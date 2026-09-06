@@ -65,11 +65,25 @@ class _ScriptedGh:
 
 
 class _RecordingSleep:
+    """Observes a wait, and MOVES THE CLOCK the way a real wait does.
+
+    ⚠️ The clock is not decoration. The seam holds a floor on the gap between
+    requests, so a sleeper that recorded waits without advancing `monotonic`
+    would leave the gap perpetually unelapsed and manufacture a spacing wait
+    before every retry — a fake that made the seam look like it double-charges
+    a backoff it has already paid.
+    """
+
     def __init__(self) -> None:
         self.waits: list[float] = []
+        self._now = 1000.0
 
     def __call__(self, seconds: float) -> None:
         self.waits.append(seconds)
+        self._now += seconds
+
+    def monotonic(self) -> float:
+        return self._now
 
 
 @pytest.fixture
@@ -77,6 +91,7 @@ def slept(monkeypatch: pytest.MonkeyPatch) -> _RecordingSleep:
     """Observe every wait the seam takes, and take none of them for real."""
     recorder = _RecordingSleep()
     monkeypatch.setattr(time, "sleep", recorder)
+    monkeypatch.setattr(time, "monotonic", recorder.monotonic)
     return recorder
 
 
@@ -86,8 +101,10 @@ def _gh_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # ⚠️ `default_gh_runner` is now ONE process-wide instance, so the nine members
     # of a sweep can share a cooldown. That is the point in production and a leak
     # in tests: whichever test trips a throttle first would pace every test after
-    # it. Reset per test — monkeypatch restores it afterwards.
+    # it. Reset per test — monkeypatch restores it afterwards. The reserved next
+    # request slot leaks the same way and is reset for the same reason.
     monkeypatch.setattr(default_gh_runner, "_throttle_lifted_at", 0.0)
+    monkeypatch.setattr(default_gh_runner, "_next_request_at", 0.0)
 
 
 def test_a_rate_limited_invocation_is_retried_and_can_succeed(

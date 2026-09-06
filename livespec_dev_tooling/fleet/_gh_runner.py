@@ -31,8 +31,12 @@ from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     InvocationNotPerformed,
 )
 from livespec_dev_tooling.fleet._read_failure import classify_gh_failure  # noqa: E402
+from livespec_dev_tooling.fleet._throttle_signal import (  # noqa: E402
+    stated_throttle_wait_seconds,
+)
 
 __all__: list[str] = [
+    "MIN_REQUEST_GAP_SECONDS",
     "GhOutcome",
     "GhResult",
     "GhRunner",
@@ -107,6 +111,28 @@ _PACING_KIND = "rate_limited"
 # hand-set so a future schedule change cannot silently break it.
 _THROTTLE_COOLDOWN_SECONDS = max(20.0, *_BACKOFF_SECONDS)
 
+# The ceiling on a wait GitHub STATED. A primary-limit reset can be an hour
+# out, and a gate that sleeps an hour has hung rather than waited — the attempt
+# bound should end that run loudly instead. Derived from the schedule's own
+# total so the two cannot drift: the seam already spends this long on a
+# throttle it was never told about, so honoring a stated wait up to the same
+# bound adds no new worst case.
+_HONORED_WAIT_CEILING_SECONDS = sum(_BACKOFF_SECONDS)
+
+# ⛔ THE FLOOR IS ON THE GAP BETWEEN REQUESTS, NOT ON ANY ONE REQUEST'S OUTCOME,
+# because the limiter's subject is the sequence and the trip is caused by the
+# pass's OWN burst. Measured 2026-08-03: a quiet period and a freshly minted
+# token, with `core.remaining=5000`, still exited 4, and the LONGER traversal
+# went blinder (`blind_rows` 2 in CI against 12 direct) — a limiter engaging
+# partway through one sequential pass. The cooldown above only REACTS to a trip
+# that has already happened; this is what keeps the pass from causing one.
+#
+# 0.2s caps the sweep at 5 requests/second, a third of the ~15/s (900
+# points/minute) GitHub documents for REST secondary limits — chosen from that
+# published budget rather than by feel. Cost is proportionate: the ~35-read
+# sweep pays ~7s, against a run already measured at ~18s.
+MIN_REQUEST_GAP_SECONDS = 0.2
+
 
 def _invoke_once(*, argv: tuple[str, ...], stdin: str | None) -> GhOutcome:
     try:
@@ -153,14 +179,32 @@ class PacedGhRunner:
 
     def __init__(self) -> None:
         self._throttle_lifted_at: float = 0.0
+        self._next_request_at: float = 0.0
 
-    def _arm_cooldown(self) -> None:
-        self._throttle_lifted_at = time.monotonic() + _THROTTLE_COOLDOWN_SECONDS
+    def _arm_cooldown(self, *, seconds: float) -> None:
+        self._throttle_lifted_at = time.monotonic() + seconds
 
     def _wait_out_active_cooldown(self) -> None:
         remaining = self._throttle_lifted_at - time.monotonic()
         if remaining > 0:
             time.sleep(remaining)
+
+    def _space_requests(self) -> None:
+        """Hold the floor on the gap since the last request; then reserve the next.
+
+        A FLOOR, not a toll: a call arriving after the gap has already elapsed —
+        one that followed a backoff, or a row whose own work took longer than
+        the gap — waits for nothing.
+
+        The remaining gap is CAPPED at the floor as well as measured against it.
+        It can never legitimately exceed the floor, so the cap costs nothing in
+        the ordinary case and keeps a clock that jumped backwards from stalling
+        the whole sweep on one row.
+        """
+        gap = min(self._next_request_at - time.monotonic(), MIN_REQUEST_GAP_SECONDS)
+        if gap > 0:
+            time.sleep(gap)
+        self._next_request_at = time.monotonic() + MIN_REQUEST_GAP_SECONDS
 
     def __call__(self, *, args: list[str], stdin: str | None = None) -> GhOutcome:
         """Run `gh <args>`, pacing the sweep and retrying a retryable rejection."""
@@ -172,6 +216,7 @@ class PacedGhRunner:
         self._wait_out_active_cooldown()
         attempt = 0
         while True:
+            self._space_requests()
             outcome = _invoke_once(argv=argv, stdin=stdin)
             attempt += 1
             if isinstance(outcome, IOFailure):
@@ -184,16 +229,31 @@ class PacedGhRunner:
             kind = classify_gh_failure(stderr=result.stderr)
             if kind not in _RETRYABLE_KINDS:
                 return outcome
+            # ⛔ THE LONGER OF THE TWO, NEVER THE STATED ONE ALONE. `Retry-After`
+            # is a MINIMUM — "not before" — so honoring it means never waiting
+            # LESS than GitHub asked. Letting it REPLACE the schedule would let
+            # a `Retry-After: 1` restore the tight retry loop the measured
+            # schedule exists to prevent.
+            stated = stated_throttle_wait_seconds(
+                stderr=result.stderr,
+                now_epoch=time.time(),
+                ceiling_seconds=_HONORED_WAIT_CEILING_SECONDS,
+            )
             # Armed BEFORE the budget check, deliberately: being rate-limited is
             # a fact about the sweep whether or not THIS call has attempts left.
             # Arming only on the retrying path would let the last refusal go
             # unrecorded, and the next row would start unpaced at exactly the
             # moment the limiter was most active.
+            # No header and a stated zero both mean "the schedule decides", so
+            # both collapse to a floor of zero and the maxima below reduce to
+            # the measured schedule.
+            floor = 0.0 if stated is None else stated
             if kind == _PACING_KIND:
-                self._arm_cooldown()
+                self._arm_cooldown(seconds=max(_THROTTLE_COOLDOWN_SECONDS, floor))
             if attempt >= _MAX_ATTEMPTS:
                 return outcome
-            time.sleep(_BACKOFF_SECONDS[min(attempt - 1, len(_BACKOFF_SECONDS) - 1)])
+            scheduled = _BACKOFF_SECONDS[min(attempt - 1, len(_BACKOFF_SECONDS) - 1)]
+            time.sleep(max(scheduled, floor))
 
 
 # The seam every `FleetContext` injects. ONE instance per process, so the nine
