@@ -92,11 +92,13 @@ Its five query panels and the dataset each reads:
 | Runner-pod lifecycle stall classes | `metrics` | all ten `livespec.ci_lifecycle.<class>` gauges |
 | Pool running jobs now | `ci-runner-pool` | the per-runner wide events: repository, workflow ref, run id, job name, phase and age |
 
-The lifecycle panel names **ten** classes, not the seven the `phase2/README.md`
-table row still lists: the original `pvc-pending`, `bind-deadline`,
-`inotify-emfile`, `containerd-deadline`, `hook-failure`, `stale-listener` and
-`capacity-absent`, plus `warm-cache-oversize`, `start-seed-cost` and
-`api-unavailable` added since. All ten are live columns in `metrics`.
+The lifecycle panel names all **ten** classes: the original `pvc-pending`,
+`bind-deadline`, `inotify-emfile`, `containerd-deadline`, `hook-failure`,
+`stale-listener` and `capacity-absent`, plus `warm-cache-oversize`,
+`start-seed-cost` and `api-unavailable` added since. All ten are live columns
+in `metrics`. The `phase2/README.md` table row lists the same ten; a class
+added to the sweep's `EMIT_CLASSES` has to be added to both, and to this
+board's lifecycle panel, or the panel silently under-reports.
 
 ### A panel whose columns do not exist yet is skipped, not fatal
 
