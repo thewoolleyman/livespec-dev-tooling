@@ -57,6 +57,31 @@ It prints one line per panel, then `created|updated <id> <name>` and the
 board's URL. Record that URL on `livespec-mqy35a` in the livespec repository
 the first time it is created.
 
+### First, widen the configuration key — it cannot touch boards today
+
+`HONEYCOMB_CONFIG_KEY_LIVESPEC` currently carries **Manage Queries and
+Columns** but **not Manage Public Boards**. Measured 2026-09-07 against the
+live environment, with the same key the trigger applier uses:
+
+| Read | Result |
+|---|---|
+| `GET /1/triggers/metrics` | `200` |
+| `GET /1/columns/metrics` | `200` |
+| `GET /1/query_annotations/metrics` | `200` |
+| `GET /1/boards` | `401 {"error":"this API key isn't allowed to access boards"}` |
+
+So `apply-boards.sh` fails on its FIRST call until someone adds the **Manage
+Public Boards** permission to that key, in the Honeycomb UI under Team
+settings → Environments → `livespec` → API keys. Nothing in this repository
+can grant it.
+
+Note the shape of that refusal, because it is easy to mis-read: the boards
+endpoint answers `401` with a JSON OBJECT, while a permitted-but-empty listing
+answers `200` with a JSON ARRAY. Code that reaches for a `boards` key with a
+default of `[]` turns the refusal into "the environment has no boards" and
+reports a clean result for a call that was rejected. Branch on the status code,
+never on whether a list came back empty.
+
 Its five query panels and the dataset each reads:
 
 | Panel | Dataset | Reads |
