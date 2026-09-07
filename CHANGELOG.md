@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.7...v1.53.8) (2026-09-07)
+
+
+### Bug Fixes
+
+* **cross-repo:** classify an already-open bump PR as a duplicate ([ce31a3d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ce31a3d66a55b75b23b93a86cf1e5b364454d0c6))
+
 ## [1.53.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.6...v1.53.7) (2026-09-07)
 
 
