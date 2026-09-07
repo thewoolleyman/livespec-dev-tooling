@@ -1,0 +1,46 @@
+# config.agent.yaml — the k3s AGENT configuration for a CI runner pool node,
+# installed to /etc/rancher/k3s/config.yaml by ./install-k3s-config.sh when the
+# node's role is `agent`. k3s reads it on every start, so every key here is
+# durable across a reboot AND a from-scratch rebuild, exactly as ./config.yaml
+# is for the role that file serves.
+#
+# WHY THIS FILE EXISTS: what is ABSENT from it, and what happens when it is not.
+# ./config.yaml carries two SERVER-ONLY keys, and k3s-agent does not merely
+# ignore them —
+#
+#   disable: [local-storage]  names a PACKAGED COMPONENT, which only a server
+#                             deploys, so `--disable` is not in the agent's flag
+#                             set at all. An agent handed this key exits at
+#                             start with `level=fatal ... flag provided but not
+#                             defined: -disable` and systemd restart-loops the
+#                             unit. Measured on gmktec-xubuntu 2026-09-07
+#                             (livespec-dev-tooling-vcv4): ../install-node.sh
+#                             step 1 had installed the server file on the agent
+#                             verbatim, and the first restart of
+#                             k3s-agent.service after that surfaced the fatal.
+#                             Nothing had complained in between — an installed
+#                             config is only read at the NEXT start, so the
+#                             damage sat latent across every earlier run.
+#   write-kubeconfig-mode     is the mode of the ADMIN kubeconfig, which only a
+#                             server writes. An agent has none, so the key names
+#                             a file that does not exist on this role.
+#
+# The `local-storage.yaml.skip` marker ./install-k3s-config.sh writes on a
+# server is server-only for the same kind of reason: its directory is
+# /var/lib/rancher/k3s/server/manifests/, the SERVER's packaged-manifest path.
+# The installer therefore writes no marker on an agent and REMOVES one it finds.
+#
+# ../../provision-k3s.sh step 0 already draws this boundary — its own
+# k3s-config step SKIPs on an agent, with the reason "an agent takes no
+# server-only config". This file is what lets ../install-node.sh keep step 1 on
+# an agent's plan rather than skipping it too: the kubelet argument below is
+# NODE state, and an agent running runner pods needs it just as much.
+
+# kubelet max-pods: the same value as ./config.yaml's and for the same reason —
+# it is a per-NODE kubelet bound, and an agent runs the pool's runner and
+# workflow pods against the identical pod-capacity constraint. Derivation:
+# ../kueue/DERIVATION.md "The pod-capacity constraint"; ratified as a host
+# requirement in livespec core non-functional-requirements.md §"Self-hosted CI
+# runner host requirements" (v216).
+kubelet-arg:
+  - "max-pods=200"

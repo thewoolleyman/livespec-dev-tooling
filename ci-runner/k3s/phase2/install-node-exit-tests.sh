@@ -15,6 +15,15 @@
 #      archive, each with a logged reason, and KEEPS k3s config, the kernel
 #      budgets, AppArmor (profile only), the storage layout, the host tools,
 #      sccache, the container hook and the scratch sweep;
+#   B2. step 1's plan NAMES the file it installs, and names a DIFFERENT one per
+#      role — config.yaml plus the local-storage skip marker on a server,
+#      config.agent.yaml and NO marker on an agent. This is the one step that
+#      is on both plans while doing something a role can be KILLED by: the
+#      server file's `disable` key is not in k3s-agent's flag set, so an agent
+#      handed it exits `flag provided but not defined: -disable` at its next
+#      start (gmktec-xubuntu 2026-09-07, livespec-dev-tooling-vcv4). A plan
+#      that says only "1/10 k3s config" cannot be read for that difference,
+#      which is why the label carries the filename;
 #   C. --dry-run executes nothing: not one installer runs, and not one of the
 #      host-mutating tools they reach for is invoked;
 #   D. the profile is DATA and is validated as data — a missing key, an
@@ -86,9 +95,16 @@ sed -e 's/^NODE_NAME=.*/NODE_NAME=agent-fixture/' \
 # deliberately a LITERAL rather than anything derived from the script under
 # test: its whole job is to fail if a future edit reorders or drops a step the
 # single-node runbook ran.
+#
+# ONE line has been re-worded since that transcription, and only re-worded:
+# step 1 was "1/10 k3s server config" until livespec-dev-tooling-vcv4 gave the
+# step a per-role FILE and put that filename in the label. The server's step 1
+# still runs, still runs first, and still installs config.yaml plus the
+# local-storage skip marker — the assertion below reads exactly that out of the
+# line, so the wording change cannot hide a change of work.
 # ---------------------------------------------------------------------------
 read -r -d '' EXPECTED_SERVER_PLAN <<'EOF'
-RUN  [server] 1/10 k3s server config
+RUN  [server] 1/10 k3s config (server or agent) — installs k3s-config/config.yaml + the local-storage skip marker
 RUN  [server] 2/10 inotify instance budget + keyring quota
 RUN  [server] 2b/10 storage layout (mount the LABEL-ed tiers + the five fstab lines + k3s drop-in; no-op when the tiers are live)
 RUN  [server] 2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)
@@ -131,6 +147,20 @@ if printf '%s\n' "$REPLY_OUT" | grep -q '^capacity: 32 '; then
 else
   no "capacity comes from the profile's ADMISSION_CAPACITY_C"
 fi
+
+# Step 1 is FIRST and does the server work it always did: the server config file
+# and the skip marker, both named in the line so a plan can be read for them.
+SERVER_STEP1="$(printf '%s\n' "$SERVER_PLAN" | head -n 1)"
+case "$SERVER_STEP1" in
+  "RUN  [server] 1/10 k3s config"*"k3s-config/config.yaml"*"local-storage skip marker"*)
+    ok "server step 1 is first and installs config.yaml + the local-storage skip marker" ;;
+  *)
+    no "server step 1 is first and installs config.yaml + the local-storage skip marker (got: ${SERVER_STEP1})" ;;
+esac
+case "$SERVER_STEP1" in
+  *config.agent.yaml*) no "the server step-1 line must not name the agent file" ;;
+  *) ok "the server step-1 line does not name the agent file" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # B. The agent plan drops the cluster-side and datastore steps, keeps the
@@ -224,7 +254,7 @@ else
 fi
 
 for fragment in \
-  "1/10 k3s server config" \
+  "1/10 k3s config (server or agent) — installs k3s-config/config.agent.yaml" \
   "2/10 inotify instance budget + keyring quota" \
   "2b/10 storage layout" \
   "2d/10 operator host tools" \
@@ -240,10 +270,33 @@ do
   fi
 done
 
+# B2. Step 1 runs on BOTH roles, and the agent's line names the agent file and
+# the marker it does NOT write. The server file on an agent is what killed
+# k3s-agent on gmktec-xubuntu (livespec-dev-tooling-vcv4), so this plan is read
+# for the filename, not merely for the step's presence.
+AGENT_STEP1="$(printf '%s\n' "$AGENT_PLAN" | head -n 1)"
+case "$AGENT_STEP1" in
+  "RUN  [agent] 1/10 k3s config"*"k3s-config/config.agent.yaml"*"NO local-storage skip marker"*)
+    ok "agent step 1 is first and installs config.agent.yaml with NO skip marker" ;;
+  *)
+    no "agent step 1 is first and installs config.agent.yaml with NO skip marker (got: ${AGENT_STEP1})" ;;
+esac
+case "$AGENT_STEP1" in
+  *"k3s-config/config.yaml"*)
+    no "the agent step-1 line must not name the SERVER's config.yaml" ;;
+  *)
+    ok "the agent step-1 line does not name the SERVER's config.yaml" ;;
+esac
+
 # The agent's steps stay in the server's relative order — the plan is a filter
-# of the runbook, never a re-ordering of it.
+# of the runbook, never a re-ordering of it. The two steps whose label differs
+# by role (step 1's file, step 3's --profile-only) are normalized back to the
+# server's wording first, since this comparison is about ORDER alone.
 SERVER_ORDER="$(printf '%s\n' "$SERVER_PLAN" | sed -E 's/^RUN  \[server\] //')"
-AGENT_ORDER="$(printf '%s\n' "$AGENT_PLAN" | sed -E 's/^(RUN|SKIP)  ?\[agent\] //' | sed -E 's/^(3\/10) AppArmor profile only.*/\1 AppArmor profile + hook ConfigMap/')"
+AGENT_ORDER="$(printf '%s\n' "$AGENT_PLAN" \
+  | sed -E 's/^(RUN|SKIP)  ?\[agent\] //' \
+  | sed -E 's/^(3\/10) AppArmor profile only.*/\1 AppArmor profile + hook ConfigMap/' \
+  | sed -E 's|^(1/10 k3s config \(server or agent\)).*|\1 — installs k3s-config/config.yaml + the local-storage skip marker|')"
 if [ "$SERVER_ORDER" = "$AGENT_ORDER" ]; then
   ok "the agent plan is the server plan filtered, in the same order"
 else
