@@ -1,0 +1,54 @@
+# ci-pool-attributed-gauges.service — one run of ci-pool-attributed-gauges.sh
+# (see its header); fired about every minute by ci-pool-attributed-gauges.timer.
+#
+# Emitter for livespec-i4ahv4 (livespec repo, plan
+# `ci-runner-pod-lifecycle-reliability`, epic livespec-ifwnqj) scope 1, 2, 4
+# and 5: the pool's queue depth and runner population PER REPOSITORY, which
+# the lifecycle sweep's fleet sums cannot express. Receiver: the
+# CI-runner-host otel-collector (thewoolleyman/otel-collector
+# config.ci-runner-host.yaml) on 127.0.0.1:4319, exporting to the `livespec`
+# Honeycomb env. READER: the plan's Honeycomb board H2 (`livespec-mqy35a`).
+# No trigger pairs with these gauges — they are board inputs, not alarms.
+#
+# NOT A DynamicUser, unlike the sibling ci-runner-heartbeat.service: it runs
+# as root with the k3s ADMIN kubeconfig, because it reads cluster-scoped
+# ClusterQueues and an all-namespace EphemeralRunner listing. That is the
+# same credential and the same Environment= line the runner-pod lifecycle
+# sweep's unit carries for the same two object kinds; the use here is
+# strictly read-only. It also makes this unit a SERVER-node unit — an agent
+# node holds no admin kubeconfig, and the server's own tick already covers
+# the whole pool.
+#
+# THE DEADLINE. The timer's interval is 60 s, so a run must finish well
+# inside one: two kubectl list calls bounded at 15 s each plus a 10 s curl is
+# 40 s worst case, and TimeoutStartSec=50 keeps a wedged read from holding
+# the cadence the way the lifecycle sweep's untimed child did on 2026-09-06
+# (livespec-kgdlte). A run that is killed at the deadline emits nothing,
+# which is the correct fail-closed outcome.
+#
+# BOOT ORDERING is ORDERING ONLY (no Requires=), the shape
+# ci-kueue-webhook-probe.service settled on: a boot-time activation waits for
+# k3s and for the reconstruct converge to have applied the ClusterQueues and
+# scale sets, so the first tick reads a converged cluster instead of failing
+# and leaving a red unit that the next tick heals.
+#
+# Source of truth: livespec-dev-tooling ci-runner/observability/ — install via
+# install-observability.sh, never hand-edit the live copy (the s2t
+# recreatability rule).
+[Unit]
+Description=CI runner pool per-repository queue and runner gauges (OTLP gauges to local collector)
+Wants=network-online.target
+After=network-online.target
+After=k3s.service converge-ci-stack.service
+
+[Service]
+Type=oneshot
+# Runs as root (default): needs the k3s admin kubeconfig, read-only.
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+TimeoutStartSec=50
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ExecStart=/usr/local/lib/ci-runner/ci-pool-attributed-gauges.sh

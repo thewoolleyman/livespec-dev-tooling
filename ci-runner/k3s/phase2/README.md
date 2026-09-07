@@ -1846,6 +1846,57 @@ are told apart by metric name and resource attributes, never by dataset:
 | `livespec.ci_warm.proxied_downloads`, `livespec.ci_warm.proxy_hit_ratio` | distributions fetched through the PyPI files proxy, and the share served from its store (`1 − new store objects / proxied downloads`; the ratio only when the populator could read the store) | same document |
 | `livespec.ci_warm.run_epoch` | the run's start, the join key back to its Job log | same document |
 
+**The per-repository breakdown is a SEPARATE emitter, on its own timer**
+(`../../observability/ci-pool-attributed-gauges.sh`,
+`ci-pool-attributed-gauges.timer`, about every minute; `livespec-i4ahv4`).
+The three Kueue/churn-slot gauges above are FLEET SUMS — the sweep makes one
+`kubectl get clusterqueues` call that yields a row per queue and then sums the
+rows one line before the POST, discarding the queue identity — so a saturated
+pool and one saturated repository look identical. READ BY: the plan's
+Honeycomb board H2 (`livespec-mqy35a`), "what is queued or running on the
+pool, and for which repository". No trigger pairs with them; like the fleet
+sums they are board inputs, not alarms.
+
+| Gauge | Attributes | Value | Read from |
+|---|---|---|---|
+| `livespec.ci_pool.queue_pending` | `ci.queue`, `ci.repository` | `ClusterQueue.status.pendingWorkloads` for ONE queue — the per-queue breakdown of `livespec.ci_kueue.pending` | the same `clusterqueues` listing, with the same `ci-runner.io/churn-slot` filter |
+| `livespec.ci_pool.queue_admitted` | `ci.queue`, `ci.repository` | `ClusterQueue.status.admittedWorkloads` for ONE queue — the breakdown of `livespec.ci_kueue.admitted` | same |
+| `livespec.ci_pool.queue_quota` | `ci.queue`, `ci.repository` | `nominalQuota` for `ci-runner.io/churn-slot` on ONE queue — the breakdown of `livespec.ci_churn_slot.quota_sum`, so the rows sum to 32 at the 2026-09-02 interim | same |
+| `livespec.ci_pool.runners` | `ci.repository`, `ci.runner_phase` | EphemeralRunner objects owned by one repository in one phase | `kubectl get ephemeralrunners --all-namespaces` |
+| `livespec.ci_pool.runners_total` | none | the same listing's total, which the per-repository rows break down | same |
+
+Resource: `service.name` = `ci-runner-pool`, `host.name` = `$(hostname)`;
+instrumentation scope `ci-pool-attributed-gauges`. The names are a NEW family
+on purpose: adding attributed datapoints to `livespec.ci_kueue.*` or
+`livespec.ci_churn_slot.quota_sum` would change what an ungrouped query over
+those returns, so every existing query, the archive-evidence recipe below and
+every trigger under `../../observability/triggers/` keep reading exactly what
+they read before, and the sweep is not edited at all.
+
+**`ci.repository`, derived — and the one queue that is not a repository.**
+This pool's ClusterQueues are named `<repository>-cq`, so `ci.repository` is
+`thewoolleyman/` plus the name with that suffix removed
+(`livespec-dev-tooling-cq` → `thewoolleyman/livespec-dev-tooling`). The one
+live exception is `phase1-proof-cq`, the Kueue proof queue, which is not a
+repository at all: it is denominated in `cpu`/`memory`, so the churn-slot
+filter already drops it (that filter is why the eleven queues' quotas sum to
+34 while the emitted total is 32), and it is ALSO named in the emitter's
+`CI_POOL_NON_REPO_QUEUES` list so a future non-repository queue that DID carry
+churn-slot could not be mangled into a repository name. A queue with no
+derivable repository is emitted with `ci.queue` alone. For a RUNNER the
+repository comes from `spec.githubConfigUrl`, a CRD-REQUIRED spec field set at
+creation, not from `status.jobRepositoryName`, which is populated only while a
+job is assigned and would drop every runner that exists without one.
+
+**Fail-closed, the same split as everywhere else on this host.** A source that
+cannot be READ contributes no gauge and makes the unit exit nonzero; a source
+that reads and reports nothing is a genuine reading. An idle pool has no
+EphemeralRunner objects at all (ARC scale sets run `minRunners: 0`), so
+`runners_total` = 0 is a true zero and IS emitted. The per-repository rows sum
+to `runners_total` unless a runner carried a `githubConfigUrl` with no
+`<owner>/<repo>` tail — an organization- or enterprise-level scale set — which
+is counted in the total, left out of the breakdown, and logged.
+
 Why ClusterQueue status rather than `kubectl get workloads -A`: one list
 call yields pending, admitted AND the quota sum, and the per-queue counters
 are the ones Kueue's own admission loop maintains; a workloads listing would

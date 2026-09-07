@@ -1,0 +1,36 @@
+# ci-pool-attributed-gauges.timer — the pool's per-repository gauges, about
+# every minute.
+#
+# WHY ITS OWN TIMER, and not a faster lifecycle sweep. The obvious way to get
+# these numbers to a live board would be to speed up
+# scan-runner-pod-lifecycle.timer, which already makes the ClusterQueue read.
+# That is wrong: the sweep's journal, scheduler-event and containerd.log reads
+# are all bounded to a 5-minute look-back window precisely so consecutive
+# sweeps TILE the timeline without double-counting, and its unit budgets 240 s
+# for one run. Dropping it to a minute would double-count its classes and
+# overrun its own deadline. So the attributed gauges ride a separate,
+# much cheaper unit: two bounded kubectl list calls and one loopback POST.
+#
+# ONE MINUTE because the reader is a live board (the plan's H2,
+# `livespec-mqy35a`) watched while jobs start and finish, and a 5-minute
+# granularity cannot show a queue filling and draining inside one workflow
+# run. AccuracySec=1s keeps systemd from coalescing the tick into a wider
+# window, which at a 60 s interval it otherwise would.
+#
+# OnBootSec sits after the boot converge (../k3s/phase2/reconstruct/
+# converge-ci-stack.service, ~2.5 min from an empty datastore) so the first
+# tick after a reboot reads a cluster that HAS its ClusterQueues and scale
+# sets, rather than emitting nothing and leaving a red unit for the next tick
+# to heal. Persistent=false: a missed minute of a live board is not worth
+# replaying a stale reading on the next boot, unlike the 5-minute sweeps.
+[Unit]
+Description=CI runner pool per-repository queue and runner gauges (every minute)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
