@@ -53,7 +53,11 @@ recipe").
 3. **`provision-k3s.sh phase0-bare-metal/profiles/<node>.env`** — the pinned k3s
    in the role that profile declares: on a `server`, the control plane and the
    admin kubeconfig every later step reads; on an `agent`, the join to the
-   cluster the profile names. It reads the same profile steps 1 and 2 used.
+   cluster the profile names. It reads the same profile steps 1 and 2 used. On
+   an `agent`, `secret-reinjection/seed-k3s-agent-join-token.sh <profile>` runs
+   FIRST, under the `github-ci-runners` 1Password wrapper: it puts the join
+   token at `CLUSTER_TOKEN_FILE`, `0600 root:root`, which this step refuses to
+   provision without.
 4. **`sudo phase2/install-node.sh phase0-bare-metal/profiles/<node>.env`** — the
    ordered node-local runbook. It reads the node's cluster role and its
    admission capacity `C` from the same profile step 1 used, and runs the step
@@ -350,6 +354,17 @@ rotate the key.
 | `secret-reinjection/inject-github-app-secret.sh` | The **boot** injector, runs as root. Reads the three decrypted credentials from `$CREDENTIALS_DIRECTORY`, ensures the `arc-runners` namespace exists, then creates/refreshes `arc-github-app-installation` idempotently (`kubectl create … --dry-run=client -o yaml \| kubectl apply -f -`). |
 | `secret-reinjection/inject-github-app-secret.service` | systemd oneshot (root) that decrypts the three credstore credentials via `LoadCredentialEncrypted=` and runs the injector at boot, `After=k3s.service` and `Before=converge-ci-stack.service` (the `livespec-olp4c5` converge, authored in the sibling PR `feat/ci-host-reconstruct-on-boot`), so the secret exists before ARC is brought up. |
 | `secret-reinjection/install-secret-reinjection-unit.sh` | Installs the injector to `/usr/local/lib/ci-runner-k3s/` and the unit to `/etc/systemd/system/`, then `systemctl enable` (NOT `--now`) — arms it for next boot without applying live. Warns if the credstore is not yet seeded. |
+| `secret-reinjection/seed-k3s-agent-join-token.sh` | **Attended, run once by the maintainer ON AN AGENT — the step BEFORE `provision-k3s.sh` on that node** (rebuild sequence step 3). Under the same 1Password wrapper it reads ONE value, `K3S_AGENT_JOIN_TOKEN_CI_RUNNER`, and writes it to the path the node's profile names in `CLUSTER_TOKEN_FILE` (`/etc/rancher/k3s/agent-join-token` on `gmktec-xubuntu`) via `sudo install` reading STDIN, mode `0600 root:root` — the exact file `provision-k3s.sh` REFUSES to provision an agent without, in `--dry-run` too. The value flows over STDIN and is never echoed, logged or placed on argv. Idempotent: a target whose bytes already equal the injected value is REPORTED, not rewritten (so a rotated token IS written). Refuses when the variable is unset or empty, when `CLUSTER_ROLE` is not `agent` (a server MINTS the token at `/var/lib/rancher/k3s/server/node-token`, which is the value being seeded), and when the target's parent directory does not exist — a mistyped path is refused rather than manufactured. `--dry-run PROFILE` prints the target and the mode, needs no credential, and executes nothing. Also the re-seed step on token rotation. |
+| `secret-reinjection/seed-k3s-agent-join-token-exit-tests.sh` | That seed step's exit tests. Runs it against a FIXTURE token this suite invents (nothing here reads 1Password) writing into a scratch target, with `sudo`/`install` replaced by tripwires for every dry-run and refusal case — so the suite proves the printed target and mode, a byte-exact write at `0600`, an idempotent second run that runs no `install` at all, a rotated value that IS written, and each of the four refusals, while touching no host. Needs no root: the fake `sudo` rewrites `install`'s `-o root -g root` to the invoking user, and the suite passes unprivileged and as root alike. |
+
+**No boot half, and why.** The App credentials above need one because they live
+in the k3s datastore, which is volatile by design; the agent join token does
+not. It is a file on the agent's own durable root filesystem, read AT RUN TIME
+by k3s out of `CLUSTER_TOKEN_FILE` — so seeding it once is enough, and the
+directory carries the attended half only. Storing the server's
+`/var/lib/rancher/k3s/server/node-token` into the `github-ci-runners`
+Environment as `K3S_AGENT_JOIN_TOKEN_CI_RUNNER` is the maintainer's own
+one-time attended step; no script in this tree reads the server's token.
 
 **1Password source (seed step only) — the least-privilege `github-ci-runners`
 Environment, never a broader fleet secret.** `seed-github-app-creds.sh` runs
