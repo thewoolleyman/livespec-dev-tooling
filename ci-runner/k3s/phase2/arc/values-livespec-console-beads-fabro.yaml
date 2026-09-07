@@ -100,6 +100,18 @@ template:
       - name: hook-pod-template
         configMap:
           name: arc-hook-pod-template
+      # The FLEET-PATCHED ARC container hook (../container-hook/), read-only
+      # from the node, where ../install-node.sh step 7c installed it. It skips
+      # the 595 MB / 9,028-file externals copy its unpatched twin makes on
+      # EVERY job start, when the work volume was pre-seeded with the matching
+      # runner version (livespec-wm7c, decision livespec-b1c6).
+      # `type: File` on purpose: a node that has not installed this hook fails
+      # the pod loudly instead of mounting an empty directory the runner would
+      # then quietly fall back from.
+      - name: fleet-container-hook
+        hostPath:
+          path: /usr/local/lib/ci-runner-k3s/hooks/2.336.0/index.js
+          type: File
     containers:
       - name: runner
         # Pinned tag + digest (livespec-s43svm handoff finding, 2026-08-25;
@@ -110,11 +122,36 @@ template:
         # the way its header documents (see ../hook-pod-template.yaml or
         # the phase2 copy). Bump BOTH tag and digest together, re-read the
         # hook's initContainers behaviour, then helm upgrade + recycle.
+        # Since livespec-wm7c a bump is ALSO a hook rebuild, a re-extraction
+        # and a values rewrite: the `fleet-container-hook` hostPath above and
+        # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION below carry this same
+        # version and move with it, in every one of these files at once
+        # (../container-hook/README.md "Runner-image bump procedure").
         image: ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
         command: ["/home/runner/run.sh"]
         env:
           - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
             value: "false"
+          # THE EXTERNALS PRE-SEED (livespec-wm7c, decision livespec-b1c6):
+          # run the fleet-patched hook mounted below instead of the image's
+          # own, and tell it which runner version's externals the work volume
+          # was born with. The hook skips its copy ONLY when this names the
+          # version whose marker the seed left in <work volume>/externals;
+          # unset, or naming another version, and the copy runs exactly as
+          # upstream's. The seed itself is the local-path provisioner's setup
+          # script (../local-path-provisioner/), from the `current` pointer
+          # ../container-hook/extract-externals.sh publishes.
+          # THESE TWO, the `fleet-container-hook` hostPath above and the
+          # `image:` pin above are ONE runner version and move together in one
+          # change; there is nowhere to state it once, because each values
+          # file is applied on its own (`helm upgrade -f`). A half-rewritten
+          # set is refused by ../container-hook/install-container-hook.sh
+          # before it installs anything. See ../container-hook/README.md
+          # "Runner-image bump procedure".
+          - name: ACTIONS_RUNNER_CONTAINER_HOOKS
+            value: /home/runner/fleet-hook/index.js
+          - name: ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
+            value: "2.336.0"
           # THE WORKFLOW-POD FIX -- see values-livespec-overseer.yaml for the
           # full root cause. In kubernetes container mode the job's `container:`
           # image runs in a SEPARATE pod the hook creates, whose securityContext
@@ -127,6 +164,12 @@ template:
         volumeMounts:
           - name: hook-pod-template
             mountPath: /home/runner/hook-template
+            readOnly: true
+          # The fleet-patched hook, at exactly the path
+          # ACTIONS_RUNNER_CONTAINER_HOOKS names. Read-only: the runner
+          # executes it and never writes it.
+          - name: fleet-container-hook
+            mountPath: /home/runner/fleet-hook/index.js
             readOnly: true
         securityContext:
           allowPrivilegeEscalation: false

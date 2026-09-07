@@ -2,12 +2,12 @@
 
 Work-item `livespec-wm7c` (decision `livespec-b1c6`, 2026-09-04), carrier F5
 of livespec plan `ci-runner-pod-lifecycle-reliability`, research/005 ("What
-one job start writes"). This directory is the FIRST half of that item: the
-build pipeline for the patched hook, the host-side extraction of the runner
-image's externals, the node-local installer, and the upstream proposal. The
-second half — selecting the hook from the scale-set values and seeding the
-externals from the local-path provisioner — lands after `livespec-lvtu`, and
-is described at the end.
+one job start writes"). This directory carries the FIRST half of that item:
+the build pipeline for the patched hook, the host-side extraction of the
+runner image's externals, the node-local installer, and the upstream proposal.
+The second half — selecting the hook from the scale-set values and seeding
+the externals from the local-path provisioner — landed after `livespec-lvtu`
+and is described at the end; the two are one mechanism and are read together.
 
 ## What the problem is
 
@@ -35,9 +35,9 @@ proposed upstream so the fleet patch can be dropped when accepted.
 |---|---|
 | `externals-skip.patch` | The ONE change against upstream: `git diff` output against tag `v0.7.0`, with a header saying why. Skips the copy only when `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION` names a runner version AND `<work volume>/externals/.externals-seeded-<that version>` exists with that version as its content; otherwise the copy runs exactly as upstream's. 23 lines added, 1 changed. |
 | `build-patched-hook.sh` | Developer-host build (Node via mise, network to GitHub and npm). Derives the hook version the pinned image bundles, proves it against the image's bytes and a reproducible unpatched rebuild, applies the patch, rebuilds, checks the result, writes `bundle/<runner-version>/`. Fails loudly at every step — see "Failure modes". |
-| `runner-image.sh` | Sourced by the three scripts: reads the image pin from `../arc/values-livespec.yaml` (the reference values file; every values file carries the same line) and derives the runner version and containerd's digest name from it, so the three cannot disagree. |
+| `runner-image.sh` | Sourced by the three scripts: reads the image pin from `../arc/values-livespec.yaml` (the reference values file; every values file carries the same line) and derives the runner version and containerd's digest name from it, so the three cannot disagree. Also carries `assert_values_pins_agree`, which requires EVERY `../arc/values-*.yaml` to state the same image pin, the same fleet-hook hostPath version and the same `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION` — the notice that reading one reference file is safe. It compares the files against each other, never against a caller's `--image`, so the bump order below still passes. |
 | `bundle/<runner-version>/index.js` + `index.js.sha256` + `BUILD-INFO` | The COMMITTED build output (8.9 MB, an ncc bundle; `dist/` is gitignored in this repo, hence the name). The node needs no Node toolchain: the installer copies from the checkout. `BUILD-INFO` records the image, the derived hook version and its source, the tag commit, the upstream asset's sha256, the image cross-check result, the patch's sha256, the patched bundle's sha256 and size, the line delta, and the Node/npm versions. |
-| `extract-externals.sh` | Node-local (root): mounts the pinned image read-only through containerd (`ctr -n k8s.io images mount --rw=false`; pulls it first only if this node never ran a runner pod), cross-checks the runner version inside (`bin/Runner.Listener.deps.json`) and optionally the bundled hook's sha256, copies `/home/runner/externals` to `/var/lib/rancher/k3s/storage/.externals/<runner-version>/` with the marker file, verifies a per-file sha256 manifest, moves it into place atomically. Idempotent on the manifest. `--dry-run` prints the plan without root. |
+| `extract-externals.sh` | Node-local (root): mounts the pinned image read-only through containerd (`ctr -n k8s.io images mount --rw=false`; pulls it first only if this node never ran a runner pod), cross-checks the runner version inside (`bin/Runner.Listener.deps.json`) and optionally the bundled hook's sha256, copies `/home/runner/externals` to `/var/lib/rancher/k3s/storage/.externals/<runner-version>/` with the marker file, verifies a per-file sha256 manifest, moves it into place atomically, and LAST publishes `.externals/current` — a relative symlink to that version directory, by one atomic rename — because the provisioner's setup script cannot know the runner version and seeds from that one name. Idempotent on the manifest, and republishes the pointer even when it copies nothing. `--dry-run` prints the plan without root. |
 | `install-container-hook.sh` | Node-local (root), run by `../install-node.sh` step 7c: verifies the committed bundle's manifest and that it was built for the pinned image, installs it to `/usr/local/lib/ci-runner-k3s/hooks/<runner-version>/index.js` (0644 root), then runs `extract-externals.sh` with the hook cross-check. |
 
 ## How the pieces fit
@@ -53,11 +53,14 @@ build-patched-hook.sh                   install-node.sh 7c -> install-container-
   write bundle/<v>/ (committed)             cp -a /home/runner/externals -> storage/.externals/<v>/
                                             write .externals-seeded-<v> (content: <v>)
 
-                                        SECOND HALF (after livespec-lvtu):
-                                        values-*.yaml: hostPath hooks/<v> (ro) into the runner,
-                                          ACTIONS_RUNNER_CONTAINER_HOOKS=<mount>/index.js,
+                                            publish storage/.externals/current -> <v>
+
+                                        SECOND HALF (landed after livespec-lvtu):
+                                        values-*.yaml: hostPath hooks/<v>/index.js (ro, type: File),
+                                          ACTIONS_RUNNER_CONTAINER_HOOKS=/home/runner/fleet-hook/index.js,
                                           ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=<v>
-                                        provisioner setup: cp -al storage/.externals/<v>/. ${VOL_DIR}/externals
+                                        provisioner setup:
+                                          cp -a --reflink=always storage/.externals/current/. ${VOL_DIR}/externals
 ```
 
 At job start the patched hook reads the env, looks for the marker under
@@ -78,15 +81,18 @@ the image). So the scale-set values declare it beside the image pin. An unset
 env is the upstream behaviour: the copy runs. That is also what makes the
 patch safe to run against an unseeded volume.
 
-### The coupling rule for the second half
+### The coupling rule
 
-The three second-half edits MUST land together in one apply: the provisioner
+The three second-half edits MUST be applied together: the provisioner
 seed, the hook selection, and the version env. A seed with NO env (or with
 the image's own hook) means the upstream copy runs over hardlinked files it
 cannot write — the runner is uid 1000 and the files are the image's
 1001:123 — and the job fails at prepare. An env with NO seed is harmless (no
 marker, so the copy runs). A seed with the env but the wrong version is
-harmless the same way.
+harmless the same way. The reflink seed does not relax this: a reflink copy
+gives the volume its own inodes, which is what keeps a job's writes out of the
+host copy, but the files still carry the image's `1001:123` ownership, so a
+uid-1000 runner still cannot write them.
 
 ## The derivation, and the proof it is right
 
@@ -131,20 +137,31 @@ order:
    `bundle/<new version>/` or fails (below). Commit the new bundle directory
    and delete the previous version's in the same change.
 2. Change tag and digest together in every `../arc/values-*.yaml` (the k3s
-   README "Pinned versions" procedure), and in the same change point the
-   second-half selection at `hooks/<new version>` and set
-   `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=<new version>`.
+   README "Pinned versions" procedure), and in the SAME change point that
+   file's `fleet-container-hook` hostPath at
+   `/usr/local/lib/ci-runner-k3s/hooks/<new version>/index.js` and set
+   `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=<new version>`. Each file
+   states the version three times and no file can inherit it from another —
+   Helm applies each on its own with `-f`, merging no shared base — so this
+   is a rewrite of every file, and `assert_values_pins_agree` (run by both
+   `build-patched-hook.sh` and `install-container-hook.sh`) refuses a
+   half-rewritten set. The provisioner's setup script needs no edit at all:
+   it seeds from `.externals/current`, which step 3 republishes.
 3. On the node: `sudo ../install-node.sh ../../phase0-bare-metal/profiles/<node>.env`
    (step 7c installs the
-   new hook beside the old one and extracts the new image's externals under
-   their own version directory; nothing running changes yet).
+   new hook beside the old one, extracts the new image's externals under their
+   own version directory, and moves `.externals/current` onto it; nothing
+   running changes yet, because volumes already provisioned keep the seed they
+   were born with and the next volume is the first to get the new one).
 4. Apply the values (`helm upgrade` per release) and recycle idle runners
    (`../arc/recycle-scale-set-runners.sh`), exactly as for any values change.
 5. Verify with research/005's single-start watcher: externals present at
    +0 s, `externals pre-seeded` in the runner's hook log, no externals bytes
    in the per-start writes. Then remove the old `hooks/<old>/` and
-   `.externals/<old>/` on the node (live hardlinks keep their inodes; the
-   directories are only the seed source).
+   `.externals/<old>/` on the node — check first that `.externals/current`
+   does not name the one being removed (a live volume's reflink copies are its
+   own inodes and stay valid regardless; the directories are only the seed
+   source, and the pointer is the only thing that must never dangle).
 
 ## Failure modes
 
@@ -199,23 +216,41 @@ mounts externals from a Kubernetes image volume instead, which needs the
 `ImageVolume` feature gate, Kubernetes 1.35+) — the proposal complements
 #399 for platforms that pre-seed rather than image-mount.
 
-## Second half (after `livespec-lvtu` merges)
+## Second half — what the seed and the selection actually do
 
-Files this half deliberately did not touch, because that item is editing
-them:
+Landed after `livespec-lvtu`, in the files this half deliberately did not
+touch while that item was editing them:
 
 - `../local-path-provisioner/local-path-provisioner.yaml` `setup`: after the
-  warm-cache seed, `cp -al "${VOL_DIR%/*}/.externals/<v>/." "${VOL_DIR}/externals"`
-  (busybox `cp -al` is verified there; the marker rides along; a missing
-  source leaves no `externals` directory, and the hook copies as upstream).
-- every `../arc/values-*.yaml`: a `hostPath` volume for
-  `/usr/local/lib/ci-runner-k3s/hooks/<v>` (`type: Directory`) mounted
-  read-only into the runner container, `ACTIONS_RUNNER_CONTAINER_HOOKS`
-  pointing at its `index.js` (the chart yields to a user-supplied value of
-  that env), and `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION: "<v>"`.
-- `../arc/hook-pod-template.yaml`: no change expected; the workflow pod keeps
-  mounting the work volume, and `/__e` is the same path.
-- Acceptance is `livespec-wm7c` criterion 2: the single-start watcher shows
-  externals present at +0 s, no copy in the hook log, per-start writes under
-  100 MB, a real node20 and a real node24 action green on the pool, and one
-  clean reboot survived.
+  warm-cache seeds,
+  `cp -a --reflink=always "${VOL_DIR%/*}/.externals/current/." "${VOL_DIR}/externals"`.
+  A REFLINK copy, not the `cp -al` this half first planned, for the reason
+  research/006 forced on the warm seed: hardlinked inodes ARE the host copy's
+  and are writable from every job, while a reflink gives the volume its own
+  inodes sharing the host copy's extents copy-on-write. It reads
+  `.externals/current` rather than a version, because the setup script gets
+  only `VOL_DIR`, `VOL_MODE` and `VOL_SIZE_BYTES` and never reads the values
+  files. The marker rides along inside the tree. A missing pointer, a missing
+  generation or any failure leaves NO `externals` at all — with the marker
+  removed BEFORE the tree, so an interrupted removal can only leave a tree the
+  hook overwrites, never a partial tree carrying a marker the hook would trust.
+  Ownership and modes stay the image's, with no `0777` directory pass like the
+  warm seed's: nothing adds entries here, and the hook's own copy is skipped.
+- every `../arc/values-*.yaml`: a `hostPath` volume named
+  `fleet-container-hook` for
+  `/usr/local/lib/ci-runner-k3s/hooks/<v>/index.js` (`type: File`, so a node
+  that has not installed the hook fails the pod loudly rather than presenting
+  an empty directory) mounted read-only at `/home/runner/fleet-hook/index.js`,
+  `ACTIONS_RUNNER_CONTAINER_HOOKS` pointing at that same path (the chart
+  yields to a user-supplied value of that env), and
+  `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION: "<v>"` beside the image pin.
+  Every file states the version three times because Helm applies each one on
+  its own; `assert_values_pins_agree` is what makes that safe.
+- `../arc/hook-pod-template.yaml`: unchanged, as expected; the workflow pod
+  keeps mounting the work volume, and `/__e` is the same path.
+- Acceptance is `livespec-wm7c` criterion 2, and is NOT discharged by this
+  repository change alone: the single-start watcher must show externals
+  present at +0 s, no copy in the hook log, per-start writes under 100 MB, a
+  real node20 and a real node24 action green on the pool, and one clean reboot
+  survived — all of which need the host apply (`install-node.sh` step 7c, then
+  the values applied per release and idle runners recycled).

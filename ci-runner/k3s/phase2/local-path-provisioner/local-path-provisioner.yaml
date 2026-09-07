@@ -16,9 +16,10 @@
 #
 # CONTENT: byte-for-byte the k3s v1.36.2+k3s1 bundled manifest (image
 # rancher/local-path-provisioner:v0.0.36, path /var/lib/rancher/k3s/storage,
-# default StorageClass `local-path`, WaitForFirstConsumer) plus TWO additions —
-# the container `args:` and the warm-cache seed in the ConfigMap's `setup`
-# script. Keep the image pin in lockstep with the k3s version in
+# default StorageClass `local-path`, WaitForFirstConsumer) plus THREE additions
+# — the container `args:`, the warm-cache seed in the ConfigMap's `setup`
+# script, and the externals seed at the end of that same script. Keep the image
+# pin in lockstep with the k3s version in
 # ../../provision-k3s.sh: a k3s upgrade that bumps the bundled provisioner is
 # the moment to re-diff this file against the new bundled copy.
 #
@@ -90,6 +91,51 @@
 # serial. The cost scales with the file count: the from-empty generation
 # build (livespec-41w4, that plan's F2) is the lever, and the provisioner's
 # 120 s helper-pod ceiling is far above it even under a start burst.
+#
+# THE EXTERNALS SEED (same plan, research/005; carrier `livespec-wm7c`,
+# maintainer decision `livespec-b1c6`): every runner work volume is ALSO born
+# with `externals` already holding the pinned runner image's
+# /home/runner/externals — the runner's bundled Node runtimes, 595 MB and
+# 9,028 files — as the same kind of REFLINK COPY, for the same reason and by
+# the same `cp -a --reflink=always`. Without it the ARC container hook's
+# copyExternalsToRoot() copies those bytes into <work volume>/externals on
+# EVERY job start, ~12 s of the pool's per-start cost, unconditionally. The
+# fleet-patched hook (../container-hook/) skips that copy when BOTH the
+# runner's ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION names a runner version
+# AND the destination holds `.externals-seeded-<that version>` with that
+# version as its content — the marker ../container-hook/extract-externals.sh
+# writes inside the host copy, which rides along with the tree here.
+# Facts this seed rests on, beyond the warm seed's above:
+#   - The source is ${VOL_DIR%/*}/.externals/current, a relative symlink
+#     extract-externals.sh publishes by atomic rename to the version directory
+#     it just extracted and verified. This script cannot name the version
+#     itself: it gets VOL_DIR, VOL_MODE and VOL_SIZE_BYTES and nothing else,
+#     and the runner version is declared in the scale-set values it never
+#     reads. Resolving one published name is what removes that dependency.
+#   - `.externals` is a hidden sibling of the pvc-* directories under the SAME
+#     node path as VOL_DIR, exactly as `.warm` is, so the reflink stays within
+#     one filesystem (FICLONE fails with EXDEV across filesystems) and the
+#     helper pod can reach it under the one hostPath mount it gets.
+#   - The seed is a reflink copy and NOT the `cp -al` the first half of
+#     livespec-wm7c planned, for the reason research/006 forced on the warm
+#     seed: hardlinked inodes ARE the host copy's, writable from every job.
+#   - Ownership and modes stay the image's (runner 1001:123, 0644/0755) and
+#     there is no 0777 directory pass like the warm seed's, because NOTHING
+#     adds entries to `externals`: the hook's copy is skipped by contract and
+#     the runner and workflow containers only read and execute, which
+#     world-readable 0644/0755 already allows. It also means the coupling rule
+#     the hook's README states still binds — a seed with the hook selected but
+#     WITHOUT the version env would have upstream's copy try to write files
+#     uid 1000 does not own, and fail the job at prepare. The three edits (the
+#     provisioner seed, the hook selection, the version env) land together.
+#   - A failed or partial seed leaves NO `externals` at all, the marker
+#     removed FIRST: a partial tree without a valid marker is safe by the hook
+#     contract (the hook copies exactly as upstream), while a partial tree
+#     carrying the marker would be silently corrupt — the hook would skip its
+#     copy over an incomplete set of runtimes.
+# Cost is not separately measured; at the ~70 us per file the warm seed's
+# measurement implies, 9,028 files is well under a second, against the ~12 s
+# per job start it removes.
 #
 # THE TUNING (measured 2026-09-01, research/001 and research/002 of the plan
 # above), against k3s's bundled defaults of 4 workers / QPS 5 / burst 10:
@@ -309,6 +355,37 @@ data:
           rm -rf "${dest}"
         fi
       done
+    fi
+    # Seed the pinned runner image's externals into ${VOL_DIR}/externals — the
+    # exact path the ARC container hook would otherwise copy 595 MB into on
+    # every job start (see the file header, "THE EXTERNALS SEED"). Source is
+    # the ONE published name ${VOL_DIR%/*}/.externals/current, a relative
+    # symlink ../container-hook/extract-externals.sh points at the version
+    # directory it extracted and verified; this script cannot know the runner
+    # version, and `.externals` is a hidden sibling of the pvc-* directories
+    # under the SAME node path as VOL_DIR, which is what keeps the reflink
+    # within one filesystem. The marker `.externals-seeded-<version>` rides
+    # along inside the tree; the hook skips its copy only when the runner's
+    # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION names that same version.
+    # Ownership and modes stay the image's, with no 0777 pass like the warm
+    # seed's: nothing adds entries here, only reads and executes.
+    #
+    # Any failure leaves NO seed and the hook copies as upstream. Removal
+    # takes the MARKER FIRST and the tree second, so an interrupted removal
+    # can only ever leave a tree the hook will overwrite, never an incomplete
+    # tree the hook trusts. The up-front removal makes a retried helper pod
+    # start clean rather than keep a half-made seed.
+    drop_externals_seed() {
+      rm -f "${VOL_DIR}"/externals/.externals-seeded-*
+      rm -rf "${VOL_DIR}/externals"
+    }
+    externals="${VOL_DIR%/*}/.externals/current"
+    drop_externals_seed
+    if [ -d "${externals}" ]; then
+      if ! cp -a --reflink=always "${externals}/." "${VOL_DIR}/externals"; then
+        echo "externals seed from ${externals} failed; leaving none" >&2
+        drop_externals_seed
+      fi
     fi
   teardown: |-
     #!/bin/sh

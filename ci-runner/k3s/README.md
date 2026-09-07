@@ -139,7 +139,14 @@ in the same change, then re-run `phase2/install-node.sh` (step 7c) on
 the node, then apply the values. The build derives the hook version the
 new image bundles and fails loudly if `externals-skip.patch` no longer
 applies to it — that failure blocks the bump until the patch is
-re-derived, by design. The full procedure and the failure modes are in
+re-derived, by design. Each values file states the runner version THREE
+times — the `image:` pin, the `fleet-container-hook` hostPath
+(`hooks/<version>/index.js`) and
+`ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION` — and no file can inherit
+it from another, because Helm applies each on its own with `-f` and
+merges no shared base; `runner-image.sh`'s `assert_values_pins_agree`
+refuses a half-rewritten set from both the build and the node install.
+The full procedure and the failure modes are in
 `phase2/container-hook/README.md` "Runner-image bump".
 
 ## Labels — confirmed distinct from the existing pool
