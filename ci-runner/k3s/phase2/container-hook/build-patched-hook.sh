@@ -112,6 +112,11 @@ digest_ref="$(digest_ref_from_ref "${image}")"
 echo "image:          ${image}"
 echo "runner version: ${runner_version}"
 out_dir="${out_dir:-${SCRIPT_DIR}/bundle/${runner_version}}"
+# Not a check of THIS build's image (a bump builds for a new --image while the
+# values files still hold the old one, which is the documented order) but of
+# the values files against each other: a half-rewritten set is a defect
+# whichever version it names, and this is the first place a bump touches.
+assert_values_pins_agree
 
 build="$(mktemp -d -t container-hook-build.XXXXXX)"
 if [ "${keep_build}" -eq 1 ]; then

@@ -13,19 +13,23 @@
 #   /usr/local/lib/ci-runner-k3s/hooks/<runner-version>/index.js.sha256
 #   /usr/local/lib/ci-runner-k3s/hooks/<runner-version>/BUILD-INFO
 #   <storage-root>/.externals/<runner-version>/ (+ marker) via extract-externals.sh
+#   <storage-root>/.externals/current -> <runner-version>  (the seed pointer)
 # The runner pod runs as uid 1000 and reads the hook through a read-only
 # hostPath mount, so 0644 root-owned is exactly enough. Per-version directories
 # let a bump stage the new hook before any values file selects it.
 #
-# WHAT SELECTS IT (the second half of livespec-wm7c, in ../arc/values-*.yaml,
-# after livespec-lvtu lands): a hostPath mount of that directory into the
-# runner container, ACTIONS_RUNNER_CONTAINER_HOOKS=<mount>/index.js (the chart
-# yields to a user-supplied value of that env), and
+# WHAT SELECTS IT (the second half of livespec-wm7c, in ../arc/values-*.yaml):
+# a read-only hostPath mount of THIS version's index.js (type: File) at
+# /home/runner/fleet-hook/index.js in the runner container,
+# ACTIONS_RUNNER_CONTAINER_HOOKS naming that path (the chart yields to a
+# user-supplied value of that env), and
 # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=<runner-version> — together with
 # the provisioner setup seed of ${VOL_DIR}/externals from the extracted copy.
-# Those three MUST land together: a seed with no env means the upstream copy
-# runs over hardlinked files it cannot write; an env with no seed is harmless
-# (no marker, so the copy runs).
+# Those three MUST be applied together: a seed with no env means the upstream
+# copy runs over files it cannot write (they carry the image's 1001:123 and
+# the runner is uid 1000, reflink seed or not); an env with no seed is
+# harmless (no marker, so the copy runs). Step 0 below refuses to install at
+# all when the values files disagree about which version that is.
 #
 # Idempotent: skips the copy when the installed bundle already matches the
 # manifest; extract-externals.sh is idempotent on its own manifest.
@@ -64,6 +68,13 @@ bundle="${SCRIPT_DIR}/bundle/${runner_version}"
 dest="${HOOKS_ROOT}/${runner_version}"
 
 # ---------------------------------------------------------------------------
+log "0. Every ../arc/values-*.yaml agrees about the runner version"
+# The boot converge applies each of those files verbatim, so one left behind
+# at a bump would select a hook path this install never creates. Refuse here,
+# where a person is watching, rather than at the next boot.
+assert_values_pins_agree
+
+# ---------------------------------------------------------------------------
 log "1. The committed bundle for runner ${runner_version}"
 for f in index.js index.js.sha256 BUILD-INFO; do
   [ -f "${bundle}/${f}" ] || die "${bundle}/${f} missing — run build-patched-hook.sh for this runner image and commit its output (README.md \"Runner-image bump\")"
@@ -98,8 +109,9 @@ log "DONE"
 cat <<EOF
 Installed: ${dest}/index.js (0644 root), externals under ${storage_root}/.externals/${runner_version}/
 Selected by (second half of livespec-wm7c, ../arc/values-*.yaml + the provisioner setup seed):
-  volumes:      hostPath ${dest} (Directory), mounted read-only in the runner container
-  env:          ACTIONS_RUNNER_CONTAINER_HOOKS=<mount path>/index.js
+  volumes:      hostPath ${dest}/index.js (type: File), mounted read-only at
+                /home/runner/fleet-hook/index.js in the runner container
+  env:          ACTIONS_RUNNER_CONTAINER_HOOKS=/home/runner/fleet-hook/index.js
                 ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=${runner_version}
-  provisioner:  cp -al \${VOL_DIR%/*}/.externals/${runner_version}/. \${VOL_DIR}/externals
+  provisioner:  cp -a --reflink=always \${VOL_DIR%/*}/.externals/current/. \${VOL_DIR}/externals
 EOF
