@@ -36,10 +36,18 @@
 # (see its skip reason below).
 #
 # ORDER, and why:
-#   1. k3s-config          — read by k3s at start; disables the bundled
-#                            provisioner, sets max-pods. Before anything that
-#                            needs the cluster, and before provision-k3s.sh on
-#                            a truly fresh host (that script calls it too).
+#   1. k3s-config          — read by k3s at start; sets max-pods on BOTH roles
+#                            and, on a server only, disables the bundled
+#                            provisioner. Before anything that needs the
+#                            cluster, and before provision-k3s.sh on a truly
+#                            fresh SERVER (that script calls it too, and skips
+#                            it on an agent). The step is on both plans; the
+#                            FILE it installs is what differs — config.yaml on a
+#                            server, config.agent.yaml on an agent — because
+#                            `disable` and `write-kubeconfig-mode` are
+#                            server-only keys and k3s-agent exits `flag provided
+#                            but not defined: -disable` at the next start after
+#                            being handed them (livespec-dev-tooling-vcv4).
 #   2. node-inotify-budget, node-keyring-budget — kernel sysctls; no cluster
 #                            needed. Then storage-layout — the five LABEL-keyed
 #                            fstab lines (cache + two tiers + two binds) and
@@ -246,7 +254,7 @@ declare -A STEP_AGENT_LABEL=()
 declare -A STEP_AGENT_NOTE=()
 declare -A STEP_SKIP=()
 
-STEP_LABEL[k3s-config]="1/10 k3s server config"
+STEP_LABEL[k3s-config]="1/10 k3s config (server or agent) — installs k3s-config/config.yaml + the local-storage skip marker"
 STEP_LABEL[kernel-budgets]="2/10 inotify instance budget + keyring quota"
 STEP_LABEL[storage-layout]="2b/10 storage layout (mount the LABEL-ed tiers + the five fstab lines + k3s drop-in; no-op when the tiers are live)"
 STEP_LABEL[host-thermal]="2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)"
@@ -263,9 +271,20 @@ STEP_LABEL[reconstruct]="8/10 reconstruct-on-boot converge unit + artifacts (ena
 STEP_LABEL[datastore-tmpfs]="9/10 tmpfs datastore mount (enable only, never started here)"
 STEP_LABEL[storage-sweep]="10/10 boot-time orphaned-scratch sweep (enable only)"
 
-# The one step whose WORK differs by role rather than its presence: the kernel
-# profile is node state and an agent needs it, while the arc-hook-pod-template
-# ConfigMap the same installer converges is a cluster object.
+# The two steps whose WORK differs by role rather than their presence. Each
+# label names the ARTEFACT that differs, so a --dry-run plan says which file the
+# step installs rather than only that the step runs.
+#
+# k3s-config: max-pods is node state both roles need, while `disable` and
+# `write-kubeconfig-mode` are server-only keys — an agent handed them does not
+# ignore them, it exits `flag provided but not defined: -disable` at the next
+# k3s start and restart-loops (gmktec-xubuntu 2026-09-07,
+# livespec-dev-tooling-vcv4). The skip marker's directory,
+# /var/lib/rancher/k3s/server/manifests/, is a SERVER path for the same reason.
+STEP_AGENT_LABEL[k3s-config]="1/10 k3s config (server or agent) — installs k3s-config/config.agent.yaml and NO local-storage skip marker (both are server-only)"
+# apparmor: the kernel profile is node state and an agent needs it, while the
+# arc-hook-pod-template ConfigMap the same installer converges is a cluster
+# object.
 STEP_AGENT_LABEL[apparmor]="3/10 AppArmor profile only (--profile-only; the hook ConfigMap is a cluster object the server converges)"
 
 STEP_SKIP[host-thermal]="iDRAC state reached through Dell's racadm packages — PowerEdge hardware, and the pool's PowerEdge is its server. This is the one skip that uses the role as a PROXY for the hardware; if a PowerEdge ever joins as an agent this becomes its own profile key, not a role test."
@@ -313,8 +332,12 @@ print_plan() {
 
 run_step() {  # run_step ID
   case "$1" in
+    # Passed this run's ROLE because the FILE it installs is role-dependent:
+    # the server config on an agent is fatal to k3s-agent at its next start
+    # (livespec-dev-tooling-vcv4), and the installer also removes the
+    # server-path skip marker an earlier run left on an agent.
     k3s-config)
-      "${SCRIPT_DIR}/k3s-config/install-k3s-config.sh" ;;
+      "${SCRIPT_DIR}/k3s-config/install-k3s-config.sh" --role "${ROLE}" ;;
     kernel-budgets)
       "${SCRIPT_DIR}/node-inotify-budget/install-inotify-sysctl.sh"
       "${SCRIPT_DIR}/node-keyring-budget/install-keyring-sysctl.sh" ;;
