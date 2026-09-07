@@ -1,0 +1,53 @@
+{
+  "name": "CI runner host: k3s API unavailable — poweredge-xubuntu ci_lifecycle.api-unavailable > 0",
+  "description": "Fires when MAX(livespec.ci_lifecycle.api-unavailable) for host.name=poweredge-xubuntu over the trailing 10 min is above 0: the lifecycle sweep saw k3s.service's main process START in its window (systemd ExecMainStartTimestampMonotonic moved: a crash-restart or a hand restart alike), or the sweep's API reads were refused. Fires once per window. A k3s restart kills in-flight runner pods, whose jobs fail at the ARC hook on ECONNREFUSED 10.43.0.1:443 (companion: 'CI hook-failure burst'), and ARC's same-name replacements can deadlock on Terminating stale-owner PVCs. Value trigger; silence is the dead-man's job. Runbook: ssh poweredge-xubuntu; journalctl -u k3s --since -30min (known cause: flannel v0.28.4 watchVXLANDevice nil-pointer panic on netlink ENOBUFS, flannel-io/flannel#2549, unfixed at v0.28.9); kubectl get pvc -A | grep Terminating. Emitter: ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh. Receiver: thewoolleyman/otel-collector config.ci-runner-host.yaml. Item: livespec-n5eudb.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "livespec.ci_lifecycle.api-unavailable"
+      }
+    ],
+    "filters": [
+      {
+        "column": "host.name",
+        "op": "=",
+        "value": "poweredge-xubuntu"
+      }
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">",
+    "value": 0,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "host",
+      "value": "poweredge-xubuntu"
+    },
+    {
+      "key": "service",
+      "value": "ci-runner-liveness"
+    },
+    {
+      "key": "component",
+      "value": "runner-pod-lifecycle"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
