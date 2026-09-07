@@ -1006,6 +1006,92 @@ def test_superseded_bump_pr_sweep_fetches_more_than_the_default_pr_page() -> Non
 
 
 # ---------------------------------------------------------------------------
+# Pre-create duplicate-bump-PR dedupe (livespec-dev-tooling-dqfmjr)
+# ---------------------------------------------------------------------------
+
+# The close sweep above runs AFTER `gh pr create`, so a second fan-out for a
+# tuple that already has an open bump PR still OPENED the duplicate — and the
+# sweep provably cannot clean that pair up, because both its categories need a
+# strict version comparison an EQUAL-version pair does not satisfy. The Action
+# therefore consults the same classifier BEFORE creating, in dedupe mode, and
+# no-ops when an incumbent exists. The decision stays in the tested module; this
+# step carries only capture / test / notice / exit.
+_DEDUPE_MODE_ENV = "BUMP_MODE=dedupe"
+
+
+def test_dedupe_gate_dispatches_the_shared_classifier_before_gh_pr_create() -> None:
+    """The Action asks the shared classifier for an incumbent before creating a PR.
+
+    Per livespec-dev-tooling-dqfmjr: the existence check MUST precede
+    `gh pr create` (a check that runs after it has already paid for the duplicate
+    PR, its CI run, and the churn), and MUST reuse the supersession classifier
+    module rather than growing new decision logic in shell.
+    """
+    body = _open_pr_step_body(text=_read(path=_ACTION_PATH))
+    dedupe_pos = body.find(_DEDUPE_MODE_ENV)
+    assert dedupe_pos != -1, (
+        f"the `Open auto-merge PR` step must run the dedupe gate ({_DEDUPE_MODE_ENV!r}); "
+        "without it a second fan-out for an already-open tuple opens a duplicate"
+    )
+    create_pos = _command_pos(body=body, command="gh pr create")
+    assert create_pos != -1, "the `Open auto-merge PR` step no longer runs `gh pr create`"
+    assert dedupe_pos < create_pos, (
+        "the dedupe gate MUST precede `gh pr create` — running it afterwards is "
+        "the close-superseded sweep, which cannot refuse a duplicate that already exists"
+    )
+    gate = body[:create_pos]
+    assert f"python -m {_SUPERSESSION_MODULE}" in gate, (
+        "the dedupe gate MUST dispatch the shared "
+        f"{_SUPERSESSION_MODULE} classifier, not an inline shell comparison"
+    )
+    assert _OPEN_PR_SWEEP_LIMIT in gate, (
+        "the dedupe gate must list open PRs with `--limit 100`, like the close "
+        "sweep; the default page can miss the incumbent it exists to find"
+    )
+
+
+def test_dedupe_gate_no_ops_the_step_instead_of_failing_the_bump_job() -> None:
+    """An already-open bump PR is a no-op, not an error.
+
+    A second fan-out for a release whose bump PR is already open is the NORMAL
+    two-producer case (dispatch plus cron-freshness), and a rerun of the same
+    producer is normal too. Failing there would redden the fleet's only
+    pin-propagation backstop for a condition that needs no action at all.
+    """
+    body = _open_pr_step_body(text=_read(path=_ACTION_PATH))
+    create_pos = _command_pos(body=body, command="gh pr create")
+    assert create_pos != -1, "the `Open auto-merge PR` step no longer runs `gh pr create`"
+    gate = body[:create_pos]
+    assert re.search(r"^          exit 0$", gate, re.MULTILINE), (
+        "the dedupe gate must exit the step cleanly when an incumbent bump PR "
+        "exists, rather than falling through to `gh pr create` or failing"
+    )
+    assert "::notice::" in gate, (
+        "the dedupe no-op must be reported as a `::notice::` so the skipped "
+        "create is visible in the run summary instead of silent"
+    )
+
+
+def test_dedupe_decision_is_not_inlined_into_the_reusable_workflows() -> None:
+    """Neither reusable workflow grows shell decision logic for the dedupe.
+
+    Per livespec-dev-tooling-dqfmjr DO-step 2: the `run:` blocks of the two
+    reusable workflows are livespec-dev-tooling-9j8.6's extraction targets and
+    must not be grown here.
+    """
+    for path in (_BUMP_WORKFLOW_PATH, _FRESHNESS_WORKFLOW_PATH):
+        text = _read(path=path)
+        assert _DEDUPE_MODE_ENV not in text, (
+            f"{path.name} inlines the dedupe gate; it belongs in the composite "
+            "Action's thin glue over the tested classifier module"
+        )
+        assert _SUPERSESSION_MODULE not in text, (
+            f"{path.name} dispatches the bump-PR classifier directly; the "
+            "composite Action owns that glue"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Stale-SHA rerun guard (livespec-dev-tooling-e37)
 # ---------------------------------------------------------------------------
 
