@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.4...v1.53.5) (2026-09-07)
+
+
+### Bug Fixes
+
+* **ci-shell-quality-subject:** pin that CI gives the shell-quality gate a subject ([c9514d8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c9514d84df751dab3eab25df5612e0cb2841064e))
+
 ## [1.53.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.3...v1.53.4) (2026-09-06)
 
 
