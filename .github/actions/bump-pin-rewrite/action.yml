@@ -505,7 +505,50 @@ runs:
         fi
         echo "changed=true" >> "$GITHUB_OUTPUT"
         git commit -m "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}"
-        git push -u origin "$BRANCH"
+        # The bump branch name is DETERMINISTIC — `<prefix>-<source_repo>-<tag>`
+        # — so an earlier sweep for the same (source_repo, tag) pair leaves its
+        # branch on the remote whenever that bump PR did not merge (auto-merge
+        # deletes the branch only on SUCCESS; nothing else ever deletes it). A
+        # bare `git push -u origin "$BRANCH"` then dies with a non-fast-forward
+        # rejection, and because this surface is a SCHEDULED workflow and not a
+        # required status context, nothing goes red anywhere a human looks: one
+        # un-merged bump branch silently disabled that (source_repo, tag) sweep
+        # in that repo indefinitely, so the fleet's stale-pin safety net was
+        # itself a dispatch failure that does not auto-recover
+        # (livespec-dev-tooling-xdyh; measured across four repos on 2026-08-04
+        # and 2026-08-05).
+        #
+        # DEFINED BEHAVIOUR, chosen among the three admissible ones: the branch
+        # is RESET to the content this run just computed. The bump branch is
+        # bot-owned and disposable, and the pins rewritten above are by
+        # construction the ones this sweep wants proposed, so the newer
+        # computation wins and a second sweep for the same pair with different
+        # rewritten content succeeds instead of failing.
+        #
+        # `--force-with-lease=<branch>:<sha>`, NEVER a bare `--force`. The lease
+        # names the ONE ref this step owns together with the exact remote value
+        # it expects, and the destination is spelled as an explicit
+        # `HEAD:refs/heads/<branch>` refspec, so no other ref — the default
+        # branch above all — is reachable by this push. The lease value comes
+        # from the `git ls-remote` probe rather than from a remote-tracking ref
+        # because this Action's checkout never fetched the bump branch, and a
+        # bare `--force-with-lease` with no tracking ref refuses with
+        # "stale info" rather than pushing.
+        #
+        # NOT `|| true`, and no new lever gating any of this: every OTHER push
+        # failure — auth, branch protection, a rejected ref, an unreachable
+        # remote — still fails this step, exactly as before. Only the
+        # branch-already-exists case is handled, so this fix cannot become the
+        # false-NEGATIVE class tracked as livespec-dev-tooling-ews (a stale pin
+        # silently never flagged), which would be strictly worse than the defect
+        # it repairs.
+        remote_head=$(git ls-remote --heads origin "refs/heads/${BRANCH}" | awk 'NR == 1 { print $1 }')
+        if [[ -n "$remote_head" ]]; then
+          echo "::notice::bump branch ${BRANCH} already exists on origin at ${remote_head}; resetting it to this sweep's rewrite"
+          git push --force-with-lease="${BRANCH}:${remote_head}" -u origin "HEAD:refs/heads/${BRANCH}"
+        else
+          git push -u origin "HEAD:refs/heads/${BRANCH}"
+        fi
 
     - name: Open auto-merge PR
       # Skipped on the no-op path (livespec-dev-tooling-bmf): when the rewrite

@@ -21,12 +21,21 @@ of the Action with every required input wired, and that the
 case-block over the four pin formats is no longer inlined into either
 workflow are all verified by literal-string presence/absence checks.
 
+One family of assertions is NOT static: the bump-branch collision
+(livespec-dev-tooling-xdyh) is a behaviour of the push, so those tests
+extract the commit step's `run:` block and EXECUTE it against a local
+bare repository standing in for origin. Every subprocess is `git`
+(fixture setup) or `bash` (the step body under test); nothing touches the
+network, the fleet ledger, or the developer's own repositories.
+
 Coverage target: the composite Action's invocation surface in YAML.
 """
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 __all__: list[str] = []
@@ -1220,3 +1229,287 @@ def test_stale_sha_guard_precedes_pin_autodiscovery() -> None:
         "stale-SHA guard MUST appear before pin-autodiscovery to fail fast "
         "before any substantive work"
     )
+
+
+# ---------------------------------------------------------------------------
+# Bump-branch collision on push (livespec-dev-tooling-xdyh)
+# ---------------------------------------------------------------------------
+
+# The bump branch name is deterministic — `<prefix>-<source_repo>-<tag>` — so
+# a sweep whose bump PR did not merge leaves that branch on the remote (only
+# auto-merge's on-success delete ever removes one). The next sweep for the
+# same (source_repo, tag) pair then met its own leftover, and the unguarded
+# `git push -u origin "$BRANCH"` died with a non-fast-forward rejection. This
+# surface is a SCHEDULED workflow and not a required status context, so
+# nothing went red where a human looks: the fleet's stale-pin safety net
+# silently disabled itself for that pair, indefinitely.
+#
+# The tests below execute the commit step's actual shell body against a local
+# bare repository standing in for origin, so they measure the push rather than
+# asserting on the text of it.
+_PIN_FILE = ".livespec.jsonc"
+_SOURCE_REPO = "livespec"
+_STALE_TAG = "v0.2.0"
+_COLLIDING_BRANCH = f"chore/freshness-bump-{_SOURCE_REPO}-{_STALE_TAG}"
+_BASE_PIN = '"pinned": "v0.1.0"\n'
+_REWRITTEN_PIN = '"pinned": "v0.2.0"\n'
+_LEFTOVER_PIN = '"pinned": "v0.2.0-rc1"\n'
+# The step body sits at 8-space indentation under its `run: |` block scalar.
+_RUN_BLOCK_MARKER = "      run: |\n"
+_RUN_BLOCK_INDENT = 8
+# git leaks these into a hook's environment; scrubbing them confines every
+# child to the tmp_path fixture rather than to the surrounding repository.
+_GIT_ENV_VARS: tuple[str, ...] = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_PREFIX",
+)
+
+
+def _commit_step_script(*, text: str) -> str:
+    """Return the commit step's `run:` block as a runnable bash script."""
+    body = _commit_step_body(text=text)
+    marker_pos = body.find(_RUN_BLOCK_MARKER)
+    assert marker_pos != -1, "commit step carries no `run: |` block"
+    block = body[marker_pos + len(_RUN_BLOCK_MARKER) :]
+    lines = [
+        line[_RUN_BLOCK_INDENT:] if line.startswith(" " * _RUN_BLOCK_INDENT) else line
+        for line in block.splitlines()
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _child_env(*, home: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    for name in _GIT_ENV_VARS:
+        _ = env.pop(name, None)
+    home.mkdir(parents=True, exist_ok=True)
+    env["HOME"] = str(home)
+    return env
+
+
+def _git_stdout(*, args: list[str], cwd: Path, env: dict[str, str]) -> str:
+    """Run a git command that must succeed and return its stdout."""
+    result = subprocess.run(
+        ["git", *args], cwd=str(cwd), env=env, check=True, capture_output=True, text=True
+    )
+    return result.stdout
+
+
+def _git(*, args: list[str], cwd: Path, env: dict[str, str]) -> None:
+    """Run a git command that must succeed, for its effect alone."""
+    _ = _git_stdout(args=args, cwd=cwd, env=env)
+
+
+def _sandbox(*, tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
+    """A bare `origin` plus a work clone holding one committed pin file."""
+    env = _child_env(home=tmp_path / "home")
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _git(args=["init", "--quiet", "--bare", "--initial-branch=master", "."], cwd=origin, env=env)
+
+    work = tmp_path / "work"
+    work.mkdir()
+    _git(args=["init", "--quiet", "--initial-branch=master", "."], cwd=work, env=env)
+    _git(args=["config", "user.name", "livespec-pr-bot[bot]"], cwd=work, env=env)
+    _git(args=["config", "user.email", "bot@example.invalid"], cwd=work, env=env)
+    _ = (work / _PIN_FILE).write_text(_BASE_PIN, encoding="utf-8")
+    _git(args=["add", "-A"], cwd=work, env=env)
+    _git(args=["commit", "--quiet", "-m", "base"], cwd=work, env=env)
+    _git(args=["remote", "add", "origin", str(origin)], cwd=work, env=env)
+    _git(args=["push", "--quiet", "origin", "master"], cwd=work, env=env)
+    return origin, work, env
+
+
+def _strand_leftover_bump_branch(*, work: Path, env: dict[str, str]) -> str:
+    """Leave a bump branch of the SAME name on origin at DIFFERENT content.
+
+    This is exactly the state an un-merged bump PR leaves behind, and the
+    state the pre-fix push could not survive. The local branch and its
+    remote-tracking ref are removed afterwards, because a fresh CI checkout
+    knows nothing about the leftover either.
+    """
+    _git(args=["checkout", "--quiet", "-b", _COLLIDING_BRANCH], cwd=work, env=env)
+    _ = (work / _PIN_FILE).write_text(_LEFTOVER_PIN, encoding="utf-8")
+    _git(args=["commit", "--quiet", "-am", "leftover bump"], cwd=work, env=env)
+    _git(args=["push", "--quiet", "origin", _COLLIDING_BRANCH], cwd=work, env=env)
+    leftover = _git_stdout(args=["rev-parse", "HEAD"], cwd=work, env=env).strip()
+    _git(args=["checkout", "--quiet", "master"], cwd=work, env=env)
+    _git(args=["branch", "--quiet", "-D", _COLLIDING_BRANCH], cwd=work, env=env)
+    _git(args=["update-ref", "-d", f"refs/remotes/origin/{_COLLIDING_BRANCH}"], cwd=work, env=env)
+    return leftover
+
+
+def _run_commit_step(
+    *,
+    tmp_path: Path,
+    work: Path,
+    env: dict[str, str],
+    branch: str = _COLLIDING_BRANCH,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Run the extracted commit step exactly as the Action runs it."""
+    script = tmp_path / "commit-step.sh"
+    _ = script.write_text(_commit_step_script(text=_read(path=_ACTION_PATH)), encoding="utf-8")
+    step_output = tmp_path / "github-output"
+    _ = step_output.write_text("", encoding="utf-8")
+    step_env = dict(env)
+    step_env["SOURCE_REPO"] = _SOURCE_REPO
+    step_env["TAG"] = _STALE_TAG
+    step_env["BRANCH"] = branch
+    step_env["GITHUB_OUTPUT"] = str(step_output)
+    completed = subprocess.run(
+        ["bash", str(script)],
+        cwd=str(work),
+        env=step_env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed, step_output
+
+
+def _remote_pin(*, origin: Path, env: dict[str, str], branch: str = _COLLIDING_BRANCH) -> str:
+    return _git_stdout(args=["show", f"{branch}:{_PIN_FILE}"], cwd=origin, env=env)
+
+
+def _stage_rewritten_pin(*, work: Path, env: dict[str, str]) -> None:
+    _git(args=["checkout", "--quiet", "-b", _COLLIDING_BRANCH], cwd=work, env=env)
+    _ = (work / _PIN_FILE).write_text(_REWRITTEN_PIN, encoding="utf-8")
+
+
+def test_commit_step_survives_a_leftover_bump_branch_at_different_content(
+    tmp_path: Path,
+) -> None:
+    """A second sweep for the same (source, tag) pair succeeds and wins.
+
+    Per livespec-dev-tooling-xdyh: with a branch of the same name already on
+    origin at DIFFERENT content, the unguarded `git push -u origin "$BRANCH"`
+    died with a non-fast-forward rejection and left that (source, tag) sweep
+    permanently broken in that repo. The step must instead reset the bot-owned
+    bump branch to the content this run computed.
+    """
+    origin, work, env = _sandbox(tmp_path=tmp_path)
+    leftover = _strand_leftover_bump_branch(work=work, env=env)
+    _stage_rewritten_pin(work=work, env=env)
+
+    completed, step_output = _run_commit_step(tmp_path=tmp_path, work=work, env=env)
+
+    assert completed.returncode == 0, (
+        "the commit step MUST survive a leftover bump branch at different "
+        f"content; it exited {completed.returncode}.\n"
+        f"stdout: {completed.stdout}\nstderr: {completed.stderr}"
+    )
+    assert _remote_pin(origin=origin, env=env) == _REWRITTEN_PIN, (
+        "the pushed bump branch MUST carry the newly rewritten pin, not the "
+        "leftover content it collided with"
+    )
+    assert (
+        _git_stdout(args=["rev-parse", _COLLIDING_BRANCH], cwd=origin, env=env).strip() != leftover
+    ), "the bump branch on origin MUST have moved off the leftover commit"
+    assert _CHANGED_OUTPUT_TRUE in step_output.read_text(
+        encoding="utf-8"
+    ), "the collision path MUST still report `changed=true` so the PR step runs"
+
+
+def test_commit_step_pushes_a_bump_branch_that_does_not_yet_exist(tmp_path: Path) -> None:
+    """The ordinary first-sweep path still creates the branch.
+
+    The collision handling added for livespec-dev-tooling-xdyh probes for an
+    existing remote branch; the no-leftover arm of that probe MUST still push
+    the branch normally.
+    """
+    origin, work, env = _sandbox(tmp_path=tmp_path)
+    _stage_rewritten_pin(work=work, env=env)
+
+    completed, _ = _run_commit_step(tmp_path=tmp_path, work=work, env=env)
+
+    assert (
+        completed.returncode == 0
+    ), f"first-sweep push failed: stdout {completed.stdout}\nstderr {completed.stderr}"
+    assert (
+        _remote_pin(origin=origin, env=env) == _REWRITTEN_PIN
+    ), "the freshly created bump branch MUST carry the rewritten pin"
+
+
+def test_commit_step_no_op_still_pushes_no_branch(tmp_path: Path) -> None:
+    """A rewrite that changed nothing stays a clean no-op.
+
+    Per livespec-dev-tooling-bmf, and asserted here as EXECUTED behavior
+    because the collision handling sits on the same path: with nothing staged
+    the step exits 0 with its `::notice::`, reports `changed=false`, and
+    pushes no branch at all. The fix must not convert a no-op into a push.
+    """
+    origin, work, env = _sandbox(tmp_path=tmp_path)
+    _git(args=["checkout", "--quiet", "-b", _COLLIDING_BRANCH], cwd=work, env=env)
+
+    completed, step_output = _run_commit_step(tmp_path=tmp_path, work=work, env=env)
+
+    assert completed.returncode == 0, f"no-op path must exit 0: {completed.stderr}"
+    assert _CHANGED_OUTPUT_FALSE in step_output.read_text(
+        encoding="utf-8"
+    ), "the no-op path MUST report `changed=false`"
+    assert "::notice::" in completed.stdout, "the no-op path MUST keep its `::notice::`"
+    remote_branches = _git_stdout(args=["branch", "--list", _COLLIDING_BRANCH], cwd=origin, env=env)
+    assert remote_branches.strip() == "", (
+        "the no-op path MUST push no bump branch; origin now carries " f"{remote_branches!r}"
+    )
+
+
+def test_commit_step_still_fails_on_a_genuine_push_failure(tmp_path: Path) -> None:
+    """Only the branch-already-exists case is handled; everything else fails.
+
+    Per livespec-dev-tooling-ews: blanket-suppressing push errors would turn
+    this false-positive class into the strictly worse false-NEGATIVE class (a
+    stale pin silently never flagged). An unreachable remote MUST still fail
+    the step.
+    """
+    _, work, env = _sandbox(tmp_path=tmp_path)
+    _git(args=["remote", "set-url", "origin", str(tmp_path / "absent.git")], cwd=work, env=env)
+    _stage_rewritten_pin(work=work, env=env)
+
+    completed, _ = _run_commit_step(tmp_path=tmp_path, work=work, env=env)
+
+    assert completed.returncode != 0, (
+        "an unreachable remote MUST still fail the commit step; it exited 0 "
+        f"with stdout {completed.stdout}"
+    )
+
+
+def test_push_uses_a_lease_scoped_to_the_bump_branch_only() -> None:
+    """The reset is a `--force-with-lease` naming only the bump branch.
+
+    Per livespec-dev-tooling-xdyh acceptance: never a bare `--force`, and no
+    path by which any other ref — the default branch above all — could be
+    force-updated. Every push line is also free of a `||` fallback, so a
+    genuine push failure still fails the step.
+    """
+    body = _commit_step_body(text=_read(path=_ACTION_PATH))
+    push_lines = re.findall(r"^\s*git push .*$", body, re.MULTILINE)
+    assert push_lines, "commit step no longer pushes the bump branch"
+    lease_lines = [line for line in push_lines if "--force-with-lease=" in line]
+    assert lease_lines, (
+        "the bump-branch push MUST use `--force-with-lease=<branch>:<sha>` so "
+        "a leftover branch at different content is reset rather than fatal"
+    )
+    for line in push_lines:
+        assert (
+            re.search(r"--force(?![-\w])", line) is None
+        ), f"a bare `--force` is forbidden; offending line: {line!r}"
+        assert "||" not in line, (
+            "a push MUST NOT carry a `||` fallback — that swallows genuine "
+            f"push failures (livespec-dev-tooling-ews). Offending line: {line!r}"
+        )
+        assert "$BRANCH" in line or "${BRANCH}" in line, (
+            "every push MUST name the bump branch explicitly so no other ref "
+            f"is reachable. Offending line: {line!r}"
+        )
+    for line in lease_lines:
+        assert re.search(r"--force-with-lease=\"?\$\{?BRANCH\}?:", line), (
+            "the lease MUST be scoped to the bump branch and carry the exact "
+            f"remote value it expects. Offending line: {line!r}"
+        )
