@@ -292,6 +292,52 @@ def test_impl_prefixes_add_livespec_driver_claude_hook_trees() -> None:
     assert ".claude-plugin/hooks/" in derived
 
 
+def test_derive_impl_prefixes_delegates_to_the_shared_config_derivation(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_derive_impl_prefixes` is a SHIM over `config.derive_source_prefixes`, not a second copy.
+
+    The derivation — union the normalised `source_trees` with the
+    normalised `source_tree_prefixes`, de-duplicated, first-seen order
+    preserved — was promoted to `config.derive_source_prefixes` so the two
+    commit-time gates that classify a staged path as first-party source
+    share ONE implementation (work-item livespec-dev-tooling-8o8e.1,
+    PR #755). This check kept a private copy; two implementations of one
+    rule is the drift source the promotion precedent exists to prevent
+    (work-item livespec-dev-tooling-hgfnqd).
+
+    The name stays — three tests above call it directly, and it is the
+    RGR-local vocabulary for "product impl prefixes" — but it must carry
+    NO derivation of its own. Asserting the private normalisation helpers
+    are GONE pins that: a shim that still owns `_source_tree_prefix` /
+    `_declared_prefix` is a second copy wearing a delegating name.
+    Substituting the shared function then proves the delegation is real
+    rather than a coincidence of two identical bodies.
+    """
+    module = _load_red_green_replay_module(name="red_green_replay_for_delegation")
+
+    assert not hasattr(module, "_source_tree_prefix")
+    assert not hasattr(module, "_declared_prefix")
+    assert hasattr(module, "_derive_impl_prefixes")
+
+    seen: list[Config] = []
+    sentinel = ("delegated-sentinel/",)
+
+    def _fake_derive_source_prefixes(*, config: Config) -> tuple[str, ...]:
+        seen.append(config)
+        return sentinel
+
+    monkeypatch.setattr(module, "derive_source_prefixes", _fake_derive_source_prefixes)
+    config = Config(
+        source_trees=(Path("livespec_dev_tooling"),),
+        source_tree_prefixes=_prefix_role(prefixes=("dev-tooling/",)),
+    )
+
+    assert module._derive_impl_prefixes(config=config) == sentinel  # noqa: SLF001
+    assert len(seen) == 1
+    assert seen[0] is config
+
+
 def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
     """A `chore:` commit subject with no product impl `.py` staged exits 0.
 
