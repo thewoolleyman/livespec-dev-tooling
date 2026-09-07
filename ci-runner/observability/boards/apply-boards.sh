@@ -52,7 +52,10 @@
 #
 # Requires: HONEYCOMB_CONFIG_KEY_LIVESPEC (a Configuration key for the
 # livespec environment, with "Manage Public Boards" and "Manage Queries and
-# Columns") — projected by the fleet's credential wrapper:
+# Columns"). MEASURED 2026-09-07: that key holds the second permission but NOT
+# the first, so the GET below answers 401 "this API key isn't allowed to access
+# boards" and this script stops there until someone widens the key in the
+# Honeycomb UI. See ../README.md. Projected by the fleet's credential wrapper:
 #   /usr/local/bin/with-livespec-env.sh -- ./apply-boards.sh
 # plus python3. Prints one `created|updated <id> <name>` line per board,
 # preceded by one line per panel.
