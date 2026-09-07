@@ -73,6 +73,12 @@ only when their topic is active:
   committing product `.py`, or diagnosing a gate command that produced no
   output — the commit aggregate can outlast the harness's 20-minute tool-call
   ceiling, and a kill with no verdict is NOT a hook refusal.
+- Read `.ai/factory-span-receiver.md` before diagnosing a factory
+  `build.cargo-*` span that lacks an attribute the sandbox shim attaches, or
+  before naming "the sandbox pin" as the gate for factory-telemetry evidence —
+  the receiver that scrubs those spans is the DISPATCHING PROJECT's installed
+  orchestrator plugin build, installs are per project, and a running
+  dispatcher loop keeps its build until restarted (paid for 2026-09-07).
 
 ## Backlog drive — this repo has no foreman seat
 
