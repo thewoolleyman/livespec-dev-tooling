@@ -40,7 +40,18 @@ _CHECKS_PACKAGE_DIR = Path(__file__).resolve().parent
 _CHECK_RECIPE_HEADER = re.compile(r"^check:\s*$", re.MULTILINE)
 _TARGETS_ARRAY_START = re.compile(r"^\s*targets=\(\s*$", re.MULTILINE)
 _TARGETS_ARRAY_END = re.compile(r"^\s*\)\s*$")
-_LOAD_CONFIG_MODULE = "livespec_dev_tooling.config"
+# BOTH spellings of "this check resolves layout-dependent config" count, and
+# the second one is load-bearing rather than tidy. A module that adopts the
+# shared `_config_load.load_config_or_report` supervisor helper stops importing
+# `load_config` while remaining exactly as layout-dependent as it was. Counting
+# only the direct import would therefore SHRINK this set on every migration —
+# quietly disarming the declaration gate over a widening slice of the tree,
+# with nothing turning red to say so, since a smaller layout-dependent set
+# makes this check laxer rather than louder.
+_LAYOUT_DEPENDENT_IMPORTS = {
+    "livespec_dev_tooling.config": "load_config",
+    "livespec_dev_tooling.checks._config_load": "load_config_or_report",
+}
 # The remediation is read at the moment someone decides what to write, so it
 # names every legal spelling inline rather than referring to one — the standard
 # `config._spellings_hint` already sets. It MUST stay correct for BOTH key
@@ -83,22 +94,28 @@ def _slug_to_module_name(*, slug: str) -> str:
     return slug.removeprefix(_CHECK_PREFIX).replace("-", "_")
 
 
-def _module_imports_load_config(*, path: Path) -> bool:
+def _module_resolves_layout_dependent_config(*, path: Path) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
             continue
-        if node.module != _LOAD_CONFIG_MODULE:
+        imported_name = _LAYOUT_DEPENDENT_IMPORTS.get(node.module or "")
+        if imported_name is None:
             continue
         for alias in node.names:
-            if alias.name == "load_config":
+            if alias.name == imported_name:
                 return True
     return False
 
 
 @impure_safe(exceptions=(OSError,))
 def layout_dependent_check_slugs() -> tuple[str, ...]:
-    """Canonical check slugs whose implementation imports `load_config`.
+    """Canonical check slugs whose implementation resolves layout-dependent config.
+
+    That means importing `config.load_config` OR the shared
+    `_config_load.load_config_or_report` supervisor helper that wraps it — the
+    two spellings are equivalent evidence, and treating them as one is what
+    keeps this set from shrinking as checks adopt the helper.
 
     Railway-lifted because this walk IS the I/O boundary: it stats every
     canonical check module. `@impure_safe` is the sanctioned form here per
@@ -120,7 +137,7 @@ def layout_dependent_check_slugs() -> tuple[str, ...]:
     # and PASSES — the exact fail-open vzwa removed.
     for slug in unsafe_perform_io(canonical_check_slugs().unwrap()):
         module_path = _CHECKS_PACKAGE_DIR / f"{_slug_to_module_name(slug=slug)}.py"
-        if module_path.is_file() and _module_imports_load_config(path=module_path):
+        if module_path.is_file() and _module_resolves_layout_dependent_config(path=module_path):
             slugs.append(slug)
     return tuple(slugs)
 
