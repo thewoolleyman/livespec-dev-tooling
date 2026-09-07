@@ -30,10 +30,30 @@ _TOKEN_PATTERN = re.compile(r"\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{8,}")
 _REDACTED = "<REDACTED>"
 _DETAIL_LIMIT = 400
 
+# GitHub answers a SECONDARY rate limit with HTTP 403 — the SAME status it
+# answers a permission denial with — so the status cannot tell the two apart and
+# only the BODY can. Of its three common bodies only one says "rate limit"; the
+# other two fell past that literal to the `40[13]` pattern below and classified
+# as `forbidden`, marking a retryable, self-clearing throttle permanent. That is
+# exactly the read that blinds an obligation row once and then succeeds on a
+# bare rerun (`livespec-dev-tooling-sh71`), and `livespec-dev-tooling-7yeveq`
+# established by minting an App token that the installation's core budget was
+# NOT exhausted during the observed incidents — so those refusals were secondary
+# limits, a demonstrated failure mode against this fleet rather than a
+# hypothetical one.
+#
+# ⛔ DELIBERATELY NARROW, AND KEYED ON THE BODY, NEVER ON THE STATUS. These
+# phrasings share 403 with "Resource not accessible by integration", so widening
+# by status — or on a looser word like "secondary" alone — would swallow a real
+# authorization failure and convert a permanent error into an endless retry.
+# "secondary rate limit" is absent here only because the `rate limit` literal
+# already carries it.
+_SECONDARY_LIMIT_BODIES = r"abuse detection mechanism|secondary quota"
+
 # Ordered because a `gh` error body can mention more than one number; the FIRST
 # match wins and the specific statuses are tried before the 5xx range.
 _STATUS_KINDS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\b(?:HTTP\s*)?429\b|rate limit"), "rate_limited"),
+    (re.compile(rf"\b(?:HTTP\s*)?429\b|rate limit|{_SECONDARY_LIMIT_BODIES}"), "rate_limited"),
     (re.compile(r"\b(?:HTTP\s*)?40[13]\b|not accessible|bad credentials"), "forbidden"),
     (re.compile(r"\b(?:HTTP\s*)?404\b|not found"), "not_found"),
     (re.compile(r"\b(?:HTTP\s*)?5\d{2}\b"), "server_error"),

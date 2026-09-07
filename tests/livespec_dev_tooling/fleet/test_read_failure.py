@@ -43,6 +43,72 @@ def test_classification_prefers_rate_limit_over_a_generic_status() -> None:
     assert classify_gh_failure(stderr="API rate limit exceeded (HTTP 429)") == "rate_limited"
 
 
+# Literal `gh` stderr bodies, each paired with the kind its REMEDY demands. The
+# 403s are grouped together deliberately: GitHub answers a secondary rate limit
+# and a permission denial with the SAME status, so the status cannot tell them
+# apart and only the body can. The two secondary-limit phrasings that omit the
+# words "rate limit" are the cases `livespec-dev-tooling-sh71` measured as
+# misclassified — retryable and self-clearing, but marked permanent.
+_CLASSIFICATION_CASES: tuple[tuple[str, str, str], ...] = (
+    (
+        "primary limit — the phrasing that already classified correctly",
+        "gh: API rate limit exceeded for installation ID 131208965. (HTTP 403)",
+        "rate_limited",
+    ),
+    (
+        "bare throttle status, no body at all",
+        "gh: HTTP 429",
+        "rate_limited",
+    ),
+    (
+        "secondary limit, the phrasing that names itself",
+        "gh: You have exceeded a secondary rate limit. Please wait a few "
+        "minutes before you try again. (HTTP 403)",
+        "rate_limited",
+    ),
+    (
+        "secondary limit as abuse detection",
+        "gh: You have triggered an abuse detection mechanism. Please wait a "
+        "few minutes before you try again. (HTTP 403)",
+        "rate_limited",
+    ),
+    (
+        "secondary limit as a quota",
+        "gh: You have exceeded a secondary quota. Please wait a few minutes "
+        "before you try again. (HTTP 403)",
+        "rate_limited",
+    ),
+    (
+        "a GENUINE permission denial, sharing 403 with the three above",
+        "gh: Resource not accessible by integration (HTTP 403)",
+        "forbidden",
+    ),
+    (
+        "a GENUINE credential rejection",
+        "gh: Bad credentials (HTTP 401)",
+        "forbidden",
+    ),
+    (
+        "an absent thing, which carries real information",
+        "gh: Not Found (HTTP 404)",
+        "not_found",
+    ),
+)
+
+
+def test_a_secondary_rate_limit_is_told_apart_from_a_permission_denial() -> None:
+    """Both are HTTP 403 and their remedies are OPPOSITE: wait, versus fix access.
+
+    Classifying a throttle as `forbidden` marks a self-clearing failure permanent,
+    which blinds an obligation row that a bare rerun would have satisfied. Widening
+    far enough to swallow a real denial is the reciprocal defect — it converts a
+    permanent authorization failure into an endless retry — so both directions are
+    asserted from the same table.
+    """
+    for label, stderr, expected in _CLASSIFICATION_CASES:
+        assert classify_gh_failure(stderr=stderr) == expected, label
+
+
 def test_an_unrecognized_failure_classifies_as_transport() -> None:
     """No HTTP status at all means the request never got an answer."""
     assert classify_gh_failure(stderr="connection reset by peer") == "transport"
