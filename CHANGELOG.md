@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.6...v1.53.7) (2026-09-07)
+
+
+### Bug Fixes
+
+* **red-green-replay:** collapse _derive_impl_prefixes into the shared config derivation ([1765bfc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1765bfc812ad72518d397bd57d2f543d09e1ddbd))
+
 ## [1.53.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.5...v1.53.6) (2026-09-07)
 
 
