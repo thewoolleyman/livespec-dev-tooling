@@ -113,9 +113,9 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
+    derive_source_prefixes,
     is_vendored_path,
     load_config,
-    role_prefixes,
 )
 
 __all__: list[str] = []
@@ -154,23 +154,28 @@ _NON_PYTHON_IMPL_SUFFIXES = (".sh", ".just", ".yml", ".yaml")
 _JUSTFILE_NAMES = ("justfile", "Justfile")
 
 
-def _source_tree_prefix(*, tree: Path) -> str:
-    return f"{tree.as_posix().strip('/')}/"
-
-
-def _declared_prefix(*, prefix: str) -> str:
-    return f"{prefix.strip('/')}/"
-
-
 def _derive_impl_prefixes(*, config: Config) -> tuple[str, ...]:
-    prefixes = [
-        *[_source_tree_prefix(tree=tree) for tree in config.source_trees],
-        *[
-            _declared_prefix(prefix=prefix)
-            for prefix in role_prefixes(role=config.source_tree_prefixes)
-        ],
-    ]
-    return tuple(dict.fromkeys(prefixes))
+    """This check's local name for the SHARED source-prefix derivation — a shim, not a copy.
+
+    The derivation itself lives in `config.derive_source_prefixes`, which
+    this delegates to and adds nothing to. It was promoted there so the
+    two commit-time gates that classify a staged path as first-party
+    source by string prefix — this one and `commit_pairs_source_and_test`
+    — share ONE implementation, exactly as `config.is_under_any_tree` was
+    promoted out of `file_lloc`. This module kept a private copy of the
+    body through that promotion (work-item livespec-dev-tooling-8o8e.1
+    scoped its authorization to the other caller); the copy is now gone,
+    because two implementations of one rule is precisely the drift the
+    promotion precedent exists to prevent (work-item
+    livespec-dev-tooling-hgfnqd).
+
+    The NAME stays, and is worth its one line: "impl prefixes" is this
+    gate's vocabulary for which staged paths are PRODUCT IMPLEMENTATION —
+    a narrower question than "what is this repo's source universe" — and
+    keeping it leaves the surface of a gate lefthook runs on every commit
+    unchanged.
+    """
+    return derive_source_prefixes(config=config)
 
 
 def _impl_prefixes_for_current_repo() -> tuple[str, ...]:
