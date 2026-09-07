@@ -332,9 +332,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Pin-currency severity policy",
-    "test": "TODO",
-    "reason": "Seeded with the livespec-dh9r Slice-3 severity-policy section. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dh9r"
+    "test": "tests.consumer.test_pin_currency_settle_window.test_both_staleness_classes_are_evaluated_and_stay_lane_scoped",
+    "reason": "Consumer-tier: drives the central lane over a one-member manifest and asserts BOTH ratified staleness classes reach a member verdict in the filter-consuming fan-out preflight and neither reaches one in per-PR CI — the section's exhaustive partition plus its lane scoping (livespec-dev-tooling-0j3i implemented the v039 never-fired class)."
   },
   {
     "spec_root": "SPECIFICATION",
@@ -380,17 +379,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale pin whose bump PR never opened escalates once the release ages past the settle window",
-    "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the escalation-predicate implementation (the never-fired staleness class); scenarios.md headings require an integration-tier-or-above test node id. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "test": "tests.consumer.test_pin_currency_settle_window.test_never_fired_past_the_settle_window_reaches_the_member_verdict",
+    "reason": "Consumer-tier: a member stale with NO open bump PR and a latest release published past the settle window reaches the per-member verdict artifact the dispatch-matrix filter consumes, at both pin sites. Landed with the escalation-predicate implementation (livespec-dev-tooling-0j3i)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale pin inside the settle window with no bump PR stays a warning",
-    "test": "TODO",
-    "reason": "Awaits the integration-tier test landing with the settle-window implementation; scenarios.md headings require an integration-tier-or-above test node id. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "test": "tests.consumer.test_pin_currency_settle_window.test_never_fired_inside_the_settle_window_stays_out_of_the_member_verdict",
+    "reason": "Consumer-tier: the same member evaluated with a latest release published INSIDE the settle window keeps both pin rows out of the verdict artifact, so no exit code moves and the fan-out excludes nobody. Landed with the settle-window implementation (livespec-dev-tooling-0j3i)."
   },
   {
     "spec_root": "SPECIFICATION",
