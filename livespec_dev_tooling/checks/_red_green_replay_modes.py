@@ -79,7 +79,17 @@ RED_GREEN_REPLAY_PROTOCOL: str = (
     "author a new Red commit. "
     "Behavior-PRESERVING product changes (no new failing test) instead take the green-verified "
     "leg: the FULL pytest suite must pass against the staged tree, and TDD-Suite-Green-* "
-    "trailers are recorded as the evidence shape."
+    "trailers are recorded as the evidence shape. "
+    "RECONCILIATION WITH livespec's `.ai/ci-gate-discipline.md`, which this protocol does NOT "
+    "override and is not overridden by: when master CI is red and local commits are themselves "
+    "blocked by that red, that directive mandates creating the revert SERVER-SIDE, through the "
+    "forge's own revert API, precisely because no local hook mediates it. This ritual is the "
+    "local hook, so it cannot stamp such a commit and must not refuse it either — the commit-RANGE "
+    "gate therefore exempts a revert that verifies against GitHub's pinned web-flow signing key "
+    "AND is byte-identical to the reverted commit's parent at every product impl .py path it "
+    "touches. That exemption is keyed on evidence an agent cannot fabricate, never on a subject "
+    "line, and it is the ONLY one: adding a flag, a skip, or a severity knob to this protocol "
+    "remains forbidden without exception (work-item livespec-dev-tooling-j2qa)."
 )
 
 

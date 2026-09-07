@@ -50,6 +50,19 @@ non-merge commit touching product impl `.py` must carry EITHER the
 regardless of prefix. An unresolvable base ref fails actionably (a
 shallow CI checkout needs `fetch-depth: 0`), never silently passes.
 
+THE ONE EXEMPTION, and it is not a lever: a commit that verifies as a
+SERVER-SIDE REVERT authored by the forge's own signing key, restoring
+bytes an ancestor of `origin/master` already earned evidence for. It
+exists because livespec's `.ai/ci-gate-discipline.md` MANDATES that
+route when master is red and local commits are blocked by that red, and
+because the very property the directive requires of it — that no local
+hook mediates it — is what makes it trailerless. Without the exemption
+the two directives are mutually blocking by construction, which is
+exactly what happened in livespec-overseer on 2026-08-22 (work-item
+livespec-dev-tooling-j2qa). What it keys on, why an agent cannot forge
+it, and why it narrows rather than weakens the gate live in
+`_red_green_replay_revert`.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics
 flow through structlog (JSON to stderr); the vendored copy under
@@ -85,6 +98,10 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_green_mode,
     _handle_red_mode,
     _handle_suite_green_mode,
+)
+from _red_green_replay_revert import (  # noqa: E402  — sibling private import
+    RANGE_MISSING_TRAILERS_HINT,
+    is_forge_authored_revert,
 )
 from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
     _narrate_git_failure,
@@ -320,7 +337,15 @@ def _commit_violates(*, sha: str) -> bool:
     # OUT of the defect could launder the half-pair past the one check that
     # convicts it.
     is_half_pair = _GREEN_TRAILER_KEY in message and _RED_TRAILER_KEY not in message
-    return is_half_pair or not (has_pair_shape or has_suite_shape)
+    lacks_evidence = is_half_pair or not (has_pair_shape or has_suite_shape)
+    # The ONE way out that is not a lever: a revert authored by the forge's own
+    # key, restoring bytes an earlier commit already earned evidence for. It is
+    # asked LAST so it costs nothing on the ordinary path, and it can only ever
+    # narrow this verdict — see `_red_green_replay_revert` for what it keys on
+    # and why no agent can produce it (work-item livespec-dev-tooling-j2qa).
+    return lacks_evidence and not is_forge_authored_revert(
+        sha=sha, product_paths=product_paths, base_ref=_RANGE_BASE
+    )
 
 
 def _validate_range() -> int:
@@ -369,22 +394,7 @@ def _validate_range() -> int:
         "green-verified behavior-preserving commit)",
         check_id="red-green-replay-range-missing-trailers",
         violating_commits=violating,
-        hint=(
-            "Every commit touching product impl .py must carry evidence, "
-            "regardless of subject prefix: author behavior changes via the "
-            "Red->Green ritual (pair shape), or behavior-preserving changes "
-            "via the green-verified leg (suite shape). A commit carrying "
-            "TDD-Green-* WITHOUT TDD-Red-* is a HALF-PAIR: a message-replacing "
-            "`git commit --amend -m` / `-F` destroyed the Red block at the "
-            "Green amend. Recover it from the commit named by that commit's "
-            "TDD-Green-Parent-Reflog trailer (`git log -1 --format=%B <sha> | "
-            "grep '^TDD-Red-'`) and re-amend with the reassembled message. "
-            "Remedy otherwise: rewrite the "
-            "unmerged feature branch (redo each offending change through the "
-            "hook so it earns its trailers) and force-push the branch — the "
-            "'never force-push' rule scopes to shared/protected refs, not to "
-            "an unmerged feature branch being brought into shape."
-        ),
+        hint=RANGE_MISSING_TRAILERS_HINT,
         protocol=RED_GREEN_REPLAY_PROTOCOL,
     )
     return 1
