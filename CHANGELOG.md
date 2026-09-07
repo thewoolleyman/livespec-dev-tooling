@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.55.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.55.0...v1.55.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **plan_record_conformance:** the epic predicates read bd 1.x's issue_type as well as type, so an armed run on a conformant tenant sees its epics (livespec-dev-tooling-lnbf) ([6787475](https://github.com/thewoolleyman/livespec-dev-tooling/commit/67874759a44aaa8cf637bd716e1da3c513fc183f))
+
 ## [1.55.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.54.0...v1.55.0) (2026-09-07)
 
 
