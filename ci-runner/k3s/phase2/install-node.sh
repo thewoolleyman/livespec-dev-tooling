@@ -232,7 +232,7 @@ declare -A STEP_SKIP=()
 
 STEP_LABEL[k3s-config]="1/10 k3s server config"
 STEP_LABEL[kernel-budgets]="2/10 inotify instance budget + keyring quota"
-STEP_LABEL[storage-layout]="2b/10 storage layout (LABEL fstab lines + k3s drop-in; no-op when the tiers are live)"
+STEP_LABEL[storage-layout]="2b/10 storage layout (mount the LABEL-ed tiers + the five fstab lines + k3s drop-in; no-op when the tiers are live)"
 STEP_LABEL[host-thermal]="2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)"
 STEP_LABEL[host-tools]="2d/10 operator host tools (btop-loop into /usr/local/bin)"
 STEP_LABEL[apparmor]="3/10 AppArmor profile + hook ConfigMap"
