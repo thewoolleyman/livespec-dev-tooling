@@ -25,18 +25,29 @@
 #      that says only "1/10 k3s config" cannot be read for that difference,
 #      which is why the label carries the filename;
 #   C. --dry-run executes nothing: not one installer runs, and not one of the
-#      host-mutating tools they reach for is invoked;
+#      host-mutating tools they reach for is invoked — the only command that
+#      reaches a real binary is the read-only `systemctl list-unit-files`
+#      presence probe case E's removal needs;
 #   D. the profile is DATA and is validated as data — a missing key, an
 #      unknown role, a non-numeric capacity and a missing file are each
-#      refused, naming what was wrong.
+#      refused, naming what was wrong;
+#   E. an agent's SKIP also REMOVES the server-only units an earlier run of
+#      this runbook installed here. A skip does not invoke the installer, so
+#      the installer's own removal never runs on the node that has them: a
+#      full exit-0 runbook run left three enabled, failed timers on
+#      gmktec-xubuntu 2026-09-07 (livespec-dev-tooling-43sc). Under a stubbed
+#      systemctl those three are disabled and deleted, timer before service,
+#      followed by one daemon-reload; under a stub that reports nothing
+#      present, no removal line is printed at all; and a SERVER prints none
+#      even when the stub says every unit is there.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `install-node.sh --dry-run`,
 # which by construction invokes no installer. On top of that each case
 # prepends a scratch PATH of TRIPWIRES for every host-mutating tool the
 # installers underneath would reach (`install`, `systemctl`, `apparmor_parser`,
-# `kubectl`, `sysctl`, `mount`, `apt-get`, `helm`): a run that executed a step
-# would leave the tripwire file non-empty, which case C asserts it does not.
-# The suite never runs as root and never needs to.
+# `kubectl`, `sysctl`, `mount`, `apt-get`, `helm`, `rm`): a run that executed a
+# step would leave a MUTATING line in the tripwire file, which case C asserts
+# it does not. The suite never runs as root and never needs to.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
 set -uo pipefail
@@ -63,13 +74,32 @@ export TRIPWIRE
 
 FAKEBIN="${TMPROOT}/fakebin"
 mkdir -p "$FAKEBIN"
-for tool in install systemctl apparmor_parser kubectl sysctl mount apt-get helm; do
+for tool in install apparmor_parser kubectl sysctl mount apt-get helm rm; do
   # Single-quoted on purpose: the body is the FAKE's source, expanded when the
   # fake runs, not when this suite writes it.
   printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "$(basename "$0")" "$*" >> "$TRIPWIRE"; exit 0\n' \
     > "${FAKEBIN}/${tool}"
   chmod +x "${FAKEBIN}/${tool}"
 done
+
+# The systemctl stub is the one fake with a RETURN VALUE, because the runbook
+# asks it a question: `list-unit-files NAME` is the presence probe deciding
+# whether this node carries a stale server-only unit the skip has to remove.
+# STUB_UNITS_PRESENT is the SPACE-SEPARATED list of names it answers yes for,
+# rather than a boolean, so a case can put exactly the three timers gmktec was
+# found carrying on the node and assert that the services beside them — which
+# were NOT reported — are left out of the sequence.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "%s %s\n" "$(basename "$0")" "$*" >> "$TRIPWIRE"' \
+  'if [ "${1:-}" = list-unit-files ]; then' \
+  '  for stub_unit in ${STUB_UNITS_PRESENT:-}; do' \
+  '    if [ "$stub_unit" = "${@: -1}" ]; then printf "%s enabled enabled\n" "$stub_unit"; fi' \
+  '  done' \
+  'fi' \
+  'exit 0' \
+  > "${FAKEBIN}/systemctl"
+chmod +x "${FAKEBIN}/systemctl"
 
 run_plan() {  # run_plan ARGS... -> stdout+stderr in REPLY_OUT, code in REPLY_RC
   REPLY_OUT="$(PATH="${FAKEBIN}:${PATH}" "$SCRIPT" "$@" 2>&1)"
@@ -78,6 +108,24 @@ run_plan() {  # run_plan ARGS... -> stdout+stderr in REPLY_OUT, code in REPLY_RC
 
 # plan_lines OUTPUT -> the RUN/SKIP lines only, which ARE the step plan.
 plan_lines() { printf '%s\n' "$1" | grep -E '^(RUN|SKIP) '; }
+
+# command_lines OUTPUT -> the '+ ' command lines only, which ARE the sequence
+# this run would execute. A plan that removes nothing has none at all.
+command_lines() { printf '%s\n' "$1" | grep -E '^\+ ' || true; }
+
+# same DESCRIPTION EXPECTED ACTUAL — assert two multi-line blocks are equal and
+# print the difference when they are not. The `IFS= read -r -d ''` expectations
+# below keep the heredoc's trailing newline and a `$(...)` capture drops one, so
+# that difference is normalized here rather than at every call site.
+same() {
+  local description="$1" expected="${2%$'\n'}" actual="$3"
+  if [ "$expected" = "$actual" ]; then
+    ok "$description"
+  else
+    no "$description"
+    diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") || true
+  fi
+}
 
 # An agent profile: the committed server profile with its cluster keys flipped.
 # Written here rather than committed under profiles/ because a profile in that
@@ -327,9 +375,14 @@ fi
 
 # ---------------------------------------------------------------------------
 # C. --dry-run executed nothing.
+#
+# The tripwire is no longer expected EMPTY: the stale-unit presence probe is a
+# READ, and it is performed under --dry-run on purpose so the removal sequence
+# a dry run prints is the one this host actually needs (case E). What must be
+# absent is every MUTATION.
 # ---------------------------------------------------------------------------
 printf '\n== C. --dry-run executes nothing ==\n'
-if [ -s "$TRIPWIRE" ]; then
+if grep -qvE '^systemctl list-unit-files ' "$TRIPWIRE"; then
   no "the dry runs executed no host-mutating command"
   cat "$TRIPWIRE"
 else
@@ -386,6 +439,155 @@ if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep -q 'no profile giv
   ok "no profile at all is refused with the usage line"
 else
   no "no profile at all is refused with the usage line"
+fi
+
+# ---------------------------------------------------------------------------
+# E. The agent SKIP removes the server-only units an earlier run left here.
+#
+# A skip is a statement about what this run will INSTALL; it says nothing about
+# what an earlier run already put on the node, and because a skip never invokes
+# the installer, the installer's own agent-side removal never runs on the node
+# that actually has the units. gmktec-xubuntu 2026-09-07: a full runbook run at
+# tree 315c4cef exited 0 and left reapply-node-extended-resource.timer,
+# scan-wedged-runners.timer and scan-runner-pod-lifecycle.timer
+# `enabled`/`failed` with `Unit k3s.service not found` (livespec-dev-tooling-43sc).
+# ---------------------------------------------------------------------------
+printf '\n== E. the agent skip removes the stale server-only units ==\n'
+
+UNIT_DIR="/etc/systemd/system"
+
+# Exactly the three timers that host was found carrying. Their SERVICES are
+# deliberately not in this stub's answer, so the assertion below also proves
+# each unit is probed on its own rather than removed as a hard-coded pair.
+GMKTEC_STALE_TIMERS="reapply-node-extended-resource.timer scan-wedged-runners.timer scan-runner-pod-lifecycle.timer"
+
+IFS= read -r -d '' EXPECTED_TIMER_REMOVAL <<'EOF'
++ systemctl disable --now reapply-node-extended-resource.timer
++ rm -f /etc/systemd/system/reapply-node-extended-resource.timer
++ systemctl disable --now scan-wedged-runners.timer
++ rm -f /etc/systemd/system/scan-wedged-runners.timer
++ systemctl disable --now scan-runner-pod-lifecycle.timer
++ rm -f /etc/systemd/system/scan-runner-pod-lifecycle.timer
++ systemctl daemon-reload
+EOF
+
+# The whole set, for a node that carries both halves of all four skipped
+# unit-installing steps. The TIMER precedes the service it triggers in every
+# pair, so nothing can fire between the two removals, and ONE daemon-reload
+# closes the set rather than one per installer.
+IFS= read -r -d '' EXPECTED_FULL_REMOVAL <<'EOF'
++ systemctl disable --now reapply-node-extended-resource.timer
++ rm -f /etc/systemd/system/reapply-node-extended-resource.timer
++ systemctl disable --now reapply-node-extended-resource.service
++ rm -f /etc/systemd/system/reapply-node-extended-resource.service
++ systemctl disable --now scan-wedged-runners.timer
++ rm -f /etc/systemd/system/scan-wedged-runners.timer
++ systemctl disable --now scan-wedged-runners.service
++ rm -f /etc/systemd/system/scan-wedged-runners.service
++ systemctl disable --now scan-runner-pod-lifecycle.timer
++ rm -f /etc/systemd/system/scan-runner-pod-lifecycle.timer
++ systemctl disable --now scan-runner-pod-lifecycle.service
++ rm -f /etc/systemd/system/scan-runner-pod-lifecycle.service
++ systemctl disable --now archive-arc-logs.timer
++ rm -f /etc/systemd/system/archive-arc-logs.timer
++ systemctl disable --now archive-arc-logs.service
++ rm -f /etc/systemd/system/archive-arc-logs.service
++ systemctl daemon-reload
+EOF
+
+# Exported, not a command prefix: the stub is a child process and reads it from
+# the environment, and `VAR=x func` would leave it set for the whole suite.
+export STUB_UNITS_PRESENT="$GMKTEC_STALE_TIMERS"
+run_plan --dry-run "$AGENT_PROFILE"
+unset STUB_UNITS_PRESENT
+if [ "$REPLY_RC" -eq 0 ]; then
+  ok "the agent dry run still exits 0 with stale units to remove"
+else
+  no "the agent dry run still exits 0 with stale units to remove (got ${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+same "the three timers gmktec carried are disabled and removed, then one daemon-reload" \
+  "$EXPECTED_TIMER_REMOVAL" "$(command_lines "$REPLY_OUT")"
+
+# Every unit named in that sequence, read back out of it so the stub and the
+# expectation cannot disagree.
+ALL_STALE_UNITS="$(printf '%s' "$EXPECTED_FULL_REMOVAL" \
+  | sed -n -E 's/^\+ systemctl disable --now //p' | tr '\n' ' ')"
+
+export STUB_UNITS_PRESENT="$ALL_STALE_UNITS"
+run_plan --dry-run "$AGENT_PROFILE"
+unset STUB_UNITS_PRESENT
+same "both halves of all four skipped unit-installing steps go, timer before service" \
+  "$EXPECTED_FULL_REMOVAL" "$(command_lines "$REPLY_OUT")"
+
+# The other branch of the presence probe. It is only assertable on a host that
+# does NOT have the units, and this suite is meant to be runnable on the pool's
+# SERVER too — where they are installed, and where the probe is right to see
+# them. So it is stated as a skip there rather than as a failure.
+stale_unit_on_this_host=0
+for unit in $(printf '%s\n' "$EXPECTED_FULL_REMOVAL" | grep -E '^\+ rm -f ' | sed -E 's|^\+ rm -f ||'); do
+  [ -e "$unit" ] && stale_unit_on_this_host=1
+done
+if [ "$stale_unit_on_this_host" -eq 1 ]; then
+  printf '  SKIP  no units present: this host has some installed, so the probe reads them\n'
+else
+  run_plan --dry-run "$AGENT_PROFILE"
+  if [ "$REPLY_RC" -eq 0 ] && [ -z "$(command_lines "$REPLY_OUT")" ]; then
+    ok "no stale unit present: the agent plan prints no removal line at all"
+  else
+    no "no stale unit present: the agent plan prints no removal line at all"
+    command_lines "$REPLY_OUT"
+  fi
+  case "$REPLY_OUT" in
+    *"nothing to remove"*) ok "the empty removal says so rather than staying silent" ;;
+    *) no "the empty removal says so rather than staying silent" ;;
+  esac
+fi
+
+# A SERVER skips nothing, so it has nothing to clean up — even on a host where
+# every one of these units is present, which is exactly the pool's server.
+export STUB_UNITS_PRESENT="$ALL_STALE_UNITS"
+run_plan --dry-run "$SERVER_PROFILE"
+unset STUB_UNITS_PRESENT
+if [ "$REPLY_RC" -eq 0 ] && [ -z "$(command_lines "$REPLY_OUT")" ]; then
+  ok "a server prints no removal line even when every unit is reported present"
+else
+  no "a server prints no removal line even when every unit is reported present"
+  command_lines "$REPLY_OUT"
+fi
+
+# The unit NAMES are stated in two places — the runbook's skip table and the
+# installer that owns each unit — so they are compared here. A rename in one
+# without the other would otherwise leave the skip removing a unit that no
+# longer exists while the real one stayed enabled and failed, which is the
+# defect this case exists for, wearing a different hat.
+assert_installer_units_are_removed() {  # ... INSTALLER-PATH
+  local installer="$1" declared unit
+  declared="$(grep -E '^(SERVICE|TIMER)="[^"]+"$' "${HERE}/${installer}" | sed -E 's/^(SERVICE|TIMER)="([^"]+)"$/\2/')"
+  if [ -z "$declared" ]; then
+    no "${installer} declares a SERVICE and a TIMER this suite can read"
+    return
+  fi
+  for unit in $declared; do
+    if printf '%s\n' "$EXPECTED_FULL_REMOVAL" | grep -qF "+ rm -f ${UNIT_DIR}/${unit}"; then
+      ok "the skip removes ${unit}, the unit ${installer} installs"
+    else
+      no "the skip removes ${unit}, the unit ${installer} installs"
+    fi
+  done
+}
+assert_installer_units_are_removed node-extended-resource/install-reapply-unit.sh
+assert_installer_units_are_removed wedged-runner/install-wedged-runner-scan.sh
+assert_installer_units_are_removed runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh
+assert_installer_units_are_removed arc-log-archive/install-arc-log-archive.sh
+
+# Case C again, now that every removal case has run: printing a removal is not
+# performing one, and the only command any of them reached is still the read.
+if grep -qvE '^systemctl list-unit-files ' "$TRIPWIRE"; then
+  no "the removal dry runs executed no host-mutating command either"
+  cat "$TRIPWIRE"
+else
+  ok "the removal dry runs executed no host-mutating command either"
 fi
 
 # ---------------------------------------------------------------------------

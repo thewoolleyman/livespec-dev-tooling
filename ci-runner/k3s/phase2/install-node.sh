@@ -26,6 +26,20 @@
 # change; the "N/10" numbering below is that historical server numbering, kept
 # verbatim so the two plans are comparable line by line.
 #
+# A SKIP ALSO CLEANS UP (2026-09-07, livespec-dev-tooling-43sc). Skipping a
+# step is what this role's plan says about the FUTURE; it says nothing about
+# what an EARLIER run of this runbook already put on the node. The runs that
+# preceded the skips installed the server-only units on gmktec-xubuntu, and
+# because those installers' own removal is reached only by INVOKING them —
+# which a skip by definition does not do — a full, exit-0 run of this runbook
+# left reapply-node-extended-resource.timer, scan-wedged-runners.timer and
+# scan-runner-pod-lifecycle.timer `enabled` and `failed` with `Unit k3s.service
+# not found`. So each agent-skipped step that installs units names them in
+# STEP_STALE_UNITS below, and the run hands the lot to
+# ./remove-server-only-units.sh: disabled, deleted, one daemon-reload, printed
+# as `+ ` lines under --dry-run and executed live. Idempotent — a node with
+# none of them says so and removes nothing.
+#
 # WHERE "Kueue" AND "ARC" LIVE IN THE AGENT SKIP SET. Neither is a step of
 # this runbook on its own: the ONLY step that applies Kueue ClusterQueues and
 # ARC scale sets is 8/10, the reconstruct-on-boot converge
@@ -107,7 +121,10 @@
 #
 # --dry-run PRINTS THE PLAN AND EXECUTES NOTHING: no installer is invoked, no
 # root check is made, no kubeconfig is required. That is what makes the two
-# role plans assertable off-host (./install-node-exit-tests.sh).
+# role plans assertable off-host (./install-node-exit-tests.sh). The stale-unit
+# removal above prints under --dry-run too, and to print the sequence THIS host
+# needs it performs the presence PROBE — `systemctl list-unit-files`, a read.
+# That is the only command a dry run reaches, and it mutates nothing.
 #
 # Usage: install-node.sh --dry-run PROFILE [WEDGE_MODE]
 #        sudo install-node.sh PROFILE [WEDGE_MODE]
@@ -304,6 +321,27 @@ STEP_SKIP[runner-pod-lifecycle]="reads PVCs, scheduler events, scale-set listene
 STEP_SKIP[arc-log-archive]="archives the ARC CONTROLLER and LISTENER pods' logs with the admin kubeconfig an agent does not hold — pods that run on the SERVER for the whole pool, so there is nothing here to archive. Unlike the two scans this unit is ordered After=network-online.target, so on an agent it would install cleanly and then fail silently every two minutes; the SERVER's own archive-arc-logs.timer already covers every node (livespec-dev-tooling-qcq0)."
 STEP_SKIP[churn-slot]="patches node STATUS through the API from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service) with the admin kubeconfig an agent does not hold — and patch-node-churn-capacity.sh patches EVERY node labeled k3s-role=arc-runner-host with ONE capacity, which makes applying it a cluster-wide act rather than a node-local one. Node-status patches are therefore applied from the SERVER's reapply timer, whose selector already includes this node; a per-node capacity read from each node's own profile is R4/R5 scope (livespec-dev-tooling-xa6o)."
 
+# ---------------------------------------------------------------------------
+# The units a SKIPPED step would have installed, and which an earlier run of
+# this runbook — one made before that step learned to skip — therefore left on
+# the node. The TIMER is listed before the service it triggers, so nothing can
+# fire between the two removals.
+#
+# Only the four unit-installing steps whose installers have been established as
+# server-only carry an entry (livespec-dev-tooling-ukbp for step 4,
+# livespec-dev-tooling-qcq0 for 5, 5b and 6). The other four agent skips are
+# deliberately absent: 2c installs no unit on this path, and 7, 8 and 9 belong
+# to installers that do not yet know about roles at all — declaring their units
+# server-only HERE would assert something no installer has been changed to
+# state, and this table is not the place to decide it. On gmktec-xubuntu those
+# three never ran on an agent anyway: the runbook aborted at step 4 of 10.
+# ---------------------------------------------------------------------------
+declare -A STEP_STALE_UNITS=()
+STEP_STALE_UNITS[churn-slot]="reapply-node-extended-resource.timer reapply-node-extended-resource.service"
+STEP_STALE_UNITS[wedged-runner]="scan-wedged-runners.timer scan-wedged-runners.service"
+STEP_STALE_UNITS[runner-pod-lifecycle]="scan-runner-pod-lifecycle.timer scan-runner-pod-lifecycle.service"
+STEP_STALE_UNITS[arc-log-archive]="archive-arc-logs.timer archive-arc-logs.service"
+
 step_label() {  # step_label ID
   if [ "$ROLE" = agent ] && [ -n "${STEP_AGENT_LABEL[$1]:-}" ]; then
     printf '%s' "${STEP_AGENT_LABEL[$1]}"
@@ -336,6 +374,28 @@ print_plan() {
       printf '     note: %s\n' "${STEP_AGENT_NOTE[$id]}"
     fi
   done
+}
+
+# ONE phase rather than a removal inside each skipped step, for two reasons:
+# the whole set is cleared with a SINGLE daemon-reload, and the sequence a
+# --dry-run prints is then the same sequence a live run performs, in the same
+# place — the property the rest of this script is built around. A role that
+# skips nothing (a server) invokes nothing and prints nothing.
+remove_stale_server_only_units() {
+  local id units=() step_units=()
+  for id in "${STEP_IDS[@]}"; do
+    step_skipped "$id" || continue
+    [ -n "${STEP_STALE_UNITS[$id]:-}" ] || continue
+    read -r -a step_units <<< "${STEP_STALE_UNITS[$id]}"
+    units+=("${step_units[@]}")
+  done
+  [ "${#units[@]}" -gt 0 ] || return 0
+  log "[${ROLE}] REMOVE the server-only units the skipped steps install — an earlier run of this runbook could have left them here, and a host carrying a unit it cannot run is drift"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    "${SCRIPT_DIR}/remove-server-only-units.sh" --dry-run "${units[@]}"
+  else
+    "${SCRIPT_DIR}/remove-server-only-units.sh" "${units[@]}"
+  fi
 }
 
 run_step() {  # run_step ID
@@ -417,6 +477,7 @@ run_step() {  # run_step ID
 # ---------------------------------------------------------------------------
 if [ "$DRY_RUN" -eq 1 ]; then
   print_plan
+  remove_stale_server_only_units
   printf '\n-- --dry-run: the plan above was printed and NOTHING was executed --\n'
   exit 0
 fi
@@ -434,6 +495,7 @@ if [ "$ROLE" = server ]; then
 fi
 
 print_plan
+remove_stale_server_only_units
 
 for step_id in "${STEP_IDS[@]}"; do
   if step_skipped "$step_id"; then
