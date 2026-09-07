@@ -14,7 +14,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -42,6 +42,12 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
 )
 from livespec_dev_tooling.fleet._pin_walk_failure import (  # noqa: E402
     walk_failure_outcome,
+)
+from livespec_dev_tooling.fleet._settle_window import (  # noqa: E402
+    LatestRelease,
+    never_fired_class,
+    read_latest_release,
+    utc_now,
 )
 
 __all__: list[str] = [
@@ -79,10 +85,16 @@ class PinRecord:
 
 @dataclass(frozen=True, kw_only=True)
 class StalePin:
-    """One pin whose current value does not denote the latest release."""
+    """One pin whose current value does not denote the latest release.
+
+    `published_at` rides along from the SAME `releases/latest` payload
+    `latest` came from, so the never-fired class can be decided without
+    a second read.
+    """
 
     record: PinRecord
     latest: str
+    published_at: str | None
 
 
 _LIVESPEC_COMPAT_SPEC = PinCurrencySpec(
@@ -152,29 +164,24 @@ def _record_from_raw(*, raw: dict[str, str]) -> PinRecord:
     )
 
 
-def _latest_release_tag(*, ctx: FleetContext, source_repo: str) -> str | None:
-    payload = ctx.api_object(path=f"repos/{ctx.owner}/{source_repo}/releases/latest")
-    if not isinstance(payload, dict):
-        return None
-    tag = cast("dict[str, object]", payload).get("tag_name")
-    return tag if isinstance(tag, str) else None
-
-
 def _stale_pins(
     *, ctx: FleetContext, records: tuple[PinRecord, ...]
 ) -> tuple[StalePin, ...] | None:
     stale: list[StalePin] = []
-    latest_cache: dict[str, str | None] = {}
+    # Memoized per SOURCE REPO, exactly as the tag-only read was: the
+    # settle window reads `published_at` off the payload this cache
+    # already holds, so arming the never-fired class adds no request.
+    latest_cache: dict[str, LatestRelease | None] = {}
     for record in records:
         if record.source_repo not in latest_cache:
-            latest_cache[record.source_repo] = _latest_release_tag(
-                ctx=ctx, source_repo=record.source_repo
-            )
-        latest = latest_cache[record.source_repo]
-        if latest is None:
+            latest_cache[record.source_repo] = read_latest_release(ctx=ctx, repo=record.source_repo)
+        release = latest_cache[record.source_repo]
+        if release is None:
             return None
-        if not denotes_same_release(pinned_tag=record.current_value, release_tag=latest):
-            stale.append(StalePin(record=record, latest=latest))
+        if not denotes_same_release(pinned_tag=record.current_value, release_tag=release.tag):
+            stale.append(
+                StalePin(record=record, latest=release.tag, published_at=release.published_at)
+            )
     return tuple(stale)
 
 
@@ -246,6 +253,11 @@ def _staleness_class_outcome(
     world; a RUN that could not read the PR list has established neither
     class, and the third branch below is the only honest thing it can
     emit. Severity is unchanged (warning) — a can't-read never escalates.
+
+    BOTH established classes now reach the lane scoping: the
+    FIRED-AND-COULD-NOT-LAND branch escalates at any release age, and the
+    NEVER-FIRED branch escalates once the release has aged past the
+    ratified settle window (`_never_fired_outcome`).
     """
     open_prs = open_bump_prs_for(ctx=ctx, member=member)
     if isinstance(open_prs, IOFailure):
@@ -280,14 +292,42 @@ def _staleness_class_outcome(
             # way — the scoping lowers severity, never the diagnostic.
             severity="error" if ctx.filter_consuming_preflight else "warning",
         )
+    return _never_fired_outcome(ctx=ctx, member=member, spec=spec, stale=stale)
+
+
+def _never_fired_outcome(
+    *, ctx: FleetContext, member: FleetMember, spec: PinCurrencySpec, stale: tuple[StalePin, ...]
+) -> RowFinding:
+    """The NEVER-FIRED class — stale, the PR list WAS read, and no bump PR is open.
+
+    The self-heal mechanism has not run at all, which the contract calls
+    the WORSE of the two states because nothing exists that would
+    eventually land. It escalates once the latest release has aged past
+    the settle window; inside that window the finding stays a warning,
+    since the interval between a release publishing and its bump PR
+    opening is normal operation — FINITE operation, which is the whole
+    correction v039 makes.
+
+    ANY stale record past the window arms the row: the records are
+    reported together, and one member's silent channel is not made
+    quieter by a second, fresher one beside it. The lane scoping is the
+    same one the persisting-gap branch applies, verbatim.
+    """
+    now = utc_now()
+    verdicts = tuple(never_fired_class(published_at=pin.published_at, now=now) for pin in stale)
+    findings = "; ".join(
+        f"{_stale_pin_summary(pin=pin)} ({verdict.clause})"
+        for pin, verdict in zip(stale, verdicts, strict=True)
+    )
+    escalates = any(verdict.escalates for verdict in verdicts)
     return RowFinding(
-        message=_finding_message(member=member, spec=spec, stale=stale),
-        severity="warning",
+        message=f"{member.repo}: {spec.pin_format} pin stale: {findings}",
+        severity="error" if escalates and ctx.filter_consuming_preflight else "warning",
     )
 
 
 def assert_livespec_compat_pin_currency(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
-    """`.livespec.jsonc` `compat.pinned` records are current; stale records warn."""
+    """`.livespec.jsonc` `compat.pinned` records are current; stale records warn or escalate."""
     return _pin_currency_outcome(ctx=ctx, member=member, spec=_LIVESPEC_COMPAT_SPEC)
 
 
