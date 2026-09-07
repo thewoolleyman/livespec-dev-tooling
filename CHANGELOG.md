@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.56.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.55.2...v1.56.0) (2026-09-07)
+
+
+### Features
+
+* **observability:** emit the runner pool's queue depth and runner population PER REPOSITORY ([c13617d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c13617d03ff96e05776fe276700ce27f51c1e74c))
+
 ## [1.55.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.55.1...v1.55.2) (2026-09-07)
 
 
