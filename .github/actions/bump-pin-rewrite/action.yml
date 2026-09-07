@@ -17,7 +17,9 @@
 #      §"reusable-bump-pin-from-dispatch.yml" .vendor.jsonc clause.
 #   5. Commit with the `chore(deps): bump <source_repo> pin to <tag>`
 #      message per §"PR commit-message convention" and push the branch.
-#   6. Open the bump PR with the supplied title and body, then enable
+#   6. Refuse a redundant bump PR when one is already open for the same
+#      (source_repo, tag, consumer) tuple (livespec-dev-tooling-dqfmjr),
+#      then open the bump PR with the supplied title and body, then enable
 #      `--auto --rebase` per
 #      SPECIFICATION/non-functional-requirements.md §"Commit and merge
 #      discipline". The auto-merge-enable failure surfaces as a
@@ -558,6 +560,41 @@ runs:
         #   - Branch-protection rules / rulesets on the base branch do
         #     not require status checks, which `--auto` needs to defer
         #     the merge until checks pass.
+        # Pre-create dedupe (livespec-dev-tooling-dqfmjr). BOTH producers reach
+        # this create for the same release — the dispatch path
+        # (`chore/bump-*`) and the cron-freshness path
+        # (`chore/freshness-bump-*`) — and a rerun of either reaches it again.
+        # Without a look before the leap the second one opened a redundant
+        # duplicate, paying for the create, its CI run, and the churn.
+        #
+        # The supersession sweep below CANNOT clean that pair up, so this is
+        # not a duplicate of it: its `master` category needs a master pin at or
+        # above the target (defeated in exactly the repo whose bump has not
+        # landed yet) and its `open_sibling` category needs a STRICTLY newer
+        # sibling, so two open PRs at the SAME version are outside both
+        # relations. Supersession closes OLD siblings; only this gate stops an
+        # equal-version duplicate being born.
+        #
+        # The decision lives in the SAME tested importable classifier module as
+        # that sweep, keyed on its shared `BumpKey`, so this block is thin glue:
+        # capture, test, notice, exit. An empty JSON object means "no
+        # incumbent — open the PR".
+        #
+        # An incumbent is a NO-OP, not an error: two producers firing for one
+        # release is the normal case, and failing here would redden the fleet's
+        # only pin-propagation backstop over a condition needing no action. The
+        # pushed branch is deliberately left alone — when this run IS the rerun,
+        # the incumbent PR is on that very branch, and deleting it would close
+        # the PR this gate exists to preserve.
+        pre_create_prs=$(gh pr list --state open --limit 100 --json number,headRefName,title)
+        duplicate=$(BUMP_MODE=dedupe OPEN_PRS="$pre_create_prs" CONSUMER="${GITHUB_REPOSITORY#*/}" \
+          uv run --project .livespec-dev-tooling python -m livespec_dev_tooling.cross_repo.bump_pr_supersession)
+        duplicate_number=$(echo "$duplicate" | jq -r '.number // empty')
+        if [[ -n "$duplicate_number" ]]; then
+          echo "::notice::$(echo "$duplicate" | jq -r '.notice')"
+          exit 0
+        fi
+
         gh pr create \
           --title "chore(deps): bump ${SOURCE_REPO} pin to ${TAG}" \
           --body "$PR_BODY" \
