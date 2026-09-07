@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 # remove-server-only-units.sh — disable and delete named SERVER-ONLY systemd
-# units from the node this runs on, then reload systemd once. Idempotent: a
-# unit that is not installed here is not mentioned, and a run that finds
-# nothing removes nothing and says so.
+# units from the node this runs on, reload systemd once, then clear each
+# removed unit's FAILED state. Idempotent: a unit that is not installed here is
+# not mentioned, and a run that finds nothing removes nothing and says so.
+#
+# WHY THE reset-failed. Deleting a unit file and reloading does NOT take the
+# unit out of `systemctl list-units --state=failed`: systemd keeps the failed
+# state in the manager, and a unit whose file is gone is reported there as
+# `not-found failed` until `systemctl reset-failed` runs or the host reboots.
+# Measured on gmktec-xubuntu 2026-09-07 (livespec-dev-tooling-oc5g): a run of
+# this script exited 0, every unit file was gone and `is-enabled` said
+# `not-found` for each — and the three timers were still listed failed. So a
+# failed-units read on that agent stayed red, which is a false monitoring
+# signal AND residual drift this very runbook created. `reset-failed` on a unit
+# systemd no longer knows is an error, not a no-op, so its failure is reported
+# and tolerated rather than allowed to fail the run.
 #
 # WHY THIS EXISTS, when four installers already remove their own units.
 # ../phase2's server-only installers each REFUSE on an agent and, before
@@ -37,8 +49,9 @@
 #
 # Requires root, and systemd, when it actually removes something. `--dry-run`
 # requires neither and executes nothing — it prints the exact sequence this
-# host needs as `+ ` lines, which is what makes the runbook's skip path
-# assertable off-host (./install-node-exit-tests.sh).
+# host needs as `+ ` lines, which is what makes this script assertable off-host
+# (./remove-server-only-units-exit-tests.sh) and the runbook's skip path with it
+# (./install-node-exit-tests.sh).
 #
 # Usage: remove-server-only-units.sh [--dry-run] UNIT...
 #   UNIT  a systemd unit NAME (`foo.service`, `foo.timer`), not a path. Pass
@@ -108,16 +121,19 @@ unit_installed() {  # unit_installed NAME
 # ---------------------------------------------------------------------------
 # The removal. Units are taken in the order given — the caller's job is to put
 # each timer before the service it triggers — and systemd is reloaded ONCE, at
-# the end, only if something was actually removed.
+# the end, only if something was actually removed. The units actually removed
+# are remembered IN THAT ORDER, because the reset-failed pass after the reload
+# is over exactly them: a unit that was never here has no failed state of this
+# runbook's making to clear.
 # ---------------------------------------------------------------------------
-removed=0
+removed_units=()
 for unit in "${UNITS[@]}"; do
   unit_installed "$unit" || continue
-  if [ "$removed" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  if [ "${#removed_units[@]}" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
     [ "$(id -u)" -eq 0 ] || die "must run as root (removes unit files from ${UNIT_DIR})"
     command -v systemctl >/dev/null || die "systemctl not found on PATH"
   fi
-  removed=1
+  removed_units+=("$unit")
   # A failed `disable` does not stop the removal: the units this cleans up
   # after are ones systemd could not start in the first place, and deleting the
   # file is the half that actually clears it. Reported, never silent.
@@ -126,8 +142,17 @@ for unit in "${UNITS[@]}"; do
   run rm -f "${UNIT_DIR}/${unit}"
 done
 
-if [ "$removed" -eq 1 ]; then
+if [ "${#removed_units[@]}" -gt 0 ]; then
   run systemctl daemon-reload
+  # AFTER the reload, so systemd has already been told the files are gone, and
+  # tolerant: `reset-failed` on a unit the manager no longer knows exits
+  # non-zero, and a unit that was removed but never failed is exactly that
+  # case. Nothing here is worth failing a cleanup over. See this script's
+  # header for why the step exists at all.
+  for unit in "${removed_units[@]}"; do
+    run systemctl reset-failed "$unit" \
+      || printf '  reset-failed found no %s to clear -- systemd had already forgotten it\n' "$unit"
+  done
 else
   printf '  nothing to remove: none of the %s server-only units named is installed on this node\n' \
     "${#UNITS[@]}"

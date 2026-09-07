@@ -36,9 +36,13 @@
 # scan-runner-pod-lifecycle.timer `enabled` and `failed` with `Unit k3s.service
 # not found`. So each agent-skipped step that installs units names them in
 # STEP_STALE_UNITS below, and the run hands the lot to
-# ./remove-server-only-units.sh: disabled, deleted, one daemon-reload, printed
-# as `+ ` lines under --dry-run and executed live. Idempotent — a node with
-# none of them says so and removes nothing.
+# ./remove-server-only-units.sh: disabled, deleted, one daemon-reload, then one
+# `reset-failed` per unit removed, printed as `+ ` lines under --dry-run and
+# executed live. Idempotent — a node with none of them says so and removes
+# nothing. The reset-failed pass is not cosmetic: without it the deleted units
+# stay in `systemctl list-units --state=failed` as `not-found failed` until the
+# host reboots, which is what the next stage-4 re-run found on that same node
+# (2026-09-07, livespec-dev-tooling-oc5g).
 #
 # WHERE "Kueue" AND "ARC" LIVE IN THE AGENT SKIP SET. Neither is a step of
 # this runbook on its own: the ONLY step that applies Kueue ClusterQueues and

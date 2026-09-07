@@ -37,9 +37,12 @@
 #      full exit-0 runbook run left three enabled, failed timers on
 #      gmktec-xubuntu 2026-09-07 (livespec-dev-tooling-43sc). Under a stubbed
 #      systemctl those three are disabled and deleted, timer before service,
-#      followed by one daemon-reload; under a stub that reports nothing
-#      present, no removal line is printed at all; and a SERVER prints none
-#      even when the stub says every unit is there.
+#      followed by one daemon-reload and then one `reset-failed` per unit
+#      removed — without which the deleted units stay in `list-units
+#      --state=failed` as `not-found failed` until the host reboots, which is
+#      what the next stage-4 re-run found (livespec-dev-tooling-oc5g); under a
+#      stub that reports nothing present, no removal line is printed at all;
+#      and a SERVER prints none even when the stub says every unit is there.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `install-node.sh --dry-run`,
 # which by construction invokes no installer. On top of that each case
@@ -461,6 +464,13 @@ UNIT_DIR="/etc/systemd/system"
 # each unit is probed on its own rather than removed as a hard-coded pair.
 GMKTEC_STALE_TIMERS="reapply-node-extended-resource.timer scan-wedged-runners.timer scan-runner-pod-lifecycle.timer"
 
+# The daemon-reload is not the last line: each removed unit is then cleared
+# from systemd's failed list, in the same order it was removed. Deleting a unit
+# file and reloading leaves the unit in `systemctl list-units --state=failed`
+# as `not-found failed` until `reset-failed` runs or the host reboots — the
+# stage-4 re-run on gmktec-xubuntu 2026-09-07 exited 0, removed all six unit
+# files, and left exactly these three timers listed failed
+# (livespec-dev-tooling-oc5g).
 IFS= read -r -d '' EXPECTED_TIMER_REMOVAL <<'EOF'
 + systemctl disable --now reapply-node-extended-resource.timer
 + rm -f /etc/systemd/system/reapply-node-extended-resource.timer
@@ -469,12 +479,16 @@ IFS= read -r -d '' EXPECTED_TIMER_REMOVAL <<'EOF'
 + systemctl disable --now scan-runner-pod-lifecycle.timer
 + rm -f /etc/systemd/system/scan-runner-pod-lifecycle.timer
 + systemctl daemon-reload
++ systemctl reset-failed reapply-node-extended-resource.timer
++ systemctl reset-failed scan-wedged-runners.timer
++ systemctl reset-failed scan-runner-pod-lifecycle.timer
 EOF
 
 # The whole set, for a node that carries both halves of all four skipped
 # unit-installing steps. The TIMER precedes the service it triggers in every
 # pair, so nothing can fire between the two removals, and ONE daemon-reload
-# closes the set rather than one per installer.
+# closes the set rather than one per installer — followed by one reset-failed
+# per unit removed, in removal order.
 IFS= read -r -d '' EXPECTED_FULL_REMOVAL <<'EOF'
 + systemctl disable --now reapply-node-extended-resource.timer
 + rm -f /etc/systemd/system/reapply-node-extended-resource.timer
@@ -493,6 +507,14 @@ IFS= read -r -d '' EXPECTED_FULL_REMOVAL <<'EOF'
 + systemctl disable --now archive-arc-logs.service
 + rm -f /etc/systemd/system/archive-arc-logs.service
 + systemctl daemon-reload
++ systemctl reset-failed reapply-node-extended-resource.timer
++ systemctl reset-failed reapply-node-extended-resource.service
++ systemctl reset-failed scan-wedged-runners.timer
++ systemctl reset-failed scan-wedged-runners.service
++ systemctl reset-failed scan-runner-pod-lifecycle.timer
++ systemctl reset-failed scan-runner-pod-lifecycle.service
++ systemctl reset-failed archive-arc-logs.timer
++ systemctl reset-failed archive-arc-logs.service
 EOF
 
 # Exported, not a command prefix: the stub is a child process and reads it from
@@ -506,7 +528,7 @@ else
   no "the agent dry run still exits 0 with stale units to remove (got ${REPLY_RC})"
   printf '%s\n' "$REPLY_OUT"
 fi
-same "the three timers gmktec carried are disabled and removed, then one daemon-reload" \
+same "the three timers gmktec carried are disabled and removed, then one daemon-reload, then a reset-failed each" \
   "$EXPECTED_TIMER_REMOVAL" "$(command_lines "$REPLY_OUT")"
 
 # Every unit named in that sequence, read back out of it so the stub and the
@@ -517,7 +539,7 @@ ALL_STALE_UNITS="$(printf '%s' "$EXPECTED_FULL_REMOVAL" \
 export STUB_UNITS_PRESENT="$ALL_STALE_UNITS"
 run_plan --dry-run "$AGENT_PROFILE"
 unset STUB_UNITS_PRESENT
-same "both halves of all four skipped unit-installing steps go, timer before service" \
+same "both halves of all four skipped unit-installing steps go, timer before service, each reset-failed after the reload" \
   "$EXPECTED_FULL_REMOVAL" "$(command_lines "$REPLY_OUT")"
 
 # The other branch of the presence probe. It is only assertable on a host that
