@@ -12,7 +12,11 @@ from returns.primitives.exceptions import UnwrapFailedError
 from returns.result import Failure
 
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_WORKTREE_JUST_BODY
-from livespec_dev_tooling.shellcheck import ShellCheckUnavailable
+from livespec_dev_tooling.shellcheck import (
+    ShellCheckUnavailable,
+    ShellCorpusEmpty,
+    run_shellcheck,
+)
 
 __all__: list[str] = []
 
@@ -375,15 +379,40 @@ def test_bootstrapped_canonical_worktree_pack_fragment_passes(
     assert rc == 0, stderr
 
 
-def test_empty_shell_corpus_fails_closed(*, tmp_path: Path) -> None:
+def test_empty_shell_corpus_is_a_clean_pass(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A repo with zero tracked shell files passes; it does not crash.
+
+    An empty corpus is the CORRECT state for a shell-free repo, not an error,
+    so the honest outcome is a clean pass — neither a finding nor an exception.
+    Before this was covered, `_shellcheck_findings` discriminated only the
+    `ShellCheckUnavailable` failure member and fell through to `.unwrap()` on
+    an already-failed `Result`, so the check raised `UnwrapFailedError` at a
+    consumer that had done nothing wrong.
+
+    The `ShellCorpusEmpty` arm is pinned DIRECTLY rather than inferred from the
+    check's exit code: `run_shellcheck` returns that member before it ever
+    looks for the binary, so asserting the member is what proves this test
+    exercises the empty-corpus return and not the missing-binary one. Asserting
+    only "no exception" would also pass against a broad `except` swallow, which
+    is the false-negative shape this check must never adopt.
+    """
     _write(root=tmp_path, rel="README.md", body="no tracked shell files\n")
     _git(cwd=tmp_path, args=["init", "-q"])
     _git(cwd=tmp_path, args=["add", "-A"])
 
-    module = importlib.import_module("livespec_dev_tooling.checks.shell_quality")
+    assert isinstance(run_shellcheck(repo_root=tmp_path).failure(), ShellCorpusEmpty)
 
-    with pytest.raises(UnwrapFailedError):
-        module.findings_for_repo(repo_root=tmp_path)
+    module = importlib.import_module("livespec_dev_tooling.checks.shell_quality")
+    assert module.findings_for_repo(repo_root=tmp_path) == []
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, stderr
 
 
 def test_missing_shellcheck_binary_hard_fails_with_actionable_remedy(
