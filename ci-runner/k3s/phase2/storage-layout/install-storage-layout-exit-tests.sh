@@ -13,7 +13,17 @@
 #   C. RUNNING k3s: with `k3s-agent.service` active and content in the
 #      containerd store, the plan stops the unit, rsyncs the store onto the
 #      tier, mounts the binds and starts the unit again, in that order — a bind
-#      laid over a live store would hide it;
+#      laid over a live store would hide it. C2-C4 are the three states of that
+#      decision, each PLANNED and EXECUTED from the same world so the two are
+#      proven to take the same branch: a tier carrying only ext4's `lost+found`
+#      is empty and is copied onto; a tier carrying
+#      `io.containerd.metadata.v1.bolt` is the store, is not copied over, and
+#      the skip names what it found; a bind ALREADY laid over a store the tier
+#      does not carry is repaired (stop, umount, rsync, mount, start) and is a
+#      no-op on the next run. All three come from gmktec-xubuntu 2026-09-07,
+#      where `lost+found` read as content, the dry run and the live run took
+#      DIFFERENT branches, and the empty tier went over the live store
+#      (livespec-dev-tooling-zmle);
 #   D. LIVE TIERS: on a host where all five managed mountpoints are already
 #      mounted the installer plans NO mutating command at all and exits 0. That
 #      no-op is its stated contract and what lets migrate-tier.sh end every
@@ -33,10 +43,11 @@
 # mktemp -d. On top of that each case runs against a scratch PATH of FAKE
 # tools: `lsblk`/`blkid` answer from a labels file this suite writes,
 # `findmnt`/`mount`/`umount` from a mounts file it keeps, `systemctl` from an
-# active-unit file — and every mutating tool records into a tripwire file that
-# cases A-D assert is empty. The suite never runs as root: the two executing
-# cases put a fake `id` on PATH ahead of the host's, and everything they do
-# would work unprivileged anyway.
+# active-unit file, `unshare` by snapshotting those files around the command it
+# runs (a mount namespace IS that snapshot) — and every mutating tool records
+# into a tripwire file that every DRY-RUN case asserts is empty. The suite never
+# runs as root: the executing cases put a fake `id` on PATH ahead of the host's,
+# and everything they do would work unprivileged anyway.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
 set -uo pipefail
@@ -199,7 +210,46 @@ fi
 printf "systemctl %s\n" "$*" >> "$TRIPWIRE"
 '
 
-mkfake "$FAKEBIN" rsync 'printf "rsync %s\n" "$*" >> "$TRIPWIRE"'
+# rsync — recorded, AND it really copies. The installer verifies that the store
+# it copied is visible through the bind afterwards, and a fake that copied
+# nothing would make that verification unfalsifiable.
+mkfake "$FAKEBIN" rsync '
+printf "rsync %s\n" "$*" >> "$TRIPWIRE"
+src=""; dst=""
+for a in "$@"; do
+  case "$a" in
+    -*) ;;
+    *) if [ -z "$src" ]; then src="$a"; else dst="$a"; fi ;;
+  esac
+done
+[ -n "$src" ] && [ -n "$dst" ] || exit 0
+mkdir -p "$dst"
+cp -a "${src%/}/." "$dst/" 2>/dev/null || true
+'
+
+# unshare -m — the installer reads what a bind mount COVERS by unmounting it
+# inside a private mount namespace, where the umount is invisible to the host.
+# The fakes keep the mount table in files, so a namespace is a SNAPSHOT of
+# those files: whatever the command inside it does to them is rolled back when
+# it exits, exactly as the kernel rolls back the real namespace. The tripwire is
+# rolled back with them, because a probe that leaves no host mutation must not
+# read as one.
+mkfake "$FAKEBIN" unshare '
+saved_mounts="$(cat "$MOUNTS")"; saved_trip="$(cat "$TRIPWIRE")"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m|--mount) shift ;;
+    --propagation) shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+"$@"
+rc=$?
+if [ -n "$saved_mounts" ]; then printf "%s\n" "$saved_mounts" > "$MOUNTS"; else : > "$MOUNTS"; fi
+if [ -n "$saved_trip" ]; then printf "%s\n" "$saved_trip" > "$TRIPWIRE"; else : > "$TRIPWIRE"; fi
+exit $rc
+'
 
 # The tripwire-only overlay the DRY-RUN cases add ahead of the fakes: under
 # --dry-run the script must reach neither of these by construction, so a
@@ -304,6 +354,34 @@ tripwire_empty() {  # tripwire_empty DESCRIPTION
   else
     ok "$1"
   fi
+}
+
+# same_branch DESCRIPTION BUILDER — build the SAME world twice, plan it with
+# --dry-run over one copy and execute it over the other, and assert the two
+# plans are identical. This is the assertion the installer did not have on
+# 2026-09-07: its dry run printed "k3s-agent.service is active and holds
+# content not on its tier", its live run printed "already holds content, so it
+# is NOT copied", and the plan nobody could distinguish from the run bound a
+# freshly formatted tier over a live containerd store. DRY_OUT and LIVE_OUT are
+# left for the caller to assert the wording of each branch on.
+DRY_OUT=""
+LIVE_OUT=""
+same_branch() {  # same_branch DESCRIPTION BUILDER
+  local description="$1" builder="$2" dry_plan live_plan dry_rc
+  "$builder"
+  run_dry
+  DRY_OUT="$REPLY_OUT"; dry_rc="$REPLY_RC"; dry_plan="$(plan_lines "$REPLY_OUT")"
+  tripwire_empty "${description}: the dry run executed no host-mutating command"
+  "$builder"
+  run_live
+  LIVE_OUT="$REPLY_OUT"; live_plan="$(plan_lines "$REPLY_OUT")"
+  if [ "$dry_rc" -eq 0 ] && [ "$REPLY_RC" -eq 0 ]; then
+    ok "${description}: both the dry run and the live run exit 0"
+  else
+    no "${description}: both runs exit 0 (dry ${dry_rc}, live ${REPLY_RC})"
+    printf '%s\n' "$LIVE_OUT"
+  fi
+  same "${description}: --dry-run and the live run plan the SAME steps" "$dry_plan" "$live_plan"
 }
 
 # ---------------------------------------------------------------------------
@@ -452,9 +530,8 @@ reset_world
 printf 'k3s-agent.service\n' > "$ACTIVE"
 add_mount "$CACHE" /dev/mapper/nvmea-ci--cache
 add_mount "$CSRC" /dev/mapper/nvmea-ci--containerd
-mkdir -p "$CDIR" "$CSRC"
+mkdir -p "$CDIR" "${CSRC}/io.containerd.metadata.v1.bolt"
 printf 'stale\n' > "$CDIR/leftover"
-printf 'layers\n' > "$CSRC/blob"
 write_five_lines
 run_dry
 if printf '%s\n' "$REPLY_OUT" | grep -qE '^\+ (rsync|systemctl (stop|start)) '; then
@@ -463,6 +540,140 @@ if printf '%s\n' "$REPLY_OUT" | grep -qE '^\+ (rsync|systemctl (stop|start)) '; 
 else
   ok "a tier that already holds a store is never copied over, and k3s is never stopped"
 fi
+
+# ---------------------------------------------------------------------------
+# The three states of the step-5 decision, each planned AND executed from the
+# same world so the two are proven to take the same branch
+# (livespec-dev-tooling-zmle).
+# ---------------------------------------------------------------------------
+
+# The world the gmktec rehearsal was in: a freshly mkfs'd ci-containerd tier
+# carrying nothing but ext4's own lost+found, a live containerd store on the
+# root filesystem, and k3s-agent.service running.
+fresh_tier_world() {
+  reset_world
+  printf 'k3s-agent.service\n' > "$ACTIVE"
+  add_mount "$CACHE" /dev/mapper/nvmea-ci--cache
+  add_mount "$CSRC" /dev/mapper/nvmea-ci--containerd
+  add_mount "$SSRC" /dev/mapper/nvmea-ci--workvols
+  mkdir -p "${CSRC}/lost+found" "${SSRC}/lost+found" "$SDIR"
+  mkdir -p "${CDIR}/io.containerd.metadata.v1.bolt" "${CDIR}/io.containerd.snapshotter.v1.overlayfs"
+  printf 'db\n' > "${CDIR}/io.containerd.metadata.v1.bolt/meta.db"
+  printf 'log\n' > "${CDIR}/containerd.log"
+  write_five_lines
+}
+
+printf '\n== C2. a tier holding only lost+found is EMPTY: the store is copied onto it ==\n'
+same_branch "lost+found is not content" fresh_tier_world
+if order_ok "$DRY_OUT" \
+  "+ systemctl stop k3s-agent.service" \
+  "+ rsync -aHAX ${CDIR}/ ${CSRC}/" \
+  "+ mount ${CDIR}" \
+  "+ systemctl start k3s-agent.service"; then
+  ok "the store is copied onto the lost+found-only tier with the agent stopped"
+else
+  no "the store is copied onto the lost+found-only tier with the agent stopped"
+  printf '%s\n' "$DRY_OUT"
+fi
+for out_name in DRY_OUT LIVE_OUT; do
+  if printf '%s\n' "${!out_name}" | grep -qi 'already holds'; then
+    no "${out_name}: a lost+found-only tier is never reported as already holding a store"
+    printf '%s\n' "${!out_name}" | grep -i 'already holds'
+  else
+    ok "${out_name}: a lost+found-only tier is never reported as already holding a store"
+  fi
+done
+if printf '%s\n' "$LIVE_OUT" | grep -qF "verify:  io.containerd.metadata.v1.bolt is visible at ${CDIR}"; then
+  ok "the run verifies the metadata database is visible through the bind"
+else
+  no "the run verifies the metadata database is visible through the bind"
+fi
+
+# The same host with the containerd metadata database ON the tier: that IS the
+# store, so nothing is copied and k3s is never stopped.
+bolt_tier_world() {
+  reset_world
+  printf 'k3s-agent.service\n' > "$ACTIVE"
+  add_mount "$CACHE" /dev/mapper/nvmea-ci--cache
+  add_mount "$CSRC" /dev/mapper/nvmea-ci--containerd
+  add_mount "$SSRC" /dev/mapper/nvmea-ci--workvols
+  mkdir -p "${CSRC}/lost+found" "${CSRC}/io.containerd.metadata.v1.bolt" "$SDIR"
+  mkdir -p "${CSRC}/io.containerd.snapshotter.v1.overlayfs" "${SSRC}/lost+found"
+  mkdir -p "$CDIR"
+  printf 'stale\n' > "${CDIR}/leftover"
+  write_five_lines
+}
+
+printf '\n== C3. a tier holding the metadata database is the store: no copy, no stop ==\n'
+same_branch "a tier that holds io.containerd.metadata.v1.bolt" bolt_tier_world
+for out_name in DRY_OUT LIVE_OUT; do
+  if printf '%s\n' "${!out_name}" | grep -qE '^\+ (rsync|systemctl (stop|start)) '; then
+    no "${out_name}: neither a copy nor a service stop is planned"
+    printf '%s\n' "${!out_name}" | grep -E '^\+ (rsync|systemctl (stop|start)) '
+  else
+    ok "${out_name}: neither a copy nor a service stop is planned"
+  fi
+done
+if printf '%s\n' "$DRY_OUT" | grep -qF "on the tier: io.containerd.metadata.v1.bolt"; then
+  ok "the skip names what it found on the tier"
+else
+  no "the skip names what it found on the tier"
+  printf '%s\n' "$DRY_OUT"
+fi
+if printf '%s\n' "$DRY_OUT" | grep -q 'lost+found'; then
+  no "lost+found is never listed as something the tier holds"
+else
+  ok "lost+found is never listed as something the tier holds"
+fi
+
+# The damage the missing lost+found rule did: the bind is already laid over the
+# live store, and the tier under it carries only what processes made after the
+# bind went on (a grpc socket directory, a content store from a failed pull).
+hidden_store_world() {
+  reset_world
+  printf 'k3s-agent.service\n' > "$ACTIVE"
+  add_mount "$CACHE" /dev/mapper/nvmea-ci--cache
+  add_mount "$CSRC" /dev/mapper/nvmea-ci--containerd
+  add_mount "$SSRC" /dev/mapper/nvmea-ci--workvols
+  add_mount "$CDIR" /dev/mapper/nvmea-ci--containerd
+  add_mount "$SDIR" /dev/mapper/nvmea-ci--workvols
+  mkdir -p "${CSRC}/lost+found" "${CSRC}/io.containerd.grpc.v1.cri" "${SSRC}/lost+found" "$SDIR"
+  mkdir -p "${CDIR}/io.containerd.metadata.v1.bolt" "${CDIR}/io.containerd.snapshotter.v1.overlayfs"
+  printf 'db\n' > "${CDIR}/io.containerd.metadata.v1.bolt/meta.db"
+  write_five_lines
+}
+
+printf '\n== C4. a bind already laid over a live store is REPAIRED ==\n'
+same_branch "a bind over a store the tier does not carry" hidden_store_world
+for out_name in DRY_OUT LIVE_OUT; do
+  if order_ok "${!out_name}" \
+    "+ systemctl stop k3s-agent.service" \
+    "+ umount ${CDIR}" \
+    "+ rsync -aHAX ${CDIR}/ ${CSRC}/" \
+    "+ mount ${CDIR}" \
+    "+ systemctl start k3s-agent.service"; then
+    ok "${out_name}: stop, umount the bind, copy the store onto the tier, bind, start"
+  else
+    no "${out_name}: stop, umount the bind, copy the store onto the tier, bind, start"
+    printf '%s\n' "${!out_name}"
+  fi
+done
+if printf '%s\n' "$DRY_OUT" | grep -qF "under the bind: io.containerd.metadata.v1.bolt"; then
+  ok "the repair names the store it found under the bind"
+else
+  no "the repair names the store it found under the bind"
+fi
+if printf '%s\n' "$LIVE_OUT" | grep -q '^+ umount .*k3s/storage$'; then
+  no "an empty local-path root under a bind is not 'repaired'"
+else
+  ok "an empty local-path root under a bind is not 'repaired'"
+fi
+# Idempotent: the repair leaves the store ON the tier, so the next run finds it
+# there and plans nothing at all.
+: > "$TRIPWIRE"
+run_live
+exits_zero "the run after the repair exits 0"
+same "the repair is idempotent: the next run plans no mutating command at all" "" "$(plan_lines "$REPLY_OUT")"
 
 # ---------------------------------------------------------------------------
 # D. Live tiers: the no-op contract.

@@ -58,7 +58,14 @@
 #      content that is not on the tier yet, the k3s unit is stopped, the
 #      content is rsynced onto the tier, the binds are mounted, and the unit is
 #      started again — a bind laid over a live store would HIDE it, which is
-#      the one thing this installer must never do;
+#      the one thing this installer must never do. "Already on the tier" means
+#      the tier holds the STORE (io.containerd.metadata.v1.bolt for the
+#      containerd tier, any entry for the local-path root) and NEVER the
+#      lost+found that mkfs.ext4 puts on every fresh filesystem; and when a
+#      bind is found already laid over a store the tier does not carry, that
+#      state is REPAIRED — unit stopped, bind unmounted, the store copied out
+#      from under it onto the tier, bind remounted, unit started, and the store
+#      verified visible through the bind;
 #   6. `findmnt --verify`, whose errors are fatal only for those five
 #      mountpoints (an unrelated line, e.g. an unplugged backup disk with
 #      `nofail`, is reported and left alone), and then a hard check that all
@@ -76,7 +83,13 @@
 #
 # --dry-run PRINTS THE PLAN AND EXECUTES NOTHING: no mount, no fstab write, no
 # root check. That is what makes every case above assertable off-host
-# (./install-storage-layout-exit-tests.sh).
+# (./install-storage-layout-exit-tests.sh). Its ONE exception is the
+# mount-namespace probe that reads what a bind mount covers (hidden_entries):
+# it is a read, it leaves the host's mount table untouched, and without it a
+# dry run could not reach the same verdict as the run it describes — which is
+# exactly the divergence that cost gmktec-xubuntu its containerd store on
+# 2026-09-07. It needs root, so run --dry-run under sudo for a determinate
+# plan; without it the affected tier is reported as unreadable, never guessed.
 #
 # MEDIA SWAP (the whole point; README "Storage layout: media-neutral tier
 # identity"): mkfs.ext4 -L <temporary label> on the new volume, rsync -aHAXS
@@ -209,11 +222,95 @@ ensure_dir() {  # ensure_dir DIR — created only when absent, so a conforming h
   run install -d -m 0755 "$1"
 }
 
-dir_has_content() {  # dir_has_content DIR — DIR exists and holds at least one entry
-  [ -d "$1" ] || return 1
-  local entry
-  entry="$(find "$1" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)"
-  [ -n "$entry" ]
+# ---------------------------------------------------------------------------
+# What "this directory holds a store" means, and how a directory that a bind
+# mount COVERS is read. One definition each, and section 5's verdict is derived
+# from these and from nothing else, in BOTH modes — the dry-run/live divergence
+# they end is the defect that put an empty tier over the live containerd store
+# on gmktec-xubuntu 2026-09-07 (livespec-dev-tooling-zmle).
+# ---------------------------------------------------------------------------
+
+# `lost+found` is made by mkfs.ext4 on EVERY fresh filesystem, so a rule that
+# counts entries makes every freshly formatted tier look occupied. It is
+# filesystem bookkeeping, never content: on 2026-09-07 it was the only thing on
+# the new ci-containerd tier, the installer read it as "the tier already holds
+# the store", skipped the copy, and bound the empty tier over the live one.
+LOST_FOUND="lost+found"
+
+# The one entry that says a containerd store is a STORE. containerd's metadata
+# database is created before anything can use the store, and everything the
+# kubelet needs is keyed to it; the grpc socket directory and the half-written
+# content store that a failed `ctr pull` leaves behind are not a store and must
+# not be mistaken for one.
+CONTAINERD_STORE_MARKER="io.containerd.metadata.v1.bolt"
+
+dir_entries() {  # dir_entries DIR — DIR's entry names, lost+found excluded, sorted
+  [ -d "$1" ] || return 0
+  find "$1" -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null \
+    | grep -vxF "$LOST_FOUND" | LC_ALL=C sort || true
+}
+
+holds_store() {  # holds_store DIR ROLE — DIR holds the store its ROLE names
+  case "$2" in
+    containerd) [ -e "${1}/${CONTAINERD_STORE_MARKER}" ] ;;
+    *) [ -n "$(dir_entries "$1")" ] ;;
+  esac
+}
+
+# Reading a directory a bind mount covers. The only way to see it is to take
+# the bind away, and the only way to do that WITHOUT touching the host is to do
+# it in our own mount namespace: `unshare -m` hands this one command a private
+# copy of the mount table, so the umount inside it is invisible to every other
+# process and the host's mounts are exactly as they were when it exits. That is
+# why --dry-run runs it too — it is a READ, and without it a dry run could not
+# reach the same verdict as the run it claims to describe.
+# Exit 0 with the hidden entry names on stdout, 1 when nothing is hidden, 2 when
+# the probe could not run at all (no unshare, or no privilege — an unprivileged
+# --dry-run cannot see under a bind, and says so rather than guessing).
+hidden_entries() {  # hidden_entries DIR
+  command -v unshare >/dev/null || return 2
+  local out
+  out="$(unshare -m --propagation private -- \
+    sh -c 'umount "$1" 2>/dev/null || exit 9; find "$1" -mindepth 1 -maxdepth 1 -printf "%f\n"' \
+    hidden-entries "$1" 2>/dev/null)" || return 2
+  out="$(printf '%s\n' "$out" | grep -vxF "$LOST_FOUND" | LC_ALL=C sort || true)"
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
+print_entries() {  # print_entries PREFIX ENTRIES — by name, so a skip is auditable
+  local prefix="$1" entries="$2" shown=0 entry
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    shown=$((shown + 1))
+    if [ "$shown" -le 12 ]; then
+      printf '%s%s\n' "$prefix" "$entry"
+    fi
+  done <<< "$entries"
+  if [ "$shown" -gt 12 ]; then
+    printf '%s... and %s more\n' "$prefix" "$((shown - 12))"
+  fi
+}
+
+# The one entry whose visibility THROUGH the bind proves the copy landed: the
+# containerd metadata database when the copied store carries it, and otherwise
+# the first thing that was copied. Derived from what was actually there, never
+# assumed, so a store that legitimately predates the bolt is not refused.
+proof_entry() {  # proof_entry ROLE ENTRIES
+  if [ "$1" = containerd ] && printf '%s\n' "$2" | grep -qxF "$CONTAINERD_STORE_MARKER"; then
+    printf '%s' "$CONTAINERD_STORE_MARKER"
+    return 0
+  fi
+  # Read rather than `head -1`: this runs inside a command substitution under
+  # `set -e -o pipefail`, where a SIGPIPE'd printf would abort the whole run.
+  local entry first=""
+  while IFS= read -r entry; do
+    if [ -n "$entry" ]; then
+      first="$entry"
+      break
+    fi
+  done <<< "$2"
+  printf '%s' "$first"
 }
 
 mount_managed() {  # mount_managed TARGET — mount it from fstab unless it is already up
@@ -390,24 +487,51 @@ mount_managed "$STORAGE_SRC"
 # order, since stage 3 installs k3s and stage 4 runs this — the containerd store
 # under /var/lib/rancher/k3s/agent/containerd is exactly such a directory. The
 # content is moved onto the tier first, with the k3s unit stopped for the copy.
-# "Not yet on the tier" is read as "the tier source is EMPTY": a tier that
-# already holds a store is the store, and re-copying over it would be wrong as
-# well as slow — that is the state migrate-tier.sh hands this script.
-MIGRATIONS=""
-for pair in "${CONTAINERD_DIR}|${CONTAINERD_SRC}" "${STORAGE_DIR}|${STORAGE_SRC}"; do
-  dir="${pair%%|*}"; src="${pair#*|}"
-  if is_mounted_or_planned "$dir"; then
-    continue
+#
+# ONE VERDICT PER TIER, from ONE function, in BOTH modes. The verdict used to
+# be "is the tier source non-empty", read at a point where --dry-run and the
+# live run see DIFFERENT filesystems: the dry run reads the empty stand-in
+# directory on the cache volume, because it only PRINTED the tier mount, while
+# the live run reads the tier it really mounted a moment earlier. On
+# gmktec-xubuntu 2026-09-07 that divergence was the whole defect — the dry run
+# printed "stopped for the copy", the live run printed "already holds content"
+# and bound a freshly formatted tier over a running containerd, whose store the
+# kubelet then spent ten minutes an hour reporting as missing. classify_tier is
+# the single decision, and every branch below is derived from it.
+VERDICT=""
+VERDICT_ENTRIES=""
+classify_tier() {  # classify_tier DIR SRC ROLE -> VERDICT, and VERDICT_ENTRIES for it
+  local dir="$1" src="$2" role="$3" entries rc
+  VERDICT_ENTRIES=""
+  # A tier that already holds a store IS the store: re-copying over it would be
+  # wrong as well as slow, and this is the state migrate-tier.sh hands us.
+  if holds_store "$src" "$role"; then
+    VERDICT_ENTRIES="$(dir_entries "$src")"
+    VERDICT="tier-holds-store"
+    return 0
   fi
-  if ! dir_has_content "$dir"; then
-    continue
+  # The tier holds no store and the bind is already over the directory that
+  # should have been copied onto it. Whatever is under that bind is the only
+  # copy of the store, and only the namespace probe can see it. `_now`, not
+  # `_or_planned`: a bind this run has merely PLANNED still leaves its
+  # directory readable, and there would be nothing for the probe to unmount.
+  if is_mounted_now "$dir"; then
+    entries="$(hidden_entries "$dir")" && rc=0 || rc=$?
+    case "$rc" in
+      0) VERDICT_ENTRIES="$entries"; VERDICT="repair" ;;
+      1) VERDICT="nothing-hidden" ;;
+      *) VERDICT="unreadable" ;;
+    esac
+    return 0
   fi
-  if dir_has_content "$src"; then
-    printf 'note:    %s already holds content, so %s is reported and NOT copied\n' "$src" "$dir"
-    continue
+  entries="$(dir_entries "$dir")"
+  if [ -n "$entries" ]; then
+    VERDICT_ENTRIES="$entries"
+    VERDICT="migrate"
+  else
+    VERDICT="empty"
   fi
-  MIGRATIONS="${MIGRATIONS}${pair}"$'\n'
-done
+}
 
 ACTIVE_UNIT=""
 for unit in "${K3S_UNITS[@]}"; do
@@ -417,20 +541,65 @@ for unit in "${K3S_UNITS[@]}"; do
   fi
 done
 
+# One "DIR|SRC|ROLE|VERDICT|PROOF" row per tier that needs work.
+PLAN=""
+for spec in "${CONTAINERD_DIR}|${CONTAINERD_SRC}|containerd" "${STORAGE_DIR}|${STORAGE_SRC}|storage"; do
+  IFS='|' read -r dir src role <<< "$spec"
+  classify_tier "$dir" "$src" "$role"
+  case "$VERDICT" in
+    tier-holds-store)
+      printf 'note:    %s already holds a %s store, so %s is reported and NOT copied\n' "$src" "$role" "$dir"
+      print_entries '         on the tier: ' "$VERDICT_ENTRIES"
+      ;;
+    migrate|repair)
+      if [ "$VERDICT" = migrate ] && ! is_mounted_now "$src"; then
+        # The one thing a dry run cannot know, said out loud rather than left
+        # to diverge silently: the tier is only PLANNED to be mounted, so this
+        # verdict was taken on the stand-in directory beneath its mountpoint.
+        printf 'note:    %s is not mounted yet, so this verdict is taken on the stand-in directory\n' "$src"
+        printf '         beneath it; the live run reads the tier itself and skips the copy if the\n'
+        printf '         tier turns out to hold a store (the copy never deletes, so neither is lost).\n'
+      fi
+      if [ "$VERDICT" = repair ]; then
+        # The repair, announced before the steps that carry it out and
+        # idempotent: once the store is on the tier the next run classifies it
+        # `tier-holds-store` and does nothing at all.
+        printf 'repair:  %s is bound over a store that %s does not carry; it is copied out from under the bind\n' "$dir" "$src"
+        print_entries '         under the bind: ' "$VERDICT_ENTRIES"
+      fi
+      PLAN="${PLAN}${dir}|${src}|${role}|${VERDICT}|$(proof_entry "$role" "$VERDICT_ENTRIES")"$'\n'
+      ;;
+    unreadable)
+      printf 'note:    %s is mounted and %s holds no %s store, but what lies UNDER that bind\n' "$dir" "$src" "$role"
+      printf '         cannot be read here: the mount-namespace probe needs root (re-run as root,\n'
+      printf '         --dry-run included). No repair is planned from a guess.\n'
+      ;;
+  esac
+done
+
 STOPPED=""
-if [ -n "$MIGRATIONS" ]; then
+if [ -n "$PLAN" ]; then
   command -v rsync >/dev/null || die "rsync not on PATH, and a k3s store has to be copied onto its tier before the bind hides it"
 fi
-if [ -n "$MIGRATIONS" ] && [ -n "$ACTIVE_UNIT" ]; then
+if [ -n "$PLAN" ] && [ -n "$ACTIVE_UNIT" ]; then
   printf 'note:    %s is active and holds content not on its tier; it is stopped for the copy and started again below\n' "$ACTIVE_UNIT"
   run systemctl stop "$ACTIVE_UNIT"
   STOPPED="$ACTIVE_UNIT"
 fi
-while IFS= read -r pair; do
-  [ -n "$pair" ] || continue
-  dir="${pair%%|*}"; src="${pair#*|}"
+while IFS= read -r row; do
+  [ -n "$row" ] || continue
+  IFS='|' read -r dir src role verdict proof <<< "$row"
+  # The bind comes off so the hidden store is reachable; the copy KEEPS
+  # whatever the tier already carries and lets the root-filesystem store win
+  # any conflict (rsync, never --delete); the bind goes back on.
+  if [ "$verdict" = repair ]; then
+    run umount "$dir"
+  fi
   run rsync -aHAX "${dir}/" "${src}/"
-done <<< "$MIGRATIONS"
+  if [ "$verdict" = repair ]; then
+    run mount "$dir"
+  fi
+done <<< "$PLAN"
 
 mount_managed "$CONTAINERD_DIR"
 mount_managed "$STORAGE_DIR"
@@ -438,6 +607,18 @@ mount_managed "$STORAGE_DIR"
 if [ -n "$STOPPED" ]; then
   run systemctl start "$STOPPED"
 fi
+
+# The store has to be VISIBLE THROUGH THE BIND, which is the one thing neither
+# the copy's exit code nor the mount's says. Under --dry-run the mounts above
+# were printed rather than made, so the check is stated and not asserted.
+while IFS= read -r row; do
+  [ -n "$row" ] || continue
+  IFS='|' read -r dir src role verdict proof <<< "$row"
+  printf 'verify:  %s is visible at %s through the bind from %s\n' "$proof" "$dir" "$src"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    [ -e "${dir}/${proof}" ] || die "${proof} is NOT visible at ${dir} after the copy and the bind; the ${role} store is hidden, which is the state this step exists to prevent"
+  fi
+done <<< "$PLAN"
 
 # ---------------------------------------------------------------------------
 log "6. findmnt --verify ${FSTAB} (errors are fatal only for the five managed mountpoints)"

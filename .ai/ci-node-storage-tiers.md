@@ -64,6 +64,21 @@ role label at once; the installer refuses while they do.
   `cp`/`rm`/`rsync` uses it, put the cleanup in a `trap ... EXIT` with a
   LITERAL path, and never `pkill -f` a pattern your own command line
   contains (bracket one character: `--reflink[=]always`).
+- **`lost+found` is not content, and a bind over a live store is SILENT.** On
+  2026-09-07 `install-storage-layout.sh` read the `lost+found` that
+  `mkfs.ext4` puts on every fresh filesystem as "the tier already holds the
+  store", skipped the copy, and bind-mounted the empty `ci-containerd` tier
+  over the running agent's store. Nothing failed: the node stayed `Ready`, and
+  the only symptoms were a kubelet line every 10 s about a missing
+  `io.containerd.snapshotter.v1.overlayfs` and, an hour later, `ctr pull` dying
+  on an absent `metadata.db`. Its `--dry-run` had printed the right plan and
+  the live run took a different branch, because the dry run reads the stand-in
+  directory and the live run reads the tier it just mounted. The installer now
+  keys "holds a store" on `io.containerd.metadata.v1.bolt` (any entry for the
+  local-path root), repairs a bind already laid over a hidden store, and reads
+  what a bind covers with an `unshare -m` probe so both modes decide the same
+  way — run `--dry-run` under sudo or it reports that tier as unreadable
+  (`livespec-dev-tooling-zmle`).
 - **Never unmount a tier mount under a running k3s, not even to swap it.**
   The `RequiresMountsFor` drop-in orders k3s's stop before the mount's, so
   an unmount is a k3s stop. To replace a tier live, STACK the new mount on
