@@ -85,7 +85,7 @@ patch safe to run against an unseeded volume.
 
 The three second-half edits MUST be applied together: the provisioner
 seed, the hook selection, and the version env. A seed with NO env (or with
-the image's own hook) means the upstream copy runs over hardlinked files it
+the image's own hook) means the upstream copy runs over seeded files it
 cannot write — the runner is uid 1000 and the files are the image's
 1001:123 — and the job fails at prepare. An env with NO seed is harmless (no
 marker, so the copy runs). A seed with the env but the wrong version is
