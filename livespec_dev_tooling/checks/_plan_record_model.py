@@ -34,6 +34,7 @@ __all__: list[str] = [
     "Finding",
     "canonical_plan_slug",
     "is_closed",
+    "is_epic_record",
     "is_same_tenant_epic",
     "metadata_string",
     "plan_slug_of",
@@ -128,6 +129,18 @@ def plan_slug_of(*, record: dict[str, object]) -> str:
     return metadata_string(record=record, key=PLAN_SLUG_METADATA_KEY)
 
 
+def is_epic_record(*, record: dict[str, object]) -> bool:
+    """Return True when a record's kind is epic, in EITHER ledger spelling.
+
+    `bd` 1.x `list --json` emits the kind as `issue_type`; the legacy JSONL
+    export spelled it `type`. A predicate reading only one spelling silently
+    populates ZERO epics on a conformant tenant, which fails every slug and
+    anchor verdict including verifiably correct ones (livespec-dev-tooling-lnbf).
+    Every epic-population site MUST route through this predicate.
+    """
+    return _EPIC_TYPE in (record.get("type"), record.get("issue_type"))
+
+
 def is_same_tenant_epic(*, record: dict[str, object], tenant_re: re.Pattern[str]) -> bool:
     """Return True for records that are epics of this tenant.
 
@@ -136,7 +149,7 @@ def is_same_tenant_epic(*, record: dict[str, object], tenant_re: re.Pattern[str]
     """
     item_id = record.get("id")
     return (
-        record.get("type") == _EPIC_TYPE
+        is_epic_record(record=record)
         and isinstance(item_id, str)
         and tenant_re.match(item_id) is not None
     )

@@ -40,6 +40,9 @@ from livespec_dev_tooling.checks._plan_ledger import (  # noqa: E402
     store_prefix,
     tenant_id_re,
 )
+from livespec_dev_tooling.checks._plan_record_model import (  # noqa: E402
+    is_epic_record,
+)
 
 __all__: list[str] = []
 
@@ -122,7 +125,7 @@ def _is_plan_epic(*, record: dict[str, object], tenant_id_re: re.Pattern[str]) -
     """Return True for same-tenant records that can anchor plans."""
     item_id = record_id(record=record)
     return (
-        record.get("type") == "epic"
+        is_epic_record(record=record)
         and item_id is not None
         and tenant_id_re.match(item_id) is not None
     )
