@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.53.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.5...v1.53.6) (2026-09-07)
+
+
+### Bug Fixes
+
+* **red-green-replay:** exempt forge-authored server-side reverts from the range gate ([e55764b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e55764b88d71bd01e9180962e479f22a9c6a544c))
+
 ## [1.53.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.4...v1.53.5) (2026-09-07)
 
 
