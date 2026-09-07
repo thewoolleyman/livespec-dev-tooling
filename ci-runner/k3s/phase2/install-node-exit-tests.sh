@@ -288,6 +288,27 @@ case "$AGENT_STEP1" in
     ok "the agent step-1 line does not name the SERVER's config.yaml" ;;
 esac
 
+# B3. Step 1 is also where an agent's runtime can be disturbed, and the plan has
+# to say what happens next. On gmktec-xubuntu 2026-09-07 this step replaced the
+# agent config while k3s-agent.service was restart-looping; step 7c reached
+# extract-externals.sh five seconds before containerd was serving and died at its
+# first `ctr images pull` with `connect: connection refused`, so the runbook only
+# "worked" on a second invocation (livespec-dev-tooling-4qp4). The agent's step-1
+# line names the CHANGED-config condition, the unit and the socket it then waits
+# for; the SERVER's does not, because a server's k3s is never disturbed here.
+case "$AGENT_STEP1" in
+  *CHANGED*"k3s-agent.service"*"containerd socket /run/k3s/containerd/containerd.sock"*)
+    ok "agent step 1 says a changed config is followed by a wait for the unit and the containerd socket" ;;
+  *)
+    no "agent step 1 says a changed config is followed by a wait for the unit and the containerd socket (got: ${AGENT_STEP1})" ;;
+esac
+case "$SERVER_STEP1" in
+  *"wait"*|*"containerd"*)
+    no "the server step-1 line describes no wait (a server's k3s is not restarted here)" ;;
+  *)
+    ok "the server step-1 line describes no wait (a server's k3s is not restarted here)" ;;
+esac
+
 # The agent's steps stay in the server's relative order — the plan is a filter
 # of the runbook, never a re-ordering of it. The two steps whose label differs
 # by role (step 1's file, step 3's --profile-only) are normalized back to the

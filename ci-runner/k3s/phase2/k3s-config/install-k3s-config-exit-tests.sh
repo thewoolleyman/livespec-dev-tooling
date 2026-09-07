@@ -23,7 +23,13 @@
 #      removes the marker, and restarts NOTHING; and a second run is a no-op
 #      that says so, since the installer is idempotent;
 #   E. the role is validated as data: an unknown role and a stray argument are
-#      each refused, naming what was wrong.
+#      each refused, naming what was wrong;
+#   F. an AGENT whose config CHANGED while k3s-agent.service is coming up WAITS
+#      — bounded, printed, restarting nothing — for the unit to be active and
+#      for containerd to answer, so the runbook steps after this one meet one
+#      runtime. A no-op run waits for nothing, a SERVER waits for nothing, and a
+#      containerd that never answers is a bounded failure rather than a hang
+#      (livespec-dev-tooling-4qp4; ../k3s-runtime-ready.sh has the measurement).
 #
 # HOW IT STAYS OFF THE HOST. Every path the installer writes is resolved under
 # `K3S_CONFIG_ROOT`, which each case points at a fresh directory inside this
@@ -282,6 +288,184 @@ if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep -q "unexpected arg
   ok "a bare positional argument is refused rather than guessed at"
 else
   no "a bare positional argument is refused rather than guessed at (rc=${REPLY_RC}: ${REPLY_OUT})"
+fi
+run_install "$VROOT" --wait-seconds two
+if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep -q 'wait-seconds must be a non-negative integer'; then
+  ok "a non-numeric --wait-seconds is refused, naming it"
+else
+  no "a non-numeric --wait-seconds is refused, naming it (rc=${REPLY_RC}: ${REPLY_OUT})"
+fi
+
+# ---------------------------------------------------------------------------
+# F. The agent readiness wait.
+#
+# The fakes above cannot express this case: their `systemctl` always reports the
+# unit down, which is the state a rebuild is done in and the state that must NOT
+# wait. These are a second set, on their own PATH, whose `systemctl is-active`
+# reports `activating` for a settable number of calls before it reports `active`
+# — the restart loop the runbook actually met — and whose `ctr version` refuses
+# the connection for a settable number of calls, exactly as a containerd that is
+# still coming up does. Both bodies are single-quoted: they are the FAKES'
+# source, expanded when a fake runs.
+# ---------------------------------------------------------------------------
+printf '\n== F. the agent wait for k3s-agent.service and containerd ==\n'
+WAITBIN="${TMPROOT}/waitbin"
+mkdir -p "$WAITBIN"
+SYSTEMCTL_COUNT="${TMPROOT}/systemctl.is-active-count"
+CTR_COUNT="${TMPROOT}/ctr.version-count"
+CTR_LOG="${TMPROOT}/ctr.log"
+export SYSTEMCTL_COUNT CTR_COUNT CTR_LOG
+cat > "${WAITBIN}/systemctl" <<'FAKE'
+#!/usr/bin/env bash
+printf 'systemctl %s\n' "$*" >> "$TRIPWIRE"
+quiet=0
+args=()
+for arg in "$@"; do
+  if [ "$arg" = --quiet ]; then quiet=1; else args+=("$arg"); fi
+done
+if [ "${args[0]:-}" != is-active ]; then exit 0; fi
+seen=0
+[ -f "$SYSTEMCTL_COUNT" ] && seen="$(cat "$SYSTEMCTL_COUNT")"
+seen=$((seen + 1))
+printf '%s\n' "$seen" > "$SYSTEMCTL_COUNT"
+if [ "$seen" -le "${SYSTEMCTL_ACTIVATING_CALLS:-0}" ]; then
+  [ "$quiet" -eq 1 ] || echo activating
+  exit 3
+fi
+[ "$quiet" -eq 1 ] || echo active
+exit 0
+FAKE
+cat > "${WAITBIN}/ctr" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CTR_LOG"
+[ "$1" = version ] || exit 1
+seen=0
+[ -f "$CTR_COUNT" ] && seen="$(cat "$CTR_COUNT")"
+seen=$((seen + 1))
+printf '%s\n' "$seen" > "$CTR_COUNT"
+if [ "$seen" -le "${CTR_REFUSING_CALLS:-0}" ]; then
+  echo "ctr: connection error: dial unix /run/k3s/containerd/containerd.sock: connect: connection refused" >&2
+  exit 1
+fi
+printf 'Client:\n  Version: fake\n'
+exit 0
+FAKE
+cp "${FAKEBIN}/id" "${WAITBIN}/id"
+chmod +x "${WAITBIN}/systemctl" "${WAITBIN}/ctr" "${WAITBIN}/id"
+
+# run_waiting ACTIVATING_CALLS REFUSING_CALLS ROOT ARGS... -> as run_install, plus
+# the elapsed whole seconds in REPLY_SECONDS.
+run_waiting() {
+  local activating="$1" refusing="$2" root="$3"; shift 3
+  local started=$SECONDS
+  : > "$TRIPWIRE"; : > "$CTR_LOG"
+  rm -f "$SYSTEMCTL_COUNT" "$CTR_COUNT"
+  REPLY_OUT="$(PATH="${WAITBIN}:${PATH}" K3S_CONFIG_ROOT="$root" \
+    SYSTEMCTL_ACTIVATING_CALLS="$activating" CTR_REFUSING_CALLS="$refusing" \
+    "$SCRIPT" "$@" 2>&1)"
+  REPLY_RC=$?
+  REPLY_SECONDS=$((SECONDS - started))
+}
+
+WROOT="$(new_root waiting)"
+run_waiting 2 1 "$WROOT" --role agent --wait-seconds 10
+if [ "$REPLY_RC" -eq 0 ]; then
+  ok "the waiting agent run exits 0"
+else
+  no "the waiting agent run exits 0 (got ${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+case "$REPLY_OUT" in
+  *"k3s-agent.service is activating; waiting up to 10s"*)
+    ok "the run says it found the unit activating and states its bound" ;;
+  *)
+    no "the run says it found the unit activating and states its bound"
+    printf '%s\n' "$REPLY_OUT" ;;
+esac
+case "$REPLY_OUT" in
+  *"k3s-agent.service is active after 2s"*)
+    ok "the run waited for the unit and reports how long" ;;
+  *)
+    no "the run waited for the unit and reports how long" ;;
+esac
+case "$REPLY_OUT" in
+  *"containerd at /run/k3s/containerd/containerd.sock answered"*"after 2s"*)
+    ok "the run then waited for containerd, naming the socket" ;;
+  *)
+    no "the run then waited for containerd, naming the socket" ;;
+esac
+# Waiting is not restarting. The whole reason this wait lives here rather than a
+# `systemctl restart` is that a restart kills every running CI job on the pool.
+if grep -qi 'restart' "$TRIPWIRE"; then
+  no "the wait restarts nothing"
+  cat "$TRIPWIRE"
+else
+  ok "the wait restarts nothing"
+fi
+
+# A run that copied nothing disturbed nothing, so it has nothing to wait for —
+# and the runbook is re-run on healthy nodes far more often than on broken ones.
+run_waiting 2 1 "$WROOT" --role agent --wait-seconds 10
+case "$REPLY_OUT" in
+  *"[agent] Wait for"*)
+    no "an unchanged agent config waits for nothing"
+    printf '%s\n' "$REPLY_OUT" ;;
+  *)
+    ok "an unchanged agent config waits for nothing" ;;
+esac
+if [ -s "$CTR_LOG" ]; then
+  no "an unchanged agent config probes containerd not at all"
+  cat "$CTR_LOG"
+else
+  ok "an unchanged agent config probes containerd not at all"
+fi
+
+# A SERVER keeps its pre-2026-09-07 behaviour exactly: ../../provision-k3s.sh
+# waits for the node to go Ready before the runbook and no server step restarts
+# k3s, so there is no window here to wait out.
+SWROOT="$(new_root server-waiting)"
+run_waiting 2 1 "$SWROOT" --role server --wait-seconds 10
+case "$REPLY_OUT" in
+  *"Wait for"*)
+    no "a server run never waits"
+    printf '%s\n' "$REPLY_OUT" ;;
+  *)
+    ok "a server run never waits" ;;
+esac
+if [ -s "$CTR_LOG" ]; then
+  no "a server run probes containerd not at all"
+else
+  ok "a server run probes containerd not at all"
+fi
+
+# The bound is the point: a containerd that never serves must end the step, not
+# hold the runbook open.
+TWROOT="$(new_root timeout-waiting)"
+run_waiting 0 999 "$TWROOT" --role agent --wait-seconds 2
+if [ "$REPLY_RC" -ne 0 ]; then
+  ok "a containerd that never answers ends the run non-zero"
+else
+  no "a containerd that never answers ends the run non-zero"
+  printf '%s\n' "$REPLY_OUT"
+fi
+case "$REPLY_OUT" in
+  *"FATAL: containerd at /run/k3s/containerd/containerd.sock did not answer"*"within 2s"*)
+    ok "the timeout names the socket and the bound" ;;
+  *)
+    no "the timeout names the socket and the bound"
+    printf '%s\n' "$REPLY_OUT" ;;
+esac
+if [ "$REPLY_SECONDS" -le 20 ]; then
+  ok "the timeout is reached inside its bound (${REPLY_SECONDS}s wall clock for a 2s bound)"
+else
+  no "the timeout is reached inside its bound (took ${REPLY_SECONDS}s for a 2s bound)"
+fi
+# The config is still installed: the wait guards the steps AFTER this one, and
+# undoing a correct file because the runtime is down would be a second failure.
+if cmp -s "$AGENT_SRC" "${TWROOT}/${CONFIG_REL}"; then
+  ok "the timed-out run still left the agent config installed"
+else
+  no "the timed-out run still left the agent config installed"
 fi
 
 # ---------------------------------------------------------------------------

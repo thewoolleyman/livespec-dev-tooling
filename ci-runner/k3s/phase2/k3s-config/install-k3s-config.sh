@@ -41,12 +41,30 @@
 # (the reconstruct-on-boot path re-applies the fleet-owned provisioner within
 # the converge).
 #
+# IT DOES, ON AN AGENT, WAIT FOR A RUNTIME IT FOUND MID-START. Not restarting is
+# not the same as leaving the node in an unknown state for the steps after this
+# one. When an AGENT's config CHANGED and k3s-agent.service is active or
+# activating, this step waits — bounded, printed, restarting nothing — for that
+# unit to be active and for containerd to answer, so ../install-node.sh's later
+# steps meet one consistent runtime. That is the ordering gmktec-xubuntu paid for
+# on 2026-09-07 (livespec-dev-tooling-4qp4): step 1 replaced the agent config
+# while the unit was restart-looping, and step 7c's first `ctr images pull` hit
+# `connect: connection refused` five seconds before the unit came up, so the
+# whole runbook had to be invoked a second time. A SERVER is unchanged in every
+# respect: ../../provision-k3s.sh waits for the node to go Ready before the
+# runbook, and no server step restarts k3s. ../k3s-runtime-ready.sh owns the
+# socket, the bound and the cadence.
+#
 # NODE-LOCAL, like ../node-inotify-budget/install-inotify-sysctl.sh: re-run on
 # any node added to the pool and after any node rebuild. Idempotent. Run it
 # BEFORE ../../provision-k3s.sh on a fresh SERVER so the first k3s start already
 # reads it.
 #
-# Usage: sudo install-k3s-config.sh [--role server|agent]
+# Usage: sudo install-k3s-config.sh [--role server|agent] [--wait-seconds <n>]
+#   --wait-seconds  the bound on the agent readiness wait described above
+#           (default 120). 0 probes once and gives up. Small values are how
+#           ./install-k3s-config-exit-tests.sh reaches the timeout path
+#           without waiting two minutes for it.
 #   --role  the node's cluster role, which selects the file installed and
 #           whether the skip marker is written. ../install-node.sh passes the
 #           role it read from the node's profile, so the role a step installs
@@ -62,6 +80,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "$0")"
+
+# shellcheck source=../k3s-runtime-ready.sh
+source "${SCRIPT_DIR}/../k3s-runtime-ready.sh"
 
 # TEST ROOT — empty on a node, and the ONLY way this script can be aimed at
 # anything but the real host. Every absolute path below is resolved under it, so
@@ -84,7 +105,7 @@ SKIP_MARKER="${MANIFESTS_DIR}/local-storage.yaml.skip"
 # to see the key that was about to kill k3s-agent.
 SERVER_ONLY_KEYS=(disable write-kubeconfig-mode)
 
-USAGE="usage: sudo ${SCRIPT_NAME} [--role server|agent]   (--role defaults to \$CLUSTER_ROLE, then to server)"
+USAGE="usage: sudo ${SCRIPT_NAME} [--role server|agent] [--wait-seconds <n>]   (--role defaults to \$CLUSTER_ROLE, then to server)"
 
 die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
 log() { printf '\n== %s ==\n' "$*"; }
@@ -94,6 +115,7 @@ log() { printf '\n== %s ==\n' "$*"; }
 # ---------------------------------------------------------------------------
 ROLE=""
 ROLE_GIVEN=0
+WAIT_SECONDS="${K3S_RUNTIME_WAIT_SECONDS}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -103,6 +125,10 @@ while [ $# -gt 0 ]; do
       [ "$ROLE_GIVEN" -eq 0 ] || die "--role given more than once -- ${USAGE}"
       ROLE_GIVEN=1
       ROLE="$2"; shift ;;
+    --wait-seconds)
+      [ $# -ge 2 ] || die "--wait-seconds needs a value -- ${USAGE}"
+      [[ "$2" =~ ^[0-9]+$ ]] || die "--wait-seconds must be a non-negative integer, got '$2' -- ${USAGE}"
+      WAIT_SECONDS="$2"; shift ;;
     -h|--help) printf '%s\n' "$USAGE"; exit 0 ;;
     -*) die "unknown option '$1' -- ${USAGE}" ;;
     *) die "unexpected argument '$1' -- ${USAGE}" ;;
@@ -131,6 +157,8 @@ if [ "$ROLE" = server ]; then
   printf 'marker:  %s (written)\n' "$SKIP_MARKER"
 else
   printf 'marker:  %s (NOT written on an agent; removed if present)\n' "$SKIP_MARKER"
+  printf 'wait:    only if the config CHANGES and k3s-agent.service is active or activating -- up to %ss for that unit and for containerd at %s\n' \
+    "$WAIT_SECONDS" "$K3S_RUNTIME_CONTAINERD_SOCKET"
 fi
 if [ -n "$ROOT" ]; then
   printf 'root:    %s   (K3S_CONFIG_ROOT -- TEST USE ONLY; never set on a node)\n' "$ROOT"
@@ -141,9 +169,14 @@ fi
 
 # ---------------------------------------------------------------------------
 log "1. Install ${CONFIG_DST} from the shipped ${ROLE} copy"
+# Whether the file on disk CHANGED, recorded here rather than re-derived later:
+# step 4's agent wait exists for the node whose k3s was disturbed by this very
+# step, and a run that copied nothing has disturbed nothing.
+CONFIG_CHANGED=0
 if [ -f "$CONFIG_DST" ] && cmp -s "$CONFIG_SRC" "$CONFIG_DST"; then
   echo "${CONFIG_DST} already matches the shipped ${ROLE} copy — unchanged"
 else
+  CONFIG_CHANGED=1
   if [ -f "$CONFIG_DST" ]; then
     # The one replacement that is a REPAIR rather than a refresh: an agent
     # carrying the server file. Named as such, and by the offending KEYS, because
@@ -211,8 +244,38 @@ if [ "$ROLE" = server ]; then
 else
   K3S_UNIT=k3s-agent.service
 fi
-if systemctl is-active --quiet "$K3S_UNIT" 2>/dev/null; then
+K3S_STATE="$(systemctl is-active "$K3S_UNIT" 2>/dev/null || true)"
+if [ "$K3S_STATE" = active ]; then
   echo "${K3S_UNIT} is running: the new config applies on its NEXT start (do that at zero active CI jobs, or by reboot)"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. [agent only] Leave the runtime consistent for the steps AFTER this one.
+#
+# Nothing here restarts anything — this is a WAIT. It runs only when this step
+# actually replaced the file (a no-op run disturbed nothing) and only when the
+# unit is already up or on its way up: a `k3s-agent.service` that is inactive or
+# failed is an operator's problem, not something to block a runbook on for two
+# minutes. `activating` is the restart-loop state the measured failure sat in.
+# ---------------------------------------------------------------------------
+if [ "$ROLE" = agent ] && [ "$CONFIG_CHANGED" -eq 1 ]; then
+  log "4. [agent] Wait for ${K3S_UNIT} and containerd (this step changed the config)"
+  case "$K3S_STATE" in
+    active|activating)
+      echo "${K3S_UNIT} is ${K3S_STATE}; waiting up to ${WAIT_SECONDS}s for it to be active, then for containerd"
+      wait_for_unit_active "$K3S_UNIT" "$WAIT_SECONDS" \
+        || die "${K3S_UNIT} was not active within ${WAIT_SECONDS}s — later steps of the runbook talk to this node's runtime, so stop here (\`systemctl status ${K3S_UNIT}\`) rather than let them meet a restarting one"
+      CTR=()
+      while IFS= read -r ctr_word; do CTR+=("${ctr_word}"); done < <(k3s_ctr_command)
+      if [ "${#CTR[@]}" -eq 0 ]; then
+        echo "neither ctr nor k3s on PATH — cannot probe ${K3S_RUNTIME_CONTAINERD_SOCKET} from here; the container-hook step (7c) waits for it on its own"
+      else
+        wait_for_containerd "$WAIT_SECONDS" "${CTR[@]}" version \
+          || die "containerd at ${K3S_RUNTIME_CONTAINERD_SOCKET} did not answer \`${CTR[*]} version\` within ${WAIT_SECONDS}s — ${K3S_UNIT} is active but its containerd is not serving, and the runbook's ctr steps would fail with 'connect: connection refused'"
+      fi ;;
+    *)
+      echo "${K3S_UNIT} is ${K3S_STATE:-not loaded} — nothing to wait for; the new config is read whenever it is next started" ;;
+  esac
 fi
 
 if [ "$ROLE" = agent ]; then
