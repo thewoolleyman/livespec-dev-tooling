@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # remove-server-only-units-exit-tests.sh — prove ./remove-server-only-units.sh
-# clears the FAILED state of every unit it removes, WITHOUT touching any host.
+# clears the FAILED state of every unit it removes AND of every unit it was
+# named that this node no longer carries, WITHOUT touching any host.
 #
 # The defect this suite exists for: deleting a unit file and reloading systemd
 # does NOT take the unit out of `systemctl list-units --state=failed`. systemd
@@ -11,28 +12,50 @@
 # still listed failed, so a failed-units read on that agent stayed red
 # (livespec-dev-tooling-oc5g).
 #
+# And the SECOND half of it, which is why cases D and E exist: the first fix's
+# reset-failed pass ran over the units removed in the SAME invocation, so it
+# could never converge that node — its unit files had already been deleted by
+# the run before, leaving nothing to remove and therefore nothing to clear.
+# Measured there again 2026-09-07 at tree c13617d0: `nothing to remove: none of
+# the 6 server-only units named is installed on this node` printed while the
+# same three timers were still `not-found failed`
+# (livespec-dev-tooling-ssbg).
+#
 #   A. --dry-run over three timers and the three services they trigger prints
 #      the removal pairs, ONE daemon-reload, and then one
 #      `+ systemctl reset-failed UNIT` per unit removed, in removal order;
-#   B. a unit the presence probe does not report is removed AND reset-failed
-#      not at all -- the reset-failed pass is over the units actually removed,
-#      not over the units named;
-#   C. nothing present at all: no command line whatsoever, and the run says so;
-#   D. the LIVE path (no --dry-run) exits 0 when `reset-failed` exits non-zero,
+#   B. a unit the presence probe does not report is removed not at all, and is
+#      reset-failed only if systemd says it IS failed;
+#   C. nothing present and nothing failed: no command line whatsoever, and the
+#      run says so -- including when `is-failed` answers `unknown` rather than
+#      `inactive`;
+#   D. a unit that is NOT installed and that `is-failed` reports `failed` is
+#      cleared on its own: one `+ systemctl reset-failed UNIT` and no disable,
+#      no rm and no daemon-reload, and no "nothing to remove" line;
+#   E. the two passes together, on a node carrying one of the units and still
+#      reporting another failed: the removal, ONE reload, the removed unit's
+#      clear, and then the residual clear;
+#   F. the LIVE path (no --dry-run) exits 0 when `reset-failed` exits non-zero,
 #      which is what a unit systemd no longer knows returns. A cleanup must not
 #      fail on the clearing of a failed state that was already clear.
 #
 # HOW IT STAYS OFF THE HOST. Every host-mutating tool the script reaches for is
 # replaced by a tripwire on a scratch PATH, and `systemctl` is stubbed so both
-# branches of the presence probe are reachable off a host that has none of
-# these units. Cases A-C are dry runs, which by construction execute nothing.
-# Case D is the one case that runs the LIVE path, so it wears three belts:
+# branches of the presence probe AND of the is-failed probe are reachable off a
+# host that has none of these units. Cases A-E are dry runs, which by
+# construction execute nothing.
+# Case F is the one case that runs the LIVE path, so it wears three belts:
 # `rm` and `systemctl` are stubs; `id` is stubbed too, because the live path
 # refuses to run as non-root and this suite must not need to BE root; and the
 # units it names are FIXTURE names no node carries, asserted absent from
 # /etc/systemd/system before the case runs — so a stub that somehow failed to
 # be picked up would still be pointed at nothing. The case then asserts that
 # not one command it executed named a real unit.
+#
+# The two READS -- `systemctl list-unit-files` and `systemctl is-failed` -- are
+# the only commands a dry run is allowed to reach, which is what the tripwire
+# assertions below spell out. Both are unprivileged and neither changes
+# anything.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
 set -uo pipefail
@@ -79,12 +102,21 @@ printf '%s\n' \
 chmod +x "${FAKEBIN}/id"
 
 # The systemctl stub is the one fake with a RETURN VALUE, because the script
-# asks it a question: `list-unit-files NAME` is the presence probe deciding
-# whether this node carries the unit at all. STUB_UNITS_PRESENT is the
-# SPACE-SEPARATED list of names it answers yes for, rather than a boolean, so a
-# case can report some of the named units and assert the others are left out of
-# the sequence entirely. STUB_RESET_FAILED_RC is what `reset-failed` exits with,
-# so case D can reproduce the unit-systemd-no-longer-knows answer.
+# asks it TWO questions:
+#   list-unit-files NAME  the presence probe deciding whether this node carries
+#                         the unit at all. STUB_UNITS_PRESENT is the
+#                         SPACE-SEPARATED list of names it answers yes for,
+#                         rather than a boolean, so a case can report some of
+#                         the named units and assert the others are left out of
+#                         the sequence entirely;
+#   is-failed NAME        the residual probe, asked of the units the first one
+#                         did NOT report. STUB_UNITS_FAILED is the
+#                         space-separated list it answers `failed` for; every
+#                         other name gets STUB_IS_FAILED_OTHERWISE (default
+#                         `inactive`) and a non-zero exit, which is what the
+#                         real systemctl does for a unit that is not failed.
+# STUB_RESET_FAILED_RC is what `reset-failed` exits with, so case F can
+# reproduce the unit-systemd-no-longer-knows answer.
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'printf "%s %s\n" "$(basename "$0")" "$*" >> "$TRIPWIRE"' \
@@ -92,6 +124,13 @@ printf '%s\n' \
   '  for stub_unit in ${STUB_UNITS_PRESENT:-}; do' \
   '    if [ "$stub_unit" = "${@: -1}" ]; then printf "%s enabled enabled\n" "$stub_unit"; fi' \
   '  done' \
+  'fi' \
+  'if [ "${1:-}" = is-failed ]; then' \
+  '  for stub_unit in ${STUB_UNITS_FAILED:-}; do' \
+  '    if [ "$stub_unit" = "${@: -1}" ]; then printf "failed\n"; exit 0; fi' \
+  '  done' \
+  '  printf "%s\n" "${STUB_IS_FAILED_OTHERWISE:-inactive}"' \
+  '  exit 1' \
   'fi' \
   'if [ "${1:-}" = reset-failed ]; then exit "${STUB_RESET_FAILED_RC:-0}"; fi' \
   'exit 0' \
@@ -185,11 +224,14 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# B. The reset-failed pass is over the units REMOVED, not the units NAMED.
+# B. A unit the probe does not report is not REMOVED, and is cleared only when
+#    systemd says it is failed.
 #
 # The three services are named on the command line and are NOT reported by the
 # probe, exactly as gmktec was found: three timers present, their services
-# already gone.
+# already gone. The stub answers `inactive` for those three, so this case pins
+# the removal half on its own — case D is the same shape with `failed` as the
+# answer.
 # ---------------------------------------------------------------------------
 IFS= read -r -d '' EXPECTED_TIMERS_ONLY <<'EOF'
 + systemctl disable --now reapply-node-extended-resource.timer
@@ -204,22 +246,26 @@ IFS= read -r -d '' EXPECTED_TIMERS_ONLY <<'EOF'
 + systemctl reset-failed scan-runner-pod-lifecycle.timer
 EOF
 
-printf '\n== B. only the units actually removed are reset-failed ==\n'
+printf '\n== B. a unit the probe does not report is not removed ==\n'
 export STUB_UNITS_PRESENT="reapply-node-extended-resource.timer scan-wedged-runners.timer scan-runner-pod-lifecycle.timer"
 run_remove --dry-run "${GMKTEC_UNITS[@]}"
 unset STUB_UNITS_PRESENT
-same "a named unit the probe does not report is neither removed nor reset-failed" \
+same "a named unit the probe does not report is neither removed nor, being inactive, reset-failed" \
   "$EXPECTED_TIMERS_ONLY" "$(command_lines "$REPLY_OUT")"
 
 # ---------------------------------------------------------------------------
-# C. Nothing present: nothing printed, and the run says so.
+# C. Nothing present and nothing failed: nothing printed, and the run says so.
 #
 # Only assertable on a host that does NOT carry these units, and this suite is
 # meant to be runnable on the pool's SERVER too — where they are installed, and
 # where the probe is right to see them. So it is stated as a skip there rather
 # than as a failure.
+#
+# `unknown` is asserted beside `inactive` because those are the two answers a
+# not-failed unit actually draws — `inactive` for one systemd knows and
+# `unknown` for one it does not — and a clear must follow NEITHER.
 # ---------------------------------------------------------------------------
-printf '\n== C. nothing present: no command line at all ==\n'
+printf '\n== C. nothing present and nothing failed: no command line at all ==\n'
 unit_on_this_host=0
 for unit in "${GMKTEC_UNITS[@]}"; do
   [ -e "${UNIT_DIR}/${unit}" ] && unit_on_this_host=1
@@ -227,22 +273,108 @@ done
 if [ "$unit_on_this_host" -eq 1 ]; then
   printf '  SKIP  nothing present: this host has some installed, so the probe reads them\n'
 else
+  for is_failed_answer in inactive unknown; do
+    export STUB_IS_FAILED_OTHERWISE="$is_failed_answer"
+    run_remove --dry-run "${GMKTEC_UNITS[@]}"
+    unset STUB_IS_FAILED_OTHERWISE
+    if [ "$REPLY_RC" -eq 0 ] && [ -z "$(command_lines "$REPLY_OUT")" ]; then
+      ok "no unit present and is-failed says ${is_failed_answer}: not one removal or reset-failed line is printed"
+    else
+      no "no unit present and is-failed says ${is_failed_answer}: not one removal or reset-failed line is printed"
+      command_lines "$REPLY_OUT"
+    fi
+    case "$REPLY_OUT" in
+      *"nothing to remove"*) ok "the empty removal says so rather than staying silent (${is_failed_answer})" ;;
+      *) no "the empty removal says so rather than staying silent (${is_failed_answer})" ;;
+    esac
+  done
+fi
+
+# ---------------------------------------------------------------------------
+# D. The RESIDUAL clear: a unit that is not installed here and that systemd
+#    still reports failed.
+#
+# This is gmktec-xubuntu as it was actually found on 2026-09-07 at tree
+# c13617d0 — the unit files deleted by an EARLIER run of this runbook, and the
+# three timers still `not-found failed` in `systemctl list-units --state=failed`
+# (livespec-dev-tooling-ssbg). Nothing is removed, so nothing is disabled, no
+# file is unlinked and systemd is NOT reloaded: there is no change for a reload
+# to publish. The one thing this host needs is the clear.
+# ---------------------------------------------------------------------------
+printf '\n== D. not installed but still failed: cleared, and nothing else ==\n'
+GMKTEC_RESIDUAL_TIMERS="reapply-node-extended-resource.timer scan-wedged-runners.timer scan-runner-pod-lifecycle.timer"
+
+IFS= read -r -d '' EXPECTED_RESIDUAL_ONLY <<'EOF'
++ systemctl reset-failed reapply-node-extended-resource.timer
++ systemctl reset-failed scan-wedged-runners.timer
++ systemctl reset-failed scan-runner-pod-lifecycle.timer
+EOF
+
+if [ "$unit_on_this_host" -eq 1 ]; then
+  printf '  SKIP  not installed but failed: this host has some installed, so the probe reads them\n'
+else
+  export STUB_UNITS_FAILED="$GMKTEC_RESIDUAL_TIMERS"
   run_remove --dry-run "${GMKTEC_UNITS[@]}"
-  if [ "$REPLY_RC" -eq 0 ] && [ -z "$(command_lines "$REPLY_OUT")" ]; then
-    ok "no unit present: not one removal or reset-failed line is printed"
+  unset STUB_UNITS_FAILED
+  if [ "$REPLY_RC" -eq 0 ]; then
+    ok "the residual dry run exits 0"
   else
-    no "no unit present: not one removal or reset-failed line is printed"
-    command_lines "$REPLY_OUT"
+    no "the residual dry run exits 0 (got ${REPLY_RC})"
+    printf '%s\n' "$REPLY_OUT"
   fi
+  same "each failed unit this node does not carry is cleared, and only cleared" \
+    "$EXPECTED_RESIDUAL_ONLY" "$(command_lines "$REPLY_OUT")"
+  # Stated again as its own assertion, because "and only cleared" is the whole
+  # point: a residual clear that also disabled, unlinked or reloaded would be
+  # acting on a node it found nothing to change on.
+  if command_lines "$REPLY_OUT" | grep -qE '^\+ (systemctl disable|rm -f|systemctl daemon-reload)'; then
+    no "the residual clear neither disables, nor unlinks, nor reloads"
+    command_lines "$REPLY_OUT"
+  else
+    ok "the residual clear neither disables, nor unlinks, nor reloads"
+  fi
+  # A run that cleared something is not a "nothing to remove" run: that line is
+  # what a reader of the runbook output takes as "this node is converged", and
+  # printing it beside three reset-failed lines would say the opposite of what
+  # happened.
   case "$REPLY_OUT" in
-    *"nothing to remove"*) ok "the empty removal says so rather than staying silent" ;;
-    *) no "the empty removal says so rather than staying silent" ;;
+    *"nothing to remove"*) no "a run that cleared something does not also say there was nothing to do" ;;
+    *) ok "a run that cleared something does not also say there was nothing to do" ;;
   esac
 fi
 
-# Everything above is a dry run, so the only command any of them may have
-# reached is the read-only presence probe.
-if grep -qvE '^systemctl list-unit-files ' "$TRIPWIRE"; then
+# ---------------------------------------------------------------------------
+# E. Both passes in one run.
+#
+# One timer installed and one OTHER timer already gone but still failed. The
+# removed unit's clear has to wait for the reload; the residual one does not
+# and follows it. This is the state a node reaches midway through the drift
+# this runbook cleans up, and it is the case that proves the two lists are
+# independent rather than one being a filter on the other.
+# ---------------------------------------------------------------------------
+printf '\n== E. one removed and one residual, in one run ==\n'
+IFS= read -r -d '' EXPECTED_MIXED <<'EOF'
++ systemctl disable --now reapply-node-extended-resource.timer
++ rm -f /etc/systemd/system/reapply-node-extended-resource.timer
++ systemctl daemon-reload
++ systemctl reset-failed reapply-node-extended-resource.timer
++ systemctl reset-failed scan-wedged-runners.timer
+EOF
+
+if [ "$unit_on_this_host" -eq 1 ]; then
+  printf '  SKIP  mixed run: this host has some installed, so the probe reads them\n'
+else
+  export STUB_UNITS_PRESENT="reapply-node-extended-resource.timer"
+  export STUB_UNITS_FAILED="scan-wedged-runners.timer"
+  run_remove --dry-run "${GMKTEC_UNITS[@]}"
+  unset STUB_UNITS_PRESENT STUB_UNITS_FAILED
+  same "the removal, one reload, the removed unit's clear, then the residual clear" \
+    "$EXPECTED_MIXED" "$(command_lines "$REPLY_OUT")"
+fi
+
+# Everything above is a dry run, so the only commands any of them may have
+# reached are the two read-only probes.
+if grep -qvE '^systemctl (list-unit-files|is-failed) ' "$TRIPWIRE"; then
   no "the dry runs executed no host-mutating command"
   cat "$TRIPWIRE"
 else
@@ -250,7 +382,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# D. The LIVE path survives a reset-failed that fails.
+# F. The LIVE path survives a reset-failed that fails.
 #
 # `systemctl reset-failed` on a unit the manager no longer knows exits
 # non-zero, and a unit that was removed but never failed is exactly that case.
@@ -261,7 +393,7 @@ fi
 # live path, and a name no node carries means even an escaped `rm` tripwire
 # would be pointed at a file that does not exist.
 # ---------------------------------------------------------------------------
-printf '\n== D. live path: a failing reset-failed does not fail the run ==\n'
+printf '\n== F. live path: a failing reset-failed does not fail the run ==\n'
 FIXTURE_UNITS=(oc5g-fixture.timer oc5g-fixture.service)
 
 for unit in "${FIXTURE_UNITS[@]}"; do
@@ -303,9 +435,11 @@ for unit in "${FIXTURE_UNITS[@]}"; do
 done
 
 # The live run is allowed to reach the mutating stubs — that is what makes it
-# live — but only ever through them: nothing it ran may name a real unit.
+# live — but only ever through them: nothing it ran may name a real unit. The
+# two READS are excluded because the dry runs above asked them about the real
+# names on purpose, which is the whole point of a probe that runs either way.
 if grep -qE 'reapply-node-extended-resource|scan-wedged-runners|scan-runner-pod-lifecycle|archive-arc-logs' \
-     <(grep -vE '^systemctl list-unit-files ' "$TRIPWIRE"); then
+     <(grep -vE '^systemctl (list-unit-files|is-failed) ' "$TRIPWIRE"); then
   no "the live run named only fixture units in the commands it executed"
   cat "$TRIPWIRE"
 else
