@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import re
-import shutil
-import subprocess
 import sys
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TypedDict, cast
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -19,8 +13,13 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402
 from returns.pipeline import is_successful  # noqa: E402
 
+from livespec_dev_tooling.checks._shell_quality_finding import Finding  # noqa: E402
+from livespec_dev_tooling.checks._shell_quality_recipes import recipe_findings  # noqa: E402
+from livespec_dev_tooling.config import assert_never  # noqa: E402
 from livespec_dev_tooling.shellcheck import (  # noqa: E402
+    ShellCheckRunFailure,
     ShellCheckUnavailable,
+    ShellCorpusEmpty,
     ShellFinding,
     run_shellcheck,
 )
@@ -29,42 +28,6 @@ __all__: list[str] = []
 
 _CHECK_ID = "shell-quality"
 _EXIT_VIOLATIONS = 1
-_SET_WORD_COUNT = 2
-_INTERPOLATION_SENTINEL = "__JUST_INTERPOLATION__"
-# `set -e` is matched with boundaries so it cannot fire from inside an
-# ordinary hyphenated word; a bare "-e" substring previously could.
-_ERREXIT_RATIONALE_PATTERN = re.compile(r"errexit|(?<![\w-])set\s+-e(?![\w-])")
-
-
-class _JustSettings(TypedDict, total=False):
-    positional_arguments: bool
-
-
-class _JustRecipe(TypedDict, total=False):
-    attributes: list[str]
-    body: list[list[object]]
-    doc: str | None
-    name: str
-    parameters: list[object]
-    shebang: bool
-
-
-class _JustDump(TypedDict, total=False):
-    recipes: dict[str, _JustRecipe]
-    settings: _JustSettings
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Finding:
-    reason: str
-    path: Path
-    line: int
-    recipe: str | None = None
-    binary_name: str | None = None
-    required_version: str | None = None
-    remedy: str | None = None
-    code: str | None = None
-    severity: str | None = None
 
 
 def _configure_logger() -> structlog.stdlib.BoundLogger:
@@ -79,28 +42,55 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("shell_quality")
 
 
-def _has_errexit(*, line: str) -> bool:
-    words = line.split()
-    return len(words) >= _SET_WORD_COUNT and words[0] == "set" and "e" in words[1].removeprefix("-")
-
-
-def _shellcheck_findings(*, repo_root: Path) -> list[_Finding]:
+def _shellcheck_findings(*, repo_root: Path) -> list[Finding]:
     run_result = run_shellcheck(repo_root=repo_root)
     if not is_successful(run_result):
-        failure = run_result.failure()
-        if isinstance(failure, ShellCheckUnavailable):
-            return [_finding_for_shellcheck_unavailable(repo_root=repo_root, failure=failure)]
+        return _findings_for_run_failure(repo_root=repo_root, failure=run_result.failure())
     shell_findings = run_result.unwrap()
-    findings: list[_Finding] = []
+    findings: list[Finding] = []
     for item in shell_findings:
         findings.extend(_finding_for_shellcheck_severity(item=item))
     return findings
 
 
+def _findings_for_run_failure(*, repo_root: Path, failure: ShellCheckRunFailure) -> list[Finding]:
+    """Render the run's failure track, TOTALLY — every member gets an arm.
+
+    ⛔ The `case _: assert_never(failure)` terminator is the POINT, not
+    ceremony. This arm previously read `if isinstance(failure,
+    ShellCheckUnavailable): return [...]` inside the caller and then fell
+    through to `.unwrap()` on an already-failed `Result` for every OTHER
+    member — so `ShellCorpusEmpty`, the other half of `ShellCheckRunFailure`,
+    crashed `check-shell-quality` with `UnwrapFailedError` on any repo with no
+    tracked shell files. An `isinstance` guard cannot fail when a member is
+    added; a `match` over the declared union does, at the type gate.
+
+    The two members mean genuinely different things and that is why neither
+    can be folded into the other:
+
+    - `ShellCorpusEmpty` is NOT an error. Zero tracked shell files is the
+      correct state for a shell-free repo, so it yields no findings and the
+      check passes. What must never come back with it is the blanket
+      `if isinstance(result, Failure): return []` this function replaced in
+      `cddb989e` — that swallowed BOTH members, which is what made a missing
+      ShellCheck binary read as a clean repo.
+    - `ShellCheckUnavailable` IS an error, and stays one: the check cannot
+      have looked at any shell file, so it reports the unavailability as a
+      finding carrying the remedy rather than passing blind.
+    """
+    match failure:
+        case ShellCorpusEmpty():
+            return []
+        case ShellCheckUnavailable():
+            return [_finding_for_shellcheck_unavailable(repo_root=repo_root, failure=failure)]
+        case _:
+            assert_never(failure)
+
+
 def _finding_for_shellcheck_unavailable(
     *, repo_root: Path, failure: ShellCheckUnavailable
-) -> _Finding:
-    return _Finding(
+) -> Finding:
+    return Finding(
         reason="shellcheck-unavailable",
         path=repo_root,
         line=1,
@@ -110,7 +100,7 @@ def _finding_for_shellcheck_unavailable(
     )
 
 
-def _finding_for_shellcheck_severity(*, item: ShellFinding) -> list[_Finding]:
+def _finding_for_shellcheck_severity(*, item: ShellFinding) -> list[Finding]:
     finding = _from_shellcheck(item=item)
     findings_by_severity = {
         "error": [finding],
@@ -121,8 +111,8 @@ def _finding_for_shellcheck_severity(*, item: ShellFinding) -> list[_Finding]:
     return findings_by_severity[item.severity]
 
 
-def _from_shellcheck(*, item: ShellFinding) -> _Finding:
-    return _Finding(
+def _from_shellcheck(*, item: ShellFinding) -> Finding:
+    return Finding(
         reason="shellcheck-finding",
         path=item.path,
         line=1,
@@ -131,164 +121,13 @@ def _from_shellcheck(*, item: ShellFinding) -> _Finding:
     )
 
 
-def _flatten_body_line(*, parts: object) -> tuple[str, bool]:
-    fragments = cast(list[object], parts)
-    text = ""
-    interpolated = False
-    for part in fragments:
-        if isinstance(part, str):
-            text += part
-        else:
-            interpolated = True
-            text += _INTERPOLATION_SENTINEL
-    return text.strip(), interpolated
-
-
-def _just_dump(*, repo_root: Path) -> _JustDump | None:
-    if not (repo_root / "justfile").is_file():
-        return None
-    just_binary = cast(str, shutil.which("just"))
-    completed = subprocess.run(
-        [just_binary, "--dump", "--dump-format", "json"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    parsed = json.loads(completed.stdout)
-    return cast(_JustDump, parsed if isinstance(parsed, Mapping) else {})
-
-
-def _recipe_findings(*, repo_root: Path) -> list[_Finding]:
-    payload = _just_dump(repo_root=repo_root)
-    if payload is None:
-        return []
-    findings: list[_Finding] = []
-    settings = payload.get("settings", {})
-    if settings.get("positional_arguments", False):
-        findings.append(
-            _Finding(reason="global-positional-arguments", path=Path("justfile"), line=1)
-        )
-    for recipe in payload.get("recipes", {}).values():
-        findings.extend(_findings_for_recipe(recipe=recipe))
-    return findings
-
-
-def findings_for_repo(*, repo_root: Path) -> list[_Finding]:
+def findings_for_repo(*, repo_root: Path) -> list[Finding]:
     findings = _shellcheck_findings(repo_root=repo_root)
-    findings.extend(_recipe_findings(repo_root=repo_root))
+    findings.extend(recipe_findings(repo_root=repo_root))
     return findings
 
 
-def _findings_for_recipe(*, recipe: _JustRecipe) -> list[_Finding]:
-    findings: list[_Finding] = []
-    name = recipe.get("name", "")
-    body = recipe.get("body", [])
-    lines = [_flatten_body_line(parts=line) for line in body]
-    if any(flag for _, flag in lines):
-        findings.append(
-            _Finding(
-                reason="just-interpolation",
-                path=Path("justfile"),
-                line=1,
-                recipe=name,
-            )
-        )
-    if _missing_per_recipe_positional_arguments(recipe=recipe):
-        findings.append(
-            _Finding(
-                reason="missing-per-recipe-positional-arguments",
-                path=Path("justfile"),
-                line=1,
-                recipe=name,
-            )
-        )
-    if _missing_errexit_rationale(recipe=recipe, lines=lines):
-        findings.append(
-            _Finding(
-                reason="missing-errexit-rationale",
-                path=Path("justfile"),
-                line=1,
-                recipe=name,
-            )
-        )
-    if _nonconforming_recipe(recipe=recipe, lines=lines):
-        findings.append(
-            _Finding(
-                reason="nonconforming-just-recipe",
-                path=Path("justfile"),
-                line=1,
-                recipe=name,
-            )
-        )
-    return findings
-
-
-def _missing_per_recipe_positional_arguments(*, recipe: _JustRecipe) -> bool:
-    return bool(recipe.get("parameters", [])) and "positional-arguments" not in recipe.get(
-        "attributes", []
-    )
-
-
-def _missing_errexit_rationale(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
-    commands = [line for line, _ in lines if _executable_line(line=line)]
-    set_lines = [line for line in commands if line.startswith("set ")]
-    return bool(
-        recipe.get("shebang", False)
-        and set_lines
-        and not _has_errexit(line=set_lines[0])
-        and not _mentions_errexit(text=recipe.get("doc") or "")
-    )
-
-
-def _nonconforming_recipe(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
-    if _documented_no_errexit_deviation(recipe=recipe, lines=lines):
-        return False
-    commands = [line for line, _ in lines if _executable_line(line=line)]
-    return (
-        bool(recipe.get("shebang", False))
-        or len(commands) > 1
-        or any(_has_forbidden_shell_syntax(line=line) for line in commands)
-    )
-
-
-def _documented_no_errexit_deviation(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
-    commands = [line for line, _ in lines if _executable_line(line=line)]
-    set_lines = [line for line in commands if line.startswith("set ")]
-    return bool(
-        recipe.get("shebang", False)
-        and set_lines
-        and not _has_errexit(line=set_lines[0])
-        and _mentions_errexit(text=recipe.get("doc") or "")
-    )
-
-
-def _executable_line(*, line: str) -> bool:
-    return bool(line) and not line.startswith("#")
-
-
-def _has_forbidden_shell_syntax(*, line: str) -> bool:
-    return any(token in line for token in ("$(", "`", "|", ">", "<", "&&", "||", ";"))
-
-
-def _mentions_errexit(*, text: str) -> bool:
-    """Does this doc actually STATE an errexit rationale?
-
-    The exemption a deviating recipe earns here is the only thing standing
-    between a deliberate omission and an accidental one, so the test must not
-    be satisfiable by prose that never mentions errexit at all. A bare
-    ``"-e" in text`` was: it matches the two characters inside any ordinary
-    hyphenated word (``byte-for-entry``, ``pre-existing``), which silently
-    granted the exemption to recipes carrying no rationale whatsoever.
-
-    Accepted spellings are the literal word ``errexit`` and the flag form
-    ``set -e``, the latter matched with boundaries so it cannot fire from the
-    middle of a hyphenated word.
-    """
-    return bool(_ERREXIT_RATIONALE_PATTERN.search(text.lower()))
-
-
-def _emit_findings(*, log: structlog.stdlib.BoundLogger, findings: Sequence[_Finding]) -> None:
+def _emit_findings(*, log: structlog.stdlib.BoundLogger, findings: Sequence[Finding]) -> None:
     for finding in findings:
         log.error(
             "shell-quality policy violation",
