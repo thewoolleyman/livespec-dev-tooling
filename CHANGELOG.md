@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.58.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.57.0...v1.58.0) (2026-09-07)
+
+
+### Features
+
+* **observability:** a Honeycomb board as code for the PowerEdge runner pool (livespec-mqy35a) ([9eddb74](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9eddb74d610cb7da89b0502dc27da19aec03a428))
+
 ## [1.57.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.56.2...v1.57.0) (2026-09-07)
 
 
