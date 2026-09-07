@@ -234,7 +234,7 @@
       // 0.254.0 does not expand `{{ inputs.* }}` inside `run.prepare`, so
       // every dispatch currently dies in setup at exit 127 before any of
       // these values could be used. See
-      // plan/ci-runner-cache-tiers/research/008-factory-dispatch-outage.md.
+      // plan/archive/ci-runner-cache-tiers/research/008-factory-dispatch-outage.md.
       "prepare_toolchain": {
         "mise": ["sh", "-c", "mise trust && env -u GITHUB_TOKEN -u GH_TOKEN -u GITHUB_API_TOKEN mise install --quiet"],
         "lefthook": ["uv", "run", "lefthook", "install"]

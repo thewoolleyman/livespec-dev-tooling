@@ -476,7 +476,7 @@ credential, which fails its write check and comes up ReadOnly; every put
 behind it is dropped with misses counted and zero errors (2026-09-06, three
 writer builds and no objects; `livespec-dev-tooling-efqeip.4`). Design and
 the live verification:
-`plan/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`.
+`plan/archive/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`.
 The cargo and sccache steps run after the uv phase on every tick, whether
 or not the uv generation was rebuilt.
 

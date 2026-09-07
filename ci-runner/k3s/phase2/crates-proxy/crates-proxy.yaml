@@ -4,7 +4,7 @@
 # `ci-cache` storage tier, read by every workflow pod over cluster DNS and by
 # off-node consumers over a hostPort. Spec: SPECIFICATION/non-functional-
 # requirements.md §"Runner-pool build cache tiers" (v054). Plan:
-# plan/ci-runner-cache-tiers — research/005 is the live verification this
+# plan/archive/ci-runner-cache-tiers — research/005 is the live verification this
 # shape was chosen on (cargo 1.92 accepts a plain-http sparse source
 # replacement; Cargo.lock byte-identical; every locked crate of the console
 # lockfile served; second pass all hits) and the candidate survey (why nginx
