@@ -12,6 +12,15 @@
 # Run with sudo from the repo (or a worktree of it):
 #   sudo ci-runner/observability/install-observability.sh
 #
+# The per-repository pool gauges (ci-pool-attributed-gauges.*, livespec-i4ahv4)
+# need the k3s ADMIN kubeconfig, which this installer does not provision either:
+# the unit carries Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml, the same
+# line the runner-pod lifecycle sweep's unit carries, so a SERVER node already
+# has what they need and an AGENT node has neither the kubeconfig nor a reason
+# to run them (the server's own tick covers the whole pool). Without a readable
+# kubeconfig they fail-closed — emit nothing, exit nonzero — rather than
+# reporting false zeros.
+#
 # The Kueue-webhook probe (ci-kueue-webhook-probe.*, livespec-s43svm.46) needs a
 # scoped read-only kubeconfig this installer does NOT provision. Apply the
 # committed RBAC once — `sudo k3s kubectl apply -f
@@ -43,6 +52,7 @@ install -o root -g root -m 0755 \
   "${src_dir}/ci-runner-heartbeat.sh" \
   "${src_dir}/ci-kueue-webhook-probe.sh" \
   "${src_dir}/ci-cache-gauges.sh" \
+  "${src_dir}/ci-pool-attributed-gauges.sh" \
   /usr/local/lib/ci-runner/
 install -o root -g root -m 0644 \
   "${src_dir}/ci-runner-heartbeat.service" \
@@ -51,12 +61,15 @@ install -o root -g root -m 0644 \
   "${src_dir}/ci-kueue-webhook-probe.timer" \
   "${src_dir}/ci-cache-gauges.service" \
   "${src_dir}/ci-cache-gauges.timer" \
+  "${src_dir}/ci-pool-attributed-gauges.service" \
+  "${src_dir}/ci-pool-attributed-gauges.timer" \
   /etc/systemd/system/
 
 systemctl daemon-reload
 systemctl enable --now ci-runner-heartbeat.timer
 systemctl enable --now ci-kueue-webhook-probe.timer
 systemctl enable --now ci-cache-gauges.timer
+systemctl enable --now ci-pool-attributed-gauges.timer
 
-echo "installed: heartbeat + kueue-webhook-probe + cache-gauges (timers enabled)"
-systemctl list-timers 'ci-runner-*' 'ci-kueue-*' 'ci-cache-*' --no-pager | head -8
+echo "installed: heartbeat + kueue-webhook-probe + cache-gauges + pool-attributed-gauges (timers enabled)"
+systemctl list-timers 'ci-runner-*' 'ci-kueue-*' 'ci-cache-*' 'ci-pool-*' --no-pager | head -10

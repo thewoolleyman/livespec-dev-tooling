@@ -105,9 +105,14 @@
 #                            itself.
 # The host OTel collector is installed from ITS OWN repository
 # (thewoolleyman/otel-collector, scripts/install-ci-runner-host.sh) and the
-# heartbeat/probe timers from ../../observability/install-observability.sh;
+# heartbeat/probe/gauge timers from ../../observability/install-observability.sh
+# — the liveness heartbeat, the Kueue-webhook probe, the build-cache gauges and
+# the per-repository pool gauges (ci-pool-attributed-gauges.*, livespec-i4ahv4);
 # both are node-local too but live outside this tree, so they are listed here
-# and not run.
+# and not run. The pool gauges are a SERVER-node unit for the same reason steps
+# 4, 5, 5b and 6 are: they read cluster-scoped ClusterQueues and an
+# all-namespace EphemeralRunner listing through the admin kubeconfig an agent
+# does not hold, and the server's own tick already covers every node.
 #
 # Every installer is idempotent, so this whole script is: re-run it after any
 # edit to this tree to refresh the live copies (the recreatability rule).
@@ -515,7 +520,10 @@ cat <<'EOF'
 Not done here, by design:
   - credstore seeding (attended, once): ../secret-reinjection/seed-github-app-creds.sh
   - the host OTel collector: thewoolleyman/otel-collector scripts/install-ci-runner-host.sh
-  - the heartbeat + Kueue-webhook probe timers: ../../observability/install-observability.sh
+  - the heartbeat, Kueue-webhook probe, build-cache gauge and per-repository
+    pool gauge timers: ../../observability/install-observability.sh
+    (the pool gauges read the cluster through the admin kubeconfig, so they
+     belong to a SERVER node — see this script's header)
   - the warm-cache initial populate (attended): warm-cache/install-warm-cache.sh
   - a k3s restart or reboot: config.yaml changes and the tmpfs cutover take
     effect on the next k3s start; do that at zero active CI jobs, or reboot —
