@@ -30,9 +30,10 @@
 # this runbook on its own: the ONLY step that applies Kueue ClusterQueues and
 # ARC scale sets is 8/10, the reconstruct-on-boot converge
 # (reconstruct/converge-ci-stack.sh), so skipping 8 is exactly what omits them
-# from an agent's plan. 6/10 "ARC log archive" is NOT that — it is a
-# node-local systemd timer archiving the runner pods' logs off THIS node's
-# disk, so it runs on both roles.
+# from an agent's plan. 6/10 "ARC log archive" is NOT that, and it is not
+# node-local either: it archives the ARC CONTROLLER and LISTENER pods' logs
+# through the admin kubeconfig, which is one pool-wide duty the server holds
+# (see its skip reason below).
 #
 # ORDER, and why:
 #   1. k3s-config          — read by k3s at start; disables the bundled
@@ -57,8 +58,15 @@
 #                            kubeconfig, and patches EVERY labeled node with one
 #                            capacity, so it is a cluster-wide act rather than a
 #                            node-local one (see its skip reason below).
-#   5. wedged-runner MODE  — the 5-minute wedge sweep.
-#   6. arc-log-archive     — the log archive timer.
+#   5. wedged-runner MODE  — the 5-minute wedge sweep, and 5b the runner-pod
+#                            lifecycle sweep. SERVER only, both: each unit is
+#                            ordered against k3s.service, each carries the admin
+#                            kubeconfig, and each sweeps the pool's pods
+#                            CLUSTER-WIDE, so the server's own timers already
+#                            cover every node (see their skip reasons below).
+#   6. arc-log-archive     — the log archive timer. SERVER only: it reads the
+#                            ARC controller's and listeners' logs with that same
+#                            admin kubeconfig, and those pods run on the server.
 #   7. ../secret-reinjection — the boot-time secret unit (enabled, not run;
 #                            credstore seeding is the SEPARATE attended step
 #                            seed-github-app-creds.sh).
@@ -264,6 +272,9 @@ STEP_SKIP[host-thermal]="iDRAC state reached through Dell's racadm packages — 
 STEP_SKIP[secret-reinjection]="writes the GitHub App Secret into the cluster at boot — one cluster-scoped object, applied with the admin kubeconfig an agent does not hold, owned by the node that holds the datastore."
 STEP_SKIP[reconstruct]="rebuilds the CLUSTER from git at boot — the fleet-owned provisioner, Kueue and every ClusterQueue, the ARC controller and every scale set. Cluster-scoped, admin-kubeconfig-only, and the server's job; this is the step whose absence omits Kueue and ARC from an agent's plan."
 STEP_SKIP[datastore-tmpfs]="mounts the k3s SERVER datastore on tmpfs; an agent node has no datastore to mount."
+STEP_SKIP[wedged-runner]="sweeps the ARC runner pods CLUSTER-WIDE from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service, so it cannot start at all) with the admin kubeconfig an agent does not hold. The SERVER's own scan-wedged-runners.timer already performs that sweep every five minutes over every pod on every node, this one included (livespec-dev-tooling-qcq0)."
+STEP_SKIP[runner-pod-lifecycle]="reads PVCs, scheduler events, scale-set listeners and node capacity CLUSTER-WIDE from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service) with the admin kubeconfig an agent does not hold. The SERVER's own scan-runner-pod-lifecycle.timer already performs that diagnosis every five minutes for the whole pool, this node included (livespec-dev-tooling-qcq0)."
+STEP_SKIP[arc-log-archive]="archives the ARC CONTROLLER and LISTENER pods' logs with the admin kubeconfig an agent does not hold — pods that run on the SERVER for the whole pool, so there is nothing here to archive. Unlike the two scans this unit is ordered After=network-online.target, so on an agent it would install cleanly and then fail silently every two minutes; the SERVER's own archive-arc-logs.timer already covers every node (livespec-dev-tooling-qcq0)."
 STEP_SKIP[churn-slot]="patches node STATUS through the API from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service) with the admin kubeconfig an agent does not hold — and patch-node-churn-capacity.sh patches EVERY node labeled k3s-role=arc-runner-host with ONE capacity, which makes applying it a cluster-wide act rather than a node-local one. Node-status patches are therefore applied from the SERVER's reapply timer, whose selector already includes this node; a per-node capacity read from each node's own profile is R4/R5 scope (livespec-dev-tooling-xa6o)."
 
 step_label() {  # step_label ID
@@ -319,19 +330,23 @@ run_step() {  # run_step ID
       else
         "${SCRIPT_DIR}/apparmor/install-apparmor-profile.sh"
       fi ;;
-    # Passed this run's ROLE even though only a server reaches this line: the
-    # installer refuses on an agent (and removes any copy it finds), so if a
-    # future edit ever drops the skip above, the step fails loudly at the
-    # installer's own refusal rather than at a "Unit k3s.service not found"
-    # halfway through installing it (livespec-dev-tooling-ukbp).
+    # The four server-only unit installers are passed this run's ROLE even
+    # though only a server reaches these lines: each refuses on an agent (and
+    # removes any copy it finds), so if a future edit ever drops one of the
+    # skips above, that step fails loudly at the installer's own refusal rather
+    # than halfway through installing a unit that cannot run. That is the
+    # failure gmktec paid for twice: step 4 and then step 5b each aborted the
+    # whole runbook at their own verify, and step 5 did something worse — it
+    # installed a timer that landed `failed` and reported DONE over it
+    # (livespec-dev-tooling-ukbp, livespec-dev-tooling-qcq0).
     churn-slot)
       "${SCRIPT_DIR}/node-extended-resource/install-reapply-unit.sh" --role "${ROLE}" "${CAPACITY}" ;;
     wedged-runner)
-      "${SCRIPT_DIR}/wedged-runner/install-wedged-runner-scan.sh" "${WEDGE_MODE}" ;;
+      "${SCRIPT_DIR}/wedged-runner/install-wedged-runner-scan.sh" --role "${ROLE}" "${WEDGE_MODE}" ;;
     runner-pod-lifecycle)
-      "${SCRIPT_DIR}/runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh" ;;
+      "${SCRIPT_DIR}/runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh" --role "${ROLE}" ;;
     arc-log-archive)
-      "${SCRIPT_DIR}/arc-log-archive/install-arc-log-archive.sh" ;;
+      "${SCRIPT_DIR}/arc-log-archive/install-arc-log-archive.sh" --role "${ROLE}" ;;
     secret-reinjection)
       "${K3S_DIR}/secret-reinjection/install-secret-reinjection-unit.sh" ;;
     sccache)
