@@ -151,7 +151,10 @@ fi
 # B. An agent is refused, and any copy on the node is removed.
 #
 # The removal order is part of the expectation: the TIMER goes first, so the
-# service cannot be triggered between the two removals.
+# service cannot be triggered between the two removals, and the reload is
+# followed by a `reset-failed` for each unit removed. Without that last pass the
+# deleted units stay in `systemctl list-units --state=failed` as `not-found
+# failed` until the host reboots (livespec-dev-tooling-oc5g).
 # ---------------------------------------------------------------------------
 IFS= read -r -d '' EXPECTED_AGENT_REMOVAL <<'EOF'
 + systemctl disable --now scan-runner-pod-lifecycle.timer
@@ -159,6 +162,8 @@ IFS= read -r -d '' EXPECTED_AGENT_REMOVAL <<'EOF'
 + systemctl disable --now scan-runner-pod-lifecycle.service
 + rm -f /etc/systemd/system/scan-runner-pod-lifecycle.service
 + systemctl daemon-reload
++ systemctl reset-failed scan-runner-pod-lifecycle.timer
++ systemctl reset-failed scan-runner-pod-lifecycle.service
 EOF
 
 printf '\n== B. agent: refused, and a stale copy removed ==\n'
@@ -173,7 +178,7 @@ else
   no "agent invocation exits non-zero (exited 0)"
 fi
 AGENT_OUT="$REPLY_OUT"
-same "the units present: both are disabled and removed, timer first, then a reload" \
+same "the units present: both are disabled and removed, timer first, then a reload and a reset-failed each" \
   "$EXPECTED_AGENT_REMOVAL" "$(command_lines "$AGENT_OUT")"
 case "$AGENT_OUT" in
   *"refusing to install ${SERVICE} on an agent node"*)

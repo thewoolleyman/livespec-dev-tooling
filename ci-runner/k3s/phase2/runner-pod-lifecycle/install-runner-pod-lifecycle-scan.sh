@@ -132,10 +132,10 @@ unit_installed() {  # unit_installed NAME
 
 # The timer BEFORE the service it triggers, so nothing fires between the two.
 remove_installed_units() {
-  local unit removed=0
+  local unit removed_units=()
   for unit in "$TIMER" "$SERVICE"; do
     if unit_installed "$unit"; then
-      removed=1
+      removed_units+=("$unit")
       # A failed `disable` does not stop the removal: the unit this cleans up
       # after is one systemd could not start in the first place, and deleting
       # the file is the half that actually clears it. Reported, never silent.
@@ -144,8 +144,20 @@ remove_installed_units() {
       run rm -f "${UNIT_DIR}/${unit}"
     fi
   done
-  if [ "$removed" -eq 1 ]; then
+  if [ "${#removed_units[@]}" -gt 0 ]; then
     run systemctl daemon-reload
+    # AFTER the reload, and tolerant of a non-zero exit: deleting a unit file
+    # and reloading does NOT take the unit out of `systemctl list-units
+    # --state=failed` -- systemd keeps the failed state in the manager and
+    # reports the deleted unit as `not-found failed` until `reset-failed` runs
+    # or the host reboots (livespec-dev-tooling-oc5g, measured on
+    # gmktec-xubuntu 2026-09-07). `reset-failed` on a unit the manager no
+    # longer knows is itself an error, which is exactly the removed-but-never-
+    # failed case, so it is reported rather than allowed to fail this cleanup.
+    for unit in "${removed_units[@]}"; do
+      run systemctl reset-failed "$unit" \
+        || printf '  reset-failed found no %s to clear -- systemd had already forgotten it\n' "$unit"
+    done
   else
     printf '  nothing to remove: neither %s nor %s is installed on this node\n' "$SERVICE" "$TIMER"
   fi
