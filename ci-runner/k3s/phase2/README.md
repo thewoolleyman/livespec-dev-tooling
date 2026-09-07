@@ -1997,7 +1997,7 @@ The warm-cache build query as a `run_query` spec:
 **Boundary.** The cache tiers' own telemetry — the `build.cache.*`
 attributes, the `cache.warm-copy` and `cache.job-summary` spans, dataset
 `github-ci` — belongs to plan `ci-runner-cache-tiers`
-(`plan/ci-runner-cache-tiers/research/003-cache-observability.md` in this
+(`plan/archive/ci-runner-cache-tiers/research/003-cache-observability.md` in this
 repository); nothing in that family is emitted here, and the disk and
 filesystem rows this recipe joins are the collector's, not the cache's.
 

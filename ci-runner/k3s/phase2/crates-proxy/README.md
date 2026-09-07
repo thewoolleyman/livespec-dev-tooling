@@ -18,7 +18,7 @@ replacement. Zero workflow changes in any routed repository.
 ## Why this shape
 
 Verified live on the pool 2026-09-04 (plan research
-`plan/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`):
+`plan/archive/ci-runner-cache-tiers/research/005-a1-crates-proxy-verification.md`):
 cargo 1.92 accepts `registry = "sparse+http://…"` with no TLS, keeps
 `Cargo.lock` byte-identical under source replacement, and resolved all 151
 registry crates of the console lockfile through the proxy with the second
