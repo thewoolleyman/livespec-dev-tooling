@@ -340,8 +340,8 @@ cmd_cutover() {
     fi
   done
 
-  log "install-storage-layout.sh BEFORE mount -a: it rewrites a tier line whose filesystem type changed (nothing is mounted by it)"
-  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|backup|  old|  new|FATAL)' || true
+  log "install-storage-layout.sh BEFORE mount -a: it rewrites a tier line whose filesystem type changed, and mounts the relabelled volumes"
+  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present:|\+ |    old:|    new:|FATAL)' || true
   systemctl daemon-reload
   mount -a || die "mount -a"
   for role in "${roles[@]}"; do
@@ -367,7 +367,7 @@ cmd_cutover() {
   rm -f "$before" "$after"
 
   log "install-storage-layout.sh must now be a no-op (every line present, drop-in byte-identical)"
-  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|FATAL)' || true
+  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present:|\+ |FATAL)' || true
   log "CUTOVER DONE for: ${roles[*]}. The old volumes keep their data under old-<suffix> until 'reclaim ROLE' removes them."
 }
 
@@ -432,8 +432,8 @@ cmd_finish_live() {
   # The temp mount of the new volume is no longer needed; the tier mount is the live one.
   umount "${TMP_ROOT}/${role}" 2>/dev/null || true
 
-  log "install-storage-layout.sh (rewrites the tier line's type if the role's filesystem changed; nothing is remounted)"
-  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present|replace|added|backup|  old|  new|FATAL)' || true
+  log "install-storage-layout.sh (rewrites the tier line's type if the role's filesystem changed; the live stack is already mounted, so it mounts nothing)"
+  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present:|\+ |    old:|    new:|FATAL)' || true
   grep -E "^LABEL=${role} " /etc/fstab
   log "FINISH-LIVE DONE for ${role}. The old volume (${old}, LABEL=old-$(suffix "$role")) stays mounted UNDERNEATH ${src} until the next boot;"
   log "fstab then mounts only the new one. After that boot: 'migrate-tier.sh reclaim ${role}' removes the old LV and grows the new."

@@ -89,7 +89,7 @@ sed -e 's/^NODE_NAME=.*/NODE_NAME=agent-fixture/' \
 read -r -d '' EXPECTED_SERVER_PLAN <<'EOF'
 RUN  [server] 1/10 k3s server config
 RUN  [server] 2/10 inotify instance budget + keyring quota
-RUN  [server] 2b/10 storage layout (LABEL fstab lines + k3s drop-in; no-op when the tiers are live)
+RUN  [server] 2b/10 storage layout (mount the LABEL-ed tiers + the five fstab lines + k3s drop-in; no-op when the tiers are live)
 RUN  [server] 2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)
 RUN  [server] 2d/10 operator host tools (btop-loop into /usr/local/bin)
 RUN  [server] 3/10 AppArmor profile + hook ConfigMap
