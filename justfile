@@ -48,6 +48,32 @@ export test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hos
 # script passes it and the staged path to the scope module, which
 # computes the skip set and FAILS FAST (the caller then runs the full
 # aggregate) rather than ever emitting an empty Red selection.
+#
+# DECIDED 2026-09-07 (livespec-dev-tooling-bvbe): dev-tooling will NOT
+# wire doctor-static into `check:` either, so "dev-tooling has none"
+# above stays true BY CHOICE rather than by oversight. The static
+# doctor is livespec CORE's suite: core runs it from its own tree, and
+# nothing in this repo's gate path materializes a core checkout. Wiring
+# it would make this repo's merge gate resolve core out of a host-level
+# plugin install that CI runners and fresh clones do not have — a gate
+# whose verdict depends on the host — and fetching core at gate time to
+# fix that is barred by the ratified "Network I/O from any check"
+# non-goal in SPECIFICATION/spec.md. It would also aim the gate at core
+# MASTER while `.livespec.jsonc` pins core at a tag, so a core-side
+# catalogue change could redden this repo on a commit it did not cause;
+# and it would close a dependency loop, since core already consumes
+# THIS repo's checks and spec.md lists a dependency the other way as a
+# non-goal. The ratified venue for the static-doctor verdict is the
+# `/livespec:revise` post-step, per spec.md's Definition of Done ("The
+# doctor static phase passes against the working spec").
+#
+# ACCEPTED RESIDUAL RISK, named because bvbe is what it looks like: a
+# finding of that class can sit in tree from commit until the next
+# revise, and a spuriously non-zero revise wrapper teaches its readers
+# to ignore the exit code that would report a REAL ratification
+# failure. The mitigation is hermetic and repo-local — pin the specific
+# rule in the offending module's own test, as bvbe does — NOT a gate
+# that reaches outside the repo for its verdict.
 export red_staged := ""
 
 # `hook_gate` — set to a non-empty value by the two LOCAL git-hook gates
