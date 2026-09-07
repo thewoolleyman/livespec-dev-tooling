@@ -540,6 +540,42 @@ config) use `chore(...)` / `docs(...)` / `chore(spec):` subjects and skip the
 ritual entirely. Always use `mise exec -- git ...` so the hooks fire; never
 pass `--no-verify`.
 
+### The server-side revert — this protocol and ci-gate-discipline reconciled
+
+The two directives read together, because each is incomplete without the other:
+
+- livespec's ci-gate-discipline directive (`ci-gate-discipline.md`, in that
+  repo's `.ai/` guidance tree) MANDATES that when master CI is red and
+  local commits are blocked by that red, the revert is created SERVER-SIDE —
+  through the forge's own revert API — precisely because no local hook mediates
+  it. It forbids adding any lever, flag or severity knob without exception.
+- This protocol's commit-range gate requires TDD trailer evidence on every
+  commit touching product impl `.py`, and those trailers are stamped by the
+  local hook.
+
+A server-side revert cannot carry trailers BECAUSE no local hook mediates it,
+which is the property the directive requires it to have. Read naively the two
+rules are mutually blocking, and on 2026-08-22 in livespec-overseer they were:
+PR 1630 was a server-side revert created exactly as directed and was refused by
+`check-red-green-replay` while the repo sat dispatch-dead.
+
+They are now reconciled IN CODE. The range gate exempts a commit that verifies
+against GitHub's pinned web-flow signing key AND is byte-identical to the
+reverted commit's parent at every product impl `.py` path it touches. Both
+halves are required; the exemption is keyed on evidence an agent cannot
+fabricate, NEVER on a subject line, and it transfers evidence (the restored
+bytes already earned trailers on the commit that introduced them) rather than
+waiving it. It is the only exemption, and it does not reopen the lever this
+protocol and `ci-gate-discipline.md` both forbid.
+
+⛔ Do NOT "fix" a refused revert by exempting a subject prefix, by exempting the
+range while master is red, or with `LIVESPEC_CHECK_SKIP`. All three are
+forgeable carve-outs an agent can produce at will. Read
+`docs/server-side-revert-exemption.md` before touching the exemption, the range
+gate's remedy hint, or `_red_green_replay_revert.py`; it also carries the
+reciprocal paragraph that still has to land in the livespec repo's own copy
+of that directive.
+
 ## CI runner routing
 
 This repo's gating CI reads the `CI_RUNNER_LABELS` repository variable
