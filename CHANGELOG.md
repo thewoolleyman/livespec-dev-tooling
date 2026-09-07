@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.58.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.58.1...v1.58.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **fleet:** a secondary rate limit is a throttle, not a permission denial (livespec-dev-tooling-sh71) ([16c7351](https://github.com/thewoolleyman/livespec-dev-tooling/commit/16c735135d178bc828e9f87cdce3cfb45a632238))
+
 ## [1.58.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.58.0...v1.58.1) (2026-09-07)
 
 
