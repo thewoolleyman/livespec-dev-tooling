@@ -14,6 +14,20 @@
 # seed-github-app-creds.sh beside it: attended, one injected variable, the
 # value never echoed, never logged and never on argv.
 #
+# WHY IT MAKES /etc/rancher/k3s. On a node that has never run k3s that
+# directory does not exist, and it is the k3s INSTALLER that would make it —
+# which on an agent runs in ../provision-k3s.sh, AFTER this seed, and refuses
+# to run until this seed's file exists. Left to the operator the recipe's own
+# order therefore could not start without an uncommitted `mkdir` typed by hand,
+# which is the defect SPECIFICATION/non-functional-requirements.md §"Runner-pool
+# node rebuild recipe" forbids ("a step that a rehearsal cannot reproduce MUST
+# be treated as a defect in the procedure"). Found live on gmktec-xubuntu
+# 2026-09-07 on the first real seeding. So this script creates the k3s
+# CONFIGURATION DIRECTORY — that tree and no other — with
+# `install -d -m 0755 -o root -g root`, printing it as a `+ ` line. A missing
+# parent anywhere ELSE is still refused, so a mistyped CLUSTER_TOKEN_FILE is
+# refused rather than manufactured.
+#
 # WHY IT HAS NO BOOT HALF. The GitHub App credentials next door need one
 # (inject-github-app-secret.service) because they live in the k3s datastore,
 # which is volatile by design. The join token does not: it is a file on the
@@ -67,6 +81,12 @@ TARGET_MODE="0600"
 TARGET_OWNER="root"
 TARGET_GROUP="root"
 
+# The k3s CONFIGURATION DIRECTORY — the ONE tree this script creates when it is
+# missing (see the header's "WHY IT MAKES /etc/rancher/k3s") — and the mode k3s
+# itself gives it: readable, since only the files inside it are credentials.
+K3S_CONFIG_DIR="/etc/rancher/k3s"
+PARENT_MODE="0755"
+
 USAGE="usage: ${SCRIPT_NAME} [--dry-run] PROFILE   (PROFILE = phase0-bare-metal/profiles/<node>.env, which carries CLUSTER_ROLE and CLUSTER_TOKEN_FILE)"
 
 die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
@@ -118,6 +138,36 @@ ROLE="${CFG[CLUSTER_ROLE]}"
 TARGET="${CFG[CLUSTER_TOKEN_FILE]}"
 TARGET_DIR="$(dirname "$TARGET")"
 
+# in_k3s_config_tree PATH — true iff PATH is the k3s configuration directory
+# itself or a directory beneath it.
+#
+# Matched on the path's TAIL, on whole components: K3S_CONFIG_DIR carries its
+# leading `/`, so `/etc/rancher/k3s-agent` and `/opt/etc-rancher/k3s` do not
+# match, while a scratch-rooted `<tmp>/etc/rancher/k3s` does. That is
+# deliberate, and it is why this script carries no environment override for the
+# rule: the exit tests exercise the creation under their own root through the
+# SAME predicate a real node is judged by, rather than through a lever that
+# could also widen what a live run is willing to make.
+in_k3s_config_tree() {
+  case "$1" in
+    *"$K3S_CONFIG_DIR") return 0 ;;
+    *"${K3S_CONFIG_DIR}/"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# exists | create | refuse — decided once, reported by the plan in both modes
+# and acted on below.
+if [ -d "$TARGET_DIR" ]; then
+  PARENT_STATE=exists
+elif in_k3s_config_tree "$TARGET_DIR"; then
+  PARENT_STATE=create
+else
+  PARENT_STATE=refuse
+fi
+
+PARENT_CREATE_CMD=(sudo install -d -m "$PARENT_MODE" -o "$TARGET_OWNER" -g "$TARGET_GROUP" "$TARGET_DIR")
+
 print_plan() {
   printf '== %s plan ==\n' "$SCRIPT_NAME"
   printf 'profile:  %s\n' "$PROFILE_PATH"
@@ -126,11 +176,31 @@ print_plan() {
   printf 'join:     %s\n' "${CFG[CLUSTER_JOIN_ADDRESS]}"
   printf 'variable: %s (injected from the github-ci-runners 1Password Environment by with-github-ci-runners-env.sh)\n' "$TOKEN_VAR"
   printf 'target:   %s\n' "$TARGET"
+  case "$PARENT_STATE" in
+    exists) printf 'parent:   %s (exists -- left exactly as it is)\n' "$TARGET_DIR" ;;
+    create)
+      printf 'parent:   %s (absent, and it is the k3s configuration directory: will be created %s %s:%s)\n' \
+        "$TARGET_DIR" "$PARENT_MODE" "$TARGET_OWNER" "$TARGET_GROUP"
+      printf '+ %s\n' "${PARENT_CREATE_CMD[*]}" ;;
+    refuse) printf 'parent:   %s (absent, and NOT under %s: would refuse -- see the FATAL below)\n' \
+      "$TARGET_DIR" "$K3S_CONFIG_DIR" ;;
+  esac
   printf 'mode:     %s %s:%s\n' "$TARGET_MODE" "$TARGET_OWNER" "$TARGET_GROUP"
   printf 'write:    sudo install -m %s -o %s -g %s /dev/stdin %s   (the token arrives on STDIN, never on argv)\n' \
     "$TARGET_MODE" "$TARGET_OWNER" "$TARGET_GROUP" "$TARGET"
   printf 'skip:     an existing %s whose bytes already equal the injected value is REPORTED, not rewritten\n' "$TARGET"
 }
+
+print_plan
+
+# ---------------------------------------------------------------------------
+# A parent this script will not create is refused HERE, after the plan and
+# before the credential — in --dry-run too, for the same reason the wrong role
+# is: the path is profile DATA, so a plan that could never be executed must not
+# be printed as though it could. The plan's `parent:` line above has already
+# named it; this says so as a FATAL and stops.
+# ---------------------------------------------------------------------------
+[ "$PARENT_STATE" != refuse ] || die "${PROFILE_PATH}: CLUSTER_TOKEN_FILE '${TARGET}' names parent directory '${TARGET_DIR}', which does not exist on this node and is not the k3s configuration directory '${K3S_CONFIG_DIR}' (the only tree this script creates). Create it deliberately first (sudo install -d -m ${PARENT_MODE} -o ${TARGET_OWNER} -g ${TARGET_GROUP} '${TARGET_DIR}'), so a mistyped path is refused rather than made."
 
 # ---------------------------------------------------------------------------
 # --dry-run stops here, having touched nothing at all — and having required no
@@ -138,12 +208,9 @@ print_plan() {
 # plan must be printable outside the 1Password wrapper.
 # ---------------------------------------------------------------------------
 if [ "$DRY_RUN" -eq 1 ]; then
-  print_plan
   printf '\n-- --dry-run: the plan above was printed and NOTHING was executed --\n'
   exit 0
 fi
-
-print_plan
 
 # The write and the comparison both need root — the target is owner-only root
 # under /etc. Checked here rather than at the top so `--dry-run` stays a pure
@@ -167,15 +234,20 @@ if [ "$(printenv "$TOKEN_VAR" 2>/dev/null | wc -c)" -le 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2. The target's parent directory exists
+# 2. The target's parent directory
 #
-# NOT created here, on purpose. /etc/rancher/k3s is made by the k3s installer,
-# which on an agent runs AFTER this seed — so an operator seeding a node that
-# has never had k3s creates it themselves, in one visible command. A script
-# that made the parent instead would silently manufacture a whole directory
-# tree for a mistyped CLUSTER_TOKEN_FILE and report success.
+# Created only when it is the k3s configuration directory or a directory
+# beneath it — the tree the k3s installer would have made had it run first, and
+# on an agent it does not (the header's "WHY IT MAKES /etc/rancher/k3s"). Any
+# other missing parent was refused above, so a mistyped CLUSTER_TOKEN_FILE
+# never has a directory tree manufactured for it. An EXISTING parent is left
+# exactly as it is: its mode and ownership are the node's, not this script's.
 # ---------------------------------------------------------------------------
-[ -d "$TARGET_DIR" ] || die "${PROFILE_PATH}: CLUSTER_TOKEN_FILE '${TARGET}' names parent directory '${TARGET_DIR}', which does not exist on this node. Create it deliberately first (sudo install -d -m 0755 -o root -g root '${TARGET_DIR}'); this script does not create it, so a mistyped path is refused rather than made."
+if [ "$PARENT_STATE" = create ]; then
+  "${PARENT_CREATE_CMD[@]}"
+  printf '\ncreated: %s (%s %s:%s) -- the k3s configuration directory this node had not had yet\n' \
+    "$TARGET_DIR" "$PARENT_MODE" "$TARGET_OWNER" "$TARGET_GROUP"
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Idempotence: byte-identical content is REPORTED, not rewritten

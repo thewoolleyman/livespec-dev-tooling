@@ -15,24 +15,30 @@
 #      at all;
 #   D. the refusals: the variable unset, the variable set but EMPTY, a profile
 #      whose CLUSTER_ROLE is not `agent`, and a CLUSTER_TOKEN_FILE whose parent
-#      directory does not exist — each non-zero, each naming the reason;
+#      directory does not exist AND is not the k3s configuration directory —
+#      each non-zero, each naming the reason;
 #   E. the COMMITTED second node's profile,
 #      `../phase0-bare-metal/profiles/gmktec-xubuntu.env`, plans the seed of
 #      the path THAT node's provisioning reads
-#      (`/etc/rancher/k3s/agent-join-token`).
+#      (`/etc/rancher/k3s/agent-join-token`);
+#   F. the fresh node: a MISSING `.../etc/rancher/k3s` is planned as a `+ `
+#      line and then created `0755 root:root` before the token is written,
+#      while an EXISTING parent keeps the mode and ownership it had.
 #
 # HOW IT STAYS OFF THE HOST AND OUT OF 1PASSWORD. The token is a fixture string
 # this suite invents; nothing here reads the github-ci-runners Environment. The
 # target is a file in this suite's own scratch directory, named by a scratch
-# copy of a profile. Cases A, D and E run against a PATH of TRIPWIRES for
-# `sudo` and `install`, so "executed nothing" is asserted rather than assumed.
-# Cases B and C need the write to really happen, so they run against a PATH
-# carrying a FAKE `sudo` that logs the command and then runs it AS THE INVOKING
-# USER, rewriting `install`'s `-o root -g root` to this user's own names —
-# emulating the ONE privilege the real sudo supplies. The suite therefore never
-# NEEDS root, and that rewrite is the reason: it passes unchanged as an
-# unprivileged user, where the rewrite is what carries the write, and as root,
-# where it is a no-op.
+# copy of a profile. Cases A, D, E and F's dry run go against a PATH of
+# TRIPWIRES for `sudo` and `install`, so "executed nothing" is asserted rather
+# than assumed. Cases B, C and F's live runs need the write to really happen,
+# so they run against a PATH carrying a FAKE `sudo` that logs the command and
+# then runs it AS THE INVOKING USER, rewriting `install`'s `-o root -g root` to
+# this user's own names — emulating the ONE privilege the real sudo supplies.
+# The suite therefore never NEEDS root, and that rewrite is the reason: it
+# passes unchanged as an unprivileged user, where the rewrite is what carries
+# the write, and as root, where it is a no-op. Every directory §F creates is
+# under this suite's own scratch root; no `/etc` on this machine is read or
+# written.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
 set -uo pipefail
@@ -150,23 +156,30 @@ else
   no "A3  the plan names the mode 0600 root:root"
 fi
 
-if [ -e "$TARGET" ]; then
-  no "A4  --dry-run wrote no file"
+if printf '%s\n' "$REPLY_OUT" | grep -q "^parent:   ${TARGET_DIR} (exists"; then
+  ok "A4  the plan reports an existing parent as existing"
 else
-  ok "A4  --dry-run wrote no file"
+  no "A4  the plan reports an existing parent as existing"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+if [ -e "$TARGET" ]; then
+  no "A5  --dry-run wrote no file"
+else
+  ok "A5  --dry-run wrote no file"
 fi
 
 if [ -s "$TRIPWIRE" ]; then
-  no "A5  --dry-run executed no host-mutating command"
+  no "A6  --dry-run executed no host-mutating command"
   cat "$TRIPWIRE"
 else
-  ok "A5  --dry-run executed no host-mutating command"
+  ok "A6  --dry-run executed no host-mutating command"
 fi
 
 if printf '%s\n' "$REPLY_OUT" | grep -q 'NOTHING was executed'; then
-  ok "A6  the dry run says so in its own output"
+  ok "A7  the dry run says so in its own output"
 else
-  no "A6  the dry run says so in its own output"
+  no "A7  the dry run says so in its own output"
 fi
 
 # ---------------------------------------------------------------------------
@@ -257,7 +270,7 @@ export "${TOKEN_VAR}=${FIXTURE_TOKEN}"
 # ---------------------------------------------------------------------------
 # D. The refusals.
 # ---------------------------------------------------------------------------
-printf '\n== D. refusals: no credential, empty credential, wrong role, no parent ==\n'
+printf '\n== D. refusals: no credential, empty credential, wrong role, unmakeable parent ==\n'
 : > "$TRIPWIRE"
 
 refuses() {  # refuses DESCRIPTION EXPECTED-FRAGMENT ARGS...
@@ -297,22 +310,40 @@ refuses "D4  a CLUSTER_ROLE that is not 'agent' is refused, naming the role it r
 refuses "D5  the wrong role is refused under --dry-run too" \
   "CLUSTER_ROLE is 'server', not 'agent'" --dry-run "$SERVER_COMMITTED"
 
+# The parent refusal survives §F's creation: it is a missing parent OUTSIDE the
+# k3s configuration tree that is refused, which is what keeps a mistyped
+# CLUSTER_TOKEN_FILE from having a directory tree manufactured for it.
 NO_PARENT_PROFILE="${TMPROOT}/agent-no-parent.env"
 agent_profile "$NO_PARENT_PROFILE" "${TMPROOT}/no-such-dir/agent-join-token"
-refuses "D6  a CLUSTER_TOKEN_FILE whose parent directory is absent is refused, naming it" \
+refuses "D6  a CLUSTER_TOKEN_FILE whose parent is absent and NOT under /etc/rancher/k3s is refused, naming it" \
   "which does not exist on this node" "$NO_PARENT_PROFILE"
+refuses "D7  that parent is refused under --dry-run too" \
+  "which does not exist on this node" --dry-run "$NO_PARENT_PROFILE"
 
-refuses "D7  a missing profile is refused, naming the path" \
+# A near-miss of the k3s configuration directory: the tail match is on whole
+# COMPONENTS, so `.../etc/rancher/k3s-agent` is a different directory and is
+# refused exactly as any other mistyped path is.
+NEAR_MISS_PROFILE="${TMPROOT}/agent-near-miss.env"
+agent_profile "$NEAR_MISS_PROFILE" "${TMPROOT}/fresh-node/etc/rancher/k3s-agent/agent-join-token"
+refuses "D8  a near-miss of the k3s configuration directory ('k3s-agent') is refused, not created" \
+  "is not the k3s configuration directory" "$NEAR_MISS_PROFILE"
+if [ -e "${TMPROOT}/fresh-node/etc/rancher/k3s-agent" ]; then
+  no "D9  the near-miss refusal created no directory"
+else
+  ok "D9  the near-miss refusal created no directory"
+fi
+
+refuses "D10 a missing profile is refused, naming the path" \
   "profile not found" "${TMPROOT}/does-not-exist.env"
 
-refuses "D8  no profile at all is refused with the usage line" \
+refuses "D11 no profile at all is refused with the usage line" \
   "no profile given" --dry-run
 
 if [ -s "$TRIPWIRE" ]; then
-  no "D9  not one refusal executed a host-mutating command"
+  no "D12 not one refusal executed a host-mutating command"
   cat "$TRIPWIRE"
 else
-  ok "D9  not one refusal executed a host-mutating command"
+  ok "D12 not one refusal executed a host-mutating command"
 fi
 
 # ---------------------------------------------------------------------------
@@ -339,6 +370,128 @@ if grep -qxF 'CLUSTER_TOKEN_FILE=/etc/rancher/k3s/agent-join-token' "$AGENT_COMM
   ok "E2  that path is the committed profile's own value, not this suite's"
 else
   no "E2  that path is the committed profile's own value, not this suite's"
+fi
+
+# The defect this fixed, asserted on the COMMITTED value: whether or not
+# /etc/rancher/k3s exists on the machine running this suite, the plan for that
+# node is never a refusal — it either finds the directory or makes it.
+if printf '%s\n' "$REPLY_OUT" | grep -q '^parent:   /etc/rancher/k3s (' \
+   && ! printf '%s\n' "$REPLY_OUT" | grep -q 'would refuse'; then
+  ok "E3  the committed profile's parent is never a refusal, on a fresh node or a provisioned one"
+else
+  no "E3  the committed profile's parent is never a refusal, on a fresh node or a provisioned one"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+# ---------------------------------------------------------------------------
+# F. The fresh node: the k3s configuration directory is MADE, not demanded.
+#
+# The defect this section pins was found live on gmktec-xubuntu 2026-09-07: on
+# a node that has never run k3s, /etc/rancher/k3s does not exist, and
+# ../provision-k3s.sh — the step that would make it — refuses until this seed
+# has written its file, so the recipe's own order could not start. The parent
+# is created here instead, under this suite's OWN root, through the same
+# whole-component tail match a real node is judged by (§D8 is its negative).
+# ---------------------------------------------------------------------------
+printf '\n== F. a missing /etc/rancher/k3s is planned, then created 0755 ==\n'
+: > "$TRIPWIRE"
+: > "$SUDO_LOG"
+
+FRESH_PARENT="${TMPROOT}/fresh-node/etc/rancher/k3s"
+FRESH_TARGET="${FRESH_PARENT}/agent-join-token"
+FRESH_PROFILE="${TMPROOT}/agent-fresh-node.env"
+agent_profile "$FRESH_PROFILE" "$FRESH_TARGET"
+
+unset "$TOKEN_VAR"
+run_seed "$TRIPBIN" --dry-run "$FRESH_PROFILE"
+
+if [ "$REPLY_RC" -eq 0 ]; then
+  ok "F1  --dry-run over an absent k3s configuration directory exits 0"
+else
+  no "F1  --dry-run over an absent k3s configuration directory exits 0 (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+if printf '%s\n' "$REPLY_OUT" | grep -q "^parent:   ${FRESH_PARENT} (absent.*will be created 0755 root:root)$"; then
+  ok "F2  the plan's parent line says it will be created 0755 root:root"
+else
+  no "F2  the plan's parent line says it will be created 0755 root:root"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+if printf '%s\n' "$REPLY_OUT" | grep -qxF "+ sudo install -d -m 0755 -o root -g root ${FRESH_PARENT}"; then
+  ok "F3  the plan prints the creation as a '+ ' line"
+else
+  no "F3  the plan prints the creation as a '+ ' line"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+if [ -e "$FRESH_PARENT" ] || [ -s "$TRIPWIRE" ]; then
+  no "F4  the dry run created nothing and executed nothing"
+  cat "$TRIPWIRE"
+else
+  ok "F4  the dry run created nothing and executed nothing"
+fi
+
+export "${TOKEN_VAR}=${FIXTURE_TOKEN}"
+run_seed "$WORKBIN" "$FRESH_PROFILE"
+
+if [ "$REPLY_RC" -eq 0 ]; then
+  ok "F5  the live run on a fresh node exits 0"
+else
+  no "F5  the live run on a fresh node exits 0 (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+FRESH_PARENT_MODE="$(stat -c '%a' "$FRESH_PARENT" 2>/dev/null)"
+if [ -d "$FRESH_PARENT" ] && [ "$FRESH_PARENT_MODE" = 755 ]; then
+  ok "F6  the k3s configuration directory was created, mode 0755"
+else
+  no "F6  the k3s configuration directory was created, mode 0755 (got '${FRESH_PARENT_MODE}')"
+fi
+
+if grep -qF -- "install -d -m 0755 -o root -g root ${FRESH_PARENT}" "$SUDO_LOG"; then
+  ok "F7  it was created through sudo install -d -o root -g root"
+else
+  no "F7  it was created through sudo install -d -o root -g root"
+  cat "$SUDO_LOG"
+fi
+
+FRESH_TARGET_MODE="$(stat -c '%a' "$FRESH_TARGET" 2>/dev/null)"
+if [ -f "$FRESH_TARGET" ] && [ "$(cat "$FRESH_TARGET")" = "$FIXTURE_TOKEN" ] \
+   && [ "$FRESH_TARGET_MODE" = 600 ]; then
+  ok "F8  the token was then written into it, 0600, byte for byte"
+else
+  no "F8  the token was then written into it, 0600, byte for byte (mode '${FRESH_TARGET_MODE}')"
+fi
+
+# An EXISTING parent is the node's own directory: neither its mode nor its
+# ownership is this script's to touch, so a run over one must not so much as
+# reach for `install -d`.
+EXISTING_PARENT="${TMPROOT}/provisioned-node/etc/rancher/k3s"
+mkdir -p "$EXISTING_PARENT"
+chmod 0700 "$EXISTING_PARENT"
+EXISTING_PROFILE="${TMPROOT}/agent-existing-parent.env"
+agent_profile "$EXISTING_PROFILE" "${EXISTING_PARENT}/agent-join-token"
+PARENT_BEFORE="$(stat -c '%a %U %G' "$EXISTING_PARENT")"
+: > "$SUDO_LOG"
+run_seed "$WORKBIN" "$EXISTING_PROFILE"
+PARENT_AFTER="$(stat -c '%a %U %G' "$EXISTING_PARENT")"
+
+# The token file's presence is part of the assertion: it proves the run went
+# all the way THROUGH the parent step rather than stopping short of it.
+if [ "$REPLY_RC" -eq 0 ] && [ -f "${EXISTING_PARENT}/agent-join-token" ] \
+   && [ "$PARENT_AFTER" = "$PARENT_BEFORE" ]; then
+  ok "F9  an existing parent is left exactly as it was (${PARENT_BEFORE})"
+else
+  no "F9  an existing parent is left exactly as it was (was '${PARENT_BEFORE}', now '${PARENT_AFTER}', rc=${REPLY_RC})"
+fi
+
+if grep -q 'install -d' "$SUDO_LOG"; then
+  no "F10 no install -d ran at all over an existing parent"
+  cat "$SUDO_LOG"
+else
+  ok "F10 no install -d ran at all over an existing parent"
 fi
 
 # ---------------------------------------------------------------------------
