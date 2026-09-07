@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.57.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.56.2...v1.57.0) (2026-09-07)
+
+
+### Features
+
+* **observability:** emit the pool's RUNNING JOBS as wide events, one per runner per tick ([b19f519](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b19f51915e6b6a230db958b811a265d734ca425e))
+
 ## [1.56.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.56.1...v1.56.2) (2026-09-07)
 
 
