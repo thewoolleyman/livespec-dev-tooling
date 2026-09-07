@@ -1,0 +1,136 @@
+{
+  "name": "CI runner pool — PowerEdge: queued, admitted and running by repository",
+  "description": "The PowerEdge (poweredge-xubuntu) self-hosted runner pool, as one page: what is QUEUED and what is RUNNING, and for WHICH repository. Panels 1-2 and 5 read the per-repository signals emitted by ci-runner/observability/ci-pool-attributed-gauges.sh; panels 3-4 read the fleet sums and stall classes emitted by ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh. Defined as code in livespec-dev-tooling ci-runner/observability/boards/ci-runner-pool.json and converged by apply-boards.sh beside it; edit the definition, never this board in the UI. livespec-mqy35a, livespec plan ci-runner-pod-lifecycle-reliability.",
+  "type": "flexible",
+  "layout_generation": "manual",
+  "tags": [
+    {"key": "host", "value": "poweredge-xubuntu"},
+    {"key": "service", "value": "ci-runner-pool"},
+    {"key": "component", "value": "runner-pool"},
+    {"key": "kind", "value": "board"}
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "position": {"x_coordinate": 0, "y_coordinate": 0, "height": 3, "width": 12},
+      "text_panel": {
+        "content": "# PowerEdge runner pool\n\n**Two datasets, on purpose.** The `livespec` environment is a Honeycomb *Metrics 2.0* environment, so **every** OTLP metric lands in its single `metrics` dataset and an `x-honeycomb-dataset` header is ignored there (measured 2026-08-23). Gauges are therefore told apart by metric NAME plus `host.name`, never by dataset — panels 1-4 all query `metrics`. The running-jobs table (panel 5) is a **wide event** stream, and events auto-route by `service.name`, so it queries the separate `ci-runner-pool` dataset.\n\n**Emitters.** Per-repository gauges and the running-job events: `ci-runner/observability/ci-pool-attributed-gauges.sh` (about every minute). Fleet sums and lifecycle stall classes: `ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (every 5 minutes). Both post to the host collector on `127.0.0.1:4319`.\n\n**This board is code.** Its definition lives at `ci-runner/observability/boards/ci-runner-pool.json` in `thewoolleyman/livespec-dev-tooling` and is converged by `apply-boards.sh` beside it. A change made in this UI is lost on the next apply."
+      }
+    },
+    {
+      "type": "query",
+      "key": "queue-depth-by-repository",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {"x_coordinate": 0, "y_coordinate": 3, "height": 6, "width": 6},
+      "annotation": {
+        "name": "Pool queue depth by repository — pending and admitted workloads",
+        "description": "MAX of livespec.ci_pool.queue_pending and livespec.ci_pool.queue_admitted on poweredge-xubuntu, broken down by ci.repository: one ClusterQueue datapoint per repository per tick. This is the question the fleet sums cannot answer — a saturated pool and one saturated repository look identical in livespec.ci_kueue.pending. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh."
+      },
+      "query": {
+        "calculations": [
+          {"op": "MAX", "column": "livespec.ci_pool.queue_pending"},
+          {"op": "MAX", "column": "livespec.ci_pool.queue_admitted"}
+        ],
+        "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}],
+        "breakdowns": ["ci.repository"],
+        "time_range": 86400,
+        "limit": 100
+      }
+    },
+    {
+      "type": "query",
+      "key": "runners-by-repository-and-phase",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {"x_coordinate": 6, "y_coordinate": 3, "height": 6, "width": 6},
+      "annotation": {
+        "name": "Pool runners by repository and phase",
+        "description": "MAX of livespec.ci_pool.runners on poweredge-xubuntu, broken down by ci.repository and ci.runner_phase: EphemeralRunner objects across all namespaces, counted by owning repository and phase. A repository whose runners sit in a non-Running phase is the per-repository half of a pool-wide stall. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh."
+      },
+      "query": {
+        "calculations": [{"op": "MAX", "column": "livespec.ci_pool.runners"}],
+        "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}],
+        "breakdowns": ["ci.repository", "ci.runner_phase"],
+        "time_range": 86400,
+        "limit": 100
+      }
+    },
+    {
+      "type": "query",
+      "key": "fleet-totals-against-quota",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {"x_coordinate": 0, "y_coordinate": 9, "height": 6, "width": 6},
+      "annotation": {
+        "name": "Pool fleet totals — pending and admitted against churn-slot quota and allocatable",
+        "description": "MAX of the lifecycle sweep's four fleet readings on poweredge-xubuntu, ungrouped: livespec.ci_kueue.pending and .admitted against livespec.ci_churn_slot.quota_sum (the nominalQuota summed over every ClusterQueue covering ci-runner.io/churn-slot) and .allocatable (the extended resource summed over the nodes; a 0 means the resource is not registered, which IS a reading). admitted at quota with pending above zero is the pool at capacity; allocatable below quota_sum is capacity the queues believe in but the nodes do not offer. Emitter: ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh."
+      },
+      "query": {
+        "calculations": [
+          {"op": "MAX", "column": "livespec.ci_kueue.pending"},
+          {"op": "MAX", "column": "livespec.ci_kueue.admitted"},
+          {"op": "MAX", "column": "livespec.ci_churn_slot.quota_sum"},
+          {"op": "MAX", "column": "livespec.ci_churn_slot.allocatable"}
+        ],
+        "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}],
+        "time_range": 86400
+      }
+    },
+    {
+      "type": "query",
+      "key": "lifecycle-stall-classes",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {"x_coordinate": 6, "y_coordinate": 9, "height": 6, "width": 6},
+      "annotation": {
+        "name": "Runner-pod lifecycle stall classes — all ten",
+        "description": "MAX of every livespec.ci_lifecycle.<class> gauge on poweredge-xubuntu. The sweep emits ten classes, not the seven the phase2 README's table row still names: the original pvc-pending, bind-deadline, inotify-emfile, containerd-deadline, hook-failure, stale-listener and capacity-absent, plus warm-cache-oversize, start-seed-cost and api-unavailable added since. Every class is emitted every sweep, 0 when clean, so a flat zero line is a working emitter and a MISSING line is a broken one. Emitter: ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh."
+      },
+      "query": {
+        "calculations": [
+          {"op": "MAX", "column": "livespec.ci_lifecycle.pvc-pending"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.bind-deadline"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.inotify-emfile"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.containerd-deadline"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.hook-failure"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.stale-listener"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.capacity-absent"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.warm-cache-oversize"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.start-seed-cost"},
+          {"op": "MAX", "column": "livespec.ci_lifecycle.api-unavailable"}
+        ],
+        "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}],
+        "time_range": 86400
+      }
+    },
+    {
+      "type": "query",
+      "key": "running-jobs-table",
+      "dataset": "ci-runner-pool",
+      "query_style": "table",
+      "position": {"x_coordinate": 0, "y_coordinate": 15, "height": 7, "width": 12},
+      "annotation": {
+        "name": "Pool running jobs now — repository, workflow, run id, job name, phase and age",
+        "description": "The wide-event half of the pool signal: one record per runner carrying a job assignment, per tick, in the ci-runner-pool EVENTS dataset (events auto-route by service.name, so this panel does NOT read the metrics dataset the other four read). Broken down by runner and job identity over the trailing 10 minutes — about ten ticks of a roughly one-minute emitter — so a row present here is a job running now; MAX(ci.runner_age_s) is that runner's age at its newest tick and orders the table oldest first, which is where a wedged runner surfaces. Run id and job name are unbounded identifiers and are carried as event fields for exactly that reason; as gauge attributes they would multiply this pool's time series by every workflow run it ever serves. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh."
+      },
+      "query": {
+        "calculations": [
+          {"op": "MAX", "column": "ci.runner_age_s"},
+          {"op": "COUNT"}
+        ],
+        "breakdowns": [
+          "ci.repository",
+          "ci.workflow_ref",
+          "ci.run_id",
+          "ci.job_name",
+          "ci.runner_phase",
+          "ci.runner_name"
+        ],
+        "orders": [{"op": "MAX", "column": "ci.runner_age_s", "order": "descending"}],
+        "time_range": 600,
+        "limit": 100
+      }
+    }
+  ]
+}

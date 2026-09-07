@@ -5,10 +5,15 @@
 # WHO READS THESE, UP FRONT (the heartbeat's lesson, livespec-s43svm.20: a
 # metric with no named reader is indistinguishable from one that stopped
 # being emitted — that heartbeat exited 7 every five minutes for eight days
-# and nothing noticed). The reader is the Honeycomb board H2 of the livespec
-# plan `ci-runner-pod-lifecycle-reliability` (`livespec-mqy35a`), which
+# and nothing noticed). The reader is the Honeycomb board named "CI runner
+# pool — PowerEdge: queued, admitted and running by repository", which
 # answers "what is queued or running on the PowerEdge pool, and for which
-# repository". No trigger pairs with these gauges: like the sweep's Kueue
+# repository". That board is code, not a hand-built page: its definition is
+# ./boards/ci-runner-pool.json and ./boards/apply-boards.sh converges it by
+# name (board H2 of the livespec plan `ci-runner-pod-lifecycle-reliability`,
+# `livespec-mqy35a`). Its first two panels read the gauges below and its
+# last reads the wide events further down; see ./README.md for which panel
+# reads which dataset. No trigger pairs with these gauges: like the sweep's Kueue
 # pair they are board inputs, not alarms. The alarms on this pool are the
 # ones already under ./triggers/, and none of them reads a metric name this
 # script emits (see WHY A SEPARATE NAME FAMILY below).
