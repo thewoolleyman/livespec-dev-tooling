@@ -10,10 +10,11 @@
 #      sub-letters names), every one of them RUN, every line tagged [server];
 #   B. an agent profile's --dry-run plan OMITS the reconstruct converge — the
 #      only step that applies Kueue ClusterQueues and ARC scale sets — plus
-#      the secret reinjection unit, the tmpfs datastore, the iDRAC thermal step
-#      and the churn-slot reapply unit, each with a logged reason, and KEEPS
-#      k3s config, the kernel budgets, AppArmor (profile only), the storage
-#      layout, both scans and the sweep;
+#      the secret reinjection unit, the tmpfs datastore, the iDRAC thermal step,
+#      the churn-slot reapply unit, both cluster-wide scans and the ARC log
+#      archive, each with a logged reason, and KEEPS k3s config, the kernel
+#      budgets, AppArmor (profile only), the storage layout, the host tools,
+#      sccache, the container hook and the scratch sweep;
 #   C. --dry-run executes nothing: not one installer runs, and not one of the
 #      host-mutating tools they reach for is invoked;
 #   D. the profile is DATA and is validated as data — a missing key, an
@@ -146,12 +147,15 @@ fi
 AGENT_OUT="$REPLY_OUT"
 AGENT_PLAN="$(plan_lines "$AGENT_OUT")"
 
-# The five skipped steps, by the label fragment that identifies each. The
+# The eight skipped steps, by the label fragment that identifies each. The
 # reconstruct converge is the only step that applies Kueue ClusterQueues and
 # ARC scale sets, so its absence is what omits Kueue and ARC from this plan.
 for fragment in \
   "2c/10 iDRAC cooling configuration" \
   "4/10 churn-slot extended resource" \
+  "5/10 wedged-runner scan" \
+  "5b/10 runner-pod lifecycle scan" \
+  "6/10 ARC log archive" \
   "7/10 boot-time GitHub App secret reinjection unit" \
   "8/10 reconstruct-on-boot converge unit" \
   "9/10 tmpfs datastore mount"
@@ -171,7 +175,7 @@ done
 # No skipped step is silent: each SKIP line is followed by its reason.
 skip_count="$(printf '%s\n' "$AGENT_PLAN" | grep -c '^SKIP ')"
 reason_count="$(printf '%s\n' "$AGENT_OUT" | grep -c '^     reason: ')"
-if [ "$skip_count" -eq 5 ] && [ "$reason_count" -eq 5 ]; then
+if [ "$skip_count" -eq 8 ] && [ "$reason_count" -eq 8 ]; then
   ok "every one of the ${skip_count} skipped steps carries a logged reason"
 else
   no "every skipped step carries a logged reason (skips=${skip_count} reasons=${reason_count})"
@@ -191,6 +195,26 @@ case "$CHURN_SKIP_REASON" in
     no "the churn-slot skip reason names the server's reapply timer (got: ${CHURN_SKIP_REASON})" ;;
 esac
 
+# The three cluster-wide sweeps are read the same way and for the same reason:
+# 5/10 reported an armed timer over one that had landed `failed`, and 5b/10
+# aborted the runbook at its own verify, taking steps 6..10 with it
+# (livespec-dev-tooling-qcq0). Each reason has to name the SERVER's timer as
+# what already performs the sweep for this node, or the operator reading the
+# skip cannot tell an omission from a gap in coverage.
+assert_skip_reason_names_server() {  # ... STEP-LABEL-FRAGMENT TIMER-NAME
+  local fragment="$1" timer="$2" reason
+  reason="$(printf '%s\n' "$AGENT_OUT" | grep -A1 -F "SKIP [agent] ${fragment}" | tail -n 1)"
+  case "$reason" in
+    "     reason: "*"SERVER's own ${timer}"*)
+      ok "the ${fragment} skip reason names the server's ${timer}" ;;
+    *)
+      no "the ${fragment} skip reason names the server's ${timer} (got: ${reason})" ;;
+  esac
+}
+assert_skip_reason_names_server "5/10 wedged-runner" "scan-wedged-runners.timer"
+assert_skip_reason_names_server "5b/10 runner-pod lifecycle" "scan-runner-pod-lifecycle.timer"
+assert_skip_reason_names_server "6/10 ARC log archive" "archive-arc-logs.timer"
+
 # Nothing in the agent plan applies the cluster-side Kueue or ARC objects: the
 # reconstruct converge is gone, and no other RUN line names either of them.
 if printf '%s\n' "$AGENT_PLAN" | grep '^RUN ' | grep -qiE 'kueue|scale set|clusterqueue'; then
@@ -205,9 +229,6 @@ for fragment in \
   "2b/10 storage layout" \
   "2d/10 operator host tools" \
   "3/10 AppArmor profile only (--profile-only;" \
-  "5/10 wedged-runner scan (clear)" \
-  "5b/10 runner-pod lifecycle scan" \
-  "6/10 ARC log archive" \
   "7b/10 pool-provided sccache binary" \
   "7c/10 fleet-patched ARC container hook" \
   "10/10 boot-time orphaned-scratch sweep"
