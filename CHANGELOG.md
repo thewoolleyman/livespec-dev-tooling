@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.55.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.54.0...v1.55.0) (2026-09-07)
+
+
+### Features
+
+* **ci-runner:** seed runner externals from the provisioner and select the fleet-patched hook ([4fb6b82](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4fb6b82a0edeb963a155752ca47cd27e6c278d46))
+
 ## [1.54.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.53.9...v1.54.0) (2026-09-07)
 
 
