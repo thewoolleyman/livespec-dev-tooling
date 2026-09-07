@@ -16,6 +16,16 @@
 # and the controller CLI is absent (hence the unresolved `<enclosure>`
 # placeholder that §B5 separately proves resolves to 32 on the real node).
 #
+# WHAT THE STAGE-1 TOOL PREFLIGHT ADDS HERE: NOTHING, EVER. Under
+# `whole-device` the preflight never installs anything — this plan runs from the
+# Recovery USB, which is built to carry the tools, so an absent one is a refusal
+# rather than a package to fetch. A `--dry-run` prints that refusal as a
+# `WOULD REFUSE: <tool> absent (<package>)` NOTE, which carries no `+ ` prefix
+# and so is not part of this capture; `storage-layout-exit-tests.sh` §H4-H5 run
+# this profile on a PATH without pvcreate or mkfs.xfs and assert both halves —
+# the two WOULD REFUSE lines, and that the printed sequence is still byte-for-
+# byte this file.
+#
 # HOW TO CHANGE IT. Only by deciding that this node's rebuild plan should
 # change, and saying so in the change that alters it. Re-capturing this file to
 # make a red §F2 go green is the same inversion `README.md` §"The profile is

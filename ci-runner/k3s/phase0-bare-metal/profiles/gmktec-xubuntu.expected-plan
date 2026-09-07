@@ -20,6 +20,17 @@
 # `lvm`, and no volume group or logical volume yet. `sgdisk --new=3:…` is
 # therefore the derived number and not an assumed one.
 #
+# WHAT THE STAGE-1 TOOL PREFLIGHT ADDS HERE: NOTHING, and that is the assertion
+# rather than an omission. The preflight emits a `+ ` line only when a tool the
+# plan needs is ABSENT, and the fake tools this capture is taken against supply
+# all of them — so this file stays the plan for a node that has lvm2 and
+# xfsprogs. The live node does not: `storage-layout-exit-tests.sh` §H1-H3 run
+# the same profile on a PATH with neither and assert the result is EXACTLY this
+# file with one `apt-get install -y --no-install-recommends lvm2 xfsprogs` line
+# in front of it. So an install is added ahead of the first `sgdisk` and nothing
+# below moves, which is the property that keeps a half-applied layout
+# impossible.
+#
 # HOW TO CHANGE IT. Only by deciding that this node's rebuild plan should
 # change, and saying so in the change that alters it. Re-capturing this file to
 # make a red assertion go green is the same inversion `README.md` §"The profile
