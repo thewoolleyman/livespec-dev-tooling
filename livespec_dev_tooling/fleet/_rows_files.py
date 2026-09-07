@@ -29,6 +29,12 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
+from livespec_dev_tooling.fleet._settle_window import (
+    LatestRelease,
+    never_fired_class,
+    read_latest_release,
+    utc_now,
+)
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -168,46 +174,39 @@ def _locked_tag(*, uv_lock_text: str) -> str | None:
     return None
 
 
-def _latest_dev_tooling_tag(*, ctx: FleetContext) -> str | None:
-    """`livespec-dev-tooling`'s latest release tag, or None when unreadable."""
-    payload = ctx.api_object(path=f"repos/{ctx.owner}/{_DEV_TOOLING_REPO}/releases/latest")
-    if not isinstance(payload, dict):
-        return None
-    tag = cast("dict[str, object]", payload).get("tag_name")
-    return tag if isinstance(tag, str) else None
-
-
 def _freshness_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> RowOutcome:
-    """Staleness leg of the pin row — WARNING, escalating on a PERSISTING gap.
+    """Staleness leg of the pin row — WARNING, escalating on either ratified class.
 
-    Plain staleness warns rather than reds the fleet: freshness has its
-    own dedicated repo-local mechanism (`pin-freshness.yml` + bump-PR
-    automation), and the minutes-long window between a release and its
-    bump PR merging is normal operation. The exception (livespec-dh9r)
-    is the PERSISTING gap — stale AND the bump PR that would fix it is
-    already open, i.e. the mechanism fired and could not land — which is
-    an error finding. An unreadable PR list never escalates (the
+    Freshness has its own dedicated repo-local mechanism
+    (`pin-freshness.yml` + bump-PR automation), so a stale pin is not by
+    itself a fleet red. Two states are: the PERSISTING gap
+    (livespec-dh9r) — stale AND the bump PR that would fix it is already
+    open, i.e. the mechanism fired and could not land — and, since v039,
+    the NEVER-FIRED class, stale with NO bump PR once the release has
+    aged past the settle window, which is the state the mechanism never
+    ran in at all. An unreadable PR list never escalates (the
     livespec-dev-tooling-6ge principle) — and no longer claims the
     never-fired class either: it says the class is undetermined.
     """
-    latest = _latest_dev_tooling_tag(ctx=ctx)
-    if latest is None:
+    release = read_latest_release(ctx=ctx, repo=_DEV_TOOLING_REPO)
+    if release is None:
         return RowPass(note="pin present; freshness unverified (latest release unreadable)")
-    if tag == latest:
+    if tag == release.tag:
         return RowPass()
-    return _stale_dev_tooling_pin_outcome(ctx=ctx, member=member, tag=tag, latest=latest)
+    return _stale_dev_tooling_pin_outcome(ctx=ctx, member=member, tag=tag, release=release)
 
 
 def _stale_dev_tooling_pin_outcome(
-    *, ctx: FleetContext, member: FleetMember, tag: str, latest: str
+    *, ctx: FleetContext, member: FleetMember, tag: str, release: LatestRelease
 ) -> RowOutcome:
     """Which staleness class the stale dev-tooling pin falls in, or that it is undetermined.
 
     The mirror of `_rows_pin_currency._staleness_class_outcome`, and the
-    two must keep agreeing: the shared clause renderer is what stops the
-    "both persisting-gap sites must move together" comment above from
-    being a hope.
+    two must keep agreeing: the shared clause renderer and the shared
+    `_settle_window` predicate are what stop the "both persisting-gap
+    sites must move together" comment below from being a hope.
     """
+    latest = release.tag
     stale_summary = f"{member.repo}: dev-tooling pin {tag} is stale (latest release {latest})"
     open_prs = open_bump_prs_for(ctx=ctx, member=member)
     if isinstance(open_prs, IOFailure):
@@ -235,7 +234,16 @@ def _stale_dev_tooling_pin_outcome(
             # the promotion is half-armed.
             severity="error" if ctx.filter_consuming_preflight else "warning",
         )
-    return RowFinding(message=stale_summary, severity="warning")
+    # The NEVER-FIRED class, under the SAME lane scoping. The predicate
+    # itself lives in `_settle_window` so this site and the pin-currency
+    # rows cannot drift on what "past the window" means.
+    never_fired = never_fired_class(published_at=release.published_at, now=utc_now())
+    return RowFinding(
+        message=f"{stale_summary} — {never_fired.clause}",
+        severity=(
+            "error" if never_fired.escalates and ctx.filter_consuming_preflight else "warning"
+        ),
+    )
 
 
 def _lock_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> RowFinding | None:
@@ -275,7 +283,8 @@ def assert_dev_tooling_pin(*, ctx: FleetContext, member: FleetMember) -> RowOutc
     Presence is the hard obligation (error severity); the committed
     `uv.lock` MUST lock the same tag the pin names (`_lock_outcome`,
     error severity, livespec-glv6); the staleness leg is delegated to
-    `_freshness_outcome` (warning severity).
+    `_freshness_outcome` (warning, escalating in the fan-out preflight
+    on either of the two ratified staleness classes).
     """
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:
