@@ -10,7 +10,7 @@ recurse into `proposed_changes/`, `history/`,
 `templates/<name>/history/`, or any other subdirectory; it does NOT
 include the skill-owned `README.md`.
 
-The check fails on five directions:
+The check fails on four directions:
 
 1. Uncovered heading — a `(spec_root, spec_file, heading)` triple
    appears in some spec file but no matching registry entry exists.
@@ -54,20 +54,17 @@ The check fails on five directions:
    violation: there is no test, so there is no marker, and that is a
    verdict the read produced.
 
-5. Unresolvable node id — a NON-TODO entry's `test` names a module
-   that does not exist, or a module that exists but defines no test
-   function of that name. Until `livespec-dev-tooling-8t0i` the
-   check never resolved the ids it was given at all: a row could
-   name a nonexistent test and the check exited 0, so twelve
-   ratified scenarios in a sibling repo were recorded as pinned and
-   were pinned by nothing. It fires
-   `registry node id does not resolve to an existing test` under its
-   OWN `check_id`, separable in a log from direction 4's tier
-   verdict. Like direction 4 it has a third outcome — a mapped
-   module that exists and cannot be read or does not parse is
-   UNRESOLVED rather than dangling, and still exits non-zero.
-   The resolution logic lives in the private sibling module
-   `_heading_coverage_node_id_resolution.py`.
+⛔ A MAPPED NODE ID IS NOT RESOLVED AGAINST THE TREE. A non-TODO
+entry naming a module or a test function that does not exist is NOT a
+violation here: a fifth direction that resolved it landed in
+`29a49c05` (v1.52.13) and was REVERTED by
+`livespec-dev-tooling-jel7`, because it was armed AHEAD OF ADOPTION —
+it reddened all three consumer repos' pin-bump PRs at once, and
+repairing their ids only makes direction 4's pre-existing tier
+verdicts reachable, so the gate was unsatisfiable by every repo it
+judged. Re-landing it behind adoption is tracked separately. It was
+removed rather than gated, and it must NOT come back as a lever, a
+flag, an env var, or a severity knob.
 
 The allowlist of integration-tier node-id prefixes is read per
 consumer repo from the `[tool.livespec_dev_tooling]` block's
@@ -120,19 +117,10 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
-# Each RESOLUTION concern lives in its own private sibling module — direction 5
-# below and direction 4 beneath it — the LLOC-reduction split mirroring
-# `_ci_matrix_parse`. The parent keeps the spec-heading walk, the registry
-# diff, and every structured diagnostic.
-#
-# Direction-5 node-id resolution (module + test-function existence).
-from livespec_dev_tooling.checks._heading_coverage_node_id_resolution import (  # noqa: E402
-    UnresolvedNodeId,
-    unresolvable_node_ids,
-)
-
 # Direction-4 scenario integration-tier resolution (the allowlist-prefix and
-# AST-marker logic).
+# AST-marker logic) extracted to a private sibling module — the LLOC-reduction
+# split mirroring `_ci_matrix_parse`. The parent keeps the spec-heading walk,
+# the registry diff, and every structured diagnostic.
 from livespec_dev_tooling.checks._heading_coverage_tier_resolution import (  # noqa: E402
     DEFAULT_SCENARIO_TIERS,
     scenario_tier_violations,
@@ -253,7 +241,6 @@ def _report(
     orphan: list[tuple[str, str, str]],
     todo_missing_reason: list[dict[str, object]],
     tier_violations: list[dict[str, object]],
-    node_id_violations: list[UnresolvedNodeId],
 ) -> int:
     """Emit every direction's structured diagnostic and return the failing exit code."""
     log = structlog.get_logger("heading_coverage")
@@ -280,17 +267,6 @@ def _report(
             spec_file=entry.get("spec_file"),
             heading=entry.get("heading"),
             test=entry.get("test"),
-        )
-    for violation in node_id_violations:
-        log.error(
-            "registry node id does not resolve to an existing test",
-            check_id="heading-coverage-node-id-does-not-resolve",
-            spec_root=violation.entry.get("spec_root"),
-            spec_file=violation.entry.get("spec_file"),
-            heading=violation.entry.get("heading"),
-            test=violation.entry.get("test"),
-            reason=violation.reason,
-            detail=violation.detail,
         )
     return 1
 
@@ -328,21 +304,6 @@ def main() -> int:
         )
     else:
         tier_violations = unsafe_perform_io(tier_scan.unwrap())
-    node_id_scan = unresolvable_node_ids(repo_root=cwd, entries=coverage_entries)
-    node_id_violations: list[UnresolvedNodeId] = []
-    if isinstance(node_id_scan, IOFailure):
-        # Same reading as the tier direction's failure arm: a mapped module the
-        # check could not read is not a dangling id, and reporting it as one
-        # would be the false verdict this direction was added to remove.
-        unreadable = unsafe_perform_io(node_id_scan.failure())
-        log.error(
-            "node id resolution UNRESOLVED — this is not an existence verdict",
-            check_id="heading-coverage-node-id-unresolved",
-            reason=unreadable.reason,
-            detail=unreadable.detail,
-        )
-    else:
-        node_id_violations = unsafe_perform_io(node_id_scan.unwrap())
     uncovered = sorted(spec_set - registry_set)
     orphan = sorted(registry_set - spec_set)
     if (
@@ -350,9 +311,7 @@ def main() -> int:
         and not orphan
         and not todo_missing_reason
         and not tier_violations
-        and not node_id_violations
         and not isinstance(tier_scan, IOFailure)
-        and not isinstance(node_id_scan, IOFailure)
     ):
         return 0
     return _report(
@@ -360,7 +319,6 @@ def main() -> int:
         orphan=orphan,
         todo_missing_reason=todo_missing_reason,
         tier_violations=tier_violations,
-        node_id_violations=node_id_violations,
     )
 
 
