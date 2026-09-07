@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.56.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.56.1...v1.56.2) (2026-09-07)
+
+
+### Bug Fixes
+
+* **bump-pin:** reset a leftover bump branch instead of dying on non-fast-forward ([9e5a1ea](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9e5a1ea118efecfca0fbba253cd5f84de8d3b8eb))
+
 ## [1.56.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.56.0...v1.56.1) (2026-09-07)
 
 
