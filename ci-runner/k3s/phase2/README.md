@@ -1898,6 +1898,66 @@ to `runners_total` unless a runner carried a `githubConfigUrl` with no
 `<owner>/<repo>` tail — an organization- or enterprise-level scale set — which
 is counted in the total, left out of the breakdown, and logged.
 
+**The RUNNING JOBS are wide EVENTS, not gauges** (`livespec-i4ahv4` scope 3).
+The same emitter makes a SECOND POST per tick, to the same collector on the
+same port but the logs path (`http://127.0.0.1:4319/v1/logs`), carrying one
+record per runner that has a job assigned. Events rather than more attributed
+gauges because the two columns an operator most wants — the run id and the job
+name — are unbounded identifiers: as gauge attributes they would multiply this
+pool's time series by every workflow run it ever serves, to carry a value of
+`1` that says nothing, whereas as a wide event each row is ONE record with
+every field on it, which is what a Honeycomb table and BubbleUp read. The
+host collector's `logs` pipeline (`thewoolleyman/otel-collector`
+`config.ci-runner-host.yaml`: receivers `[otlp]`, exporters
+`[otlp/honeycomb_livespec]`) already existed, so nothing outside this
+repository changed.
+
+| Attribute | Value | Read from |
+|---|---|---|
+| `ci.repository` | the repository the running job belongs to, already `owner/repo` | `EphemeralRunner.status.jobRepositoryName` |
+| `ci.workflow_ref` | the full workflow ref, e.g. `thewoolleyman/livespec-dev-tooling/.github/workflows/ci.yml@refs/heads/master`, emitted verbatim rather than split | `status.jobWorkflowRef` |
+| `ci.run_id` | the workflow run id, e.g. `34120033338` — a STRING although it is numeric, because it is an identifier to group and filter by, never a quantity to sum | `status.workflowRunId` |
+| `ci.job_name` | the CI job label, e.g. `check-metadata-batch` | `status.jobDisplayName` |
+| `ci.runner_phase` | the runner's phase; the rows are NOT filtered to `Running`, so a job wedged in `Pending` or gone to `Failed` is visible and the board filters on it | `status.phase` |
+| `ci.runner_name`, `ci.runner_namespace` | the EphemeralRunner object, the join key back to `kubectl` and to the pod's logs | `metadata.name`, `metadata.namespace` |
+| `ci.runner_age_s` | whole seconds since the runner object was created | `metadata.creationTimestamp` |
+
+**The dataset is `ci-runner-pool`, and it was chosen by choosing
+`service.name`.** The collector's one Honeycomb exporter sets no
+`x-honeycomb-dataset` header, so traces and logs auto-route by `service.name`
+— naming the dataset IS naming the service. These records carry
+`service.name` = `ci-runner-pool` (scope `ci-pool-attributed-gauges`), which
+is the name `livespec-i4ahv4` proposed and the one board H2
+(`livespec-mqy35a`) tables. It collides with nothing: the gauges above share
+that `service.name` and still land in the environment's single Metrics 2.0
+`metrics` dataset, because metrics there are routed by name and attributes
+rather than by service.
+
+**One listing, two signals, two different repository fields — on purpose.**
+The events come from the SAME `kubectl get ephemeralrunners --all-namespaces`
+call as the gauges, widened to carry the job fields, so this signal costs no
+extra API request per tick. But the gauges derive `ci.repository` from
+`spec.githubConfigUrl` and the events derive it from
+`status.jobRepositoryName`, and neither can use the other's field: the spec
+field is present in every phase, so the COUNTS include idle runners, while
+`jobRepositoryName` is populated only while a job is assigned, which is
+exactly the lifetime of an event ROW. A useful consequence of the split: a
+runner from an organization-level scale set has no `<owner>/<repo>` tail in
+its config URL and so contributes to no per-repository gauge row, yet its
+running job still appears as an event, because the job names its repository
+directly.
+
+**Fail-closed, per attribute.** An attribute whose field is empty is OMITTED
+from the record rather than sent as an empty string, and an unreadable
+`creationTimestamp` drops `ci.runner_age_s` rather than reporting a runner as
+brand new. A runner with NO job fields at all gets no record — it is a
+population fact the gauges already carry, not a running job. An idle pool
+therefore produces no records and no logs POST at all, which for a board
+asking "what is running now" is the answer rather than a gap; the emitter's
+liveness is carried by `livespec.ci_pool.runners_total`, emitted every tick
+including 0, so the events dataset needs no heartbeat row to be told apart
+from a broken emitter.
+
 Why ClusterQueue status rather than `kubectl get workloads -A`: one list
 call yields pending, admitted AND the quota sum, and the per-queue counters
 are the ones Kueue's own admission loop maintains; a workloads listing would

@@ -4,11 +4,16 @@
 # Emitter for livespec-i4ahv4 (livespec repo, plan
 # `ci-runner-pod-lifecycle-reliability`, epic livespec-ifwnqj) scope 1, 2, 4
 # and 5: the pool's queue depth and runner population PER REPOSITORY, which
-# the lifecycle sweep's fleet sums cannot express. Receiver: the
+# the lifecycle sweep's fleet sums cannot express — and scope 3, the
+# per-runner RUNNING-JOB detail, as wide events. Receiver: the
 # CI-runner-host otel-collector (thewoolleyman/otel-collector
 # config.ci-runner-host.yaml) on 127.0.0.1:4319, exporting to the `livespec`
-# Honeycomb env. READER: the plan's Honeycomb board H2 (`livespec-mqy35a`).
-# No trigger pairs with these gauges — they are board inputs, not alarms.
+# Honeycomb env. TWO POSTs to that one receiver per tick: the gauges to
+# /v1/metrics, landing in the env's single Metrics 2.0 `metrics` dataset, and
+# the running-job events to /v1/logs, landing in the `ci-runner-pool` dataset
+# the exporter routes them to by service.name (it sets no dataset header).
+# READER of both: the plan's Honeycomb board H2 (`livespec-mqy35a`). No
+# trigger pairs with either — they are board inputs, not alarms.
 #
 # NOT A DynamicUser, unlike the sibling ci-runner-heartbeat.service: it runs
 # as root with the k3s ADMIN kubeconfig, because it reads cluster-scoped
@@ -19,12 +24,16 @@
 # node holds no admin kubeconfig, and the server's own tick already covers
 # the whole pool.
 #
-# THE DEADLINE. The timer's interval is 60 s, so a run must finish well
-# inside one: two kubectl list calls bounded at 15 s each plus a 10 s curl is
-# 40 s worst case, and TimeoutStartSec=50 keeps a wedged read from holding
-# the cadence the way the lifecycle sweep's untimed child did on 2026-09-06
-# (livespec-kgdlte). A run that is killed at the deadline emits nothing,
-# which is the correct fail-closed outcome.
+# THE DEADLINE. The timer's interval is 60 s, so a run must finish inside
+# one. The bounded work is two kubectl list calls at 15 s each plus TWO 10 s
+# curls — the metrics POST and the running-job events POST — so 50 s worst
+# case, and TimeoutStartSec=55 keeps a wedged read from holding the cadence
+# the way the lifecycle sweep's untimed child did on 2026-09-06
+# (livespec-kgdlte). It was 50 against a 40 s worst case while this unit
+# posted metrics only; the events POST added the fourth bounded step, so the
+# deadline moved with it rather than being left to bite a healthy-but-slow
+# run. A run killed at the deadline emits nothing, which is the correct
+# fail-closed outcome.
 #
 # BOOT ORDERING is ORDERING ONLY (no Requires=), the shape
 # ci-kueue-webhook-probe.service settled on: a boot-time activation waits for
@@ -45,7 +54,7 @@ After=k3s.service converge-ci-stack.service
 Type=oneshot
 # Runs as root (default): needs the k3s admin kubeconfig, read-only.
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-TimeoutStartSec=50
+TimeoutStartSec=55
 CapabilityBoundingSet=
 NoNewPrivileges=yes
 ProtectSystem=strict

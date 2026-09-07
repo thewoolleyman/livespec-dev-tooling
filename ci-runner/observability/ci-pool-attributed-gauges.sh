@@ -24,8 +24,9 @@
 # read for emission at all. So there is no place to see which repository is
 # waiting: a saturated pool and one saturated repository look identical.
 # Scope 1, 2, 4 and 5 of livespec-i4ahv4 (livespec repo, epic
-# livespec-ifwnqj). Scope 3, the per-runner running-job detail, is a
-# separate slice and is NOT emitted here.
+# livespec-ifwnqj), and — since the running-jobs slice — its scope 3 as
+# well: the per-runner running-job detail, emitted as WIDE EVENTS beside
+# the gauges (see WHAT IT EMITS AS EVENTS below).
 #
 # WHAT IT EMITS. One OTLP/HTTP metrics POST to the host collector's loopback
 # receiver (127.0.0.1:4319/v1/metrics — the heartbeat's and the sweep's
@@ -46,6 +47,71 @@
 #   livespec.ci_pool.runners_total   (no attributes)
 #       the same listing's total — the fleet number the per-repository rows
 #       break down.
+#
+# WHAT IT EMITS AS EVENTS, and why events rather than more gauges. Scope 3
+# of livespec-i4ahv4 asks for the jobs RUNNING NOW with per-runner detail:
+# repository, workflow ref, run id, job name, phase and age. That is a row
+# per runner per tick, and its two most useful columns — the run id and the
+# job name — are unbounded high-cardinality identifiers. As gauge ATTRIBUTES
+# they would multiply this pool's time series by every workflow run it ever
+# serves, to carry a value (1) that says nothing; as a WIDE EVENT each row is
+# ONE record with every field on it, which is the shape a Honeycomb table and
+# BubbleUp actually read. So the running-job detail is emitted as OTLP LOGS,
+# one record per runner carrying a job assignment, in a SECOND POST to the
+# same collector on the same port: 127.0.0.1:4319/v1/logs.
+#
+# THE DATASET IS CHOSEN BY service.name, NOT BY A HEADER. The host collector
+# (thewoolleyman/otel-collector config.ci-runner-host.yaml) wires a `logs`
+# pipeline — receivers [otlp], exporters [otlp/honeycomb_livespec] — through
+# the SAME exporter the metrics pipeline uses, and that exporter sets no
+# x-honeycomb-dataset header, so traces and logs auto-route by service.name.
+# Choosing the events dataset therefore IS choosing service.name: these
+# records carry service.name = ci-runner-pool, so they land in the `livespec`
+# environment's `ci-runner-pool` dataset — the name livespec-i4ahv4 named,
+# and the one the plan's board H2 (`livespec-mqy35a`) reads as a table. It
+# keeps both halves of this ONE emitter under one service identity with no
+# collision: the gauges land in the env's single Metrics 2.0 `metrics`
+# dataset whatever their service.name is.
+#
+#   ci-runner-pool (events dataset)  one record per runner that carries a
+#       job assignment, per tick, with attributes ci.repository (owner/repo),
+#       ci.workflow_ref, ci.run_id, ci.job_name, ci.runner_phase,
+#       ci.runner_name, ci.runner_namespace and ci.runner_age_s.
+#
+# WHICH RUNNERS GET A ROW, and why not only the Running ones. A row is
+# emitted for every runner whose listing carries at least ONE of the four
+# job-assignment fields; a runner with none of them has no job and is a
+# POPULATION fact the gauges above already carry, not a running job. The row
+# is deliberately NOT filtered to phase Running: a job wedged in Pending or
+# gone to Failed is exactly what an operator needs to see, so the phase rides
+# the record as an attribute the board filters on rather than as a condition
+# this emitter applies and cannot be asked about later. An attribute whose
+# field is empty is OMITTED from the record rather than sent as an empty
+# string — the gauges' fail-closed rule, applied per attribute.
+#
+# NO EVENTS IS NOT A DEAD EMITTER. An idle pool produces no rows and this
+# script POSTs no logs payload at all, which for a board asking "what is
+# running now" is the answer rather than a gap. The emitter's own liveness is
+# carried by the gauge half — livespec.ci_pool.runners_total is emitted every
+# tick, 0 included — so the events dataset needs no heartbeat row to be told
+# apart from a broken emitter (the livespec-s43svm.20 lesson, discharged once
+# per emitter rather than once per signal).
+#
+# ONE LISTING, TWO SIGNALS, TWO DIFFERENT REPOSITORY FIELDS — DELIBERATELY.
+# The gauges and the events come from the SAME
+# `kubectl get ephemeralrunners --all-namespaces` call, widened to carry the
+# job fields, so scope 3 costs no additional API request per tick. But they
+# derive ci.repository from DIFFERENT fields, and unifying them would break
+# one or the other:
+#   * the GAUGES use spec.githubConfigUrl, a CRD-REQUIRED spec field present
+#     in every phase, so an IDLE runner still lands on its repository's row.
+#     status.jobRepositoryName would silently drop every idle runner — the
+#     population a board most wants to see.
+#   * the EVENTS use status.jobRepositoryName, because the row exists only
+#     while a job is assigned and that field names the repository the job
+#     actually belongs to. It is already `owner/repo` and needs no
+#     derivation, so it cannot be mangled the way a URL tail can.
+#   Do NOT "unify" them.
 #
 # WHY A SEPARATE NAME FAMILY, and not attributes bolted onto the sweep's
 # gauges. The sweep's three fleet sums are attribute-less single datapoints
@@ -117,6 +183,12 @@
 set -uo pipefail
 
 OTLP_ENDPOINT="${CI_RUNNER_HEARTBEAT_OTLP:-http://127.0.0.1:4319/v1/metrics}"
+# The SAME collector and the SAME port, the logs signal's path — the host's
+# `logs` pipeline receives on the otlp receiver the metrics POST already uses
+# (see THE DATASET IS CHOSEN BY service.name above). Spelled out rather than
+# derived from OTLP_ENDPOINT by string surgery, so either can be pointed
+# somewhere else without silently dragging the other along.
+OTLP_LOGS_ENDPOINT="${CI_POOL_OTLP_LOGS:-http://127.0.0.1:4319/v1/logs}"
 KUBECTL_BIN="${CI_POOL_KUBECTL:-kubectl}"
 KUBECTL_REQUEST_TIMEOUT="${CI_POOL_KUBECTL_REQUEST_TIMEOUT:-15s}"
 # The GitHub owner every queue name on this pool is a repository of.
@@ -133,7 +205,10 @@ log() { printf 'ci-pool-attributed-gauges: %s\n' "$*"; }
 now_ns="$(date +%s%N)"
 host_name="$(hostname)"
 readings="$(mktemp)"
-trap 'rm -f "${readings}"' EXIT
+# The EphemeralRunner listing's raw rows, kept so the events assembler reads
+# the SAME bytes the count loop below reads — one listing, two readers.
+runners_raw="$(mktemp)"
+trap 'rm -f "${readings}" "${runners_raw}"' EXIT
 failed=0
 
 # One TSV record per datapoint, read back by the assembler below:
@@ -189,20 +264,35 @@ else
 fi
 
 # ---- EphemeralRunners --------------------------------------------------------
-# spec.githubConfigUrl (a CRD-required spec field) rather than
-# status.jobRepositoryName (populated only while a job is assigned), so a
-# runner that exists without a job still lands on its repository's row.
-ER_JSONPATH='{range .items[*]}{.spec.githubConfigUrl}|{.status.phase}{"\n"}{end}'
+# ONE listing feeds BOTH signals (see ONE LISTING, TWO SIGNALS above): the
+# per-repository/per-phase COUNTS in this loop, which derive the repository
+# from spec.githubConfigUrl (a CRD-required spec field) so a runner that
+# exists without a job still lands on its repository's row, and the
+# per-runner running-job EVENTS assembled further down, which derive it from
+# status.jobRepositoryName because their row exists only while a job does.
+#
+# FIELD ORDER IS LOAD-BEARING. Every field but the last is structurally
+# constrained — two Kubernetes names, an RFC 3339 timestamp, a URL, a phase,
+# an `owner/repo`, a workflow ref, a numeric run id — and so cannot contain
+# the `|` separator. status.jobDisplayName is free text written by a workflow
+# author, so it goes LAST, where both readers absorb the whole remainder of
+# the line into it and an embedded `|` cannot shift any other field.
+ER_JSONPATH='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.metadata.creationTimestamp}|{.spec.githubConfigUrl}|{.status.phase}|{.status.jobRepositoryName}|{.status.jobWorkflowRef}|{.status.workflowRunId}|{.status.jobDisplayName}{"\n"}{end}'
 
 if er_rows="$(kc get ephemeralrunners --all-namespaces -o jsonpath="${ER_JSONPATH}" 2>&1)"; then
+  printf '%s\n' "${er_rows}" > "${runners_raw}"
   er_total=0
   er_unattributed=0
   declare -A er_counts=()
-  while IFS='|' read -r er_url er_phase; do
-    # A jsonpath range over an empty item list yields nothing; a runner with
-    # neither field set would still be a runner, so count on the record, not
-    # on the URL.
-    [ -n "${er_url}${er_phase}" ] || continue
+  # Field order per ER_JSONPATH above; this loop needs only the phase and the
+  # config URL, so the namespace, the name (read solely as the record's
+  # existence test) and the four job fields are discarded into `_`. The
+  # events assembler reads the same rows for the rest.
+  while IFS='|' read -r _ er_name _ er_url er_phase _; do
+    # A jsonpath range over an empty item list yields nothing. Count on
+    # metadata.name, which every object has: a line carrying no name is not
+    # an object, and counting it would inflate runners_total.
+    [ -n "${er_name}" ] || continue
     er_total=$((er_total + 1))
     # An empty status.phase is a real state (the object exists, its pod has
     # not reported one yet), so it is labelled rather than dropped — the
@@ -335,11 +425,165 @@ PY
   exit 1
 }
 
-if ! curl --silent --show-error --fail --max-time 10 -X POST "${OTLP_ENDPOINT}" \
+post_failed=0
+if curl --silent --show-error --fail --max-time 10 -X POST "${OTLP_ENDPOINT}" \
      -H 'Content-Type: application/json' -d "${payload}" > /dev/null; then
+  log "posted $(wc -l < "${readings}") datapoint(s) -> ${OTLP_ENDPOINT} (host.name=${host_name})"
+else
+  # Deliberately no longer an immediate exit: the events POST below carries a
+  # DIFFERENT signal derived from the same listing, and a collector that
+  # rejected the metrics payload has said nothing about whether it would take
+  # the events one. The exit status is still 7, at the bottom.
   log "POST to ${OTLP_ENDPOINT} failed" >&2
-  exit 7
+  post_failed=7
 fi
 
-log "posted $(wc -l < "${readings}") datapoint(s) -> ${OTLP_ENDPOINT} (host.name=${host_name})"
+# ---- running-job events ------------------------------------------------------
+# One wide event per runner carrying a job assignment, POSTed to the same
+# collector's logs path (see WHAT IT EMITS AS EVENTS in the header). The rows
+# are the ones the count loop above already read; nothing is listed twice.
+if [ ! -s "${runners_raw}" ]; then
+  log "no EphemeralRunner listing to derive running-job events from; none POSTed" >&2
+else
+  events_rc=0
+  # stdout is the record COUNT on line 1 and the OTLP payload on line 2.
+  events_out="$(python3 - "${runners_raw}" "${now_ns}" "${host_name}" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+
+raw_path, now_ns, host = sys.argv[1], sys.argv[2], sys.argv[3]
+now_epoch = int(now_ns) / 1_000_000_000
+
+# ER_JSONPATH's field order, spelled once. jobDisplayName is LAST because it
+# is the only free-text field, so the bounded split below hands it the whole
+# remainder of the line and an embedded "|" cannot shift another field.
+FIELDS = (
+    "namespace", "name", "created", "config_url", "phase",
+    "job_repository", "job_workflow_ref", "run_id", "job_name",
+)
+
+# The four fields populated only while a job is ASSIGNED. A runner carrying
+# none of them has no job: it is a population fact the gauges already emit,
+# not a running job, so it gets no row.
+JOB_FIELDS = ("job_repository", "job_workflow_ref", "run_id", "job_name")
+
+# Attribute name -> field. ci.repository here is status.jobRepositoryName,
+# already owner/repo -- NOT the gauges' spec.githubConfigUrl derivation; the
+# two are different on purpose (see the script header). ci.run_id is a STRING
+# attribute although its value is numeric: it is an identifier to group and
+# filter by, never a quantity to sum or average.
+ATTRIBUTES = (
+    ("ci.repository", "job_repository"),
+    ("ci.workflow_ref", "job_workflow_ref"),
+    ("ci.run_id", "run_id"),
+    ("ci.job_name", "job_name"),
+    ("ci.runner_phase", "phase"),
+    ("ci.runner_name", "name"),
+    ("ci.runner_namespace", "namespace"),
+)
+
+
+def age_seconds(stamp: str) -> int | None:
+    """Whole seconds since metadata.creationTimestamp, or None if unreadable.
+
+    Unreadable means the attribute is OMITTED, never sent as 0 -- a runner
+    reported as brand new when its age is unknown would be a false reading.
+    """
+    if not stamp:
+        return None
+    try:
+        created = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return max(0, int(now_epoch - created.timestamp()))
+
+
+records: list[dict[str, object]] = []
+malformed = 0
+for line in open(raw_path):
+    line = line.rstrip("\n")
+    if not line.replace("|", "").strip():
+        continue
+    parts = line.split("|", len(FIELDS) - 1)
+    if len(parts) != len(FIELDS):
+        malformed += 1
+        continue
+    row = dict(zip(FIELDS, parts))
+    if not row["name"] or not any(row[field] for field in JOB_FIELDS):
+        continue
+    attrs: list[dict[str, object]] = [
+        {"key": key, "value": {"stringValue": row[field]}}
+        for key, field in ATTRIBUTES
+        if row[field]
+    ]
+    age = age_seconds(row["created"])
+    if age is not None:
+        attrs.append({"key": "ci.runner_age_s", "value": {"intValue": str(age)}})
+    summary = " ".join(
+        part for part in (row["phase"], row["job_repository"], row["job_name"]) if part
+    )
+    records.append({
+        "timeUnixNano": now_ns,
+        "observedTimeUnixNano": now_ns,
+        "severityNumber": 9,
+        "severityText": "INFO",
+        "body": {"stringValue": summary or row["name"]},
+        "attributes": attrs,
+    })
+
+if malformed:
+    print(
+        f"ci-pool-attributed-gauges: {malformed} EphemeralRunner record(s) did not "
+        "carry the expected field count and were skipped rather than misparsed",
+        file=sys.stderr,
+    )
+
+# Exit 3 is "the listing read fine and nothing is running" -- the caller
+# POSTs nothing, which for a board asking what is running now is the answer,
+# not a gap. Any other non-zero is a real assembly failure.
+if not records:
+    sys.exit(3)
+
+print(len(records))
+print(json.dumps({"resourceLogs": [{
+    "resource": {"attributes": [
+        {"key": "service.name", "value": {"stringValue": "ci-runner-pool"}},
+        {"key": "host.name", "value": {"stringValue": host}},
+    ]},
+    "scopeLogs": [{
+        "scope": {"name": "ci-pool-attributed-gauges"},
+        "logRecords": records,
+    }],
+}]}))
+PY
+)" || events_rc=$?
+
+  case "${events_rc}" in
+    0)
+      events_count="${events_out%%$'\n'*}"
+      events_body="${events_out#*$'\n'}"
+      if curl --silent --show-error --fail --max-time 10 -X POST "${OTLP_LOGS_ENDPOINT}" \
+           -H 'Content-Type: application/json' -d "${events_body}" > /dev/null; then
+        log "posted ${events_count} running-job event(s) -> ${OTLP_LOGS_ENDPOINT} (host.name=${host_name})"
+      else
+        log "POST to ${OTLP_LOGS_ENDPOINT} failed" >&2
+        post_failed=7
+      fi
+      ;;
+    3)
+      log "no EphemeralRunner carried a job assignment; no running-job events to post"
+      ;;
+    *)
+      log "could not assemble the running-job events payload (python3 exited ${events_rc}); none POSTed" >&2
+      failed=1
+      ;;
+  esac
+fi
+
+if [ "${post_failed}" -ne 0 ]; then
+  exit "${post_failed}"
+fi
 exit "${failed}"
