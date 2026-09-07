@@ -81,7 +81,7 @@ def _records(*, captured: str) -> list[dict[str, object]]:
 
 
 def test_legacy_empty_target_dirs_is_now_rejected_at_load(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Phase 4: a bare `target_dirs = []` no longer warns — it FAILS THE LOAD.
 
@@ -98,21 +98,29 @@ def test_legacy_empty_target_dirs_is_now_rejected_at_load(
     strictly worse than `pure_trees`, which at least logged. Five of eight fleet
     repos were in that state.
 
-    What is asserted is the LOADER guarantee, because that is what Phase 4
-    delivers: the config does not load, and the error names the key plus every
-    legal spelling. The check's `main()` does NOT yet wrap it in a structured
-    diagnostic — 30 of 31 checks reading `load_config` lack that catch, which
-    Phase 4 makes reachable for the first time and which is filed separately.
-    The exception is loud and non-zero either way; it is the RENDERING that is
-    owed, not the rejection.
+    The REJECTION assertions below are the Phase-4 guarantee and are unchanged:
+    the config does not load, the exit is non-zero, and the message names the
+    key plus every legal spelling. What changed is only WHERE the reader finds
+    that message. `livespec-dev-tooling-i6zi` supplied the rendering this
+    docstring used to record as owed and filed separately — `main()` now catches
+    `ConfigParseError` through the shared `_config_load.load_config_or_report`
+    helper — so the message arrives as the `error` field of one structured
+    event instead of as an interpreter traceback. Asserting it off the record
+    rather than off `pytest.raises` is what keeps the rejection pinned across
+    that move: the same key and the same four spellings must still reach the
+    operator, and a check that swallowed them would fail here.
     """
     _write_config(tmp_path=tmp_path, body="target_dirs = []\n")
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(ConfigParseError) as excinfo:
-        _ = claude_md_coverage.main()
+    rc = claude_md_coverage.main()
 
-    message = str(excinfo.value)
+    assert rc == 1, "a config that does not load must still exit non-zero"
+    message = next(
+        str(record.get("error"))
+        for record in _records(captured=capsys.readouterr().err)
+        if record.get("event") == "consumer config parse failed"
+    )
     assert "target_dirs" in message
     # A rejection that does not say what IS legal only relocates the confusion.
     for spelling in ("not_applicable", "superseded_by", "unarmed_until", "convention_not_adopted"):

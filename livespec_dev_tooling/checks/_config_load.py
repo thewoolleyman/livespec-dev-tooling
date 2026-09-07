@@ -1,0 +1,99 @@
+"""Shared `ConfigParseError` rendering for the check supervisors.
+
+`SPECIFICATION/contracts.md` section "Configuration loader" makes
+`ConfigParseError` an IO-layer exception that each check's `main()`
+supervisor catches and renders as a structured diagnostic. Measured on
+master `dd98bbb0`, exactly ONE of the 33 `load_config` call sites under
+this package did that; the other 32 let the error escape as an uncaught
+traceback.
+
+That gap is worse than an unpolished message. A traceback reaches stderr
+through the INTERPRETER rather than through structlog, so a check whose
+job is to enforce this package's structlog-only output discipline
+(`print` and `sys.*.write` are banned here) broke that discipline itself
+at the one moment its diagnostic mattered — when the consumer's
+`pyproject.toml` was malformed and the operator needed to be told which
+key to fix.
+
+This module is the SINGLE DEFINITION of that rendering, following the
+promotion precedent `config.is_under_any_tree` and
+`config.derive_source_prefixes` set: a shape a dozen checks need becomes
+one shared definition rather than a dozen near-identical blocks. It
+GENERALIZES `required_role_keys_declared.main()`, which is the one
+compliant call site already in the tree, rather than inventing a second
+diagnostic shape — same event wording, same fields, same non-zero
+outcome. That module stays unmigrated and is pinned by a control test, so
+any future divergence between the precedent and this generalization is
+visible in one place.
+
+It owes the RENDERING, not the REJECTION. The loader still raises loudly,
+the caller still exits non-zero, and the raised message still names the
+offending key and its blessed spellings; nothing a consumer's config is
+rejected for today becomes accepted.
+
+`None` rather than an exit code is the return, because the caller's
+non-zero is not always a literal `1` — `check_mutation` returns it up
+through a gate that already speaks in `int | None` — and because a
+sentinel exit code would have to be distinguishable from a legitimately
+loaded `Config`. The absence type says "there is no config to work with"
+and leaves the exit to the supervisor that owns it.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+
+from livespec_dev_tooling.config import (  # noqa: E402
+    Config,
+    ConfigParseError,
+    load_config,
+)
+
+__all__: list[str] = [
+    "CONFIG_PARSE_FAILED_EVENT",
+    "load_config_or_report",
+]
+
+
+# Byte-identical to the wording `required_role_keys_declared` has emitted
+# since the rejecting loader landed. Consumers grep their check output, so
+# changing it here would silently retire a string other people's tooling
+# already matches on.
+CONFIG_PARSE_FAILED_EVENT = "consumer config parse failed"
+
+
+def load_config_or_report(
+    *, repo_root: Path, log: structlog.stdlib.BoundLogger, check_id: str
+) -> Config | None:
+    """Load the consumer config, or render the parse failure and return `None`.
+
+    Returns the parsed `Config` on success. On `ConfigParseError` it emits
+    exactly ONE structured `log.exception` carrying `check_id`,
+    `status="fail"` and `error`, and returns `None` — the caller's cue to
+    exit non-zero. It NEVER re-raises and never propagates: a supervisor
+    that let the exception through would put the interpreter's traceback
+    back on stderr, which is the failure mode this helper exists to remove.
+
+    The catch is NARROW by design and stays narrow. `ConfigParseError` is
+    the loader's declared IO-layer failure; widening this to `Exception`
+    would swallow bugs in the check itself and would convict this module
+    under `no_except_outside_io`, which permits a broad catch only as a
+    marked, sole boundary catch inside a declared supervisor entry file.
+    """
+    try:
+        return load_config(repo_root=repo_root)
+    except ConfigParseError as exc:
+        log.exception(
+            CONFIG_PARSE_FAILED_EVENT,
+            check_id=check_id,
+            status="fail",
+            error=str(exc),
+        )
+        return None
