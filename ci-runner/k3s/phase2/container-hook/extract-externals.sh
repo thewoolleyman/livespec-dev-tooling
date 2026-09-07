@@ -64,12 +64,31 @@
 # version. externals-skip.patch skips the copy only when the runner's
 # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION names that same version.
 #
+# WAITS FOR CONTAINERD BEFORE THE FIRST ctr CALL. Every step below talks to the
+# node's containerd, and this script is reached from ../install-node.sh (step 7c)
+# which may itself have replaced a k3s config a few steps earlier. On
+# gmktec-xubuntu 2026-09-07 that ordering cost a whole runbook run: the agent's
+# k3s-agent.service was restart-looping, came up five seconds later, and step 7c
+# got there first —
+#   ctr: connection error: dial unix /run/k3s/containerd/containerd.sock:
+#   connect: connection refused
+# -> FATAL: ctr pull ... failed. The identical command minutes later worked, so
+# the recipe "worked" only when invoked twice (livespec-dev-tooling-4qp4). Step 0
+# is the bounded wait that removes the second invocation; ../k3s-runtime-ready.sh
+# owns the socket, the bound and the cadence, and says why the probe is a `ctr
+# version` call rather than a stat of the socket file.
+#
 # Usage: extract-externals.sh [--image <ref>] [--storage-root <dir>]
-#                             [--expect-hook-sha256 <sha256>] [--dry-run]
+#                             [--expect-hook-sha256 <sha256>] [--wait-seconds <n>]
+#                             [--dry-run]
 #   --image        runner image reference (tag@digest); default: the values pin
 #   --storage-root default /var/lib/rancher/k3s/storage (the local-path root)
 #   --expect-hook-sha256  fail unless the image's /home/runner/k8s/index.js
 #                  has this sha256 (the upstream_index_js_sha256 of BUILD-INFO)
+#   --wait-seconds how long step 0 waits for containerd to answer (default 120);
+#                  0 probes once and gives up. Small values are how
+#                  ./extract-externals-exit-tests.sh reaches the timeout path
+#                  without waiting two minutes for it
 #   --dry-run      resolve and print the plan; touch nothing; needs no root
 set -euo pipefail
 
@@ -77,18 +96,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export CONTAINER_HOOK_DIR="${SCRIPT_DIR}"
 # shellcheck source=./runner-image.sh
 source "${SCRIPT_DIR}/runner-image.sh"
+# shellcheck source=../k3s-runtime-ready.sh
+source "${SCRIPT_DIR}/../k3s-runtime-ready.sh"
 
 CTR_NAMESPACE="k8s.io"
-USAGE="usage: extract-externals.sh [--image <ref>] [--storage-root <dir>] [--expect-hook-sha256 <sha256>] [--dry-run]"
+USAGE="usage: extract-externals.sh [--image <ref>] [--storage-root <dir>] [--expect-hook-sha256 <sha256>] [--wait-seconds <n>] [--dry-run]"
 image=""
 storage_root="/var/lib/rancher/k3s/storage"
 expect_hook_sha=""
+wait_seconds="${K3S_RUNTIME_WAIT_SECONDS}"
 dry_run=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --image) image="${2:?--image needs a value}"; shift 2 ;;
     --storage-root) storage_root="${2:?--storage-root needs a value}"; shift 2 ;;
     --expect-hook-sha256) expect_hook_sha="${2:?--expect-hook-sha256 needs a value}"; shift 2 ;;
+    --wait-seconds) wait_seconds="${2:?--wait-seconds needs a value}"; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
     -h|--help) echo "${USAGE}"; exit 0 ;;
     *) echo "FATAL: unknown argument '$1'" >&2; echo "${USAGE}" >&2; exit 1 ;;
@@ -97,6 +120,8 @@ done
 
 log() { printf '\n== %s ==\n' "$*"; }
 die() { echo "FATAL: $*" >&2; exit 1; }
+
+[[ "${wait_seconds}" =~ ^[0-9]+$ ]] || die "--wait-seconds must be a non-negative integer, got '${wait_seconds}'"
 
 image="$(resolve_runner_image "${image}")"
 runner_version="$(runner_version_from_ref "${image}")"
@@ -109,15 +134,10 @@ if [ -n "${expect_hook_sha}" ] && ! [[ "${expect_hook_sha}" =~ ^[0-9a-f]{64}$ ]]
   die "--expect-hook-sha256 is not a hex sha256: '${expect_hook_sha}'"
 fi
 
-# containerd's ctr: k3s installs a `ctr` symlink pointed at its own socket; the
-# `k3s ctr` subcommand is the same thing when the symlink is absent.
-if command -v ctr >/dev/null; then
-  CTR=(ctr)
-elif command -v k3s >/dev/null; then
-  CTR=(k3s ctr)
-else
-  CTR=()
-fi
+# containerd's ctr, resolved by ../k3s-runtime-ready.sh so the client this
+# script works with is the one its readiness probe dials.
+CTR=()
+while IFS= read -r ctr_word; do CTR+=("${ctr_word}"); done < <(k3s_ctr_command)
 
 echo "image:          ${image}"
 echo "digest ref:     ${digest_ref}"
@@ -127,9 +147,11 @@ echo "manifest:       ${manifest}"
 echo "marker:         ${dest}/${marker}  (content: ${runner_version})"
 echo "pointer:        ${externals_root}/current -> ${runner_version}"
 echo "hook check:     ${expect_hook_sha:-none requested}"
+echo "containerd:     ${K3S_RUNTIME_CONTAINERD_SOCKET}  (waited for, up to ${wait_seconds}s)"
 
 if [ "${dry_run}" -eq 1 ]; then
   log "DRY RUN — nothing touched. The run would:"
+  echo "  0. $(k3s_runtime_wait_plan_line "${wait_seconds}"), before any pull"
   echo "  1. ${CTR[*]:-ctr} -n ${CTR_NAMESPACE} images ls -q            (pull ${digest_ref} if absent)"
   echo "  2. ${CTR[*]:-ctr} -n ${CTR_NAMESPACE} images mount --rw=false ${digest_ref} <tmp mountpoint>"
   echo "  3. verify Runner.Listener/${runner_version} in <mount>/home/runner/bin/Runner.Listener.deps.json"
@@ -145,6 +167,14 @@ fi
 [ "${#CTR[@]}" -gt 0 ] || die "neither ctr nor k3s on PATH"
 for t in sha256sum find sort cmp cp mv ln; do command -v "$t" >/dev/null || die "$t not on PATH"; done
 [ -d "${storage_root}" ] || die "storage root ${storage_root} does not exist (is the ci-workvols bind mounted?)"
+
+# ---------------------------------------------------------------------------
+# Step 0 is BEFORE every other step because every other step is a ctr call, and
+# the one this runbook died on was the first of them (livespec-dev-tooling-4qp4;
+# the header's "WAITS FOR CONTAINERD" note carries the measurement).
+log "0. containerd is answering (${K3S_RUNTIME_CONTAINERD_SOCKET})"
+wait_for_containerd "${wait_seconds}" "${CTR[@]}" version \
+  || die "containerd at ${K3S_RUNTIME_CONTAINERD_SOCKET} did not answer \`${CTR[*]} version\` within ${wait_seconds}s — the runtime is down or still starting, so every ctr call below would fail with 'connect: connection refused'; check k3s (\`systemctl status k3s k3s-agent\`) and re-run"
 
 # Publish <storage-root>/.externals/current -> <runner-version> with ONE
 # atomic rename: create the link under a temporary name, then rename it over

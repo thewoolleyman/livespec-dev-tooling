@@ -281,7 +281,15 @@ STEP_LABEL[storage-sweep]="10/10 boot-time orphaned-scratch sweep (enable only)"
 # k3s start and restart-loops (gmktec-xubuntu 2026-09-07,
 # livespec-dev-tooling-vcv4). The skip marker's directory,
 # /var/lib/rancher/k3s/server/manifests/, is a SERVER path for the same reason.
-STEP_AGENT_LABEL[k3s-config]="1/10 k3s config (server or agent) — installs k3s-config/config.agent.yaml and NO local-storage skip marker (both are server-only)"
+# The agent label also names the WAIT that step earns the rest of this runbook:
+# the same host, hours later, ran this step against a restart-looping
+# k3s-agent.service and then reached 7c five seconds before containerd was
+# serving, so extract-externals.sh died at its first `ctr images pull` with
+# `connect: connection refused` and the whole runbook had to be invoked twice
+# (livespec-dev-tooling-4qp4). A server has no such window — provision-k3s.sh
+# waits for the node to go Ready before the runbook and no server step restarts
+# k3s — so its label and its behaviour are unchanged.
+STEP_AGENT_LABEL[k3s-config]="1/10 k3s config (server or agent) — installs k3s-config/config.agent.yaml and NO local-storage skip marker (both are server-only); a CHANGED config with k3s-agent.service active or activating is then followed by a bounded wait for that unit to be active and for the containerd socket /run/k3s/containerd/containerd.sock, restarting nothing"
 # apparmor: the kernel profile is node state and an agent needs it, while the
 # arc-hook-pod-template ConfigMap the same installer converges is a cluster
 # object.
@@ -335,7 +343,12 @@ run_step() {  # run_step ID
     # Passed this run's ROLE because the FILE it installs is role-dependent:
     # the server config on an agent is fatal to k3s-agent at its next start
     # (livespec-dev-tooling-vcv4), and the installer also removes the
-    # server-path skip marker an earlier run left on an agent.
+    # server-path skip marker an earlier run left on an agent. The role also
+    # selects whether the installer WAITS afterwards: on an agent whose config
+    # it changed while k3s-agent.service was up or coming up, it blocks until
+    # the unit is active and containerd answers, so every step after this one
+    # meets one runtime rather than a restarting one
+    # (livespec-dev-tooling-4qp4).
     k3s-config)
       "${SCRIPT_DIR}/k3s-config/install-k3s-config.sh" --role "${ROLE}" ;;
     kernel-budgets)
