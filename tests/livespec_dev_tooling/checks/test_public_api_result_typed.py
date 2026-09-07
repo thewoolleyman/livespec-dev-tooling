@@ -18,8 +18,10 @@ surface.
 from __future__ import annotations
 
 import ast
+import io
 import subprocess
 import sys
+import tokenize
 from pathlib import Path
 
 __all__: list[str] = []
@@ -31,6 +33,98 @@ _PUBLIC_API_RESULT_TYPED = (
 )
 _PARSE_TREE = ".claude-plugin/scripts/livespec/parse"
 _COMMANDS_TREE = ".claude-plugin/scripts/livespec/commands"
+
+# The marker the pinned-core `doctor-no-spec-section-citation-in-code` check
+# forbids in source prose: a section sign directly followed by a double quote,
+# i.e. a heading-level spec citation, which rots silently when the heading is
+# renamed. It is held here as a STRING LITERAL and never written into a comment
+# or a docstring, because this test file is itself inside that check's walk-set
+# and the check ignores the marker only in non-comment string literals.
+_SECTION_SIGN_CITATION = '§"'
+
+# The clause-0 citation as a reader standing in ANOTHER repo must be able to
+# resolve it. The private-helper definition clause 0 adopts — private names MUST
+# NOT appear in `__all__` — lives in livespec CORE's non-functional-requirements,
+# not in this repo's same-named section, which carries no such definition. So the
+# owning repo is `livespec`, and naming it is what makes the address resolvable
+# (livespec-dev-tooling-bvbe; the rule is `docs/shipped-message-doc-citations.md`).
+_CLAUSE_ZERO_CITATION = "livespec SPECIFICATION/non-functional-requirements.md"
+
+
+def _prose_spans(*, source: str) -> list[tuple[int, str]]:
+    """Return every comment and docstring in `source` as `(1-indexed line, text)`.
+
+    Mirrors the pinned-core static-doctor walk for a single `.py` file:
+    `tokenize` surfaces COMMENT tokens and `ast` surfaces module, class and
+    function docstrings. A marker anywhere else is a string literal — fixture
+    content, regex, or test data — and is not prose that check reads.
+    """
+    spans: list[tuple[int, str]] = [
+        (token.start[0], token.string)
+        for token in tokenize.generate_tokens(io.StringIO(source).readline)
+        if token.type == tokenize.COMMENT
+    ]
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            docstring = ast.get_docstring(node, clean=False)
+            if docstring is not None:
+                spans.append((node.body[0].lineno, docstring))
+    return spans
+
+
+def test_check_source_prose_carries_no_heading_level_spec_citation() -> None:
+    """Neither the check nor its paired test cites a spec heading bare.
+
+    This repo does not wire the static doctor into `just check` (see the
+    justfile's decision note), so the only thing that runs this rule here is a
+    `/livespec:revise` post-step — and one offending docstring made that
+    wrapper exit 3 on every revise, after the snapshot was already cut and with
+    every spec-tree check green. A spuriously non-zero wrapper trains its
+    readers to ignore the one exit code that would report a REAL ratification
+    failure, so the finding is pinned here where the local gate can see it.
+
+    BOTH HALVES OF THE PAIR ARE SCANNED, because `a1d4ed72` wrote the same
+    sentence into both and the doctor SHORT-CIRCUITS on the first hit in sorted
+    path order — so fixing only the check module would have surfaced this file
+    as the next finding and left the revise wrapper at 3 exactly as before.
+    """
+    offenders = {
+        path.name: [
+            (line, text)
+            for line, text in _prose_spans(source=path.read_text(encoding="utf-8"))
+            if _SECTION_SIGN_CITATION in text
+        ]
+        for path in (_PUBLIC_API_RESULT_TYPED, Path(__file__).resolve())
+    }
+
+    assert not any(offenders.values()), (
+        f"a comment or docstring cites a spec heading via the forbidden section-sign form, which "
+        f"the pinned-core static doctor rejects; name the spec FILE and its owning repo instead, "
+        f"and say the section in prose; offenders={offenders!r}"
+    )
+
+
+def test_clause_zero_citation_names_its_owning_repo_and_spec_file() -> None:
+    """The clause-0 delegation addresses livespec core's spec, not this repo's.
+
+    Dropping the heading is only half the fix: a bare
+    `non-functional-requirements.md` is producer-relative, and BOTH repos ship a
+    file by that name with a section by the same name. Only core's holds the
+    private-helper definition, so the citation must say whose spec it is.
+    """
+    source = _PUBLIC_API_RESULT_TYPED.read_text(encoding="utf-8")
+    docstring = ast.get_docstring(ast.parse(source), clean=False)
+    assert docstring is not None, f"{_PUBLIC_API_RESULT_TYPED.name} must carry a module docstring"
+
+    # Unwrapped first: the docstring is hard-wrapped well under the line-length
+    # limit, so the citation reaches the reader split across two source lines.
+    unwrapped = " ".join(docstring.split())
+
+    assert _CLAUSE_ZERO_CITATION in unwrapped, (
+        f"the clause-0 private-helper delegation must name its owning repo and spec file as "
+        f"{_CLAUSE_ZERO_CITATION!r}; a bare path resolves to this repo's same-named section, "
+        f"which holds no private-helper definition; docstring={unwrapped!r}"
+    )
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
@@ -219,8 +313,10 @@ def test_public_api_result_typed_scans_a_private_filename(*, tmp_path: Path) -> 
     from the ratified rule.
 
     livespec v178 clause 0 disqualifies a `_`-prefixed NAME, adopting the
-    private-helper definition in §"Typechecker rule set" — which is about names
-    in `__all__` and says nothing about filenames. The shipped `_scan` ALSO
+    private-helper definition in the typechecker rule set of `livespec
+    SPECIFICATION/non-functional-requirements.md` — CORE's spec, not this
+    repo's same-named section — which is about names in `__all__` and says
+    nothing about filenames. The shipped `_scan` ALSO
     skipped whole files, an exemption wider than the text it implements. That
     skip is gone (livespec-dev-tooling-8zv3.5); this test is the one that would
     fail if it came back.

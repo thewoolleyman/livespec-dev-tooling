@@ -87,9 +87,12 @@ in any `SPECIFICATION/`.
 A `_`-prefixed FUNCTION name is not public however it is
 reached — v178 clause 0 (see `_is_public_name`). A `_`-prefixed
 FILE is NOT skipped, and the difference is the whole point:
-clause 0 adopts the private-helper definition in §"Typechecker
-rule set", which binds NAMES in `__all__` and says nothing about
-filenames. This check used to skip whole files as well, an
+clause 0 adopts the private-helper definition in the typechecker
+rule set of `livespec SPECIFICATION/non-functional-requirements.md`,
+which binds NAMES in `__all__` and says nothing about filenames.
+That is CORE's spec: this repo carries a same-named section of its
+own, and that one holds no private-helper definition at all.
+This check used to skip whole files as well, an
 exemption WIDER than the text it implements, through which
 `_`-prefixed modules exported public API that siblings and other
 fleet repos consume. Removed under the maintainer's 2026-08-20
