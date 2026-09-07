@@ -52,6 +52,11 @@
 #                            state, no cluster needed, not on the k3s chain.
 #   3. apparmor            — kernel profile + the hook ConfigMap (needs API).
 #   4. node-extended-resource CAPACITY — the churn-slot resource + its timer.
+#                            SERVER only: the unit is ordered against
+#                            k3s.service, patches node status with the admin
+#                            kubeconfig, and patches EVERY labeled node with one
+#                            capacity, so it is a cluster-wide act rather than a
+#                            node-local one (see its skip reason below).
 #   5. wedged-runner MODE  — the 5-minute wedge sweep.
 #   6. arc-log-archive     — the log archive timer.
 #   7. ../secret-reinjection — the boot-time secret unit (enabled, not run;
@@ -204,7 +209,10 @@ esac
 #                       on an agent, and says so.
 # STEP_AGENT_NOTE    => the step runs on an agent and carries a caveat the
 #                       operator has to see (a prerequisite this runbook
-#                       cannot satisfy from here).
+#                       cannot satisfy from here). No step carries one today:
+#                       the churn-slot caveat that used to be the only entry
+#                       became a SKIP reason in livespec-dev-tooling-ukbp, the
+#                       step having turned out to be server-only in kind.
 # ---------------------------------------------------------------------------
 STEP_IDS=(
   k3s-config
@@ -256,8 +264,7 @@ STEP_SKIP[host-thermal]="iDRAC state reached through Dell's racadm packages — 
 STEP_SKIP[secret-reinjection]="writes the GitHub App Secret into the cluster at boot — one cluster-scoped object, applied with the admin kubeconfig an agent does not hold, owned by the node that holds the datastore."
 STEP_SKIP[reconstruct]="rebuilds the CLUSTER from git at boot — the fleet-owned provisioner, Kueue and every ClusterQueue, the ARC controller and every scale set. Cluster-scoped, admin-kubeconfig-only, and the server's job; this is the step whose absence omits Kueue and ARC from an agent's plan."
 STEP_SKIP[datastore-tmpfs]="mounts the k3s SERVER datastore on tmpfs; an agent node has no datastore to mount."
-
-STEP_AGENT_NOTE[churn-slot]="the installed timer patches THIS node's status through the API, so an agent needs a KUBECONFIG with node-status patch rights — not the server's admin file. Point KUBECONFIG at one before the timer's first fire."
+STEP_SKIP[churn-slot]="patches node STATUS through the API from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service) with the admin kubeconfig an agent does not hold — and patch-node-churn-capacity.sh patches EVERY node labeled k3s-role=arc-runner-host with ONE capacity, which makes applying it a cluster-wide act rather than a node-local one. Node-status patches are therefore applied from the SERVER's reapply timer, whose selector already includes this node; a per-node capacity read from each node's own profile is R4/R5 scope (livespec-dev-tooling-xa6o)."
 
 step_label() {  # step_label ID
   if [ "$ROLE" = agent ] && [ -n "${STEP_AGENT_LABEL[$1]:-}" ]; then
@@ -312,8 +319,13 @@ run_step() {  # run_step ID
       else
         "${SCRIPT_DIR}/apparmor/install-apparmor-profile.sh"
       fi ;;
+    # Passed this run's ROLE even though only a server reaches this line: the
+    # installer refuses on an agent (and removes any copy it finds), so if a
+    # future edit ever drops the skip above, the step fails loudly at the
+    # installer's own refusal rather than at a "Unit k3s.service not found"
+    # halfway through installing it (livespec-dev-tooling-ukbp).
     churn-slot)
-      "${SCRIPT_DIR}/node-extended-resource/install-reapply-unit.sh" "${CAPACITY}" ;;
+      "${SCRIPT_DIR}/node-extended-resource/install-reapply-unit.sh" --role "${ROLE}" "${CAPACITY}" ;;
     wedged-runner)
       "${SCRIPT_DIR}/wedged-runner/install-wedged-runner-scan.sh" "${WEDGE_MODE}" ;;
     runner-pod-lifecycle)

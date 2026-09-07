@@ -10,10 +10,10 @@
 #      sub-letters names), every one of them RUN, every line tagged [server];
 #   B. an agent profile's --dry-run plan OMITS the reconstruct converge — the
 #      only step that applies Kueue ClusterQueues and ARC scale sets — plus
-#      the secret reinjection unit, the tmpfs datastore and the iDRAC thermal
-#      step, each with a logged reason, and KEEPS k3s config, the kernel
-#      budgets, AppArmor (profile only), the storage layout, the churn slot,
-#      both scans and the sweep;
+#      the secret reinjection unit, the tmpfs datastore, the iDRAC thermal step
+#      and the churn-slot reapply unit, each with a logged reason, and KEEPS
+#      k3s config, the kernel budgets, AppArmor (profile only), the storage
+#      layout, both scans and the sweep;
 #   C. --dry-run executes nothing: not one installer runs, and not one of the
 #      host-mutating tools they reach for is invoked;
 #   D. the profile is DATA and is validated as data — a missing key, an
@@ -146,11 +146,12 @@ fi
 AGENT_OUT="$REPLY_OUT"
 AGENT_PLAN="$(plan_lines "$AGENT_OUT")"
 
-# The four skipped steps, by the label fragment that identifies each. The
+# The five skipped steps, by the label fragment that identifies each. The
 # reconstruct converge is the only step that applies Kueue ClusterQueues and
 # ARC scale sets, so its absence is what omits Kueue and ARC from this plan.
 for fragment in \
   "2c/10 iDRAC cooling configuration" \
+  "4/10 churn-slot extended resource" \
   "7/10 boot-time GitHub App secret reinjection unit" \
   "8/10 reconstruct-on-boot converge unit" \
   "9/10 tmpfs datastore mount"
@@ -170,11 +171,25 @@ done
 # No skipped step is silent: each SKIP line is followed by its reason.
 skip_count="$(printf '%s\n' "$AGENT_PLAN" | grep -c '^SKIP ')"
 reason_count="$(printf '%s\n' "$AGENT_OUT" | grep -c '^     reason: ')"
-if [ "$skip_count" -eq 4 ] && [ "$reason_count" -eq 4 ]; then
+if [ "$skip_count" -eq 5 ] && [ "$reason_count" -eq 5 ]; then
   ok "every one of the ${skip_count} skipped steps carries a logged reason"
 else
   no "every skipped step carries a logged reason (skips=${skip_count} reasons=${reason_count})"
 fi
+
+# The churn-slot skip is the one reason this suite reads in full, because the
+# step it omits used to ABORT the whole runbook on an agent at 4 of 10
+# (livespec-dev-tooling-ukbp): the unit is ordered against the SERVER's
+# k3s.service, and the node-status patch it reapplies selects every labeled node
+# — an act the server's own timer already performs for the whole pool. The
+# operator reads that from this line or nowhere.
+CHURN_SKIP_REASON="$(printf '%s\n' "$AGENT_OUT" | grep -A1 -F 'SKIP [agent] 4/10 churn-slot' | tail -n 1)"
+case "$CHURN_SKIP_REASON" in
+  "     reason: "*"SERVER's reapply timer"*)
+    ok "the churn-slot skip reason names the server's reapply timer" ;;
+  *)
+    no "the churn-slot skip reason names the server's reapply timer (got: ${CHURN_SKIP_REASON})" ;;
+esac
 
 # Nothing in the agent plan applies the cluster-side Kueue or ARC objects: the
 # reconstruct converge is gone, and no other RUN line names either of them.
@@ -190,7 +205,6 @@ for fragment in \
   "2b/10 storage layout" \
   "2d/10 operator host tools" \
   "3/10 AppArmor profile only (--profile-only;" \
-  "4/10 churn-slot extended resource (capacity 32) + reapply timer" \
   "5/10 wedged-runner scan (clear)" \
   "5b/10 runner-pod lifecycle scan" \
   "6/10 ARC log archive" \
