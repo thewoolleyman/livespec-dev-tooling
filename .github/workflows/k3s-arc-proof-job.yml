@@ -17,7 +17,7 @@
 # and `gh workflow run k3s-arc-proof-job.yml --ref <branch>`; master's copy
 # is never changed and a branch push triggers no gating workflow (ci.yml is
 # push: master + pull_request). Used 2026-09-04 for the keyed-tier proof
-# (livespec-dev-tooling-dajhxa, plan/archive/ci-runner-cache-tiers/research/010).
+# (livespec-dev-tooling-dajhxa, plan/ci-runner-cache-tiers/research/010).
 # Delete the remote branch afterwards through the GitHub API
 # (`gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<branch>`): the
 # primary-checkout hook refuses a `git push --delete` from the primary.
