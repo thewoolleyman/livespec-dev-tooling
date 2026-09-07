@@ -38,11 +38,20 @@
 # STEP_STALE_UNITS below, and the run hands the lot to
 # ./remove-server-only-units.sh: disabled, deleted, one daemon-reload, then one
 # `reset-failed` per unit removed, printed as `+ ` lines under --dry-run and
-# executed live. Idempotent — a node with none of them says so and removes
-# nothing. The reset-failed pass is not cosmetic: without it the deleted units
-# stay in `systemctl list-units --state=failed` as `not-found failed` until the
-# host reboots, which is what the next stage-4 re-run found on that same node
-# (2026-09-07, livespec-dev-tooling-oc5g).
+# executed live. Idempotent — a node with none of them, and none of them
+# failed, says so and does nothing. The reset-failed pass is not cosmetic:
+# without it the deleted units stay in `systemctl list-units --state=failed` as
+# `not-found failed` until the host reboots, which is what the next stage-4
+# re-run found on that same node (2026-09-07, livespec-dev-tooling-oc5g).
+#
+# AND THE CLEAR IS OVER THE UNITS NAMED, not the units this run removed. The
+# residual on that node was left by the run BEFORE the reset-failed pass
+# existed, so by the time the pass shipped there was nothing left to remove and
+# therefore nothing it would clear: the next re-run printed `nothing to remove`
+# while the same three timers were still listed failed (2026-09-07,
+# livespec-dev-tooling-ssbg). So each named unit the node does NOT carry is
+# asked `systemctl is-failed` — a read, performed under --dry-run too — and
+# cleared when the answer is `failed`.
 #
 # WHERE "Kueue" AND "ARC" LIVE IN THE AGENT SKIP SET. Neither is a step of
 # this runbook on its own: the ONLY step that applies Kueue ClusterQueues and

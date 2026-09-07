@@ -64,16 +64,26 @@ for tool in install rm journalctl; do
   chmod +x "${FAKEBIN}/${tool}"
 done
 
-# The systemctl stub is the one fake with a RETURN VALUE, because the installer
-# asks it a question: `list-unit-files NAME` is the presence probe deciding
-# whether an agent has a stale copy to remove. STUB_UNITS_PRESENT makes it
-# answer yes, so both branches of that decision are assertable off a host that
-# has neither unit.
+# The systemctl stub is the one fake with RETURN VALUES, because the installer
+# asks it two questions: `list-unit-files NAME` is the presence probe deciding
+# whether an agent has a stale copy to remove, and `is-failed NAME` is the
+# residual probe asked of a unit the first one did NOT report. STUB_UNITS_PRESENT
+# makes the first answer yes; STUB_UNITS_FAILED is the SPACE-SEPARATED list of
+# names the second answers `failed` for, every other name drawing `inactive` and
+# a non-zero exit as the real systemctl does. So both branches of both decisions
+# are assertable off a host that has neither unit.
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'printf "%s %s\n" "$(basename "$0")" "$*" >> "$TRIPWIRE"' \
   'if [ "${1:-}" = list-unit-files ] && [ -n "${STUB_UNITS_PRESENT:-}" ]; then' \
   '  printf "%s enabled enabled\n" "${@: -1}"' \
+  'fi' \
+  'if [ "${1:-}" = is-failed ]; then' \
+  '  for stub_unit in ${STUB_UNITS_FAILED:-}; do' \
+  '    if [ "$stub_unit" = "${@: -1}" ]; then printf "failed\n"; exit 0; fi' \
+  '  done' \
+  '  printf "inactive\n"' \
+  '  exit 1' \
   'fi' \
   'exit 0' \
   > "${FAKEBIN}/systemctl"
@@ -237,18 +247,35 @@ else
     *"nothing to remove"*) ok "the empty removal says so rather than staying silent" ;;
     *) no "the empty removal says so rather than staying silent" ;;
   esac
+
+  # The RESIDUAL case, which is the same not-present branch with systemd still
+  # reporting the units failed: an EARLIER run deleted the files and left the
+  # failed state behind, so this run has nothing to remove and one thing to
+  # clear. gmktec-xubuntu was found exactly there on 2026-09-07
+  # (livespec-dev-tooling-ssbg). Nothing is disabled, unlinked or reloaded --
+  # there is no change on the node for a reload to publish.
+  export STUB_UNITS_FAILED="${TIMER} ${SERVICE}"
+  run_plan --dry-run --role agent
+  unset STUB_UNITS_FAILED
+  same "not installed but still failed: each unit is cleared, and only cleared" \
+    "$(printf '+ systemctl reset-failed %s\n+ systemctl reset-failed %s\n' "$TIMER" "$SERVICE")" \
+    "$(command_lines "$REPLY_OUT")"
+  case "$REPLY_OUT" in
+    *"nothing to remove"*) no "a run that cleared something does not also say there was nothing to do" ;;
+    *) ok "a run that cleared something does not also say there was nothing to do" ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
 # C. --dry-run executed nothing.
 #
-# The tripwire is not expected EMPTY: the presence probe is a read, and a read
-# is performed under --dry-run on purpose so the removal sequence a dry run
-# prints is the one this host actually needs. What must be absent is every
-# MUTATION.
+# The tripwire is not expected EMPTY: the presence probe and the is-failed probe
+# are READS, and a read is performed under --dry-run on purpose so the removal
+# sequence a dry run prints is the one this host actually needs. What must be
+# absent is every MUTATION.
 # ---------------------------------------------------------------------------
 printf '\n== C. --dry-run executes nothing ==\n'
-if grep -qvE '^systemctl list-unit-files ' "$TRIPWIRE"; then
+if grep -qvE '^systemctl (list-unit-files|is-failed) ' "$TRIPWIRE"; then
   no "the dry runs executed no host-mutating command"
   cat "$TRIPWIRE"
 else

@@ -160,6 +160,19 @@ unit_installed() {  # unit_installed NAME
   [ -n "$(systemctl list-unit-files --no-legend "$1" 2>/dev/null)" ]
 }
 
+# The second READ, asked only of a unit this node does NOT carry, and performed
+# under --dry-run for the same reason as the first: an unprivileged caller may
+# ask systemd for a state. `systemctl is-failed` prints `failed` for a unit in
+# the failed state INCLUDING one whose file is gone -- systemd's `not-found
+# failed` -- and `inactive`, `unknown` or nothing at all otherwise, so the
+# ANSWER is compared rather than the exit code. A unit an earlier run deleted
+# keeps that state until it is cleared or the host reboots
+# (livespec-dev-tooling-ssbg).
+unit_failed() {  # unit_failed NAME
+  command -v systemctl >/dev/null 2>&1 || return 1
+  [ "$(systemctl is-failed "$1" 2>/dev/null)" = failed ]
+}
+
 # THE ASSERTION THIS INSTALLER DID NOT HAVE. `systemctl show -p ActiveState` and
 # not `is-active`, because the WORD is the diagnosis the operator needs: on
 # gmktec the timer read `failed` (the service it triggers could not start at
@@ -180,7 +193,7 @@ assert_timer_active() {
 
 # The timer BEFORE the service it triggers, so nothing fires between the two.
 remove_installed_units() {
-  local unit removed_units=()
+  local unit removed_units=() stale_failed_units=()
   for unit in "$TIMER" "$SERVICE"; do
     if unit_installed "$unit"; then
       removed_units+=("$unit")
@@ -190,6 +203,8 @@ remove_installed_units() {
       run systemctl disable --now "$unit" \
         || printf '  disable failed for %s -- removing the unit file anyway\n' "$unit"
       run rm -f "${UNIT_DIR}/${unit}"
+    elif unit_failed "$unit"; then
+      stale_failed_units+=("$unit")
     fi
   done
   if [ "${#removed_units[@]}" -gt 0 ]; then
@@ -206,8 +221,22 @@ remove_installed_units() {
       run systemctl reset-failed "$unit" \
         || printf '  reset-failed found no %s to clear -- systemd had already forgotten it\n' "$unit"
     done
-  else
-    printf '  nothing to remove: neither %s nor %s is installed on this node\n' "$SERVICE" "$TIMER"
+  fi
+  # The RESIDUAL clear, and no reload before it: these unit files were already
+  # gone when this run started, so there is no change on this node for a reload
+  # to publish. Without it a node whose files an EARLIER run deleted stays
+  # `not-found failed` for good -- which is what gmktec-xubuntu was still doing
+  # on 2026-09-07 with the removed-units pass above already in place
+  # (livespec-dev-tooling-ssbg). A run that cleared something is not a "nothing
+  # to remove" run, so the two are alternatives.
+  if [ "${#stale_failed_units[@]}" -gt 0 ]; then
+    for unit in "${stale_failed_units[@]}"; do
+      run systemctl reset-failed "$unit" \
+        || printf '  reset-failed found no %s to clear -- systemd had already forgotten it\n' "$unit"
+    done
+  elif [ "${#removed_units[@]}" -eq 0 ]; then
+    printf '  nothing to remove: neither %s nor %s is installed on this node, and neither is failed\n' \
+      "$SERVICE" "$TIMER"
   fi
 }
 
