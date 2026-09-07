@@ -1,9 +1,26 @@
-"""Classify bump PRs superseded by master or newer open sibling PRs.
+"""Decide which bump PRs to close, and which not to open at all.
 
 The release fan-out opens PRs titled ``chore(deps): bump <source_repo> pin to
 <tag>``. This module keeps the decision logic importable and unit-tested while
 the workflow remains thin glue: gather open PR JSON, gather discovered master pin
-records, call this module, and close the PR numbers it returns.
+records, call this module, and act on what it returns.
+
+Two decisions share one bump identity, and each covers what the other cannot:
+
+- ``classify_superseded_prs`` runs AFTER the create and closes OLD PRs — those a
+  master pin or a STRICTLY newer open sibling has overtaken.
+- ``find_duplicate_bump_pr`` runs BEFORE the create and refuses NEW duplicates —
+  a second PR for a tuple that already has one open. Supersession structurally
+  cannot clean an EQUAL-version pair up: its master category needs a master pin
+  at or above the target, defeated in exactly the repo whose bump has not landed
+  yet, and its sibling category needs a strictly newer sibling, which two PRs at
+  the same version are not to each other. Both producers — the dispatch path
+  (``chore/bump-*``) and the cron-freshness path (``chore/freshness-bump-*``) —
+  reach the create for the same release, so the duplicate has to be refused
+  rather than swept (livespec-dev-tooling-dqfmjr).
+
+Together they hold the invariant of at most one open bump PR per
+``(source_repo, consumer)``.
 """
 
 from __future__ import annotations
@@ -16,23 +33,31 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
+from livespec_dev_tooling.cross_repo._bump_version_order import (
+    version_gt,
+    version_gte,
+    version_lt,
+    version_sort_key,
+)
+
 __all__: list[str] = [
     "BumpKey",
+    "DuplicateBumpDecision",
     "OpenBumpPullRequest",
     "SupersessionDecision",
     "classify_superseded_prs",
+    "find_duplicate_bump_pr",
     "main",
     "master_versions_from_records",
     "parse_open_bump_prs",
 ]
 
 _BUMP_TITLE_RE = re.compile(r"^chore\(deps\): bump (?P<source>.+) pin to (?P<tag>\S+)$")
-_VERSION_RE = re.compile(r"(?:^|-)?v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$")
 
 
 @dataclass(frozen=True, kw_only=True)
 class BumpKey:
-    """The shared bump identity used by supersession and future dedupe logic."""
+    """The shared bump identity used by supersession and dedupe alike."""
 
     source_repo: str
     target_version: str
@@ -49,6 +74,15 @@ class OpenBumpPullRequest:
 
 
 @dataclass(frozen=True, kw_only=True)
+class DuplicateBumpDecision:
+    """The already-open bump PR that makes another ``gh pr create`` redundant."""
+
+    number: int
+    branch: str
+    notice: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class SupersessionDecision:
     """A PR that should be closed, with the superseder named for the comment."""
 
@@ -57,43 +91,6 @@ class SupersessionDecision:
     category: str
     superseder: str
     comment: str
-
-
-def _version_tuple(*, value: str) -> tuple[int, int, int] | None:
-    match = _VERSION_RE.search(value)
-    if match is None:
-        return None
-    return (
-        int(match.group("major")),
-        int(match.group("minor")),
-        int(match.group("patch")),
-    )
-
-
-def _version_gte(*, left: str, right: str) -> bool:
-    if left == right:
-        return True
-    left_tuple = _version_tuple(value=left)
-    right_tuple = _version_tuple(value=right)
-    if left_tuple is None or right_tuple is None:
-        return False
-    return left_tuple >= right_tuple
-
-
-def _version_gt(*, left: str, right: str) -> bool:
-    left_tuple = _version_tuple(value=left)
-    right_tuple = _version_tuple(value=right)
-    if left_tuple is None or right_tuple is None:
-        return False
-    return left_tuple > right_tuple
-
-
-def _version_lt(*, left: str, right: str) -> bool:
-    left_tuple = _version_tuple(value=left)
-    right_tuple = _version_tuple(value=right)
-    if left_tuple is None or right_tuple is None:
-        return False
-    return left_tuple < right_tuple
 
 
 def _newer_sibling(
@@ -105,12 +102,12 @@ def _newer_sibling(
         if candidate.number != pr.number
         and candidate.key.source_repo == pr.key.source_repo
         and candidate.key.consumer == pr.key.consumer
-        and _version_gt(left=candidate.key.target_version, right=pr.key.target_version)
+        and version_gt(left=candidate.key.target_version, right=pr.key.target_version)
     ]
     return max(
         candidates,
         key=lambda candidate: (
-            _version_tuple(value=candidate.key.target_version) or (0, 0, 0),
+            version_sort_key(value=candidate.key.target_version),
             candidate.number,
         ),
         default=None,
@@ -142,13 +139,13 @@ def classify_superseded_prs(
 
     ``master_versions`` is keyed as ``(source_repo, consumer)``. Each
     ``OpenBumpPullRequest`` carries the full ``(source_repo, target_version,
-    consumer)`` key so a future duplicate-PR dedupe pass can share the same
+    consumer)`` key, which is what lets ``find_duplicate_bump_pr`` share the same
     parser and domain model.
     """
     decisions: list[SupersessionDecision] = []
     for pr in sorted(open_prs, key=lambda candidate: candidate.number):
         master_version = master_versions.get((pr.key.source_repo, pr.key.consumer))
-        if master_version is not None and _version_gte(
+        if master_version is not None and version_gte(
             left=master_version, right=pr.key.target_version
         ):
             decisions.append(
@@ -174,6 +171,43 @@ def classify_superseded_prs(
                 )
             )
     return decisions
+
+
+def _duplicate_notice(*, incumbent: OpenBumpPullRequest, key: BumpKey) -> str:
+    return (
+        f"bump PR #{incumbent.number} ({incumbent.branch}) already targets "
+        f"{key.source_repo} {key.target_version} for {key.consumer}; "
+        "skipping a duplicate `gh pr create`."
+    )
+
+
+def find_duplicate_bump_pr(
+    *, open_prs: list[OpenBumpPullRequest], key: BumpKey
+) -> DuplicateBumpDecision | None:
+    """Return the open bump PR that already covers ``key``, or ``None`` to create one.
+
+    The match is on the whole ``(source_repo, target_version, consumer)`` identity
+    and deliberately NOT on the branch name: the two producers name their branches
+    differently for the same bump, and it is exactly that cross-producer pair the
+    supersession sweep cannot close afterwards.
+
+    A different target version for the same source and consumer is NOT a
+    duplicate — that is an older sibling, which is
+    ``classify_superseded_prs``'s concern. Refusing it here would suppress the
+    legitimate newer bump and freeze the consumer at the older target.
+
+    The lowest PR number wins so the notice names the same incumbent across
+    repeated fan-outs when a duplicate pair is already open.
+    """
+    matches = [pr for pr in open_prs if pr.key == key]
+    if not matches:
+        return None
+    incumbent = min(matches, key=lambda candidate: candidate.number)
+    return DuplicateBumpDecision(
+        number=incumbent.number,
+        branch=incumbent.branch,
+        notice=_duplicate_notice(incumbent=incumbent, key=key),
+    )
 
 
 def _payload_mapping(*, value: object) -> Mapping[str, object] | None:
@@ -244,7 +278,7 @@ def master_versions_from_records(
             continue
         key = (source_repo, consumer)
         existing = versions.get(key)
-        if existing is None or _version_lt(left=current_value, right=existing):
+        if existing is None or version_lt(left=current_value, right=existing):
             versions[key] = current_value
     return versions
 
@@ -262,6 +296,17 @@ def _decision_payload(*, decisions: list[SupersessionDecision]) -> list[dict[str
     ]
 
 
+def _duplicate_payload(*, duplicate: DuplicateBumpDecision | None) -> dict[str, str | int]:
+    """Render the dedupe verdict; an empty object means "no duplicate, open the PR"."""
+    if duplicate is None:
+        return {}
+    return {
+        "number": duplicate.number,
+        "branch": duplicate.branch,
+        "notice": duplicate.notice,
+    }
+
+
 def _consumer_from_env() -> str:
     consumer = os.environ.get("CONSUMER")
     if consumer:
@@ -270,15 +315,42 @@ def _consumer_from_env() -> str:
     return repository.rsplit("/", maxsplit=1)[-1]
 
 
+def _bump_key_from_env(*, consumer: str) -> BumpKey:
+    """Build the bump identity the caller is about to open a PR for.
+
+    ``SOURCE_REPO`` and ``TAG`` are the composite Action's own inputs, and the PR
+    title it writes embeds them verbatim, so a title parsed back out of
+    ``gh pr list`` compares equal to this key by construction.
+    """
+    return BumpKey(
+        source_repo=os.environ.get("SOURCE_REPO", ""),
+        target_version=os.environ.get("TAG", ""),
+        consumer=consumer,
+    )
+
+
 def main() -> int:
-    """Read workflow JSON from env and emit a JSON close plan."""
-    open_pr_payload = json.loads(os.environ.get("OPEN_PRS", "[]"))
-    records_payload = cast(list[dict[str, str]], json.loads(os.environ.get("RECORDS", "[]")))
+    """Read workflow JSON from env and emit a JSON decision plan.
+
+    ``BUMP_MODE=dedupe`` selects the pre-create dedupe verdict; anything else
+    keeps the post-create close plan the supersession sweep already reads.
+    """
     consumer = _consumer_from_env()
+    open_pr_payload = json.loads(os.environ.get("OPEN_PRS", "[]"))
     open_prs = parse_open_bump_prs(payload=open_pr_payload, consumer=consumer)
-    master_versions = master_versions_from_records(records=records_payload, consumer=consumer)
-    decisions = classify_superseded_prs(open_prs=open_prs, master_versions=master_versions)
-    _ = sys.stdout.write(json.dumps(_decision_payload(decisions=decisions), indent=2))
+    payload: object
+    if os.environ.get("BUMP_MODE") == "dedupe":
+        payload = _duplicate_payload(
+            duplicate=find_duplicate_bump_pr(
+                open_prs=open_prs, key=_bump_key_from_env(consumer=consumer)
+            )
+        )
+    else:
+        records_payload = cast(list[dict[str, str]], json.loads(os.environ.get("RECORDS", "[]")))
+        master_versions = master_versions_from_records(records=records_payload, consumer=consumer)
+        decisions = classify_superseded_prs(open_prs=open_prs, master_versions=master_versions)
+        payload = _decision_payload(decisions=decisions)
+    _ = sys.stdout.write(json.dumps(payload, indent=2))
     _ = sys.stdout.write("\n")
     return 0
 
