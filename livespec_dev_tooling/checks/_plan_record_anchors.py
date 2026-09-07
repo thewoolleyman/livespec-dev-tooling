@@ -24,6 +24,7 @@ from livespec_dev_tooling.checks._plan_record_model import (
     PLAN_ANCHOR_FILENAME,
     UNASSIGNED_ANCHOR,
     Finding,
+    is_epic_record,
     plan_slug_of,
 )
 
@@ -31,7 +32,6 @@ __all__: list[str] = [
     "anchor_findings",
 ]
 
-_EPIC_TYPE = "epic"
 
 _MISSING_REMEDIATION = (
     "write `plan/<slug>/associated_work_item_id` holding one line: the id of the "
@@ -115,7 +115,7 @@ def _consistent_findings(
     record = by_id.get(anchor)
     if record is None:
         return [_inconsistent(directory=directory, message=f"anchor names no record {anchor}")]
-    if record.get("type") != _EPIC_TYPE:
+    if not is_epic_record(record=record):
         return [
             _inconsistent(directory=directory, message=f"anchor names non-epic record {anchor}")
         ]

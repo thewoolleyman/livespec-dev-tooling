@@ -890,3 +890,35 @@ def test_module_importable_without_running_main() -> None:
     module = _load(name="plan_record_conformance")
 
     assert callable(module.main), "main should be importable without invocation"
+
+
+def test_epic_predicates_accept_bd_issue_type_spelling() -> None:
+    """bd 1.x `list --json` spells the kind `issue_type`, never `type`.
+
+    Every epic-population predicate must read both spellings, or an armed run
+    on a conformant tenant sees zero epics and fails every slug and anchor
+    verdict (livespec-dev-tooling-lnbf).
+    """
+    ledger = _load(name="_plan_ledger")
+    tenant_re = ledger.tenant_id_re(tenant_prefix=_TENANT)
+    record: dict[str, object] = {
+        "id": _EPIC,
+        "issue_type": "epic",
+        "status": "open",
+        "metadata": {"plan_slug": "topic"},
+    }
+    model = _load(name="_plan_record_model")
+    assert model.is_same_tenant_epic(record=record, tenant_re=tenant_re)
+    anchors = _load(name="_plan_record_anchors")
+    dirs = _load(name="_plan_record_dirs")
+    directory = dirs.PlanDirectory(
+        relative="plan/topic", slug="topic", archived=False, raw=_EPIC, anchor=_EPIC
+    )
+    assert (
+        anchors._consistent_findings(  # noqa: SLF001  — private verdict under test
+            directory=directory, anchor=_EPIC, grouped={}, by_id={_EPIC: record}
+        )
+        == []
+    )
+    parity = _load(name="plan_epic_parity")
+    assert parity._is_plan_epic(record=record, tenant_id_re=tenant_re)  # noqa: SLF001
