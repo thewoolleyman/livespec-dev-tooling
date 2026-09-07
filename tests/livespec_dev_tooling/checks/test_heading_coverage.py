@@ -10,17 +10,15 @@ recursing into `proposed_changes/`,
 never including the skill-owned `README.md` at the tree root.
 
 Failure modes covered: uncovered heading, orphan registry entry,
-missing `reason` on a TODO entry, a `scenarios.md` heading mapped
-to a unit-tier test (the integration-tier sub-rule), and a non-TODO
-row whose node id resolves to no existing test (direction 5,
-`livespec-dev-tooling-8t0i`). Skip rule covered: `Scenario:` prefix.
+missing `reason` on a TODO entry, and a `scenarios.md` heading mapped
+to a unit-tier test (the integration-tier sub-rule). Skip rule
+covered: `Scenario:` prefix.
 
-⛔ EVERY PASSING FIXTURE BELOW NOW AUTHORS THE TEST MODULE ITS ROW
-NAMES, via `_write_test_module`. Before direction 5 a fixture could
-map a heading to `tests/foo.py::test_foo` with no such file, because
-nothing resolved the id — which is precisely the defect direction 5
-closes. A fixture left dangling would fire the new diagnostic and
-stop exercising the direction it was written for.
+NOT a failure mode: a non-TODO row whose node id names no existing
+test. `livespec-dev-tooling-jel7` reverted the node-id-resolution
+direction `29a49c05` armed ahead of adoption, and
+`test_dangling_non_todo_node_id_does_not_fail_the_check` pins that the
+check exits 0 on such a row.
 
 The scenario integration-tier sub-rule (per
 `SPECIFICATION/constraints.md` section "Heading taxonomy"): a registry entry
@@ -86,18 +84,6 @@ def _write_file(*, tmp_path: Path, rel_path: str, body: str) -> None:
     full.write_text(body, encoding="utf-8")
 
 
-def _write_test_module(*, tmp_path: Path, rel_path: str, func: str) -> None:
-    """Author the test module a registry row names, so its node id RESOLVES.
-
-    Direction 5 reads every non-TODO row, so a fixture asserting exit 0 must
-    carry the test it maps to; see this module's docstring for why that is the
-    point rather than an inconvenience.
-    """
-    _write_file(
-        tmp_path=tmp_path, rel_path=rel_path, body=f"def {func}() -> None:\n    assert True\n"
-    )
-
-
 def _scenarios_body() -> str:
     """A `scenarios.md` whose single non-`Scenario:` heading needs coverage."""
     return "# Scenarios\n\n## Observable outcomes\n\nbody\n"
@@ -121,7 +107,6 @@ def test_heading_coverage_accepts_covered_heading(*, tmp_path: Path) -> None:
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -213,7 +198,6 @@ def test_heading_coverage_skips_scenario_prefix(*, tmp_path: Path) -> None:
     """Headings beginning with `Scenario:` are skipped — no entry needed."""
     body = "# Title\n\n## Foo\n\n## Scenario: happy path\n"
     _write_spec_file(tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body=body)
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -239,7 +223,6 @@ def test_heading_coverage_does_not_recurse_into_proposed_changes(*, tmp_path: Pa
         rel_path="SPECIFICATION/proposed_changes/whatever.md",
         body="## Proposal: should be ignored\n",
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -265,7 +248,6 @@ def test_heading_coverage_does_not_recurse_into_history(*, tmp_path: Path) -> No
         rel_path="SPECIFICATION/history/v001/spec.md",
         body="# Title\n\n## Snapshot heading\n",
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -291,7 +273,6 @@ def test_heading_coverage_does_not_count_readme(*, tmp_path: Path) -> None:
         rel_path="SPECIFICATION/README.md",
         body="# Orientation\n\n## Some Section\n",
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -318,7 +299,6 @@ def test_heading_coverage_skips_non_directory_under_templates(*, tmp_path: Path)
         rel_path="SPECIFICATION/templates/stray.txt",
         body="not a sub-spec directory\n",
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -344,8 +324,6 @@ def test_heading_coverage_walks_sub_spec_trees(*, tmp_path: Path) -> None:
         rel_path="SPECIFICATION/templates/livespec/spec.md",
         body="# Title\n\n## Sub-spec heading\n",
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/main.py", func="test_main")
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/sub.py", func="test_sub")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -394,19 +372,12 @@ def test_heading_coverage_disambiguates_same_heading_across_files(*, tmp_path: P
 
 
 def test_heading_coverage_tolerates_malformed_registry_entries(*, tmp_path: Path) -> None:
-    """Entries with non-string fields are skipped silently.
-
-    Skipped by DIRECTION 5 too, and deliberately: a row the coverage diff
-    already discards must not acquire a second, different verdict from the
-    node-id resolver — the malformed row here carries `test: "x"`, which
-    resolves to nothing.
-    """
+    """Entries with non-string fields are skipped silently."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n"
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     tests_dir = tmp_path / "tests"
-    tests_dir.mkdir(exist_ok=True)
+    tests_dir.mkdir()
     (tests_dir / "heading-coverage.json").write_text(
         json.dumps(
             [
@@ -470,9 +441,6 @@ def test_scenario_tier_compliant_via_default_prefix(*, tmp_path: Path) -> None:
     """A scenarios.md entry with a default-allowlist prefix node id passes (no pyproject)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
-    )
-    _write_test_module(
-        tmp_path=tmp_path, rel_path="tests/e2e/test_happy_path.py", func="test_happy_path_minimal"
     )
     _write_registry(
         tmp_path=tmp_path,
@@ -555,9 +523,6 @@ def test_scenario_tier_unit_tier_does_not_fire_for_non_scenarios_file(*, tmp_pat
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
     )
-    _write_test_module(
-        tmp_path=tmp_path, rel_path="tests/unit/test_pure.py", func="test_pure_thing"
-    )
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -629,9 +594,6 @@ def test_scenario_tier_allowlist_read_from_pyproject(*, tmp_path: Path) -> None:
         rel_path="pyproject.toml",
         body=("[tool.livespec_dev_tooling]\n" 'scenario_tiers = ["tests.acceptance"]\n'),
     )
-    _write_test_module(
-        tmp_path=tmp_path, rel_path="tests/acceptance/test_flow.py", func="test_acceptance"
-    )
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -686,7 +648,6 @@ def test_scenario_tier_default_used_when_table_absent(*, tmp_path: Path) -> None
         rel_path="pyproject.toml",
         body='[project]\nname = "x"\nversion = "0"\n',
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/integration/test_x.py", func="test_y")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -702,28 +663,13 @@ def test_scenario_tier_default_used_when_table_absent(*, tmp_path: Path) -> None
     assert result.returncode == 0
 
 
-def test_scenario_tier_absent_node_id_file_passes_tier_and_fires_direction_5(
-    *, tmp_path: Path
-) -> None:
-    """An allowlisted prefix still governs the TIER — and direction 5 fires on the absence.
-
-    ⛔ THIS TEST ASSERTED EXIT 0 UNTIL `livespec-dev-tooling-8t0i`, and its own
-    docstring said why: "an allowlisted prefix passes even when the node-id
-    file does not exist". That WAS the defect, pinned by a passing test that
-    read as correct — a row naming a nonexistent module under an allowlisted
-    tier prefix is exactly the shape of the twelve dangling `livespec-overseer`
-    rows this item was filed from.
-
-    Both halves are asserted, because "the new diagnostic appears" is only part
-    of the claim: the tier direction must still be SILENT, since a prefix-
-    compliant id is not a unit-tier verdict — the two directions are separable
-    in a log by design.
-    """
+def test_scenario_tier_unresolvable_node_id_governed_by_prefix(*, tmp_path: Path) -> None:
+    """An allowlisted prefix passes even when the node-id file does not exist (no crash)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
     )
-    # No file at tests/e2e/test_missing.py — the allowlisted `tests.e2e` prefix
-    # (tier path a) governs direction 4, and direction 5 resolves the id.
+    # No file at tests/e2e/test_missing.py — marker path (b) finds nothing, but
+    # the allowlisted `tests.e2e` prefix (path a) governs and the check passes.
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -736,14 +682,7 @@ def test_scenario_tier_absent_node_id_file_passes_tier_and_fires_direction_5(
         ],
     )
     result = _run_check(cwd=tmp_path)
-    assert result.returncode != 0
-    combined = result.stdout + result.stderr
-    assert (
-        "heading-coverage-node-id-does-not-resolve" in combined
-    ), f"an absent mapped module must be reported as unresolvable; got {combined!r}"
-    assert (
-        "scenario heading mapped to unit-tier test" not in combined
-    ), f"a prefix-compliant id is not a tier verdict; got {combined!r}"
+    assert result.returncode == 0
 
 
 def test_scenario_tier_compliant_via_module_pytestmark(*, tmp_path: Path) -> None:
@@ -1157,7 +1096,6 @@ def test_scenario_heading_in_non_scenarios_file_still_skipped(*, tmp_path: Path)
         rel_path="SPECIFICATION/spec.md",
         body="# Title\n\n## Foo\n\n## Scenario: belongs to prose, not registry\n",
     )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
     _write_registry(
         tmp_path=tmp_path,
         entries=[
@@ -1173,24 +1111,20 @@ def test_scenario_heading_in_non_scenarios_file_still_skipped(*, tmp_path: Path)
     assert result.returncode == 0
 
 
-# ---------------------------------------------------------------------------
-# Direction 5 — a non-TODO node id must resolve to an existing test
-# (`livespec-dev-tooling-8t0i`). The two sabotage controls measured in
-# `livespec-overseer` at release 1.24.1, run here through the check's own
-# subprocess contract rather than against the resolver, plus the negative
-# control that proves a fully-resolvable registry still passes.
-# ---------------------------------------------------------------------------
+def test_dangling_non_todo_node_id_does_not_fail_the_check(*, tmp_path: Path) -> None:
+    """A mapped node id naming NO existing test exits 0 — the arming was reverted.
 
+    `livespec-dev-tooling-jel7`: `29a49c05` armed a fifth direction that resolved
+    every non-TODO row's node id and failed the check on a dangling one. It was
+    armed AHEAD OF ADOPTION — all three consumer repos' pin-bump PRs went red on
+    it, and satisfying it needs id-repair work none of them has been funded to
+    do — so the direction was removed rather than gated (no lever, no flag, no
+    severity knob). This test pins the removal: the row below names
+    `tests/does_not_exist.py`, which no fixture authors, and the check passes.
 
-def test_node_id_naming_a_nonexistent_module_fires(*, tmp_path: Path) -> None:
-    """SABOTAGE CONTROL 2 — a wholly nonexistent module exits NON-ZERO, and says so.
-
-    Measured silent (exit 0, no output naming the row) before this direction
-    landed. The row here is annotated exactly as the twelve `livespec-overseer`
-    rows were — a `work_item` and an honest "NOT YET WRITTEN" `reason` beside a
-    mapped `test` — because that is the whole finding: AN HONEST `reason`
-    BESIDE A MAPPED `test` IS INDISTINGUISHABLE FROM REAL COVERAGE to every
-    field the checker reads, so only resolving the id discriminates.
+    The row's `spec_file` is `spec.md` rather than `scenarios.md` so the
+    scenario integration-tier direction — which is UNCHANGED and still fatal —
+    does not govern it, leaving the dangling id as the only thing under test.
     """
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
@@ -1202,134 +1136,11 @@ def test_node_id_naming_a_nonexistent_module_fires(*, tmp_path: Path) -> None:
                 "heading": "## Foo",
                 "spec_root": "SPECIFICATION",
                 "spec_file": "spec.md",
-                "test": "tests.integration.test_never_existed.test_flow",
-                "work_item": "overseer-0nsx",
-                "reason": (
-                    "NOT YET WRITTEN -- owned by overseer-0nsx. Until that test lands this "
-                    "is a debt marker, not coverage."
-                ),
+                "test": "tests.does_not_exist.test_absent",
+                "reason": "NOT YET WRITTEN — the shape the reverted direction convicted",
             }
         ],
     )
     result = _run_check(cwd=tmp_path)
-    assert result.returncode != 0
     combined = result.stdout + result.stderr
-    assert (
-        "heading-coverage-node-id-does-not-resolve" in combined
-    ), f"a nonexistent module must fire the new diagnostic; got {combined!r}"
-    assert "module-file-absent" in combined
-    assert "tests.integration.test_never_existed.test_flow" in combined
-
-
-def test_node_id_naming_a_nonexistent_function_in_a_real_module_fires(*, tmp_path: Path) -> None:
-    """SABOTAGE CONTROL 1 — an existing module with a nonexistent function fires.
-
-    The harder half: the module resolves, so only the trailing segment is a
-    lie. Also silent (exit 0) before this direction landed.
-    """
-    _write_spec_file(
-        tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
-    )
-    _write_test_module(
-        tmp_path=tmp_path, rel_path="tests/integration/test_real.py", func="test_something_else"
-    )
-    _write_registry(
-        tmp_path=tmp_path,
-        entries=[
-            {
-                "heading": "## Foo",
-                "spec_root": "SPECIFICATION",
-                "spec_file": "spec.md",
-                "test": "tests.integration.test_real.test_never_written",
-            }
-        ],
-    )
-    result = _run_check(cwd=tmp_path)
-    assert result.returncode != 0
-    combined = result.stdout + result.stderr
-    assert (
-        "heading-coverage-node-id-does-not-resolve" in combined
-    ), f"a nonexistent function must fire the new diagnostic; got {combined!r}"
-    assert "test-function-absent" in combined
-
-
-def test_fully_resolvable_registry_passes(*, tmp_path: Path) -> None:
-    """NEGATIVE CONTROL — every mapped row naming a real test still exits 0.
-
-    Both node-id spellings and a TODO row together, so the negative control
-    covers what the positive controls sabotage.
-    """
-    _write_spec_file(
-        tmp_path=tmp_path,
-        rel_path="SPECIFICATION/spec.md",
-        body="# Title\n\n## Foo\n\n## Bar\n\n## Baz\n",
-    )
-    _write_test_module(
-        tmp_path=tmp_path, rel_path="tests/integration/test_real.py", func="test_flow"
-    )
-    _write_test_module(tmp_path=tmp_path, rel_path="tests/foo.py", func="test_foo")
-    _write_registry(
-        tmp_path=tmp_path,
-        entries=[
-            {
-                "heading": "## Foo",
-                "spec_root": "SPECIFICATION",
-                "spec_file": "spec.md",
-                "test": "tests.integration.test_real.test_flow",
-            },
-            {
-                "heading": "## Bar",
-                "spec_root": "SPECIFICATION",
-                "spec_file": "spec.md",
-                "test": "tests/foo.py::test_foo",
-            },
-            {
-                "heading": "## Baz",
-                "spec_root": "SPECIFICATION",
-                "spec_file": "spec.md",
-                "test": "TODO",
-                "reason": "integration-tier harness pending",
-            },
-        ],
-    )
-    result = _run_check(cwd=tmp_path)
-    assert result.returncode == 0, f"a fully-resolvable registry must pass; got {result.stderr!r}"
-
-
-def test_node_id_whose_module_does_not_parse_is_unresolved(*, tmp_path: Path) -> None:
-    """A mapped module that exists and does NOT parse is UNRESOLVED, not dangling.
-
-    ⛔ "THIS ID DOES NOT RESOLVE" IS NOT "I COULD NOT READ THE FILE TO FIND
-    OUT". Both directions are asserted: the unresolved diagnostic must appear
-    AND the existence verdict must be gone, or the direction added to remove a
-    false coverage claim would have introduced a false dangling-id claim.
-    """
-    _write_spec_file(
-        tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
-    )
-    _write_file(
-        tmp_path=tmp_path,
-        rel_path="tests/integration/test_broken.py",
-        body="def test_broken(:\n    this is not valid python\n",
-    )
-    _write_registry(
-        tmp_path=tmp_path,
-        entries=[
-            {
-                "heading": "## Foo",
-                "spec_root": "SPECIFICATION",
-                "spec_file": "spec.md",
-                "test": "tests.integration.test_broken.test_broken",
-            }
-        ],
-    )
-    result = _run_check(cwd=tmp_path)
-    assert result.returncode != 0
-    combined = result.stdout + result.stderr
-    assert (
-        "heading-coverage-node-id-unresolved" in combined
-    ), f"an unparseable mapped module must be reported as unresolved; got {combined!r}"
-    assert "test-file-unparseable" in combined
-    assert (
-        "heading-coverage-node-id-does-not-resolve" not in combined
-    ), f"a non-read must not be reported as a dangling id; got {combined!r}"
+    assert result.returncode == 0, f"a dangling node id must not fail the check; got {combined!r}"
