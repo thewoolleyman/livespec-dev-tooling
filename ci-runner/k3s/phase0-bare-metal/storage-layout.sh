@@ -48,12 +48,24 @@
 # carries `--i-consent-to-destroy=<target>` naming that exact target, and the
 # refusal names it. Consent for one target is never consent for another.
 #
+# TOOLS BEFORE MUTATIONS. Stage 1 is a PREFLIGHT: it derives every tool the
+# plan will reach for and answers an absent one before anything is written, so
+# a run either has what it needs or has changed nothing. The two plans answer
+# differently because they run in different places — `free-space` runs on the
+# node's own installed operating system, which has a package manager and may
+# simply never have been given lvm2, so the package is installed first;
+# `whole-device` runs from the Recovery USB, which is BUILT to carry these
+# tools, so an absent one is a defect in the USB and the run refuses.
+#
 # --dry-run PRINTS AND EXECUTES NOTHING. Read-only PROBES still run (they are
 # how the plan is derived); every mutating command is printed with a leading
 # `+ ` and executed by nothing. A probe whose tool is not installed reports
 # "absent", so a dry run on a workstation prints the full sequence a bare node
 # would take. Consent is evaluated identically in both modes, so a dry run also
-# tells the operator which targets it would need consent for.
+# tells the operator which targets it would need consent for — and a
+# whole-device refusal the preflight would make is printed as
+# `WOULD REFUSE: <tool> absent (<package>)` rather than taken, so a workstation
+# dry run still shows the whole plan.
 #
 # Usage:
 #   storage-layout.sh --dry-run profiles/<node>.env
@@ -218,6 +230,47 @@ size_arg() {
   esac
 }
 
+# fs_tool TYPE — set FS_TOOL to the maker a declared filesystem type is made
+# with. It is the TOOL side of `make_fs`, split out because the preflight has
+# to know which makers a plan will reach for before the stage that reaches for
+# them runs. The two carry the same list of types on purpose: `make_fs` owns
+# each maker's ARGUMENTS, this owns its NAME, and a type that has neither is
+# refused HERE — before any mutation, rather than at stage 7 with five stages
+# of writes already behind it.
+#
+# An out-variable rather than a `$(…)` helper on purpose: its rejection has to
+# stop the RUN, and an `exit` inside a command substitution only ends the
+# subshell that ran it.
+fs_tool() {
+  case "$1" in
+    ext4) FS_TOOL='mkfs.ext4' ;;
+    xfs) FS_TOOL='mkfs.xfs' ;;
+    vfat) FS_TOOL='mkfs.vfat' ;;
+    swap) FS_TOOL='mkswap' ;;
+    *) die "unsupported filesystem type '$1' in ${PROFILE_PATH}" ;;
+  esac
+}
+
+# tool_package TOOL — set TOOL_PACKAGE to the Debian package carrying TOOL.
+#
+# Naming the package is what makes both of the preflight's answers actionable:
+# the free-space plan installs exactly these, and the whole-device refusal tells
+# an operator what the Recovery USB is missing rather than leaving them to work
+# out for themselves which package holds `pvcreate`. Same out-variable shape as
+# `fs_tool`, and for the same reason.
+tool_package() {
+  case "$1" in
+    sgdisk) TOOL_PACKAGE='gdisk' ;;
+    partprobe) TOOL_PACKAGE='parted' ;;
+    pvcreate|vgcreate|lvcreate) TOOL_PACKAGE='lvm2' ;;
+    mkfs.ext4) TOOL_PACKAGE='e2fsprogs' ;;
+    mkfs.xfs) TOOL_PACKAGE='xfsprogs' ;;
+    mkfs.vfat) TOOL_PACKAGE='dosfstools' ;;
+    mkswap) TOOL_PACKAGE='util-linux' ;;
+    *) die "no package is recorded for the tool '$1'; add it to tool_package before the plan can need it" ;;
+  esac
+}
+
 # fs_type_of / fs_label_of — probe the superblock directly rather than the
 # blkid cache, which goes stale after a relabel.
 fs_type_of() { probe blkid -p -s TYPE -o value "$1"; }
@@ -240,7 +293,112 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-stage "1/6 storage-controller virtual disk"
+stage "1/7 the tools this plan needs"
+# ---------------------------------------------------------------------------
+# THE HALF-APPLIED LAYOUT THIS STAGE EXISTS TO PREVENT. Every stage below
+# reaches for a tool the node may not carry, and they are not equally likely to
+# be there: a stock desktop install HAS `sgdisk`, `partprobe` and `mkfs.ext4`
+# and has neither lvm2 nor xfsprogs. Without this stage a `free-space` run on
+# such a node writes the new partition, re-reads the table, and only THEN dies
+# at `pvcreate: command not found` — the device now carries a partition with
+# nothing on it, and because the tail it was cut from is no longer free, a
+# re-run computes a DIFFERENT "largest free region" against a device that
+# changed under it. Measured on gmktec-xubuntu 2026-09-07, before its
+# rehearsal.
+#
+# THE TOOL SET IS DERIVED FROM THE PLAN, never listed: a profile whose logical
+# volumes name a filesystem type puts that type's maker in the set, so a new
+# type is a profile edit and a `fs_tool` arm, and never a list to keep in step
+# by hand.
+#
+# THE TWO PLANS ANSWER AN ABSENCE DIFFERENTLY, because they run in different
+# places. `whole-device` runs from the Recovery USB, which is built to carry
+# these tools, so an absent one is a defect in the USB and the honest answer is
+# to refuse before writing anything. `free-space` runs on the operating system
+# the node already has — which has a package manager, and no reason to have
+# been given lvm2 — so the honest answer is to install it FIRST, ahead of the
+# partition table, which is what keeps "either everything it needs or nothing
+# changed" true. (An `apt-get` that is itself missing fails there, as the first
+# mutating command of the run, with the disk still untouched.)
+required_tools=()
+declare -A tool_seen=()
+add_required_tool() {
+  if [ -z "${tool_seen[$1]:-}" ]; then
+    tool_seen["$1"]=1
+    required_tools+=("$1")
+  fi
+}
+
+# The partition table is written with sgdisk and re-read with partprobe; the
+# physical volume, its group and its volumes with the LVM trio. The EFI system
+# partition's maker joins the set only under `whole-device`, which is the plan
+# that MAKES it; under `free-space` it is a filesystem the node already boots
+# from and stage 7 never writes it.
+for tool in sgdisk partprobe pvcreate vgcreate lvcreate; do
+  add_required_tool "$tool"
+done
+if [ "${CFG[DISK_PLAN]}" != "free-space" ]; then
+  fs_tool "${CFG[ESP_FSTYPE]}"
+  add_required_tool "$FS_TOOL"
+fi
+for record in "${LV_RECORDS[@]}"; do
+  IFS=: read -r _ _ _ rec_fstype _ <<< "$record"
+  fs_tool "$rec_fstype"
+  add_required_tool "$FS_TOOL"
+done
+
+missing_tools=()
+for tool in "${required_tools[@]}"; do
+  have "$tool" || missing_tools+=("$tool")
+done
+
+if [ "${#missing_tools[@]}" -eq 0 ]; then
+  note "no change: every tool this plan needs is installed (${required_tools[*]})"
+elif [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
+  # One `apt-get` for all of them, and each package named once: the LVM trio is
+  # three tools out of one package, so a per-tool install would ask for lvm2
+  # three times and read as three separate problems.
+  missing_packages=()
+  declare -A package_seen=()
+  for tool in "${missing_tools[@]}"; do
+    tool_package "$tool"
+    if [ -z "${package_seen[$TOOL_PACKAGE]:-}" ]; then
+      package_seen["$TOOL_PACKAGE"]=1
+      missing_packages+=("$TOOL_PACKAGE")
+    fi
+  done
+  note "plan:     ${missing_tools[*]} absent; ${missing_packages[*]} installed before the partition table is touched"
+  # Nobody is sitting at this node, so apt-get must never stop for a prompt.
+  export DEBIAN_FRONTEND=noninteractive
+  run apt-get install -y --no-install-recommends "${missing_packages[@]}"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    # RE-PROBED, because "apt-get exited 0" is a statement about apt-get and not
+    # about the tool: a package that installs its binary somewhere this PATH
+    # does not reach leaves the run exactly as unable to finish as before.
+    for tool in "${missing_tools[@]}"; do
+      tool_package "$tool"
+      have "$tool" || die "${tool} is still absent after installing ${TOOL_PACKAGE}; nothing has been written to ${CFG[TARGET_DEVICE]}"
+    done
+    note "installed: ${missing_tools[*]} are present now"
+  fi
+else
+  for tool in "${missing_tools[@]}"; do
+    tool_package "$tool"
+    if [ "$DRY_RUN" -eq 1 ]; then
+      note "WOULD REFUSE: ${tool} absent (${TOOL_PACKAGE})"
+    else
+      printf 'REFUSED: %s needs %s, which is not installed (package %s).\n' \
+        "$SCRIPT_NAME" "$tool" "$TOOL_PACKAGE" >&2
+    fi
+  done
+  if [ "$DRY_RUN" -eq 0 ]; then
+    die "DISK_PLAN=whole-device runs from the Recovery USB, which is built to carry every tool this plan needs. Nothing has been written to ${CFG[TARGET_DEVICE]}. Add the package(s) named above to recovery-usb/build-recovery-usb.sh and re-run."
+  fi
+  note "          a live run refuses there; the rest of the plan is printed so a dry run still shows it in full"
+fi
+
+# ---------------------------------------------------------------------------
+stage "2/7 storage-controller virtual disk"
 # ---------------------------------------------------------------------------
 # A free-space plan runs against a device that already carries this node's
 # operating system, so there is nothing here to build: the virtual disk (or the
@@ -311,7 +469,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-stage "2/6 partition table on ${CFG[TARGET_DEVICE]}"
+stage "3/7 partition table on ${CFG[TARGET_DEVICE]}"
 # ---------------------------------------------------------------------------
 # Under `whole-device` the structure is fixed by the procedure — partition 1 is
 # the EFI system partition, partition 2 is the LVM physical volume — while the
@@ -362,7 +520,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-stage "3/6 LVM physical volumes"
+stage "4/7 LVM physical volumes"
 # ---------------------------------------------------------------------------
 for vg in "${VG_NAMES[@]}"; do
   pv="${VG_PV[$vg]}"
@@ -378,7 +536,7 @@ for vg in "${VG_NAMES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-stage "4/6 volume groups"
+stage "5/7 volume groups"
 # ---------------------------------------------------------------------------
 for vg in "${VG_NAMES[@]}"; do
   if [ -n "$(probe vgs --noheadings -o vg_name "$vg")" ]; then
@@ -389,7 +547,7 @@ for vg in "${VG_NAMES[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-stage "5/6 logical volumes"
+stage "6/7 logical volumes"
 # ---------------------------------------------------------------------------
 for record in "${LV_RECORDS[@]}"; do
   IFS=: read -r rec_vg rec_lv rec_size _ _ <<< "$record"
@@ -401,7 +559,7 @@ for record in "${LV_RECORDS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-stage "6/6 filesystems, carrying the labels install-storage-layout.sh resolves"
+stage "7/7 filesystems, carrying the labels install-storage-layout.sh resolves"
 # ---------------------------------------------------------------------------
 # The per-role filesystem types come from the profile and MUST agree with
 # ../phase2/storage-layout/migrate-tier.sh's role_fstype and with

@@ -30,7 +30,14 @@
 #      PLAN is right against a fixture; only this one asks whether the second
 #      NODE's committed data is. As for the first node, that data is also held
 #      against a RECORD (`profiles/gmktec-xubuntu.recorded-facts`) and the plan
-#      against a committed capture (`profiles/gmktec-xubuntu.expected-plan`).
+#      against a committed capture (`profiles/gmktec-xubuntu.expected-plan`);
+#   7. the TOOL PREFLIGHT never lets a run start a layout it cannot finish.
+#      Under `free-space` an absent tool's package is installed BEFORE the
+#      first partition command; under `whole-device` an absent tool refuses
+#      before any mutation, printed as `WOULD REFUSE:` rather than taken under
+#      `--dry-run`; and a node carrying every tool sees neither. This is the
+#      one property whose fixtures REPLACE the PATH rather than prepending to
+#      it — see §H.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `storage-layout.sh --dry-run`, so
 # no mutating command is ever executed by construction. On top of that, each
@@ -72,6 +79,14 @@ export TRIPWIRE
 # Fake-tool scaffolding
 # ---------------------------------------------------------------------------
 mkfake() {  # mkfake DIR NAME BODY
+  # UNLINKED FIRST, and that is not tidiness. `make_selfcontained_path` fills a
+  # scratch directory with SYMLINKS to real host utilities, and a `>` redirect
+  # onto a symlink writes THROUGH it: overwriting a fake that happens to be one
+  # of those links would truncate `/usr/bin/id` on the machine running this
+  # suite. It did, once, before this line existed. A suite whose whole claim is
+  # that it touches no host cannot leave that to the order its callers happen
+  # to use.
+  rm -f "${1}/${2}"
   printf '#!/usr/bin/env bash\n%s\n' "$3" > "${1}/${2}"
   chmod +x "${1}/${2}"
 }
@@ -81,8 +96,13 @@ mkfake() {  # mkfake DIR NAME BODY
 make_bare_fakes() {  # make_bare_fakes DIR
   local dir="$1" tool
   mkdir -p "$dir"
+  # `apt-get` is a tripwire like the rest and for a sharper reason than the
+  # others: the host running this suite is the one kind of machine that really
+  # does have it, so a preflight bug that reached an install would install
+  # packages onto the developer's own workstation. Faked, it lands in the
+  # tripwire file that §D1 and §I1 assert is empty instead.
   for tool in sgdisk wipefs partprobe udevadm pvcreate vgcreate lvcreate mkswap \
-              mkfs.ext4 mkfs.xfs mkfs.vfat; do
+              mkfs.ext4 mkfs.xfs mkfs.vfat apt-get; do
     # Single-quoted on purpose: the body is the FAKE's source, expanded when
     # the fake runs, not when this suite writes it.
     mkfake "$dir" "$tool" 'printf "%s %s\n" "$(basename "$0")" "$*" >> "$TRIPWIRE"; exit 0'
@@ -96,6 +116,42 @@ make_bare_fakes() {  # make_bare_fakes DIR
 run_layout() {  # run_layout FAKEDIR ARGS... -> stdout+stderr in REPLY_OUT, code in REPLY_RC
   local dir="$1"; shift
   REPLY_OUT="$(PATH="${dir}:${PATH}" "$SCRIPT" "$@" 2>&1)"
+  REPLY_RC=$?
+}
+
+# The utilities storage-layout.sh and profile.sh actually call, so that §H can
+# REPLACE the whole PATH rather than prepend to it. Prepending cannot make a
+# tool ABSENT — the host's own copy is one directory further along — and
+# absence is precisely what the preflight cases have to construct. `bash` is
+# here because every fake, and the script itself, is `#!/usr/bin/env bash`, and
+# `env` resolves that name against the PATH it is handed.
+PATH_UTILITIES=(bash cat id grep awk paste basename dirname)
+
+make_selfcontained_path() {  # make_selfcontained_path DIR [ABSENT-TOOL...]
+  local dir="$1"; shift
+  local util real absent
+  make_bare_fakes "$dir"
+  for util in "${PATH_UTILITIES[@]}"; do
+    # `type -P` and not `command -v`: the latter answers with the NAME when the
+    # caller's shell has one of these as a function or an alias, and a symlink
+    # named `grep` pointing at `grep` resolves to itself. The absolute-path
+    # check is what turns that into a stop rather than a directory of tools
+    # that silently are not there.
+    real="$(type -P "$util")"
+    case "$real" in
+      /*) ;;
+      *) echo "FATAL: the host running this suite has no ${util} on PATH" >&2; exit 1 ;;
+    esac
+    ln -sf "$real" "${dir}/${util}"
+  done
+  for absent in "$@"; do
+    rm -f "${dir}/${absent}"
+  done
+}
+
+run_layout_only() {  # run_layout_only DIR ARGS... — PATH REPLACED, not prepended
+  local dir="$1"; shift
+  REPLY_OUT="$(PATH="$dir" "$SCRIPT" "$@" 2>&1)"
   REPLY_RC=$?
 }
 
@@ -1079,15 +1135,168 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
-echo "== H. Still nothing ran =="
+echo "== H. The tool preflight: never start a layout this node cannot finish =="
 # ---------------------------------------------------------------------------
-# D1 asserted this before section F existed; F and H drive several more dry
-# runs, including three that plan a partition, so the tripwire is read again
-# after them.
-if [ ! -s "$TRIPWIRE" ]; then
-  ok "H1  no mutating command ran in any dry run, sections F and G included"
+# Every case above runs on a PATH where every tool the plan reaches for is
+# present, which is the one state a real node is not guaranteed to be in.
+# Measured on gmktec-xubuntu 2026-09-07, before its rehearsal: the node has
+# `sgdisk`, `partprobe` and `mkfs.ext4` and has NEITHER lvm2 NOR xfsprogs. A
+# live `free-space` run there would have cut partition 3, re-read the table and
+# then died at `pvcreate: command not found`, leaving a partition with nothing
+# on it — and a re-run would compute its "largest free region" against a device
+# that had changed under it.
+#
+# THESE CASES REPLACE THE PATH RATHER THAN PREPENDING TO IT, which is the one
+# way this section differs from every other. Prepending a scratch directory can
+# make a tool ANSWER differently; it cannot make one ABSENT, because the host's
+# own `/usr/sbin/pvcreate` is simply one directory further along. So each
+# fixture below is a SELF-CONTAINED PATH: the fake tools plus symlinks to the
+# handful of real utilities the script calls, minus the tools the case is about.
+#
+# `apt-get` is faked as a tripwire in every one of them, so a preflight bug that
+# reached an install lands in the tripwire file rather than in the packages of
+# the machine running this suite.
+
+# The gmktec node as measured: two partitions taken, no `lvm` label — and now
+# also without `pvcreate` (lvm2) or `mkfs.xfs` (xfsprogs).
+GM_NO_TOOLS="${TMPROOT}/gmktec-no-tools-bin"
+make_selfcontained_path "$GM_NO_TOOLS" pvcreate mkfs.xfs
+mkfake "$GM_NO_TOOLS" lsblk '
+case " $* " in
+  *" PARTLABEL "*) printf "\n\n\n"; exit 0 ;;
+  *" PARTN "*) printf "\n1\n2\n"; exit 0 ;;
+esac
+exit 1'
+
+run_layout_only "$GM_NO_TOOLS" --dry-run "$GMKTEC"
+PF_FS_OUT="$REPLY_OUT"
+PF_FS_RC="$REPLY_RC"
+pf_apt_lines="$(printf '%s\n' "$PF_FS_OUT" | grep -c '^+ apt-get ' || true)"
+pf_apt_idx="$(printf '%s\n' "$PF_FS_OUT" | grep -n '^+ apt-get ' | head -1 | cut -d: -f1)"
+pf_sgdisk_idx="$(printf '%s\n' "$PF_FS_OUT" | grep -n '^+ sgdisk ' | head -1 | cut -d: -f1)"
+
+# ONE apt-get line, naming both packages and only the packages actually missing:
+# `vgcreate` and `lvcreate` are also lvm2's, so a per-tool install would ask for
+# lvm2 three times and read as three separate problems.
+if [ "$PF_FS_RC" -eq 0 ] \
+   && [ "$pf_apt_lines" -eq 1 ] \
+   && printf '%s\n' "$PF_FS_OUT" | grep -qxF '+ apt-get install -y --no-install-recommends lvm2 xfsprogs'; then
+  ok "H1  free-space with lvm2 and xfsprogs absent plans exactly one apt-get, naming both packages"
 else
-  no "H1  a dry run EXECUTED a mutating command:"
+  no "H1  free-space with lvm2 and xfsprogs absent plans exactly one apt-get, naming both packages (rc=${PF_FS_RC}, ${pf_apt_lines} apt-get line(s))"
+  printf '%s\n' "$PF_FS_OUT"
+fi
+
+# BEFORE the first partition command, which is the whole property: an install
+# after the sgdisk is an install that runs on a disk already cut.
+if [ -n "$pf_apt_idx" ] && [ -n "$pf_sgdisk_idx" ] && [ "$pf_apt_idx" -lt "$pf_sgdisk_idx" ]; then
+  ok "H2  the apt-get line comes before the first sgdisk line"
+else
+  no "H2  the apt-get line does not precede the first sgdisk line (apt-get at ${pf_apt_idx:-none}, sgdisk at ${pf_sgdisk_idx:-none})"
+  printf '%s\n' "$PF_FS_OUT"
+fi
+
+# The rest of the plan is UNCHANGED — the committed expected plan with exactly
+# that one line in front of it. This is an equality, so it also proves the two
+# things a per-line assertion cannot: that the preflight added nothing else and
+# dropped nothing, and that the self-contained PATH above is COMPLETE (a missing
+# utility would have derived a different plan, not an error).
+PF_FS_PLANNED="$(printf '%s\n' "$PF_FS_OUT" | sed -n 's/^+ //p')"
+PF_FS_EXPECTED="apt-get install -y --no-install-recommends lvm2 xfsprogs
+${GMKTEC_EXPECTED}"
+if [ "$PF_FS_PLANNED" = "$PF_FS_EXPECTED" ]; then
+  ok "H3  the rest of the free-space plan is the committed expected plan, unchanged"
+else
+  no "H3  the free-space plan is not the committed expected plan plus the install:"
+  printf '%s\n' "$PF_FS_EXPECTED" > "${TMPROOT}/pf-expected"
+  printf '%s\n' "$PF_FS_PLANNED" > "${TMPROOT}/pf-planned"
+  diff -u --label 'expected plan' --label 'planned' \
+    "${TMPROOT}/pf-expected" "${TMPROOT}/pf-planned" | sed 's/^/        /'
+fi
+
+# The whole-device answer to the same absence. That plan runs from the Recovery
+# USB, which is BUILT to carry these tools, so installing them would paper over
+# a defect in the USB; the run refuses instead. Under --dry-run the refusal is
+# PRINTED rather than taken, so a workstation still sees the whole plan — which
+# is the half a bare `die` would have cost.
+PE_NO_TOOLS="${TMPROOT}/poweredge-no-tools-bin"
+make_selfcontained_path "$PE_NO_TOOLS" pvcreate mkfs.xfs
+
+run_layout_only "$PE_NO_TOOLS" --dry-run "$POWEREDGE"
+PF_WD_OUT="$REPLY_OUT"
+PF_WD_RC="$REPLY_RC"
+
+if [ "$PF_WD_RC" -eq 0 ] \
+   && printf '%s\n' "$PF_WD_OUT" | grep -qxF 'WOULD REFUSE: pvcreate absent (lvm2)' \
+   && printf '%s\n' "$PF_WD_OUT" | grep -qxF 'WOULD REFUSE: mkfs.xfs absent (xfsprogs)' \
+   && ! printf '%s\n' "$PF_WD_OUT" | grep -q '^+ apt-get'; then
+  ok "H4  whole-device names each absent tool and its package as WOULD REFUSE, and installs nothing"
+else
+  no "H4  whole-device names each absent tool and its package as WOULD REFUSE, and installs nothing (rc=${PF_WD_RC})"
+  printf '%s\n' "$PF_WD_OUT"
+fi
+
+PF_WD_PLANNED="$(printf '%s\n' "$PF_WD_OUT" | sed -n 's/^+ //p')"
+if [ "$PF_WD_PLANNED" = "$POWEREDGE_EXPECTED" ]; then
+  ok "H5  and still prints the full command sequence, byte-identical to the committed expected plan"
+else
+  no "H5  the whole-device plan is no longer printed in full:"
+  printf '%s\n' "$POWEREDGE_EXPECTED" > "${TMPROOT}/pf-wd-expected"
+  printf '%s\n' "$PF_WD_PLANNED" > "${TMPROOT}/pf-wd-planned"
+  diff -u --label 'expected plan' --label 'planned' \
+    "${TMPROOT}/pf-wd-expected" "${TMPROOT}/pf-wd-planned" | sed 's/^/        /'
+fi
+
+# The control, and the reason the two assertions above mean anything: on a node
+# that HAS every tool the preflight is silent in both plans. `POWEREDGE_OUT` and
+# `GM_OUT` are the §B and §G runs, whose fake PATHs carry all of them.
+if ! printf '%s\n' "$POWEREDGE_OUT" | grep -q 'apt-get\|WOULD REFUSE' \
+   && ! printf '%s\n' "$GM_OUT" | grep -q 'apt-get\|WOULD REFUSE'; then
+  ok "H6  with every tool present, neither profile's plan carries an apt-get or a WOULD REFUSE line"
+else
+  no "H6  a plan carries an apt-get or WOULD REFUSE line with every tool present"
+  printf '%s\n' "$POWEREDGE_OUT" "$GM_OUT" | grep -n 'apt-get\|WOULD REFUSE'
+fi
+
+# The LIVE refusal — the case the other three only describe. It is the one run
+# in this suite that is not a dry run, so it is fenced twice: `id` is faked to
+# report root (otherwise the run stops at the privilege check, one step BEFORE
+# the preflight, and would pass this vacuously), and it gets its own tripwire
+# file so §I1 still means what it says. Every mutating command on this PATH is a
+# tripwire, so "exited before executing any sgdisk" is asserted against the
+# tripwire rather than inferred from the exit code.
+PE_LIVE="${TMPROOT}/poweredge-live-bin"
+make_selfcontained_path "$PE_LIVE" pvcreate mkfs.xfs
+mkfake "$PE_LIVE" id 'echo 0'
+LIVE_TRIPWIRE="${TMPROOT}/live-tripwire"
+: > "$LIVE_TRIPWIRE"
+REPLY_OUT="$(TRIPWIRE="$LIVE_TRIPWIRE" PATH="$PE_LIVE" "$SCRIPT" "$POWEREDGE" 2>&1)"
+REPLY_RC=$?
+
+if [ "$REPLY_RC" -ne 0 ] \
+   && printf '%s\n' "$REPLY_OUT" | grep -qF 'REFUSED' \
+   && printf '%s\n' "$REPLY_OUT" | grep -qF 'pvcreate' \
+   && printf '%s\n' "$REPLY_OUT" | grep -qF 'lvm2' \
+   && ! printf '%s\n' "$REPLY_OUT" | grep -q '^+ ' \
+   && [ ! -s "$LIVE_TRIPWIRE" ]; then
+  ok "H7  a LIVE whole-device run with an absent tool exits non-zero having executed nothing"
+else
+  no "H7  a LIVE whole-device run with an absent tool exits non-zero having executed nothing (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+  cat "$LIVE_TRIPWIRE"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "== I. Still nothing ran =="
+# ---------------------------------------------------------------------------
+# D1 asserted this before section F existed; F, G and H drive several more dry
+# runs, including three that plan a partition and two that plan a package
+# install, so the tripwire is read again after them.
+if [ ! -s "$TRIPWIRE" ]; then
+  ok "I1  no mutating command ran in any dry run, sections F, G and H included"
+else
+  no "I1  a dry run EXECUTED a mutating command:"
   cat "$TRIPWIRE"
 fi
 

@@ -215,6 +215,34 @@ cannot state it and the script cannot check it. `base-os-install.sh` is NOT run
 on that node: it keeps the operating system `free-space` exists to preserve,
 and the stage refuses against its profile rather than debootstrapping over it.
 
+The dry run also prints the **tool preflight**, which is stage 1 of the storage
+run and sits ahead of every mutating command precisely so a node cannot start a
+layout it has no way to finish. It derives the tools the plan will reach for
+from the plan itself — `sgdisk`, `partprobe`, the LVM trio, and the maker each
+declared filesystem type is made with — and the two disk plans answer an absent
+one differently, because they run in different places:
+
+* under `DISK_PLAN=free-space` the run is on the node's own installed operating
+  system, which has a package manager and may simply never have been given
+  lvm2. The missing packages are installed FIRST, printed as a single
+  `+ apt-get install -y --no-install-recommends lvm2 xfsprogs` line ahead of
+  the first `+ sgdisk`, and every tool is re-probed afterwards. This is not
+  hypothetical: `gmktec-xubuntu` was read on 2026-09-07 and has `sgdisk`,
+  `partprobe` and `mkfs.ext4` and has neither lvm2 nor xfsprogs. Without the
+  preflight its first live run would have cut partition 3, re-read the table,
+  died at `pvcreate: command not found` and left a partition with nothing on
+  it — after which a re-run would size its "largest free region" against a
+  device that had changed under it;
+* under `DISK_PLAN=whole-device` the run is from the Recovery USB, which is
+  BUILT to carry these tools, so installing them would paper over a defect in
+  the USB. An absent tool is a refusal before anything is written, naming the
+  package to add to `recovery-usb/build-recovery-usb.sh`. Under `--dry-run` it
+  is printed as `WOULD REFUSE: <tool> absent (<package>)` and the run carries
+  on, so a workstation dry run still shows the whole plan.
+
+On a node carrying every tool the stage prints neither line, which is why the
+committed `profiles/*.expected-plan` captures are unaffected by it.
+
 `--dry-run` still runs the read-only PROBES — that is how it derives the plan —
 but executes no mutating command. A probe whose tool is not installed reports
 "absent", so a dry run on a workstation prints the full sequence a bare node
