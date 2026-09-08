@@ -25,7 +25,33 @@ The clone step is driven by a fake `git` shim on PATH (the precedent
 from `test_tdd_commit.py`): the shim materializes a clone tree in the
 `git clone ... <dest>` destination so the copy + license + manifest-stamp
 legs run without network access. GIT_* hook-passthrough vars are scrubbed
-so the subprocess does not inherit a surrounding hook's repo context.
+so the `git` shim does not inherit a surrounding hook's repo context.
+
+`main()` is driven IN-PROCESS (`monkeypatch.chdir(...)` +
+`monkeypatch.setattr(sys, "argv", ...)` + `capsys` + `rc = main()`)
+rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child of this test, no
+`.coverage.*` race under the parallel dispatcher, and materially faster.
+`_vendor_update` reads `Path.cwd()` and `main()` parses `sys.argv`
+through `argparse`, so the two monkeypatches supply exactly what the
+child's cwd and argv list supplied before. The fake `git` shim is
+UNCHANGED: it is the tool's OWN subprocess, found through `PATH`, and
+`monkeypatch.setenv` / `monkeypatch.delenv` in this process give that
+child the identical environment the retired `env=` mapping did. The
+assertion targets are unchanged — the int exit code (including the
+`SystemExit(3)` precondition code, translated back below) plus the
+structlog stderr text, now read off `capsys`.
+
+Branch parity with the retired spawn: all five precondition exits, the
+three vendor-layout resolutions, the ambiguous- and unvendored-repo arms,
+the shim arm, and the LICENSE-present / -absent arms are driven by the
+same fixtures as before, and `test_module_re_import_with_vendor_in_sys_path`
+still covers both arms of the vendored-path guard. The
+`if __name__ == "__main__": raise SystemExit(main())` line is the one
+line the child reached that an in-process call cannot; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
@@ -33,10 +59,10 @@ from __future__ import annotations
 import importlib.util
 import os
 import stat
-import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -64,8 +90,10 @@ _UPSTREAM_REF = "1.2.3"
 _OLD_VENDORED_AT = "2026-01-01T00:00:00Z"
 
 
-def _scrubbed_env() -> dict[str, str]:
-    return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
+def _scrub_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove the GIT_* hook-passthrough vars for the duration of one test."""
+    for var in _GIT_ENV_PASSTHROUGH_VARS:
+        monkeypatch.delenv(var, raising=False)
 
 
 def _manifest_text(
@@ -167,23 +195,43 @@ def _write_fake_git(
     git_path.chmod(git_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+class _ModuleRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
 def _run_module(
     *,
     cwd: Path,
     bin_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     lib: str = _LIB,
-) -> subprocess.CompletedProcess[str]:
-    """Invoke vendor_update as a subprocess with the fake git shim first on PATH."""
-    env = _scrubbed_env()
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
-    return subprocess.run(
-        [sys.executable, str(_MODULE), lib],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+) -> _ModuleRun:
+    """Invoke `vendor_update.main()` in-process with the fake git shim first on PATH.
+
+    The module is loaded FRESH for each run (`_load_module`, below), which
+    is the in-process analogue of the fresh interpreter the retired child
+    gave every invocation.
+    """
+    _scrub_git_env(monkeypatch=monkeypatch)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setattr(sys, "argv", ["vendor_update", lib])
+    monkeypatch.chdir(cwd)
+    try:
+        rc = _load_module().main()
+    except SystemExit as terminated:
+        # The precondition failures raise `SystemExit(_EXIT_PRECONDITION)`
+        # rather than returning, and `argparse` terminates the interpreter
+        # itself on a usage error. In the retired child both became the
+        # process exit code; in-process they arrive here, so they are
+        # translated back into the identical int.
+        rc = 0 if terminated.code is None else int(terminated.code)
+    captured = capsys.readouterr()
+    return _ModuleRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _vendor_dest(*, root: Path, lib: str = _LIB, vendor_root: str = _PLUGIN_VENDOR_ROOT) -> Path:
@@ -210,13 +258,15 @@ def test_module_resolves_at_new_package_path() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_happy_path_vendors_and_stamps(*, tmp_path: Path) -> None:
+def test_happy_path_vendors_and_stamps(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Exit 0: package tree copied (no __pycache__), LICENSE copied, manifest stamped."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir)
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"expected exit 0; stderr={result.stderr!r}"
 
     dest = _vendor_dest(root=tmp_path)
@@ -230,7 +280,9 @@ def test_happy_path_vendors_and_stamps(*, tmp_path: Path) -> None:
     assert "vendor-update completed" in result.stderr
 
 
-def test_happy_path_overwrites_existing_vendor_dest(*, tmp_path: Path) -> None:
+def test_happy_path_overwrites_existing_vendor_dest(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A pre-existing vendor_dest dir is rmtree'd and replaced (no stale files)."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
     dest = _vendor_dest(root=tmp_path)
@@ -239,7 +291,7 @@ def test_happy_path_overwrites_existing_vendor_dest(*, tmp_path: Path) -> None:
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir)
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert not (dest / "stale.txt").exists(), "stale pre-existing file must be gone"
     assert (dest / "__init__.py").exists()
@@ -252,7 +304,9 @@ def test_happy_path_overwrites_existing_vendor_dest(*, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_resolves_package_layout_vendor_root(*, tmp_path: Path) -> None:
+def test_resolves_package_layout_vendor_root(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`<package>/_vendor/` — the layout of the repo that SHIPS this tool.
 
     livespec-dev-tooling is a plain library with no `.claude-plugin/` tree;
@@ -264,7 +318,7 @@ def test_resolves_package_layout_vendor_root(*, tmp_path: Path) -> None:
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir, tracked=(f"{_PACKAGE_VENDOR_ROOT}/tomli/__init__.py",))
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"stderr={result.stderr!r}"
 
     dest = _vendor_dest(root=tmp_path, vendor_root=_PACKAGE_VENDOR_ROOT)
@@ -274,7 +328,9 @@ def test_resolves_package_layout_vendor_root(*, tmp_path: Path) -> None:
     ).exists(), "the plugin-layout path must not be created in a package-layout repo"
 
 
-def test_resolves_repo_root_vendor_layout(*, tmp_path: Path) -> None:
+def test_resolves_repo_root_vendor_layout(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`_vendor/` at the repo ROOT — livespec-driver-claude's layout.
 
     The named counterexample that proves one re-vendor invocation does not
@@ -285,7 +341,7 @@ def test_resolves_repo_root_vendor_layout(*, tmp_path: Path) -> None:
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir, tracked=(f"{_ROOT_VENDOR_ROOT}/returns/__init__.py",))
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"stderr={result.stderr!r}"
 
     dest = _vendor_dest(root=tmp_path, vendor_root=_ROOT_VENDOR_ROOT)
@@ -293,7 +349,9 @@ def test_resolves_repo_root_vendor_layout(*, tmp_path: Path) -> None:
     assert not _vendor_dest(root=tmp_path).exists()
 
 
-def test_no_tracked_vendor_tree_exits_3(*, tmp_path: Path) -> None:
+def test_no_tracked_vendor_tree_exits_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo with NO vendored tree → exit 3, not a fresh wrong-place tree.
 
     This is the fail-loud arm, and it is the one that matters most: the old
@@ -307,13 +365,15 @@ def test_no_tracked_vendor_tree_exits_3(*, tmp_path: Path) -> None:
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir, tracked=("livespec_runtime/hygiene_scan.py",))
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION, f"stderr={result.stderr!r}"
     assert "no tracked `_vendor/` tree" in result.stderr
     assert not _vendor_dest(root=tmp_path).exists(), "must not create a wrong-place tree"
 
 
-def test_ambiguous_vendor_trees_exit_3(*, tmp_path: Path) -> None:
+def test_ambiguous_vendor_trees_exit_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Two tracked `_vendor/` trees → exit 3 naming both, rather than picking one."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
     bin_dir = tmp_path / "fakebin"
@@ -325,13 +385,15 @@ def test_ambiguous_vendor_trees_exit_3(*, tmp_path: Path) -> None:
         ),
     )
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION, f"stderr={result.stderr!r}"
     assert "more than one tracked `_vendor/` tree" in result.stderr
     assert _PLUGIN_VENDOR_ROOT in result.stderr and _PACKAGE_VENDOR_ROOT in result.stderr
 
 
-def test_untracked_vendor_tree_on_disk_is_ignored(*, tmp_path: Path) -> None:
+def test_untracked_vendor_tree_on_disk_is_ignored(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An on-disk `_vendor/` the index does not carry is NOT a destination.
 
     Every governed repo's virtualenv contains
@@ -349,7 +411,7 @@ def test_untracked_vendor_tree_on_disk_is_ignored(*, tmp_path: Path) -> None:
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir, tracked=("livespec_runtime/hygiene_scan.py",))
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION, f"stderr={result.stderr!r}"
     assert "no tracked `_vendor/` tree" in result.stderr
     assert (installed / "__init__.py").read_text(encoding="utf-8") == (
@@ -362,7 +424,9 @@ def test_untracked_vendor_tree_on_disk_is_ignored(*, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_upstream_license_restores_preexisting(*, tmp_path: Path) -> None:
+def test_no_upstream_license_restores_preexisting(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Upstream ships no LICENSE but vendor_dest had one → it is restored (warning)."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
     dest = _vendor_dest(root=tmp_path)
@@ -371,7 +435,7 @@ def test_no_upstream_license_restores_preexisting(*, tmp_path: Path) -> None:
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir, upstream_license=False)
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert (dest / "LICENSE").read_text(encoding="utf-8") == "MAINTAINER-AUTHORED LICENSE\n"
     assert "restored pre-existing" in result.stderr
@@ -380,13 +444,15 @@ def test_no_upstream_license_restores_preexisting(*, tmp_path: Path) -> None:
     assert "livespec SPECIFICATION/constraints.md" in result.stderr
 
 
-def test_no_upstream_license_and_no_preexisting_warns(*, tmp_path: Path) -> None:
+def test_no_upstream_license_and_no_preexisting_warns(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No upstream LICENSE and no pre-existing one → warning, still exits 0."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir, upstream_license=False)
 
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert "maintainer must author one" in result.stderr
     assert "livespec SPECIFICATION/constraints.md" in result.stderr
@@ -398,56 +464,70 @@ def test_no_upstream_license_and_no_preexisting_warns(*, tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_missing_manifest_exits_3(*, tmp_path: Path) -> None:
+def test_missing_manifest_exits_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No `.vendor.jsonc` in cwd → exit 3, manifest-not-found logged."""
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir)
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION
     assert "manifest not found" in result.stderr
 
 
-def test_manifest_without_libraries_array_exits_3(*, tmp_path: Path) -> None:
+def test_manifest_without_libraries_array_exits_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A manifest whose `libraries` is not a list → exit 3."""
     (tmp_path / ".vendor.jsonc").write_text('{ "libraries": "nope" }\n', encoding="utf-8")
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir)
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION
     assert "missing top-level `libraries` array" in result.stderr
 
 
-def test_no_entry_for_lib_exits_3(*, tmp_path: Path) -> None:
+def test_no_entry_for_lib_exits_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The requested lib has no `.vendor.jsonc` entry → exit 3."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(name="other"), encoding="utf-8")
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir)
-    result = _run_module(cwd=tmp_path, lib=_LIB, bin_dir=bin_dir)
+    result = _run_module(
+        cwd=tmp_path, lib=_LIB, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys
+    )
     assert result.returncode == _EXIT_PRECONDITION
     assert "no `.vendor.jsonc` entry for lib" in result.stderr
 
 
-def test_shim_entry_is_not_revendored_exits_3(*, tmp_path: Path) -> None:
+def test_shim_entry_is_not_revendored_exits_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `shim: true` entry is refused → exit 3 (shims edited in place, not vendored)."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(shim=True), encoding="utf-8")
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir)
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION
     assert "lib is a shim" in result.stderr
     assert "livespec SPECIFICATION/constraints.md" in result.stderr
 
 
-def test_clone_missing_package_dir_exits_3(*, tmp_path: Path) -> None:
+def test_clone_missing_package_dir_exits_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Clone produces no `<lib>/` package dir → _copy_package_tree raises exit 3."""
     (tmp_path / ".vendor.jsonc").write_text(_manifest_text(), encoding="utf-8")
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir, make_package_dir=False)
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION
 
 
-def test_manifest_needle_format_mismatch_exits_3(*, tmp_path: Path) -> None:
+def test_manifest_needle_format_mismatch_exits_3(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Entry parses but its on-disk text differs from the rewrite needle → exit 3.
 
     The clone + copy legs succeed (the entry is valid), but the
@@ -464,7 +544,7 @@ def test_manifest_needle_format_mismatch_exits_3(*, tmp_path: Path) -> None:
     )
     bin_dir = tmp_path / "fakebin"
     _write_fake_git(bin_dir=bin_dir)
-    result = _run_module(cwd=tmp_path, bin_dir=bin_dir)
+    result = _run_module(cwd=tmp_path, bin_dir=bin_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == _EXIT_PRECONDITION
 
 

@@ -19,15 +19,38 @@ only flips findings from WARNING (exit 0) to ERROR (exit 4).
 
 Tests inject a synthetic canonical set via `--canonical-from` so they stay
 hermetic from the live `checks/` package and from sibling-PR landings.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` +
+`monkeypatch.setattr(sys, "argv", ...)` + `capsys` + `rc = main()`) rather
+than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture, and it runs
+`--canonical-from` through `argparse`, so the argv monkeypatch is what
+the child's argv list supplied before. The assertion targets are
+unchanged — the int exit code plus the structlog stderr text, now read
+off `capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the (a) and (b) directions, the
+`ci-green` gate arms, the severity-lever warn/fail arms, and the
+unloadable-`--canonical-from` arm are driven by the same fixtures as
+before. The `if __name__ == "__main__": raise SystemExit(main())` line is
+the one line the child reached that an in-process call cannot; it is
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -36,18 +59,51 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "ci_matrix_completeness.py"
 
 # Env vars that change `ci_matrix_completeness`'s VERDICT rather than its behavior.
-# Cleared from every subprocess unless the test names one, so a test's expected exit
+# Cleared from every run unless the test names one, so a test's expected exit
 # code cannot depend on the host that runs it.
 _AMBIENT_SEVERITY_VARS = ("LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST",)
+
+
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    Registered in `sys.modules` BEFORE `exec_module`: the module declares
+    a `@dataclass`, and under `from __future__ import annotations` the
+    dataclass machinery resolves its string annotations through
+    `sys.modules[cls.__module__]`, which is `None` until the name is bound.
+    """
+    module_name = "ci_matrix_completeness_under_test"
+    spec = importlib.util.spec_from_file_location(module_name, str(_CHECK))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 def _run_check(
     *,
     cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     extra_argv: list[str] | None = None,
     env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    argv = [sys.executable, str(_CHECK)]
+) -> _CheckRun:
+    argv = ["ci-matrix-completeness"]
     if extra_argv is not None:
         argv.extend(extra_argv)
     # ⛔ THE AMBIENT SEVERITY VARS ARE CLEARED UNLESS A TEST SETS THEM EXPLICITLY.
@@ -62,24 +118,30 @@ def _run_check(
     # time, and `ci.yml` still asserts it is "Harmless for the other metadata legs —
     # they do not read this var". That became FALSE once
     # `check-check-coverage-incremental` began selecting this file, which happens
-    # whenever a change touches `ci_matrix_completeness.py`. A leg that SPAWNS the
+    # whenever a change touches `ci_matrix_completeness.py`. A leg that RUNS the
     # check reads the var transitively.
     #
-    # Severity must be a property of the TEST, never of the host. The pass-through
-    # keeps everything the interpreter needs (PATH, HOME, venv vars) and removes only
-    # the flags that change the check's verdict.
-    run_env: dict[str, str] = {**os.environ, **(env or {})}
+    # Severity must be a property of the TEST, never of the host. `monkeypatch`
+    # scopes both the deletions and the explicit sets to this test, so the
+    # ambient environment is restored afterwards.
+    for name, value in (env or {}).items():
+        monkeypatch.setenv(name, value)
     for var in _AMBIENT_SEVERITY_VARS:
         if env is None or var not in env:
-            run_env.pop(var, None)
-    return subprocess.run(
-        argv,
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=run_env,
-    )
+            monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.chdir(cwd)
+    try:
+        rc = _MODULE.main()
+    except SystemExit as terminated:
+        # `argparse` terminates the interpreter itself for `--help` (0) and for
+        # a usage error (2) instead of returning through `main()`. In the
+        # retired child that WAS the process exit code; in-process the same
+        # decision arrives as `SystemExit`, so it is translated back into the
+        # identical int rather than escaping as an error.
+        rc = 0 if terminated.code is None else int(terminated.code)
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write_canonical_json(*, cwd: Path, slugs: list[str], name: str = "canonical.json") -> Path:
@@ -200,19 +262,28 @@ def _fully_wired_jobs() -> list[str]:
     ]
 
 
-def test_fully_wired_repo_passes(*, tmp_path: Path) -> None:
+def test_fully_wired_repo_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """CI matrix and dedicated jobs cover the aggregate; ci-green.needs complete -> exit 0."""
     slugs = ["check-alpha", "check-beta", "check-gamma"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
     _ = _write_ci_yml(cwd=tmp_path, jobs=_fully_wired_jobs())
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 for a fully-wired repo; got {result.returncode}, stderr={result.stderr!r}"
 
 
-def test_target_inventory_supplies_aggregate_for_ci_scan(*, tmp_path: Path) -> None:
+def test_target_inventory_supplies_aggregate_for_ci_scan(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`check-targets.txt` supplies the aggregate target list for CI coverage."""
     slugs = ["check-alpha", "check-beta"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -225,13 +296,20 @@ def test_target_inventory_supplies_aggregate_for_ci_scan(*, tmp_path: Path) -> N
             _ci_green_job(needs="[check]"),
         ],
     )
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 when inventory targets are covered by CI; stderr={result.stderr!r}"
 
 
-def test_ci_matrix_omits_aggregate_slug_reports_finding_a(*, tmp_path: Path) -> None:
+def test_ci_matrix_omits_aggregate_slug_reports_finding_a(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A canonical aggregate slug run nowhere in CI → finding (a); warn-default → exit 0."""
     slugs = ["check-alpha", "check-beta", "check-gamma"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -243,7 +321,12 @@ def test_ci_matrix_omits_aggregate_slug_reports_finding_a(*, tmp_path: Path) -> 
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
@@ -254,7 +337,9 @@ def test_ci_matrix_omits_aggregate_slug_reports_finding_a(*, tmp_path: Path) -> 
     assert missing[0].get("level") == "warning", f"expected WARNING level; got {missing[0]!r}"
 
 
-def test_world_gate_aggregate_slug_absent_from_ci_is_not_flagged(*, tmp_path: Path) -> None:
+def test_world_gate_aggregate_slug_absent_from_ci_is_not_flagged(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A world-gate canonical slug in the aggregate but nowhere in CI is NOT a finding (a).
 
     World-gate checks (`check-master-ci-green`, `check-branch-protection-alignment`)
@@ -279,7 +364,12 @@ def test_world_gate_aggregate_slug_absent_from_ci_is_not_flagged(*, tmp_path: Pa
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
@@ -299,7 +389,9 @@ def test_world_gate_aggregate_slug_absent_from_ci_is_not_flagged(*, tmp_path: Pa
     )
 
 
-def test_ci_green_needs_incomplete_reports_finding_b(*, tmp_path: Path) -> None:
+def test_ci_green_needs_incomplete_reports_finding_b(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Full matrix coverage but ci-green.needs omits a check-bearing job → finding (b)."""
     slugs = ["check-alpha", "check-beta", "check-gamma"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -312,7 +404,12 @@ def test_ci_green_needs_incomplete_reports_finding_b(*, tmp_path: Path) -> None:
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
@@ -327,14 +424,21 @@ def test_ci_green_needs_incomplete_reports_finding_b(*, tmp_path: Path) -> None:
     assert missing == [], f"expected no (a) findings; got {missing!r}"
 
 
-def test_ci_green_job_missing_reports_finding(*, tmp_path: Path) -> None:
+def test_ci_green_job_missing_reports_finding(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No `ci-green` job at all → ci-green-job-missing finding naming the check-bearing jobs."""
     slugs = ["check-alpha", "check-beta"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
     jobs = [_matrix_job(key="check", targets=["check-alpha", "check-beta"], needs="setup")]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
@@ -342,7 +446,9 @@ def test_ci_green_job_missing_reports_finding(*, tmp_path: Path) -> None:
     assert absent[0].get("check_bearing_jobs") == ["check"]
 
 
-def test_lever_set_flips_findings_to_error_and_exit_4(*, tmp_path: Path) -> None:
+def test_lever_set_flips_findings_to_error_and_exit_4(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """With the lever set, the same findings emit at ERROR and exit 4."""
     slugs = ["check-alpha", "check-beta", "check-gamma"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -356,6 +462,8 @@ def test_lever_set_flips_findings_to_error_and_exit_4(*, tmp_path: Path) -> None
         cwd=tmp_path,
         extra_argv=["--canonical-from", "canonical.json"],
         env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert (
         result.returncode == 4
@@ -369,7 +477,9 @@ def test_lever_set_flips_findings_to_error_and_exit_4(*, tmp_path: Path) -> None
     assert missing[0].get("failing") is True
 
 
-def test_non_canonical_slug_ignored_by_a_but_its_job_gating_for_b(*, tmp_path: Path) -> None:
+def test_non_canonical_slug_ignored_by_a_but_its_job_gating_for_b(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A non-canonical `just <slug>` counts for neither (a)'s coverage — yet its job IS gating for (b).
 
     Post-o6b: assertion (a) stays canonical-scoped (a non-canonical
@@ -390,7 +500,12 @@ def test_non_canonical_slug_ignored_by_a_but_its_job_gating_for_b(*, tmp_path: P
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
@@ -403,7 +518,9 @@ def test_non_canonical_slug_ignored_by_a_but_its_job_gating_for_b(*, tmp_path: P
     assert {f.get("job") for f in incomplete} == {"lint"}, f"got {incomplete!r}"
 
 
-def test_non_canonical_gating_jobs_required_in_ci_green_needs(*, tmp_path: Path) -> None:
+def test_non_canonical_gating_jobs_required_in_ci_green_needs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Real fleet non-canonical gating jobs (e2e-cli, check-doctor-static) must be in ci-green.needs (o6b).
 
     They run `just e2e-cli` / `just check-doctor-static` — non-canonical
@@ -425,7 +542,12 @@ def test_non_canonical_gating_jobs_required_in_ci_green_needs(*, tmp_path: Path)
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
@@ -436,7 +558,9 @@ def test_non_canonical_gating_jobs_required_in_ci_green_needs(*, tmp_path: Path)
     assert incomplete == {"e2e-cli", "check-doctor-static"}, f"got {incomplete!r}"
 
 
-def test_telemetry_and_auto_merge_jobs_auto_excluded_from_b(*, tmp_path: Path) -> None:
+def test_telemetry_and_auto_merge_jobs_auto_excluded_from_b(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """export-telemetry / enable-auto-merge run no `just` target → not gating → not required (o6b).
 
     They are excluded with NO hardcoded denylist: neither runs a `just
@@ -459,7 +583,12 @@ def test_telemetry_and_auto_merge_jobs_auto_excluded_from_b(*, tmp_path: Path) -
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"expected exit 0; telemetry/auto-merge are not gating; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -469,7 +598,9 @@ def test_telemetry_and_auto_merge_jobs_auto_excluded_from_b(*, tmp_path: Path) -
     assert incomplete == [], f"telemetry/auto-merge must auto-exclude from (b); got {incomplete!r}"
 
 
-def test_comment_line_in_non_matrix_job_skipped_by_gating_scan(*, tmp_path: Path) -> None:
+def test_comment_line_in_non_matrix_job_skipped_by_gating_scan(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A comment line in a non-matrix job's body is skipped; its `just <target>` still makes it gating.
 
     A matrix job short-circuits the gating scan on its `matrix.target` list, so
@@ -493,7 +624,12 @@ def test_comment_line_in_non_matrix_job_skipped_by_gating_scan(*, tmp_path: Path
         _ci_green_job(needs="[check]"),  # omits the gating e2e-cli
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     incomplete = {
@@ -502,7 +638,9 @@ def test_comment_line_in_non_matrix_job_skipped_by_gating_scan(*, tmp_path: Path
     assert incomplete == {"e2e-cli"}, f"got {incomplete!r}"
 
 
-def test_scalar_and_block_needs_shapes_parsed(*, tmp_path: Path) -> None:
+def test_scalar_and_block_needs_shapes_parsed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """ci-green with a block-list `needs:` covering scalar-`needs:` jobs → exit 0."""
     slugs = ["check-alpha", "check-gamma"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -523,13 +661,20 @@ def test_scalar_and_block_needs_shapes_parsed(*, tmp_path: Path) -> None:
         ci_green_block,
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert (
         result.returncode == 0
     ), f"expected exit 0 with block-list needs; got {result.returncode}, stderr={result.stderr!r}"
 
 
-def test_empty_flow_needs_yields_incomplete_when_check_bearing_exists(*, tmp_path: Path) -> None:
+def test_empty_flow_needs_yields_incomplete_when_check_bearing_exists(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`needs: []` covers nothing, so a check-bearing job trips (b)."""
     slugs = ["check-alpha"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -539,14 +684,21 @@ def test_empty_flow_needs_yields_incomplete_when_check_bearing_exists(*, tmp_pat
         _ci_green_job(needs="[]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     incomplete = [f for f in findings if f.get("failure_mode") == "ci-green-needs-incomplete"]
     assert {f.get("job") for f in incomplete} == {"check"}, f"got {incomplete!r}"
 
 
-def test_comments_and_blanks_in_ci_and_targets_filtered(*, tmp_path: Path) -> None:
+def test_comments_and_blanks_in_ci_and_targets_filtered(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Comment/blank lines in the matrix target list, run body, and targets array are skipped."""
     slugs = ["check-alpha", "check-beta"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -584,50 +736,78 @@ def test_comments_and_blanks_in_ci_and_targets_filtered(*, tmp_path: Path) -> No
     )
     jobs = [matrix_with_comment, _ci_green_job(needs="[check]")]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"expected exit 0 with comments/blanks filtered; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
 
 
-def test_top_level_key_after_jobs_still_parses_jobs(*, tmp_path: Path) -> None:
+def test_top_level_key_after_jobs_still_parses_jobs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A top-level key after the jobs table ends the section without losing the last job."""
     slugs = ["check-alpha", "check-beta", "check-gamma"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
     _ = _write_ci_yml(cwd=tmp_path, jobs=_fully_wired_jobs(), trailer="concurrency: ci-group\n")
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"expected exit 0 with a trailing top-level key; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
 
 
-def test_missing_justfile_reports_absence(*, tmp_path: Path) -> None:
+def test_missing_justfile_reports_absence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No justfile at cwd → justfile_not_found finding."""
     _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absence = [f for f in findings if f.get("failure_mode") == "justfile_not_found"]
     assert len(absence) == 1, f"expected one justfile_not_found finding; got {absence!r}"
 
 
-def test_missing_check_recipe_reports_absence(*, tmp_path: Path) -> None:
+def test_missing_check_recipe_reports_absence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Justfile without a `check:` recipe → check_recipe_not_found finding."""
     _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
     _ = _write_justfile(
         cwd=tmp_path, body="default:\n    @just --list\n\nfmt:\n    ruff format .\n"
     )
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absence = [f for f in findings if f.get("failure_mode") == "check_recipe_not_found"]
     assert len(absence) == 1, f"expected one check_recipe_not_found finding; got {absence!r}"
 
 
-def test_targets_array_missing_reports_absence(*, tmp_path: Path) -> None:
+def test_targets_array_missing_reports_absence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`check:` recipe without a `targets=(...)` array → targets_array_not_found finding."""
     _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
     _ = _write_justfile(
@@ -641,14 +821,21 @@ def test_targets_array_missing_reports_absence(*, tmp_path: Path) -> None:
             '    echo "no targets array here"\n'
         ),
     )
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absence = [f for f in findings if f.get("failure_mode") == "targets_array_not_found"]
     assert len(absence) == 1, f"expected one targets_array_not_found finding; got {absence!r}"
 
 
-def test_unclosed_targets_array_reports_being_unterminated(*, tmp_path: Path) -> None:
+def test_unclosed_targets_array_reports_being_unterminated(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`targets=(...)` never closed → targets_array_unterminated finding.
 
     ⛔ THIS TEST USED TO PIN THE DEFECT. It asserted `targets_array_not_found`
@@ -673,7 +860,12 @@ def test_unclosed_targets_array_reports_being_unterminated(*, tmp_path: Path) ->
             "    # never closed (no `)` line before EOF)\n"
         ),
     )
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     unterminated = [f for f in findings if f.get("failure_mode") == "targets_array_unterminated"]
@@ -682,7 +874,9 @@ def test_unclosed_targets_array_reports_being_unterminated(*, tmp_path: Path) ->
     assert [f for f in findings if f.get("failure_mode") == "targets_array_not_found"] == []
 
 
-def test_recipe_body_stops_at_next_recipe_header(*, tmp_path: Path) -> None:
+def test_recipe_body_stops_at_next_recipe_header(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A recipe after `check:` terminates the body scan (the break branch)."""
     slugs = ["check-alpha"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
@@ -707,33 +901,52 @@ def test_recipe_body_stops_at_next_recipe_header(*, tmp_path: Path) -> None:
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"expected exit 0 when another recipe follows `check:`; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
 
 
-def test_missing_ci_yml_reports_absence(*, tmp_path: Path) -> None:
+def test_missing_ci_yml_reports_absence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A wired justfile but no `.github/workflows/ci.yml` → ci_yml_not_found finding."""
     slugs = ["check-alpha"]
     _ = _write_canonical_json(cwd=tmp_path, slugs=slugs)
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=slugs))
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absence = [f for f in findings if f.get("failure_mode") == "ci_yml_not_found"]
     assert len(absence) == 1, f"expected one ci_yml_not_found finding; got {absence!r}"
 
 
-def test_no_jobs_header_yields_ci_green_missing(*, tmp_path: Path) -> None:
+def test_no_jobs_header_yields_ci_green_missing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A ci.yml with no `jobs:` table → no jobs → ci-green-job-missing (empty canonical isolates it)."""
     _ = _write_canonical_json(cwd=tmp_path, slugs=[])
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha"]))
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True, exist_ok=True)
     _ = (workflows / "ci.yml").write_text("name: CI\non: [push]\n", encoding="utf-8")
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
@@ -741,7 +954,9 @@ def test_no_jobs_header_yields_ci_green_missing(*, tmp_path: Path) -> None:
     assert absent[0].get("check_bearing_jobs") == []
 
 
-def test_jobs_header_with_no_child_jobs_yields_ci_green_missing(*, tmp_path: Path) -> None:
+def test_jobs_header_with_no_child_jobs_yields_ci_green_missing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `jobs:` table whose only content is a comment → no jobs parsed."""
     _ = _write_canonical_json(cwd=tmp_path, slugs=[])
     _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha"]))
@@ -750,14 +965,21 @@ def test_jobs_header_with_no_child_jobs_yields_ci_green_missing(*, tmp_path: Pat
     _ = (workflows / "ci.yml").write_text(
         "name: CI\non: [push]\njobs:\n  # no jobs yet\n", encoding="utf-8"
     )
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
     assert len(absent) == 1, f"expected ci-green-job-missing; got {findings!r}"
 
 
-def test_jobs_section_without_valid_job_header_parses_no_jobs(*, tmp_path: Path) -> None:
+def test_jobs_section_without_valid_job_header_parses_no_jobs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `jobs:` table whose lines are a comment + a non-`key:` line → zero jobs parsed.
 
     Exercises the loop's `current_name is None` paths in `_parse_ci_jobs`: a
@@ -772,7 +994,12 @@ def test_jobs_section_without_valid_job_header_parses_no_jobs(*, tmp_path: Path)
         "name: CI\non: [push]\njobs:\n  # a note\n  scalar-without-colon value\n",
         encoding="utf-8",
     )
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     absent = [f for f in findings if f.get("failure_mode") == "ci-green-job-missing"]
@@ -780,7 +1007,9 @@ def test_jobs_section_without_valid_job_header_parses_no_jobs(*, tmp_path: Path)
     assert absent[0].get("check_bearing_jobs") == []
 
 
-def test_default_canonical_source_is_live_package(*, tmp_path: Path) -> None:
+def test_default_canonical_source_is_live_package(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Without `--canonical-from`, the live canonical set is used (this module's own slug)."""
     # The justfile wires exactly this module's own canonical slug; the live
     # canonical set contains it (this module exists), so it is the sole
@@ -792,7 +1021,7 @@ def test_default_canonical_source_is_live_package(*, tmp_path: Path) -> None:
         _ci_green_job(needs="[setup]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     findings = _parse_findings(stderr=result.stderr)
     missing = {
@@ -806,7 +1035,9 @@ def test_default_canonical_source_is_live_package(*, tmp_path: Path) -> None:
     )
 
 
-def test_malformed_canonical_json_treated_as_empty(*, tmp_path: Path) -> None:
+def test_malformed_canonical_json_treated_as_empty(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--canonical-from` JSON whose `slugs` is not a list → empty canonical → no (a) findings."""
     bad = tmp_path / "canonical.json"
     _ = bad.write_text(json.dumps({"slugs": "not-a-list"}), encoding="utf-8")
@@ -816,14 +1047,21 @@ def test_malformed_canonical_json_treated_as_empty(*, tmp_path: Path) -> None:
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"expected exit 0 when canonical set is empty; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
 
 
-def test_non_dict_canonical_json_treated_as_empty(*, tmp_path: Path) -> None:
+def test_non_dict_canonical_json_treated_as_empty(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--canonical-from` JSON that is not an object at all → empty canonical → exit 0."""
     bad = tmp_path / "canonical.json"
     _ = bad.write_text(json.dumps(["check-alpha", "check-beta"]), encoding="utf-8")
@@ -833,16 +1071,23 @@ def test_non_dict_canonical_json_treated_as_empty(*, tmp_path: Path) -> None:
         _ci_green_job(needs="[check]"),
     ]
     _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
-    result = _run_check(cwd=tmp_path, extra_argv=["--canonical-from", "canonical.json"])
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"expected exit 0 when canonical json is a non-dict; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
 
 
-def test_help_flag_exits_zero(*, tmp_path: Path) -> None:
+def test_help_flag_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--help` exits 0 with usage text on stdout."""
-    result = _run_check(cwd=tmp_path, extra_argv=["--help"])
+    result = _run_check(cwd=tmp_path, extra_argv=["--help"], monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     combined = result.stdout.lower()
     assert "ci-matrix-completeness" in combined or "usage" in combined

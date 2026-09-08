@@ -11,15 +11,34 @@ when any image-baked pin drifts from this repo's own pin sources:
 - `ARG PYTHON_VERSION` must match `.python-version`.
 - `ARG GH_VERSION` must match the supported GitHub CLI pin.
 
-Tests invoke the check as a subprocess with `cwd=tmp_path` against
-synthetic fixture trees, mirroring the sibling check-test style.
+Tests invoke the check IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
+`capsys` + `rc = main()`) against synthetic fixture trees, mirroring the
+sibling check-test style: no `COVERAGE_PROCESS_START`-instrumented child,
+no `.coverage.*` race under the parallel dispatcher, and materially
+faster. `main()` reads `Path.cwd()`, so the monkeypatched cwd anchors the
+fixture, and the assertion targets are unchanged — the int exit code plus
+the structlog stderr text, now read off `capsys` instead of
+`CompletedProcess`.
+
+Branch parity with the retired spawn: both ARG-parser arms (obligated and
+un-obligated names), every missing-pin-source arm, and the drift and
+lockstep exits are driven by the same fixtures as before. The two lines
+the child process reached that an in-process call cannot are the module's
+vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -132,17 +151,46 @@ def _write_fixture(
         _ = (root / ".python-version").write_text(python_version, encoding="utf-8")
 
 
-def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_CHECK)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling...`) so the test
+    exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "fabro_image_pin_lockstep_under_test", str(_CHECK)
     )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def test_accepts_image_pins_in_lockstep(*, tmp_path: Path) -> None:
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_accepts_image_pins_in_lockstep(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """All four obligated ARG pins (split across layers) matching passes (exit 0)."""
     _write_fixture(
         root=tmp_path,
@@ -151,7 +199,7 @@ def test_accepts_image_pins_in_lockstep(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"lockstep fixture should pass; got returncode={result.returncode} "
@@ -159,7 +207,9 @@ def test_accepts_image_pins_in_lockstep(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_drifted_from_chain_default(*, tmp_path: Path) -> None:
+def test_rejects_drifted_from_chain_default(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A FROM-chain ARG must retain its safe local-development default."""
     drifted_agent = _LOCKSTEP_AGENT_DOCKERFILE.replace(
         "ARG PARENT_IMAGE=livespec-fabro-sandbox:python-dev",
@@ -172,7 +222,7 @@ def test_rejects_drifted_from_chain_default(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"FROM-chain default drift should fail; got returncode={result.returncode} "
@@ -185,7 +235,9 @@ def test_rejects_drifted_from_chain_default(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_declared_tool_absent_from_the_image_args(*, tmp_path: Path) -> None:
+def test_rejects_declared_tool_absent_from_the_image_args(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.mise.toml` tool with no baked ARG pin is drift, not an exemption.
 
     The obligation is DERIVED from the `[tools]` table, so declaring a tool
@@ -201,7 +253,7 @@ def test_rejects_declared_tool_absent_from_the_image_args(*, tmp_path: Path) -> 
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"a declared-but-unbaked tool should fail; got returncode={result.returncode} "
@@ -214,7 +266,9 @@ def test_rejects_declared_tool_absent_from_the_image_args(*, tmp_path: Path) -> 
     )
 
 
-def test_rejects_declared_tool_never_installed_by_mise(*, tmp_path: Path) -> None:
+def test_rejects_declared_tool_never_installed_by_mise(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An ARG pin alone does not bake the tool — it must be `mise use -g`-installed.
 
     Without this direction a tool could carry a correct, in-lockstep ARG and
@@ -231,7 +285,7 @@ def test_rejects_declared_tool_never_installed_by_mise(*, tmp_path: Path) -> Non
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"a declared tool never installed by mise should fail; "
@@ -245,7 +299,9 @@ def test_rejects_declared_tool_never_installed_by_mise(*, tmp_path: Path) -> Non
     )
 
 
-def test_rejects_missing_layer_dockerfiles(*, tmp_path: Path) -> None:
+def test_rejects_missing_layer_dockerfiles(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo without the layer Dockerfile tree fails and names the layer dir.
 
     This repo owns the image, so the layers' absence is itself drift (e.g. a
@@ -258,7 +314,7 @@ def test_rejects_missing_layer_dockerfiles(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"missing layer Dockerfiles should fail; got returncode={result.returncode} "
@@ -271,7 +327,9 @@ def test_rejects_missing_layer_dockerfiles(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_missing_mise_toml_and_python_version(*, tmp_path: Path) -> None:
+def test_rejects_missing_mise_toml_and_python_version(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Missing repo-side pin sources fail; both absentees are named."""
     _write_fixture(
         root=tmp_path,
@@ -280,7 +338,7 @@ def test_rejects_missing_mise_toml_and_python_version(*, tmp_path: Path) -> None
         python_version=None,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"missing pin sources should fail; got returncode={result.returncode} "
@@ -293,7 +351,9 @@ def test_rejects_missing_mise_toml_and_python_version(*, tmp_path: Path) -> None
     )
 
 
-def test_rejects_mise_pin_mismatch(*, tmp_path: Path) -> None:
+def test_rejects_mise_pin_mismatch(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An image-baked uv version drifting from .mise.toml fails, naming both values."""
     drifted_python = _LOCKSTEP_PYTHON_DOCKERFILE.replace(
         "ARG UV_VERSION=0.5.20",
@@ -306,7 +366,7 @@ def test_rejects_mise_pin_mismatch(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"uv pin drift should fail; got returncode={result.returncode} "
@@ -319,7 +379,9 @@ def test_rejects_mise_pin_mismatch(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_python_version_mismatch(*, tmp_path: Path) -> None:
+def test_rejects_python_version_mismatch(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An image-baked interpreter drifting from .python-version fails."""
     _write_fixture(
         root=tmp_path,
@@ -328,7 +390,7 @@ def test_rejects_python_version_mismatch(*, tmp_path: Path) -> None:
         python_version="3.11.1\n",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"python pin drift should fail; got returncode={result.returncode} "
@@ -341,7 +403,9 @@ def test_rejects_python_version_mismatch(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_unsupported_gh_version(*, tmp_path: Path) -> None:
+def test_rejects_unsupported_gh_version(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An image-baked GitHub CLI version drifting from the supported pin fails."""
     base_with_old_gh = _LOCKSTEP_BASE_DOCKERFILE.replace(
         "ARG GH_VERSION=2.100.0",
@@ -354,7 +418,7 @@ def test_rejects_unsupported_gh_version(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"unsupported gh pin should fail; got returncode={result.returncode} "
@@ -367,7 +431,9 @@ def test_rejects_unsupported_gh_version(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_gh_without_signed_cli_apt_repository(*, tmp_path: Path) -> None:
+def test_rejects_gh_without_signed_cli_apt_repository(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The GitHub CLI must come from the official signed cli.github.com apt source."""
     base_without_signed_repo = _LOCKSTEP_BASE_DOCKERFILE.replace(
         "signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] "
@@ -381,7 +447,7 @@ def test_rejects_gh_without_signed_cli_apt_repository(*, tmp_path: Path) -> None
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"unsigned gh apt source should fail; got returncode={result.returncode} "
@@ -394,7 +460,9 @@ def test_rejects_gh_without_signed_cli_apt_repository(*, tmp_path: Path) -> None
     )
 
 
-def test_rejects_gh_apt_install_without_exact_package_pin(*, tmp_path: Path) -> None:
+def test_rejects_gh_apt_install_without_exact_package_pin(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Installing bare `gh` from apt is drift-prone; the package pin is exact."""
     base_without_package_pin = _LOCKSTEP_BASE_DOCKERFILE.replace(
         "gh=${GH_VERSION}",
@@ -407,7 +475,7 @@ def test_rejects_gh_apt_install_without_exact_package_pin(*, tmp_path: Path) -> 
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"unpinned apt gh install should fail; got returncode={result.returncode} "
@@ -420,7 +488,9 @@ def test_rejects_gh_apt_install_without_exact_package_pin(*, tmp_path: Path) -> 
     )
 
 
-def test_rejects_gh_installed_by_mise(*, tmp_path: Path) -> None:
+def test_rejects_gh_installed_by_mise(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The Fabro image must not route gh through mise's aqua backend."""
     base_with_mise_gh = _LOCKSTEP_BASE_DOCKERFILE.replace(
         "RUN mise use -g just@${JUST_VERSION}",
@@ -433,7 +503,7 @@ def test_rejects_gh_installed_by_mise(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"mise-managed gh should fail; got returncode={result.returncode} "
@@ -446,7 +516,9 @@ def test_rejects_gh_installed_by_mise(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_layers_missing_obligated_args(*, tmp_path: Path) -> None:
+def test_rejects_layers_missing_obligated_args(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Layers lacking LEFTHOOK_VERSION (base) and PYTHON_VERSION (python) fail.
 
     Covers both missing-ARG arms (the mise-pinned trio loop and the python
@@ -473,7 +545,7 @@ def test_rejects_layers_missing_obligated_args(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"missing obligated ARGs should fail; got returncode={result.returncode} "
@@ -486,7 +558,9 @@ def test_rejects_layers_missing_obligated_args(*, tmp_path: Path) -> None:
     )
 
 
-def test_rejects_mise_toml_missing_tool_pin(*, tmp_path: Path) -> None:
+def test_rejects_mise_toml_missing_tool_pin(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A .mise.toml [tools] table lacking the `just` pin fails."""
     mise_without_just = _LOCKSTEP_MISE_TOML.replace('just     = "1.36.0"\n', "")
     _write_fixture(
@@ -496,7 +570,7 @@ def test_rejects_mise_toml_missing_tool_pin(*, tmp_path: Path) -> None:
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"missing .mise.toml pin should fail; got returncode={result.returncode} "
