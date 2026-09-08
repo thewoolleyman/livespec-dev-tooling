@@ -266,6 +266,67 @@
       // This is a per-repo claims cap, so 10 only approaches that ceiling if
       // this repo alone fills it. Re-measure on the host (not from run
       // counts) before raising further.
+      // Park the `pr` node on the Claude adapter, OFF Codex.
+      //
+      // WHY. `dispatcher.codex_models` expands UNCONDITIONALLY -- its `pr`
+      // tier fires even for a repo (like this one) that configures no
+      // `codex_models` block at all -- and pins the fleet default
+      // `_DEFAULT_PR_MODEL = "gpt-5.4-mini"`. That pin is STALE against the
+      // adapter this repo now bakes, and the publish leg is dead as a result:
+      //
+      //   run 01M20W5GPEK6945EXGE2PS68CS (livespec-dev-tooling-ys2i),
+      //   2026-09-08, stages/006-pr@1:
+      //     Warning: Model metadata for `gpt-5.4-mini` not found.
+      //     {"status":400,"error":{"message":"The 'gpt-5.4-mini' model is not
+      //      supported when using Codex with a ChatGPT account."}}
+      //
+      // implement, janitor and review all PASSED (003-implementation_diff
+      // exited 0, i.e. `git diff --quiet` returned 1 -- there was a diff);
+      // only `pr` died, so the work was done and stranded with no branch
+      // pushed. The fabro run reports `succeeded` while the dispatcher
+      // reports `failed` at pr-view "no PR found for branch"; that
+      // disagreement is what makes this read as an item defect when it is not.
+      //
+      // ROOT CAUSE. The plugin's model table (`_codex_model_tiers.py`) records
+      // that it was measured 2026-08-26 against `@agentclientprotocol/codex-acp`
+      // 1.6.2, lists `gpt-5.4-mini` among the slugs that COMPLETED a turn, and
+      // states the governing rule: the reachable set is a property OF THE BAKED
+      // ADAPTER VERSION and must be re-measured whenever that version changes.
+      // Image `python-agent-v1.63.0` -- the one this repo dispatches on -- bakes
+      // codex-acp 1.10.0 (verified by reading package.json inside the image, not
+      // inferred from the Dockerfile ARG). The set was never re-measured, and the
+      // 400 above is verbatim the refusal signature that table attributes to
+      // slugs ABSENT FROM THE CATALOG.
+      //
+      // NOT THE SAME DEFECT AS THE CONSOLE'S. livespec-console-beads-fabro parks
+      // this node for a JSON-quote parse defect that kills the Codex node in
+      // startAcpServer BEFORE it does any work. Ours starts fine and reaches the
+      // API; only the model is refused. Same remedy, different cause.
+      //
+      // WHY HERE AND NOT IN workflow.toml. `repository_acp_overlays` builds the
+      // codex-shorthand overlays first and then `overlays.update()`s the explicit
+      // `acp_nodes` table over them, so THIS key wins. Editing `pr_adapter` in
+      // `.fabro/workflows/implement-work-item/workflow.toml` would leave a green
+      // tree and an UNCHANGED live adapter.
+      //
+      // WHY NOT THE DOCUMENTED TIER OPT-OUT. `codex_models.pr.model = ""` removes
+      // only the `model` / `model_reasoning_effort` keys inside `CODEX_CONFIG`;
+      // the posture keys and the Codex command are emitted regardless, so the node
+      // stays on Codex and stays dead.
+      //
+      // COST NOTE. The `pr` tier exists to keep a scripted git/gh recipe off the
+      // expensive implementer tier. This parks it on the same Claude adapter the
+      // implementer uses -- a deliberate cost regression taken over a dead publish
+      // leg, the same trade livespec-console-beads-fabro and homelab already made.
+      // The value is byte-identical to workflow.toml's own `pr_adapter` default.
+      //
+      // REVERT CONDITION: a re-measured reachable-model table for codex-acp 1.10.0
+      // naming a `pr`-tier slug that completes a turn. Tracked on
+      // livespec-dev-tooling-zwsl.
+      "acp_nodes": {
+        "pr": "npx -y @agentclientprotocol/claude-agent-acp"
+      },
+
       "wip_cap": 10,
       "default_factory": "hp",
       "factories": {
