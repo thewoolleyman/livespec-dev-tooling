@@ -51,27 +51,58 @@
 #      resident count is exactly twice the tag count, and why they are removed
 #      together or not at all.
 #
-#   4. LIVE REFERENCES, FROM TWO SOURCES, AND NEITHER IS OPTIONAL.
+#   4. LIVE REFERENCES, FROM THREE SOURCES, AND NONE OF THEM IS OPTIONAL.
 #      (a) The cluster: every image named by any PodSpec of a Pod, Deployment,
 #          StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, in every
 #          namespace. CronJobs and Jobs are the reason this reads WORKLOADS and
 #          not just running containers — the pool has objects that pin OLD tags
-#          and hold no pod between runs. Two live examples, both of which a
-#          naive "keep the newest N" would have deleted:
-#          ../warm-cache-cronjob.yaml pins
+#          and hold no pod between runs. ../warm-cache-cronjob.yaml pins
 #          `livespec-fabro-sandbox:python-rust-fuzz-v1.46.0` and fires on a
-#          half-hourly schedule; ../../isolation/negative-control-job.yaml pins
-#          `:python-v1.40.1` and runs every six hours. Between runs there is no
-#          pod, no container, and nothing in containerd saying either image is
-#          needed.
+#          half-hourly schedule, so between runs there is no pod, no container,
+#          and nothing in containerd saying that image is needed — yet a naive
+#          "keep the newest N" would have deleted it.
 #      (b) The node: every image and imageRef of every container that EXISTS in
 #          containerd, running or not.
-#      The union is taken as OPPORTUNISTICALLY WIDE as the JSON allows — every
-#      `"image"`, `"imageID"` and `"imageRef"` string in either dump, including
-#      status fields — because over-protection costs disk and under-protection
-#      costs a workload.
+#      (c) THIS REPOSITORY'S OWN COMMITTED MANIFESTS, read out of a data file
+#          installed beside this script (see "THE REPO-PINS FILE IS A SNAPSHOT"
+#          below for where it comes from and how old it is). Source (a) reads
+#          DEPLOYED definitions, and that stops one step short of its own
+#          argument. ../../isolation/negative-control-job.yaml pins
+#          `:python-v1.40.1`, and it is a `kind: Job` — a one-shot manifest
+#          applied by hand when someone runs the isolation negative control,
+#          carrying `ttlSecondsAfterFinished` so the object deletes itself
+#          afterwards. For almost all of its life it exists only as a file in
+#          this repository, and `kubectl get cronjobs,jobs -A` does not see it
+#          at all. Measured in a report-only run against poweredge-xubuntu on
+#          2026-09-08 (`livespec-ifwnqj.7`), source (a) protected the warm
+#          cache's v1.46.0 and listed the negative control's v1.40.1 FOR
+#          REMOVAL. Both sit far outside the keep window, so both depended
+#          entirely on this gate; only one was in it. Reading only deployed
+#          definitions treats "nothing is running it right now" as "nothing
+#          needs it" — the running-containers mistake of source (b), moved up
+#          one level and no more correct there. What it would cost is a
+#          re-pull, unless ghcr is unreachable or that tag has been deleted
+#          upstream, at which point a NEGATIVE CONTROL becomes unreproducible.
+#          The scan catches a second class of pin the cluster read also cannot
+#          see: the container-job image every routed workflow names in
+#          ../../../../.github/workflows/. A workflow's pod exists only while
+#          the job runs, so between runs that tag is in no cluster object and
+#          no container either — it is only ever a line in a committed YAML
+#          file. Today those name a recent release the keep window covers
+#          anyway; the window is not a promise, and a pin is.
+#      The union is taken as OPPORTUNISTICALLY WIDE as each source allows —
+#      every `"image"`, `"imageID"` and `"imageRef"` string in either JSON dump
+#      including status fields, and every reference to ${REPOSITORY} in every
+#      YAML file of the repository whatever that file is for — because
+#      over-protection costs disk and under-protection costs a workload.
+#      NEITHER SCAN NAMES WHAT IT IS ALLOWED TO FIND SOMETHING IN. A Kubernetes
+#      shape this script has never heard of still protects its image, and a
+#      manifest added tomorrow is protected without anyone remembering to list
+#      it. That is also the answer to "why not just a keep-list": a
+#      hand-maintained one drifts silently, and the drift would be invisible in
+#      exactly the way this gap was.
 #
-#   5. FAIL CLOSED, TWICE.
+#   5. FAIL CLOSED, THREE TIMES.
 #      (a) If the cluster read fails, or succeeds and yields NO protected
 #          references at all, the run STOPS. An empty result from a query that
 #          was supposed to enumerate a live cluster is the failure mode
@@ -85,6 +116,24 @@
 #          under itself. This is what "safe to run while CI is active" rests
 #          on, together with the fact that removing an image reference does not
 #          disturb a container already running from it.
+#      (c) If the installed repo-pins file behind source 4(c) is missing,
+#          unreadable or empty, the run STOPS before it reads anything else.
+#          "This repository pins no sandbox image" is indistinguishable from
+#          "the file did not install", and the second would authorise removing
+#          exactly the images source 4(c) exists to save — so the ambiguity is
+#          refused rather than resolved in the destructive direction. It is
+#          also never the truth: the warm-cache CronJob's own manifest is
+#          committed here, so a scan of this repository that finds nothing has
+#          looked in the wrong place. The installer refuses to write an empty
+#          one for the same reason, which means the two halves of this gate
+#          cannot disagree.
+#
+#          Sources 4(a) and 4(c) are counted SEPARATELY and gated separately,
+#          and that separation is the whole point: the repo pins are never
+#          empty, so folding them into 5(a)'s union first would let a cluster
+#          read that came back with nothing sail past the one check that exists
+#          to catch it. 5(a) is asked of the LIVE union alone; the pins are
+#          added afterwards.
 #
 # ============================================================================
 # WHAT IT KEEPS
@@ -130,6 +179,24 @@
 #
 # IDEMPOTENT: a second run finds the surplus already gone and removes nothing.
 #
+# THE REPO-PINS FILE IS A SNAPSHOT, AND MERGING IS NOT DEPLOYING. Source 4(c)
+# reads ./prune-sandbox-images.repo-pins beside the INSTALLED copy of this
+# script — one image reference per line — written by
+# ./install-sandbox-image-prune.sh out of the repository tree it was run from.
+# The prune cannot scan the repository itself: it runs on a node from
+# /usr/local/lib/ci-runner-k3s, where no checkout is guaranteed to exist. So
+# the file is as old as the last install, and a manifest whose pin changed
+# after that is not reflected until the installer runs again. That is the same
+# property every unit in this tree already has — the installed script is a
+# COPY, so editing the source in git changes nothing on a node until someone
+# re-installs — and it is spelled out here only because this one is a DATA
+# file, which reads like something the script derives afresh on each run and is
+# not. The direction of the staleness is the safe one: a pin DELETED from the
+# repository keeps protecting its image until the next install, while a NEWLY
+# added pin is not protected by this gate until then. A new pin is normally a
+# recent release, which the newest-N window already covers; a new pin to an OLD
+# tag is the case that needs the installer re-run before the next tick.
+#
 # Requires: root, `crictl` (or `k3s crictl`), `kubectl` with a kubeconfig that
 # can list workloads cluster-wide, and python3 (to read crictl's JSON; it is
 # a pre-gate, not an assumption). The cluster read is why the installer beside
@@ -146,7 +213,8 @@ KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 export KUBECONFIG
 
 APPLY=0
-SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 USAGE="usage: ${SCRIPT_NAME} [--apply] [--keep N]   (default: report only, remove nothing)"
 
 die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
@@ -188,6 +256,13 @@ fi
 command -v kubectl >/dev/null 2>&1 || die "kubectl not found on PATH; gate 4(a) needs a cluster read"
 [ -r "$KUBECONFIG" ] || die "KUBECONFIG '${KUBECONFIG}' is not readable; an agent node holds no admin kubeconfig, and this prune refuses to run on node evidence alone"
 
+# Gate 5(c): source 4(c)'s data file, resolved beside this script exactly as
+# the installer places it. A pre-gate rather than a check at the point of use,
+# so a node missing it is told before a single image record is classified.
+REPO_PINS="${SCRIPT_DIR}/${SCRIPT_NAME%.sh}.repo-pins"
+[ -r "$REPO_PINS" ] || die "the repo-pins file '${REPO_PINS}' is missing or unreadable. ./install-sandbox-image-prune.sh writes it beside this script, and without it every image that ONLY a committed manifest pins — the isolation negative control's, for one — silently drops out of the protected set. Install it rather than running without it"
+[ -s "$REPO_PINS" ] || die "the repo-pins file '${REPO_PINS}' is empty. The installer refuses to write an empty one, so this is a truncated or hand-made file rather than a repository that pins nothing, and an empty protected source is the answer that would authorise removing what it exists to save"
+
 WORKDIR="$(mktemp -d)"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
@@ -201,6 +276,11 @@ trap cleanup EXIT
 # ephemeralContainers, a CronJob's jobTemplate and every status field without
 # naming any of them, so a Kubernetes shape this script has never heard of
 # still protects its image.
+#
+# This function collects the LIVE sources 4(a) and 4(b) ONLY. Source 4(c), the
+# repository's own pins, is folded in by each caller AFTER that caller has put
+# this function's result through the emptiness gate — see gate 5(c)'s closing
+# paragraph for why the order is load-bearing rather than incidental.
 collect_protected() {  # collect_protected OUTFILE
   local out="$1" cluster="${WORKDIR}/cluster.json" node="${WORKDIR}/node.json"
   if ! kubectl get pods,deployments,statefulsets,daemonsets,replicasets,jobs,cronjobs \
@@ -225,13 +305,27 @@ PROTECTED="${WORKDIR}/protected.txt"
 collect_protected "$PROTECTED"
 protected_count="$(wc -l < "$PROTECTED" | tr -d ' ')"
 [ "$protected_count" -gt 0 ] || die "the cluster and node reads produced ZERO image references. A live pool always runs the ARC controller and listener pods, so this is a broken read, not an idle cluster — and 'nothing is protected' is the one answer that would authorise deleting everything"
-log "protected references in scope-independent form: ${protected_count}"
+log "live protected references (cluster + node): ${protected_count}"
 
 declare -A PROTECTED_REF=()
 while IFS= read -r ref; do
   [ -n "$ref" ] || continue
   PROTECTED_REF["$ref"]=1
 done < "$PROTECTED"
+
+# Source 4(c), unioned in only now that 5(a) has been asked of the live sources
+# alone. REPO_PIN_ONLY records the refs NO live source named, which is what
+# makes the report able to say how many records this gate saved BY ITSELF —
+# the warm cache's tag is in both sets and would otherwise flatter the number.
+declare -A REPO_PIN_ONLY=()
+repo_pin_count=0
+while IFS= read -r ref; do
+  [ -n "$ref" ] || continue
+  repo_pin_count=$((repo_pin_count + 1))
+  [ -n "${PROTECTED_REF[$ref]:-}" ] || REPO_PIN_ONLY["$ref"]=1
+  PROTECTED_REF["$ref"]=1
+done < "$REPO_PINS"
+log "references pinned by this repository's committed manifests: ${repo_pin_count} (from ${REPO_PINS})"
 
 # ---------------------------------------------------------------------------
 # The resident image records.
@@ -311,22 +405,40 @@ while IFS=$'\t' read -r image_id size pinned refs; do
 done < "$RECORDS"
 
 # Gate 4, applied: any reference of a record, or the record's own id, appearing
-# in the protected set saves the whole record.
+# in the protected set saves the whole record. The reason distinguishes WHICH
+# source saved it, because "a committed manifest pins this and nothing is
+# running it" and "something is running this" are different facts about a node
+# and an operator reading a keep decision should not have to guess which one
+# they are looking at.
+kept_by_repo_pin=0
 protect_referenced_records() {
-  local image_id ref
+  local image_id ref live_ref pin_ref
   for image_id in "${in_scope_ids[@]}"; do
     [ -z "${ID_KEEP_REASON[$image_id]:-}" ] || continue
     if [ -n "${PROTECTED_REF[$image_id]:-}" ]; then
       ID_KEEP_REASON["$image_id"]="its image id is referenced by a live workload or an existing container"
       continue
     fi
+    # Every reference is examined before a reason is chosen, rather than the
+    # first match winning: a record can carry both a live-referenced tag and a
+    # repo-pinned one, and calling that record "saved by the repository alone"
+    # would overstate what gate 4(c) is doing on this node.
+    live_ref=""; pin_ref=""
     IFS=',' read -r -a ref_list <<< "${ID_REFS[$image_id]}"
     for ref in "${ref_list[@]}"; do
-      if [ -n "${PROTECTED_REF[$ref]:-}" ]; then
-        ID_KEEP_REASON["$image_id"]="${ref} is referenced by a live workload or an existing container"
+      if [ -n "${REPO_PIN_ONLY[$ref]:-}" ]; then
+        [ -n "$pin_ref" ] || pin_ref="$ref"
+      elif [ -n "${PROTECTED_REF[$ref]:-}" ]; then
+        live_ref="$ref"
         break
       fi
     done
+    if [ -n "$live_ref" ]; then
+      ID_KEEP_REASON["$image_id"]="${live_ref} is referenced by a live workload or an existing container"
+    elif [ -n "$pin_ref" ]; then
+      ID_KEEP_REASON["$image_id"]="${pin_ref} is pinned by a committed manifest of this repository and by nothing live"
+      kept_by_repo_pin=$((kept_by_repo_pin + 1))
+    fi
   done
 }
 protect_referenced_records
@@ -403,7 +515,24 @@ printf 'keep per family:   %s\n' "$KEEP_PER_FAMILY"
 printf 'resident records:  %s in this repository\n' "${#in_scope_ids[@]}"
 printf 'kept by policy:    %s\n' "$kept_by_policy"
 printf 'kept, other:       %s unversioned-tag record(s), %s record(s) shared outside the repository\n' "$unversioned_records" "$foreign_mixed"
-printf 'candidates:        %s record(s), %s MiB of record size\n' "${#candidates[@]}" "$((candidate_bytes / 1048576))"
+printf 'kept by repo pin:  %s record(s) pinned by a committed manifest and by nothing live (gate 4c)\n' "$kept_by_repo_pin"
+printf 'candidates:        %s record(s)\n' "${#candidates[@]}"
+# The MiB figure is stated with what it is NOT, in the report itself, because
+# `97 GB of candidates` on a node whose whole containerd root is 24 GB was read
+# as reclaimable disk once already (`livespec-ifwnqj.7`). There is no
+# shared-layer-aware number to print instead: CRI's ImageService reports a
+# per-image size and exposes no layer graph, so containerd would have to be
+# asked directly to compute one. Saying plainly what the number means costs one
+# report block; a number that invites the wrong reading costs an operator's
+# capacity plan.
+printf 'gross record size: %s MiB, being the candidate record sizes ADDED UP.\n' "$((candidate_bytes / 1048576))"
+printf '                   This is NOT the disk a removal frees. Consecutive sandbox releases\n'
+printf '                   share nearly every layer -- v1.40.0 and v1.40.1 were byte-identical,\n'
+printf '                   10 of 10 layers shared -- and containerd stores a shared layer ONCE\n'
+printf '                   while this sum charges it to every record naming it. On 2026-09-07\n'
+printf '                   the entire containerd root, every image on the node included,\n'
+printf '                   measured 24 GB against ~97 GB summed this way. What this prune\n'
+printf '                   bounds is the RECORD count; treat the MiB as a record-size total.\n'
 printf '\nper family:\n%s' "$keep_summary"
 
 if [ "${#candidates[@]}" -eq 0 ]; then
@@ -411,7 +540,8 @@ if [ "${#candidates[@]}" -eq 0 ]; then
   exit 0
 fi
 
-printf '\nrecords that would be removed (every reference of each goes with it):\n'
+printf '\nrecords that would be removed (every reference of each goes with it; each\n'
+printf 'MiB below is the gross size of that one record, not additive -- see above):\n'
 for image_id in "${candidates[@]}"; do
   printf '  %s  %6s MiB  %s\n' "${image_id:0:19}" "$(( ${ID_SIZE[$image_id]:-0} / 1048576 ))" "${ID_REFS[$image_id]}"
 done
@@ -433,6 +563,13 @@ while IFS= read -r ref; do
   [ -n "$ref" ] || continue
   PROTECTED_NOW["$ref"]=1
 done < "$PROTECTED"
+# And source 4(c) again, after that gate for the same reason as above. The file
+# is re-read rather than remembered: it is the one protected source a
+# concurrent re-install could legitimately have widened while this run decided.
+while IFS= read -r ref; do
+  [ -n "$ref" ] || continue
+  PROTECTED_NOW["$ref"]=1
+done < "$REPO_PINS"
 
 removed=0
 skipped_late=0
@@ -472,4 +609,4 @@ for image_id in "${candidates[@]}"; do
   fi
 done
 
-log "removed ${removed} record(s), ${skipped_late} skipped as newly referenced, ${removed_bytes} bytes of record size"
+log "removed ${removed} record(s), ${skipped_late} skipped as newly referenced, ${removed_bytes} gross record-size bytes (shared layers counted once per record, so not disk freed)"

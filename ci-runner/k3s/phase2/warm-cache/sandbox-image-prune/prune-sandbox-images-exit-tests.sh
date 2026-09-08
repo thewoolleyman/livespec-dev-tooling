@@ -38,6 +38,15 @@
 #   L. A record sharing a reference with another repository is kept.
 #   M. LATE PROTECTION. A candidate that becomes referenced between the
 #      decision and the removal is skipped, not removed.
+#   N. A COMMITTED MANIFEST PROTECTS ITS IMAGE. The reported case, reproduced:
+#      a release that NO live source names, pinned only by a file in this
+#      repository, is kept — and the same fixture with a repo-pins file that
+#      does not name it lists it for removal, so the protection is shown to
+#      come from that source and not from something else in the fixture.
+#   O. FAIL CLOSED when the installed repo-pins file is ABSENT.
+#   P. FAIL CLOSED when it is present but EMPTY — the same
+#      empty-result-reads-as-nothing-is-protected trap as case J, one source
+#      along.
 #
 # HOW IT STAYS OFF THE HOST. Every case prepends a scratch PATH carrying fakes
 # for `id` (so the root check passes without root), `crictl` and `kubectl`. The
@@ -45,6 +54,16 @@
 # is what cases A, G and H read. `python3` is deliberately NOT faked — the real
 # one parses the fake's JSON, which is the only thing the script uses it for.
 # The suite never runs as root and mutates nothing outside its own scratch dir.
+#
+# THE SCRIPT IS RUN OUT OF A FAKED INSTALL DIRECTORY, not out of this one. The
+# prune resolves its repo-pins file BESIDE ITS OWN LOCATION, exactly as
+# ../sandbox-image-prune/install-sandbox-image-prune.sh places it, so each case
+# below copies the script into a scratch directory laid out the way
+# /usr/local/lib/ci-runner-k3s is and runs it from there. That is the real
+# resolution path rather than a test-only override — a knob for "where are the
+# pins" would be a way to point the one fail-closed gate at a file of the
+# caller choosing, which is the opposite of what it is for. The absent-file and
+# empty-file cases are then just two more such directories.
 #
 # THE FAKE IMAGE IDS ARE SHORT (`sha256:aaa1`) where a real containerd would
 # give 64 hex characters. Nothing in the script under test parses an id, and
@@ -54,7 +73,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT="${HERE}/prune-sandbox-images.sh"
+SOURCE_SCRIPT="${HERE}/prune-sandbox-images.sh"
 REPO="ghcr.io/thewoolleyman/livespec-fabro-sandbox"
 
 pass=0; fail=0
@@ -71,6 +90,37 @@ trap cleanup EXIT
 
 FAKEBIN="${TMPROOT}/fakebin"
 mkdir -p "$FAKEBIN"
+
+# --------------------------------------------------------------------------
+# The faked install directories. See "THE SCRIPT IS RUN OUT OF A FAKED INSTALL
+# DIRECTORY" above for why the pins file is placed rather than pointed at.
+# --------------------------------------------------------------------------
+# stage_lib DIRNAME [PIN...] -> the path of the script copy to run.
+# With no PIN arguments, no pins file is written at all — which is case O.
+stage_lib() {
+  local dir="${TMPROOT}/$1"; shift
+  mkdir -p "$dir"
+  cp "$SOURCE_SCRIPT" "${dir}/prune-sandbox-images.sh"
+  if [ "$#" -gt 0 ]; then
+    printf '%s\n' "$@" > "${dir}/prune-sandbox-images.repo-pins"
+  fi
+  printf '%s' "${dir}/prune-sandbox-images.sh"
+}
+
+# The repository as this fixture has it committed: the warm-cache CronJob tag,
+# which a live cluster object ALSO names, and the isolation negative control
+# tag, which nothing live names at all. That second one is the reported gap.
+SCRIPT="$(stage_lib lib "${REPO}:python-rust-fuzz-v1.46.0" "${REPO}:python-v1.40.1")"
+
+# The control for case N: a valid, non-empty pins file that simply does not
+# name the negative control tag, standing for the repository as it was BEFORE
+# that manifest was committed.
+SCRIPT_OTHER_PINS="$(stage_lib lib-otherpins "${REPO}:python-rust-fuzz-v1.46.0")"
+
+# Cases O and P: the file absent, and the file present but empty.
+SCRIPT_NO_PINS="$(stage_lib lib-nopins)"
+SCRIPT_EMPTY_PINS="$(stage_lib lib-emptypins)"
+: > "${TMPROOT}/lib-emptypins/prune-sandbox-images.repo-pins"
 
 # --------------------------------------------------------------------------
 # The fakes. Single-quoted heredocs on purpose: each body is the FAKE's source,
@@ -132,6 +182,8 @@ cat > "$IMAGES_JSON" <<JSON
   "repoTags":["${REPO}:python-v1.5.0"],"repoDigests":["${REPO}@sha256:ccc1"]},
  {"id":"sha256:ddd1","size":"268435456","pinned":false,
   "repoTags":["${REPO}:python-v1.46.0"],"repoDigests":["${REPO}@sha256:ddd1"]},
+ {"id":"sha256:ddd0","size":"268435456","pinned":false,
+  "repoTags":["${REPO}:python-v1.40.1"],"repoDigests":["${REPO}@sha256:ddd0"]},
  {"id":"sha256:eee1","size":"268435456","pinned":false,
   "repoTags":["${REPO}:python-rust-fuzz-v1.46.0"],"repoDigests":["${REPO}@sha256:eee1"]},
  {"id":"sha256:fff1","size":"268435456","pinned":false,
@@ -197,6 +249,8 @@ TRIPWIRE_RMI="${TMPROOT}/rmi.log"
 KUBECTL_CALLS="${TMPROOT}/kubectl.calls"
 export TRIPWIRE_RMI KUBECTL_CALLS
 
+# PRUNE_SCRIPT selects the faked install directory for one call; unset, the
+# fully-pinned one is used.
 run_prune() {
   local out="$1"; shift
   : > "$TRIPWIRE_RMI"
@@ -213,7 +267,7 @@ run_prune() {
     FAKE_KUBECTL_EXIT="${FAKE_KUBECTL_EXIT:-0}" \
     FAKE_RMI_EXIT="${FAKE_RMI_EXIT:-0}" \
     KEEP_PER_FAMILY="${KEEP:-2}" \
-    bash "$SCRIPT" "$@" > "$out" 2>&1
+    bash "${PRUNE_SCRIPT:-$SCRIPT}" "$@" > "$out" 2>&1
   return $?
 }
 
@@ -312,6 +366,20 @@ else
   no "L. a record shared outside the repository was classified as removable"
 fi
 
+# N. A release that ONLY a committed manifest pins is kept. This is the
+#    reported case in miniature: python-v1.40.1 is outside the keep window, no
+#    cluster object and no container names it, and the repository pins it.
+if ! printf '%s\n' "$removable" | grep -q 'sha256:ddd0'; then
+  ok "N. python-v1.40.1 is kept — a committed manifest pins it and nothing live does"
+else
+  no "N. python-v1.40.1 was classified as removable despite a committed manifest pinning it"
+fi
+if grep -q 'kept by repo pin:  1 record' "$OUT"; then
+  ok "N. the report attributes exactly that one record to gate 4(c)"
+else
+  no "N. the report does not attribute one record to gate 4(c)"
+fi
+
 # The whole expected candidate set, so a future change that adds a candidate
 # has to say so here rather than slipping past the per-case assertions.
 expected="$(printf '%s\n' sha256:ccc1 sha256:ddd1 sha256:hhh1 sha256:kkk1 | sort)"
@@ -319,6 +387,26 @@ if [ "$removable" = "$expected" ]; then
   ok "the candidate set is exactly {ccc1, ddd1, hhh1, kkk1}"
 else
   no "the candidate set drifted: got [$(echo "$removable" | tr '\n' ' ')] want [$(echo "$expected" | tr '\n' ' ')]"
+fi
+
+# --------------------------------------------------------------------------
+printf '\n-- the same fixture, with a repo-pins file that does NOT name it --\n'
+# --------------------------------------------------------------------------
+# The control for case N. Everything else is held constant — same images, same
+# cluster, same budget — and only the repository content changes, so a pass
+# here says the protection came from gate 4(c) and not from some other property
+# of the fixture that would have kept ddd0 anyway.
+OUT="${TMPROOT}/otherpins.out"
+PRUNE_SCRIPT="$SCRIPT_OTHER_PINS" run_prune "$OUT"; status=$?
+if [ "$status" -eq 0 ] && would_remove "$OUT" | grep -q 'sha256:ddd0'; then
+  ok "N. with that pin absent from the repository, the same release IS a candidate"
+else
+  no "N. the control did not reclassify python-v1.40.1 (status ${status}) — case N proves nothing"
+fi
+if ! would_remove "$OUT" | grep -q 'sha256:eee1'; then
+  ok "N. the CronJob-protected release is unaffected by the repository content"
+else
+  no "N. dropping a repo pin also unprotected a live-referenced release"
 fi
 
 # --------------------------------------------------------------------------
@@ -355,6 +443,22 @@ if [ "$status" -ne 0 ] && [ ! -s "$TRIPWIRE_RMI" ] && grep -q 'ZERO image refere
   ok "J. a cluster read naming no image stops the run and removes nothing"
 else
   no "J. an empty cluster read did not stop the run (status ${status})"
+fi
+
+OUT="${TMPROOT}/nopins.out"
+PRUNE_SCRIPT="$SCRIPT_NO_PINS" run_prune "$OUT" --apply; status=$?
+if [ "$status" -ne 0 ] && [ ! -s "$TRIPWIRE_RMI" ] && grep -q 'is missing or unreadable' "$OUT"; then
+  ok "O. an absent repo-pins file stops the run and removes nothing"
+else
+  no "O. an absent repo-pins file did not stop the run (status ${status})"
+fi
+
+OUT="${TMPROOT}/emptypins.out"
+PRUNE_SCRIPT="$SCRIPT_EMPTY_PINS" run_prune "$OUT" --apply; status=$?
+if [ "$status" -ne 0 ] && [ ! -s "$TRIPWIRE_RMI" ] && grep -q 'is empty' "$OUT"; then
+  ok "P. an empty repo-pins file stops the run and removes nothing"
+else
+  no "P. an empty repo-pins file did not stop the run (status ${status})"
 fi
 
 # --------------------------------------------------------------------------
