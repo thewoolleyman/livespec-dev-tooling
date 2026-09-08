@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.66.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.66.0...v1.66.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **checks:** fail a credential-less check inside a delegated gate pod (livespec-dev-tooling-ul61) ([6e6805e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6e6805e4f80746761821bfcf9d3f801f7d056e68))
+
 ## [1.66.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.65.0...v1.66.0) (2026-09-08)
 
 
