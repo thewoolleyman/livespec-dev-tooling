@@ -109,12 +109,28 @@ end-to-end run of the committed procedure. See
 
 | Component | Version | Where the pin lives |
 |---|---|---|
-| k3s | `v1.36.2+k3s1` | `provision-k3s.sh` (`INSTALL_K3S_VERSION`) |
+| k3s | `v1.36.2+k3s1` | `provision-k3s.sh` (`INSTALL_K3S_VERSION`) — **held deliberately; see below** |
 | ARC controller chart | `0.14.2` | `install-arc.sh` |
 | ARC runner scale set chart | `0.14.2` | `install-arc.sh` and every `phase2/arc/values-*.yaml` apply |
 | Runner image | `ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc70…` | every `values-*.yaml` `template.spec.containers[0].image` |
 | Kueue | `v0.19.1` | `install-kueue.sh` |
 | helm | `v3.21.4` | `provision-k3s.sh` (`HELM_VERSION`; checksum-verified against the release's `.sha256sum`) — required by `phase2/reconstruct/converge-ci-stack.sh` |
+
+The **k3s pin is HELD deliberately**, not merely un-bumped
+(`livespec-n5eudb`, decided 2026-09-07). k3s `v1.36.2+k3s1` bundles
+flannel `v0.28.4`, whose vxlan backend panics on a nil pointer in
+`watchVXLANDevice` when its netlink subscription closes on `ENOBUFS` —
+the 2026-09-06 06:07:03Z crash that took the API away and failed 17
+in-flight jobs. Bumping buys nothing: the same defect is live at
+flannel's development tip, the upstream report
+`flannel-io/flannel#2549` is untriaged, the newest release `v0.28.9`
+predates it, and every k3s tag checked (`v1.36.2`, `v1.36.3`,
+`v1.36.4`, `v1.37.0-rc3`) bundles the same flannel. The mitigation is
+the **churn-slot cap of 32**, which is the only thing currently
+preventing recurrence — any increase toward 64 must land a mitigation
+first. Detection is the `api-unavailable` Honeycomb alarm. The full
+reasoning and mitigation ladder sit beside the pin in
+`provision-k3s.sh`.
 
 Nothing floats `latest` (rule restated here after the tree that first
 carried it was deleted under `livespec-s43svm.19`). The runner image is

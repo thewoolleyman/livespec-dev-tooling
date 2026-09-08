@@ -59,6 +59,31 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "$0")"
+# PINNED DELIBERATELY, AND HELD (livespec-n5eudb, decided 2026-09-07). This
+# k3s bundles flannel v0.28.4, whose vxlan backend dereferences a nil pointer
+# in (*network).watchVXLANDevice (pkg/backend/vxlan/vxlan_network.go:138, from
+# the goroutine spawned at :81) when its netlink subscription closes on
+# ENOBUFS. That is the crash that took this host's API away at 2026-09-06
+# 06:07:03Z and failed 17 in-flight jobs on ECONNREFUSED.
+#
+# DO NOT BUMP THIS PIN EXPECTING A FIX. There is no version to bump TO: the
+# same single-value channel receive is present at flannel's DEVELOPMENT TIP
+# (read on master at lines 81/137/138), the upstream report
+# flannel-io/flannel#2549 is open and untriaged, and the newest release
+# v0.28.9 predates the report. Every k3s tag checked (v1.36.2, v1.36.3,
+# v1.36.4, v1.37.0-rc3) bundles that same flannel v0.28.4. A bump therefore
+# carries the ordinary risk of a version change with ZERO defect reduction.
+#
+# THE MITIGATION IS A CAPACITY CAP, NOT A VERSION. The panic needs the
+# interface-churn saturation that overran the netlink buffer, and the
+# churn-slot cap of 32 is the ONLY thing currently preventing recurrence.
+# Any increase toward 64 reintroduces exactly that condition and MUST land a
+# mitigation first — see livespec-n5eudb's mitigation ladder, whose next rung
+# is authoring the upstream fix (the two-value receive, returning when the
+# channel closes; a naive nil guard instead produces a full-CPU busy loop,
+# because a closed channel is always immediately ready in a Go select).
+# Detection is the `api-unavailable` alarm, live in Honeycomb since
+# 2026-09-08.
 K3S_VERSION="v1.36.2+k3s1"
 HELM_VERSION="v3.21.4"        # co-maintained with README.md "Pinned versions"
 NODE_LABEL="k3s-role=arc-runner-host"
