@@ -102,3 +102,29 @@ def test_a_single_failure_is_below_the_threshold_and_stays_silent() -> None:
     state = lane_state(runs=runs)
     assert state["healthy"] is False
     assert notice_text(workflow="release-tag.yml", state=state) == ""
+
+
+def test_the_verdict_does_not_depend_on_the_order_runs_arrive_in() -> None:
+    """`lane_state` accepts oldest-first OR newest-first, per its contract.
+
+    Salvaged from the parallel factory attempt on this item, which asserted a
+    documented property the first suite left untested: the forge returns runs
+    newest-first while the replay fixtures here are oldest-first, so a
+    sort-order regression would flip every verdict in production while every
+    test stayed green.
+    """
+    forward = lane_state(runs=_RED_STREAK)
+    reversed_order = lane_state(runs=list(reversed(_RED_STREAK)))
+    assert forward == reversed_order
+
+
+def test_an_untruncated_block_is_an_exact_count_carrying_its_last_green() -> None:
+    """The complement of the truncation case: a green above the block bounds it."""
+    state = lane_state(runs=_RED_STREAK)
+    assert state["truncated"] is False
+    assert state["consecutive_failures"] == 5
+    assert state["last_green"] == "2026-08-16T10:00:00Z"
+    assert notice_text(workflow="release-tag.yml", state=state) == (
+        "release-tag.yml: FAILING — 5 consecutive runs since 2026-08-17T14:20:47Z; "
+        "last green 2026-08-16T10:00:00Z"
+    )
