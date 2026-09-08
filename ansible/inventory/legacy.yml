@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# LEGACY-ONLY inventory — the pre-Talos Ubuntu machines, and ONLY those.
+#
+# A TALOS NODE MUST NEVER APPEAR IN THIS FILE. Talos exposes an API and no
+# shell, the homelab specification forbids anything depending on shell access
+# to a Talos node, and that fleet's desired state is owned by Omni and Flux.
+# An entry here for a machine those own would give it two declared owners,
+# which is the one interference risk this tree has to fence. Ansible cannot
+# reach a Talos node even by accident; this header is what stops someone
+# adding one on purpose.
+#
+# These four machines "remain independent and manually managed while their
+# workloads migrate" (homelab `docs/talos-omni-architecture-and-rollout.md`).
+# They are a sunset substrate. When a machine's workload moves to the Talos
+# fleet, delete its entry here rather than porting anything.
+#
+# Group meanings:
+#   dev_hosts     — the maintainer's workstation/VPS; also the control node.
+#   ci_pool       — the k3s cluster's nodes. `cluster_role` selects the
+#                   server-only steps, replacing install-node.sh's STEP_SKIP.
+#   sandbox_hosts — the Fabro sandbox machines.
+# ---------------------------------------------------------------------------
+all:
+  children:
+    legacy:
+      children:
+        dev_hosts:
+          hosts:
+            vps:
+              # The control node manages itself over a local connection, so a
+              # run needs no ssh credential toward this machine and no inbound
+              # reachability to it.
+              ansible_connection: local
+        ci_pool:
+          hosts:
+            poweredge-xubuntu:
+              ansible_user: cwoolley
+              cluster_role: server
+            gmktec-xubuntu:
+              ansible_user: cwoolley
+              cluster_role: agent
+        sandbox_hosts:
+          hosts:
+            hp-xubuntu:
+              ansible_user: cwoolley

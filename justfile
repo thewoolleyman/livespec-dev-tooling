@@ -267,6 +267,7 @@ check:
         check-work-item-interpolation-delimiters
         check-work-item-status-vocabulary
         check-wrapper-shape
+        check-ansible-lint
         check-lint
         check-format
         check-types
@@ -293,6 +294,36 @@ check:
 # consolidated onto the SINGLE pytest run that check-per-file-coverage
 # already performs (see check-coverage below).
 # ---------------------------------------------------------------
+
+# --- Ansible: the LEGACY-ONLY host-provisioning tree under `ansible/` ---
+#
+# livespec work-item livespec-sab5gn.4. `ansible/inventory/legacy.yml` covers
+# the pre-Talos Ubuntu machines and MUST NEVER list a Talos node; read its
+# header before adding a host.
+#
+# WHY `uvx` RATHER THAN A pyproject DEPENDENCY GROUP. Ansible is a tool this
+# repo INVOKES, never a library it imports, and ansible-core 2.21 requires
+# Python >=3.12 while this repo's `requires-python` floor is >=3.10.16.
+# Raising that floor is a fleet-wide decision about the shared enforcement
+# suite and has nothing to do with provisioning hosts, so the tool resolves
+# through `uvx` against its own interpreter with both versions pinned
+# exactly. The justfile stays the single source of truth for the invocation.
+
+check-ansible-lint:
+    uvx --from ansible-lint==26.8.0 --with ansible-core==2.21.4 ansible-lint ansible/
+
+# `ansible-drift` — the drift report. This is what replaced the bespoke
+# verify-installed-tree.sh: it reports what the host would change and changes
+# nothing. Run it before every apply.
+[positional-arguments]
+ansible-drift *args:
+    uvx --from ansible-core==2.21.4 ansible-playbook --check --diff -i ansible/inventory/legacy.yml "$@"
+
+# `ansible-apply` — converge the named playbook. Idempotent; re-running is the
+# supported repair path. Run `just ansible-drift <playbook>` first.
+[positional-arguments]
+ansible-apply *args:
+    uvx --from ansible-core==2.21.4 ansible-playbook -i ansible/inventory/legacy.yml "$@"
 
 check-lint:
     uv run ruff check .
