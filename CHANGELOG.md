@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.61.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.60.0...v1.61.0) (2026-09-08)
+
+
+### Features
+
+* **ci-runner:** bound the sandbox image set and mirror ghcr on the LAN ([f3cd304](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f3cd3043985bbf9d2b1493d7d2c8cde4eff0a34a))
+
 ## [1.60.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.59.0...v1.60.0) (2026-09-08)
 
 
