@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.64.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.63.0...v1.64.0) (2026-09-08)
+
+
+### Features
+
+* **driver-checks:** hold each Driver's decision-body copy byte-identical ([fb06651](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fb066516ed7b67bc1b6fb38752a432b1f889baef))
+* **hooks:** single-source the github rate-limit decision body ([0312998](https://github.com/thewoolleyman/livespec-dev-tooling/commit/031299879a547e4a4bb32c4872672a7b9c09f916))
+
 ## [1.63.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.62.0...v1.63.0) (2026-09-08)
 
 
