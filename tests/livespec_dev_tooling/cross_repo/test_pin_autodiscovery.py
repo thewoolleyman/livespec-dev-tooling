@@ -6,21 +6,43 @@ per-format walks now live in two cohesive helper modules
 (`_pin_single_file_formats`, `_pin_directory_scan_formats`) exercised by
 their own mirror test files; this file exercises the parent
 orchestration surface — the `discover()` entry point that fans out over
-all five formats, the multi-pin coexistence cases, and the
-module-as-script CLI invocation (per the semver-stable contract).
+all five formats, the multi-pin coexistence cases, and the CLI
+`main()` entry point (per the semver-stable contract).
 
 A `.copier-answers.yml` `_commit` marker is copier render-provenance,
 NOT a version pin, so the walk deliberately emits no record for it.
 
 Coverage target: 100% line + branch of `pin_autodiscovery.py`.
+
+The CLI is driven IN-PROCESS (`monkeypatch.chdir(...)` +
+`monkeypatch.setattr(sys, "argv", ...)` + `capsys` + `rc = main()`)
+rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The five call sites
+differed only in argv, so they now share one `_run_cli` helper that
+takes `argv`; the monkeypatched cwd and argv supply exactly what the
+child's `cwd=` argument and command line did. `--help` makes `argparse`
+terminate the interpreter, so `SystemExit` is caught and translated back
+into the identical int rather than allowed to escape. The assertion
+targets are unchanged — the int exit code plus the JSON / usage text,
+now read off `capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the default-cwd walk, the `--root` override, the `--source-repo`
+filter, the `--help` exit, and the `--json` empty-array emission. The
+one line the child reached that an in-process call cannot is
+`if __name__ == "__main__": raise SystemExit(main())`; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from returns.unsafe import unsafe_perform_io
@@ -255,24 +277,49 @@ def test_discover_multiple_pins_same_format(*, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CLI surface — exercises the module-as-script invocation per the
-# semver-stable contract.
+# CLI surface — exercises the `main()` entry point per the semver-stable
+# contract.
 # ---------------------------------------------------------------------------
 
 
-def test_cli_default_root_emits_json_array(*, tmp_path: Path) -> None:
-    """`python -m ...pin_autodiscovery` with cwd=tmp_path emits a JSON array."""
+class _CliRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_cli(
+    *,
+    cwd: Path,
+    argv: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> _CliRun:
+    """Invoke the CLI's `main()` in-process under `cwd` with `argv`, capturing output."""
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(sys, "argv", ["pin-autodiscovery", *argv])
+    try:
+        rc = pin_autodiscovery.main()
+    except SystemExit as terminated:
+        # `argparse` terminates the interpreter itself on `--help`. In the
+        # retired child that became the process exit code; in-process it
+        # arrives here, so it is translated back into the identical int.
+        rc = 0 if terminated.code is None else int(terminated.code)
+    captured = capsys.readouterr()
+    return _CliRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_cli_default_root_emits_json_array(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`pin_autodiscovery` with cwd=tmp_path emits a JSON array."""
     (tmp_path / ".livespec.jsonc").write_text(
         json.dumps({"myapp": {"compat": {"livespec": ">=0.1.0,<1.0.0", "pinned": "v0.5.0"}}}),
         encoding="utf-8",
     )
-    result = subprocess.run(
-        [sys.executable, str(_MODULE_PATH)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_cli(cwd=tmp_path, argv=[], monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, f"pin_autodiscovery should exit 0; stderr={result.stderr!r}"
     parsed = json.loads(result.stdout)
     assert isinstance(parsed, list)
@@ -280,7 +327,9 @@ def test_cli_default_root_emits_json_array(*, tmp_path: Path) -> None:
     assert parsed[0]["pin_format"] == "livespec_jsonc_compat_pinned"
 
 
-def test_cli_root_flag_overrides_cwd(*, tmp_path: Path) -> None:
+def test_cli_root_flag_overrides_cwd(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--root <path>` overrides cwd so the script walks the supplied root."""
     target = tmp_path / "consumer"
     target.mkdir()
@@ -290,19 +339,17 @@ def test_cli_root_flag_overrides_cwd(*, tmp_path: Path) -> None:
     )
     other_cwd = tmp_path / "elsewhere"
     other_cwd.mkdir()
-    result = subprocess.run(
-        [sys.executable, str(_MODULE_PATH), "--root", str(target)],
-        cwd=str(other_cwd),
-        capture_output=True,
-        text=True,
-        check=False,
+    result = _run_cli(
+        cwd=other_cwd, argv=["--root", str(target)], monkeypatch=monkeypatch, capsys=capsys
     )
     assert result.returncode == 0
     parsed = json.loads(result.stdout)
     assert len(parsed) == 1
 
 
-def test_cli_source_repo_filter_via_argv(*, tmp_path: Path) -> None:
+def test_cli_source_repo_filter_via_argv(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--source-repo livespec` filters output via argv parsing."""
     (tmp_path / ".livespec.jsonc").write_text(
         json.dumps({"myapp": {"compat": {"livespec": ">=0.1.0,<1.0.0", "pinned": "v0.5.0"}}}),
@@ -323,12 +370,8 @@ def test_cli_source_repo_filter_via_argv(*, tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    result = subprocess.run(
-        [sys.executable, str(_MODULE_PATH), "--source-repo", "livespec"],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
+    result = _run_cli(
+        cwd=tmp_path, argv=["--source-repo", "livespec"], monkeypatch=monkeypatch, capsys=capsys
     )
     assert result.returncode == 0
     parsed = json.loads(result.stdout)
@@ -336,15 +379,11 @@ def test_cli_source_repo_filter_via_argv(*, tmp_path: Path) -> None:
     assert parsed[0]["source_repo"] == "livespec"
 
 
-def test_cli_help_flag_exits_zero(*, tmp_path: Path) -> None:
+def test_cli_help_flag_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--help` exits 0 with usage text on stdout, per the wrapper-shape contract."""
-    result = subprocess.run(
-        [sys.executable, str(_MODULE_PATH), "--help"],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_cli(cwd=tmp_path, argv=["--help"], monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "pin-autodiscovery" in result.stdout
     # The spec clause it cites lives in the repo that SHIPS this tool, not in
@@ -356,15 +395,11 @@ def test_cli_help_flag_exits_zero(*, tmp_path: Path) -> None:
     assert "livespec-dev-tooling SPECIFICATION/contracts.md" in unwrapped
 
 
-def test_cli_json_flag_default_is_true(*, tmp_path: Path) -> None:
+def test_cli_json_flag_default_is_true(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Passing `--json` explicitly is accepted (forward-compat for future text mode)."""
-    result = subprocess.run(
-        [sys.executable, str(_MODULE_PATH), "--json"],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_cli(cwd=tmp_path, argv=["--json"], monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     parsed = json.loads(result.stdout)
     assert parsed == []

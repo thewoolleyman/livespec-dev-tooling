@@ -9,13 +9,40 @@ installed at the pinned version — both mise-pinned binaries
 Cycle 167 implements minimum-viable: parse `.mise.toml` for
 the binary pins and verify each binary is on PATH and reports
 the pinned version when invoked with `--version`.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The six call sites
+spawned near-identically, so they now share one `_run_check` helper;
+`main()` reads `Path.cwd()`, so the monkeypatched cwd anchors the
+fixture exactly as the child's `cwd=` argument did. The one site that
+carried an `env=` mapping now uses `monkeypatch.setenv("PATH", ...)`,
+which the check's OWN `<bin> --version` / `<bin> version` subprocesses
+and its `shutil.which` lookup inherit unchanged. The assertion targets
+are unchanged — the int exit code plus the diagnostic text, now read off
+`capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the missing-`.mise.toml` exit, the any-version pin, the substring
+match, the not-on-PATH offender, the version-mismatch offender, and the
+`<bin> version` fallback. The two lines the child process reached that
+an in-process call cannot are the module's vendored-path guard
+(`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -24,19 +51,50 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK_TOOLS = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "check_tools.py"
 
 
-def test_check_tools_rejects_missing_mise_toml(*, tmp_path: Path) -> None:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location("check_tools_under_test", str(_CHECK_TOOLS))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_check_tools_rejects_missing_mise_toml(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo cwd without `.mise.toml` fails the check.
 
     Fixture: empty tmp_path. The check requires the mise
     config to know which binaries to verify.
     """
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_TOOLS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"check_tools should reject missing .mise.toml; "
@@ -50,7 +108,9 @@ def test_check_tools_rejects_missing_mise_toml(*, tmp_path: Path) -> None:
     )
 
 
-def test_check_tools_accepts_mise_pinned_tools_at_pinned_versions(*, tmp_path: Path) -> None:
+def test_check_tools_accepts_mise_pinned_tools_at_pinned_versions(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.mise.toml` whose pinned tools resolve at pinned versions passes (exit 0).
 
     Fixture exercises every parser branch:
@@ -85,13 +145,7 @@ def test_check_tools_accepts_mise_pinned_tools_at_pinned_versions(*, tmp_path: P
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_TOOLS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"check_tools should accept any-version pin with exit 0; "
@@ -100,7 +154,9 @@ def test_check_tools_accepts_mise_pinned_tools_at_pinned_versions(*, tmp_path: P
     )
 
 
-def test_check_tools_accepts_substring_match_against_version_output(*, tmp_path: Path) -> None:
+def test_check_tools_accepts_substring_match_against_version_output(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A pin matching a substring of the binary's `--version` output passes (exit 0).
 
     Closes the version-match success branch (`if expected_version
@@ -114,13 +170,7 @@ def test_check_tools_accepts_substring_match_against_version_output(*, tmp_path:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_TOOLS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"check_tools should accept substring match; "
@@ -129,7 +179,9 @@ def test_check_tools_accepts_substring_match_against_version_output(*, tmp_path:
     )
 
 
-def test_check_tools_rejects_tool_not_on_path(*, tmp_path: Path) -> None:
+def test_check_tools_rejects_tool_not_on_path(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.mise.toml` pinning a binary not on PATH fails the check.
 
     Closes the `if binary_path is None: return ...` branch.
@@ -140,20 +192,16 @@ def test_check_tools_rejects_tool_not_on_path(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_TOOLS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"check_tools should reject not-on-path tool; " f"got returncode={result.returncode}"
     )
 
 
-def test_check_tools_rejects_pinned_version_mismatch(*, tmp_path: Path) -> None:
+def test_check_tools_rejects_pinned_version_mismatch(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.mise.toml` pinning `uv` to a version not installed fails the check."""
     mise = tmp_path / ".mise.toml"
     mise.write_text(
@@ -161,13 +209,7 @@ def test_check_tools_rejects_pinned_version_mismatch(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_TOOLS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"check_tools should reject version mismatch; " f"got returncode={result.returncode}"
@@ -177,6 +219,8 @@ def test_check_tools_rejects_pinned_version_mismatch(*, tmp_path: Path) -> None:
 def test_check_tools_falls_back_to_subcommand_version_when_dash_dash_version_errors(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Binaries whose `--version` errors but `version` reports the version pass.
 
@@ -217,17 +261,13 @@ def test_check_tools_falls_back_to_subcommand_version_when_dash_dash_version_err
 
     import os
 
-    env = dict(os.environ)
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    # The retired child carried this as an `env=` mapping. In-process
+    # `monkeypatch.setenv` supplies the identical PATH, which the check's OWN
+    # `<bin> --version` / `<bin> version` subprocesses — and the
+    # `shutil.which("foo")` lookup that finds them — inherit unchanged.
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_TOOLS)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"check_tools should fall back to `<bin> version` when "

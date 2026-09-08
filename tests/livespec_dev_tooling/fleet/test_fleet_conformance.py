@@ -2,16 +2,32 @@
 
 Engine functions run in-process against canned-response contexts; the
 CLI entry point is exercised across its lever / precondition / finding
-/ success branches, plus one `python -m` subprocess invocation for the
-`__main__` guard (lever unset → fast logged skip).
+/ success branches, including the lever-unset fast logged skip.
+
+That last case previously ran as a `python -m` subprocess. It is now
+driven IN-PROCESS (`monkeypatch.delenv(...)` + `monkeypatch.setattr(sys,
+"argv", ...)` + `capsys` + `rc = main()`): no
+`COVERAGE_PROCESS_START`-instrumented child and no `.coverage.*` race
+under the parallel dispatcher. Where the child carried an `env=` mapping
+with the lever popped, `monkeypatch.delenv` supplies the identical
+condition in this process. The assertion targets are unchanged — exit
+code 0 plus the `skipped` structlog record on stderr, now read off
+`capsys`.
+
+Branch parity with the retired spawn: the child reached `main()`'s
+lever-unset arm and returned before touching the owner resolution, and
+the in-process call drives that same arm. The one line the child reached
+that an in-process call cannot is
+`if __name__ == "__main__": raise SystemExit(main())`; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import io
 import json
-import os
-import subprocess
 import sys
 import tarfile
 from pathlib import Path
@@ -987,18 +1003,13 @@ def test_main_defers_the_adopter_leg_out_of_vantage_without_reading_adopters(
     assert not [call for call in calls if any("adopted" in arg for arg in call)]
 
 
-def test_module_invocation_with_lever_unset_skips() -> None:
-    env = {key: value for key, value in os.environ.items()}
-    _ = env.pop("LIVESPEC_RUN_FLEET_CONFORMANCE", None)
-    result = subprocess.run(
-        [sys.executable, "-m", "livespec_dev_tooling.fleet.fleet_conformance"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    assert result.returncode == 0
-    assert "skipped" in result.stderr
+def test_main_with_lever_unset_skips(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("LIVESPEC_RUN_FLEET_CONFORMANCE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["fleet-conformance"])
+    assert fleet_conformance.main() == 0
+    assert "skipped" in capsys.readouterr().err
 
 
 def _unwired_member_table() -> dict[tuple[str, ...], GhResult]:

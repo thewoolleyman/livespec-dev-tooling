@@ -20,17 +20,53 @@ The fixture builds a synthetic project root at `tmp_path` with
 exactly one source file plus a hand-authored `.coverage` data
 file produced via `coverage.CoverageData.add_lines` (writing
 parallel-mode-disabled, single-file form so `Coverage.load()`
-finds it directly without needing a `combine()` step). The check
-is invoked as a subprocess with `cwd=tmp_path` per the standard
-dev-tooling/checks invocation contract.
+finds it directly without needing a `combine()` step).
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The six check call sites
+spawned identically, so they now share one `_run_check` helper; `main()`
+resolves `cwd/.coverage`, so the monkeypatched cwd anchors the fixture
+exactly as the child's `cwd=` argument did, and
+`monkeypatch.delenv("COVERAGE_FILE")` supplies what the child's `env=`
+mapping did. The assertion targets are unchanged — the int exit code
+plus the offending-file diagnostic, now read off `capsys` instead of
+`CompletedProcess`.
+
+A SEVENTH SPAWN, not a check spawn, went with them: the fixture builder
+in `test_per_file_coverage_empty_data_emits_actionable_hint` that
+constructs the present-but-empty `.coverage`. It ran in a child because
+it built the file via `Coverage.start()` / `stop()` / `save()`, and a
+nested `Coverage.start()` would suspend the outer `pytest --cov`
+session's tracer and blind it to this fixture's own lines. The child was
+a consequence of that construction, not of the fixture: `CoverageData`
+— the same public API this file's other fixtures already use — writes
+the identical artifact with no tracer involved at all
+(`add_lines({})` + `write()` leaves a loadable data file whose
+`measured_files()` is empty). Both forms were compared before the swap
+and produce a present, loadable, zero-measured-file `.coverage`. So this
+file carries NO spawn and its `subprocess_spawn_allowlist` entry is
+removed alongside its eleven siblings'.
+
+Branch parity with the retired spawns: the same fixtures drive the same
+arms — the below-100%-line rejection, the missing-`.coverage` early
+exit, the all-100% accept, the COVERAGE_FILE-env resolution, and the
+empty-data actionable hint. The two lines the child process reached that
+an in-process call cannot are the module's vendored-path guard
+(`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, and
+`test_per_file_coverage_module_importable_without_running_main` still
+closes the already-present arm of the vendored-path branch. No new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from coverage import CoverageData
@@ -42,23 +78,40 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PER_FILE_COVERAGE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "per_file_coverage.py"
 
 
-def _env_without_coverage_file() -> dict[str, str]:
-    """Return a copy of the environment with COVERAGE_FILE removed.
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
 
-    The parallel check dispatcher (work-item livespec-dev-tooling-cmn)
-    sets COVERAGE_FILE for the `check-per-file-coverage` pytest run, and
-    subprocess children inherit it. Tests that exercise
-    per_file_coverage's DEFAULT `cwd/.coverage` resolution must run the
-    subprocess WITHOUT that inherited override, or the check would read
-    the outer run's isolated data file instead of the fixture's
-    cwd-local `.coverage`.
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output.
+
+    `monkeypatch.delenv("COVERAGE_FILE")` supplies in this process exactly
+    what the retired child's `env=` mapping did. The parallel check
+    dispatcher (work-item livespec-dev-tooling-cmn) sets COVERAGE_FILE for
+    the `check-per-file-coverage` pytest run; tests that exercise
+    per_file_coverage's DEFAULT `cwd/.coverage` resolution must not see
+    that override, or the check would read the outer run's isolated data
+    file instead of the fixture's cwd-local `.coverage`.
     """
-    env = dict(os.environ)
-    env.pop("COVERAGE_FILE", None)
-    return env
+    monkeypatch.chdir(cwd)
+    monkeypatch.delenv("COVERAGE_FILE", raising=False)
+    rc = _load_per_file_coverage_module().main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
-def test_per_file_coverage_rejects_file_below_100_line_coverage(*, tmp_path: Path) -> None:
+def test_per_file_coverage_rejects_file_below_100_line_coverage(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """A measured file with line coverage below 100% makes the check exit non-zero.
 
     The fixture writes a synthetic `subject.py` with five
@@ -95,16 +148,7 @@ def test_per_file_coverage_rejects_file_below_100_line_coverage(*, tmp_path: Pat
     data.add_lines({str(src_file): [1, 3]})
     data.write()
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled
-    # script path); no untrusted shell input.
-    result = subprocess.run(
-        [sys.executable, str(_PER_FILE_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_env_without_coverage_file(),
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"per_file_coverage should reject subject.py at <100% line coverage with non-zero exit; "
@@ -119,7 +163,12 @@ def test_per_file_coverage_rejects_file_below_100_line_coverage(*, tmp_path: Pat
     )
 
 
-def test_per_file_coverage_rejects_when_no_coverage_data_file_exists(*, tmp_path: Path) -> None:
+def test_per_file_coverage_rejects_when_no_coverage_data_file_exists(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """No `.coverage` file in cwd makes the check exit non-zero with a clear diagnostic.
 
     Per `per_file_coverage.py`: the helper inspects
@@ -129,14 +178,7 @@ def test_per_file_coverage_rejects_when_no_coverage_data_file_exists(*, tmp_path
     check must exit non-zero and surface the missing path so the
     developer knows pytest --cov was skipped.
     """
-    result = subprocess.run(
-        [sys.executable, str(_PER_FILE_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_env_without_coverage_file(),
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"per_file_coverage should reject missing .coverage file with non-zero exit; "
@@ -150,7 +192,12 @@ def test_per_file_coverage_rejects_when_no_coverage_data_file_exists(*, tmp_path
     )
 
 
-def test_per_file_coverage_accepts_when_all_files_at_100_percent(*, tmp_path: Path) -> None:
+def test_per_file_coverage_accepts_when_all_files_at_100_percent(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """A `.coverage` data file where every measured file is at 100% passes the check.
 
     Per `per_file_coverage.py`: when the per-file
@@ -178,14 +225,7 @@ def test_per_file_coverage_accepts_when_all_files_at_100_percent(*, tmp_path: Pa
     data.add_lines({str(src_file): [1, 2]})
     data.write()
 
-    result = subprocess.run(
-        [sys.executable, str(_PER_FILE_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_env_without_coverage_file(),
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"per_file_coverage should accept all-100% data with exit 0; "
@@ -272,31 +312,30 @@ def test_per_file_coverage_empty_data_emits_actionable_hint(
     subprocess COVERAGE_FILE collision whose `coverage combine` swept the
     data — on which `json_report` would raise the cryptic "No data to
     report"), the gate must emit an ACTIONABLE message naming the
-    isolated-COVERAGE_FILE fix. The fixture produces a present-but-empty
-    `.coverage` via start/stop/save (zero measured files, file on disk);
-    the check is run in-process with cwd monkeypatched to tmp_path and
-    asserts the hint mentions isolating COVERAGE_FILE.
+    isolated-COVERAGE_FILE fix. The fixture writes a present-but-empty
+    `.coverage` (zero measured files, file on disk); the check is run
+    in-process with cwd monkeypatched to tmp_path and asserts the hint
+    mentions isolating COVERAGE_FILE.
     """
-    # Build the present-but-empty `.coverage` in a SUBPROCESS so the
-    # outer pytest-cov session's tracer is not suspended by a nested
-    # `Coverage.start()` (which would blind the outer tracer to this
-    # fixture's own lines). The child does start/stop/save with nothing
-    # measured, leaving a file on disk whose measured_files() is empty.
+    # Write the present-but-empty `.coverage` through `CoverageData`, the
+    # same public API this file's other fixtures use. Recording an empty
+    # line map is what materializes the data file; the earlier
+    # `Coverage.start()` / `stop()` / `save()` form needed a SUBPROCESS
+    # only because a nested `Coverage.start()` would suspend the outer
+    # pytest-cov session's tracer and blind it to this fixture's own
+    # lines. No tracer is started here, so no child is needed, and the
+    # artifact is identical: a loadable file whose measured_files() is
+    # empty. The `is_file` + `no measured files` assertions below are
+    # what hold that — if the write ever stopped materializing the file,
+    # this test would fail loudly rather than silently degrade into the
+    # missing-file case that `..._missing_data_file_...` already covers.
     empty_db = tmp_path / ".coverage"
-    builder = (
-        "from coverage import Coverage;"
-        f"c = Coverage(data_file={str(empty_db)!r});"
-        "c.start(); c.stop(); c.save()"
-    )
-    build = subprocess.run(
-        [sys.executable, "-c", builder],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    data = CoverageData(basename=str(empty_db), suffix=False)
+    data.add_lines({})
+    data.write()
     assert empty_db.is_file(), (
-        f"fixture subprocess must leave a present .coverage file; "
-        f"stdout={build.stdout!r} stderr={build.stderr!r}"
+        "fixture must leave a present .coverage file so the EMPTY-data branch "
+        "is the one under test, not the missing-file branch"
     )
 
     monkeypatch.chdir(tmp_path)
@@ -360,7 +399,12 @@ def test_full_coverage_pct_constant_pins_v033_d2_threshold() -> None:
     assert module._FULL_COVERAGE_PCT == 100.0  # noqa: SLF001
 
 
-def test_per_file_coverage_parses_xdist_combined_data(*, tmp_path: Path) -> None:
+def test_per_file_coverage_parses_xdist_combined_data(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """per_file_coverage.py correctly reads `.coverage` data combined from xdist workers.
 
     Per v039 D2: `check-coverage` invokes `pytest -n auto` so the
@@ -413,14 +457,7 @@ def test_per_file_coverage_parses_xdist_combined_data(*, tmp_path: Path) -> None
     combiner.combine(data_paths=[str(tmp_path)])
     combiner.save()
 
-    result = subprocess.run(
-        [sys.executable, str(_PER_FILE_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_env_without_coverage_file(),
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"per_file_coverage should reject subject.py at <100% coverage in xdist-combined data; "
@@ -435,7 +472,12 @@ def test_per_file_coverage_parses_xdist_combined_data(*, tmp_path: Path) -> None
     )
 
 
-def test_per_file_coverage_purges_measured_files_whose_source_vanished(*, tmp_path: Path) -> None:
+def test_per_file_coverage_purges_measured_files_whose_source_vanished(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """A measured file whose source no longer exists is purged with a warning, not a crash.
 
     Work-item livespec-dev-tooling-5xh8: on a cold-cache CI pod, `uv`
@@ -465,14 +507,7 @@ def test_per_file_coverage_purges_measured_files_whose_source_vanished(*, tmp_pa
     data.add_lines({str(src_file): [1, 2], str(vanished): [1, 2, 3]})
     data.write()
 
-    result = subprocess.run(
-        [sys.executable, str(_PER_FILE_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_env_without_coverage_file(),
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode == 0, (
@@ -494,7 +529,12 @@ def test_per_file_coverage_purges_measured_files_whose_source_vanished(*, tmp_pa
     ), f"purging must keep the still-present measured files; remaining={sorted(remaining)!r}"
 
 
-def test_per_file_coverage_purge_preserves_branch_arcs_of_kept_files(*, tmp_path: Path) -> None:
+def test_per_file_coverage_purge_preserves_branch_arcs_of_kept_files(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Purging under branch (`--cov-branch`) data keeps the surviving files' arcs intact.
 
     The real producer runs `pytest --cov --cov-branch`, so the data file
@@ -518,14 +558,7 @@ def test_per_file_coverage_purge_preserves_branch_arcs_of_kept_files(*, tmp_path
     data.add_arcs({str(src_file): subject_arcs, str(vanished): [(-1, 1), (1, -1)]})
     data.write()
 
-    result = subprocess.run(
-        [sys.executable, str(_PER_FILE_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_env_without_coverage_file(),
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode == 0, (

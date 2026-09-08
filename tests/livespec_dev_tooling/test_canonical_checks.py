@@ -32,12 +32,29 @@ Three invariants pinned here:
 Plus the snake_case → kebab-case slug mapping (file `foo_bar.py`
 → slug `check-foo-bar`) and the thin-transport `--json` surface
 shape (`{"slugs": [...]}` on stdout, exit 0).
+
+The `--json` surface is driven IN-PROCESS (`monkeypatch.chdir(...)` +
+`monkeypatch.setattr(sys, "argv", ...)` + `capsys` + `rc = main()`)
+rather than via a `python -m` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The monkeypatched cwd
+supplies what the child's `cwd=` argument did, and the assertion targets
+are unchanged — the int exit code plus the JSON document, now parsed off
+`capsys` instead of `CompletedProcess.stdout`.
+
+Branch parity with the retired spawn: the child drove `main()`'s
+argparse arm, the `canonical_check_slugs()` success track, and the stdout
+emission, and the in-process call drives those same three. The one line
+the child reached that an in-process call cannot is
+`if __name__ == "__main__": raise SystemExit(main())`; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -261,29 +278,26 @@ def test_canonical_check_slugs_excludes_helper_module() -> None:
     ), f"underscore-prefixed helper (stripped form) must not appear; got {slugs}"
 
 
-def test_json_thin_transport_emits_slugs_array() -> None:
-    """`python -m livespec_dev_tooling.canonical_checks --json` emits `{"slugs": [...]}`.
+def test_json_thin_transport_emits_slugs_array(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`canonical_checks --json` emits `{"slugs": [...]}` on stdout.
 
     Thin-transport contract per epic li-univck Phase 1.2:
     stdout is a single JSON object with a `slugs` key whose
     value is an alphabetically-sorted list of strings. Exit 0.
     """
-    # S603: argv is a fixed list (sys.executable + package -m
-    # invocation); no untrusted shell input.
-    result = subprocess.run(
-        [sys.executable, "-m", "livespec_dev_tooling.canonical_checks", "--json"],
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    monkeypatch.chdir(_REPO_ROOT)
+    monkeypatch.setattr(sys, "argv", ["canonical-checks", "--json"])
+    returncode = _import_canonical_checks().main()
+    captured = capsys.readouterr()
 
-    assert result.returncode == 0, (
+    assert returncode == 0, (
         f"--json thin-transport must exit 0; "
-        f"got returncode={result.returncode} "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        f"got returncode={returncode} "
+        f"stdout={captured.out!r} stderr={captured.err!r}"
     )
-    payload = json.loads(result.stdout)
+    payload = json.loads(captured.out)
     assert isinstance(
         payload, dict
     ), f"--json output must be a JSON object; got {type(payload).__name__}"

@@ -11,13 +11,37 @@ every other entry.
 
 Cycle 162 implements the structural validation of
 `.vendor.jsonc`'s placeholder-and-shim discipline.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The ten call sites
+spawned identically, so they now share one `_run_check` helper; `main()`
+reads `Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly
+as the child's `cwd=` argument did, and the assertion targets are
+unchanged — the int exit code plus the offending-entry diagnostic, now
+read off `capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the missing-manifest exit, each placeholder / empty-field
+rejection, the unparseable-`vendored_at` rejection, both `shim` arms,
+and the valid-manifest pass. The two lines the child process reached
+that an in-process call cannot are the module's vendored-path guard
+(`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -26,7 +50,46 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _VENDOR_MANIFEST = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "vendor_manifest.py"
 
 
-def test_vendor_manifest_rejects_empty_upstream_ref(*, tmp_path: Path) -> None:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "vendor_manifest_under_test", str(_VENDOR_MANIFEST)
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_vendor_manifest_rejects_empty_upstream_ref(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.vendor.jsonc` entry with empty `upstream_ref` fails the check.
 
     Fixture: a manifest with one entry whose `upstream_ref` is
@@ -45,13 +108,7 @@ def test_vendor_manifest_rejects_empty_upstream_ref(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject empty upstream_ref; "
@@ -65,7 +122,9 @@ def test_vendor_manifest_rejects_empty_upstream_ref(*, tmp_path: Path) -> None:
     )
 
 
-def test_vendor_manifest_rejects_unparseable_vendored_at(*, tmp_path: Path) -> None:
+def test_vendor_manifest_rejects_unparseable_vendored_at(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `.vendor.jsonc` entry with malformed `vendored_at` fails the check."""
     manifest = tmp_path / ".vendor.jsonc"
     manifest.write_text(
@@ -78,13 +137,7 @@ def test_vendor_manifest_rejects_unparseable_vendored_at(*, tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject unparseable vendored_at; "
@@ -93,7 +146,9 @@ def test_vendor_manifest_rejects_unparseable_vendored_at(*, tmp_path: Path) -> N
     )
 
 
-def test_vendor_manifest_rejects_shim_on_non_canonical_entry(*, tmp_path: Path) -> None:
+def test_vendor_manifest_rejects_shim_on_non_canonical_entry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `shim: true` flag on an entry other than `jsoncomment` fails the check."""
     manifest = tmp_path / ".vendor.jsonc"
     manifest.write_text(
@@ -107,13 +162,7 @@ def test_vendor_manifest_rejects_shim_on_non_canonical_entry(*, tmp_path: Path) 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject shim flag on non-canonical entry; "
@@ -122,7 +171,9 @@ def test_vendor_manifest_rejects_shim_on_non_canonical_entry(*, tmp_path: Path) 
     )
 
 
-def test_vendor_manifest_rejects_canonical_shim_without_flag(*, tmp_path: Path) -> None:
+def test_vendor_manifest_rejects_canonical_shim_without_flag(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `jsoncomment` entry MISSING the `shim: true` flag fails the check."""
     manifest = tmp_path / ".vendor.jsonc"
     manifest.write_text(
@@ -135,13 +186,7 @@ def test_vendor_manifest_rejects_canonical_shim_without_flag(*, tmp_path: Path) 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject jsoncomment without shim:true; "
@@ -150,7 +195,9 @@ def test_vendor_manifest_rejects_canonical_shim_without_flag(*, tmp_path: Path) 
     )
 
 
-def test_vendor_manifest_rejects_empty_upstream_url(*, tmp_path: Path) -> None:
+def test_vendor_manifest_rejects_empty_upstream_url(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An entry with empty `upstream_url` fails the check."""
     manifest = tmp_path / ".vendor.jsonc"
     manifest.write_text(
@@ -163,20 +210,16 @@ def test_vendor_manifest_rejects_empty_upstream_url(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject empty upstream_url; " f"got returncode={result.returncode}"
     )
 
 
-def test_vendor_manifest_rejects_missing_vendored_at_field(*, tmp_path: Path) -> None:
+def test_vendor_manifest_rejects_missing_vendored_at_field(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An entry with no `vendored_at` field at all fails the check.
 
     Closes the early-return False branch of `_is_iso_parseable`
@@ -192,31 +235,21 @@ def test_vendor_manifest_rejects_missing_vendored_at_field(*, tmp_path: Path) ->
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject missing vendored_at; " f"got returncode={result.returncode}"
     )
 
 
-def test_vendor_manifest_rejects_missing_libraries_array(*, tmp_path: Path) -> None:
+def test_vendor_manifest_rejects_missing_libraries_array(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A manifest without a top-level `libraries` array fails the check."""
     manifest = tmp_path / ".vendor.jsonc"
     manifest.write_text('{"other_key": []}', encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject manifest without `libraries`; "
@@ -224,7 +257,9 @@ def test_vendor_manifest_rejects_missing_libraries_array(*, tmp_path: Path) -> N
     )
 
 
-def test_vendor_manifest_rejects_non_dict_library_entry(*, tmp_path: Path) -> None:
+def test_vendor_manifest_rejects_non_dict_library_entry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A library entry that's not a dict (e.g., a string) fails the check."""
     manifest = tmp_path / ".vendor.jsonc"
     manifest.write_text(
@@ -232,20 +267,16 @@ def test_vendor_manifest_rejects_non_dict_library_entry(*, tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"vendor_manifest should reject non-dict entry; " f"got returncode={result.returncode}"
     )
 
 
-def test_vendor_manifest_accepts_canonical_manifest(*, tmp_path: Path) -> None:
+def test_vendor_manifest_accepts_canonical_manifest(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A manifest mirroring the real `.vendor.jsonc` shape passes (exit 0)."""
     manifest = tmp_path / ".vendor.jsonc"
     manifest.write_text(
@@ -263,13 +294,7 @@ def test_vendor_manifest_accepts_canonical_manifest(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"vendor_manifest should accept canonical manifest with exit 0; "
@@ -278,20 +303,16 @@ def test_vendor_manifest_accepts_canonical_manifest(*, tmp_path: Path) -> None:
     )
 
 
-def test_vendor_manifest_accepts_missing_manifest_file(*, tmp_path: Path) -> None:
+def test_vendor_manifest_accepts_missing_manifest_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo cwd without `.vendor.jsonc` passes the check (exit 0).
 
     Closes the `if not manifest_path.is_file():` early-return
     branch — the check exits silently when no manifest
     exists.
     """
-    result = subprocess.run(
-        [sys.executable, str(_VENDOR_MANIFEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"vendor_manifest should accept missing manifest with exit 0; "

@@ -3,15 +3,30 @@
 The reconcile engine runs in-process against canned-response contexts
 (sharing the same one-member-manifest fixture shape the conformance
 tests use); the CLI entry point is exercised across its precondition /
-unresolved / success branches, plus one `python -m` subprocess
-invocation for the `__main__` guard (missing --repo → argparse usage
-error).
+unresolved / success branches, including the argparse usage error
+raised when `--repo` is omitted.
+
+That last case previously ran as a `python -m` subprocess. It is now
+driven IN-PROCESS (`monkeypatch.setattr(sys, "argv", ...)` + `capsys` +
+`rc = main()`): no `COVERAGE_PROCESS_START`-instrumented child and no
+`.coverage.*` race under the parallel dispatcher. `argparse` terminates
+the interpreter on a usage error, so `SystemExit` is caught and
+translated back into the identical int the child's exit code carried;
+the assertion targets are unchanged — exit code 2 plus the `--repo`
+mention on stderr, now read off `capsys`.
+
+Branch parity with the retired spawn: the child reached `main()`'s
+argparse arm and nothing beyond it, and the in-process call drives that
+same arm. The one line the child reached that an in-process call cannot
+is `if __name__ == "__main__": raise SystemExit(main())`; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from typing import TYPE_CHECKING
 
@@ -328,12 +343,16 @@ def test_main_unresolved_rows_exit_four(*, monkeypatch: pytest.MonkeyPatch) -> N
     assert wire_fleet_member.main() == 4
 
 
-def test_module_invocation_without_repo_is_usage_error() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "livespec_dev_tooling.fleet.wire_fleet_member"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 2
-    assert "--repo" in result.stderr
+def test_main_without_repo_is_usage_error(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["wire-fleet-member"])
+    try:
+        rc = wire_fleet_member.main()
+    except SystemExit as terminated:
+        # `argparse` terminates the interpreter itself on a usage error. In
+        # the retired child that became the process exit code; in-process it
+        # arrives here, so it is translated back into the identical int.
+        rc = 0 if terminated.code is None else int(terminated.code)
+    assert rc == 2
+    assert "--repo" in capsys.readouterr().err

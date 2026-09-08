@@ -6,13 +6,35 @@ test module under `tests/livespec/parse/` and `tests/livespec/
 validate/` declares at least one `@given(...)`-decorated test
 function. Hypothesis property-based testing is the canonical
 PBT mechanism for pure layers.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The seven call sites
+spawned identically, so they now share one `_run_check` helper; `main()`
+reads `Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly
+as the child's `cwd=` argument did, and the assertion targets are
+unchanged — the int exit code plus the offending-path diagnostic, now
+read off `capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the missing-`@given` offender, the `@given`-present pass, the
+configured `pure_trees` arms, the first-matching and no-matching
+`mirror_pairings` resolutions, and the config-parse failure exit. The
+two lines the child process reached that an in-process call cannot are
+the module's vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -27,7 +49,46 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PBT_COVERAGE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "pbt_coverage_pure_modules.py"
 
 
-def test_pbt_coverage_rejects_parse_test_without_given_decorator(*, tmp_path: Path) -> None:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "pbt_coverage_pure_modules_under_test", str(_PBT_COVERAGE)
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_pbt_coverage_rejects_parse_test_without_given_decorator(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `tests/livespec/parse/test_foo.py` without `@given(...)` fails the check."""
     test_dir = tmp_path / "tests" / "livespec" / "parse"
     test_dir.mkdir(parents=True)
@@ -43,13 +104,7 @@ def test_pbt_coverage_rejects_parse_test_without_given_decorator(*, tmp_path: Pa
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PBT_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"pbt_coverage should reject parse-layer test without @given; "
@@ -63,7 +118,9 @@ def test_pbt_coverage_rejects_parse_test_without_given_decorator(*, tmp_path: Pa
     )
 
 
-def test_pbt_coverage_accepts_parse_test_with_given_decorator(*, tmp_path: Path) -> None:
+def test_pbt_coverage_accepts_parse_test_with_given_decorator(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `tests/livespec/parse/test_foo.py` WITH a `@given(...)`-decorated function passes."""
     test_dir = tmp_path / "tests" / "livespec" / "parse"
     test_dir.mkdir(parents=True)
@@ -83,13 +140,7 @@ def test_pbt_coverage_accepts_parse_test_with_given_decorator(*, tmp_path: Path)
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PBT_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"pbt_coverage should accept parse-layer test with @given; "
@@ -98,7 +149,9 @@ def test_pbt_coverage_accepts_parse_test_with_given_decorator(*, tmp_path: Path)
     )
 
 
-def test_pbt_coverage_accepts_validate_test_with_given_decorator(*, tmp_path: Path) -> None:
+def test_pbt_coverage_accepts_validate_test_with_given_decorator(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `tests/livespec/validate/test_foo.py` WITH a `@given(...)` passes.
 
     Fixture exercises additional decorator-shape branches:
@@ -136,13 +189,7 @@ def test_pbt_coverage_accepts_validate_test_with_given_decorator(*, tmp_path: Pa
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PBT_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"pbt_coverage should accept validate-layer test with @given; "
@@ -153,6 +200,8 @@ def test_pbt_coverage_accepts_validate_test_with_given_decorator(*, tmp_path: Pa
 def test_pbt_coverage_uses_first_matching_configured_mirror_pairing(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[tool.livespec_dev_tooling]\n"
@@ -173,13 +222,7 @@ def test_pbt_coverage_uses_first_matching_configured_mirror_pairing(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PBT_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0
     assert "tests/consumer_pkg/parse/test_parser.py" in result.stdout + result.stderr
@@ -188,6 +231,8 @@ def test_pbt_coverage_uses_first_matching_configured_mirror_pairing(
 def test_pbt_coverage_falls_back_when_no_mirror_pairing_matches(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[tool.livespec_dev_tooling]\n"
@@ -206,45 +251,31 @@ def test_pbt_coverage_falls_back_when_no_mirror_pairing_matches(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PBT_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0
     assert "tests/consumer_pkg/parse/test_parser.py" in result.stdout + result.stderr
 
 
-def test_pbt_coverage_noops_without_configured_pure_trees(*, tmp_path: Path) -> None:
+def test_pbt_coverage_noops_without_configured_pure_trees(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     (tmp_path / "pyproject.toml").write_text(
         '[tool.livespec_dev_tooling]\npure_trees = { not_applicable = "consumer has no pure tree" }\n',
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_PBT_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
     assert "pure_trees" in result.stdout + result.stderr
 
 
-def test_pbt_coverage_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+def test_pbt_coverage_rejects_declared_tree_with_no_python(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A declared pure test tree containing no Python files is a misdeclaration."""
-    result = subprocess.run(
-        [sys.executable, str(_PBT_COVERAGE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 1, (
         f"pbt_coverage should reject a declared tree with no Python files; "
