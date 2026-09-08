@@ -131,6 +131,12 @@ log "7b. Copy the delegated-gate submitter's RBAC manifest (R4.S2, y8em)"
 # from the token Secret it requests. The gates NAMESPACE is not here: it ships
 # in kueue/cluster-queue-gates.yaml, copied by step 4's cluster-queue-* glob.
 install -m 0644 "${GATES_SRC}/gates-rbac.yaml" "${LIB_DIR}/gates/gates-rbac.yaml"
+# The gate Job TEMPLATE and its renderer (R4.S5, sk8f). Shipped, never applied:
+# the template carries placeholder markers and is not a valid manifest until
+# render-gate-job.sh substitutes them, so converge must NOT `kubectl apply` it.
+# The gate client renders and submits; converge only puts them on the host.
+install -m 0644 "${GATES_SRC}/gate-job-template.yaml" "${LIB_DIR}/gates/gate-job-template.yaml"
+install -m 0755 "${GATES_SRC}/render-gate-job.sh" "${LIB_DIR}/gates/render-gate-job.sh"
 
 # ---------------------------------------------------------------------------
 log "8. Install the systemd unit"
