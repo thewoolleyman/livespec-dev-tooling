@@ -84,9 +84,24 @@ only when their topic is active:
 
 The open backlog of this repository is owned by the plan
 `dev-tooling-backlog-drain` (`plan/dev-tooling-backlog-drain/`, ledger epic in
-`associated_work_item_id`). Read its charter,
+`associated_work_item_id`). **The drive mechanism is the `drain-backlog`
+skill**, read by absolute path:
+
+```text
+/data/projects/livespec-overseer/.claude/skills/drain-backlog/SKILL.md
+```
+
+Read that skill in full, then this plan's charter,
 `plan/dev-tooling-backlog-drain/research/001-charter-dev-tooling-backlog-drain.md`,
-before touching any work item here. The rules that matter most:
+which is now only the DELTA — what is true of this drive and nothing else. The
+skill owns preconditions, the snapshot and its tiers, triage batching and the
+sorting rule, factory-only execution and the exemption enum, the failed-run
+decision, the detached probe-gated engine, the loop, what may be filed,
+handoffs, and the evidence gotchas. Do not restate any of that here or there.
+
+Four rules are repeated in this always-load file on purpose, because a rule
+that lives only in a document you must remember to open is the layer that
+fails alone:
 
 - **Do not invoke `/livespec-overseer:foreman` for this repository**, and do
   not start a tmux worker session for a work item. The console repo's
@@ -94,41 +109,27 @@ before touching any work item here. The rules that matter most:
   as a transport (its decisions D1, D4, D5); this repo applies that now. The
   resident foreman role, pane rosters, `foreman-act` proposals, and escalation
   JSON files are not used here.
-- **Everything executes through the factory.** The only execution verbs for a
-  work item are `drive --action impl:<id>` and the dispatcher loop. Hand work
-  through worktree → PR → merge is allowed only for an item labelled
-  `factory-exempt:infra-in-person` or `factory-exempt:factory-path-defect`.
-- **The scope is frozen.** The plan's snapshot lists every item it owns. A new
-  item may be filed only as a child of a snapshot epic, as a
-  `discovered-from:<snapshot-id>` dependency, or as a consolidation closing two
-  or more snapshot items. Anything else goes to a `PARKING LOT` comment on the
-  plan epic, not to the ledger.
-- **Resume from the ledger, not from chat, and resume INTO THE LOOP.** To
-  pick the drive up in a fresh session run
+- **The scope is the plan's frozen 258-item snapshot**,
+  `plan/dev-tooling-backlog-drain/research/002-snapshot-2026-09-06.json`, and
+  NOT `tmp/drain-backlog/snapshot.json` — that file exists in this repo too
+  (210 ids, a later freeze) because another actor runs the same skill against
+  this tenant. Do not read one for the other. New items are admitted only under
+  SKILL.md §6; anything else is a `PARKING LOT` comment on the plan epic.
+- **Resume from the ledger, and resume INTO THE LOOP.** Run
   `/livespec-orchestrator-beads-fabro:plan dev-tooling-backlog-drain`, take the
-  epic's typed `next_action`, and then, in the SAME turn, invoke `/loop` with
-  no interval so the session self-paces charter §8's three-source tick: the
-  dispatch journal's outcome events, `needs-attention`, and the open PRs. A
+  epic's typed `next_action`, and in the SAME turn invoke `/loop` with no
+  interval (SKILL.md §5 carries the tick and the verbatim loop prompt). A
   session that has resumed this plan and is not looping is STALLED BY
-  DEFINITION, whatever its last message says: it has no watcher, so nothing it
-  dispatched can reach it and nothing ripe can wake it. Recorded 2026-09-06
-  after the first resume did exactly that (wrote a handoff and parked) and the
-  maintainer had to notice by hand.
-- **The engine does not live in the session.** Factory runs are launched
-  through a DETACHED `dispatcher.py loop` (`setsid nohup`, journal under
-  `tmp/`) so they outlive the LLM session that started them; the session's
-  loop only reads outcomes, re-dispatches, and works the valves. Never make a
-  fabro run's survival depend on the chat session being alive.
-- **Gate the engine on the probe, never on a claimed reset time.** The only
-  admissible reasons to hold a launch are the credential probe
-  (`dispatcher.py claude-cred-status --json`, `condition: usable`) and master
-  CI. A "resets at HH:MMZ" in a handoff or a 429 body is a claim, not a
-  measurement: the dispatcher's own exhaustion hold is a bounded 15 minutes,
-  and the orchestrator measured the provider's stated instant to be wrong by
-  orders of magnitude. Run the probe before reading any time claim, and never
-  write a "sleep until HH:MM" resumer. Recorded 2026-09-06 after three clock
-  resumers held an idle factory for two hours with a usable credential and no
-  exhaustion record, and the maintainer had to notice by hand.
+  DEFINITION: it has no watcher, so nothing it dispatched can reach it.
+  Recorded 2026-09-06 after the first resume wrote a handoff and parked, and
+  the maintainer had to notice by hand.
+- **Engines are DETACHED and gated on the measured probe, never on a clock.**
+  Launch through `setsid nohup` so a run outlives the session, and hold a
+  launch only for the credential probe (`dispatcher.py claude-cred-status
+  --json`, `condition: usable`) or master CI. A "resets at HH:MMZ" in a handoff
+  or a 429 body is a claim, not a measurement; never write a "sleep until
+  HH:MM" resumer. Recorded 2026-09-06 after three clock resumers held an idle
+  factory for two hours with a usable credential and no exhaustion record.
 
 ## Decision authority — when to ask, proceed, or self-resolve
 

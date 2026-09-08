@@ -22,29 +22,66 @@ orchestrator primitive that already exists. This plan applies that decision to
 one repository's backlog without waiting for the console to ship. Nothing here
 is a new substrate; it is a discipline over primitives that exist today.
 
-## 1. The forest is frozen
+## 0. The mechanism is the drain-backlog skill — this charter is the delta
+
+**Read the skill first, in full, then this file.** The drive mechanism of this
+plan is the `drain-backlog` skill, at the absolute path:
+
+```text
+/data/projects/livespec-overseer/.claude/skills/drain-backlog/SKILL.md
+```
+
+That skill was generalised FROM this plan's first two days and is now the
+authority for everything it covers. It owns, and this charter no longer
+restates: the preconditions to measure on every resume (§1), the snapshot and
+its exit gate and the four tiers (§2), the triage batches, sorting rule and
+ruling record (§3), factory-only execution with a closed exemption enum, the
+four-way response to a failed run, and the detached probe-gated engine (§4),
+the loop without panes and its three sources (§5), what may be filed during a
+drain (§6), handoffs with a typed next action and the resume protocol (§7),
+and the evidence-discipline gotchas (§8).
+
+Folded in by the maintainer's direction of 2026-09-08T14:50Z, so this plan is
+a ONE-STOP: the skill supplies the mechanism, this charter supplies only what
+is true of THIS drive and nothing else. Where the two disagree, the skill wins
+on mechanism and this charter wins on scope.
+
+### How this plan binds to the skill's state
+
+The skill is run in its **plan-epic mode** (SKILL.md §0): the operator names
+epic `livespec-dev-tooling-kcoslm`, so every ruling is a scope event and every
+session end a handoff **on that epic**, not in `tmp/drain-backlog/`. The skill
+does not and cannot select that epic; this section is the binding.
+
+Two compatibility facts, both measured 2026-09-08, that a session running the
+skill here must not confuse:
+
+- **This plan's frozen scope is `research/002-snapshot-2026-09-06.json`** — 258
+  open ids at 2026-09-06T07:45Z, committed — and NOT
+  `tmp/drain-backlog/snapshot.json`. That file also exists in this repo (210
+  frozen ids, taken 2026-09-06T14:34:43Z) because a SEPARATE actor has run the
+  skill against this tenant. It is not this plan's scope and must never be
+  treated as it: it is a later, smaller freeze. Run the skill's
+  `snapshot.py --status` only against a copy of research/002, or read progress
+  from the ledger directly.
+- `tmp/drain-backlog/` in this repo therefore holds another actor's engine
+  logs and snapshots. `tmp/overseer/`, `.overseer-state` and `.livespec.jsonc`
+  are read by this drive as they stand; this plan changes none of them.
+
+## 1. The forest is frozen — this plan's scope, and only this
 
 `research/002-snapshot-2026-09-06.json` lists every open work item in the
 `livespec-dev-tooling` tenant at the moment this plan opened: 258 items, by id,
 status, type, priority and title. That list is this plan's scope, whole and
-fixed.
-
-- **Exit gate.** The plan is complete when every id in the snapshot is
-  `closed`, or carries a recorded disposition (a scope event on this epic
-  naming the id and one of the sorting outcomes in §5).
-- **Nothing filed after the snapshot extends the plan.** A new item is either
-  admitted under §4 or it is out of scope. Inventing an item is not progress
-  on anything this plan measures.
-- **Status is never written here.** Progress is read fresh from the ledger.
-  The snapshot is an id list, not a status board; a status column in a file is
-  a shadow ledger (the console program board's rule).
+fixed. The skill's §2 exit-gate and no-shadow-ledger rules apply to it
+verbatim; the only thing this section adds is WHICH file is frozen.
 
 ## 2. Roles — there is no foreman
 
 | Role | Who | What it does |
 |---|---|---|
 | Engine | the orchestrator's dispatcher loop | Takes the `ready` set into fabro runs under `wip_cap`, accepts on green under `acceptance_mode: ai-only`. Exists; needs no seat. |
-| Interactive session | one LLM session opened with `discuss-work-item dev-tooling-backlog-drain` | The D4 role from the console charter: triage, rulings with the maintainer, the thin hand-driven set, `needs-attention` reads, re-dispatch, handoffs on this epic. |
+| Interactive session | one LLM session resumed on this epic | The D4 role from the console charter: triage, rulings with the maintainer, the thin hand-driven set, `needs-attention` reads, re-dispatch, handoffs on this epic. |
 | Maintainer | the human | Rules on triage batches; answers the human-gated valves; restarts the interactive session when it dies. |
 
 Dropped for this repository, by reference to console D5: the `foreman` skill
@@ -57,144 +94,48 @@ The interactive session resumes from the ledger alone: this epic's typed
 `next_action`, its handoff and scope-event comments, and the `context`
 envelope. It needs no chat history and no tmux state.
 
-## 3. Execution rule — everything goes through the factory
+## 3. Where the skill is WIDER than this charter was
 
-The only execution verbs the interactive session may use for a work item are
-`drive --action impl:<id>` and the dispatcher loop. A tmux worker session is
-never started for a work item.
+The skill's rules superseded three of this charter's, each in the direction of
+MORE permission. Recorded rather than silently adopted, because a drive that
+inherits a wider rule without noticing has changed its own scope:
 
-**Exemption is a closed enum.** An item may be worked by hand, through the
-ordinary worktree → PR → merge protocol, only when it is one of:
+- **The exemption enum gains a third value.** This charter admitted only
+  `factory-exempt:infra-in-person` and `factory-exempt:factory-path-defect`.
+  SKILL.md §4 adds `factory-exempt:workflow-only` — a diff entirely under
+  `.github/workflows/`, which the App token cannot push, retiring when it can.
+  Adopted: it names a real mechanical limit this repo hits, and it is the same
+  label carrier `factory-bypass-audit --allow-label` already reads.
+- **The disposition table gains `refer` and `hold`.** This drive had already
+  been using both by ruling (cross-tenant referrals; the four items held on the
+  console overseer-freeze scope event). The skill makes them first-class.
+- **`superseded-by-transport` is the skill's `superseded`.** Batch 1's closures
+  carry the longer reason string; later batches use the skill's name. Same
+  disposition, and no closure is reopened over the rename.
 
-- `infra-in-person` — the change is a host, secret, registrar, or billing act
-  that no sandbox can perform (console D4 item 1).
-- `factory-path-defect` — the item IS a defect in the path a factory run takes
-  in this repo (the commit hooks, the gate runner, the sandbox image, the
-  dispatcher's typed inputs), so a factory run cannot fix it (console D4 item
-  3: "the factory cannot fix the thing that blocks the factory").
-
-The classification is made at triage time and recorded in the scope event, not
-improvised when a run fails. The default is dispatchable. An exempt item
-carries a ledger label naming its reason, `factory-exempt:infra-in-person` or
-`factory-exempt:factory-path-defect`, and nothing else counts as an exemption.
-A label is the carrier because the orchestrator's `factory-bypass-audit`
-already takes `--allow-label` as its exemption policy, so the same label that
-authorizes the hand-worked PR is the one the gate in §7 reads. (The
-dispatcher's `sandbox_exempt_marker`, `livespec.sandboxExempt`, is a different
-thing: a git-config key the commit-refuse hook reads inside the sandbox. It is
-not an item-level marker and is not used here.)
-
-**A failed run is re-dispatched or groomed, never hand-fixed.** When a factory
-run fails on a dispatchable item, the response is one of: re-dispatch (when
-the journal outcome is `transient_infra` or the failure is in the run's own
-environment), `groom` (when the item is oversized or non-converging), or a
-discovered-during child under §4 (when the failure exposes a factory-path
-defect). Hand-fixing a dispatchable item because "it's quicker" is the leak
-this rule exists to close.
-
-## 4. Anti-yak-shaving — what may be filed
-
-A new work item may be created in this tenant during this plan only when it
-is one of:
-
-1. A **child of an open epic** that is itself in the snapshot.
-2. A **discovered-during** defect that blocks a snapshot item, filed with
-   `--deps discovered-from:<snapshot-id>` so the provenance is a ledger edge,
-   not a sentence.
-3. A **consolidation** that closes two or more snapshot items into one.
-4. One of the **two mechanical children this plan files for itself** (§7).
-
-Anything else is one line in a `PARKING LOT` comment on this epic and is not
-filed. A parked idea is reviewed only when the snapshot is drained or when a
-snapshot item turns out to depend on it.
-
-## 5. Triage — the sorting rule and the batches
-
-Every snapshot item receives exactly one disposition from the console program
-board's sorting rule:
-
-- **keep** — dispatchable as written; enters the ready set in priority order.
-- **re-scope** — the intent survives but the shape does not; the item is
-  rewritten (title, acceptance) before dispatch, or handed to `groom`.
-- **superseded-by-transport** — the item exists only to serve the tmux /
-  overseer transport that console D1 and D5 retire; close with that reason.
-- **consolidate** — the item duplicates or fragments another; close into the
-  survivor and record the survivor id.
-- **close** — the item is cruft: no longer true, already landed, or not worth
-  its own cost; close with the reason.
-
-Dispositions are presented to the maintainer in batches grouped by class, not
-one item at a time, and recorded as scope events on this epic once ruled. The
-closures the ruling authorizes are executed against the ledger with the scope
-event named in the close reason. A disposition the interactive session is
-confident about is proposed as decided; only genuine doubt is put as a
-question, and one question per turn.
-
-## 6. Ordering
-
-After triage, work is dispatched in this order, each tier drained before the
-next is opened except where a dependency edge forces otherwise:
-
-1. **Factory-path defects** — anything that makes a factory run in this repo
-   fail for reasons unrelated to the item it carries: the Red-Green-Replay
-   ritual under pre-commit gates exceeding the implement turn, the green amend
-   that cannot commit, the conformance check that intermittently reds every
-   PR, the Codex adapter config rejection. These are the `factory-path-defect`
-   exemptions and are worked first, by hand where the factory cannot.
-2. **Enforcement-suite correctness** — checks that pass vacuously, pass on a
-   half-pair, or fail on a true positive. A false green here poisons every
-   later tier's evidence.
-3. **The P1 epics and their children.**
-4. **The long tail** in priority order.
-
-Cross-tenant items — livespec core contract questions, fleet fan-out legs
-owned by another repository — follow the console plan's never-work-around
-rule: file or link the item in the owning tenant, record the path as a
-comment here, and do not substitute a dev-tooling-side workaround.
-
-## 7. Durability — three layers, because prose alone has failed before
+## 4. Durability — the two mechanical children, still unfiled
 
 The console plan's `never-work-around-upstream-dependencies` note measured
-that a rule written in three places was ignored anyway. So:
+that a rule written in three places was ignored anyway. The skill (§0, §3, §7)
+now carries the ledger and handoff layers. What remains specific to this plan
+is the mechanical layer: two children, and only two, filed by this plan for
+itself and built through the factory like anything else.
 
-- **Ledger.** Every ruling is a scope event; every session end is a handoff
-  with a typed `next_action`; every closure names its scope event. A fresh
-  session recovers the whole state from `context`.
-- **Repo prose.** This repository's `CLAUDE.md` names this plan as the owner
-  of the backlog, says the `foreman` skill is not to be invoked here, and
-  gives the one command that resumes the drive. This is the reminder layer.
-  It is the layer that fails alone.
-- **Mechanical.** Two children, and only two, filed by this plan for itself
-  and built through the factory like anything else:
-  1. **Item-provenance ratchet.** A check over the ledger: any item created
-     after the snapshot instant must have a `parent` in the snapshot or a
-     `discovered-from` edge to a snapshot item, or the check is red. This
-     repo already runs a non-increasing ratchet on its lines-of-code soft
-     band; the pattern is native.
-  2. **Factory-bypass gate.** The orchestrator already ships
-     `factory-bypass-audit`, a report-only surface that flags merged PRs
-     changing product `.py` outside a factory run. This child consumes it as
-     a red gate in this repo, with the exemption enum of §3 as its allow
-     policy. It is a consume leg, not a build.
+1. **Item-provenance ratchet.** A check over the ledger: any item created
+   after the snapshot instant must have a `parent` in the snapshot or a
+   `discovered-from` edge to a snapshot item, or the check is red. This repo
+   already runs a non-increasing ratchet on its lines-of-code soft band; the
+   pattern is native.
+2. **Factory-bypass gate.** The orchestrator already ships
+   `factory-bypass-audit`, a report-only surface that flags merged PRs
+   changing product `.py` outside a factory run. This child consumes it as a
+   red gate in this repo, with the exemption enum of SKILL.md §4 as its allow
+   policy. It is a consume leg, not a build.
 
-Until both land, the §3 and §4 rules are prose only, and every handoff says
-so.
+**Until both land, the factory-only and anti-yak-shaving rules are prose only,
+and every handoff says so.** Neither is filed as of 2026-09-08.
 
-## 8. The loop without panes
-
-The interactive session re-checks three sources on a self-paced wakeup: the
-dispatch journal's outcome events, `needs-attention`, and the open pull
-requests. It acts on what is ripe and writes nothing when nothing changed.
-Healthy waits are silent. A tick report lists what changed, by id, and does
-not re-argue standing items.
-
-What survives from the foreman contract is its evidence discipline only:
-verify by the authoritative source (`bd show --json`, `gh pr view`, the
-journal's `outcome` event), never by a peer's claim; carry a claim's hedge or
-re-measure it; route before escalating; state capacity only from a capacity
-verdict, and say "unknown" when there is none.
-
-## 9. Known limits
+## 5. Known limits
 
 - Nothing here keeps the interactive session alive across a host restart, a
   usage-limit kill, or a context wind-down. The state survives in the ledger;
@@ -202,6 +143,26 @@ verdict, and say "unknown" when there is none.
   trade the console redesign makes.
 - The factory's sandbox quota and implement-turn ceiling will time out
   gate-heavy items until tier 1 lands. That is why tier 1 is first.
-- The `factory-bypass-audit` allow-label policy is named here from reading
-  its source on 2026-09-06 and has not yet been exercised in this repo. It is
+- The `factory-bypass-audit` allow-label policy is named here from reading its
+  source on 2026-09-06 and has not yet been exercised in this repo. It is
   hedged until the first use measures it.
+- The skill lives in ANOTHER repository's checkout. A path reference is not a
+  distribution mechanism: if `/data/projects/livespec-overseer` is absent, this
+  plan has no mechanism document. `overseer-exz7` is the item that is making
+  the skill plan-completing; whether the skill should also be distributed as a
+  plugin skill rather than read by path is not settled here.
+
+## 6. What this charter's earlier revision said, and where it went
+
+The triage-batch documents `003`–`011` cite this charter by its PRE-FOLD
+section numbers. They are dated records and are not rewritten; read them
+against this map. Old §2 (roles) survives unchanged as §2 above, and old §9
+(known limits) as §5 above. For the rest, superseded on 2026-09-08 by the fold
+in §0: old §1 →
+SKILL.md §2 (the frozen-file binding survives as §1 above); old §3 → SKILL.md
+§4; old §4 → SKILL.md §6; old §5 → SKILL.md §3; old §6 → SKILL.md §2 tiers plus
+§6's cross-tenant rule; old §7's ledger and prose layers → SKILL.md §0/§3/§7,
+its mechanical layer survives as §4 above; old §8 → SKILL.md §5, and its
+2026-09-06 amendment (gate the engine on the measured credential probe and
+master CI, never on a claimed reset time — `livespec-dev-tooling-kcoslm.1`,
+closed) is now SKILL.md §1 and §4.
