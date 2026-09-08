@@ -7,17 +7,28 @@ cache-telemetry endpoint every job pod posts to was the literal cni0 gateway
 of node 0. Both are silent-wrong-answer shapes once a second node joins: an
 unpinned pod mounts an EMPTY directory and reports Ready, and a pod on node 1
 posts spans to an address that does not exist there at all (flannel gives each
-node its own /24, so node 1's gateway is 10.42.1.1) — into the emitter's
-bounded, fail-soft, deliberately silent timeout.
+node its own /24) — into the emitter's bounded, fail-soft, deliberately silent
+timeout.
 
-Neither failure is observable from inside the cluster once it happens, and
-neither is reachable on the single-node pool that exists now, so these tests
-are the only thing standing between the manifests and the regression. They
-read the REAL manifests and scripts, and they RUN each converge script's
+The endpoint's FIRST repair, a `status.hostIP` fieldRef, was silently wrong in
+the same shape and on the node that already existed: the node's LAN address is
+not where the keyless `otlp/pods` receiver listens, and that receiver's cni0-
+only bind IS its access control, so widening it is not available as a fix.
+Measured on `poweredge-xubuntu` 2026-09-07: a POST to the cni0 gateway
+returned 200 and a POST to the node's InternalIP was refused, for a month, with
+no error and no rows. So the endpoint is now derived IN THE POD from the pod's
+own default route — which IS its node's cni0 bridge — and the tests below both
+pin that shape in the manifest and RUN the derivation.
+
+None of these failures is observable from inside the cluster once it happens,
+and one of them was not reachable on the single-node pool that exists now, so
+these tests are the only thing standing between the manifests and the
+regression. They read the REAL manifests and scripts, they RUN the emitter's
+derivation against a stubbed routing table, and they RUN each converge script's
 `--dry-run` (which is why the dry-run must touch nothing: this suite is not
 the node and has no cluster).
 
-Plan: livespec `k3s-on-gmktec-for-vps-usage`, carrier R3.
+Plan: livespec `k3s-on-gmktec-for-vps-usage`, carriers R3 and R7.
 """
 
 from __future__ import annotations
@@ -45,6 +56,7 @@ _HOSTPATH_SINGLETONS = (
     _PHASE2 / "warm-cache" / "warm-cache-cronjob.yaml",
 )
 _HOOK_TEMPLATE = _PHASE2 / "arc" / "hook-pod-template.yaml"
+_EMITTER = _PHASE2 / "cache-telemetry" / "ci-cache-span.sh"
 _PROVISION = _K3S / "provision-k3s.sh"
 _BOOT_CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 
@@ -71,16 +83,21 @@ _PINNED = re.compile(
     re.MULTILINE,
 )
 
-# The downward-API declaration and the two endpoints derived from it.
-_HOST_IP_FIELD_REF = re.compile(
-    r"- name: CI_RUNNER_NODE_HOST_IP\n"
-    r" +valueFrom:\n"
-    r" +fieldRef:\n"
-    r" +fieldPath: status\.hostIP$",
-    re.MULTILINE,
+# The in-pod derivation: postStart publishes the endpoint, the emitter reads it
+# back, and the cargo shim — which can read nothing but an env var — reaches it
+# through a hosts alias whose NAME is the same on every node.
+_PUBLISH_CALL = "/opt/ci-runner/bin/ci-cache-span publish-endpoint"
+_OTLP_ALIAS = "otlp-collector.ci-runner.internal"
+_SANDBOX_ENDPOINT = (
+    f"- name: LIVESPEC_SANDBOX_OTEL_ENDPOINT\n          value: http://{_OTLP_ALIAS}:4319\n"
 )
-_DERIVED_ENDPOINT = "value: http://$(CI_RUNNER_NODE_HOST_IP):4319"
-_ENDPOINT_VARS = ("CI_CACHE_OTLP_ENDPOINT", "LIVESPEC_SANDBOX_OTEL_ENDPOINT")
+# The address that is NOT the pod's, and the declaration that resolved to it.
+_RETIRED_HOST_IP_TOKENS = ("status.hostIP", "CI_RUNNER_NODE_HOST_IP")
+# poweredge-xubuntu's cni0 gateway, and therefore what a pod's default route
+# reads there. A LITERAL here and a DERIVATION in the pool: the acceptance
+# criterion names the measured address, and this suite is the only place that
+# can hold the pool to it without a cluster.
+_STUB_GATEWAY = "10.42.0.1"
 
 # A whole nodeSelector block: its keys are the lines indented DEEPER than the
 # `nodeSelector:` line itself, which is what stops the match running on into
@@ -150,26 +167,125 @@ def test_provision_and_the_boot_converge_set_the_label_idempotently() -> None:
         )
 
 
-def test_the_cache_telemetry_endpoint_is_derived_per_node() -> None:
-    """Both endpoints come from a `status.hostIP` fieldRef declared before them."""
+def test_the_cache_telemetry_endpoint_is_derived_in_the_pod_not_from_the_host_ip() -> None:
+    """No `status.hostIP` anywhere; postStart publishes, and the shim gets a name."""
     text = _read(path=_HOOK_TEMPLATE)
-    field_ref = _HOST_IP_FIELD_REF.search(text)
-    assert field_ref is not None, (
-        "hook-pod-template.yaml must declare CI_RUNNER_NODE_HOST_IP from a "
-        "status.hostIP fieldRef"
+    # Comments are out of scope for the same reason markdown is below: the
+    # design record has to be able to name what it replaced, and a comment
+    # configures nothing.
+    declared = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    for token in _RETIRED_HOST_IP_TOKENS:
+        assert token not in declared, (
+            f"hook-pod-template.yaml still carries {token} — status.hostIP is "
+            "the node's LAN address, which the keyless otlp/pods receiver "
+            "deliberately does not bind, so every span posted there is refused"
+        )
+    assert "- name: CI_CACHE_OTLP_ENDPOINT\n" not in declared, (
+        "CI_CACHE_OTLP_ENDPOINT must NOT be set in the manifest: no value "
+        "expressible here is correct, and leaving it unset is what makes an "
+        "underivable endpoint a skip rather than a POST at a refused address"
     )
-    for name in _ENDPOINT_VARS:
-        declaration = f"- name: {name}\n"
-        assert declaration in text, f"hook-pod-template.yaml must set {name}"
-        at = text.index(declaration)
-        assert text[at:].startswith(f"{declaration}          {_DERIVED_ENDPOINT}\n"), (
-            f"{name} must be {_DERIVED_ENDPOINT!r} — a literal address is the "
-            "wrong node's, or no node's, from a second node"
-        )
-        assert field_ref.start() < at, (
-            f"CI_RUNNER_NODE_HOST_IP must be declared BEFORE {name}: Kubernetes "
-            "expands $(VAR) only against env vars earlier in the same list"
-        )
+    assert _PUBLISH_CALL in text, (
+        f"postStart must call {_PUBLISH_CALL!r} — the derivation from the "
+        "pod's own default route is the endpoint's only source"
+    )
+    assert _SANDBOX_ENDPOINT in text, (
+        "LIVESPEC_SANDBOX_OTEL_ENDPOINT must name the hosts alias "
+        f"{_OTLP_ALIAS}: the cargo shim is baked into a pinned image and reads "
+        "an env var and nothing else, so the value is per-node by NAME"
+    )
+
+
+def _stub(*, bin_dir: Path, name: str, body: str) -> None:
+    """Write an executable `name` stub into `bin_dir`, first on the emitter's PATH."""
+    path = bin_dir / name
+    _ = path.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _emit(
+    *, args: list[str], bin_dir: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """Run the REAL emitter with `bin_dir` shadowing `ip` (and `python3`) on PATH."""
+    return subprocess.run(
+        ["sh", str(_EMITTER), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=_REPO_ROOT,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": "/nonexistent", **env},
+    )
+
+
+def _derivation_fixture(*, tmp_path: Path, ip_body: str, route_table: str) -> dict[str, str]:
+    """A stubbed pod: a routing table, a hosts file, a state dir, a fake python3.
+
+    The `python3` stub is the SKIP oracle: the emitter reaches python only when
+    it has an endpoint to post to, so the sentinel's absence is proof that
+    emission was skipped rather than attempted and swallowed by the fail-soft
+    contract (which would look identical from the exit code alone).
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _stub(bin_dir=bin_dir, name="ip", body=ip_body)
+    _stub(
+        bin_dir=bin_dir,
+        name="python3",
+        body='printf "%s" "${CI_CACHE_OTLP_ENDPOINT:-}" > "${EMIT_SENTINEL}"',
+    )
+    _ = (tmp_path / "route").write_text(route_table, encoding="utf-8")
+    _ = (tmp_path / "hosts").write_text("127.0.0.1 localhost\n", encoding="utf-8")
+    return {
+        "CI_CACHE_STATE_DIR": str(tmp_path / "state"),
+        "CI_CACHE_HOSTS_FILE": str(tmp_path / "hosts"),
+        "CI_CACHE_PROC_NET_ROUTE": str(tmp_path / "route"),
+        "EMIT_SENTINEL": str(tmp_path / "emitted"),
+    }
+
+
+def test_the_endpoint_is_derived_from_the_pods_own_default_gateway(*, tmp_path: Path) -> None:
+    """`publish-endpoint` reads the default route and both consumers get it."""
+    env = _derivation_fixture(
+        tmp_path=tmp_path,
+        ip_body=f'echo "default via {_STUB_GATEWAY} dev eth0"',
+        route_table="Iface\tDestination\tGateway\n",
+    )
+    bin_dir = tmp_path / "bin"
+    published = _emit(args=["publish-endpoint"], bin_dir=bin_dir, env=env)
+    assert published.returncode == 0, published.stderr
+    expected = f"http://{_STUB_GATEWAY}:4319"
+    assert published.stdout.strip() == expected
+    assert (tmp_path / "state" / "otlp_endpoint").read_text(encoding="utf-8") == expected
+    assert f"{_STUB_GATEWAY} {_OTLP_ALIAS}\n" in (tmp_path / "hosts").read_text(encoding="utf-8"), (
+        "the hosts alias is how the baked cargo shim — which reads an env var "
+        "and nothing else — reaches its own node's collector"
+    )
+    # And the emitter posts THERE, with no endpoint in its environment at all.
+    ended = _emit(args=["job-end"], bin_dir=bin_dir, env=env)
+    assert ended.returncode == 0, ended.stderr
+    assert (tmp_path / "emitted").read_text(encoding="utf-8") == expected
+
+
+def test_emission_is_skipped_not_failed_when_there_is_no_default_route(*, tmp_path: Path) -> None:
+    """No route to derive from: nothing published, nothing posted, exit 0."""
+    env = _derivation_fixture(
+        tmp_path=tmp_path,
+        ip_body="exit 0",
+        route_table="Iface\tDestination\tGateway\neth0\t0A2A0000\t00000000\n",
+    )
+    bin_dir = tmp_path / "bin"
+    published = _emit(args=["publish-endpoint"], bin_dir=bin_dir, env=env)
+    assert published.returncode == 0, published.stderr
+    assert published.stdout == ""
+    assert not (tmp_path / "state" / "otlp_endpoint").exists()
+    assert _OTLP_ALIAS not in (tmp_path / "hosts").read_text(encoding="utf-8")
+    ended = _emit(args=["job-end"], bin_dir=bin_dir, env=env)
+    assert ended.returncode == 0, ended.stderr
+    assert not (tmp_path / "emitted").exists(), (
+        "the emitter must SKIP when no endpoint was derived, not POST into a "
+        "refused address and swallow the failure — the silent-loss shape this "
+        "whole derivation exists to end"
+    )
 
 
 def test_no_manifest_or_script_under_ci_runner_carries_the_retired_gateway() -> None:
