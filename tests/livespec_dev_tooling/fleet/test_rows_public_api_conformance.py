@@ -501,3 +501,70 @@ def test_a_sibling_is_never_read_from_the_local_checkout(*, tmp_path: Path) -> N
         f"consumed function; got {outcome!r}"
     )
     assert "pkg/contract.py::parse_manifest <- app:app/use.py" in outcome.message
+
+
+_FUNCTION_DELETED = "def other(*, text: str) -> str:\n    return text\n"
+
+
+def test_a_name_a_sibling_imports_that_the_member_no_longer_binds_is_a_finding() -> None:
+    """The 9s2j defect at the ROW: silence in the case that breaks hardest.
+
+    `lib` keeps `pkg/contract.py` and deletes `parse_manifest` from it, while
+    `app` still imports the name. The graph builds an edge only where an import
+    RESOLVES, so the edge vanished and the row reported NOTHING — an
+    `ImportError` in `app` at runtime, delivered as a pass.
+
+    This fixture is the true-positive proof: run against the pre-change code it
+    produces no finding at all, which is what the Red leg of this change
+    recorded.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _FUNCTION_DELETED},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+    )
+    assert isinstance(outcome, RowFinding), (
+        f"a sibling importing a name this member no longer binds is a BROKEN "
+        f"CONSUMER, not a clean member; got {outcome!r}"
+    )
+    assert "1 name(s) a sibling IMPORTS are NO LONGER BOUND here" in outcome.message
+    assert "pkg.contract::parse_manifest <- app:app/use.py" in outcome.message
+    assert "cross_repo_public_api omits" not in outcome.message
+    assert "STATIC BLIND SPOT" in outcome.message
+
+
+def test_a_present_but_undeclared_function_stays_the_declaration_gap_finding() -> None:
+    """The two outcomes must remain distinguishable in the row's own output.
+
+    Same consumer, same import — the only difference is that `lib` still DEFINES
+    the function. A row that reported the broken-consumer sentence here would
+    have collapsed a declaration gap into an ImportError claim.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_SOURCE},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+    )
+    assert isinstance(outcome, RowFinding)
+    assert "cross_repo_public_api omits 1 function(s)" in outcome.message
+    assert "NO LONGER BOUND" not in outcome.message
+
+
+def test_the_consuming_member_is_not_convicted_for_its_own_broken_import() -> None:
+    """The record grades the member whose files answered, not the one that read.
+
+    `app` is the consumer, so the finding belongs to `lib`; `app`'s own row must
+    stay clean or the fleet would report one defect twice, against both ends.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _FUNCTION_DELETED},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="app",
+    )
+    assert isinstance(outcome, RowPass)
