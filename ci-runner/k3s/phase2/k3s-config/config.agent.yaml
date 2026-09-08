@@ -5,7 +5,7 @@
 # is for the role that file serves.
 #
 # WHY THIS FILE EXISTS: what is ABSENT from it, and what happens when it is not.
-# ./config.yaml carries two SERVER-ONLY keys, and k3s-agent does not merely
+# ./config.yaml carries three SERVER-ONLY keys, and k3s-agent does not merely
 # ignore them —
 #
 #   disable: [local-storage]  names a PACKAGED COMPONENT, which only a server
@@ -24,6 +24,14 @@
 #   write-kubeconfig-mode     is the mode of the ADMIN kubeconfig, which only a
 #                             server writes. An agent has none, so the key names
 #                             a file that does not exist on this role.
+#   tls-san                   names subject alternative names for the API
+#                             SERVER's serving certificate. An agent serves no
+#                             API and issues no such certificate, so `--tls-san`
+#                             is not in its flag set either — the same fatal as
+#                             `disable`, by the same mechanism. Added to
+#                             ./config.yaml on 2026-09-08 to make the API server
+#                             reachable over the tailnet
+#                             (livespec-dev-tooling-vlku).
 #
 # The `local-storage.yaml.skip` marker ./install-k3s-config.sh writes on a
 # server is server-only for the same kind of reason: its directory is

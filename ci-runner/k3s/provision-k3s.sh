@@ -243,7 +243,7 @@ STEP_LABEL[kubeconfig-mode]="3. Make kubectl usable for the provisioning admin (
 
 STEP_AGENT_LABEL[k3s-install]="1. Install k3s ${K3S_VERSION} AGENT joining ${CFG[CLUSTER_JOIN_ADDRESS]} (idempotent — skip if already at this version)"
 
-STEP_SKIP[k3s-config]="phase2/k3s-config/config.yaml is the SERVER configuration — 'disable: local-storage' and 'write-kubeconfig-mode' are server-only keys. An agent takes no server-only config; its kubelet arguments arrive with the node-local runbook, phase2/install-node.sh."
+STEP_SKIP[k3s-config]="phase2/k3s-config/config.yaml is the SERVER configuration — 'disable: local-storage', 'write-kubeconfig-mode' and 'tls-san' are server-only keys. An agent takes no server-only config; its kubelet arguments arrive with the node-local runbook, phase2/install-node.sh."
 STEP_SKIP[helm]="helm is installed here for the reconstruct-on-boot converge (phase2/reconstruct/converge-ci-stack.sh), which applies cluster-scoped objects with the admin kubeconfig and is a step an agent skips."
 STEP_SKIP[node-ready]="reads the cluster through /etc/rancher/k3s/k3s.yaml, the admin kubeconfig an agent does not hold. The SERVER is where this node's registration becomes visible."
 STEP_SKIP[tier-label]="labels a node through the API with that same admin kubeconfig, and the label it sets marks the node whose disks the pool's hostPath singletons live on — which is the tier carrier, not every node that joins."
@@ -374,11 +374,27 @@ step_tier_label() {
 }
 
 step_kubeconfig_mode() {
-  # k3s.yaml is 0600 root:root by default. Widen to 0644 (contents are a
-  # cluster-local admin kubeconfig for a single-tenant homelab node with no
-  # externally-reachable API server; this is the documented k3s convention for
-  # non-root kubectl use, not a security relaxation of the runner containment
-  # model above, which governs job execution identity, not admin access).
+  # k3s.yaml is 0600 root:root by default. Widen to 0644 — the documented k3s
+  # convention for non-root kubectl use, not a security relaxation of the
+  # runner containment model above, which governs job execution identity, not
+  # admin access.
+  #
+  # THIS COMMENT USED TO REST THE WIDENING on the claim that nothing off this
+  # host could reach its API server. That premise is GONE as of 2026-09-07:
+  # phase2/k3s-config/config.yaml declares a `tls-san` carrying this node's
+  # tailnet name and tailnet address, so the API server IS reached from off
+  # this host — over the TAILNET, to TAILNET MEMBERS ONLY (the LAN address
+  # answers nothing off-LAN, and nothing is published to the public internet).
+  # The old claim must not be revived as the justification for this mode.
+  #
+  # 0644 nonetheless stands, on a different argument, weighed in full beside
+  # that `write-kubeconfig-mode` entry in phase2/k3s-config/config.yaml: the
+  # mode never defended against a local uid (127.0.0.1:6443 has always answered
+  # every local process, so a reader of this file already held cluster-admin),
+  # and the pool's root-free operator converge paths depend on it. Tightening
+  # is earned by first giving those readers a scoped, non-admin credential —
+  # the shape observability/ci-kueue-webhook-probe.sh already uses — not by a
+  # chmod here.
   chmod 0644 /etc/rancher/k3s/k3s.yaml
   printf 'k3s ready. export KUBECONFIG=/etc/rancher/k3s/k3s.yaml for kubectl/helm.\n'
 }
