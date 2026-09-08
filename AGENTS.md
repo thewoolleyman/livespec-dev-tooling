@@ -48,7 +48,22 @@ references, but it is not the picker row operators should expect.
 ## Progressive durable guidance
 
 This file carries the always-load instructions. Load the sibling guidance files
-only when their topic is active:
+only when their topic is active.
+
+**Match a trigger on the OBSERVABLE you are reading, not on your own framing of
+the task.** This index is the only thing standing between you and a file you
+need, and framing is its weak link: you will describe a task in your own words,
+and those words may not appear below. Before any decision that rests on a
+measured observable — a load average, a queue depth, a disk latency, a memory
+figure, a hit rate — name the observable and search this list for THAT word.
+Recorded because it failed on 2026-09-08: a session setting a factory dispatch
+width off a load average matched its own phrase "choosing concurrency" against
+this index, found nothing, and never opened `ci-node-capacity-reads.md` — whose
+trigger line named both a slot cap and a large load average. The document was
+adequate; the session's indexing of its own situation was not, and the cost was
+silent, because a throttle raises no error.
+
+The files:
 
 - Read `.ai/livespec-operation-gotchas.md` before running or editing
   livespec revise/propose-change flows, spec heading coverage, or commit-prefix
@@ -62,9 +77,14 @@ only when their topic is active:
   `ci-runner/k3s/phase2/storage-layout/` — the media-swap model, the link
   survey that is the acceptance test for any card or socket change, and the
   udev / fio / stale-copy traps that each cost real time on 2026-09-04.
-- Read `.ai/ci-node-capacity-reads.md` before raising or lowering the
-  churn-slot cap `C`, diagnosing "the node is slow" or a large load average, or
-  proposing CPU protection for k3s or the removal of a k3s component — why the
+- Read `.ai/ci-node-capacity-reads.md` before setting ANY host's concurrency
+  or slot cap — the CI node's churn-slot cap `C`, a factory dispatch width, a
+  worker count — and before diagnosing "the node is slow" or a large load
+  average, or proposing CPU protection for k3s or the removal of a k3s
+  component. The trigger is the OBSERVABLE, not the machine: the method
+  generalizes to any host, and a 2026-09-08 drain throttled itself for hours
+  on the dev host reading load 17.5/18 as saturation when `mpstat` in the same
+  minute said 55% IDLE — why the
   cap is throughput-derived rather than utilization-derived, why load average
   is not CPU busy and `sar`'s 10-minute buckets hide bursts, why `k3s-server`
   is already protected by cgroup parity, why `metrics-server` stays, and the
