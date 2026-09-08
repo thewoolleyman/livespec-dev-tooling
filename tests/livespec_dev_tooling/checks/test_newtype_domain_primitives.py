@@ -23,6 +23,9 @@ import pytest
 
 from livespec_dev_tooling import config as config_module
 from livespec_dev_tooling.checks import newtype_domain_primitives as _check
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
 
 __all__: list[str] = []
 
@@ -39,9 +42,12 @@ def test_newtype_domain_primitives_bug_guard_after_gate(
     """If the gate is bypassed, a declared-empty dataclasses tree remains a bug."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(_check, "role_absence_exit_code", lambda **_kwargs: None)
+    # The patched seam is the shared supervisor helper the check now loads
+    # through (`livespec-dev-tooling-efxa`), not the raw loader it imported
+    # directly before. Same substitution, one name further along the chain.
     monkeypatch.setattr(
         _check,
-        "load_config",
+        "load_config_or_report",
         lambda **_kwargs: replace(
             config_module.Config(),
             declared_keys=frozenset({"dataclasses_tree"}),
@@ -534,3 +540,26 @@ def test_newtype_domain_primitives_module_importable_without_running_main() -> N
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert callable(module.main), "main should be importable without invocation"
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    `SPECIFICATION/contracts.md` section "Configuration loader" puts the catch
+    at this check's `main()` supervisor; before `livespec-dev-tooling-efxa`
+    the `ConfigParseError` escaped from here as an uncaught traceback, which
+    reaches stderr through the interpreter rather than through structlog and
+    so broke the very output discipline this package exists to enforce.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="newtype_domain_primitives",
+        check_id="newtype_domain_primitives",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )

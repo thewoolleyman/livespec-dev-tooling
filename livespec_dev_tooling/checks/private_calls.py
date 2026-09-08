@@ -71,12 +71,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     is_slf001_exempt,
     is_under_any_tree,
-    load_config,
     load_slf001_exempt_globs,
-    resolve_check_universe,
 )
 
 __all__: list[str] = []
@@ -120,11 +119,13 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("private_calls")
-    root, universe = resolve_check_universe()
+    resolved = resolve_check_context_or_report(log=log, check_id="private_calls")
+    if resolved is None:
+        return 1
+    root, universe, config = resolved
     if not universe:
         log.info("no first-party Python to check")
         return 0
-    config = load_config(repo_root=root)
     slf001_exempt = load_slf001_exempt_globs(repo_root=root)
     legacy_offenders: list[tuple[Path, int, str]] = []
     newly_offenders: list[tuple[Path, int, str]] = []

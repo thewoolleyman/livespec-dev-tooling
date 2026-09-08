@@ -30,6 +30,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
+
 __all__: list[str] = []
 
 
@@ -231,3 +237,33 @@ def test_module_importable_without_running_main() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert callable(module.main), "main should be importable without invocation"
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    Same transitive reach as `file_lloc`: this check never names `load_config`,
+    it calls `resolve_check_universe`, which parses the consumer config itself.
+    So it escaped both the original "30 of 31" measurement and the repo-wide
+    scan the first sweep of `livespec-dev-tooling-efxa` added.
+
+    The non-zero here is UNCONDITIONAL, and deliberately not the check's
+    `_EXIT_VIOLATIONS`. This is a Phase-0 warn check whose findings exit 0
+    until `LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST` arms them — but that lever
+    scopes the directives this check FINDS, never a consumer config it could
+    not read at all, so an unparseable config fails whether or not the lever
+    is set. This test runs with the lever unset to pin exactly that.
+    """
+    monkeypatch.delenv(_FAIL_ENV, raising=False)
+    assert_main_renders_the_parse_failure(
+        module_slug="no_fmt_directives",
+        check_id="no-fmt-directives",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )

@@ -89,7 +89,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import resolve_check_universe  # noqa: E402
+from livespec_dev_tooling.checks._config_load import (  # noqa: E402
+    resolve_check_context_or_report,
+)
 
 __all__: list[str] = []
 
@@ -155,7 +157,13 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("file_lloc")
-    root, universe = resolve_check_universe()
+    resolved = resolve_check_context_or_report(log=log, check_id="file_lloc")
+    if resolved is None:
+        return 1
+    # The config itself is unused here — this check's ceilings are constants,
+    # not consumer-declared — but the universe walk it rides on parses the
+    # consumer config, so the parse failure had to be caught at THIS frame.
+    root, universe, _config = resolved
     soft_offenders: list[tuple[Path, int]] = []
     hard_offenders: list[tuple[Path, int]] = []
     for rel in universe:

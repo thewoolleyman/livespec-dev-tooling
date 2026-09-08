@@ -35,13 +35,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
     ensure_declared_paths_contain_python,
     role_absence_exit_code,
 )
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
-    load_config,
     role_trees,
 )
 
@@ -90,7 +90,9 @@ def main() -> int:
     )
     log = structlog.get_logger("pbt_coverage_pure_modules")
     cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
+    config = load_config_or_report(repo_root=cwd, log=log, check_id="pbt_coverage_pure_modules")
+    if config is None:
+        return 1
     gate_exit = role_absence_exit_code(
         config=config,
         role=config.pure_trees,

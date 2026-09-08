@@ -23,6 +23,9 @@ import pytest
 from livespec_dev_tooling.checks import _no_except_outside_io_ruff as _ruff_probe
 from livespec_dev_tooling.checks import no_except_outside_io as _check
 from livespec_dev_tooling.checks._no_except_outside_io_ruff import find_ruff_backstop_gaps
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
 
 _VENDOR_DIR = Path(_ruff_probe.__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
@@ -1592,4 +1595,27 @@ def test_no_except_outside_io_reports_position_offenses_alongside_backstop_gaps(
     assert "pkg/visible.py" in combined, (
         f"the position offense must NOT be suppressed by the backstop gap — this is the "
         f"early-return masking defect; combined={combined!r}"
+    )
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    `SPECIFICATION/contracts.md` section "Configuration loader" puts the catch
+    at this check's `main()` supervisor; before `livespec-dev-tooling-efxa`
+    the `ConfigParseError` escaped from here as an uncaught traceback, which
+    reaches stderr through the interpreter rather than through structlog and
+    so broke the very output discipline this package exists to enforce.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="no_except_outside_io",
+        check_id="no_except_outside_io",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )

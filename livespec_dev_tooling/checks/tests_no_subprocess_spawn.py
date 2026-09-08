@@ -61,9 +61,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     iter_py_files,
-    load_config,
     load_subprocess_spawn_allowlist,
 )
 
@@ -180,7 +180,9 @@ def main() -> int:
     )
     log = structlog.get_logger("tests_no_subprocess_spawn")
     cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
+    config = load_config_or_report(repo_root=cwd, log=log, check_id="tests_no_subprocess_spawn")
+    if config is None:
+        return 1
     allowlist = load_subprocess_spawn_allowlist(repo_root=cwd) or ()
     tests_root = cwd / config.tests_tree_prefix
     offenders: list[tuple[str, int]] = []

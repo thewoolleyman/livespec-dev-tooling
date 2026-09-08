@@ -109,13 +109,13 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
     is_docs_only_change,
 )
 from livespec_dev_tooling.config import (  # noqa: E402
     derive_source_prefixes,
     is_vendored_path,
-    load_config,
     role_path,
 )
 
@@ -210,7 +210,9 @@ def main() -> int:
     )
     log = structlog.get_logger("commit_pairs_source_and_test")
     cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
+    config = load_config_or_report(repo_root=cwd, log=log, check_id="commit_pairs_source_and_test")
+    if config is None:
+        return 1
 
     if _head_has_unpaired_red_trailers(cwd=cwd):
         log.info(
