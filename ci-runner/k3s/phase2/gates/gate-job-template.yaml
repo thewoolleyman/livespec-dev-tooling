@@ -1,0 +1,165 @@
+# gate-job-template.yaml — the Job a delegated pre-push gate run instantiates
+# (R4.S5, livespec-dev-tooling-sk8f; plan livespec k3s-on-gmktec-for-vps-usage,
+# epic livespec-sab5gn; design in that plan's research/003 section D and
+# corrections 2, 5 and 6).
+#
+# NOT APPLIED BY CONVERGE. Unlike every other manifest in this tree, this file is
+# a TEMPLATE: ./render-gate-job.sh substitutes its placeholder markers and the gate client
+# submits the result. Converge only ships it. Applying this file as it stands
+# would fail — @@IMAGE@@ is not a resolvable image reference — and that is the
+# intended failure mode for anyone who tries.
+#
+# EVERY TOKEN IS REQUIRED. render-gate-job.sh refuses to emit a manifest that
+# still carries an unsubstituted placeholder marker, so a token added here without a
+# matching substitution is caught at render time rather than by the API server.
+#
+# WHY suspend: true — Kueue admits a Job by UNSUSPENDING it. A Job created
+# unsuspended bypasses the queue entirely and runs immediately against no quota,
+# which would defeat gates-cq. Kueue sets this back to false on admission.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: @@JOB_NAME@@
+  namespace: gates
+  labels:
+    app.kubernetes.io/part-of: livespec-ci-gates
+    app.kubernetes.io/managed-by: livespec-ci-runner-gates
+    livespec.gate/repo: @@REPO@@
+    livespec.gate/tree-hash: @@TREE_HASH@@
+    # Requirement 6: the LocalQueue in this namespace, bound to gates-cq.
+    kueue.x-k8s.io/queue-name: gates-lq
+    # Admission order within gates-cq. gate-priority never preempts; gates-cq
+    # keeps the pool's three `Never` preemption settings.
+    kueue.x-k8s.io/priority-class: gate-priority
+spec:
+  suspend: true
+  # Requirement 8: finished gate Jobs are collected rather than accumulating as
+  # control-plane objects. The pool is under a ratified clause to bound the
+  # pending work it materialises on the control plane, and a gate Job is a new
+  # object on that same bounded plane. One hour is long enough to read a failed
+  # gate's logs by hand and short enough that a day of pushes cannot pile up.
+  ttlSecondsAfterFinished: @@TTL_SECONDS@@
+  # A gate verdict is a measurement, not a workload to retry: a re-run on the
+  # same tree must be a new, separately-identified gate, never a silent second
+  # attempt whose failure the first attempt's success would mask.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: livespec-ci-gates
+        livespec.gate/repo: @@REPO@@
+    spec:
+      restartPolicy: Never
+      # Requirement 7, half one. R3 taints gmktec `node-role/ci=pending:NoSchedule`
+      # and R5 untaints it. Without this toleration the Job lands on poweredge —
+      # the node whose relief is the entire point of this slice. The taint keeps
+      # CI RUNNER pods off gmktec until R5 derives its capacity; a gate is
+      # deliberately the first workload allowed there.
+      tolerations:
+        - key: node-role/ci
+          operator: Equal
+          value: pending
+          effect: NoSchedule
+      # Requirement 7, half two. PREFERRED rather than required: gates-flavor
+      # already selects gmktec by `kubernetes.io/hostname`, so Kueue will not
+      # admit this Job against any other node's quota. This affinity expresses
+      # the same intent to the SCHEDULER, and keeping it preferred means a
+      # future flavor change does not leave an unschedulable Job behind.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["gmktec-xubuntu"]
+      # The executor holds NO cluster authority: it runs a check aggregate over a
+      # tree and has no business reading the API. Nothing here mounts a
+      # ServiceAccount token.
+      automountServiceAccountToken: false
+      initContainers:
+        # Fetches the exact tree under test from the in-cluster read-only mirror
+        # (research/003 section E; built by R4.S4, livespec-dev-tooling-2hno).
+        # The ref is named after the tree hash, so one value identifies the tree,
+        # the ref and this Job — a gate cannot run against content other than
+        # what was pushed.
+        - name: fetch-tree
+          image: @@IMAGE@@
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              git init --quiet /workspace
+              cd /workspace
+              git remote add origin "@@SOURCE_URL@@"
+              git fetch --quiet --depth 1 origin "refs/gates/@@TREE_HASH@@"
+              git checkout --quiet FETCH_HEAD
+              actual="$(git rev-parse 'HEAD^{tree}')"
+              if [ "${actual}" != "@@TREE_HASH@@" ]; then
+                echo "FATAL: fetched tree ${actual} is not the requested @@TREE_HASH@@" >&2
+                exit 1
+              fi
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      containers:
+        - name: gate
+          # Requirement 1: resolved by render-gate-job.sh from the GATED
+          # repository's own .github/workflows/ci.yml container block, never a
+          # constant. Measured 2026-09-07 the two repos ran different tags, and
+          # by 2026-09-08 both had moved again — a baked tag would gate against a
+          # different toolchain than CI uses.
+          image: @@IMAGE@@
+          imagePullPolicy: IfNotPresent
+          workingDir: /workspace
+          # Requirement 2: the gated repository's own aggregate, nothing else.
+          command: ["/bin/bash", "-lc"]
+          args: ["just check"]
+          env:
+            # Requirement 4. The local lane derives nproc / 4, and `nproc` inside
+            # a container reports the NODE's 32 threads regardless of this
+            # container's cpu request — so an unset value would start 8 workers
+            # under a 5 cpu request and oversubscribe the gate's own quota.
+            - name: LIVESPEC_TEST_PARALLELISM
+              value: "@@PARALLELISM@@"
+            # Requirement 5: the cache environment is REUSED from
+            # ../arc/hook-pod-template.yaml rather than re-invented, so the two
+            # cannot drift. Keep these in step with that file's container env.
+            - name: UV_CACHE_DIR
+              value: /__w/_warm/uv
+            - name: CI_CACHE_KILL_SWITCH
+              value: ""
+            - name: SCCACHE_REDIS_ENDPOINT
+              value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
+            - name: SCCACHE_REDIS_RW_MODE
+              value: READ_ONLY
+            - name: CI_CACHE_CANARY_N
+              value: "20"
+            - name: CI_RUNNER_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            # Requirement 3. Runner pods request only ci-runner.io/churn-slot, so
+            # the scheduler bin-packs on that alone and a request-less gate would
+            # not be placed sanely. These are also the terms gates-cq quotas:
+            # 15 cpu / 24Gi admits three concurrent gates at exactly these
+            # numbers (../kueue/cluster-queue-gates.yaml).
+            requests:
+              cpu: "@@CPU@@"
+              memory: "@@MEMORY@@"
+            limits:
+              # No cpu limit, deliberately: a cpu limit throttles rather than
+              # bin-packs, and the quota above is what bounds concurrency. The
+              # memory limit equals the request so the gate is Guaranteed-class
+              # for memory and cannot be evicted under node pressure mid-run,
+              # which would read as a gate failure rather than as an eviction.
+              memory: "@@MEMORY@@"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: workspace
+          emptyDir: {}
