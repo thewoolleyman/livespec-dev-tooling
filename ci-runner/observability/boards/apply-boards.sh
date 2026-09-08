@@ -51,11 +51,26 @@
 # with no edit to the definition.
 #
 # Requires: HONEYCOMB_CONFIG_KEY_LIVESPEC (a Configuration key for the
-# livespec environment, with "Manage Public Boards" and "Manage Queries and
-# Columns"). MEASURED 2026-09-07: that key holds the second permission but NOT
-# the first, so the GET below answers 401 "this API key isn't allowed to access
-# boards" and this script stops there until someone widens the key in the
-# Honeycomb UI. See ../README.md. Projected by the fleet's credential wrapper:
+# livespec environment). It needs exactly TWO UI permissions, and which two is
+# easy to get wrong: "Public Boards" (the `boards` field) and "Queries and
+# columns" (the `columns` field). MEASURED 2026-09-08 at /1/auth, after the key
+# was widened: boards true, columns true, queries FALSE — and the board applies
+# anyway.
+#
+# THAT LAST PART IS THE NON-OBVIOUS BIT, so it is recorded rather than
+# rediscovered. This script POSTs to /1/queries/<dataset> and
+# /1/query_annotations/<dataset> before it ever touches /1/boards, which makes
+# it look gated on a `queries` permission. It is not. CREATING a saved query
+# object is covered by "Queries and columns"; the separate `queries` field is
+# the query-EXECUTION API, whose UI control ("Run queries") is greyed out as
+# enterprise-only on this account. So a board applies on a plan that can never
+# run a query through the API.
+#
+# THE CONSEQUENCE FOR ACCEPTANCE, since it outlives this script: nothing in the
+# fleet can execute a Honeycomb query over the API with this key. A claim that
+# needs query RESULTS has to be read off the rendered board in a browser, or
+# emitted as a series by a collector — it cannot be curl'd. See ../README.md.
+# Projected by the fleet's credential wrapper:
 #   /usr/local/bin/with-livespec-env.sh -- ./apply-boards.sh
 # plus python3. Prints one `created|updated <id> <name>` line per board,
 # preceded by one line per panel.

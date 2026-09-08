@@ -56,33 +56,65 @@ same way:
 ```
 
 It prints one line per panel, then `created|updated <id> <name>` and the
-board's URL. Record that URL on `livespec-mqy35a` in the livespec repository
-the first time it is created.
+board's URL. The board was first applied on 2026-09-08 and lives at:
 
-### First, widen the configuration key — it cannot touch boards today
+<https://ui.honeycomb.io/thewoolleyweb/environments/livespec/board/a5qKbhpZRjj>
 
-`HONEYCOMB_CONFIG_KEY_LIVESPEC` currently carries **Manage Queries and
-Columns** but **not Manage Public Boards**. Measured 2026-09-07 against the
-live environment, with the same key the trigger applier uses:
+That id is stable across re-applies — the applier is idempotent by board NAME
+and reuses the stored query ids, so a re-run prints `updated` with the same id
+rather than minting a second board. A run that prints `created` for a board
+that should already exist means the name was changed or the board was deleted,
+and the URL above is then stale; recheck before assuming the applier churned.
 
-| Read | Result |
-|---|---|
-| `GET /1/triggers/metrics` | `200` |
-| `GET /1/columns/metrics` | `200` |
-| `GET /1/query_annotations/metrics` | `200` |
-| `GET /1/boards` | `401 {"error":"this API key isn't allowed to access boards"}` |
+A panel whose columns do not exist yet is SKIPPED and reported, and the script
+still exits non-zero at the end so the incompleteness is visible. That is the
+expected first-apply state for any panel whose emitter has not had its host
+apply yet — re-running afterwards completes the board with no edit to the
+definition, which is exactly how the two start-latency panels are meant to
+arrive.
 
-So `apply-boards.sh` fails on its FIRST call until someone adds the **Manage
-Public Boards** permission to that key, in the Honeycomb UI under Team
-settings → Environments → `livespec` → API keys. Nothing in this repository
-can grant it.
+### The configuration key: which two permissions, and the one it cannot have
 
-Note the shape of that refusal, because it is easy to mis-read: the boards
-endpoint answers `401` with a JSON OBJECT, while a permitted-but-empty listing
-answers `200` with a JSON ARRAY. Code that reaches for a `boards` key with a
-default of `[]` turns the refusal into "the environment has no boards" and
-reports a clean result for a call that was rejected. Branch on the status code,
-never on whether a list came back empty.
+`HONEYCOMB_CONFIG_KEY_LIVESPEC` needs exactly two UI permissions, and which two
+is easy to get wrong: **Public Boards** and **Queries and columns**. Measured at
+`/1/auth` on 2026-09-08, after the key was widened:
+
+| `/1/auth` field | UI control | State |
+|---|---|---|
+| `boards` | Public Boards | **true** — granted 2026-09-08 |
+| `columns` | Queries and columns | **true** |
+| `triggers` | Triggers | **true** |
+| `recipients` | Recipients | **true** |
+| `queries` | Run queries | **false — cannot be granted**, see below |
+
+**`queries` is enterprise-gated, and the board applies without it.** This is the
+part worth recording, because the code's shape suggests otherwise:
+`apply-boards.sh` POSTs to `/1/queries/<dataset>` and
+`/1/query_annotations/<dataset>` before it ever touches `/1/boards`, so it looks
+gated on `queries`. It is not. *Creating* a saved query object is covered by
+**Queries and columns**; the separate `queries` field is the query-**execution**
+API, whose UI control is greyed out with "This feature is only available for
+enterprise plans". The board applied cleanly with `boards` alone.
+
+The mapping was forced by evidence rather than assumed: "Queries and columns"
+was already checked while `/1/auth` reported `queries:false, columns:true`. If
+that one checkbox covered both fields, its checked state would require
+`queries:true` — a contradiction. So it maps to `columns` alone.
+
+**The consequence outlives this script.** Nothing in the fleet can execute a
+Honeycomb query over the API with this key. A claim that needs query *results*
+must be read off the rendered board in a browser, or emitted as a series by a
+collector — it cannot be `curl`'d. Plan for that when writing an acceptance
+criterion: "a query returns rows" is not a checkable assertion here, whereas "a
+panel renders these rows" is.
+
+Note the shape of a boards refusal, because it is easy to mis-read and the key
+can always be narrowed again: the boards endpoint answers `401` with a JSON
+OBJECT, while a permitted-but-empty listing answers `200` with a JSON ARRAY.
+Code that reaches for a `boards` key with a default of `[]` turns the refusal
+into "the environment has no boards" and reports a clean result for a call that
+was rejected. Branch on the status code, never on whether a list came back
+empty.
 
 Its seven query panels and the dataset each reads:
 
