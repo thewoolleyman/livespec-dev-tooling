@@ -108,6 +108,7 @@ PROVISIONER_DIR="${ARTIFACT_DIR}/local-path-provisioner"
 WARM_CACHE_DIR="${ARTIFACT_DIR}/warm-cache"
 CRATES_PROXY_DIR="${ARTIFACT_DIR}/crates-proxy"
 SCCACHE_DIR="${ARTIFACT_DIR}/sccache"
+GATE_MIRROR_DIR="${ARTIFACT_DIR}/gate-mirror"
 if [ -d "${ARTIFACT_DIR}/observability" ]; then
   OBSERVABILITY_DIR="${ARTIFACT_DIR}/observability"          # installed layout
 else
@@ -597,6 +598,22 @@ if ! "${SCCACHE_DIR}/converge-sccache-redis.sh"; then
 fi
 
 # ---------------------------------------------------------------------------
+log "8d. Converge the gate mirror (the bare mirror on the ci-cache tier, the read-only git daemon, the refs/gates sweep)"
+# The tree a gate Job runs `just check` against reaches the cluster through
+# this mirror rather than through GitHub — nothing has been pushed to GitHub
+# yet, which is the point of a pre-push gate (../gate-mirror/README.md).
+# Unlike the three singletons above it also creates HOST state: the bare
+# mirror itself, which SURVIVES the boot while everything it converges into
+# the datastore does not. It refuses on an unmounted ci-cache tier for the
+# same reason the sccache converge does — a mirror created on the root volume
+# is shadowed, invisibly, the moment the tier mounts — and that refusal is a
+# WARN here for the same reason: gating is one workload of many, and failing
+# the whole converge over it would take the runner pool down with it.
+if ! "${GATE_MIRROR_DIR}/converge-gate-mirror.sh"; then
+  echo "WARN: converge-gate-mirror.sh failed (see above; an unmounted ci-cache tier refuses by design) — continuing; no gate Job can fetch its tree until it is re-run"
+fi
+
+# ---------------------------------------------------------------------------
 log "9. Converge the warm uv cache's cluster objects (Namespace, CronJob, ConfigMaps)"
 # No populate Job here: the on-disk lower survives a reboot and the CronJob
 # refreshes it on its schedule. install-warm-cache.sh is the attended path
@@ -628,4 +645,4 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l "$NODE_LABEL_SELECTOR" \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + warm-cache CronJob + probe identity."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + gate mirror + warm-cache CronJob + probe identity."

@@ -15,6 +15,8 @@
 #                   + its verifier (two .py) + pypi-proxy/ (the manifest the converge applies)
 #   crates-proxy/   converge-crates-proxy.sh + the proxy manifest
 #   sccache/        converge-sccache-redis.sh + the redis manifest
+#   gate-mirror/    converge-gate-mirror.sh + the mirror creator it runs + the
+#                   sweep the converge puts in a ConfigMap + the manifest
 #   observability/  the Kueue-webhook probe's RBAC (from ci-runner/observability)
 #   render-sa-kubeconfig.sh   the probe-credential renderer
 #   (NOT patch-node-churn-capacity.sh: converge step 1b runs it from this same
@@ -47,6 +49,7 @@ PROVISIONER_SRC="${PHASE2_DIR}/local-path-provisioner"
 WARM_CACHE_SRC="${PHASE2_DIR}/warm-cache"
 CRATES_PROXY_SRC="${PHASE2_DIR}/crates-proxy"
 SCCACHE_SRC="${PHASE2_DIR}/sccache"
+GATE_MIRROR_SRC="${PHASE2_DIR}/gate-mirror"
 OBSERVABILITY_SRC="$(cd "${PHASE2_DIR}/../../observability" && pwd)"
 LIB_DIR="/usr/local/lib/ci-runner-k3s"
 UNIT_DIR="/etc/systemd/system"
@@ -60,7 +63,8 @@ command -v systemctl >/dev/null || { echo "FATAL: systemctl not found on PATH"; 
 # ---------------------------------------------------------------------------
 log "1. Create the self-contained artifact tree under ${LIB_DIR}"
 install -d -m 0755 "${LIB_DIR}" "${LIB_DIR}/arc" "${LIB_DIR}/kueue" "${LIB_DIR}/kueue/core" \
-  "${LIB_DIR}/local-path-provisioner" "${LIB_DIR}/warm-cache" "${LIB_DIR}/crates-proxy" "${LIB_DIR}/sccache" "${LIB_DIR}/observability"
+  "${LIB_DIR}/local-path-provisioner" "${LIB_DIR}/warm-cache" "${LIB_DIR}/crates-proxy" "${LIB_DIR}/sccache" \
+  "${LIB_DIR}/gate-mirror" "${LIB_DIR}/observability"
 
 # ---------------------------------------------------------------------------
 log "2. Copy the converge script (the unit's ExecStart target) and its helper"
@@ -118,6 +122,18 @@ log "6c. Copy the sccache-redis converge and the manifest it applies"
 # install-node.sh, not something the boot converge applies.)
 install -m 0755 "${SCCACHE_SRC}/converge-sccache-redis.sh" "${LIB_DIR}/sccache/converge-sccache-redis.sh"
 install -m 0644 "${SCCACHE_SRC}/sccache-redis.yaml" "${LIB_DIR}/sccache/sccache-redis.yaml"
+
+# ---------------------------------------------------------------------------
+log "6d. Copy the gate-mirror converge, the mirror creator it runs, the sweep and the manifest"
+# prune-gate-refs.sh is 0755 although the CronJob runs it from a ConfigMap
+# rather than from this copy: the converge reads THIS file to write that
+# ConfigMap, and an operator sweeps by hand with it. Refreshing this copy
+# converges nothing on its own — ../gate-mirror/converge-gate-mirror.sh has to
+# run for the ConfigMap the CronJob actually mounts to change.
+install -m 0755 "${GATE_MIRROR_SRC}/converge-gate-mirror.sh" "${LIB_DIR}/gate-mirror/converge-gate-mirror.sh"
+install -m 0755 "${GATE_MIRROR_SRC}/ensure-gate-mirror.sh" "${LIB_DIR}/gate-mirror/ensure-gate-mirror.sh"
+install -m 0755 "${GATE_MIRROR_SRC}/prune-gate-refs.sh" "${LIB_DIR}/gate-mirror/prune-gate-refs.sh"
+install -m 0644 "${GATE_MIRROR_SRC}/gate-mirror.yaml" "${LIB_DIR}/gate-mirror/gate-mirror.yaml"
 
 # ---------------------------------------------------------------------------
 log "7. Copy the Kueue-webhook probe's RBAC manifest"
