@@ -252,7 +252,21 @@
       // 7 concurrent dev-tooling runs, each a docker sandbox executing the
       // full `just check` aggregate, saturated the hp factory's CPU. Raise it
       // only from a measured capacity verdict on the factory host.
-      "wip_cap": 4,
+      //
+      // Raised 4 -> 10 on 2026-09-08 (maintainer-directed) on exactly that
+      // verdict, measured ON hp-xubuntu rather than inferred from the number
+      // of runs in `fabro ps`: load average 2.55 / 1.83 / 1.28 across 16
+      // cores, CPU 69.3% idle (23.7% user, 6.3% sys), 25 GB of 30 GB memory
+      // available, 3 running containers. Taken while SIX dispatcher loops
+      // were live across THREE tenants (dolt-server x3, dev-tooling x2,
+      // runtime x1), so it is a loaded-host reading, not an idle-host one.
+      //
+      // The 2026-09-06 saturation above still stands as the ceiling evidence,
+      // and note what it actually measured: 7 concurrent DEV-TOOLING runs.
+      // This is a per-repo claims cap, so 10 only approaches that ceiling if
+      // this repo alone fills it. Re-measure on the host (not from run
+      // counts) before raising further.
+      "wip_cap": 10,
       "default_factory": "hp",
       "factories": {
         "hp": {
