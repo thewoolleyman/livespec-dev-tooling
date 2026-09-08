@@ -11,6 +11,7 @@ two checks resolving "which records are ours" from two copies of the same
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -28,6 +29,8 @@ _COMPLETION_RESOLUTIONS = frozenset({"completed", "merged", "released", "shipped
 _ISSUES_JSONL = Path(".beads") / "issues.jsonl"
 _LIVESPEC_CONFIG = ".livespec.jsonc"
 _COMMENTS_FIELD = "comments"
+_BD_PATH_ENV = "LIVESPEC_BD_PATH"
+_BD_ON_PATH = "bd"
 
 __all__: list[str] = [
     "CommentReader",
@@ -107,6 +110,22 @@ def parse_records(*, text: str) -> list[dict[str, object]]:
     return [cast("dict[str, object]", item) for item in data_list if isinstance(item, dict)]
 
 
+def _bd_executable() -> str:
+    """Return the `bd` binary the comment reader shells out to.
+
+    The same resolution the worktree-discipline pack's
+    `dev-tooling/check-no-workflow-edits.sh` performs (`resolve_bd`, in THIS
+    repo — `livespec-dev-tooling`): `LIVESPEC_BD_PATH` names the
+    lifecycle-guard entry point when it is set and executable, otherwise `bd`
+    on PATH. Reading the override here keeps this reader on the one guarded
+    binary the fleet pins rather than on whatever a caller's PATH resolves.
+    """
+    override = os.environ.get(_BD_PATH_ENV)
+    if override and os.access(override, os.X_OK):
+        return override
+    return _BD_ON_PATH
+
+
 def bd_items_reader(*, repo: Path) -> list[dict[str, object]]:
     """Read ledger items from the local export when present, else `bd list --json`.
 
@@ -133,9 +152,18 @@ def bd_items_reader(*, repo: Path) -> list[dict[str, object]]:
 
 
 def bd_comments_reader(*, repo: Path, item_id: str) -> list[dict[str, object]]:
-    """Read a record's comment timeline via `bd -C <repo> show <id> --json`."""
+    """Read a record's comment timeline via `bd -C <repo> show <id> --json`.
+
+    `--include-comments` is LOAD-BEARING, exactly as `--status all` is for the
+    item reader above: without it the pinned `bd` omits the `comments` key
+    entirely, so this reader answered `[]` for EVERY record and reported no
+    error doing it. Every post-cutoff closed plan epic then failed
+    `plan_close_evidence` with its evidence comment sitting unread in the
+    tenant — 8 of the 10 findings from the first armed console run were that
+    false positive (`livespec-dev-tooling-7b6l`).
+    """
     completed = subprocess.run(
-        ("bd", "-C", str(repo), "show", item_id, "--json"),
+        (_bd_executable(), "-C", str(repo), "show", item_id, "--json", "--include-comments"),
         check=False,
         capture_output=True,
         text=True,
