@@ -1,0 +1,176 @@
+"""The single shared work-item liveness resolver every stand-down gate calls.
+
+This repository's `SPECIFICATION/spec.md` §"Non-goals" carves ONE exception
+to the network-I/O prohibition: a check that stands down, weakens, or
+exempts on an EXPLICITLY NAMED work-item id MAY resolve that id against the
+repository's own configured work-item store, solely to learn whether it
+exists and whether it is open. The same clause requires "one shared
+mechanism, not per-gate hand-rolls" — a gate rolling its own lookup is
+non-conforming even when its behaviour is otherwise correct. This module IS
+that mechanism. `checks/no_todo_registry`'s release tier is its first
+consumer; every other gate that stands down on a named id converges here.
+
+WHY IT EXISTS. Before it, each such gate carried an UNIMPLEMENTED seam that
+returned `None` unconditionally, so the branch convicting a closed owner was
+unreachable in every consuming repository and the gate passed BY
+CONSTRUCTION. Measured across the eleven governed repositories on
+2026-09-08: 63 heading-coverage TODO rows named an already-closed owner and
+41 named an id that does not exist, and not one of them could be convicted.
+A check that cannot convict is worse than no check; that is the defect this
+closes.
+
+WHY A WHOLE-POPULATION SNAPSHOT RATHER THAN A PER-ID `bd show`. The second
+reason is the load-bearing one:
+
+- ONE subprocess per run instead of one per id. This repository's registry
+  alone carries dozens of TODO rows.
+- A per-id `bd show` CANNOT TELL "no such id" FROM "the store did not
+  answer" — both exit non-zero. Reading the population once separates them
+  structurally: a snapshot that arrives at all establishes reachability, so
+  an id missing FROM it is genuinely nonexistent. The ratified clause
+  requires the verdict to be "discriminating in both directions", and
+  per-id probing structurally cannot be.
+
+THE ABSENT ANSWER IS `None`, NEVER `{}`. An unreachable store and an empty
+one are different facts that must never share a spelling: `{}` says the
+store answered and holds nothing, `None` says it did not answer. Collapsing
+them would reintroduce the vacuous-gate defect this module exists to
+remove. The consuming gate turns `None` into an explicit "liveness
+unverified" diagnostic naming the id, never a silent pass — the honest
+degradation the clause demands.
+
+NO LEVER. Nothing here reads an environment variable, flag, or
+configuration key that could disable the resolution, force it to pass, or
+convert a CLOSED verdict into a quiet one; the ratified clause forbids all
+three. The credential-wrapper lookup below is HOST DISCOVERY, not a lever —
+nothing configurable selects it, and its absence degrades to the bare
+invocation rather than to a pass.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Protocol
+
+from livespec_dev_tooling.checks._plan_ledger import parse_records
+
+__all__: list[str] = [
+    "NONEXISTENT",
+    "UNREACHABLE",
+    "LedgerReader",
+    "bd_status_reader",
+    "resolve_liveness",
+    "resolved_status",
+]
+
+
+# Beads normalizes the livespec lifecycle vocabulary onto its own, and a tenant
+# may answer with either spelling of "this work is finished". Kept in step with
+# `checks/_plan_ledger`'s own closed set, which reads the same field for the
+# plan-lifecycle verdicts.
+_CLOSED_STATUSES = frozenset({"closed", "done"})
+
+# The two answers that are NOT a status: the store answered and does not hold
+# the id, versus the store never answered. Both are reported verbatim by the
+# consuming gate, because the ratified clause requires a surfaced stand-down to
+# name "the id and its resolved status".
+NONEXISTENT = "nonexistent"
+UNREACHABLE = "unreachable"
+
+# The tenant password is projected from 1Password rather than stored on disk,
+# so a BARE `bd` on a fleet host answers `Error 1045 (28000): Access denied` —
+# which this resolver would read as UNREACHABLE forever, leaving the gate as
+# vacuous as it was before. Routing through the wrapper WHERE THE HOST INSTALLS
+# IT is what lets the probe answer at all. Discovered on `PATH`, the same way
+# the fleet's own charters invoke it.
+_CREDENTIAL_WRAPPER = "with-livespec-env.sh"
+
+# A store on the far side of a network hop must never be able to wedge a gate;
+# a timeout degrades to UNREACHABLE like any other non-answer.
+_QUERY_TIMEOUT_SECONDS = 30.0
+
+
+class LedgerReader(Protocol):
+    """Snapshot a repository's configured store as `{work-item id: status}`.
+
+    `None` means the store did not answer, and is never a spelling of "the
+    store is empty". This is the seam a consuming gate injects for tests, so
+    no unit test needs a reachable tracker.
+    """
+
+    def __call__(self, *, repo: Path) -> dict[str, str] | None:
+        """Return the snapshot for the store `repo` configures."""
+        ...
+
+
+def bd_status_reader(*, repo: Path) -> dict[str, str] | None:
+    """Snapshot `repo`'s configured tenant through the pinned `bd` CLI.
+
+    `--status all` is load-bearing: `bd list` OMITS every closed item by
+    default, so without it a closed owner would be absent from the snapshot
+    and convicted as nonexistent — the right verdict reached by a wrong
+    reading, and a wrong one the moment the default view changes. Measured on
+    this repository's own tenant: the default listing hid 58% of the ledger.
+
+    Every non-answer collapses to `None`: the CLI is absent or fails to
+    launch, it exits non-zero (a missing credential projection looks exactly
+    like this), it times out, or it answers with something that is not the
+    JSON record surface. That last guard is not redundant — output carrying no
+    JSON delimiter at all parses as an EMPTY population, which would convict
+    every owned id as nonexistent on the strength of junk.
+    """
+    wrapper = shutil.which(_CREDENTIAL_WRAPPER)
+    query = ("bd", "-C", str(repo), "list", "--status", "all", "--json")
+    try:
+        # S603: a fixed argv of literal arguments plus the repo path; no shell.
+        completed = subprocess.run(
+            (wrapper, "--", *query) if wrapper else query,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_QUERY_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not any(mark in completed.stdout for mark in "[{"):
+        return None
+    try:
+        records = parse_records(text=completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    snapshot: dict[str, str] = {}
+    for record in records:
+        item_id = record.get("id")
+        status = record.get("status")
+        if isinstance(item_id, str) and isinstance(status, str):
+            snapshot[item_id] = status
+    return snapshot
+
+
+def resolved_status(*, work_item: str, snapshot: dict[str, str] | None) -> str:
+    """The word to REPORT for `work_item` — its status, `nonexistent`, or `unreachable`.
+
+    The boolean verdict alone cannot satisfy the ratified requirement that a
+    surfaced stand-down name "the id and its resolved status", and it cannot
+    tell a reader which half of "closed or nonexistent" they are looking at.
+    """
+    if snapshot is None:
+        return UNREACHABLE
+    return snapshot.get(work_item, NONEXISTENT)
+
+
+def resolve_liveness(*, work_item: str, snapshot: dict[str, str] | None) -> bool | None:
+    """Whether `work_item` is live; `None` when the store did not answer.
+
+    `False` covers BOTH halves of the ratified "closed or nonexistent"
+    verdict, because a stand-down has the same defect either way: it names
+    work nobody is going to do. `resolved_status` is what separates them for
+    the reader.
+    """
+    if snapshot is None:
+        return None
+    status = snapshot.get(work_item)
+    return status is not None and status not in _CLOSED_STATUSES
