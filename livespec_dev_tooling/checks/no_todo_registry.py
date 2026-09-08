@@ -76,17 +76,32 @@ Release CI sets only the fail lever, so the ratified release-gate
 verdict is untouched: this is an opt-in narrowing for the authoring
 context, not a change to what a release rejects.
 
-LIVENESS IS BEST-EFFORT AND ABSENT BY DEFAULT. No tracker is
-configured for this repo family, and a release runs on hosted CI
-that cannot reach a loopback ledger, so `_probe_work_item_liveness`
-reports `None` (UNVERIFIED) rather than inventing a verdict. An
-UNVERIFIED entry PASSES, but emits a `liveness_unverified`
-diagnostic — an unreachable tracker is not a passing liveness
-check, and the two must never be indistinguishable. Liveness is
-deliberately confined to the release tier: a per-commit verdict
-depending on mutable external state could flip master red with no
-commit, which `.ai/ci-gate-discipline.md` treats as a real broken
-state rather than a notification.
+LIVENESS IS RESOLVED BY THE SHARED RESOLVER, AND ABSENT WHENEVER
+THE STORE DOES NOT ANSWER. `checks/_work_item_liveness` is the
+single shared mechanism this repository's `SPECIFICATION/spec.md`
+§ "Non-goals" requires for the work-item-liveness exception; the
+release tier takes it through `main`'s `ledger_reader` seam, so a
+unit test supplies a deterministic double and no test needs a
+reachable tracker. Where the store DOES answer, an owner that is
+closed or that the store does not hold resolves False and IS
+convicted, naming the id and its resolved status. Where it does
+not — no `bd` on the host, no credential projection, a release on
+hosted CI that cannot reach a loopback ledger — the snapshot is
+`None`, the entry PASSES, and a `liveness_unverified` diagnostic
+says so. An unreachable tracker is not a passing liveness check,
+and the two must never be indistinguishable.
+
+THAT DEFAULT IS WHAT MAKES THE TEETH LANDABLE. A repo whose host
+cannot reach its own tenant is byte-behaviour-identical to before
+the resolver existed, so arming the mechanism reddens nothing on
+merge; a repo carrying closed-owner debt reds only once its own
+host can answer, which each repo clears on its own consume leg.
+Measured across the eleven governed repositories on 2026-09-08:
+63 closed-owner and 41 nonexistent-owner rows. Liveness stays
+confined to the release tier: a per-commit verdict depending on
+mutable external state could flip master red with no commit,
+which livespec core's `.ai/ci-gate-discipline.md` treats as a
+real broken state rather than a notification.
 
 The check loads the JSON file (strict JSON, not JSONC) and
 walks the array. If the file is missing or contains no TODO
@@ -114,6 +129,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
+    LedgerReader,
+    bd_status_reader,
+    resolve_liveness,
+    resolved_status,
+)
+
 __all__: list[str] = []
 
 
@@ -131,23 +153,6 @@ def _is_owned(*, entry: dict[str, object]) -> bool:
     """
     work_item = entry.get("work_item")
     return isinstance(work_item, str) and bool(work_item.strip())
-
-
-def _probe_work_item_liveness(*, work_item: str) -> bool | None:
-    """Best-effort liveness probe for `work_item`; `None` means UNVERIFIED.
-
-    ABSENT BY DEFAULT, and that is the shipped production behavior rather
-    than a placeholder: this repo family configures no tracker at all, and
-    the release gate runs on hosted CI that cannot reach a loopback ledger.
-    Returning `None` keeps the check honest — it reports that liveness was
-    not established instead of asserting a work-item is live.
-
-    A consumer that configures a reachable tracker replaces this seam; the
-    ratified rule only asks for liveness "where the configured tracker
-    makes liveness mechanically checkable".
-    """
-    del work_item  # No tracker is configured; nothing to query.
-    return None
 
 
 def _entry_fingerprint(*, entry: object) -> str:
@@ -255,13 +260,21 @@ def _warn_every_todo(*, offenders: list[dict[str, object]]) -> None:
         )
 
 
-def _release_tier_failures(*, offenders: list[dict[str, object]]) -> int:
+def _release_tier_failures(
+    *, offenders: list[dict[str, object]], snapshot: dict[str, str] | None
+) -> int:
     """RELEASE tier: count entries that must block the release.
 
     Rejects an UNOWNED entry, and an owned one whose work-item is checkably
     closed or nonexistent. An owned entry whose liveness cannot be
     established PASSES, but emits a `liveness_unverified` diagnostic so it
     is never indistinguishable from a verified one.
+
+    `snapshot` is the shared resolver's id → status view of the repository's
+    own configured store, `None` when it did not answer. It is read once per
+    run rather than per entry, which is also what lets an id MISSING from an
+    answering store be convicted as nonexistent rather than mistaken for a
+    store that never replied.
     """
     emit = structlog.get_logger("no_todo_registry")
     failing = 0
@@ -277,11 +290,11 @@ def _release_tier_failures(*, offenders: list[dict[str, object]]) -> int:
             )
             continue
         work_item = cast("str", entry.get("work_item")).strip()
-        live = _probe_work_item_liveness(work_item=work_item)
+        live = resolve_liveness(work_item=work_item, snapshot=snapshot)
         if live is None:
             emit.warning(
                 "owned TODO entry accepted; work-item liveness UNVERIFIED "
-                "(no reachable tracker configured)",
+                "(the repository's configured work-item store did not answer)",
                 heading=entry.get("heading"),
                 spec_root=entry.get("spec_root"),
                 work_item=work_item,
@@ -296,13 +309,21 @@ def _release_tier_failures(*, offenders: list[dict[str, object]]) -> int:
                 heading=entry.get("heading"),
                 spec_root=entry.get("spec_root"),
                 work_item=work_item,
+                resolved_status=resolved_status(work_item=work_item, snapshot=snapshot),
                 fail_env_var=_FAIL_ENV_VAR,
                 failing=True,
             )
     return failing
 
 
-def main() -> int:
+def main(*, ledger_reader: LedgerReader = bd_status_reader) -> int:
+    """Run the TODO scan; `ledger_reader` is the injectable liveness seam.
+
+    The default reads the repository's own configured work-item store through
+    the shared resolver. A test passes a deterministic double instead, so the
+    fail-capability cases are proven without a reachable tracker and no unit
+    test's verdict depends on the host it runs on.
+    """
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,
@@ -337,7 +358,8 @@ def main() -> int:
         return 0
     if bool(os.environ.get(_SCOPE_ENV_VAR)):
         offenders = _in_scope_offenders(offenders=offenders, cwd=cwd)
-    return 1 if _release_tier_failures(offenders=offenders) else 0
+    snapshot = ledger_reader(repo=cwd)
+    return 1 if _release_tier_failures(offenders=offenders, snapshot=snapshot) else 0
 
 
 if __name__ == "__main__":

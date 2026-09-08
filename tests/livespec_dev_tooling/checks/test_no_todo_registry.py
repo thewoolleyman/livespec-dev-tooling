@@ -23,11 +23,15 @@ toggled via `monkeypatch.setenv`/`delenv`.
 from __future__ import annotations
 
 import importlib.util
+import inspect
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
 
 import pytest
+
+from livespec_dev_tooling.checks._work_item_liveness import bd_status_reader
 
 __all__: list[str] = []
 
@@ -65,25 +69,52 @@ class _CheckRun(NamedTuple):
     stderr: str
 
 
+_Reader = Callable[..., "dict[str, str] | None"]
+
+
+def _tracker(*, snapshot: dict[str, str] | None) -> _Reader:
+    """A DETERMINISTIC stand-in for the repository's configured work-item store.
+
+    `snapshot=None` is a store that did not answer — the shipped default on
+    any host without a reachable tracker, and the state every pre-existing
+    test in this file runs under. A dict is a store that ANSWERED and holds
+    exactly those items, so an id absent from it is genuinely nonexistent.
+
+    Injecting it here rather than reaching a real tenant is what keeps these
+    verdicts a function of the fixture instead of the host.
+    """
+
+    def _read(*, repo: Path) -> dict[str, str] | None:
+        del repo  # The double answers for whatever repo it is handed.
+        return snapshot
+
+    return _read
+
+
 def _run_check(
     *,
     cwd: Path,
     fail_var: str | None,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    reader: _Reader | None = None,
 ) -> _CheckRun:
     """Invoke the check's `main()` in-process under `cwd`, toggling the fail-lever.
 
     `fail_var=None` removes the lever from the environment (the
     warn-only state); any string sets it to that value via
     `monkeypatch.setenv`.
+
+    `reader` defaults to a store that did not answer, so no test's verdict
+    depends on whether the host running it happens to have a reachable
+    tenant.
     """
     monkeypatch.chdir(cwd)
     if fail_var is None:
         monkeypatch.delenv(_FAIL_VAR, raising=False)
     else:
         monkeypatch.setenv(_FAIL_VAR, fail_var)
-    rc = _MODULE.main()
+    rc = _MODULE.main(ledger_reader=reader or _tracker(snapshot=None))
     captured = capsys.readouterr()
     return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
@@ -217,29 +248,22 @@ _UNOWNED_EMPTY = '[{"heading": "## Foo", "spec_root": "/", "test": "TODO", "work
 _UNOWNED_NON_STR = '[{"heading": "## Foo", "spec_root": "/", "test": "TODO", "work_item": 7}]'
 
 
-def _set_probe(*, monkeypatch: pytest.MonkeyPatch, verdict: bool | None) -> None:
-    """Replace the liveness seam with a SYNTHETIC probe.
-
-    Never contacts the real ledger: the seam is a module-level function and
-    this swaps it wholesale, so no tracker, socket, or `bd` invocation is
-    reachable from these tests.
-    """
-    monkeypatch.setattr(
-        _MODULE,
-        "_probe_work_item_liveness",
-        lambda *, work_item: verdict,  # noqa: ARG005
-    )
+_OWNER_ID = "livespec-jvdvx4"
 
 
 def test_release_tier_passes_owned_entry_when_liveness_unverifiable(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Owned TODO + release lever + no reachable tracker → exit 0, UNVERIFIED diagnostic.
+    """FAIL-CAPABILITY PROOF 4 — no reachable tracker → exit 0, UNVERIFIED diagnostic.
 
     The ratified rule: "an owned live TODO does not block an unrelated
-    release." Absent a configured tracker, liveness is UNVERIFIED — which
+    release." Absent a store that answers, liveness is UNVERIFIED — which
     must PASS, but must NOT be indistinguishable from a real check, so a
     structured diagnostic naming liveness unverified is required.
+
+    This is also the NON-BREAKING proof: it is the state every consuming
+    repository is in on merge, and it is byte-behaviour-identical to the
+    behaviour before the resolver existed.
     """
     _write_coverage(tmp_path=tmp_path, body=_OWNED)
     result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
@@ -252,6 +276,20 @@ def test_release_tier_passes_owned_entry_when_liveness_unverifiable(
         f"an unreachable tracker must emit an UNVERIFIED diagnostic, never a silent pass; "
         f"stderr={result.stderr!r}"
     )
+
+
+def test_shipped_default_reader_is_the_shared_resolver() -> None:
+    """The default seam is the SHARED resolver, not a per-gate hand-roll.
+
+    `SPECIFICATION/spec.md` §"Non-goals" admits the liveness lookup only
+    through "one shared mechanism"; a gate wiring its own is non-conforming
+    even when its behaviour is right. Pinning the default here is what stops
+    the injectable seam from drifting into a private lookup.
+    """
+    default = inspect.signature(_MODULE.main).parameters["ledger_reader"].default
+    assert (
+        default is bd_status_reader
+    ), f"main() must default to the shared work-item liveness resolver; got {default!r}"
 
 
 def test_release_tier_fails_entry_with_whitespace_only_work_item(
@@ -278,34 +316,98 @@ def test_release_tier_fails_entry_with_non_string_work_item(
     )
 
 
-def test_release_tier_fails_owned_entry_whose_work_item_is_not_live(
+def test_release_tier_convicts_a_todo_whose_owner_is_closed(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Where liveness IS checkable, a closed/nonexistent `work_item` fails."""
+    """FAIL-CAPABILITY PROOF 1 — a reachable store reporting the owner CLOSED convicts.
+
+    This is the branch that was UNREACHABLE in every consuming repository
+    while the liveness seam returned `None` unconditionally: 22 rows on
+    livespec-runtime passed the release gate owned by a closed item, and the
+    gate could not have said otherwise. A check that cannot convict is worse
+    than no check, so this test — not the code path — is the deliverable.
+    """
     _write_coverage(tmp_path=tmp_path, body=_OWNED)
-    _set_probe(monkeypatch=monkeypatch, verdict=False)
-    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    result = _run_check(
+        cwd=tmp_path,
+        fail_var="true",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        reader=_tracker(snapshot={_OWNER_ID: "closed"}),
+    )
     assert result.returncode != 0, (
-        f"a checkable-but-dead work_item must fail the release tier; "
+        f"a CLOSED owner must fail the release tier; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
+    assert (
+        "closed or nonexistent work-item" in combined
+    ), f"the refusal must name WHY the owner is dead; stderr={result.stderr!r}"
+    assert '"resolved_status": "closed"' in combined, (
+        f"the ratified clause requires the finding to name the id AND its resolved "
+        f"status; stderr={result.stderr!r}"
+    )
     assert (
         '"level": "error"' in combined
     ), f"a dead work_item should be error-level; stderr={result.stderr!r}"
 
 
-def test_release_tier_passes_owned_entry_whose_work_item_is_live(
+def test_release_tier_convicts_a_todo_whose_owner_does_not_exist(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Where liveness IS checkable and the `work_item` is live, the entry passes."""
+    """FAIL-CAPABILITY PROOF 2 — an owner the answering store does not hold convicts.
+
+    A store that ANSWERED and does not hold the id has established that the
+    id is nonexistent; this must not be confused with a store that never
+    replied, which is the `liveness_unverified` case above. Fleet-wide there
+    are 41 rows of exactly this shape, including ids filed against the wrong
+    tenant.
+    """
     _write_coverage(tmp_path=tmp_path, body=_OWNED)
-    _set_probe(monkeypatch=monkeypatch, verdict=True)
-    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    result = _run_check(
+        cwd=tmp_path,
+        fail_var="true",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        reader=_tracker(snapshot={"livespec-some-other-item": "ready"}),
+    )
+    assert result.returncode != 0, (
+        f"a NONEXISTENT owner must fail the release tier; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert '"resolved_status": "nonexistent"' in combined, (
+        f"the finding must distinguish an invented id from a closed one; "
+        f"stderr={result.stderr!r}"
+    )
+
+
+def test_release_tier_passes_a_todo_whose_owner_is_open(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """FAIL-CAPABILITY PROOF 3 — an OPEN owner stays quiet, in both directions.
+
+    A gate that can only report one of the two outcomes has not adopted the
+    ratified exception. Convicting a live owner would red every honest
+    repository, so this is the half that keeps the teeth discriminating
+    rather than merely sharp.
+    """
+    _write_coverage(tmp_path=tmp_path, body=_OWNED)
+    result = _run_check(
+        cwd=tmp_path,
+        fail_var="true",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        reader=_tracker(snapshot={_OWNER_ID: "ready"}),
+    )
     assert result.returncode == 0, (
         f"an owned live TODO must not block a release; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
+    combined = result.stdout + result.stderr
+    assert (
+        '"level": "error"' not in combined
+    ), f"a live owner must produce no error-level finding; stderr={result.stderr!r}"
 
 
 def test_per_commit_tier_unchanged_for_owned_entry(
