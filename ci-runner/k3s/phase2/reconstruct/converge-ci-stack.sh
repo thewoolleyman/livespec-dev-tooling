@@ -113,8 +113,13 @@ if [ -d "${ARTIFACT_DIR}/observability" ]; then
 else
   OBSERVABILITY_DIR="$(cd "${ARTIFACT_DIR}/../../observability" && pwd)"   # repo layout
 fi
+if [ -d "${ARTIFACT_DIR}/gates" ]; then
+  GATES_DIR="${ARTIFACT_DIR}/gates"                          # installed layout
+else
+  GATES_DIR="$(cd "${ARTIFACT_DIR}/../gates" && pwd)"        # repo layout
+fi
 RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
-for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR"; do
+for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR"; do
   [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
 done
 [ -x "$RENDER_SA_KUBECONFIG" ] || { echo "FATAL: ${RENDER_SA_KUBECONFIG} not found or not executable" >&2; exit 1; }
@@ -124,6 +129,14 @@ KUEUE_VERSION="v0.19.1"      # co-maintained with ../../install-kueue.sh
 CONTROLLER_NAMESPACE="arc-systems"
 RUNNERS_NAMESPACE="arc-runners"
 PROBE_KUBECONFIG="${CI_KUEUE_PROBE_KUBECONFIG:-/etc/ci-runner/kueue-webhook-probe.kubeconfig}"
+# The delegated-gate submitter credential (R4.S2, livespec-dev-tooling-y8em).
+# Rendered HERE on the control-plane node but CONSUMED by a remote driver host,
+# so its kubeconfig names the TAILNET address the API server holds a SAN for
+# (../k3s-config/config.yaml `tls-san`), never the loopback default that is
+# correct for the on-host probe above. Delivering this file to the driver host
+# is R4.S8's job (livespec-sab5gn.1); converge only renders it.
+GATES_KUBECONFIG="${CI_GATES_KUBECONFIG:-/etc/ci-runner/gates.kubeconfig}"
+GATES_SERVER="${CI_GATES_SERVER:-https://poweredge-xubuntu.perch-rudd.ts.net:6443}"
 
 # Live release -> phase-2 values file. The SINGLE source of truth in this
 # script for what gets applied; co-maintained with phase2/README.md
@@ -615,6 +628,22 @@ kubectl apply -f "${OBSERVABILITY_DIR}/kueue-webhook-probe-rbac.yaml"
   --secret kueue-webhook-probe-token \
   --user kueue-webhook-probe \
   --dest "${PROBE_KUBECONFIG}" \
+  --group root --mode 0600
+
+# ---------------------------------------------------------------------------
+log "10b. Re-apply the delegated-gate submitter identity and re-render its kubeconfig"
+# Same tmpfs-datastore reasoning as step 10: the ServiceAccount and its token
+# Secret are wiped on every boot, so a kubeconfig rendered once carries a token
+# the fresh API server has never seen. The gates Namespace this applies into is
+# created by step 5's ../kueue/cluster-queue-gates.yaml, which is why this step
+# is ordered after it rather than beside step 10.
+kubectl apply -f "${GATES_DIR}/gates-rbac.yaml"
+"${RENDER_SA_KUBECONFIG}" \
+  --namespace gates \
+  --secret gate-submitter-token \
+  --user gate-submitter \
+  --dest "${GATES_KUBECONFIG}" \
+  --server "${GATES_SERVER}" \
   --group root --mode 0600
 
 # ---------------------------------------------------------------------------

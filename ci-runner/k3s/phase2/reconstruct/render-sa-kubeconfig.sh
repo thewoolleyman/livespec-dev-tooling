@@ -16,13 +16,24 @@
 #
 # Usage:
 #   render-sa-kubeconfig.sh --namespace NS --secret SECRET --user NAME \
-#                           --dest PATH [--group GROUP] [--mode MODE]
+#                           --dest PATH [--group GROUP] [--mode MODE] \
+#                           [--server URL]
+#
+# --server is the API-server URL written into the rendered kubeconfig. It
+# DEFAULTS to https://127.0.0.1:6443, which is correct for a HOST-side caller on
+# the control-plane node (the Kueue-webhook probe) and wrong for any kubeconfig
+# that LEAVES the host: loopback there names the reader's own machine. A remote
+# caller must pass the address the API server actually serves under and holds a
+# SAN for — for the driver host that is the tailnet name added by R4.S1
+# (livespec-dev-tooling-vlku). The default is kept so the existing probe caller
+# is unchanged.
 # The Secret must be `type: kubernetes.io/service-account-token` annotated
 # with the ServiceAccount; the token controller populates it asynchronously,
 # so this waits up to 60 s for `data.token` to appear.
 set -euo pipefail
 
 namespace=""; secret=""; user=""; dest=""; group="root"; mode="0600"
+server="https://127.0.0.1:6443"
 while [ $# -gt 0 ]; do
   case "$1" in
     --namespace) namespace="$2"; shift 2 ;;
@@ -31,6 +42,7 @@ while [ $# -gt 0 ]; do
     --dest) dest="$2"; shift 2 ;;
     --group) group="$2"; shift 2 ;;
     --mode) mode="$2"; shift 2 ;;
+    --server) server="$2"; shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -59,7 +71,7 @@ kind: Config
 clusters:
 - name: k3s
   cluster:
-    server: https://127.0.0.1:6443
+    server: ${server}
     certificate-authority-data: ${ca_b64}
 contexts:
 - name: ${user}@k3s

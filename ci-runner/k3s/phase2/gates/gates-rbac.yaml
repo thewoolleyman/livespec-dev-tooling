@@ -1,0 +1,101 @@
+# gates-rbac.yaml — the scoped, REMOTE cluster credential a driver host uses to
+# submit and watch delegated pre-push gate Jobs (R4.S2, livespec-dev-tooling-y8em,
+# plan livespec k3s-on-gmktec-for-vps-usage / epic livespec-sab5gn, design in that
+# plan's research/003 "The recommended shape" B).
+#
+# WHY THIS EXISTS AS SOURCE: the driver host (today the VPS) holds a kubeconfig
+# carrying a bearer TOKEN, so that kubeconfig is NEVER committed. This manifest is
+# the non-secret half — the ServiceAccount, its least-privilege Role + RoleBinding,
+# and the static-token Secret request — captured as source so the credential is
+# recreatable (the fleet's live-must-equal-source rule), exactly as
+# ../../observability/kueue-webhook-probe-rbac.yaml does for the on-host probe.
+# Applying this manifest reproduces the live objects; the ServiceAccount-token
+# controller then POPULATES the Secret's data (token, ca.crt) — those populated
+# bytes are the secret and are deliberately absent here.
+#
+# THE NAMESPACE IS NOT DECLARED HERE, DELIBERATELY. The `gates` Namespace is
+# already a converge artifact, created by ../kueue/cluster-queue-gates.yaml,
+# because that file's LocalQueue `gates-lq` is namespaced and cannot be applied
+# without it. Re-declaring it here would give one live object two committed
+# sources of truth and invite drift between them. Converge applies the kueue
+# manifests (step 5) before this one (step 10b), so the namespace always exists
+# by the time these objects are applied.
+#
+# LEAST PRIVILEGE: create, get, list and watch on `jobs` (batch) and `pods` (core),
+# plus get on `pods/log`, in namespace `gates` ONLY. Deliberately absent, and
+# asserted absent by gates-credential-exit-tests.sh: anything cluster-scoped, any
+# verb on `secrets`, and any `delete` — a finished Job is reaped by its own
+# ttlSecondsAfterFinished via the Job controller's authority, never by this
+# credential. `pods/log` is the gate's whole output channel, so `get` on it is the
+# one subresource grant.
+#
+# APPLIED ON EVERY BOOT by the reconstruct-on-boot converge
+# (../reconstruct/converge-ci-stack.sh, step 10b), which applies this manifest and
+# then renders the kubeconfig from the populated token Secret via
+# ../reconstruct/render-sa-kubeconfig.sh. WHY AT BOOT: the k3s datastore is tmpfs
+# and EMPTY on every boot (../datastore-tmpfs/), so this ServiceAccount and its
+# token Secret are WIPED at each boot; a kubeconfig rendered once then carries a
+# token the fresh API server has never seen and every call fails `Unauthorized` —
+# the measured failure that ../../observability/kueue-webhook-probe-rbac.yaml's own
+# header records from 2026-09-02. The gates credential therefore EXPIRES AT EVERY
+# poweredge REBOOT; re-delivering it to the driver host is R4.S8's job
+# (livespec-sab5gn.1), not this manifest's.
+#
+# To re-apply and re-render by hand between boots:
+#   sudo systemctl start converge-ci-stack.service   (idempotent)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gate-submitter
+  namespace: gates
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-gates
+    livespec.workitem: y8em
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gate-submitter
+  namespace: gates
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-gates
+    livespec.workitem: y8em
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gate-submitter
+  namespace: gates
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-gates
+    livespec.workitem: y8em
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gate-submitter
+subjects:
+  - kind: ServiceAccount
+    name: gate-submitter
+    namespace: gates
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gate-submitter-token
+  namespace: gates
+  annotations:
+    kubernetes.io/service-account.name: gate-submitter
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-gates
+    livespec.workitem: y8em
+type: kubernetes.io/service-account-token
