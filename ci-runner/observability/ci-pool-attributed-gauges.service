@@ -5,7 +5,10 @@
 # `ci-runner-pod-lifecycle-reliability`, epic livespec-ifwnqj) scope 1, 2, 4
 # and 5: the pool's queue depth and runner population PER REPOSITORY, which
 # the lifecycle sweep's fleet sums cannot express — and scope 3, the
-# per-runner RUNNING-JOB detail, as wide events. Receiver: the
+# per-runner RUNNING-JOB detail, as wide events. Also for `livespec-ifwnqj.6`:
+# the runner-pod START INTERVAL emitted as its PHASES rather than as one
+# aggregate, as gauges beside the others and as a second wide-event kind in
+# the same POST. Receiver: the
 # CI-runner-host otel-collector (thewoolleyman/otel-collector
 # config.ci-runner-host.yaml) on 127.0.0.1:4319, exporting to the `livespec`
 # Honeycomb env. TWO POSTs to that one receiver per tick: the gauges to
@@ -17,23 +20,38 @@
 #
 # NOT A DynamicUser, unlike the sibling ci-runner-heartbeat.service: it runs
 # as root with the k3s ADMIN kubeconfig, because it reads cluster-scoped
-# ClusterQueues and an all-namespace EphemeralRunner listing. That is the
-# same credential and the same Environment= line the runner-pod lifecycle
-# sweep's unit carries for the same two object kinds; the use here is
+# ClusterQueues and PersistentVolumes plus all-namespace EphemeralRunner and
+# pod listings. That is the same credential and the same Environment= line
+# the runner-pod lifecycle sweep's unit carries for the same object kinds,
+# and it already covers the two the start phases added, so no RBAC changed
+# with them; the use here is
 # strictly read-only. It also makes this unit a SERVER-node unit — an agent
 # node holds no admin kubeconfig, and the server's own tick already covers
 # the whole pool.
 #
 # THE DEADLINE. The timer's interval is 60 s, so a run must finish inside
-# one. The bounded work is two kubectl list calls at 15 s each plus TWO 10 s
-# curls — the metrics POST and the running-job events POST — so 50 s worst
-# case, and TimeoutStartSec=55 keeps a wedged read from holding the cadence
-# the way the lifecycle sweep's untimed child did on 2026-09-06
+# one. The bounded work is FOUR kubectl list calls — ClusterQueues and
+# EphemeralRunners at 15 s each, pods and PersistentVolumes at 5 s each —
+# plus TWO 5 s curls, the metrics POST and the wide-events POST, so 50 s
+# worst case, and TimeoutStartSec=55 keeps a wedged read from holding the
+# cadence the way the lifecycle sweep's untimed child did on 2026-09-06
 # (livespec-kgdlte). It was 50 against a 40 s worst case while this unit
 # posted metrics only; the events POST added the fourth bounded step, so the
 # deadline moved with it rather than being left to bite a healthy-but-slow
 # run. A run killed at the deadline emits nothing, which is the correct
 # fail-closed outcome.
+#
+# THE PER-PHASE START WORK ADDED NO DEADLINE, it REALLOCATED one
+# (`livespec-ifwnqj.6`). The pod and PersistentVolume listings the start
+# phases need cost 10 s of worst case, and the two loopback POSTs dropped
+# from 10 s to 5 s each to pay for it: the worst case is 50 s before and
+# after, and this line stays 55. Five seconds is not a weakened POST
+# deadline — the collector is on 127.0.0.1, and a small JSON body it cannot
+# accept in five seconds means it is wedged, which is precisely when this
+# unit should stop waiting. The two new listings take the SHORTER kubectl
+# deadline because the start signal samples by construction: abandoning one
+# slow listing costs one sample, while overrunning this line costs the whole
+# tick, gauges and events together.
 #
 # BOOT ORDERING is ORDERING ONLY (no Requires=), the shape
 # ci-kueue-webhook-probe.service settled on: a boot-time activation waits for
