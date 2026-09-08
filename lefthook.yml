@@ -6,8 +6,17 @@
 #   pre-commit runs, in order, 00-install-worktree-pack,
 #   01-lint-autofix-staged, 02-commit-pairs-source-and-test,
 #   03-check-pre-commit; commit-msg runs no-commit-on-master then
-#   red-green-replay (v034 D3); pre-push runs 00-install-worktree-pack
-#   then 01-check-pre-push (the full aggregate).
+#   red-green-replay (v034 D3) then the shipped-path release guard;
+#   pre-push runs 00-install-worktree-pack then 01-check-pre-push (the
+#   full aggregate).
+#
+# Why the release guard is a commit-msg member and runs LAST there
+# (work-item livespec-dev-tooling-sxdz): both the commit TYPE it judges
+# and its `Shipped-Path-Release-Waived:` override trailer live in the
+# COMMIT MESSAGE, which does not exist at pre-commit time — so it cannot
+# be a pre-commit gate at all. It runs after red-green-replay because
+# that gate can reject a commit outright, and a commit already refused
+# should not also be told about its release class.
 #
 # Why the installer runs FIRST in both hooks: the worktree-discipline
 # pack this repository ships is gitignored-and-installed, so a worktree
@@ -61,6 +70,8 @@ commit-msg:
         fi
     01-red-green-replay:
       run: just check-red-green-replay {1}
+    02-shipped-path-release-guard:
+      run: just check-shipped-path-release-guard {1}
 
 pre-push:
   commands:

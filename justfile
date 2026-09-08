@@ -275,6 +275,7 @@ check:
         check-fleet-conformance-admin
         check-fabro-image-pin-lockstep
         check-no-workflow-edits
+        check-shipped-path-release-guard
         check-uv-lock-version-sync
     )
     scripts/just/check.sh "${targets[@]}"
@@ -877,6 +878,22 @@ check-red-green-replay *args:
 
 check-required-role-keys-declared:
     uv run python -m livespec_dev_tooling.checks.required_role_keys_declared
+
+# Shipped-path release guard. NOT a canonical-aggregate slug — its module lives
+# at livespec_dev_tooling/shipped_path_release_guard_check.py rather than under
+# livespec_dev_tooling/checks/, so canonical_checks.py's filesystem walk does not
+# discover it and it is wired in the repo-private block below the canonical set.
+#
+# Two modes on the `check-red-green-replay` precedent above, which solves the
+# identical problem. WITH a message-file argument (lefthook's commit-msg hook
+# passes `{1}`) it judges the pending commit against the staged diff. With NO
+# argument — the `just check` / pre-push / CI invocation — it judges every
+# non-merge commit in origin/master..HEAD. `"$@"` is therefore load-bearing:
+# dropping it would silently run the range on every commit-msg invocation
+# (work-item livespec-dev-tooling-sxdz).
+[positional-arguments]
+check-shipped-path-release-guard *args:
+    uv run python -m livespec_dev_tooling.shipped_path_release_guard_check "$@"
 
 check-rop-pipeline-shape:
     uv run python -m livespec_dev_tooling.checks.rop_pipeline_shape
