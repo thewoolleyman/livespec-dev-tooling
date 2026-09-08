@@ -23,14 +23,39 @@ at all and skip gracefully so local pre-commit is not blocked. A host
 whose credentialed API call fails for any other reason attempted the
 check and got no answer — it has not proven master is green, so it
 fails loudly.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The assertion targets are
+unchanged — the int exit code plus the structlog stderr text, now read
+off `capsys` instead of `CompletedProcess`.
+
+The fake `gh` is UNAFFECTED: it is the check's OWN subprocess, found
+through `shutil.which` / `PATH` exactly as before. What used to be the
+child's `env={**os.environ, ...}` overrides is now `monkeypatch.setenv`
+in this process, which the check's own children inherit identically.
+
+Branch parity with the retired spawn: the five `gh` failure states, the
+severity-lever arms, the pending / green / red conclusion arms, and the
+signal-source disagreement are driven by the same fixtures as before, and
+the module-import pair at the bottom still covers both arms of the
+vendored-path guard. The
+`if __name__ == "__main__": raise SystemExit(main())` line is the one
+line the child reached that an in-process call cannot; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -43,35 +68,63 @@ _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "master_ci_green.py"
 _EXPECTED_ENDPOINT = "repos/{owner}/{repo}/commits/master/check-runs?check_name=ci-green"
 
 
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location("master_ci_green_under_test", str(_CHECK))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
 def _run_check(
     *,
     cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     env_path: str | None = None,
     env_extra: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run the check script with cwd set to a path.
+) -> _CheckRun:
+    """Run the check's `main()` in-process with cwd set to a path.
 
-    Preserves the parent env (incl. COVERAGE_PROCESS_START) so pytest-cov's
-    subprocess auto-init works; overrides only PATH when env_path is given,
-    plus any explicit `env_extra` entries (e.g. pinning an env var a test's
-    expectation depends on, so it cannot flip with the invoking shell's env).
+    Overrides only PATH when `env_path` is given, plus any explicit
+    `env_extra` entries (e.g. pinning an env var a test's expectation
+    depends on, so it cannot flip with the invoking shell's env). Both
+    are the in-process equivalent of the retired child's `env=` mapping
+    — `monkeypatch.setenv` mutates this process's `os.environ`, which the
+    `gh` subprocesses the check itself spawns inherit identically.
     """
-    env = {**os.environ, **(env_extra or {})}
+    monkeypatch.chdir(cwd)
+    for name, value in (env_extra or {}).items():
+        monkeypatch.setenv(name, value)
     if env_path is not None:
-        env["PATH"] = env_path
-    return subprocess.run(
-        [sys.executable, str(_CHECK)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+        monkeypatch.setenv("PATH", env_path)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
-def test_gh_unavailable_skips_gracefully(*, tmp_path: Path) -> None:
+def test_gh_unavailable_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No `gh` on PATH → exit 0 with a warning (local-dev tolerance)."""
-    result = _run_check(cwd=tmp_path, env_path="")
+    result = _run_check(cwd=tmp_path, env_path="", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when gh unavailable; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -79,7 +132,12 @@ def test_gh_unavailable_skips_gracefully(*, tmp_path: Path) -> None:
     assert "gh CLI not on PATH" in result.stderr
 
 
-def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
+def test_real_repo_passes(
+    *,
+    tmp_path: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Run the check against the real repo cwd; expect exit 0.
 
     Exercises the real-`gh` path end-to-end against a green master (a red
@@ -88,7 +146,7 @@ def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
     check). With `gh` unauthenticated the check still exits 0 (graceful
     skip).
     """
-    result = _run_check(cwd=_REPO_ROOT)
+    result = _run_check(cwd=_REPO_ROOT, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 against real repo; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -159,7 +217,9 @@ def _check_runs_payload(*, status: str, conclusion: str) -> str:
     )
 
 
-def test_reads_head_commit_ci_green_check_run_not_the_workflow_run(*, tmp_path: Path) -> None:
+def test_reads_head_commit_ci_green_check_run_not_the_workflow_run(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Master's newest workflow run is RED while head-commit `ci-green` is green → exit 0.
 
     Regression pin for work-item livespec-dev-tooling-aa7 (absorbing gam8 and
@@ -175,7 +235,7 @@ def test_reads_head_commit_ci_green_check_run_not_the_workflow_run(*, tmp_path: 
         tmp_path=tmp_path,
         stdout=_check_runs_payload(status="completed", conclusion='"success"'),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when head-commit ci-green is success despite a red "
         f"workflow run; got {result.returncode}, stderr={result.stderr!r}"
@@ -190,17 +250,21 @@ def test_reads_head_commit_ci_green_check_run_not_the_workflow_run(*, tmp_path: 
     )
 
 
-def test_success_conclusion_passes(*, tmp_path: Path) -> None:
+def test_success_conclusion_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Head-commit ci-green is success → exit 0."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout=_check_runs_payload(status="completed", conclusion='"success"'),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_failure_conclusion_fails(*, tmp_path: Path) -> None:
+def test_failure_conclusion_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Head-commit ci-green is failure → exit 1 with error diagnostic."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
@@ -210,12 +274,16 @@ def test_failure_conclusion_fails(*, tmp_path: Path) -> None:
         cwd=tmp_path,
         env_path=fake_path,
         env_extra={"LIVESPEC_MASTER_CI_GREEN": ""},
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 1
     assert "master CI is red" in result.stderr
 
 
-def test_red_conclusion_fails_regardless_of_lever_env(*, tmp_path: Path) -> None:
+def test_red_conclusion_fails_regardless_of_lever_env(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A red master fails even with `LIVESPEC_MASTER_CI_GREEN=warn` in the env.
 
     This gate deliberately has NO escape lever (wontfix li-4x3a45, upheld and
@@ -235,42 +303,52 @@ def test_red_conclusion_fails_regardless_of_lever_env(*, tmp_path: Path) -> None
         cwd=tmp_path,
         env_path=fake_path,
         env_extra={"LIVESPEC_MASTER_CI_GREEN": "warn"},
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 1
     assert "master CI is red" in result.stderr
 
 
-def test_pending_status_passes(*, tmp_path: Path) -> None:
+def test_pending_status_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Head-commit ci-green still in_progress → exit 0 with info log."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout=_check_runs_payload(status="in_progress", conclusion="null"),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "still pending" in result.stderr
 
 
-def test_unrecognized_conclusion_passes(*, tmp_path: Path) -> None:
+def test_unrecognized_conclusion_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Unrecognized conclusion → exit 0 with warning (non-blocking)."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout=_check_runs_payload(status="completed", conclusion='"neutral"'),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "unrecognized conclusion" in result.stderr
 
 
-def test_empty_check_runs_list_skips(*, tmp_path: Path) -> None:
+def test_empty_check_runs_list_skips(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No ci-green check run on master's head commit → exit 0 with warning."""
     fake_path = _install_fake_gh(tmp_path=tmp_path)
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "no ci-green check run on master" in result.stderr
 
 
-def test_missing_master_ref_skips_gracefully(*, tmp_path: Path) -> None:
+def test_missing_master_ref_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The `master` ref does not resolve on the remote → exit 0 with warning.
 
     A governed repo whose default branch is `main` has no `master` commit to
@@ -287,7 +365,7 @@ def test_missing_master_ref_skips_gracefully(*, tmp_path: Path) -> None:
         returncode=1,
         auth_returncode=0,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when the master ref does not resolve; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -295,7 +373,9 @@ def test_missing_master_ref_skips_gracefully(*, tmp_path: Path) -> None:
     assert "master ref does not resolve" in result.stderr
 
 
-def test_gh_api_failure_without_credential_skips_gracefully(*, tmp_path: Path) -> None:
+def test_gh_api_failure_without_credential_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh present but holding NO credential, API call fails → exit 0 with warning.
 
     This is the local-developer tolerance the fail-soft was built for: someone
@@ -309,7 +389,7 @@ def test_gh_api_failure_without_credential_skips_gracefully(*, tmp_path: Path) -
         returncode=1,
         auth_returncode=1,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when gh holds no credential; got {result.returncode}, "
         f"stderr={result.stderr!r}"
@@ -318,7 +398,9 @@ def test_gh_api_failure_without_credential_skips_gracefully(*, tmp_path: Path) -
     assert "gh auth login" in result.stderr
 
 
-def test_credentialed_http_401_skips_as_invalid_credential(*, tmp_path: Path) -> None:
+def test_credentialed_http_401_skips_as_invalid_credential(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh credential present but rejected with HTTP 401 → exit 0 with warning.
 
     `gh auth token` proves only local credential presence, not validity. An
@@ -332,7 +414,7 @@ def test_credentialed_http_401_skips_as_invalid_credential(*, tmp_path: Path) ->
         returncode=1,
         auth_returncode=0,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 for rejected gh credential; got {result.returncode}, "
         f"stderr={result.stderr!r}"
@@ -340,7 +422,9 @@ def test_credentialed_http_401_skips_as_invalid_credential(*, tmp_path: Path) ->
     assert "gh credential was rejected" in result.stderr
 
 
-def test_credentialed_http_503_still_fails_loudly(*, tmp_path: Path) -> None:
+def test_credentialed_http_503_still_fails_loudly(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh credential present but API returns HTTP 503 → exit 1, never a pass."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
@@ -349,7 +433,7 @@ def test_credentialed_http_503_still_fails_loudly(*, tmp_path: Path) -> None:
         returncode=1,
         auth_returncode=0,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, (
         f"expected exit 1 when GitHub returns HTTP 503; got {result.returncode}, "
         f"stderr={result.stderr!r}"
@@ -357,7 +441,9 @@ def test_credentialed_http_503_still_fails_loudly(*, tmp_path: Path) -> None:
     assert "cannot prove master CI is green" in result.stderr
 
 
-def test_credentialed_rate_limit_fails_loudly(*, tmp_path: Path) -> None:
+def test_credentialed_rate_limit_fails_loudly(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh credential present but the API rate-limits the call → exit 1.
 
     A 403 rate-limit is the same category as the outage: the gate was armed,
@@ -371,7 +457,7 @@ def test_credentialed_rate_limit_fails_loudly(*, tmp_path: Path) -> None:
         returncode=1,
         auth_returncode=0,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, (
         f"expected exit 1 when the GitHub API rate-limits a credentialed call; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -379,7 +465,9 @@ def test_credentialed_rate_limit_fails_loudly(*, tmp_path: Path) -> None:
     assert "cannot prove master CI is green" in result.stderr
 
 
-def test_credentialed_network_failure_fails_loudly(*, tmp_path: Path) -> None:
+def test_credentialed_network_failure_fails_loudly(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh credential present but the host cannot reach the API at all → exit 1.
 
     The third trigger named alongside HTTP 5xx and rate-limiting: `gh` never
@@ -400,7 +488,7 @@ def test_credentialed_network_failure_fails_loudly(*, tmp_path: Path) -> None:
         returncode=1,
         auth_returncode=0,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, (
         f"expected exit 1 when a credentialed gh cannot reach the API at all; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -409,7 +497,9 @@ def test_credentialed_network_failure_fails_loudly(*, tmp_path: Path) -> None:
     assert "retry once the GitHub API is reachable" in result.stderr
 
 
-def test_gh_api_failure_with_credential_fails_loudly(*, tmp_path: Path) -> None:
+def test_gh_api_failure_with_credential_fails_loudly(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh IS credentialed and the API call fails → exit 1, never a silent pass.
 
     Regression pin for the 2026-07-19 GitHub outage (work-item
@@ -425,7 +515,7 @@ def test_gh_api_failure_with_credential_fails_loudly(*, tmp_path: Path) -> None:
         returncode=1,
         auth_returncode=0,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, (
         f"expected exit 1 when a credentialed gh cannot reach the API; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -433,7 +523,9 @@ def test_gh_api_failure_with_credential_fails_loudly(*, tmp_path: Path) -> None:
     assert "cannot prove master CI is green" in result.stderr
 
 
-def test_credentialed_api_failure_hint_is_not_the_auth_hint(*, tmp_path: Path) -> None:
+def test_credentialed_api_failure_hint_is_not_the_auth_hint(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The API-error hint must not misdiagnose an outage as an auth problem.
 
     The pre-fix code emitted `check gh auth status` for every failure branch
@@ -447,13 +539,15 @@ def test_credentialed_api_failure_hint_is_not_the_auth_hint(*, tmp_path: Path) -
         returncode=1,
         auth_returncode=0,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert "gh auth login" not in result.stderr
     assert "gh auth status" not in result.stderr
     assert "retry once the GitHub API is reachable" in result.stderr
 
 
-def test_credentialed_api_failure_fails_regardless_of_lever_env(*, tmp_path: Path) -> None:
+def test_credentialed_api_failure_fails_regardless_of_lever_env(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An unprovable master fails even with `LIVESPEC_MASTER_CI_GREEN=warn` set.
 
     Same standing directive as the red-conclusion case below (wontfix
@@ -472,37 +566,45 @@ def test_credentialed_api_failure_fails_regardless_of_lever_env(*, tmp_path: Pat
         cwd=tmp_path,
         env_path=fake_path,
         env_extra={"LIVESPEC_MASTER_CI_GREEN": "warn"},
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 1
     assert "cannot prove master CI is green" in result.stderr
 
 
-def test_unexpected_payload_shape(*, tmp_path: Path) -> None:
+def test_unexpected_payload_shape(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh returns a non-object payload → exit 0 with error log."""
     fake_path = _install_fake_gh(tmp_path=tmp_path, stdout='["not an object"]')
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "unexpected gh response shape" in result.stderr
 
 
-def test_check_runs_entry_not_dict(*, tmp_path: Path) -> None:
+def test_check_runs_entry_not_dict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh returns check_runs whose first entry isn't a dict → exit 0 with error log."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout='{"total_count": 1, "check_runs": ["not a dict"]}',
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "unexpected ci-green check-run shape" in result.stderr
 
 
-def test_missing_status_and_conclusion(*, tmp_path: Path) -> None:
+def test_missing_status_and_conclusion(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh returns a check run without status/conclusion fields → exit 0 with warning."""
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout='{"total_count": 1, "check_runs": [{}]}',
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     # status is None (not in PENDING set) and conclusion is None
     # (not in GREEN or RED set), so falls through to "unrecognized" warning.

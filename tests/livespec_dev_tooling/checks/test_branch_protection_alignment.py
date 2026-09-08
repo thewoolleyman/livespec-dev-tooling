@@ -3,16 +3,44 @@
 Guard Layer 1 mechanical check that prevents the v039-D1-style
 drift between `.github/workflows/ci.yml`'s job matrix and the
 default branch protection's required-checks list.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture, and the
+assertion targets are unchanged — the int exit code plus the structlog
+stderr text, now read off `capsys` instead of `CompletedProcess`.
+
+The `gh` / `git` stubs are UNAFFECTED: those are the check's OWN
+subprocesses, and it finds them through `shutil.which` / `PATH` exactly
+as before. What used to be the child's `env={**os.environ, "PATH": ...}`
+is now `monkeypatch.setenv("PATH", ...)` in this process, which the
+check's own children inherit identically.
+
+Branch parity with the retired spawn: the graceful-absence exit, the
+empty-matrix exit, the `gh`-unavailable skip, the protection-absent and
+strict-enabled exits, and both alignment directions are driven by the
+same fixtures as before, and the module-import pair below still covers
+both arms of the vendored-path guard. The
+`if __name__ == "__main__": raise SystemExit(main())` line is the one
+line the child reached that an in-process call cannot; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
-import os
-import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -21,24 +49,60 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _CHECK = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "branch_protection_alignment.py"
 
 
-def _run_check(*, cwd: Path, env_path: str | None = None) -> subprocess.CompletedProcess[str]:
-    """Run the check script with cwd set to tmp_path (or any path).
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
 
-    Preserves the parent env (incl. COVERAGE_PROCESS_START) so pytest-cov's
-    subprocess auto-init works; overrides only PATH when env_path is given.
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    Registered in `sys.modules` before `exec_module` for the same reason
+    `test_module_importable_without_running_main` does it: the dataclass
+    machinery resolves string annotations via `sys.modules[cls.__module__]`.
     """
-    env = {**os.environ, "PATH": env_path} if env_path is not None else None
-    return subprocess.run(
-        [sys.executable, str(_CHECK)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    module_name = "branch_protection_alignment_under_test"
+    spec = importlib.util.spec_from_file_location(module_name, str(_CHECK))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def test_missing_ci_yml_is_graceful(*, tmp_path: Path) -> None:
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    env_path: str | None = None,
+) -> _CheckRun:
+    """Run the check's `main()` in-process with cwd set to tmp_path (or any path).
+
+    Overrides only PATH when `env_path` is given — the in-process
+    equivalent of the retired child's `env={**os.environ, "PATH": ...}`,
+    inherited by the `gh` / `git` subprocesses the check itself spawns.
+    """
+    monkeypatch.chdir(cwd)
+    if env_path is not None:
+        monkeypatch.setenv("PATH", env_path)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_missing_ci_yml_is_graceful(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Empty cwd → ci.yml missing → exit 0 (graceful absence-handling).
 
     Per epic li-univck Phase 1.1 (li-chkabs), every canonical check
@@ -47,7 +111,7 @@ def test_missing_ci_yml_is_graceful(*, tmp_path: Path) -> None:
     not configured GitHub Actions CI have no `.github/workflows/ci.yml`;
     the branch-protection alignment invariant is vacuously satisfied.
     """
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 on missing ci.yml (graceful absence-handling); "
         f"got {result.returncode}, "
@@ -55,12 +119,14 @@ def test_missing_ci_yml_is_graceful(*, tmp_path: Path) -> None:
     )
 
 
-def test_empty_matrix_fails(*, tmp_path: Path) -> None:
+def test_empty_matrix_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """ci.yml exists but has no parseable matrix → exit 1."""
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
     _ = (workflows / "ci.yml").write_text("name: CI\non: push\n", encoding="utf-8")
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 1, (
         f"expected exit 1 on empty matrix; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -68,7 +134,9 @@ def test_empty_matrix_fails(*, tmp_path: Path) -> None:
     assert "matrix.target" in result.stderr
 
 
-def test_gh_unavailable_skips_gracefully(*, tmp_path: Path) -> None:
+def test_gh_unavailable_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No `gh` on PATH → exit 0 with a warning (local-dev tolerance)."""
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
@@ -86,7 +154,7 @@ def test_gh_unavailable_skips_gracefully(*, tmp_path: Path) -> None:
         """)
     _ = (workflows / "ci.yml").write_text(ci_yml, encoding="utf-8")
     # Empty PATH → gh CLI not found by shutil.which.
-    result = _run_check(cwd=tmp_path, env_path="")
+    result = _run_check(cwd=tmp_path, env_path="", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when gh unavailable; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -94,7 +162,12 @@ def test_gh_unavailable_skips_gracefully(*, tmp_path: Path) -> None:
     assert "gh CLI not on PATH" in result.stderr
 
 
-def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
+def test_real_repo_passes(
+    *,
+    tmp_path: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Run the check against the real repo cwd; expect exit 0.
 
     With the path-portability refactor, the check resolves the
@@ -104,7 +177,7 @@ def test_real_repo_passes(*, tmp_path: Path) -> None:  # noqa: ARG001
     unauthenticated OR with no branch protection set on master,
     the check still exits 0 (graceful skip). Either way: exit 0.
     """
-    result = _run_check(cwd=_REPO_ROOT)
+    result = _run_check(cwd=_REPO_ROOT, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 against real repo; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -269,7 +342,9 @@ def _setup_repo_with_gate_and_matrix(*, tmp_path: Path) -> None:
     _ = (workflows / "ci.yml").write_text(ci_yml, encoding="utf-8")
 
 
-def test_gate_job_recognized_as_required(*, tmp_path: Path) -> None:
+def test_gate_job_recognized_as_required(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A required top-level GATE job (`ci-green`) is recognized, not flagged missing.
 
     Under the single-gate model, master branch protection requires only
@@ -284,7 +359,7 @@ def test_gate_job_recognized_as_required(*, tmp_path: Path) -> None:
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["ci-green"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when the required check is the ci-green gate job; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -293,7 +368,9 @@ def test_gate_job_recognized_as_required(*, tmp_path: Path) -> None:
     assert "required check has no matching" not in result.stderr
 
 
-def test_genuinely_missing_required_still_fails(*, tmp_path: Path) -> None:
+def test_genuinely_missing_required_still_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A required check matching neither a matrix leg nor a top-level job → exit 4.
 
     Guards against over-broadening the gate-job recognition: `check-phantom`
@@ -308,7 +385,7 @@ def test_genuinely_missing_required_still_fails(*, tmp_path: Path) -> None:
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["ci-green", "check-phantom"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4 when a genuinely-missing check is required; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -353,7 +430,9 @@ def test_parse_top_level_jobs_collects_ids_and_literal_names() -> None:
     assert result == {"build", "ci-green", "matrix-job"}, result
 
 
-def test_required_missing_from_ci_yml_fails(*, tmp_path: Path) -> None:
+def test_required_missing_from_ci_yml_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Required check absent from ci.yml matrix → exit 4 (check failed).
 
     Exit 4 is the documented "check failed (structured findings on
@@ -367,7 +446,7 @@ def test_required_missing_from_ci_yml_fails(*, tmp_path: Path) -> None:
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["check-foo", "check-missing"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4 when required check missing from ci.yml; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -377,7 +456,9 @@ def test_required_missing_from_ci_yml_fails(*, tmp_path: Path) -> None:
     assert "required_check_missing_from_ci" in result.stderr
 
 
-def test_aligned_lists_pass(*, tmp_path: Path) -> None:
+def test_aligned_lists_pass(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Required list and ci.yml matrix match exactly → exit 0, no warnings.
 
     The protection-present + aligned case: the API succeeds and the
@@ -390,14 +471,16 @@ def test_aligned_lists_pass(*, tmp_path: Path) -> None:
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["check-foo", "check-bar"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "required check has no matching" not in result.stderr
     assert "no branch protection" not in result.stderr
     assert "strict" not in result.stderr
 
 
-def test_strict_enabled_fails(*, tmp_path: Path) -> None:
+def test_strict_enabled_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Protection present with required_status_checks.strict TRUE → exit 4.
 
     Strict (require-branches-up-to-date) MUST be OFF per livespec
@@ -414,7 +497,7 @@ def test_strict_enabled_fails(*, tmp_path: Path) -> None:
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["check-foo"], strict=True),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4 when strict is enabled; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -423,7 +506,9 @@ def test_strict_enabled_fails(*, tmp_path: Path) -> None:
     assert "strict" in result.stderr
 
 
-def test_protection_absent_fails(*, tmp_path: Path) -> None:
+def test_protection_absent_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """API definitively reports master is unprotected → exit 4 (check failed).
 
     GitHub's branch-protection endpoints return the canonical
@@ -444,7 +529,7 @@ def test_protection_absent_fails(*, tmp_path: Path) -> None:
         stderr="gh: Branch not protected (HTTP 404)",
         returncode=1,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4 when master is definitively unprotected; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -453,7 +538,9 @@ def test_protection_absent_fails(*, tmp_path: Path) -> None:
     assert "protection_absent" in result.stderr
 
 
-def test_permission_error_skips_gracefully(*, tmp_path: Path) -> None:
+def test_permission_error_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """API errors with a non-definitive 404 (no admin read access) → exit 0 skip.
 
     The default Actions `GITHUB_TOKEN` lacks the admin scope needed to
@@ -472,7 +559,7 @@ def test_permission_error_skips_gracefully(*, tmp_path: Path) -> None:
         stderr="gh: Resource not accessible by integration (HTTP 403)",
         returncode=1,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when protection is unreadable (no admin scope); "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -481,7 +568,9 @@ def test_permission_error_skips_gracefully(*, tmp_path: Path) -> None:
     assert "no branch protection" not in result.stderr
 
 
-def test_blank_and_comment_lines_in_matrix_are_skipped(*, tmp_path: Path) -> None:
+def test_blank_and_comment_lines_in_matrix_are_skipped(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Blank lines and `# comment` lines within the matrix target bullets are skipped.
 
     Exercises the in-bullet-list `continue` branch in
@@ -509,7 +598,7 @@ def test_blank_and_comment_lines_in_matrix_are_skipped(*, tmp_path: Path) -> Non
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["check-foo", "check-bar"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 with blank/comment lines in matrix; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -517,7 +606,9 @@ def test_blank_and_comment_lines_in_matrix_are_skipped(*, tmp_path: Path) -> Non
     assert "required check has no matching" not in result.stderr
 
 
-def test_unrequired_leg_errors_under_the_many_contexts_model(*, tmp_path: Path) -> None:
+def test_unrequired_leg_errors_under_the_many_contexts_model(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No required aggregate gate + an unrequired matrix leg → exit 4.
 
     The many-contexts half of the discriminating control pair for
@@ -534,7 +625,7 @@ def test_unrequired_leg_errors_under_the_many_contexts_model(*, tmp_path: Path) 
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["check-foo"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4 for an unrequired matrix leg with no required "
         f"aggregate gate; got {result.returncode}, stderr={result.stderr!r}"
@@ -543,7 +634,9 @@ def test_unrequired_leg_errors_under_the_many_contexts_model(*, tmp_path: Path) 
     assert "unrequired_leg_without_aggregate_gate" in result.stderr
 
 
-def test_unrequired_leg_warns_when_a_required_aggregate_gate_exists(*, tmp_path: Path) -> None:
+def test_unrequired_leg_warns_when_a_required_aggregate_gate_exists(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A required aggregate gate + unrequired matrix legs → warning, exit 0.
 
     The single-gate half of the discriminating control pair: master
@@ -557,7 +650,7 @@ def test_unrequired_leg_warns_when_a_required_aggregate_gate_exists(*, tmp_path:
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["ci-green"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when a required aggregate gate covers the "
         f"unrequired legs; got {result.returncode}, stderr={result.stderr!r}"
@@ -567,16 +660,20 @@ def test_unrequired_leg_warns_when_a_required_aggregate_gate_exists(*, tmp_path:
     assert "unrequired_leg_without_aggregate_gate" not in result.stderr
 
 
-def test_gh_api_failure_skips_gracefully(*, tmp_path: Path) -> None:
+def test_gh_api_failure_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh available but API call fails → exit 0 with warning."""
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
     fake_path = _install_fake_gh(tmp_path=tmp_path, stdout="error", returncode=1)
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "gh api call failed" in result.stderr
 
 
-def test_main_default_branch_resolved_from_git_symref(*, tmp_path: Path) -> None:
+def test_main_default_branch_resolved_from_git_symref(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A main-default repo's protection is read at `branches/main` (17o).
 
     The clone's `refs/remotes/origin/HEAD` symref points at
@@ -591,7 +688,7 @@ def test_main_default_branch_resolved_from_git_symref(*, tmp_path: Path) -> None
         stdout=_checks_payload(contexts=["check-foo"]),
         git_head_ref="refs/remotes/origin/main",
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 on an aligned main-default repo; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -601,7 +698,9 @@ def test_main_default_branch_resolved_from_git_symref(*, tmp_path: Path) -> None
     assert "branches/master" not in argv_log
 
 
-def test_default_branch_falls_back_to_repo_object_when_symref_unset(*, tmp_path: Path) -> None:
+def test_default_branch_falls_back_to_repo_object_when_symref_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Symref unset → the repo object's `default_branch` drives the path.
 
     A single-ref CI fetch has no `refs/remotes/origin/HEAD`; the check
@@ -615,7 +714,7 @@ def test_default_branch_falls_back_to_repo_object_when_symref_unset(*, tmp_path:
         git_head_ref=None,
         repo_payload='{"default_branch": "main"}',
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 via the repo-object fallback; "
         f"got {result.returncode}, stderr={result.stderr!r}"
@@ -625,7 +724,9 @@ def test_default_branch_falls_back_to_repo_object_when_symref_unset(*, tmp_path:
     assert "branches/master" not in argv_log
 
 
-def test_default_branch_shapeless_repo_payload_falls_back_to_master(*, tmp_path: Path) -> None:
+def test_default_branch_shapeless_repo_payload_falls_back_to_master(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Non-origin symref + non-object repo payload → `master` fallback (warn).
 
     The symref answers with a ref outside `refs/remotes/origin/` (so it
@@ -640,14 +741,16 @@ def test_default_branch_shapeless_repo_payload_falls_back_to_master(*, tmp_path:
         git_head_ref="refs/heads/master",
         repo_payload='"not an object"',
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "could not resolve the default branch" in result.stderr
     argv_log = _gh_argv_log(tmp_path=tmp_path)
     assert "branches/master/protection/required_status_checks" in argv_log
 
 
-def test_default_branch_non_string_in_repo_payload_falls_back_to_master(*, tmp_path: Path) -> None:
+def test_default_branch_non_string_in_repo_payload_falls_back_to_master(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Repo object without a usable `default_branch` string → `master` fallback."""
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
     fake_path = _install_fake_gh(
@@ -656,14 +759,16 @@ def test_default_branch_non_string_in_repo_payload_falls_back_to_master(*, tmp_p
         git_head_ref=None,
         repo_payload='{"default_branch": 7}',
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "could not resolve the default branch" in result.stderr
     argv_log = _gh_argv_log(tmp_path=tmp_path)
     assert "branches/master/protection/required_status_checks" in argv_log
 
 
-def test_default_branch_api_failure_falls_back_to_master(*, tmp_path: Path) -> None:
+def test_default_branch_api_failure_falls_back_to_master(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Symref unset + repo-object read fails → `master` fallback, then skip.
 
     Covers the api-resolver's non-zero-exit branch: with no
@@ -679,13 +784,15 @@ def test_default_branch_api_failure_falls_back_to_master(*, tmp_path: Path) -> N
         returncode=1,
         git_head_ref=None,
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "could not resolve the default branch" in result.stderr
     assert "gh api call failed" in result.stderr
 
 
-def test_git_remote_failure_skips_gracefully(*, tmp_path: Path) -> None:
+def test_git_remote_failure_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """git available but `git remote get-url origin` fails → exit 0 with warning.
 
     Closes the `completed.returncode != 0` branch of
@@ -695,7 +802,7 @@ def test_git_remote_failure_skips_gracefully(*, tmp_path: Path) -> None:
     """
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
     fake_path = _install_fake_gh(tmp_path=tmp_path, git_returncode=128)
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 when git remote fails; got {result.returncode}, "
         f"stderr={result.stderr!r}"
@@ -703,7 +810,9 @@ def test_git_remote_failure_skips_gracefully(*, tmp_path: Path) -> None:
     assert "git remote get-url origin failed" in result.stderr
 
 
-def test_non_github_remote_skips_gracefully(*, tmp_path: Path) -> None:
+def test_non_github_remote_skips_gracefully(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """git returns a non-github.com remote URL → exit 0 with warning.
 
     Closes the `match is None` branch of `_resolve_owner_repo`:
@@ -716,7 +825,7 @@ def test_non_github_remote_skips_gracefully(*, tmp_path: Path) -> None:
         tmp_path=tmp_path,
         git_origin_url="https://gitlab.com/some-org/some-repo.git",
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0 on non-github remote; got {result.returncode}, "
         f"stderr={result.stderr!r}"
@@ -724,7 +833,9 @@ def test_non_github_remote_skips_gracefully(*, tmp_path: Path) -> None:
     assert "origin URL did not match github.com pattern" in result.stderr
 
 
-def test_unexpected_payload_shape(*, tmp_path: Path) -> None:
+def test_unexpected_payload_shape(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh returns non-object payload → exit 0 with error log (no enforcement).
 
     The `required_status_checks` endpoint returns a JSON OBJECT; a bare
@@ -733,26 +844,30 @@ def test_unexpected_payload_shape(*, tmp_path: Path) -> None:
     """
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
     fake_path = _install_fake_gh(tmp_path=tmp_path, stdout='"not an object"')
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "unexpected gh api response shape" in result.stderr
 
 
-def test_payload_with_non_string_entries(*, tmp_path: Path) -> None:
+def test_payload_with_non_string_entries(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """gh contexts list contains non-string entries → silently skip them (covers the False branch)."""
     _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
     fake_path = _install_fake_gh(
         tmp_path=tmp_path,
         stdout=_checks_payload(contexts=["check-foo", 42, None, "check-bar"]),
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     # Only "check-foo" and "check-bar" are extracted as required;
     # ci.yml has only "check-foo", so "check-bar" is missing → exit 4.
     assert result.returncode == 4
     assert "check-bar" in result.stderr
 
 
-def test_payload_with_non_list_contexts(*, tmp_path: Path) -> None:
+def test_payload_with_non_list_contexts(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`contexts` absent / not a list → treated as empty required set (covers the False branch).
 
     The `required_status_checks` object normally carries a `contexts`
@@ -768,7 +883,7 @@ def test_payload_with_non_list_contexts(*, tmp_path: Path) -> None:
         tmp_path=tmp_path,
         stdout='{"strict": false}',
     )
-    result = _run_check(cwd=tmp_path, env_path=fake_path)
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4 when contexts absent (empty required set leaves "
         f"the leg uncovered); got {result.returncode}, stderr={result.stderr!r}"

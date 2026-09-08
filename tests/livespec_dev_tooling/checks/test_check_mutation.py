@@ -47,22 +47,42 @@ tally on disk; the tests below pin that rc 1 is the only non-zero code the
 tally may excuse, and that a crashed run's partial measurement never reaches
 the ratchet.
 
-Tests invoke check_mutation.py via subprocess with a fake mutmut package
-injected through PYTHONPATH, following the established dev-tooling test
-pattern. This approach lets mutmut properly substitute the mutated module
-when running its own tests. Subprocess tests that exercise the armed path declare an explicit
-`pure_trees` role key and seed a Python file under it, so they do not
-depend on a whole-block fallback.
+Tests invoke `check_mutation.main()` IN-PROCESS (`monkeypatch.chdir(...)`
++ `capsys` + `rc = main()`) with a fake mutmut package injected through
+PYTHONPATH, following the established dev-tooling test pattern: no
+`COVERAGE_PROCESS_START`-instrumented child of this test, no `.coverage.*`
+race under the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture, and the
+assertion targets are unchanged — the int exit code plus the structlog
+stderr text, now read off `capsys` instead of `CompletedProcess`.
+
+PYTHONPATH still does exactly what it did: the check's OWN
+`python -m mutmut` children are fresh interpreters, so injecting the fake
+mutmut package there still lets mutmut substitute the mutated module when
+running its own tests. What used to be the child's `env=` mapping is now
+`monkeypatch.setenv` / `monkeypatch.delenv` in this process, which those
+children inherit identically. Tests that exercise the armed path declare
+an explicit `pure_trees` role key and seed a Python file under it, so they
+do not depend on a whole-block fallback.
+
+Branch parity with the retired spawn: the `LIVESPEC_RUN_MUTATION`
+self-skip and armed arms, the pure-trees gate arms, the first-run
+baseline-capture arm, the ratchet arms, and the crashed/unusable-
+measurement arms are driven by the same fixtures as before. The
+`if __name__ == "__main__": raise SystemExit(main())` line is the one
+line the child reached that an in-process call cannot; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 from pathlib import Path
 from types import FunctionType
+from typing import NamedTuple
 
 import pytest
 import structlog
@@ -74,13 +94,13 @@ from livespec_dev_tooling.checks.check_mutation import (
     _pure_trees_gate_exit_code,
     _resolve_staging_cwd,
     _update_baseline,
+    main,
 )
 
 __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CHECK_MUTATION_SCRIPT = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "check_mutation.py"
 
 _RUN_VAR = "LIVESPEC_RUN_MUTATION"
 
@@ -168,41 +188,49 @@ def _ensure_declared_pure_tree(*, repo_root: Path) -> None:
         module.write_text("from __future__ import annotations\n\nx = 1\n", encoding="utf-8")
 
 
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
 def _run_check(
     *,
     tmp_path: Path,
     fake_mutmut_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     baseline: dict[str, object] | None = None,
     run_var: str | None = "true",
     cwd: Path | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run check_mutation.py in `cwd` (default `tmp_path`) with a fake mutmut.
+) -> _CheckRun:
+    """Run `check_mutation.main()` in `cwd` (default `tmp_path`) with a fake mutmut.
 
     `run_var` controls the `LIVESPEC_RUN_MUTATION` lever: the default
     `"true"` exercises the run-the-suite path (the behavior every
     existing assertion below depends on); `None` removes the lever to
     exercise the self-skip path.
 
-    The repo package must be importable in the subprocess (the script now
-    imports `livespec_dev_tooling.config`), so the repo root is appended to
-    `PYTHONPATH` alongside the fake-mutmut dir.
+    The repo package must be importable in the check's own `mutmut`
+    subprocesses, so the repo root is appended to `PYTHONPATH` alongside
+    the fake-mutmut dir. `monkeypatch.setenv` mutates this process's
+    `os.environ`, which those children inherit exactly as the retired
+    `env=` mapping supplied it.
     """
     if run_var:
         _ensure_declared_pure_tree(repo_root=tmp_path)
     if baseline is not None:
         (tmp_path / ".mutmut-baseline.json").write_text(json.dumps(baseline), encoding="utf-8")
-    env = {k: v for k, v in os.environ.items() if k != _RUN_VAR}
-    env["PYTHONPATH"] = os.pathsep.join([str(fake_mutmut_dir), str(_REPO_ROOT)])
+    monkeypatch.delenv(_RUN_VAR, raising=False)
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(fake_mutmut_dir), str(_REPO_ROOT)]))
     if run_var is not None:
-        env[_RUN_VAR] = run_var
-    return subprocess.run(
-        [sys.executable, str(_CHECK_MUTATION_SCRIPT)],
-        cwd=str(cwd if cwd is not None else tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+        monkeypatch.setenv(_RUN_VAR, run_var)
+    monkeypatch.chdir(cwd if cwd is not None else tmp_path)
+    rc = main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 # --- direct-import parser tests against REAL captured mutmut-3.2.3 output ---
@@ -314,14 +342,23 @@ def test_resolve_staging_cwd_uses_configured_dir(*, tmp_path: Path) -> None:
 # --- subprocess tests (the established dev-tooling pattern) ---
 
 
-def test_skips_when_run_var_unset(*, tmp_path: Path) -> None:
+def test_skips_when_run_var_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`LIVESPEC_RUN_MUTATION` unset → self-skip: exit 0, no mutmut invocation."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=3, total=20)
     # A baseline that would FAIL if the suite actually ran (3/20 = 15% < 80%
     # floor). The skip path must short-circuit before any kill-rate gate, so
     # exit 0 here proves the suite did not run.
     baseline = {"kill_rate_percent": 0.0, "mutants_surviving": 0, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline, run_var=None)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        run_var=None,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"run-var unset should self-skip + exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -335,11 +372,20 @@ def test_skips_when_run_var_unset(*, tmp_path: Path) -> None:
     ), f"skip diagnostic should name the run-var lever; stderr={result.stderr!r}"
 
 
-def test_empty_run_var_treated_as_unset(*, tmp_path: Path) -> None:
+def test_empty_run_var_treated_as_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An empty-string `LIVESPEC_RUN_MUTATION` counts as unset → self-skip + exit 0."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=3, total=20)
     baseline = {"kill_rate_percent": 0.0, "mutants_surviving": 0, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline, run_var="")
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        run_var="",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"empty run-var should self-skip + exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -348,78 +394,140 @@ def test_empty_run_var_treated_as_unset(*, tmp_path: Path) -> None:
     assert "skipped" in combined
 
 
-def test_baseline_is_placeholder_first_run(*, tmp_path: Path) -> None:
+def test_baseline_is_placeholder_first_run(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """total=0 in baseline → first-run mode: saves baseline, exits 0."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)
     baseline = {"kill_rate_percent": 0, "mutants_surviving": 0, "mutants_total": 0}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     written = json.loads((tmp_path / ".mutmut-baseline.json").read_text())
     assert written["mutants_total"] == 20
     assert written["kill_rate_percent"] == pytest.approx(85.0)
 
 
-def test_no_baseline_file_treated_as_placeholder(*, tmp_path: Path) -> None:
+def test_no_baseline_file_treated_as_placeholder(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Missing .mutmut-baseline.json → treated as placeholder → first-run mode."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake)
+    result = _run_check(
+        tmp_path=tmp_path, fake_mutmut_dir=fake, monkeypatch=monkeypatch, capsys=capsys
+    )
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     assert (tmp_path / ".mutmut-baseline.json").is_file()
 
 
-def test_parse_mutmut_results_parses_killed_total(*, tmp_path: Path) -> None:
+def test_parse_mutmut_results_parses_killed_total(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Killed and total are tallied end-to-end from a mutmut-3.x results block."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=18, total=20)
     baseline = {"kill_rate_percent": 80.0, "mutants_surviving": 4, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, f"stderr={result.stderr!r}"
 
 
-def test_derive_exit_code_passes_at_floor(*, tmp_path: Path) -> None:
+def test_derive_exit_code_passes_at_floor(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Kill rate at exactly 80% floor passes."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=16, total=20)
     baseline = {"kill_rate_percent": 80.0, "mutants_surviving": 4, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, f"stderr={result.stderr!r}"
 
 
-def test_derive_exit_code_fails_below_80_percent(*, tmp_path: Path) -> None:
+def test_derive_exit_code_fails_below_80_percent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Kill rate below 80% always fails — proving the gate is no longer a no-op."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=3, total=20)
     baseline = {"kill_rate_percent": 0.0, "mutants_surviving": 0, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 1, "unexpected pass"
 
 
-def test_derive_exit_code_fails_on_regression(*, tmp_path: Path) -> None:
+def test_derive_exit_code_fails_on_regression(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Kill rate above floor but below baseline fails (regression)."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)
     baseline = {"kill_rate_percent": 90.0, "mutants_surviving": 2, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 1, "unexpected pass"
 
 
-def test_update_baseline_on_improvement(*, tmp_path: Path) -> None:
+def test_update_baseline_on_improvement(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Improved kill rate updates baseline."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=20, total=20)
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     written = json.loads((tmp_path / ".mutmut-baseline.json").read_text())
     assert written["kill_rate_percent"] == pytest.approx(100.0)
 
 
-def test_no_baseline_update_when_equal(*, tmp_path: Path) -> None:
+def test_no_baseline_update_when_equal(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Kill rate == baseline: passes but does not update baseline."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=16, total=20)
     baseline = {"kill_rate_percent": 80.0, "mutants_surviving": 4, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0
     written = json.loads((tmp_path / ".mutmut-baseline.json").read_text())
     assert written["kill_rate_percent"] == pytest.approx(80.0)
 
 
-def test_mutmut_run_failure_returns_1(*, tmp_path: Path) -> None:
+def test_mutmut_run_failure_returns_1(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Mutmut run returning a non-0/1 exit code causes the check to fail.
 
     The tally is deliberately NON-empty (20 mutants, 18 killed, a 90% rate
@@ -431,7 +539,13 @@ def test_mutmut_run_failure_returns_1(*, tmp_path: Path) -> None:
     """
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=18, total=20, run_rc=2)
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 1, (
         f"a non-0/1 mutmut exit must FAIL even when verdicts are present; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -441,7 +555,9 @@ def test_mutmut_run_failure_returns_1(*, tmp_path: Path) -> None:
 # --- armed-but-inspected-nothing (work-item livespec-dev-tooling-z45) ---
 
 
-def test_armed_zero_mutants_fails(*, tmp_path: Path) -> None:
+def test_armed_zero_mutants_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An ARMED run that enumerated zero mutants FAILS — it inspected nothing.
 
     Mask 2 of work-item livespec-dev-tooling-z45: `total == 0` was an
@@ -453,7 +569,13 @@ def test_armed_zero_mutants_fails(*, tmp_path: Path) -> None:
     """
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=0, total=0, run_rc=0)
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 1, (
         f"an armed run enumerating zero mutants must FAIL, not pass; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -464,7 +586,9 @@ def test_armed_zero_mutants_fails(*, tmp_path: Path) -> None:
     ), f"the failure must name the zero-mutant cause; stderr={result.stderr!r}"
 
 
-def test_armed_zero_mutants_refuses_to_write_baseline(*, tmp_path: Path) -> None:
+def test_armed_zero_mutants_refuses_to_write_baseline(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A zero-mutant run never promotes its garbage measurement into the ratchet.
 
     Mask 3 of work-item livespec-dev-tooling-z45: first-run mode recorded
@@ -474,7 +598,9 @@ def test_armed_zero_mutants_refuses_to_write_baseline(*, tmp_path: Path) -> None
     placeholder, so this is exactly the first-run path.
     """
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=0, total=0, run_rc=0)
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake)
+    result = _run_check(
+        tmp_path=tmp_path, fake_mutmut_dir=fake, monkeypatch=monkeypatch, capsys=capsys
+    )
     assert result.returncode == 1, (
         f"a zero-mutant first run must FAIL rather than capture a baseline; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -484,7 +610,9 @@ def test_armed_zero_mutants_refuses_to_write_baseline(*, tmp_path: Path) -> None
     ).is_file(), "a zero-mutant run must not write the ratchet"
 
 
-def test_crashed_mutmut_rc1_fails_and_surfaces_stderr(*, tmp_path: Path) -> None:
+def test_crashed_mutmut_rc1_fails_and_surfaces_stderr(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """rc 1 with no parseable verdicts is a CRASH, not a survivor run.
 
     Mask 1 of work-item livespec-dev-tooling-z45: exit 1 is legitimate for
@@ -502,7 +630,13 @@ def test_crashed_mutmut_rc1_fails_and_surfaces_stderr(*, tmp_path: Path) -> None
         run_stderr="FileNotFoundError: [Errno 2] No such file or directory: 'pyproject.toml'\n",
     )
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 1, (
         f"a crashed mutmut must FAIL rather than be absorbed as rc 1; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -516,7 +650,9 @@ def test_crashed_mutmut_rc1_fails_and_surfaces_stderr(*, tmp_path: Path) -> None
 # --- crashed-with-verdicts (work-item livespec-dev-tooling-6j6) ---
 
 
-def test_killed_mutmut_with_partial_verdicts_does_not_poison_the_ratchet(*, tmp_path: Path) -> None:
+def test_killed_mutmut_with_partial_verdicts_does_not_poison_the_ratchet(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An OOM-killed run's PARTIAL tally must never be promoted into the ratchet.
 
     Work-item livespec-dev-tooling-6j6. `mutmut run` persists each verdict to
@@ -536,7 +672,13 @@ def test_killed_mutmut_with_partial_verdicts_does_not_poison_the_ratchet(*, tmp_
     """
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=5, total=5, run_rc=137)
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 60, "mutants_total": 400}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 1, (
         f"a killed mutmut run must FAIL even though its partial tally parses; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
@@ -549,11 +691,19 @@ def test_killed_mutmut_with_partial_verdicts_does_not_poison_the_ratchet(*, tmp_
     assert written["mutants_total"] == 400, f"the ratchet was overwritten: {written!r}"
 
 
-def test_reports_mutant_count_and_kill_rate(*, tmp_path: Path) -> None:
+def test_reports_mutant_count_and_kill_rate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A passing run still emits the tally, so "inspected 0" cannot look like "passed"."""
     fake = _make_fake_mutmut(tmp_path=tmp_path, killed=17, total=20)
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
-    result = _run_check(tmp_path=tmp_path, fake_mutmut_dir=fake, baseline=baseline)
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     combined = result.stdout + result.stderr
     assert '"total": 20' in combined, f"the mutant count must be visible; got {combined!r}"
@@ -599,7 +749,9 @@ def test_update_baseline_writes_when_mutants_present(*, tmp_path: Path) -> None:
     assert written["kill_rate_percent"] == pytest.approx(85.0)
 
 
-def test_runs_mutmut_from_staging_cwd_baseline_at_repo_root(*, tmp_path: Path) -> None:
+def test_runs_mutmut_from_staging_cwd_baseline_at_repo_root(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A configured `mutation_staging_dir` runs mutmut there; the baseline stays at root.
 
     The repo root declares `mutation_staging_dir` and carries a placeholder
@@ -627,6 +779,8 @@ def test_runs_mutmut_from_staging_cwd_baseline_at_repo_root(*, tmp_path: Path) -
         fake_mutmut_dir=fake,
         baseline={"kill_rate_percent": 0, "mutants_surviving": 0, "mutants_total": 0},
         cwd=repo_root,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 0, f"stderr={result.stderr!r}"
     marker = staging / "MUTMUT_RAN_IN.txt"

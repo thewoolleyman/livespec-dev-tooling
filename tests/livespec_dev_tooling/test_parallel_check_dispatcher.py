@@ -21,15 +21,39 @@ for-loop in the check: justfile recipe. Behavioral tests verify:
 Private names are accessed via the imported module object (the
 package-private access model, mirroring
 tests/livespec_dev_tooling/agent_hooks/).
+
+`main()` is driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` +
+`monkeypatch.setattr(sys, "argv", ...)` + `capsys` + `rc = main()`)
+rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child of this test, no
+`.coverage.*` race under the parallel dispatcher, and materially faster.
+`main()` reads `Path.cwd()` and parses `sys.argv` through `argparse`, so
+the two monkeypatches supply exactly what the child's cwd and argv list
+supplied before. The `just` subprocesses the dispatcher itself spawns are
+UNCHANGED — the concurrency probe, the coverage-namespace isolation, and
+the failure summary are still observed through them, and the assertion
+targets are unchanged: the int exit code plus the emitted text, now read
+off `capsys`.
+
+Branch parity with the retired spawn: the skip list, the worker cap, the
+ordering edge, the pass and fail summaries, and the isolation-env
+propagation are driven by the same fixtures as before, and
+`test_module_importable_without_running_main` below still closes both the
+`sys.path.insert` already-present branch and the
+`if __name__ == "__main__"` else-arm. That `__main__` line is the one
+line the child reached that an in-process call cannot; it is already
+excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so it was never measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -397,23 +421,43 @@ def _write_justfile(*, tmp_path: Path, content: str) -> None:
     (tmp_path / "justfile").write_text(content, encoding="utf-8")
 
 
-def _run_dispatcher(*, tmp_path: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_MODULE), *args],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+class _DispatcherRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
 
 
-def test_main_exits_0_and_emits_timings_when_all_targets_pass(*, tmp_path: Path) -> None:
+def _run_dispatcher(
+    *,
+    tmp_path: Path,
+    args: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> _DispatcherRun:
+    """Invoke `main()` in-process with `tmp_path` as cwd and `args` as argv."""
+    monkeypatch.setattr(sys, "argv", ["parallel-check-dispatcher", *args])
+    monkeypatch.chdir(tmp_path)
+    rc = mod.main()
+    captured = capsys.readouterr()
+    return _DispatcherRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_main_exits_0_and_emits_timings_when_all_targets_pass(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """main() exits 0 and includes per-target wall times when all targets pass."""
     _write_justfile(
         tmp_path=tmp_path,
         content="check-lint:\n    @echo lint ok\n\ncheck-format:\n    @echo format ok\n",
     )
-    result = _run_dispatcher(tmp_path=tmp_path, args=["--", "check-lint", "check-format"])
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-lint", "check-format"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}\n"
         f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -424,13 +468,20 @@ def test_main_exits_0_and_emits_timings_when_all_targets_pass(*, tmp_path: Path)
     assert "wall" in combined or "0." in combined
 
 
-def test_main_exits_1_when_any_target_fails(*, tmp_path: Path) -> None:
+def test_main_exits_1_when_any_target_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """main() exits 1 and names the failing target when any target exits non-zero."""
     _write_justfile(
         tmp_path=tmp_path,
         content="check-lint:\n    @echo ok\n\ncheck-fail:\n    @exit 1\n",
     )
-    result = _run_dispatcher(tmp_path=tmp_path, args=["--", "check-lint", "check-fail"])
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-lint", "check-fail"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 1, (
         f"expected exit 1; got {result.returncode}\n"
         f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -438,7 +489,9 @@ def test_main_exits_1_when_any_target_fails(*, tmp_path: Path) -> None:
     assert "check-fail" in result.stdout or "check-fail" in result.stderr
 
 
-def test_main_skips_targets_in_skip_list(*, tmp_path: Path) -> None:
+def test_main_skips_targets_in_skip_list(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """main() skips targets in --skip and exits 0 even if the skipped target would fail."""
     _write_justfile(
         tmp_path=tmp_path,
@@ -447,6 +500,8 @@ def test_main_skips_targets_in_skip_list(*, tmp_path: Path) -> None:
     result = _run_dispatcher(
         tmp_path=tmp_path,
         args=["--skip", "check-coverage", "--", "check-lint", "check-coverage"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 0, (
         f"check-coverage should be skipped; got {result.returncode}\n" f"stdout={result.stdout!r}"
@@ -455,7 +510,9 @@ def test_main_skips_targets_in_skip_list(*, tmp_path: Path) -> None:
     assert "skipped" in combined
 
 
-def test_coverage_dependency_ordering_enforced(*, tmp_path: Path) -> None:
+def test_coverage_dependency_ordering_enforced(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """check-coverage runs only AFTER check-per-file-coverage: file-marker probe.
 
     check-per-file-coverage creates a marker file; check-coverage's recipe
@@ -476,6 +533,8 @@ def test_coverage_dependency_ordering_enforced(*, tmp_path: Path) -> None:
     result = _run_dispatcher(
         tmp_path=tmp_path,
         args=["--", "check-per-file-coverage", "check-coverage"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 0, (
         f"check-coverage should run after check-per-file-coverage (marker must exist); "
@@ -484,7 +543,9 @@ def test_coverage_dependency_ordering_enforced(*, tmp_path: Path) -> None:
     )
 
 
-def test_coverage_target_runs_with_isolated_coverage_file_env(*, tmp_path: Path) -> None:
+def test_coverage_target_runs_with_isolated_coverage_file_env(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A coverage target's recipe sees COVERAGE_FILE/TMPDIR set into an isolated dir.
 
     The recipe writes the COVERAGE_FILE + TMPDIR values it received into
@@ -498,7 +559,12 @@ def test_coverage_target_runs_with_isolated_coverage_file_env(*, tmp_path: Path)
         f'    printf "%s\\n%s\\n" "$COVERAGE_FILE" "$TMPDIR" > {probe}\n'
     )
     _write_justfile(tmp_path=tmp_path, content=justfile_text)
-    result = _run_dispatcher(tmp_path=tmp_path, args=["--", "check-per-file-coverage"])
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-per-file-coverage"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"coverage target should run; got {result.returncode}\n"
         f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -522,7 +588,9 @@ def test_coverage_target_runs_with_isolated_coverage_file_env(*, tmp_path: Path)
     ).exists(), f"the minted namespace COVERAGE_FILE should be cleaned up after the run; {coverage_file!r} remains"
 
 
-def test_incremental_runs_concurrently_with_no_prereq_edge(*, tmp_path: Path) -> None:
+def test_incremental_runs_concurrently_with_no_prereq_edge(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """check-check-coverage-incremental runs even though no producer precedes it.
 
     The incremental gate is isolated in its own namespace with no data
@@ -533,7 +601,12 @@ def test_incremental_runs_concurrently_with_no_prereq_edge(*, tmp_path: Path) ->
     marker = tmp_path / "incremental_ran"
     justfile_text = "check-check-coverage-incremental:\n" f"    touch {marker}\n"
     _write_justfile(tmp_path=tmp_path, content=justfile_text)
-    result = _run_dispatcher(tmp_path=tmp_path, args=["--", "check-check-coverage-incremental"])
+    result = _run_dispatcher(
+        tmp_path=tmp_path,
+        args=["--", "check-check-coverage-incremental"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
     assert result.returncode == 0, (
         f"incremental gate should run independently; got {result.returncode}\n"
         f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -541,7 +614,9 @@ def test_incremental_runs_concurrently_with_no_prereq_edge(*, tmp_path: Path) ->
     assert marker.exists(), "the incremental gate should have run with no blocking prereq"
 
 
-def test_prereq_skipped_runs_dependent_independently(*, tmp_path: Path) -> None:
+def test_prereq_skipped_runs_dependent_independently(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """check-coverage runs independently when check-per-file-coverage is skipped.
 
     Covers the dispatcher branch: the consumer's producer is named in
@@ -565,6 +640,8 @@ def test_prereq_skipped_runs_dependent_independently(*, tmp_path: Path) -> None:
             "check-per-file-coverage",
             "check-coverage",
         ],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 0, (
         f"check-coverage should run independently when prereq is skipped; "

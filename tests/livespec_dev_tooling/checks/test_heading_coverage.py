@@ -37,14 +37,36 @@ test, so there is no marker — and the two sit side by side here as
 `test_scenario_tier_node_id_missing_file_fires` and
 `test_scenario_tier_unparseable_test_file_is_unresolved`, which
 asserted the SAME diagnostic until the resolver went on the railway.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture, and the
+assertion targets are unchanged — the int exit code plus the structlog
+stderr text, now read off `capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the four directions, the
+registry-shape tolerations, the `scenario_tiers` pyproject-versus-default
+fallback arms, and the resolver's compliant / violating / UNRESOLVED
+outcomes are all still driven by the same fixtures. The two lines the
+child process reached that an in-process call cannot are the module's
+vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
-import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -53,14 +75,41 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _HEADING_COVERAGE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "heading_coverage.py"
 
 
-def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_HEADING_COVERAGE)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "heading_coverage_under_test", str(_HEADING_COVERAGE)
     )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write_registry(*, tmp_path: Path, entries: list[dict[str, object]]) -> None:
@@ -89,20 +138,24 @@ def _scenarios_body() -> str:
     return "# Scenarios\n\n## Observable outcomes\n\nbody\n"
 
 
-def test_heading_coverage_rejects_uncovered_heading(*, tmp_path: Path) -> None:
+def test_heading_coverage_rejects_uncovered_heading(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A spec heading without a matching registry entry fails."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
     )
     _write_registry(tmp_path=tmp_path, entries=[])
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "spec heading missing coverage entry" in combined
     assert "Foo" in combined
 
 
-def test_heading_coverage_accepts_covered_heading(*, tmp_path: Path) -> None:
+def test_heading_coverage_accepts_covered_heading(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A spec heading with a matching (spec_root, spec_file, heading) triple passes."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
@@ -118,11 +171,13 @@ def test_heading_coverage_accepts_covered_heading(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_rejects_orphan_registry_entry(*, tmp_path: Path) -> None:
+def test_heading_coverage_rejects_orphan_registry_entry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A registry entry whose triple does not match any spec heading fails."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
@@ -144,14 +199,16 @@ def test_heading_coverage_rejects_orphan_registry_entry(*, tmp_path: Path) -> No
             },
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "registry entry orphaned" in combined
     assert "OldName" in combined
 
 
-def test_heading_coverage_rejects_todo_without_reason(*, tmp_path: Path) -> None:
+def test_heading_coverage_rejects_todo_without_reason(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `test: TODO` entry without a non-empty `reason` field fails."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
@@ -167,13 +224,15 @@ def test_heading_coverage_rejects_todo_without_reason(*, tmp_path: Path) -> None
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "TODO registry entry missing reason" in combined
 
 
-def test_heading_coverage_accepts_todo_with_reason(*, tmp_path: Path) -> None:
+def test_heading_coverage_accepts_todo_with_reason(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `test: TODO` entry WITH a non-empty `reason` field passes."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
@@ -190,11 +249,13 @@ def test_heading_coverage_accepts_todo_with_reason(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_skips_scenario_prefix(*, tmp_path: Path) -> None:
+def test_heading_coverage_skips_scenario_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Headings beginning with `Scenario:` are skipped — no entry needed."""
     body = "# Title\n\n## Foo\n\n## Scenario: happy path\n"
     _write_spec_file(tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body=body)
@@ -209,11 +270,13 @@ def test_heading_coverage_skips_scenario_prefix(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_does_not_recurse_into_proposed_changes(*, tmp_path: Path) -> None:
+def test_heading_coverage_does_not_recurse_into_proposed_changes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `## Proposal:` heading under proposed_changes/ does NOT require a registry entry."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n"
@@ -234,11 +297,13 @@ def test_heading_coverage_does_not_recurse_into_proposed_changes(*, tmp_path: Pa
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_does_not_recurse_into_history(*, tmp_path: Path) -> None:
+def test_heading_coverage_does_not_recurse_into_history(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Headings under `history/v*/` are NOT counted by the check."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n"
@@ -259,11 +324,13 @@ def test_heading_coverage_does_not_recurse_into_history(*, tmp_path: Path) -> No
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_does_not_count_readme(*, tmp_path: Path) -> None:
+def test_heading_coverage_does_not_count_readme(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The skill-owned `README.md` at the tree root is not walked."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n"
@@ -284,11 +351,13 @@ def test_heading_coverage_does_not_count_readme(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_skips_non_directory_under_templates(*, tmp_path: Path) -> None:
+def test_heading_coverage_skips_non_directory_under_templates(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A non-directory entry under `templates/` is ignored (e.g., a stray file)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n"
@@ -310,11 +379,13 @@ def test_heading_coverage_skips_non_directory_under_templates(*, tmp_path: Path)
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_walks_sub_spec_trees(*, tmp_path: Path) -> None:
+def test_heading_coverage_walks_sub_spec_trees(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Sub-spec roots under `SPECIFICATION/templates/<name>/` are walked too."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Main\n"
@@ -341,11 +412,13 @@ def test_heading_coverage_walks_sub_spec_trees(*, tmp_path: Path) -> None:
             },
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_disambiguates_same_heading_across_files(*, tmp_path: Path) -> None:
+def test_heading_coverage_disambiguates_same_heading_across_files(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Two files with the same heading text need TWO registry entries (different spec_file)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Summary\n"
@@ -364,14 +437,16 @@ def test_heading_coverage_disambiguates_same_heading_across_files(*, tmp_path: P
             },
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "spec heading missing coverage entry" in combined
     assert "contracts.md" in combined
 
 
-def test_heading_coverage_tolerates_malformed_registry_entries(*, tmp_path: Path) -> None:
+def test_heading_coverage_tolerates_malformed_registry_entries(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Entries with non-string fields are skipped silently."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n"
@@ -392,29 +467,35 @@ def test_heading_coverage_tolerates_malformed_registry_entries(*, tmp_path: Path
         ),
         encoding="utf-8",
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_tolerates_object_top_level_registry(*, tmp_path: Path) -> None:
+def test_heading_coverage_tolerates_object_top_level_registry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Non-list top-level coverage JSON is treated as no entries."""
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
     (tests_dir / "heading-coverage.json").write_text("{}", encoding="utf-8")
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_accepts_pre_phase_6_empty(*, tmp_path: Path) -> None:
+def test_heading_coverage_accepts_pre_phase_6_empty(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An empty `[]` registry with NO spec tree passes (exit 0)."""
     _write_registry(tmp_path=tmp_path, entries=[])
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_heading_coverage_accepts_no_coverage_file(*, tmp_path: Path) -> None:
+def test_heading_coverage_accepts_no_coverage_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Repo without `tests/heading-coverage.json` passes (exit 0)."""
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
@@ -437,7 +518,9 @@ def test_heading_coverage_module_importable_without_running_main() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_scenario_tier_compliant_via_default_prefix(*, tmp_path: Path) -> None:
+def test_scenario_tier_compliant_via_default_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A scenarios.md entry with a default-allowlist prefix node id passes (no pyproject)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -453,11 +536,13 @@ def test_scenario_tier_compliant_via_default_prefix(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_compliant_via_marker_ast(*, tmp_path: Path) -> None:
+def test_scenario_tier_compliant_via_marker_ast(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A non-allowlisted node id passes when the test fn carries an integration marker."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -485,11 +570,13 @@ def test_scenario_tier_compliant_via_marker_ast(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_unit_tier_node_id_fires(*, tmp_path: Path) -> None:
+def test_scenario_tier_unit_tier_node_id_fires(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A scenarios.md entry mapped to a unit-tier node id fires the new diagnostic."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -511,14 +598,16 @@ def test_scenario_tier_unit_tier_node_id_fires(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
     assert "Observable outcomes" in combined
 
 
-def test_scenario_tier_unit_tier_does_not_fire_for_non_scenarios_file(*, tmp_path: Path) -> None:
+def test_scenario_tier_unit_tier_does_not_fire_for_non_scenarios_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A unit-tier node id under spec.md (not scenarios.md) does NOT fire direction 4."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/spec.md", body="# Title\n\n## Foo\n\nbody\n"
@@ -534,11 +623,13 @@ def test_scenario_tier_unit_tier_does_not_fire_for_non_scenarios_file(*, tmp_pat
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_todo_with_tier_acknowledging_reason_passes(*, tmp_path: Path) -> None:
+def test_scenario_tier_todo_with_tier_acknowledging_reason_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A scenarios.md TODO whose reason acknowledges the tier requirement passes."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -555,11 +646,13 @@ def test_scenario_tier_todo_with_tier_acknowledging_reason_passes(*, tmp_path: P
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_todo_without_tier_acknowledgment_fires(*, tmp_path: Path) -> None:
+def test_scenario_tier_todo_without_tier_acknowledgment_fires(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A scenarios.md TODO with a non-empty but tier-silent reason fires direction 4."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -576,13 +669,15 @@ def test_scenario_tier_todo_without_tier_acknowledgment_fires(*, tmp_path: Path)
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
 
 
-def test_scenario_tier_allowlist_read_from_pyproject(*, tmp_path: Path) -> None:
+def test_scenario_tier_allowlist_read_from_pyproject(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A consumer-declared `scenario_tiers` prefix is honored from pyproject.toml."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -605,11 +700,13 @@ def test_scenario_tier_allowlist_read_from_pyproject(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_pyproject_allowlist_excludes_default_prefix(*, tmp_path: Path) -> None:
+def test_scenario_tier_pyproject_allowlist_excludes_default_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A declared allowlist REPLACES the default — a default-only prefix then fires."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -632,13 +729,15 @@ def test_scenario_tier_pyproject_allowlist_excludes_default_prefix(*, tmp_path: 
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
 
 
-def test_scenario_tier_default_used_when_table_absent(*, tmp_path: Path) -> None:
+def test_scenario_tier_default_used_when_table_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """With a pyproject that has no livespec_dev_tooling table, the default allowlist applies."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -659,11 +758,13 @@ def test_scenario_tier_default_used_when_table_absent(*, tmp_path: Path) -> None
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_unresolvable_node_id_governed_by_prefix(*, tmp_path: Path) -> None:
+def test_scenario_tier_unresolvable_node_id_governed_by_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An allowlisted prefix passes even when the node-id file does not exist (no crash)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -681,11 +782,13 @@ def test_scenario_tier_unresolvable_node_id_governed_by_prefix(*, tmp_path: Path
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_compliant_via_module_pytestmark(*, tmp_path: Path) -> None:
+def test_scenario_tier_compliant_via_module_pytestmark(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A module-level `pytestmark` integration marker satisfies path (b)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -711,11 +814,13 @@ def test_scenario_tier_compliant_via_module_pytestmark(*, tmp_path: Path) -> Non
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_compliant_via_class_marker(*, tmp_path: Path) -> None:
+def test_scenario_tier_compliant_via_class_marker(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A class-level integration marker on the enclosing class satisfies path (b)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -742,11 +847,13 @@ def test_scenario_tier_compliant_via_class_marker(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_node_id_without_dot_fires(*, tmp_path: Path) -> None:
+def test_scenario_tier_node_id_without_dot_fires(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A single-token (no-dot) node id cannot resolve to a file → unit-tier fires."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -762,13 +869,15 @@ def test_scenario_tier_node_id_without_dot_fires(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
 
 
-def test_scenario_tier_node_id_missing_file_fires(*, tmp_path: Path) -> None:
+def test_scenario_tier_node_id_missing_file_fires(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A non-allowlisted node id whose file does NOT exist → unit-tier fires (no crash).
 
     The ANSWER half of the pair `livespec-dev-tooling-8o8e.9` split: there is no
@@ -790,13 +899,15 @@ def test_scenario_tier_node_id_missing_file_fires(*, tmp_path: Path) -> None:
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
 
 
-def test_scenario_tier_unparseable_test_file_is_unresolved(*, tmp_path: Path) -> None:
+def test_scenario_tier_unparseable_test_file_is_unresolved(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A node-id file with invalid Python is UNRESOLVED, never a unit-tier verdict.
 
     ⛔ THIS TEST PINNED THE COLLAPSE. Until `livespec-dev-tooling-8o8e.9` it
@@ -830,7 +941,7 @@ def test_scenario_tier_unparseable_test_file_is_unresolved(*, tmp_path: Path) ->
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert (
@@ -844,7 +955,9 @@ def test_scenario_tier_unparseable_test_file_is_unresolved(*, tmp_path: Path) ->
     ), f"a non-read must not be reported as a tier verdict; got {combined!r}"
 
 
-def test_scenario_tier_compliant_via_annotated_module_pytestmark(*, tmp_path: Path) -> None:
+def test_scenario_tier_compliant_via_annotated_module_pytestmark(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An ANNOTATED module-level `pytestmark: ... = pytest.mark.integration` satisfies (b)."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -870,11 +983,13 @@ def test_scenario_tier_compliant_via_annotated_module_pytestmark(*, tmp_path: Pa
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_pytestmark_list_with_unrelated_assigns(*, tmp_path: Path) -> None:
+def test_scenario_tier_pytestmark_list_with_unrelated_assigns(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `pytestmark = [...]` list amid unrelated top-level assigns is honored."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -905,11 +1020,13 @@ def test_scenario_tier_pytestmark_list_with_unrelated_assigns(*, tmp_path: Path)
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_tier_class_without_target_function_fires(*, tmp_path: Path) -> None:
+def test_scenario_tier_class_without_target_function_fires(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An unmarked class lacking the target fn, plus a bare decorator, → unit-tier fires."""
     _write_spec_file(
         tmp_path=tmp_path, rel_path="SPECIFICATION/scenarios.md", body=_scenarios_body()
@@ -942,13 +1059,15 @@ def test_scenario_tier_class_without_target_function_fires(*, tmp_path: Path) ->
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
 
 
-def test_scenario_tier_unmarked_method_in_unmarked_class_fires(*, tmp_path: Path) -> None:
+def test_scenario_tier_unmarked_method_in_unmarked_class_fires(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The target method exists in an UNMARKED class with NO marker → unit-tier fires.
 
     Exercises the class-walk continuing past a found-but-unmarked method (the
@@ -978,13 +1097,15 @@ def test_scenario_tier_unmarked_method_in_unmarked_class_fires(*, tmp_path: Path
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
 
 
-def test_scenario_tier_non_string_test_is_skipped(*, tmp_path: Path) -> None:
+def test_scenario_tier_non_string_test_is_skipped(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A scenarios.md entry whose `test` is non-string short-circuits direction 4.
 
     The (spec_root, spec_file, heading) triple is still valid (all strings), so
@@ -1009,7 +1130,7 @@ def test_scenario_tier_non_string_test_is_skipped(*, tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" not in combined
@@ -1021,7 +1142,9 @@ def test_scenario_tier_non_string_test_is_skipped(*, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_scenario_heading_in_scenarios_md_requires_entry(*, tmp_path: Path) -> None:
+def test_scenario_heading_in_scenarios_md_requires_entry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `## Scenario:` heading in `scenarios.md` with NO entry fires the uncovered diagnostic."""
     _write_spec_file(
         tmp_path=tmp_path,
@@ -1029,14 +1152,16 @@ def test_scenario_heading_in_scenarios_md_requires_entry(*, tmp_path: Path) -> N
         body="# Scenarios\n\n## Scenario: happy path\n\nbody\n",
     )
     _write_registry(tmp_path=tmp_path, entries=[])
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "spec heading missing coverage entry" in combined
     assert "Scenario: happy path" in combined
 
 
-def test_scenario_heading_in_scenarios_md_accepts_todo_with_tier_reason(*, tmp_path: Path) -> None:
+def test_scenario_heading_in_scenarios_md_accepts_todo_with_tier_reason(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `## Scenario:` heading in `scenarios.md` covered by a TODO+tier-reason entry passes."""
     _write_spec_file(
         tmp_path=tmp_path,
@@ -1055,11 +1180,13 @@ def test_scenario_heading_in_scenarios_md_accepts_todo_with_tier_reason(*, tmp_p
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_scenario_heading_in_scenarios_md_unit_tier_fires(*, tmp_path: Path) -> None:
+def test_scenario_heading_in_scenarios_md_unit_tier_fires(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `## Scenario:` heading mapped to a unit-tier real test fires the tier diagnostic."""
     _write_spec_file(
         tmp_path=tmp_path,
@@ -1082,14 +1209,16 @@ def test_scenario_heading_in_scenarios_md_unit_tier_fires(*, tmp_path: Path) -> 
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert "scenario heading mapped to unit-tier test" in combined
     assert "Scenario: happy path" in combined
 
 
-def test_scenario_heading_in_non_scenarios_file_still_skipped(*, tmp_path: Path) -> None:
+def test_scenario_heading_in_non_scenarios_file_still_skipped(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `## Scenario:` heading in spec.md (not scenarios.md) needs NO entry — still skipped."""
     _write_spec_file(
         tmp_path=tmp_path,
@@ -1107,11 +1236,13 @@ def test_scenario_heading_in_non_scenarios_file_still_skipped(*, tmp_path: Path)
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
 
 
-def test_dangling_non_todo_node_id_does_not_fail_the_check(*, tmp_path: Path) -> None:
+def test_dangling_non_todo_node_id_does_not_fail_the_check(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A mapped node id naming NO existing test exits 0 — the arming was reverted.
 
     `livespec-dev-tooling-jel7`: `29a49c05` armed a fifth direction that resolved
@@ -1141,6 +1272,6 @@ def test_dangling_non_todo_node_id_does_not_fail_the_check(*, tmp_path: Path) ->
             }
         ],
     )
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     combined = result.stdout + result.stderr
     assert result.returncode == 0, f"a dangling node id must not fail the check; got {combined!r}"

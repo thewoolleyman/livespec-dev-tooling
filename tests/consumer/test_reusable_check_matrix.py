@@ -16,14 +16,31 @@ The consumer-observable contract this test pins is the *matrix shape*:
   `livespec_dev_tooling.checks.<name>` module — so every matrix entry the
   workflow fans out to executes a named check, never a missing module.
 
-Driven through the shipped `python -m livespec_dev_tooling.canonical_checks
---json` entrypoint (the consumer-facing surface), not internal helpers.
+Driven through the shipped `livespec_dev_tooling.canonical_checks`
+entrypoint (the consumer-facing surface), not internal helpers. The
+entrypoint is invoked IN-PROCESS — `monkeypatch.chdir(...)` +
+`monkeypatch.setattr(sys, "argv", ...)` + `capsys` + `rc = main()` —
+rather than as a `sys.executable -m` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The argv monkeypatch is
+what `-m ... --json` supplied before, since `main()` runs the flag
+through `argparse`; the assertion targets are unchanged — the int exit
+code plus the JSON the entrypoint writes, now read off `capsys` instead
+of `CompletedProcess.stdout`.
+
+Branch parity with the retired spawn: this test drove exactly the
+argparse arm, the `canonical_check_slugs()` success track, and the stdout
+emission, and it still drives those three. The `IOFailure` arm and the
+`if __name__ == "__main__": raise SystemExit(main())` line were never
+reached from here — the latter is excluded repo-wide by the PRE-EXISTING
+`exclude_also` patterns in `[tool.coverage.report]` — so no coverage this
+file held has moved and no new exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -41,33 +58,41 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # `<name>` is the snake_case module name. This is that inverse mapping.
 _SLUG_PREFIX = "check-"
 
+# The shipped consumer-facing entrypoint, imported by name rather than
+# spawned as `python -m <name>` — a consumer reaches the same `main()`.
+_ENTRYPOINT_MODULE = "livespec_dev_tooling.canonical_checks"
+
 
 def _slug_to_module_name(*, slug: str) -> str:
     return slug.removeprefix(_SLUG_PREFIX).replace("-", "_")
 
 
-def _canonical_slugs() -> list[str]:
+def _canonical_slugs(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> list[str]:
     """Run the shipped `--json` thin-transport surface and return the slug list."""
-    result = subprocess.run(
-        [sys.executable, "-m", "livespec_dev_tooling.canonical_checks", "--json"],
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
+    monkeypatch.chdir(_REPO_ROOT)
+    monkeypatch.setattr(sys, "argv", ["canonical-checks", "--json"])
+    module = importlib.import_module(_ENTRYPOINT_MODULE)
+
+    returncode = module.main()
+
+    captured = capsys.readouterr()
+    assert returncode == 0, (
+        f"canonical_checks --json must exit 0; got returncode={returncode} "
+        f"stderr={captured.err!r}"
     )
-    assert result.returncode == 0, (
-        f"canonical_checks --json must exit 0; got returncode={result.returncode} "
-        f"stderr={result.stderr!r}"
-    )
-    payload = json.loads(result.stdout)
+    payload = json.loads(captured.out)
     slugs = payload["slugs"]
     assert isinstance(slugs, list)
     return slugs
 
 
-def test_canonical_checks_emits_a_nonempty_matrix_array() -> None:
+def test_canonical_checks_emits_a_nonempty_matrix_array(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The matrix-shape surface emits a non-empty JSON array of check slugs."""
-    slugs = _canonical_slugs()
+    slugs = _canonical_slugs(monkeypatch=monkeypatch, capsys=capsys)
 
     assert (
         slugs
@@ -77,7 +102,9 @@ def test_canonical_checks_emits_a_nonempty_matrix_array() -> None:
     ), f"every matrix slug is a `check-`-prefixed string; got {slugs}"
 
 
-def test_every_matrix_slug_resolves_to_a_runnable_check_module() -> None:
+def test_every_matrix_slug_resolves_to_a_runnable_check_module(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Each emitted slug maps to a real importable `checks.<name>` module.
 
     Every matrix entry the workflow fans out to therefore executes a named
@@ -85,7 +112,7 @@ def test_every_matrix_slug_resolves_to_a_runnable_check_module() -> None:
     """
     checks_dir = _REPO_ROOT / "livespec_dev_tooling" / "checks"
 
-    for slug in _canonical_slugs():
+    for slug in _canonical_slugs(monkeypatch=monkeypatch, capsys=capsys):
         module_name = _slug_to_module_name(slug=slug)
         module_file = checks_dir / f"{module_name}.py"
         assert module_file.is_file(), (
