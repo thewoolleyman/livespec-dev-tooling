@@ -48,6 +48,7 @@ WARM_CACHE_SRC="${PHASE2_DIR}/warm-cache"
 CRATES_PROXY_SRC="${PHASE2_DIR}/crates-proxy"
 SCCACHE_SRC="${PHASE2_DIR}/sccache"
 OBSERVABILITY_SRC="$(cd "${PHASE2_DIR}/../../observability" && pwd)"
+GATES_SRC="${PHASE2_DIR}/gates"
 LIB_DIR="/usr/local/lib/ci-runner-k3s"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="converge-ci-stack.service"
@@ -60,7 +61,8 @@ command -v systemctl >/dev/null || { echo "FATAL: systemctl not found on PATH"; 
 # ---------------------------------------------------------------------------
 log "1. Create the self-contained artifact tree under ${LIB_DIR}"
 install -d -m 0755 "${LIB_DIR}" "${LIB_DIR}/arc" "${LIB_DIR}/kueue" "${LIB_DIR}/kueue/core" \
-  "${LIB_DIR}/local-path-provisioner" "${LIB_DIR}/warm-cache" "${LIB_DIR}/crates-proxy" "${LIB_DIR}/sccache" "${LIB_DIR}/observability"
+  "${LIB_DIR}/local-path-provisioner" "${LIB_DIR}/warm-cache" "${LIB_DIR}/crates-proxy" "${LIB_DIR}/sccache" "${LIB_DIR}/observability" \
+  "${LIB_DIR}/gates"
 
 # ---------------------------------------------------------------------------
 log "2. Copy the converge script (the unit's ExecStart target) and its helper"
@@ -122,6 +124,13 @@ install -m 0644 "${SCCACHE_SRC}/sccache-redis.yaml" "${LIB_DIR}/sccache/sccache-
 # ---------------------------------------------------------------------------
 log "7. Copy the Kueue-webhook probe's RBAC manifest"
 install -m 0644 "${OBSERVABILITY_SRC}/kueue-webhook-probe-rbac.yaml" "${LIB_DIR}/observability/kueue-webhook-probe-rbac.yaml"
+
+# ---------------------------------------------------------------------------
+log "7b. Copy the delegated-gate submitter's RBAC manifest (R4.S2, y8em)"
+# converge step 10b applies this and renders /etc/ci-runner/gates.kubeconfig
+# from the token Secret it requests. The gates NAMESPACE is not here: it ships
+# in kueue/cluster-queue-gates.yaml, copied by step 4's cluster-queue-* glob.
+install -m 0644 "${GATES_SRC}/gates-rbac.yaml" "${LIB_DIR}/gates/gates-rbac.yaml"
 
 # ---------------------------------------------------------------------------
 log "8. Install the systemd unit"
