@@ -56,6 +56,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-per-file-coverage",
     "check-plan-anchor-declared",
     "check-plan-epic-parity",
+    "check-plan-no-live-handoff-file",
     "check-plan-no-tombstone",
     "check-plan-record-conformance",
     "check-plugin-resolution",
