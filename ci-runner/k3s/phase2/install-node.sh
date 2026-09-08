@@ -71,10 +71,11 @@
 #                            it on an agent). The step is on both plans; the
 #                            FILE it installs is what differs — config.yaml on a
 #                            server, config.agent.yaml on an agent — because
-#                            `disable` and `write-kubeconfig-mode` are
-#                            server-only keys and k3s-agent exits `flag provided
-#                            but not defined: -disable` at the next start after
-#                            being handed them (livespec-dev-tooling-vcv4).
+#                            `disable`, `write-kubeconfig-mode` and `tls-san`
+#                            are server-only keys and k3s-agent exits `flag
+#                            provided but not defined: -disable` at the next
+#                            start after being handed them
+#                            (livespec-dev-tooling-vcv4).
 #   2. node-inotify-budget, node-keyring-budget — kernel sysctls; no cluster
 #                            needed. Then storage-layout — the five LABEL-keyed
 #                            fstab lines (cache + two tiers + two binds) and
@@ -310,10 +311,10 @@ STEP_LABEL[storage-sweep]="10/10 boot-time orphaned-scratch sweep (enable only)"
 # label names the ARTEFACT that differs, so a --dry-run plan says which file the
 # step installs rather than only that the step runs.
 #
-# k3s-config: max-pods is node state both roles need, while `disable` and
-# `write-kubeconfig-mode` are server-only keys — an agent handed them does not
-# ignore them, it exits `flag provided but not defined: -disable` at the next
-# k3s start and restart-loops (gmktec-xubuntu 2026-09-07,
+# k3s-config: max-pods is node state both roles need, while `disable`,
+# `write-kubeconfig-mode` and `tls-san` are server-only keys — an agent handed
+# them does not ignore them, it exits `flag provided but not defined: -disable`
+# at the next k3s start and restart-loops (gmktec-xubuntu 2026-09-07,
 # livespec-dev-tooling-vcv4). The skip marker's directory,
 # /var/lib/rancher/k3s/server/manifests/, is a SERVER path for the same reason.
 # The agent label also names the WAIT that step earns the rest of this runbook:

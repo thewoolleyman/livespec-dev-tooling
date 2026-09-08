@@ -31,9 +31,79 @@ kubelet-arg:
 disable:
   - local-storage
 
+# The API server serving certificate's subject alternative names, so a client
+# dialling this node over the TAILNET completes TLS instead of failing
+# hostname verification. research/001 of the livespec plan
+# `k3s-on-gmktec-for-vps-usage` measured the live cert's SANs as kubernetes,
+# the kubernetes.default variants, localhost, poweredge-xubuntu, 10.43.0.1,
+# 127.0.0.1, 192.168.1.200 and ::1 — no tailnet name and no tailnet address.
+#
+# The route itself already works and only this list was missing. Measured
+# 2026-09-07 from the VPS: https://poweredge-xubuntu:6443 and
+# https://100.78.140.72:6443 both answer 401 Unauthorized, so TCP, TLS and HTTP
+# complete end to end and only a credential is absent; the LAN address
+# 192.168.1.200 times out, because the VPS is not on the home LAN and will not
+# be. BOTH spellings are listed on purpose: a client resolving MagicDNS dials
+# the name, a client configured with the raw address dials the IP, and a SAN
+# list carrying only one of them breaks the other.
+#
+# TAKES EFFECT AT THE NEXT k3s START, which is also when the serving cert
+# covering these names is issued — k3s regenerates it when the requested SAN
+# set no longer matches the one at
+# /var/lib/rancher/k3s/server/tls/serving-kube-apiserver.crt. Do that restart
+# at zero active jobs: it kills every running CI job on the pool. Confirm
+# afterwards from a tailnet member rather than from this file, e.g.
+# `openssl s_client -connect 100.78.140.72:6443 </dev/null 2>/dev/null |
+# openssl x509 -noout -text | grep -A1 'Subject Alternative Name'`.
+tls-san:
+  - "poweredge-xubuntu.perch-rudd.ts.net"
+  - "100.78.140.72"
+
 # The admin kubeconfig's mode. ../../provision-k3s.sh step 3 used to chmod it
 # 0644 by hand for non-root kubectl/helm use, and k3s reset it to 0600 on
 # every start (observed after the 2026-09-02 reboot). This is the durable
-# form of the same decision — a cluster-local admin kubeconfig on a
-# single-tenant node with no externally reachable API server.
+# form of the same decision.
+#
+# THE PREMISE THAT JUSTIFIED 0644 IS GONE. Until 2026-09-07 this comment ended
+# by calling the file safe wide because nothing off this host could reach its
+# API server, and ../../provision-k3s.sh's step_kubeconfig_mode rested the
+# widening on the same claim. With the tls-san above the API server IS reached
+# from off this host — over the TAILNET, to TAILNET MEMBERS ONLY; the LAN
+# address answers nothing off-LAN and nothing is published to the public
+# internet. That claim no longer holds and must not be revived, for this mode
+# or for anything else.
+#
+# 0644 STANDS ANYWAY, for a reason that is not that one — weighed here rather
+# than left unstated. What tailnet reachability changes is not WHO can read
+# this file (still every uid on this host, exactly as before) but WHERE a copy
+# of it works: an exfiltrated admin kubeconfig used to be useless off-host and
+# is now usable from any tailnet member. What it does not change is that 0644
+# never defended against a local uid in the first place — the API server has
+# always answered on 127.0.0.1:6443 to every local process, so anyone who could
+# read this file already held cluster-admin. The mode's blast radius was, and
+# remains, "can execute code on this host".
+#
+# WHAT DEPENDS ON 0644, read out of this repo rather than assumed: the
+# root-free operator paths, which are documented without `sudo` and check for
+# no such thing —
+# `KUBECONFIG=/etc/rancher/k3s/k3s.yaml ../crates-proxy/converge-crates-proxy.sh`,
+# `../warm-cache/install-warm-cache.sh`, `../warm-cache/converge-warm-cache.sh`
+# — plus the `kubectl -n ... get ...` "is it live?" reads throughout
+# ../README.md. Every AUTOMATED reader is already root and needs none of it:
+# the units carrying Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# (../reconstruct/converge-ci-stack.service,
+# ../runner-pod-lifecycle/scan-runner-pod-lifecycle.service,
+# ../../secret-reinjection/inject-github-app-secret.service,
+# ../../../observability/ci-pool-attributed-gauges.service) declare no `User=`,
+# and ../install-node.sh requires root outright.
+#
+# SO THE FIX IS NOT A chmod. Dropping to 0600 here would break those operator
+# paths at the next k3s start and buy nothing against the local uid that 0644
+# never stopped. Tightening is earned by giving the non-root operator a SCOPED
+# credential first, the way ../../../observability/ci-kueue-webhook-probe.sh
+# already reads the cluster through its own read-only ServiceAccount kubeconfig
+# at /etc/ci-runner/kueue-webhook-probe.kubeconfig
+# (../reconstruct/render-sa-kubeconfig.sh renders those). That changes what
+# RUNS on the host; this file is committed config only, so the successor work
+# is named here rather than smuggled in beside a SAN list.
 write-kubeconfig-mode: "0644"

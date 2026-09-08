@@ -14,7 +14,8 @@
 # ROLE-AWARE (2026-09-07, livespec-dev-tooling-vcv4, livespec plan
 # `k3s-on-gmktec-for-vps-usage` carrier R3). Until now this installed
 # ./config.yaml on whatever node ran it, and ../install-node.sh runs it on BOTH
-# roles. That file carries two SERVER-ONLY keys, and an agent handed them does
+# roles. That file carries three SERVER-ONLY keys (`tls-san` joined them on
+# 2026-09-08 with the tailnet SAN list), and an agent handed them does
 # not ignore them: k3s-agent exits `level=fatal ... flag provided but not
 # defined: -disable` and systemd restart-loops the unit. Measured on
 # gmktec-xubuntu 2026-09-07 — and measured only then, because a config is read
@@ -103,7 +104,7 @@ SKIP_MARKER="${MANIFESTS_DIR}/local-storage.yaml.skip"
 # Named here so a server config found on an agent is reported by WHAT makes it
 # wrong rather than by its filename — the operator reading the replacement has
 # to see the key that was about to kill k3s-agent.
-SERVER_ONLY_KEYS=(disable write-kubeconfig-mode)
+SERVER_ONLY_KEYS=(disable write-kubeconfig-mode tls-san)
 
 USAGE="usage: sudo ${SCRIPT_NAME} [--role server|agent] [--wait-seconds <n>]   (--role defaults to \$CLUSTER_ROLE, then to server)"
 

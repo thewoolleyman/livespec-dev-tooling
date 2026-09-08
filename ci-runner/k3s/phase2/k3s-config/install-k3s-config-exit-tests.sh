@@ -7,11 +7,20 @@
 # and the marker removed — with nothing restarted.
 #
 #   A. ./config.agent.yaml carries no server-only key. This is the fact the
-#      whole change rests on and the only one asserted against the committed
-#      file rather than against a run: `disable` is not in k3s-agent's flag set,
-#      so an agent handed it exits `level=fatal ... flag provided but not
+#      whole change rests on and one of the two asserted against the committed
+#      files rather than against a run: `disable` is not in k3s-agent's flag
+#      set, so an agent handed it exits `level=fatal ... flag provided but not
 #      defined: -disable` and systemd restart-loops the unit (gmktec-xubuntu
 #      2026-09-07, livespec-dev-tooling-vcv4);
+#   A2. ./config.yaml declares the TAILNET SANs, and neither it nor
+#      ../../provision-k3s.sh still claims the node has no externally reachable
+#      API server. The two halves belong in one case because they are one fact:
+#      the tls-san entry is what MAKES the API server reachable from off the
+#      host, so a SAN list present while either file still asserts
+#      unreachability is a repo contradicting itself about its own attack
+#      surface — and the 0644 admin-kubeconfig mode was justified by exactly
+#      that unreachability. Also asserted against the committed files
+#      (livespec-dev-tooling-vlku);
 #   B. a `server` run on a fresh node installs ./config.yaml byte-for-byte and
 #      writes the skip marker — the sequence this installer always ran;
 #   C. an `agent` run on a fresh node installs ./config.agent.yaml
@@ -103,7 +112,7 @@ fi
 # Top-level keys only: a `disable` inside a comment is prose, and the fatal is
 # caused by the KEY. Same shallow read the installer itself does.
 AGENT_KEYS="$(sed -n 's/^\([A-Za-z][A-Za-z0-9_-]*\):.*$/\1/p' "$AGENT_SRC")"
-for forbidden in disable write-kubeconfig-mode; do
+for forbidden in disable write-kubeconfig-mode tls-san; do
   if printf '%s\n' "$AGENT_KEYS" | grep -qx "$forbidden"; then
     no "config.agent.yaml has no '${forbidden}' key"
   else
@@ -116,13 +125,98 @@ else
   no "config.agent.yaml keeps the node-local kubelet-arg the agent needs"
 fi
 # The server file is the counter-example that makes the assertion above mean
-# something: it DOES carry both keys, which is why it cannot be installed here.
+# something: it DOES carry every one of them, which is why it cannot be
+# installed here.
 SERVER_KEYS="$(sed -n 's/^\([A-Za-z][A-Za-z0-9_-]*\):.*$/\1/p' "$SERVER_SRC")"
-if printf '%s\n' "$SERVER_KEYS" | grep -qx 'disable' \
-  && printf '%s\n' "$SERVER_KEYS" | grep -qx 'write-kubeconfig-mode'; then
-  ok "config.yaml still carries both server-only keys (the state that is fatal on an agent)"
+server_only_missing=""
+for server_only in disable write-kubeconfig-mode tls-san; do
+  printf '%s\n' "$SERVER_KEYS" | grep -qx "$server_only" \
+    || server_only_missing="${server_only_missing}${server_only_missing:+ }${server_only}"
+done
+if [ -z "$server_only_missing" ]; then
+  ok "config.yaml still carries every server-only key (the state that is fatal on an agent)"
 else
-  no "config.yaml still carries both server-only keys (the state that is fatal on an agent)"
+  no "config.yaml still carries every server-only key — missing: ${server_only_missing}"
+fi
+
+# ---------------------------------------------------------------------------
+# A2. The committed server config declares the TAILNET SANs, and no committed
+#     file still claims this node's API server cannot be reached from off the
+#     host. Asserted together because they are one fact with two halves: the
+#     tls-san entry is what makes the API server reachable over the tailnet,
+#     and the 0644 admin-kubeconfig mode was justified by the reachability
+#     claim the SAN list retires (livespec-dev-tooling-vlku). Nothing here runs
+#     the installer — these are properties of the committed files.
+# ---------------------------------------------------------------------------
+printf '\n== A2. config.yaml declares the tailnet SANs; no file claims the API server is unreachable ==\n'
+PROVISION_SRC="${HERE}/../../provision-k3s.sh"
+
+# tls_san_entries -> config.yaml's top-level tls-san list entries, unquoted, one
+# per line. Read as a LIST rather than by grepping the whole file: the tailnet
+# address also appears in the prose above the key (it is the address the
+# 401-Unauthorized measurement was taken against), so a file-wide grep would
+# pass on a config that documents the SANs and declares none.
+tls_san_entries() {
+  awk '
+    /^tls-san:[[:space:]]*$/ { in_list = 1; next }
+    in_list && /^[[:space:]]*-[[:space:]]/ {
+      entry = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", entry)
+      gsub(/"/, "", entry)
+      print entry
+      next
+    }
+    in_list && /^[[:space:]]*(#.*)?$/ { next }
+    in_list { in_list = 0 }
+  ' "$SERVER_SRC"
+}
+
+if printf '%s\n' "$SERVER_KEYS" | grep -qx 'tls-san'; then
+  ok "config.yaml declares a top-level tls-san key"
+else
+  no "config.yaml declares a top-level tls-san key"
+fi
+SAN_ENTRIES="$(tls_san_entries)"
+for san in poweredge-xubuntu.perch-rudd.ts.net 100.78.140.72; do
+  if printf '%s\n' "$SAN_ENTRIES" | grep -qxF "$san"; then
+    ok "tls-san carries '${san}'"
+  else
+    no "tls-san carries '${san}' (entries: $(printf '%s' "$SAN_ENTRIES" | paste -sd' ' -))"
+  fi
+done
+
+# The retired premise, in both files that asserted it. Matched on the shape of
+# the claim rather than on one spelling of it: the hyphenated and unhyphenated
+# forms both appeared, one per file.
+for premise_file in "$SERVER_SRC" "$PROVISION_SRC"; do
+  premise_name="$(basename "$premise_file")"
+  if grep -qiE 'no externally[ -]reachable API server' "$premise_file"; then
+    no "${premise_name} no longer claims the API server is not externally reachable"
+    grep -niE 'no externally[ -]reachable API server' "$premise_file"
+  else
+    ok "${premise_name} no longer claims the API server is not externally reachable"
+  fi
+  # Absence alone would also be satisfied by deleting the sentence, which would
+  # leave the next reader with no account of the exposure at all. The amended
+  # statement has to BE there, and it has to name who can reach it.
+  if grep -q 'TAILNET MEMBERS ONLY' "$premise_file"; then
+    ok "${premise_name} carries the amended tailnet-reachable statement"
+  else
+    no "${premise_name} carries the amended tailnet-reachable statement"
+  fi
+done
+
+# The mode question is answered rather than left open: 0644 is still what the
+# file declares, so the comment beside it has to say why it survives the
+# exposure the SAN list creates.
+if grep -q '^write-kubeconfig-mode: "0644"$' "$SERVER_SRC"; then
+  if grep -q '0644 STANDS ANYWAY' "$SERVER_SRC"; then
+    ok "config.yaml records why 0644 stands under tailnet reachability"
+  else
+    no "config.yaml still declares write-kubeconfig-mode 0644 but records no reason it stands under tailnet reachability"
+  fi
+else
+  ok "config.yaml no longer declares write-kubeconfig-mode 0644 — the mode was tightened"
 fi
 
 # ---------------------------------------------------------------------------
@@ -215,10 +309,10 @@ fi
 # The operator has to be able to read WHY the file was replaced out of the run's
 # own output — the offending keys, not just a diff.
 case "$REPLY_OUT" in
-  *"REPAIR:"*"SERVER-ONLY key(s):"*disable*write-kubeconfig-mode*)
-    ok "the replacement names both server-only keys it found" ;;
+  *"REPAIR:"*"SERVER-ONLY key(s):"*disable*write-kubeconfig-mode*tls-san*)
+    ok "the replacement names every server-only key it found" ;;
   *)
-    no "the replacement names both server-only keys it found"
+    no "the replacement names every server-only key it found"
     printf '%s\n' "$REPLY_OUT" ;;
 esac
 case "$REPLY_OUT" in
