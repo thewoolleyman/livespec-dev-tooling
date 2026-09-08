@@ -75,6 +75,12 @@ from livespec_dev_tooling.checks._import_resolution import (
     suffix_index,
     top_level_functions,
 )
+from livespec_dev_tooling.fleet._public_api_unresolved import (
+    UnresolvedReach,
+    bound_names,
+    ordered_reaches,
+    unresolved_reach,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -135,10 +141,18 @@ class UnparsedSource:
 
 @dataclass(frozen=True, kw_only=True)
 class ConsumptionGraph:
-    """Every cross-member consumption, plus what could not be measured."""
+    """Every cross-member consumption, plus what could not be measured.
+
+    `unresolved` is a THIRD outcome and not a kind of edge: a sibling reaches a
+    name the module it resolves to no longer binds, which is an `ImportError`
+    in the CONSUMER rather than a declaration gap in the definer. Before it
+    existed that consumption VANISHED instead of convicting — see
+    `_public_api_unresolved`.
+    """
 
     edges: tuple[ConsumptionEdge, ...]
     unparsed: tuple[UnparsedSource, ...]
+    unresolved: tuple[UnresolvedReach, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -207,17 +221,26 @@ class _DefiningFacts:
     IMPORTS from another first-party module and re-exports is not among that
     file's own definitions, so a reach resolved to the facade would be dropped
     without it.
+
+    `bindings` answers a DIFFERENT question from `functions`, and the two must
+    not be collapsed. `functions` is "what is public API here" — top-level
+    functions minus the `_`-prefixed ones. `bindings` is "what would satisfy a
+    sibling's `import` statement", which includes classes, constants, private
+    helpers and re-exported names. Only the second can say a name is GONE, and
+    asking the first would convict every reach the graph already drops on
+    purpose.
     """
 
     index: dict[str, frozenset[Path]]
     functions: dict[Path, frozenset[str]]
     reexports: dict[Path, dict[str, str]]
+    bindings: dict[Path, frozenset[str] | None]
 
 
 def _defining_index(
     *, members: Mapping[str, MemberSources], unparsed: list[UnparsedSource]
 ) -> _DefiningFacts:
-    """The fleet-wide suffix index, each defining file's functions, and its re-exports."""
+    """The suffix index, each defining file's functions, re-exports, and bound names."""
     texts: dict[Path, str] = {}
     functions: dict[Path, frozenset[str]] = {}
     trees_by_file: dict[Path, ast.Module] = {}
@@ -238,7 +261,8 @@ def _defining_index(
         }
         for qualified, tree in trees_by_file.items()
     }
-    return _DefiningFacts(index=index, functions=functions, reexports=reexports)
+    bindings = {qualified: bound_names(tree=tree) for qualified, tree in trees_by_file.items()}
+    return _DefiningFacts(index=index, functions=functions, reexports=reexports, bindings=bindings)
 
 
 def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> ConsumptionGraph:
@@ -251,6 +275,7 @@ def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> Consump
     unparsed: list[UnparsedSource] = []
     facts = _defining_index(members=members, unparsed=unparsed)
     edges: list[ConsumptionEdge] = []
+    reaches: list[UnresolvedReach] = []
     for member, sources in members.items():
         trees = _parsed(member=member, sources=sources.consuming, into=unparsed)
         for rel, tree in trees.items():
@@ -259,8 +284,14 @@ def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> Consump
             reached = name_imports(
                 tree=tree, current=current, index=facts.index
             ) | attribute_reaches(tree=tree, aliases=aliases, index=facts.index)
-            edges.extend(_edges_for(member=member, rel=rel, reached=reached, facts=facts))
-    return ConsumptionGraph(edges=tuple(sorted(edges, key=_edge_order)), unparsed=tuple(unparsed))
+            found, missing = _edges_for(member=member, rel=rel, reached=reached, facts=facts)
+            edges.extend(found)
+            reaches.extend(missing)
+    return ConsumptionGraph(
+        edges=tuple(sorted(edges, key=_edge_order)),
+        unparsed=tuple(unparsed),
+        unresolved=ordered_reaches(reaches=reaches),
+    )
 
 
 def _through_reexports(
@@ -306,9 +337,20 @@ def _through_reexports(
 
 def _edges_for(
     *, member: str, rel: Path, reached: set[tuple[str, str]], facts: _DefiningFacts
-) -> list[ConsumptionEdge]:
-    """The cross-member edges one consuming file's reaches produce."""
+) -> tuple[list[ConsumptionEdge], list[UnresolvedReach]]:
+    """The cross-member edges one consuming file's reaches produce, and the BROKEN ones.
+
+    The second half exists because the first used to be the only one. A reach
+    whose resolution came back empty produced no edge and left no trace, so a
+    function DELETED out from under a sibling was reported as silence — see
+    `_public_api_unresolved`. Both are returned together because they are two
+    outcomes of the SAME resolution and a caller must not be able to take one
+    without the other.
+    """
     found: list[ConsumptionEdge] = []
+    missing: list[UnresolvedReach] = []
+    consuming = _qualified(member=member, rel=rel)
+    bindings = facts.bindings
     for dotted, name in reached:
         candidates = facts.index[dotted]
         if any(candidate.parts[0] == member for candidate in candidates):
@@ -338,6 +380,18 @@ def _edges_for(
             # consumer's would fail a member for a file it never opens, which
             # is the 14-false-findings shape the pre-hop guard exists to stop.
             continue
+        if not defining_files:
+            # THE DROP THIS RECORDS. Reaching here means both guards passed —
+            # the reach genuinely leaves `member` — and the re-export walk
+            # still found the name nowhere. Placed AFTER both `continue`s on
+            # purpose: emitting before either would reproduce the exact
+            # 14-false-findings shape they exist to prevent, against a name
+            # the consumer satisfies from its own copy.
+            reach = unresolved_reach(
+                consuming=consuming, reach=(dotted, name), candidates=candidates, bindings=bindings
+            )
+            if reach is not None:
+                missing.append(reach)
         for defining in sorted(defining_files):
             found.append(
                 ConsumptionEdge(
@@ -349,7 +403,7 @@ def _edges_for(
                     uniquely_resolved=len(candidates) == 1 and hops_unique,
                 )
             )
-    return found
+    return found, missing
 
 
 def _edge_order(edge: ConsumptionEdge) -> tuple[str, str, str, str, str]:
