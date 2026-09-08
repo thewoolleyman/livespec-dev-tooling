@@ -501,3 +501,88 @@ def test_a_sibling_is_never_read_from_the_local_checkout(*, tmp_path: Path) -> N
         f"consumed function; got {outcome!r}"
     )
     assert "pkg/contract.py::parse_manifest <- app:app/use.py" in outcome.message
+
+
+_LIBRARY_AFTER_DELETION = "def kept(*, text: str) -> str:\n    return text\n"
+
+
+def test_a_function_deleted_out_from_under_a_sibling_convicts_as_a_broken_consumer() -> None:
+    """THE DEFECT (livespec-dev-tooling-9s2j): the row used to report NOTHING here.
+
+    `pkg/contract.py` still exists in `lib`; `parse_manifest` does not, and
+    `app` still imports it. The graph built an edge only where a reach resolved
+    to a file that DEFINED the name, so this consumption vanished instead of
+    convicting — silence in exactly the case that breaks the consumer hardest,
+    because an `ImportError` in `app` is not something `lib` can fix by
+    declaring anything.
+
+    The finding names all four facts an operator needs to act: which member
+    breaks, which of its files, through which dotted module, and which name.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_AFTER_DELETION},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+    )
+    assert isinstance(outcome, RowFinding)
+    assert "BROKEN CONSUMER" in outcome.message
+    assert "pkg.contract::parse_manifest <- app:app/use.py" in outcome.message
+    assert "cross_repo_public_api omits" not in outcome.message
+
+
+def test_the_broken_consumer_finding_states_its_own_limit_rather_than_completeness() -> None:
+    """The noise fence, in the OUTPUT: a row that overclaims is a row that gets muted.
+
+    The oracle reads source, so it cannot see a definition supplied
+    dynamically, and the operator holding the finding must be told that before
+    acting on it.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_AFTER_DELETION},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+    )
+    assert isinstance(outcome, RowFinding)
+    assert "Read statically" in outcome.message
+    assert "not exhaustive" in outcome.message
+
+
+def test_a_present_but_undeclared_function_is_still_only_a_declaration_gap() -> None:
+    """NEGATIVE CONTROL — the OTHER defect is untouched, and the two are distinguishable.
+
+    Same fixture as the case above with `parse_manifest` RESTORED. The sibling
+    imports fine, so nothing is broken; what `lib` owes is a declaration. A row
+    that reported this as a broken consumer would have merged two defects with
+    opposite remedies.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_SOURCE},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="lib",
+    )
+    assert isinstance(outcome, RowFinding)
+    assert "cross_repo_public_api omits 1 function(s)" in outcome.message
+    assert "BROKEN CONSUMER" not in outcome.message
+
+
+def test_the_consuming_member_is_named_by_the_finding_and_never_convicted_by_it() -> None:
+    """`app` breaks and cannot fix it; convicting it would hand the remedy to the
+    one repo that does not hold it.
+
+    The same fixture graded for `app` instead of `lib`. The deletion is `lib`'s,
+    so `lib` is the member that owes it.
+    """
+    outcome = outcome_for(
+        trees={
+            "lib": {"pkg/contract.py": _LIBRARY_AFTER_DELETION},
+            "app": {"app/use.py": _CONSUMER_SOURCE},
+        },
+        repo="app",
+    )
+    assert isinstance(outcome, RowPass)

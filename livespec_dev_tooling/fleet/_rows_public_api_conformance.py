@@ -36,6 +36,18 @@ re-measured over the SAME denominator — nine read, 0 skipped, 0 unparsed, 58
 edges examined, 0 findings — before the flip. REMEDIATE-THEN-FLIP, this repo's
 own ratified doctrine (v034 carve-out 1).
 
+THE ROW CONVICTS ON TWO DIFFERENT DEFECTS, AND CONFLATING THEM WOULD DESTROY
+BOTH. The declaration gap above is "this member defines a function a sibling
+consumes and does not declare it" — the sibling still works, and the remedy is
+a declaration. The second is "a sibling imports a name this member NO LONGER
+DEFINES", which is an `ImportError` in that sibling at runtime and which no
+declaration can fix. The row used to be blind to the second: the graph built an
+edge only where an import resolved to a file that still defined the name, so a
+DELETED definition produced no edge and the consumption VANISHED rather than
+convicting (`livespec-dev-tooling-9s2j`). `_public_api_unresolved` carries that
+outcome now, and it renders as its own statement in the finding. The member
+convicted is the DEFINER either way; the consumer is named, never failed.
+
 WHAT THE ROW PUTS IN ITS OWN OUTPUT RATHER THAN IN THIS DOCSTRING, because an
 operator reads the finding and not the source:
 
@@ -100,6 +112,10 @@ from livespec_dev_tooling.fleet._public_api_graph import (  # noqa: E402
     FleetConsumption,
     MemberSources,
     cross_member_consumption,
+)
+from livespec_dev_tooling.fleet._public_api_unresolved import (  # noqa: E402
+    broken_consumer_note,
+    broken_consumers,
 )
 
 if TYPE_CHECKING:
@@ -298,6 +314,23 @@ def _finding_lines(*, undeclared: tuple[ConsumptionEdge, ...]) -> str:
     )
 
 
+def _gap_note(*, repo: str, undeclared: tuple[ConsumptionEdge, ...]) -> str:
+    """The DECLARATION-GAP half of the finding, or "" when the declaration is complete.
+
+    Split out from the message when the BROKEN-CONSUMER half arrived beside it,
+    so the two defects render as two statements rather than one blurred
+    sentence. A member can owe both at once, and a reader must be able to tell
+    which of its names need a declaration from which no longer exist.
+    """
+    if not undeclared:
+        return ""
+    names = len({(edge.defining_file, edge.function) for edge in undeclared})
+    return (
+        f"{repo}: cross_repo_public_api omits {names} function(s) a sibling "
+        f"consumes: {_finding_lines(undeclared=undeclared)}. "
+    )
+
+
 def assert_cross_repo_public_api_declared(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """`cross_repo_public_api` names every function a SIBLING actually consumes."""
     if not ctx.members:
@@ -314,13 +347,13 @@ def assert_cross_repo_public_api_declared(*, ctx: FleetContext, member: FleetMem
     variants = _variants_note(state=state, repo=member.repo)
     context = f"{absence}. {variants}.{_unparsed_note(state=state, repo=member.repo)}"
     undeclared = _undeclared(state=state, repo=member.repo)
-    if not undeclared:
+    broken = broken_consumers(reaches=state.graph.unresolved, repo=member.repo)
+    if not undeclared and not broken:
         return RowPass(note=f"{context} {_BLIND_SPOT}")
     return RowFinding(
         message=(
-            f"{member.repo}: cross_repo_public_api omits "
-            f"{len({(e.defining_file, e.function) for e in undeclared})} function(s) a sibling "
-            f"consumes: {_finding_lines(undeclared=undeclared)}. {context} "
-            f"{_GUARD_WARNING} {_BLIND_SPOT}"
+            f"{_gap_note(repo=member.repo, undeclared=undeclared)}"
+            f"{broken_consumer_note(repo=member.repo, broken=broken)}"
+            f"{context} {_GUARD_WARNING} {_BLIND_SPOT}"
         )
     )

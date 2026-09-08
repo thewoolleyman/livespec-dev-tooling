@@ -55,6 +55,8 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "UnresolvedReach",
     "bound_names",
+    "broken_consumer_note",
+    "broken_consumers",
     "ordered_reaches",
     "unresolved_reach",
 ]
@@ -153,3 +155,49 @@ def _reach_order(reach: UnresolvedReach) -> tuple[str, str, str, str]:
 def ordered_reaches(*, reaches: Iterable[UnresolvedReach]) -> tuple[UnresolvedReach, ...]:
     """`reaches` in the stable order a row reports them in."""
     return tuple(sorted(reaches, key=_reach_order))
+
+
+def broken_consumers(
+    *, reaches: Iterable[UnresolvedReach], repo: str
+) -> tuple[UnresolvedReach, ...]:
+    """The reaches `repo` OWES — the ones whose dotted module resolved into its files.
+
+    Attribution is to the DEFINING side, matching the declaration-gap half the
+    row already computes: the row is called once per member and asks what that
+    member owes, and a deleted definition is owed by whoever deleted it. The
+    CONSUMING member is the one that breaks, so it is NAMED by the finding
+    rather than convicted by it — it did nothing wrong, and failing it would
+    hand the remedy to the one repo that cannot apply it.
+    """
+    return tuple(reach for reach in reaches if repo in reach.defining_members)
+
+
+def broken_consumer_note(*, repo: str, broken: tuple[UnresolvedReach, ...]) -> str:
+    """The BROKEN-CONSUMER half of the row's finding, or "" when there is none.
+
+    Worded so it cannot be read as the declaration-gap half. Conflating the two
+    destroys the point of the row: "this member defines it but does not declare
+    it" is a declaration gap the sibling survives, and its remedy is a
+    declaration; "a sibling imports a name this member no longer defines" is an
+    `ImportError` in that sibling, and no declaration can fix it.
+
+    ⚠️ IT STATES ITS OWN LIMIT rather than asserting completeness, because a row
+    that overclaims is a row that gets muted. The reading is STATIC in both
+    directions: a name supplied dynamically would not be seen as present, and a
+    consumer reaching this member through `getattr` / `importlib` / string
+    dispatch would not be seen at all.
+    """
+    if not broken:
+        return ""
+    sites = sorted(
+        f"{reach.module}::{reach.name} <- {reach.consuming_member}:"
+        f"{reach.consuming_file.as_posix()}"
+        for reach in broken
+    )
+    return (
+        f"{repo}: {len(broken)} name(s) a sibling IMPORTS are NO LONGER DEFINED here -- a "
+        f"BROKEN CONSUMER (an ImportError in that sibling at runtime), NOT a declaration "
+        f"gap: {'; '.join(sites)}. Restore the definition or fix the consuming import; "
+        f"declaring it cannot help. Read statically, so a definition supplied dynamically "
+        f"would not be seen as present, and this list is not exhaustive. "
+    )
