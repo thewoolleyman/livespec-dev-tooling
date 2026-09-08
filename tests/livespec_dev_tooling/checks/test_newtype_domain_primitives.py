@@ -10,14 +10,38 @@ use the corresponding `livespec/types.py` NewType
 (`CheckId`, `RunId`, `TopicSlug`, `SpecRoot`, `SchemaId`,
 `TemplateName`, `Author`, `VersionTag`). Note: `template_root`
 is the resolved-directory `Path`, NOT `TemplateName`.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The twelve call sites
+spawned identically, so they now share one `_run_check` helper. That
+helper calls `_check.main()` — the SAME module object the
+monkeypatched-seam test at the top of this file patches — rather than a
+second, path-loaded copy, so every test here drives one module. `main()`
+reads `Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly
+as the child's `cwd=` argument did, and the assertion targets are
+unchanged — the int exit code plus the offending-field diagnostic, now
+read off `capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — each raw-type rejection, the NewType and Optional-NewType passes,
+the non-canonical and `template_root` ignores, the class-body skip, the
+non-Optional-union rejection, the missing / empty declared-tree exits,
+and the nested-module walk. The two lines the child process reached that
+an in-process call cannot are the module's vendored-path guard
+(`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from dataclasses import replace
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -34,6 +58,29 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _NEWTYPE_DOMAIN_PRIMITIVES = (
     _REPO_ROOT / "livespec_dev_tooling" / "checks" / "newtype_domain_primitives.py"
 )
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output.
+
+    Calls `_check.main()` — the same module object the monkeypatched-seam
+    tests above patch — rather than a second, path-loaded copy, so every
+    test in this file drives one module.
+    """
+    monkeypatch.chdir(cwd)
+    rc = _check.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def test_newtype_domain_primitives_bug_guard_after_gate(
@@ -64,6 +111,8 @@ def test_newtype_domain_primitives_bug_guard_after_gate(
 def test_newtype_domain_primitives_rejects_canonical_field_with_raw_type(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A dataclass field named `check_id` annotated `str` (not `CheckId`) fails the check."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "schemas" / "dataclasses"
@@ -83,13 +132,7 @@ def test_newtype_domain_primitives_rejects_canonical_field_with_raw_type(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"newtype_domain_primitives should reject str-typed `check_id` field; "
@@ -105,6 +148,8 @@ def test_newtype_domain_primitives_rejects_canonical_field_with_raw_type(
 def test_newtype_domain_primitives_accepts_canonical_field_with_newtype(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A `check_id: CheckId` field passes the check."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "schemas" / "dataclasses"
@@ -126,13 +171,7 @@ def test_newtype_domain_primitives_accepts_canonical_field_with_newtype(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"newtype_domain_primitives should accept CheckId-typed `check_id`; "
@@ -144,6 +183,8 @@ def test_newtype_domain_primitives_accepts_canonical_field_with_newtype(
 def test_newtype_domain_primitives_ignores_non_canonical_field_name(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A field with a non-canonical name (e.g., `name: str`) is ignored."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "schemas" / "dataclasses"
@@ -164,13 +205,7 @@ def test_newtype_domain_primitives_ignores_non_canonical_field_name(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"newtype_domain_primitives should ignore non-canonical fields; "
@@ -181,6 +216,8 @@ def test_newtype_domain_primitives_ignores_non_canonical_field_name(
 def test_newtype_domain_primitives_skips_class_body_methods_and_docstrings(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Class-body statements that aren't AnnAssign are skipped.
 
@@ -212,13 +249,7 @@ def test_newtype_domain_primitives_skips_class_body_methods_and_docstrings(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"newtype_domain_primitives should skip non-AnnAssign body stmts; "
@@ -227,7 +258,9 @@ def test_newtype_domain_primitives_skips_class_body_methods_and_docstrings(
     )
 
 
-def test_newtype_domain_primitives_ignores_template_root(*, tmp_path: Path) -> None:
+def test_newtype_domain_primitives_ignores_template_root(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`template_root` is resolved-directory Path, NOT TemplateName.
 
     Per the canonical row note: the L8 mapping is
@@ -252,13 +285,7 @@ def test_newtype_domain_primitives_ignores_template_root(*, tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"newtype_domain_primitives should ignore `template_root: Path`; "
@@ -269,6 +296,8 @@ def test_newtype_domain_primitives_ignores_template_root(*, tmp_path: Path) -> N
 def test_newtype_domain_primitives_accepts_canonical_field_with_optional_newtype(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A `author: Author | None` field passes the check.
 
@@ -295,13 +324,7 @@ def test_newtype_domain_primitives_accepts_canonical_field_with_optional_newtype
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"newtype_domain_primitives should accept `author: Author | None`; "
@@ -313,6 +336,8 @@ def test_newtype_domain_primitives_accepts_canonical_field_with_optional_newtype
 def test_newtype_domain_primitives_accepts_canonical_field_with_optional_newtype_left_none(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A `author: None | Author` field also passes (None on the left arm)."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "schemas" / "dataclasses"
@@ -334,13 +359,7 @@ def test_newtype_domain_primitives_accepts_canonical_field_with_optional_newtype
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"newtype_domain_primitives should accept `author: None | Author`; "
@@ -352,6 +371,8 @@ def test_newtype_domain_primitives_accepts_canonical_field_with_optional_newtype
 def test_newtype_domain_primitives_rejects_optional_with_raw_type(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A `author: str | None` (optional but raw str inner) fails the check.
 
@@ -376,13 +397,7 @@ def test_newtype_domain_primitives_rejects_optional_with_raw_type(
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"newtype_domain_primitives should reject `author: str | None`; "
@@ -399,6 +414,8 @@ def test_newtype_domain_primitives_rejects_optional_with_raw_type(
 def test_newtype_domain_primitives_rejects_canonical_field_with_non_optional_union(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A `check_id: str | int` (BinOp BitOr but neither arm is None Constant) falls through.
 
@@ -425,13 +442,7 @@ def test_newtype_domain_primitives_rejects_canonical_field_with_non_optional_uni
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"newtype_domain_primitives should reject `check_id: str | int`; "
@@ -440,15 +451,11 @@ def test_newtype_domain_primitives_rejects_canonical_field_with_non_optional_uni
     )
 
 
-def test_newtype_domain_primitives_rejects_missing_declared_tree(*, tmp_path: Path) -> None:
+def test_newtype_domain_primitives_rejects_missing_declared_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A declared dataclasses_tree must exist as a directory."""
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 1, (
         f"newtype_domain_primitives should reject a missing declared tree; "
@@ -457,7 +464,9 @@ def test_newtype_domain_primitives_rejects_missing_declared_tree(*, tmp_path: Pa
     assert "declared dataclasses_tree is not a directory" in result.stderr
 
 
-def test_newtype_domain_primitives_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+def test_newtype_domain_primitives_rejects_declared_tree_with_no_python(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A declared tree resolving to zero `.py` files is a hard ERROR.
 
     An armed check inspecting nothing is a configuration defect,
@@ -470,13 +479,7 @@ def test_newtype_domain_primitives_rejects_declared_tree_with_no_python(*, tmp_p
     tree.mkdir(parents=True)
     (tree / "README.md").write_text("declared, populated, but no Python\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 1, (
         f"newtype_domain_primitives should reject a declared tree containing no .py; "
@@ -485,7 +488,9 @@ def test_newtype_domain_primitives_rejects_declared_tree_with_no_python(*, tmp_p
     assert "declared role key resolves to no Python files" in result.stderr
 
 
-def test_newtype_domain_primitives_walks_nested_modules(*, tmp_path: Path) -> None:
+def test_newtype_domain_primitives_walks_nested_modules(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The declared tree is WALKED, not globbed at its top level only.
 
     `contracts.md` calls this key "the dataclass-definition tree
@@ -513,13 +518,7 @@ def test_newtype_domain_primitives_walks_nested_modules(*, tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_NEWTYPE_DOMAIN_PRIMITIVES)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"newtype_domain_primitives should walk into subdirectories of the declared tree; "

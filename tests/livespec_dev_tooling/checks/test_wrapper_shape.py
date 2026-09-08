@@ -24,13 +24,36 @@ Expr(Call(bootstrap)) + ImportFrom("livespec.<...>") +
 Raise(SystemExit(Call(main))).
 
 Cycle 160 implements the structural check.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. The nine call sites
+spawned identically, so they now share one `_run_check` helper; `main()`
+reads `Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly
+as the child's `cwd=` argument did, and the assertion targets are
+unchanged — the int exit code plus the offending-file diagnostic, now
+read off `capsys` instead of `CompletedProcess`.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — each malformed-wrapper rejection, the `_bootstrap.py` exemption,
+the conforming-wrapper pass, and the empty-tree clean exit. The two
+lines the child process reached that an in-process call cannot are the
+module's vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -39,7 +62,44 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WRAPPER_SHAPE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "wrapper_shape.py"
 
 
-def test_wrapper_shape_rejects_wrapper_with_extra_statement(*, tmp_path: Path) -> None:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the
+    test exercises the on-disk module the Red→Green hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location("wrapper_shape_under_test", str(_WRAPPER_SHAPE))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd` and capture output."""
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
+
+
+def test_wrapper_shape_rejects_wrapper_with_extra_statement(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A wrapper with an extra top-level statement fails the check.
 
     Fixture: a bin/*.py wrapper with the canonical 5
@@ -66,13 +126,7 @@ def test_wrapper_shape_rejects_wrapper_with_extra_statement(*, tmp_path: Path) -
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"wrapper_shape should reject wrapper with extra statement; "
@@ -87,7 +141,9 @@ def test_wrapper_shape_rejects_wrapper_with_extra_statement(*, tmp_path: Path) -
     )
 
 
-def test_wrapper_shape_rejects_wrapper_with_wrong_statement_kind(*, tmp_path: Path) -> None:
+def test_wrapper_shape_rejects_wrapper_with_wrong_statement_kind(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A wrapper with 5 statements but wrong shape (statement 3 not bootstrap()) fails.
 
     Fixture: 5 statements but the third is `x = 1` (Assign,
@@ -113,13 +169,7 @@ def test_wrapper_shape_rejects_wrapper_with_wrong_statement_kind(*, tmp_path: Pa
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"wrapper_shape should reject wrapper with wrong statement kinds; "
@@ -128,7 +178,9 @@ def test_wrapper_shape_rejects_wrapper_with_wrong_statement_kind(*, tmp_path: Pa
     )
 
 
-def test_wrapper_shape_rejects_wrapper_with_wrong_final_statement(*, tmp_path: Path) -> None:
+def test_wrapper_shape_rejects_wrapper_with_wrong_final_statement(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A wrapper with the first 4 statements correct but final not Raise fails.
 
     Fixture: 5 statements with the first 4 canonical, but the
@@ -154,13 +206,7 @@ def test_wrapper_shape_rejects_wrapper_with_wrong_final_statement(*, tmp_path: P
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"wrapper_shape should reject wrapper with wrong final statement; "
@@ -169,7 +215,9 @@ def test_wrapper_shape_rejects_wrapper_with_wrong_final_statement(*, tmp_path: P
     )
 
 
-def test_wrapper_shape_accepts_canonical_wrapper(*, tmp_path: Path) -> None:
+def test_wrapper_shape_accepts_canonical_wrapper(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A canonical 5-statement wrapper passes the check (exit 0)."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "bin"
     package_dir.mkdir(parents=True)
@@ -188,13 +236,7 @@ def test_wrapper_shape_accepts_canonical_wrapper(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"wrapper_shape should accept canonical wrapper with exit 0; "
@@ -203,7 +245,9 @@ def test_wrapper_shape_accepts_canonical_wrapper(*, tmp_path: Path) -> None:
     )
 
 
-def test_wrapper_shape_accepts_impl_plugin_fleet_wrapper(*, tmp_path: Path) -> None:
+def test_wrapper_shape_accepts_impl_plugin_fleet_wrapper(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A canonical wrapper importing main from a `livespec_<suffix>` fleet member package passes.
 
     Fixture: a bin/*.py wrapper that is canonical in every
@@ -232,13 +276,7 @@ def test_wrapper_shape_accepts_impl_plugin_fleet_wrapper(*, tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"wrapper_shape should accept a fleet impl-plugin wrapper with exit 0; "
@@ -247,7 +285,9 @@ def test_wrapper_shape_accepts_impl_plugin_fleet_wrapper(*, tmp_path: Path) -> N
     )
 
 
-def test_wrapper_shape_rejects_non_fleet_main_import(*, tmp_path: Path) -> None:
+def test_wrapper_shape_rejects_non_fleet_main_import(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A wrapper whose main import is from a non-fleet package fails.
 
     Fixture: a wrapper canonical in every respect except the
@@ -274,13 +314,7 @@ def test_wrapper_shape_rejects_non_fleet_main_import(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"wrapper_shape should reject a wrapper whose main import is from a "
@@ -290,7 +324,9 @@ def test_wrapper_shape_rejects_non_fleet_main_import(*, tmp_path: Path) -> None:
     )
 
 
-def test_wrapper_shape_rejects_lookalike_non_fleet_prefix(*, tmp_path: Path) -> None:
+def test_wrapper_shape_rejects_lookalike_non_fleet_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A wrapper importing from `livespecfoo.` (no separator) fails.
 
     Fixture: the main import is `livespecfoo.commands.seed` -
@@ -318,13 +354,7 @@ def test_wrapper_shape_rejects_lookalike_non_fleet_prefix(*, tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"wrapper_shape should reject a wrapper importing from a livespec-lookalike "
@@ -334,7 +364,9 @@ def test_wrapper_shape_rejects_lookalike_non_fleet_prefix(*, tmp_path: Path) -> 
     )
 
 
-def test_wrapper_shape_exempts_bootstrap_file(*, tmp_path: Path) -> None:
+def test_wrapper_shape_exempts_bootstrap_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`bin/_bootstrap.py` is exempt from the wrapper-shape check.
 
     Pass-case: _bootstrap.py is the canonical exception to
@@ -360,13 +392,7 @@ def test_wrapper_shape_exempts_bootstrap_file(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"wrapper_shape should exempt _bootstrap.py with exit 0; "
@@ -375,15 +401,11 @@ def test_wrapper_shape_exempts_bootstrap_file(*, tmp_path: Path) -> None:
     )
 
 
-def test_wrapper_shape_accepts_empty_tree(*, tmp_path: Path) -> None:
+def test_wrapper_shape_accepts_empty_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An empty repo cwd passes the check (exit 0)."""
-    result = subprocess.run(
-        [sys.executable, str(_WRAPPER_SHAPE)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"wrapper_shape should accept empty tree with exit 0; "
