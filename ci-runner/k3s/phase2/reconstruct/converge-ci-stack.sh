@@ -391,10 +391,13 @@ fi
 kubectl -n kueue-system rollout status deployment/kueue-controller-manager --timeout=180s
 # The CRDs ship in the same manifest; wait for the ones step 5 applies to be
 # Established before applying instances, so a fast boot cannot race them.
+# workloadpriorityclasses joined the list 2026-09-08 with ../kueue/cluster-queue-gates.yaml,
+# whose gate-priority object is the first instance of that kind this converge applies.
 kubectl wait --for=condition=established --timeout=60s \
   crd/resourceflavors.kueue.x-k8s.io \
   crd/clusterqueues.kueue.x-k8s.io \
-  crd/localqueues.kueue.x-k8s.io
+  crd/localqueues.kueue.x-k8s.io \
+  crd/workloadpriorityclasses.kueue.x-k8s.io
 # The mutating webhook's Service must have a READY endpoint before any step
 # creates a pod outside kube-system/kueue-system, or that create fails
 # `no endpoints available for service "kueue-webhook-service"` (seen live
@@ -417,6 +420,12 @@ done
 # ---------------------------------------------------------------------------
 log "5. Apply all per-repo Kueue resources (ResourceFlavor first, then queues)"
 kubectl apply -f "${KUEUE_DIR}/resource-flavor.yaml"
+# The glob below covers MORE than the ten per-repo queue pairs: any file named
+# cluster-queue-*.yaml in ../kueue/ is applied, which is how the non-cohort
+# cpu/memory queues reach the cluster with no second loop to keep in sync —
+# cluster-queue-phase1-proof.yaml, and since 2026-09-08 cluster-queue-gates.yaml
+# (the gates Namespace + gates-flavor + gates-cq + gate-priority + gates-lq,
+# each object ordered within its own file so a dependency never precedes it).
 for f in "${KUEUE_DIR}"/cluster-queue-*.yaml; do
   [ -e "$f" ] || { echo "FATAL: no cluster-queue-*.yaml found in ${KUEUE_DIR}"; exit 1; }
   kubectl apply -f "$f"

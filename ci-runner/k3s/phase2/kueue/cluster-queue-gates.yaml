@@ -1,0 +1,147 @@
+# cluster-queue-gates.yaml — the Kueue admission home for GATE Jobs: the
+# `just check` aggregate runs offloaded to the second pool node, gmktec-xubuntu.
+#
+# It carries FIVE objects, applied in this file's own document order because
+# each depends on the one before it: the `gates` Namespace, the `gates-flavor`
+# ResourceFlavor, the `gates-cq` ClusterQueue, the `gate-priority`
+# WorkloadPriorityClass, and the `gates-lq` LocalQueue.
+#
+# WHY THE FILE IS NAMED `cluster-queue-*`: ../../reconstruct/converge-ci-stack.sh
+# step 5 and ../../reconstruct/install-converge-unit.sh both loop
+# `cluster-queue-*.yaml`, so this name is what makes the whole set a converge
+# artifact with no new loop to keep in sync. `cluster-queue-phase1-proof.yaml`
+# beside it is the same shape — a flavor, a queue and a LocalQueue in one file,
+# outside the fair-share cohort, quota'd on cpu/memory.
+#
+# WHY A DEDICATED QUOTA RATHER THAN PREEMPTION. The plan's research/000 first
+# proposed a WorkloadPriorityClass letting a gate PREEMPT a queued runner. It
+# cannot: every ClusterQueue in `fleet-ci-runner-pool` sets the three
+# preemption values to `Never` under a standing maintainer declaration recorded
+# in DERIVATION.md ("`fairSharing.weight` is deliberately left at 1", 2026-08-30)
+# — never evict a healthy running job to rebalance the cohort. That declaration
+# is not this file's to reverse. Separate capacity buys the non-queueing
+# property preemption was asked for, without touching it.
+#
+# WHY NOT `ci-runner.io/churn-slot`. Quota'ing gates on the extended resource
+# would make a gate draw down the very admission budget the gmktec plan exists
+# to RELIEVE: a gate admitted would be one fewer CI runner admitted, fleet-wide.
+# Gates are quota'd on plain cpu/memory over their own flavor instead, so they
+# cannot consume a churn slot and are excluded from DERIVATION.md's
+# apportionment — the ten repositories' churn-slot quotas still sum to exactly
+# C, unchanged by this file.
+#
+# Read DERIVATION.md "The gates quota on gmktec-xubuntu (2026-09-08)" before
+# changing either number below. Both are FIRST ESTIMATES to confirm by soak.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gates
+  labels:
+    # Not `arc-runners`: gate Jobs are not runner pods, are not created by ARC,
+    # and must not be swept by anything that treats that namespace's contents
+    # as ephemeral runners.
+    app.kubernetes.io/part-of: livespec-ci-gates
+# Declared here rather than assumed, because `kubectl apply` of the LocalQueue
+# below into a namespace that does not exist FAILS, and step 5 of the converge
+# runs under `set -e` on every boot of a tmpfs datastore. Re-declaring it in a
+# sibling gates manifest is harmless — `apply` is idempotent.
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: gates-flavor
+spec:
+  nodeLabels:
+    # `kubernetes.io/hostname`, NOT `k3s-role: arc-runner-host`: BOTH pool
+    # nodes carry the k3s-role label (../../provision-k3s.sh applies it from
+    # every profile), so selecting on it would let a gate land on the
+    # PowerEdge — the host whose contention this plan exists to relieve. The
+    # hostname is the node's own name from
+    # ../../phase0-bare-metal/profiles/gmktec-xubuntu.env (NODE_NAME), and it
+    # selects that node alone.
+    kubernetes.io/hostname: gmktec-xubuntu
+# NOT TOLERATED HERE, deliberately: gmktec-xubuntu still carries
+# `node-role/ci=pending:NoSchedule` (its profile's NODE_TAINTS), so nothing
+# this file admits can actually be SCHEDULED yet. Kueue admission and the
+# Kubernetes scheduler are separate gates (DERIVATION.md "The physical cap is
+# the scheduler, not Kueue"); opening the node is a later item of the same
+# plan, and the taint is not this file's to tolerate away.
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: gates-cq
+spec:
+  # NO `cohortName`, on purpose. A cohort exists so members can lend and borrow
+  # unused quota, and every member of `fleet-ci-runner-pool` is denominated in
+  # `ci-runner.io/churn-slot` over `churn-slot-flavor`. `gates-cq` covers
+  # different resources over a different flavor on a different node, so it has
+  # nothing those queues could borrow and nothing it could borrow from them —
+  # joining would add a relationship that can only ever be inert. Same reasoning
+  # as `cluster-queue-phase1-proof.yaml`.
+  #
+  # `fairSharing.weight` is likewise absent: fair sharing apportions WITHIN a
+  # cohort, and this queue is in none.
+  namespaceSelector: {}
+  preemption:
+    # The pool's three settings, restated EXPLICITLY rather than left to the
+    # API defaults (which are these same values at the pinned Kueue v0.19.1).
+    # The per-repo queues rely on the defaults; this queue states them, because
+    # it is the queue a future reader will reach for when they want a gate to
+    # jump a line, and the answer must be visible in the object rather than
+    # only in the CRD's default. Flipping any of them contradicts the standing
+    # maintainer declaration cited in the header.
+    reclaimWithinCohort: Never
+    borrowWithinCohort:
+      policy: Never
+    withinClusterQueue: Never
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: gates-flavor
+          resources:
+            # Three concurrent gates at roughly 5 cpu / 6 Gi each. cpu is the
+            # binding term at exactly 3 x 5; memory carries headroom above
+            # 3 x 6 = 18 Gi so an under-estimated gate does not make memory
+            # bind first before a soak has measured one. 24 Gi is about half of
+            # the ~50 GiB the plan's research/001 section 3 item 5 found
+            # available to pods on this node without evicting the LLM model
+            # from its 64 GiB iGPU carveout. Derivation in full: DERIVATION.md
+            # "The gates quota on gmktec-xubuntu (2026-09-08)".
+            - name: "cpu"
+              nominalQuota: 15
+            - name: "memory"
+              nominalQuota: 24Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: gate-priority
+# WorkloadPriorityClass is cluster-scoped and carries `value` and `description`
+# at the TOP level — it has no `spec` (confirmed against the pinned v0.19.1
+# release manifest's v1beta2 schema).
+#
+# This orders gates AMONG THEMSELVES inside `gates-cq` — which of four queued
+# gates is admitted when the fourth 5-cpu slot frees. It does NOT and cannot
+# order a gate against a CI runner: those are in a different queue on a
+# different flavor, and `withinClusterQueue: Never` above means a higher value
+# still never evicts a gate already running. It is the tie-break in an
+# admission ORDER, not a preemption lever.
+#
+# 1000 is a deliberate midpoint: it leaves room below for a future
+# best-effort/soak class and above for an interactive one, without any of them
+# meaning anything outside `gates-cq`.
+value: 1000
+description: >-
+  Admission order for CI gate Jobs within gates-cq. Higher is admitted first
+  when gate quota frees. Never preempts: gates-cq keeps the pool's three
+  preemption Never settings.
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: gates-lq
+  namespace: gates
+spec:
+  clusterQueue: gates-cq
