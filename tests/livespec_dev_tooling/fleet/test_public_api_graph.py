@@ -10,6 +10,7 @@ asymmetric universes are doing anything.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 
 from livespec_dev_tooling.fleet._public_api_graph import (
@@ -401,3 +402,199 @@ def test_a_reexport_cycle_terminates_and_emits_nothing() -> None:
         }
     )
     assert graph.edges == ()
+
+
+_MODULE = "pkg/mod.py"
+_STILL_DEFINES = "def compute() -> int:\n    return 1\n"
+_DELETED = "def other() -> int:\n    return 2\n"
+_IMPORTS_COMPUTE = "from pkg.mod import compute\n\nvalue = compute()\n"
+
+
+def test_a_deleted_function_a_sibling_still_imports_is_a_record_not_an_absent_edge() -> None:
+    """The 9s2j defect: the edge VANISHED instead of convicting.
+
+    `alpha` keeps `pkg/mod.py` and deletes `compute` from it; `beta` still
+    imports `compute` from it. An edge is built only where an import RESOLVES
+    to a defining file, so the reach produced NOTHING — silence in the case
+    that breaks the consumer hardest, since this is an `ImportError` in `beta`
+    at runtime rather than a declaration gap.
+
+    The record rides BESIDE the edges, which the first assertion states as a
+    fact about the graph's shape rather than leaving to an attribute access:
+    the collection has to exist for a row to be able to report it.
+    """
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(defining={_MODULE: _DELETED}, consuming={_MODULE: _DELETED}),
+            "beta": sources(defining={}, consuming={"app.py": _IMPORTS_COMPUTE}),
+        }
+    )
+    assert "unresolved" in {field.name for field in fields(graph)}
+    assert graph.edges == ()
+    assert [
+        (
+            record.consuming_member,
+            record.consuming_file.as_posix(),
+            record.module,
+            record.name,
+            record.defining_members,
+        )
+        for record in graph.unresolved
+    ] == [("beta", "app.py", "pkg.mod", "compute", ("alpha",))]
+
+
+def test_the_same_fixture_yields_an_edge_and_no_record_while_the_function_is_present() -> None:
+    """The discriminator: restore `compute` and the record becomes an ordinary edge.
+
+    Without it the assertion above would also pass against a graph that emitted
+    a record for every reach it saw.
+    """
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(
+                defining={_MODULE: _STILL_DEFINES}, consuming={_MODULE: _STILL_DEFINES}
+            ),
+            "beta": sources(defining={}, consuming={"app.py": _IMPORTS_COMPUTE}),
+        }
+    )
+    assert [(edge.defining_member, edge.function) for edge in graph.edges] == [("alpha", "compute")]
+    assert graph.unresolved == ()
+
+
+def test_a_name_that_is_present_but_not_a_public_function_is_neither_edge_nor_record() -> None:
+    """The two outcomes must stay distinguishable, and this is the boundary.
+
+    A class, a constant and a `_`-prefixed helper each resolve to NO defining
+    file — the defining set is public top-level FUNCTIONS — so a record keyed on
+    "no defining file" rather than on "no binding" would convict every
+    cross-member class import as a broken consumer.
+    """
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(
+                defining={
+                    _MODULE: (
+                        "class Widget:\n    pass\n\n\nVALUE = 1\n\n\n"
+                        "def _helper() -> int:\n    return 1\n"
+                    )
+                },
+                consuming={},
+            ),
+            "beta": sources(
+                defining={},
+                consuming={"app.py": "from pkg.mod import VALUE, Widget, _helper\n"},
+            ),
+        }
+    )
+    assert graph.edges == ()
+    assert graph.unresolved == ()
+
+
+def test_a_module_that_resolves_nowhere_in_the_fleet_is_neither_edge_nor_record() -> None:
+    """The ordinary stdlib / third-party import, which must stay silent.
+
+    `dataclasses` is the measured name: the first attempt at this row reported
+    `dataclasses::asdict` and 1195 siblings of it against one member, every one
+    read out of a gitignored virtualenv that had entered that member's
+    first-party universe (`livespec-dev-tooling-xs58`).
+    """
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(defining={_MODULE: _STILL_DEFINES}, consuming={}),
+            "beta": sources(
+                defining={},
+                consuming={"app.py": "from dataclasses import asdict\nfrom pkg.gone import lost\n"},
+            ),
+        }
+    )
+    assert graph.edges == ()
+    assert graph.unresolved == ()
+
+
+def test_a_stdlib_import_a_members_own_file_happens_to_answer_is_not_a_record() -> None:
+    """The measured false-positive family, reproduced end-to-end on the graph.
+
+    `suffix_index` maps every dotted suffix INCLUDING the bare last component,
+    so a member's `pkg/io.py` really does answer `from io import BytesIO` — the
+    candidate set is NOT empty and the emptiness fence alone does not cover it.
+    Measured on the real fleet: `io`, `types` and `dataclasses` produced 40
+    names across 5 members before the bare-suffix fence.
+    """
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(defining={"pkg/io.py": _STILL_DEFINES}, consuming={}),
+            "beta": sources(defining={}, consuming={"app.py": "from io import BytesIO\n"}),
+        }
+    )
+    assert graph.edges == ()
+    assert graph.unresolved == ()
+
+
+def test_an_attribute_reach_for_a_missing_name_is_not_a_record() -> None:
+    """Only a `from <module> import <name>` reach may convict.
+
+    `module_aliases` binds a name to a module on `from pkg import mod`, and
+    every `mod.<attr>` in that file is then a reach — including an attribute of
+    an INSTANCE that shares the module's name, the shape that manufactured 19
+    phantom consumptions in this repo. Those reaches produce no edge today, so
+    admitting them here would convert a silent drop into false ImportError
+    claims about names no import statement ever mentions.
+    """
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(defining={_MODULE: _DELETED}, consuming={}),
+            "beta": sources(
+                defining={},
+                consuming={"app.py": "import pkg.mod\n\nvalue = pkg.mod.compute()\n"},
+            ),
+        }
+    )
+    assert graph.edges == ()
+    assert graph.unresolved == ()
+
+
+def test_a_module_the_consuming_member_defines_itself_is_neither_edge_nor_record() -> None:
+    """The PRE-HOP guard, re-asserted for the second outcome.
+
+    Without it one byte-identical installed hook produced 14 false findings
+    across 7 members. A record emitted on a path that guard would have skipped
+    would reintroduce exactly that population, one deleted name at a time.
+    """
+    shared = {_MODULE: _DELETED}
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(defining=shared, consuming=shared),
+            "beta": sources(defining=shared, consuming={**shared, "app.py": _IMPORTS_COMPUTE}),
+        }
+    )
+    assert graph.edges == ()
+    assert graph.unresolved == ()
+
+
+def test_a_reexport_hop_landing_in_the_consuming_member_is_neither_edge_nor_record() -> None:
+    """The POST-HOP guard, re-asserted for the second outcome.
+
+    `pkg/facade.py` belongs to `alpha` alone, so the pre-hop guard does not
+    fire and the reach genuinely leaves `beta`. The re-export then resolves
+    into a module `beta` also ships, and Python satisfies the name from
+    `beta`'s own copy — so the reach is local after all, and neither outcome
+    may be emitted.
+    """
+    facade = "from pkg.mod import compute\n\n__all__: list[str] = ['compute']\n"
+    graph = cross_member_consumption(
+        members={
+            "alpha": sources(
+                defining={_MODULE: _STILL_DEFINES, "pkg/facade.py": facade},
+                consuming={_MODULE: _STILL_DEFINES, "pkg/facade.py": facade},
+            ),
+            "beta": sources(
+                defining={_MODULE: _STILL_DEFINES},
+                consuming={
+                    _MODULE: _STILL_DEFINES,
+                    "app.py": "from pkg.facade import compute\n",
+                },
+            ),
+        }
+    )
+    assert graph.edges == ()
+    assert graph.unresolved == ()
