@@ -1,0 +1,251 @@
+# registry-mirror.yaml — a pull-through cache of ghcr.io on the pool's LAN, so
+# a node that does not already hold a sandbox image fetches its layers from a
+# store one hop away instead of from ghcr, once per layer for the whole pool
+# rather than once per node. Item `livespec-h96p`; the measurement it rests on
+# and the policy it pairs with are in ../README.md "Sandbox image hygiene".
+#
+# WHAT THIS IS NOT FOR. It is NOT a fix for the "Pulling image" stalls of
+# 2026-09-02. That premise was DISPROVEN on the item: the v1.40.1 sandbox tag
+# was byte-identical to v1.40.0 (10 layers each, 10/10 shared, nothing
+# downloaded), so the minutes-long phases were containerd crawling under
+# teardown starvation on a saturated RAID, not cold pulls. The stall fix is the
+# interim admission cap of 32 plus `livespec-e2vcqf` (NVMe tiering). What this
+# IS for is the case the byte-identical finding does NOT cover: a CATTLE
+# REBUILD, where a node's containerd starts empty and shares nothing with
+# anybody, and any genuinely new image whose layers no node holds yet.
+#
+# WHY A PULL-THROUGH CACHE AND NOT k3s's EMBEDDED REGISTRY MIRROR. k3s ships a
+# peer-to-peer distributed registry (`--embedded-registry`, Spegel) that lets
+# nodes serve each other images they already hold. It is a smaller moving part
+# and it would cover the two-node rebuild case. It is NOT what this ships, for
+# two reasons: it can only serve what some SURVIVING node still holds, so a
+# fleet-wide rebuild — or the first pull of a genuinely new image — still goes
+# to ghcr from every node; and enabling it is a k3s server-config change, which
+# takes effect at the next k3s start and so costs a restart that kills every
+# running job on the pool (../k3s-config/config.yaml says the same about its own
+# `tls-san` list). A cache with its own durable store on the `ci-cache` tier
+# holds the bytes even when no node does, and is added and removed without
+# touching k3s's own configuration. The two are not exclusive; if the embedded
+# mirror is ever enabled, this cache stays useful as the thing behind it.
+#
+# WHY ONE UPSTREAM. distribution can proxy exactly one upstream registry per
+# instance ("It's currently possible to mirror only one upstream registry at a
+# time", distribution's own pull-through recipe), and ../../k3s-config/ and
+# ../../reconstruct/ pull from other registries too. So this instance fronts
+# ghcr.io ONLY, and ./registries.yaml.template mirrors ghcr.io ONLY. Everything
+# else on the node — docker.io, registry.k8s.io, quay.io — is untouched and
+# resolves exactly as it does today. That is also what keeps this manifest from
+# depending on itself: the registry image below comes from docker.io, which
+# this mirror does not serve, so a cold node can always pull the mirror that
+# every later pull goes through.
+#
+# FAIL-SOFT, BY CONTAINERD'S OWN RULE AND NOT BY ANYTHING WRITTEN HERE. k3s
+# documents an implicit "default endpoint" that "is always tried as a last
+# resort, even if there are other endpoints listed for that registry in
+# registries.yaml". So a mirror that is down, unscheduled, or mid-rollout costs
+# a pull one failed connection and then behaves exactly as today. The node flag
+# that would remove that safety net, `--disable-default-registry-endpoint`, is
+# deliberately NOT set anywhere in this tree — see ./install-registry-mirror.sh.
+#
+# TRUST. The cache has no write surface to protect: a registry in proxy mode
+# serves pulls and refuses pushes, and no credentials are configured, so it can
+# only ever hold what an anonymous client could have fetched from ghcr itself.
+# Verified 2026-09-08 by an anonymous token exchange against
+# ghcr.io/thewoolleyman/livespec-fabro-sandbox: the tag listing answers 200 with
+# no credential, i.e. the sandbox package is public, which is why this instance
+# needs no `proxy.username`/`proxy.password` and why adding them would be a
+# mistake — distribution's own recipe warns that a credentialled proxy
+# republishes everything that user can read on an unauthenticated mirror.
+#
+# WHAT LANDS ON THE NODE IS STILL NAMED `ghcr.io/...`. k3s: "images will still
+# be stored under the original name ... `crictl image ls` will show
+# docker.io/rancher/mirrored-pause:3.6 as available on the node, even if the
+# image was pulled from a mirror". So this manifest changes WHERE bytes come
+# from and nothing about what ../sandbox-image-prune/prune-sandbox-images.sh
+# sees or decides.
+#
+# STORAGE: /var/cache/ci-runner/registry-mirror on the LABEL-addressed
+# `ci-cache` tier (../../storage-layout/), regenerable and deletable at any
+# time — the next pull re-fetches. Bounded by `proxy.ttl` below rather than by
+# size: distribution's proxy scheduler expires cached content past its TTL, and
+# that expiry only happens when `storage.delete.enabled` is true, which is why
+# it is set on a store nothing ever pushes to.
+#
+# EXPOSURE: hostPort 5001 on the node that carries the tier. The consumer is
+# CONTAINERD, not a pod — it dials before pod networking exists for the image
+# it is fetching — so the ClusterIP Service below is for diagnostics from
+# inside the cluster, and the hostPort is the mechanism, exactly as it is for
+# ../../crates-proxy/ (servicelb is disabled on this k3s).
+#
+# NODE PINNING: `ci-runner.io/cache-tier-carrier: "true"`, the same key and the
+# same reason as ../../crates-proxy/crates-proxy.yaml — the store is a hostPath
+# on one node's `ci-cache` tier, so a pod that lands anywhere else serves an
+# empty cache. An agent's ./registries.yaml.template therefore points at the
+# CARRIER's address, not at its own loopback.
+#
+# NOT YET APPLIED TO A CLUSTER. This manifest ships as code and has never been
+# converged (`livespec-h96p` is repository work; applying it is a separate
+# maintainer-gated step). The first ./converge-registry-mirror.sh must confirm
+# the pod reaches Ready and that `curl -fsS http://127.0.0.1:5001/v2/` answers
+# from the node before any node's registries.yaml is installed — until it does,
+# every pull simply falls back to ghcr and nothing is worse than today.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-registry-mirror
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: registry-mirror-config
+  namespace: ci-registry-mirror
+data:
+  # distribution 3.x reads /etc/distribution/config.yml (2.x read
+  # /etc/docker/registry/config.yml); the mount below uses the 3.x path
+  # because the image is pinned to a 3.x release.
+  config.yml: |
+    version: 0.1
+    log:
+      level: info
+      fields:
+        service: registry-mirror
+    storage:
+      filesystem:
+        rootdirectory: /var/lib/registry
+      # REQUIRED for `proxy.ttl` to mean anything: distribution's recipe is
+      # explicit that "for the scheduler to clean up old entries, delete must
+      # be enabled". Nothing else in this deployment deletes, and nothing can
+      # push, so enabling it grants the cache exactly one power — expiring its
+      # own stale entries.
+      delete:
+        enabled: true
+      maintenance:
+        uploadpurging:
+          enabled: false
+    http:
+      addr: :5001
+      headers:
+        X-Content-Type-Options: [nosniff]
+    health:
+      storagedriver:
+        enabled: true
+        interval: 10s
+        threshold: 3
+    proxy:
+      remoteurl: https://ghcr.io
+      # 30 days. The pool cuts releases far faster than that, so the window is
+      # not sized to the release cadence — it is sized to the thing this cache
+      # exists for, a rebuild that happens weeks after the last one, which must
+      # still find the layers here rather than at ghcr. Consecutive sandbox
+      # releases share every layer (the byte-identical finding in
+      # ../README.md), so a long window costs far less store than the tag count
+      # suggests.
+      ttl: 720h
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry-mirror
+  namespace: ci-registry-mirror
+  labels:
+    app.kubernetes.io/name: registry-mirror
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: one hostPort and one store directory on one
+  # node; two pods cannot coexist.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: registry-mirror
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: registry-mirror
+    spec:
+      # The node whose `ci-cache` tier this pod's hostPath lives on (header,
+      # "NODE PINNING"). Unschedulable is the correct failure: a pending pod is
+      # visible, an empty cache on the wrong node is not — and here it would be
+      # worse than for ../../crates-proxy/, because containerd would keep
+      # dialling an endpoint that answers and serves nothing.
+      nodeSelector:
+        ci-runner.io/cache-tier-carrier: "true"
+      # No Kueue queue-name label and no ci-runner.io/churn-slot request: not a
+      # CI job, must never occupy a runner slot.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: registry
+          # Pinned by tag AND digest (k3s README "Pinned versions — nothing
+          # floats `latest`"). Digest resolved from Docker Hub 2026-09-08 for
+          # docker.io/library/registry:3.0.0. Bump both together.
+          image: docker.io/library/registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5001
+              hostPort: 5001
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # uid 0 with every capability dropped, deliberately: the store is a
+            # hostPath created root-owned by DirectoryOrCreate, and a hostPath
+            # takes no `fsGroup`, so a non-root uid could not write it without
+            # a chown step this manifest would then own forever. The process
+            # binds a port above 1024, drops every capability, and cannot
+            # escalate; what "root" buys it here is write access to one
+            # directory on one tier.
+            runAsUser: 0
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              memory: "1Gi"
+          # /v2/ is the registry API root and answers 200 unauthenticated
+          # (nothing configures auth). It is a cheap liveness fact that does
+          # not touch the upstream.
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            periodSeconds: 30
+          volumeMounts:
+            - name: config
+              mountPath: /etc/distribution/config.yml
+              subPath: config.yml
+              readOnly: true
+            - name: store
+              mountPath: /var/lib/registry
+      volumes:
+        - name: config
+          configMap:
+            name: registry-mirror-config
+        - name: store
+          hostPath:
+            path: /var/cache/ci-runner/registry-mirror
+            # DirectoryOrCreate on the ci-cache tier mounted by fstab at
+            # /var/cache/ci-runner (../../storage-layout/); created on first
+            # run, like every other store in this tree.
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-mirror
+  namespace: ci-registry-mirror
+spec:
+  selector:
+    app.kubernetes.io/name: registry-mirror
+  ports:
+    - name: http
+      port: 5001
+      targetPort: http

@@ -691,6 +691,241 @@ job died with "pod failed to come online". The copy always exited 0 and
 was "fail-soft" by design; its stderr was not. The current `postStart`
 prints nothing on its fail-soft paths.
 
+## Sandbox image hygiene: the ghcr mirror and the sandbox-tag prune
+
+The record for `livespec-h96p`, which is reliability hygiene and NOT a
+fix for anything about the 2026-09-02 fan-out stall.
+
+### The finding that removed this item's original premise
+
+The item was filed believing that each release cut a fresh sandbox tag
+which every node then pulled cold, and that pre-warming would remove the
+minutes-long "Pulling image" phases. That premise was measured and
+DISPROVEN on the item the same day.
+`ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.40.0` and
+`:python-v1.40.1` are **byte-identical** — 10 layers each, 255 MB, 10 of
+10 layers shared, 0 new, because the GHA build cache was warm and buildx
+reproduced identical digests. The node already held 100% of the bytes;
+nothing was downloaded and nothing was unpacked. The stalls were
+containerd itself crawling: 22,161 `DeadlineExceeded` in the k3s journal
+between 16:50 and 17:10Z, dominated by 3,715 `StopPodSandbox` and 3,689
+`StopContainer` failures — teardown of the previous wave's job pods on a
+saturated RAID (sda 98% busy), retried by kubelet in a loop, starving
+every other containerd RPC including manifest-only pulls. Pre-warming, a
+bigger cache and building on the host would each have changed nothing.
+The stall fix is the interim admission cap of 32 plus `livespec-e2vcqf`
+(NVMe tiering of the containerd root and the PVC scratch).
+
+Two things follow, and both shape what is below. First, **release-time
+pre-warming was dropped**, not deferred. Second, the byte-identical
+result is exactly why the prune's central mechanism is per-RECORD rather
+than per-tag: when two release tags name one image record, removing
+either by name removes both.
+
+### The measured before-state
+
+Read from `poweredge-xubuntu` on 2026-09-07:
+
+| Measure | Value |
+|---|---|
+| Refs of `livespec-fabro-sandbox` resident in the `k8s.io` containerd namespace | 454 — 227 tag refs and their 227 paired digest-pinned refs |
+| Tag families resident, and their counts | `python` 100, `python-rust` 78, `python-rust-fuzz` 49 |
+| Version span resident | v1.46.0 → v1.58.6 |
+| Total image refs in that namespace | 729 |
+| `/var/lib/rancher/k3s/agent/containerd` | 24 GB |
+
+The item recorded **60 tags / ~21.8 GB** when it was filed on
+2026-09-02. Five days later it is 227 tags. **That growth rate is the
+argument for the policy, and the disk number is not** — because
+consecutive releases share nearly every layer, 227 tags cost far less
+than 227 × 255 MB. What is genuinely unbounded is the number of image
+RECORDS, and with it every listing, GC pass and metadata walk containerd
+performs over them; nothing in this pool has ever removed one.
+
+A second fact from the same reading, which the policy below had to be
+built around: the registry has carried **six** families, not the three
+resident here — `base`, `python`, `python-agent`, `python-rust`,
+`python-rust-agent`, `python-rust-fuzz` — and both `-v<semver>` and
+`-sha-<shortsha>` tags. A policy naming the three resident families
+would have been correct about this node on this day and wrong about the
+repository.
+
+### The pull-through mirror
+
+`registry-mirror/` runs one `distribution` instance in proxy mode in
+front of ghcr.io, storing on the `ci-cache` tier, and points each node's
+containerd at it through `/etc/rancher/k3s/registries.yaml`. It does
+nothing for an image the node already holds — the byte-identical finding
+says that is the common case — and everything for the two cases that
+finding does not cover: a **cattle rebuild**, whose containerd starts
+empty and shares nothing with anybody, and a genuinely new image whose
+layers no node holds yet. Both then pull over the LAN once for the whole
+pool rather than from ghcr once per node.
+
+Three properties make it safe to add:
+
+- **It cannot make a pull fail.** k3s documents containerd's implicit
+  default endpoint as "always tried as a last resort, even if there are
+  other endpoints listed for that registry in `registries.yaml`", so a
+  mirror that is down, unscheduled or absent costs one failed dial and
+  the pull proceeds to ghcr. The node flag that would remove that safety
+  net, `--disable-default-registry-endpoint`, must never be set on this
+  pool.
+- **It fronts ghcr.io and nothing else.** A `distribution` instance
+  proxies exactly one upstream, so `registries.yaml` names exactly one
+  registry. docker.io, registry.k8s.io and quay.io are untouched — which
+  is also what keeps the mirror from depending on itself, since its own
+  image comes from docker.io.
+- **It holds only public bytes.** The sandbox package is public:
+  verified 2026-09-08 by an anonymous token exchange against
+  `ghcr.io/thewoolleyman/livespec-fabro-sandbox`, whose tag listing
+  answers 200 with no credential. So no `proxy.username`/`proxy.password`
+  is configured, and adding one would be a mistake — distribution's own
+  recipe warns that a credentialled proxy republishes everything that
+  user can read on an unauthenticated mirror.
+
+**Why not k3s's embedded registry mirror** (`--embedded-registry`,
+Spegel), which shares images peer-to-peer between nodes: it can only
+serve what a surviving node still holds, so a fleet-wide rebuild or a
+first pull still goes to ghcr from every node, and enabling it is a k3s
+server-config change that takes effect only at the next k3s start — a
+restart that kills every running job on the pool. A cache with its own
+durable store holds the bytes when no node does, and is added and removed
+without touching k3s's configuration. The two are not exclusive.
+
+### The prune policy
+
+`sandbox-image-prune/prune-sandbox-images.sh` keeps the newest N
+releases of each tag family and removes older records that nothing needs.
+It **reports by default and removes only under `--apply`** — the inverse
+of this tree's usual `--dry-run` convention, chosen deliberately because
+the fleet has already been bitten by a destructive verb whose bare form
+acts, and because a script that deletes container images on a live CI
+node should make the destructive form the one that must be asked for by
+name. The systemd unit passes `--apply` in the open, where
+`systemctl cat` shows it.
+
+**How it decides that a record is safe to remove.** Five gates, any one
+of which alone saves an image, and none of which is allowed to answer
+"don't know":
+
+1. **Scope.** Only records inside
+   `ghcr.io/thewoolleyman/livespec-fabro-sandbox` are ever considered,
+   and the repository is a constant in the script rather than a flag,
+   because the scope IS the safety property. The pinned ARC runner image
+   `ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc70…`, from which
+   both the fleet-patched container hook and the host-side externals seed
+   are derived (`livespec-wm7c`), is in a different repository and is
+   never a candidate.
+2. **Whole-record scope.** A record carrying any reference outside that
+   repository is skipped entirely and reported.
+3. **Removal is per-record, so keeping is per-record.** containerd's CRI
+   `RemoveImage` deletes ALL references of the image it resolves, not
+   only the one named — which is why this is the gate the byte-identical
+   finding makes load-bearing: two release tags routinely name one
+   record, so `crictl rmi …:v1.40.0` would take `:v1.40.1` with it. A
+   record is therefore a candidate only when EVERY one of its in-scope
+   tags is prunable; one kept or protected tag saves the whole record.
+   This is also the answer to the paired digest ref: the `:tag` ref and
+   the `@sha256:` ref are two references to the SAME record — which is
+   why the resident count is exactly twice the tag count — so they are
+   removed together or not at all.
+4. **Live references, from two sources.** (a) The cluster: every image
+   named by any PodSpec of a Pod, Deployment, StatefulSet, DaemonSet,
+   ReplicaSet, Job or CronJob, in every namespace. (b) The node: every
+   image and imageRef of every container that exists in containerd,
+   running or not. Reading WORKLOADS and not just running containers is
+   not caution for its own sake — this pool has two objects pinning old
+   tags and holding no pod between runs, and a naive newest-N would have
+   deleted both: `warm-cache-cronjob.yaml` pins
+   `:python-rust-fuzz-v1.46.0` on a half-hourly schedule, and
+   `../isolation/negative-control-job.yaml` pins `:python-v1.40.1` every
+   six hours. The union is taken as widely as the JSON allows — every
+   `"image"`, `"imageID"` and `"imageRef"` string in either dump,
+   including status fields — because over-protection costs disk and
+   under-protection costs a workload.
+5. **Fail closed, twice.** A cluster read that errors, or that succeeds
+   and names no image at all, STOPS the run: an empty result from a query
+   meant to enumerate a live cluster reads exactly like "nothing is
+   protected", which is the one answer that would authorise deleting
+   everything (`.ai/verifying-against-the-right-source.md`). And the
+   protected set is collected AGAIN immediately before the first removal,
+   with every candidate re-tested, so a pod admitted while the script was
+   deciding is not pruned out from under itself. That, plus the fact that
+   removing an image reference does not disturb a container already
+   running from it, is what "safe to run while CI is active" rests on.
+
+**What it keeps.** The newest N of EACH family, where N defaults to 10.
+Per family and not globally, because the families are wildly uneven — 100
+/ 78 / 49 on 2026-09-07 — so a global budget would be spent on whichever
+family releases most often and would starve the others to nothing. The
+family list is DERIVED from the tags resident on the node by stripping
+the `-v<semver>` suffix, never written down, so a family bounds itself
+the day it appears rather than the day someone remembers to add it.
+Versions are ordered component-wise as NUMBERS: v1.46.0 < v1.49.0 <
+v1.58.6 by version but `v1.46.0` > `v1.5.0` > `v1.49.0` by string, so a
+lexical sort would keep an arbitrary set and delete recent releases. A
+tag that is not `<family>-v<semver>` — the `-sha-<shortsha>` tags — is
+never pruned and keeps its record, because there is no defensible
+"newest" among them; they are counted in the report so an operator can
+see if they ever start to matter.
+
+One consequence worth stating: versions on records ALREADY saved by an
+earlier gate do not consume their family's budget, so the resident set
+settles at N per family plus whatever is protected. The policy can keep
+more than N; it never keeps fewer.
+
+### Paths
+
+| Path | Role |
+|---|---|
+| `registry-mirror/registry-mirror.yaml` | Namespace `ci-registry-mirror`, the `distribution` config (proxy mode against ghcr.io, filesystem store, `delete` enabled so the TTL scheduler can expire entries, 30-day `proxy.ttl`), the digest-pinned Deployment (`hostPath` store on the `ci-cache` tier, `hostPort` 5001, pinned to `ci-runner.io/cache-tier-carrier`), and the ClusterIP Service. Its header carries the design, the trust argument and the comparison with k3s's embedded registry mirror. |
+| `registry-mirror/registries.yaml.template` | The node-side artifact, with one `@MIRROR_ENDPOINT@` placeholder. A template and not a file because the endpoint differs by role: the server reaches the mirror on loopback, an agent at the carrier's LAN address. |
+| `registry-mirror/install-registry-mirror.sh` | Renders that template for the run's role and writes `/etc/rancher/k3s/registries.yaml`. Role and carrier address are DERIVED from the profile (`CLUSTER_ROLE`, and the host of `CLUSTER_JOIN_ADDRESS` on an agent), or given explicitly with `--role` / `--mirror-endpoint`. Idempotent — a second run with the same inputs says "unchanged" and writes nothing — and it REFUSES rather than overwrites a `registries.yaml` it did not write, since a hand-written one may carry private-registry credentials. Never restarts k3s. `--dry-run` prints the rendered file and the command sequence and executes nothing. |
+| `registry-mirror/converge-registry-mirror.sh` | The idempotent apply of the cluster objects, with a config-hash stamp so an edit rolls the pod and a bounded rollout wait. Same shape as `../crates-proxy/converge-crates-proxy.sh`, including `--dry-run`. |
+| `sandbox-image-prune/prune-sandbox-images.sh` | The policy. Reports by default; `--apply` removes; `--keep N` sets the per-family budget. Its header states all five gates in full. |
+| `sandbox-image-prune/prune-sandbox-images.service` + `.timer` | One oneshot pass with `--apply` spelled out in the unit, `Requires=k3s.service` (a safety ordering: without the API server the central gate cannot be answered, and an agent runs `k3s-agent.service`, so the unit cannot start there), every 6 hours with the first tick 30 minutes after boot. |
+| `sandbox-image-prune/install-sandbox-image-prune.sh` | Installs the script to `/usr/local/lib/ci-runner-k3s/` and enables the TIMER (never the service). SERVER-only, as a hard refusal. `--dry-run` prints the plan and executes nothing. |
+| `sandbox-image-prune/prune-sandbox-images-exit-tests.sh` | The prune's exit tests, with `crictl` and `kubectl` faked and every `rmi` sent to a tripwire, so the decisions are proved without a containerd, a cluster, root, or a single image removed anywhere: the ARC runner image is never named; a CronJob-only tag survives while the older release beside it does not; a one-release family keeps its release where a global newest-N would starve it; v1.5.0 is pruned while v1.49.0 is kept; a record holding one kept tag is kept whole; the paired digest ref is shown going with the tag; a bare run removes nothing; `--apply` removes exactly the candidates; a failing and an empty cluster read each stop the run; and a candidate that becomes referenced mid-run is skipped. |
+
+### Applying it — none of this is live yet
+
+`livespec-h96p` is repository work. Nothing here has been converged, no
+node carries a `registries.yaml`, and no timer is installed. The apply is
+a separate maintainer-gated step, in this order:
+
+1. `KUBECONFIG=/etc/rancher/k3s/k3s.yaml registry-mirror/converge-registry-mirror.sh`,
+   then confirm from the carrier node that
+   `curl -fsS http://127.0.0.1:5001/v2/` answers. Until it does, every
+   pull simply falls back to ghcr and nothing is worse than today.
+2. `sudo registry-mirror/install-registry-mirror.sh <profile>` on each
+   node. It takes effect at that node's next k3s start, which this
+   installer deliberately does not perform.
+3. `sudo sandbox-image-prune/install-sandbox-image-prune.sh <server profile>`,
+   then run ONE report pass by hand —
+   `sudo /usr/local/lib/ci-runner-k3s/prune-sandbox-images.sh` — and read
+   the candidate list for that node before the timer's first `--apply`.
+4. If the mirror is to survive a reboot, add its converge to
+   `../reconstruct/converge-ci-stack.sh` and re-run
+   `../reconstruct/install-converge-unit.sh` so the boot copy under
+   `/usr/local/lib/ci-runner-k3s/` matches. It is deliberately NOT wired
+   in yet: an unexercised Deployment does not belong on the unattended
+   boot path.
+
+### The half that is open
+
+**An agent node's containerd is not pruned.** The prune's central gate is
+a cluster-wide PodSpec read, and only a server holds the admin
+kubeconfig; an agent could prune on node evidence alone, but must not,
+because "no container is using this image" is precisely the wrong
+question — it is the question that would have deleted the warm-cache
+CronJob's pinned tag. Bounding an agent's containerd needs a scoped
+read-only credential on that node first, the shape
+`../../../observability/ci-kueue-webhook-probe.sh` already uses and
+`../reconstruct/render-sa-kubeconfig.sh` already renders. Recorded here
+as a stated limitation rather than left to be discovered as an
+inconsistency.
+
 ## Tiers 2 and 3
 
 The other two tiers from the design record are not here: tier 2, a local

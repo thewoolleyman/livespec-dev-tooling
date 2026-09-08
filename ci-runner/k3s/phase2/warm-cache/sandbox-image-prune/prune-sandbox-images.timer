@@ -1,0 +1,31 @@
+# prune-sandbox-images.timer — run the sandbox-image prune every 6 hours.
+#
+# THE INTERVAL IS SET BY THE GROWTH RATE, not by disk pressure. The resident
+# sandbox tag count went from 60 on 2026-09-02 to 227 on 2026-09-07 — the pool
+# cuts a release, and every family's new tag lands on whichever node next runs
+# a job. At 6 hours the surplus is measured in a handful of records per tick,
+# which is a listing and a few removals; at a much longer interval each tick
+# would be a large batch of removals competing with running jobs for the same
+# containerd, which is precisely the contention the disproven half of this
+# item's premise turned out to be about.
+#
+# It is NOT set shorter than that, because every tick makes a cluster-wide
+# workload listing against the local API server. Six hours is four of those a
+# day, against a controller that reconciles far more often.
+#
+# OnBootSec=30min keeps the prune away from the boot storm: the reconstruct
+# converge, the tmpfs datastore's empty start and the first scale-set pulls all
+# want the same containerd in the first minutes after a boot.
+#
+# Persistent=true so a node that was down over a scheduled tick prunes once on
+# the next boot instead of waiting a further interval.
+[Unit]
+Description=Periodic prune of surplus Fabro sandbox images (every 6 h)
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
