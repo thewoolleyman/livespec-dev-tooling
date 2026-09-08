@@ -21,20 +21,40 @@ exactly one implementation:
 ## Running it
 
 ```bash
-python -m livespec_dev_tooling.shipped_path_release_guard_check [MESSAGE_FILE]
+just check-shipped-path-release-guard [MESSAGE_FILE]
 ```
 
-`MESSAGE_FILE` is the pending commit's message file. It is the argument git's
-`commit-msg` hook passes as `$1`; omit it and the check falls back to
-`<git-dir>/COMMIT_EDITMSG`. The changed paths come from
-`git diff --cached --name-only`, run in the current working directory.
+The check has TWO MODES, and the presence of `MESSAGE_FILE` selects between them.
+
+**Commit-msg mode — one argument.** `MESSAGE_FILE` is the pending commit's
+message file, the argument git's `commit-msg` hook passes as `$1`. The changed
+paths come from `git diff --cached --name-only`, run in the current working
+directory. This mode judges the one commit being written.
 
 It is a commit-msg-scoped gate rather than a pre-commit one for a structural
 reason: both the commit TYPE and the override marker live in the commit message,
 and at pre-commit time that message does not exist yet.
 
-Exit `0` when there is no violation; exit `1` on a violation, or when the message
-file cannot be read.
+**Range mode — no argument.** The check judges every non-merge commit in
+`origin/master..HEAD`, each against its OWN message and its OWN changed paths.
+This is what `just check`, pre-push and CI run, and it is the branch-level gate
+behind the per-commit hook — which a rebase, a squash or a history rewrite can
+bypass.
+
+Range mode is why the no-argument invocation no longer falls back to reading
+`<git-dir>/COMMIT_EDITMSG`. The aggregate runs with no pending commit: argv is
+empty and the staged diff is empty, so that fallback judged the LAST commit's
+already-decided message against no changed paths and therefore COULD NOT FAIL.
+An aggregate member that cannot fail is the defect the enforcement suite exists
+to remove.
+
+An unresolvable `origin/master` REFUSES rather than passes: a shallow clone
+yields an empty commit list, which is indistinguishable from a clean branch, so
+treating it as clean would fail open. Fetch the base ref, or check out with full
+history in CI.
+
+Exit `0` when there is no violation; exit `1` on a violation, when the message
+file cannot be read, or when the range base cannot be resolved.
 
 ## The override marker
 
@@ -95,7 +115,26 @@ the check logs the empty derivation and its source like any other.
 
 ## Wiring
 
-Wiring the guard into `lefthook.yml`'s `commit-msg` hook and into the
-`just check` aggregate is a SEPARATE change (work-item
-`livespec-dev-tooling-sxdz`). Until it lands, the check is runnable and tested
-but not armed, so no repository is gated on it.
+The guard is ARMED in livespec-dev-tooling (work-item
+`livespec-dev-tooling-sxdz`), in both modes:
+
+- `lefthook.yml`'s `commit-msg` hook runs `02-shipped-path-release-guard` —
+  `just check-shipped-path-release-guard {1}` — immediately after
+  `01-red-green-replay`. It delegates to `just` rather than shelling out to
+  `python`/`uv`, per the spec's lefthook-must-delegate-to-just rule.
+- The `just check` aggregate (and `check-targets.txt`, its other reader) wires
+  `check-shipped-path-release-guard`, which runs in range mode.
+
+`check-shipped-path-release-guard` is NOT a canonical-aggregate slug: its module
+lives at `livespec_dev_tooling/shipped_path_release_guard_check.py` rather than
+under `livespec_dev_tooling/checks/`, so `canonical_checks.py`'s filesystem walk
+does not discover it. It is wired in the repo-private block below the canonical
+set, where `check-aggregate-completeness` requires extras to sit.
+
+**In livespec-dev-tooling itself the guard is correctly INERT.** This repository
+carries no `.claude-plugin/` manifest at its root or one level below, so its
+derived shipped set is empty and no commit here can violate. That is the honest
+answer rather than a silent one — every run logs the empty derivation and its
+source string. The guard is armed here for the consumers whose derived sets are
+not empty, and arming it in an inert repository is a deliberate no-op rather than
+an untested green.

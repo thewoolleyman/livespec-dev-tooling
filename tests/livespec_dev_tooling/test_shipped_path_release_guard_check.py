@@ -21,6 +21,13 @@ that matters most: a repository declaring `changelog-sections` that include
 declaring none does NOT. A fleet constant could only ever be right for one of
 those two, so asserting only one direction would let the refuted premise back in.
 
+Slice C (`livespec-dev-tooling-sxdz`) added the module's second MODE and its
+tests to the bottom of this file. With no argv the check no longer reads
+`<git-dir>/COMMIT_EDITMSG` — it validates every non-merge commit in
+`origin/master..HEAD`, each against its OWN message and its OWN changed paths.
+That is what makes it a non-vacuous member of the `just check` aggregate, where
+there is no pending commit and the old fallback would have read a STALE message.
+
 `main()` is called in-process rather than spawned, per the
 `tests_no_subprocess_spawn` discipline — only `git` itself is a subprocess here.
 That makes the GIT_* hook variables load-bearing: when this suite runs under a
@@ -112,6 +119,21 @@ def _make_repo(
     _git(cwd=root, args=["commit", "-m", "chore: baseline"])
 
 
+def _git_out(*, cwd: Path, args: list[str]) -> str:
+    # S603/S607: argv is a fixed list (literal git binary + repo-controlled
+    # args); bare `git` is the canonical invocation per system PATH; no
+    # untrusted shell input.
+    result = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+    return result.stdout.strip()
+
+
 def _stage(*, root: Path, rel_path: str, content: str = "changed\n") -> None:
     target = root / rel_path
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -119,30 +141,54 @@ def _stage(*, root: Path, rel_path: str, content: str = "changed\n") -> None:
     _git(cwd=root, args=["add", rel_path])
 
 
-def _run(
-    *,
-    monkeypatch: pytest.MonkeyPatch,
-    root: Path,
-    message: str,
-    write_default_message: bool = False,
-) -> int:
-    """Invoke the check in-process against `root`, returning its exit code.
+def _commit(*, root: Path, rel_path: str, message: str, content: str = "changed\n") -> str:
+    """Stage one path and commit it, returning the new commit's sha."""
+    _stage(root=root, rel_path=rel_path, content=content)
+    _git(cwd=root, args=["commit", "-m", message])
+    return _git_out(cwd=root, args=["rev-parse", "HEAD"])
 
-    By default the message is written to a file passed as the positional
-    argument, exactly as git's `commit-msg` hook supplies it. With
-    `write_default_message` the message goes to `<git-dir>/COMMIT_EDITMSG` and
-    NO argument is passed, pinning the fallback.
+
+def _set_range_base(*, root: Path) -> None:
+    """Point `origin/master` at HEAD, so the range starts EMPTY.
+
+    A real remote is unnecessary: the check resolves the base as a ref, and
+    `update-ref` gives the fixture one without a network. Anchoring it at HEAD
+    is load-bearing — `_make_repo`'s own baseline commit is typed `chore` and
+    stages the plugin manifest, so leaving it inside the range would make every
+    fixture violate for a reason no test intended.
+    """
+    _git(
+        cwd=root,
+        args=[
+            "update-ref",
+            "refs/remotes/origin/master",
+            _git_out(cwd=root, args=["rev-parse", "HEAD"]),
+        ],
+    )
+
+
+def _run(*, monkeypatch: pytest.MonkeyPatch, root: Path, message: str) -> int:
+    """Invoke the check in-process against `root` in COMMIT-MSG mode, returning its exit code.
+
+    The message is written to a file passed as the positional argument, exactly
+    as git's `commit-msg` hook supplies it. The no-argument invocation is a
+    different mode entirely (the range) and has its own helper, `_run_range`.
     """
     for name in _GIT_HOOK_VARS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(root)
-    if write_default_message:
-        (root / ".git" / "COMMIT_EDITMSG").write_text(message, encoding="utf-8")
-        monkeypatch.setattr(sys, "argv", ["shipped-path-release-guard"])
-        return main()
     message_path = root / "commit-message.txt"
     message_path.write_text(message, encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["shipped-path-release-guard", "commit-message.txt"])
+    return main()
+
+
+def _run_range(*, monkeypatch: pytest.MonkeyPatch, root: Path) -> int:
+    """Invoke the check with NO argv — the `just check` aggregate's range mode."""
+    for name in _GIT_HOOK_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(sys, "argv", ["shipped-path-release-guard"])
     return main()
 
 
@@ -313,22 +359,35 @@ def test_a_repo_with_no_plugin_manifest_ships_nothing_and_says_so(
     assert "ships no plugin bytes" in resolution["shipped_prefixes_source"]
 
 
-def test_the_message_defaults_to_the_git_dir_commit_editmsg(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_no_argv_validates_the_range_rather_than_the_stale_commit_editmsg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no positional argument the check reads `<git-dir>/COMMIT_EDITMSG`."""
-    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
-    _stage(root=tmp_path, rel_path=".claude-plugin/skills/next/SKILL.md")
+    """The no-argv path is RANGE mode, NOT the `<git-dir>/COMMIT_EDITMSG` fallback.
 
-    assert (
-        _run(
-            monkeypatch=monkeypatch,
-            root=tmp_path,
-            message="docs: fix a typo\n",
-            write_default_message=True,
-        )
-        == 1
+    The contract slice C replaced (work-item `livespec-dev-tooling-sxdz`, BUILD
+    3(a)). `just check` runs with no pending commit: the index is clean and
+    COMMIT_EDITMSG holds the LAST commit's message, so the old fallback made an
+    aggregate member that passes vacuously while reading a stale message. This
+    pins the replacement by constructing exactly that trap — a clean index, a
+    COMMIT_EDITMSG whose `docs:` subject would have been read, and the range
+    empty — and requiring a pass for the RANGE's reason rather than the
+    message's.
+    """
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
+    _set_range_base(root=tmp_path)
+    (tmp_path / ".git" / "COMMIT_EDITMSG").write_text(
+        "docs: a stale message from the last commit\n", encoding="utf-8"
     )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 0
+
+    # Exit 0 alone would not discriminate: the OLD fallback also returned 0 here
+    # (clean index ⇒ no shipped path touched). The run must say it validated the
+    # RANGE, so a silent regression to the stale-message read cannot pass this.
+    summary = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert summary["mode"] == "range"
+    assert summary["range_base"] == "origin/master"
+    assert summary["commits_validated"] == 0
 
 
 def test_an_unreadable_message_file_fails_rather_than_passing(
@@ -371,3 +430,182 @@ def test_a_breaking_footer_releases_a_docs_typed_shipped_edit(
     message = "docs(skills): rewrite the contract\n\nBREAKING CHANGE: the contract changed\n"
 
     assert _run(monkeypatch=monkeypatch, root=tmp_path, message=message) == 0
+
+
+# --- Range mode (work-item livespec-dev-tooling-sxdz, BUILD 3(a)) -------------
+#
+# The aggregate leg. Every case below is built over a FIXTURE repository rather
+# than this checkout, which is not a convenience: livespec-dev-tooling carries no
+# `.claude-plugin/` manifest, so its own derived shipped set is EMPTY and the
+# guard cannot fire here on any commit. Asserting the firing path against this
+# repo would therefore assert nothing.
+
+
+def test_range_refuses_a_docs_commit_touching_a_shipped_path(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """POSITIVE: the defect, caught at branch scope instead of per-commit."""
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
+    _set_range_base(root=tmp_path)
+    sha = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/SKILL.md",
+        message="docs(skills): fix a typo",
+    )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 1
+
+    finding = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert finding["failure_mode"] == "shipped_path_edited_without_a_release"
+    assert finding["offending_paths"] == [".claude-plugin/skills/next/SKILL.md"]
+    assert finding["commit"] == sha
+    assert finding["commit_type"] == "docs(skills)"
+
+
+def test_range_passes_a_releasing_type_touching_the_same_shipped_path(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NEGATIVE 1: same fixture, same path, releasing type — the bytes reach seats."""
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
+    _set_range_base(root=tmp_path)
+    _ = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/SKILL.md",
+        message="fix(skills): fix a typo",
+    )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 0
+
+
+def test_range_honours_the_override_trailer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NEGATIVE 2: the recorded decision survives into range mode."""
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
+    _set_range_base(root=tmp_path)
+    _ = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/SKILL.md",
+        message=(
+            "docs(skills): fix a typo\n"
+            "\n"
+            "Shipped-Path-Release-Waived: prose-only; no served behaviour changes\n"
+        ),
+    )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 0
+
+
+def test_range_passes_a_repo_deriving_no_shipped_prefixes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """NEGATIVE 3: no manifest ⇒ empty derivation ⇒ inert, and it SAYS so.
+
+    This is livespec-dev-tooling's own shape, which is why arming the guard here
+    is a deliberate no-op rather than an untested green.
+    """
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG, manifest_dir=None)
+    _set_range_base(root=tmp_path)
+    _ = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/SKILL.md",
+        message="docs(skills): fix a typo",
+    )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 0
+
+    resolution = json.loads(capsys.readouterr().err.strip().splitlines()[0])
+    assert resolution["shipped_prefixes"] == []
+    assert "ships no plugin bytes" in resolution["shipped_prefixes_source"]
+
+
+def test_range_treats_refactor_as_releasing_where_the_repo_declares_it_visible(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-repo resolution, direction 1 — asserted at the range tier too."""
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
+    _set_range_base(root=tmp_path)
+    _ = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/SKILL.md",
+        message="refactor(skills): rename a helper",
+    )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 0
+
+
+def test_range_does_not_release_refactor_where_the_repo_declares_no_sections(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Per-repo resolution, direction 2 — release-please hides `refactor` by default.
+
+    The other half of the premise slice A was amended to escape. A range loop is a
+    fresh place to re-lock it as a constant, so BOTH directions are pinned here:
+    the identical commit that passed above must fail against a repo declaring no
+    `changelog-sections`.
+    """
+    _make_repo(root=tmp_path, release_please_config={"release-type": "python"})
+    _set_range_base(root=tmp_path)
+    _ = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/SKILL.md",
+        message="refactor(skills): rename a helper",
+    )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 1
+
+    finding = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert finding["releasing_types"] == ["feat", "feature", "fix", "perf", "revert"]
+    assert "release-please's built-in defaults" in finding["releasing_types_source"]
+
+
+def test_range_names_every_offending_commit_and_skips_the_clean_ones(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each commit is judged on its OWN message and its OWN paths, not the branch's union."""
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
+    _set_range_base(root=tmp_path)
+    first = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/SKILL.md",
+        message="docs(skills): fix a typo",
+    )
+    # Clean for two different reasons: a releasing type on a shipped path, then a
+    # non-releasing type OUTSIDE the shipped set.
+    _ = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/skills/next/OTHER.md",
+        message="fix(skills): correct the contract",
+    )
+    _ = _commit(root=tmp_path, rel_path="docs/runbook.md", message="docs: update the runbook")
+    third = _commit(
+        root=tmp_path,
+        rel_path=".claude-plugin/marketplace.json",
+        message="chore(plugin): retouch the manifest",
+    )
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 1
+
+    findings = [
+        json.loads(line)
+        for line in capsys.readouterr().err.strip().splitlines()
+        if '"failure_mode"' in line
+    ]
+    assert [f["commit"] for f in findings] == [first, third]
+    assert [f["offending_paths"] for f in findings] == [
+        [".claude-plugin/skills/next/SKILL.md"],
+        [".claude-plugin/marketplace.json"],
+    ]
+
+
+def test_range_refuses_rather_than_passes_when_the_base_ref_is_unresolvable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unenumerable range is undecidable, NOT clean — the fail-open this must not have."""
+    _make_repo(root=tmp_path, release_please_config=_LIVESPEC_STYLE_CONFIG)
+
+    assert _run_range(monkeypatch=monkeypatch, root=tmp_path) == 1
+
+    finding = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert finding["failure_mode"] == "range_base_unresolvable"
+    assert finding["range_base"] == "origin/master"

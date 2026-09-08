@@ -162,13 +162,17 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 73-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 74-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    assert wired is not None and len(wired) == 73
+    # 74 since livespec-dev-tooling-sxdz wired the repo-private
+    # `check-shipped-path-release-guard`. The count stays EXACT rather than
+    # becoming a `>=`: its job is to make any change to the inventory a
+    # deliberate edit here, and a lower bound would let a silent drop through.
+    assert wired is not None and len(wired) == 74
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None
