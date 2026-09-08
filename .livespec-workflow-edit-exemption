@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-3u3gm2.2
-reason=Add the python-rust-fuzz leaf (g++ + nightly + cargo-fuzz) to the fabro-sandbox image tree so the console's check-fuzz job stops installing its toolchain on every PR (40-48 s on the PR critical path); maintainer-approved 2026-09-06 under console plan optimize-console-builds (livespec-console-beads-fabro-gqmtwa.1).
+work_item=livespec-dev-tooling-37p0
+reason=Adds reusable-release-lane-watch.yml, the shared release-lane watcher every publishing fleet repo will call. The workflow IS the deliverable: the lane watcher exists to run on a cadence in Actions, so it cannot be delivered without a workflow file. Lifted from livespec-overseer (overseer-hgq4wi.15) rather than reimplemented. Carrier R1 depth half of plan fleet-delivery-lane-visibility, epic livespec-n33rwg.

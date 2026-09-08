@@ -1,0 +1,99 @@
+# reusable-release-lane-watch.yml — periodic release-LANE health backstop.
+#
+# Authority: livespec plan/fleet-delivery-lane-visibility (epic
+#   livespec-n33rwg), carrier R1 depth half; slice
+#   livespec-dev-tooling-37p0. Lifted from livespec-overseer's
+#   release-lane-watch.yml (overseer-hgq4wi.15) so every publishing repo
+#   consumes ONE implementation instead of forking it.
+#
+# Motivating incident: the overseer's own release lane failed 139 of 157
+# runs between 2026-07-26 and 2026-08-20, including one unbroken block of
+# 123 consecutive failed cuts across SIXTEEN DAYS, and nothing reported
+# it. Separately, livespec's `Release tag` failed five consecutive
+# published cuts (v0.34.2..v0.37.0) while every release published anyway.
+#
+# WHY A CADENCE AND NOT AN EDGE: at an 88.5% failure rate a
+# transition-triggered alert is silent through most of the failure,
+# because most of the lane's life IS the failure. This job reports STATE
+# on a schedule instead — "currently failing, N cuts, since T".
+#
+# WHAT IT DOES NOT DO: it performs no mutation and no auto-anything. A red
+# scheduled job IS the report. The lane set is supplied by the CALLER and
+# is never hardcoded here: the fleet is non-uniform, and only two repos
+# ship a `release-tag.yml` at all.
+#
+# EXIT CODES ARE THREE-VALUED ON PURPOSE, and both non-zero values red the
+# job: 1 means the lane is FAILING, 2 means it CANNOT BE MEASURED (the
+# forge was unreachable, unauthorized, or unparsable). A watcher that
+# cannot measure must never be mistaken for one reporting healthy, so the
+# annotations say which of the two happened.
+
+name: reusable-release-lane-watch
+
+on:
+  workflow_call:
+    inputs:
+      workflows:
+        description: >-
+          Whitespace-separated workflow FILE NAMES in the CALLER's repo to
+          watch, e.g. "release-tag.yml release-readiness.yml". Supplied by
+          the caller because the fleet is non-uniform — deriving a
+          fleet-wide default here would watch lanes that do not exist and
+          miss the ones that do.
+        required: true
+        type: string
+      min_consecutive:
+        description: >-
+          Consecutive failures before the lane is reported. Defaults to 2:
+          a SINGLE failed cut is indistinguishable from a flake, and a
+          watcher that cries wolf on one transient is muted within a day.
+        required: false
+        type: number
+        default: 2
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  watch:
+    name: release-lane-watch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the caller repo
+        uses: actions/checkout@v5
+
+      - name: Checkout livespec-dev-tooling support modules
+        uses: actions/checkout@v5
+        with:
+          repository: thewoolleyman/livespec-dev-tooling
+          path: .livespec-dev-tooling
+          fetch-depth: 1
+
+      - name: Report each watched lane's state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOWS: ${{ inputs.workflows }}
+          MIN_CONSECUTIVE: ${{ inputs.min_consecutive }}
+        run: |
+          set -uo pipefail
+          # The runner emits structured diagnostics and a THREE-VALUED exit; the
+          # operator annotation is rendered here because it is a presentation
+          # concern and `print` is banned in the support tree. Both 1 and 2 red
+          # the job — but they say WHICH, because a watcher that cannot measure
+          # must never be mistaken for one reporting healthy.
+          worst=0
+          for workflow in ${WORKFLOWS}; do
+            python3 .livespec-dev-tooling/.github/scripts/release_lane_watch_runner.py \
+              "${workflow}" && continue
+            rc=$?
+            if [ "${rc}" = "2" ]; then
+              echo "::warning::${workflow} lane could not be measured — NOT a healthy verdict"
+              [ "${worst}" = "1" ] || worst=2
+            else
+              echo "::error::${workflow} lane is persistently failing"
+              worst=1
+            fi
+          done
+          exit "${worst}"
