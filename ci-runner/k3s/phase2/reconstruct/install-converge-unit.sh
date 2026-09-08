@@ -49,14 +49,28 @@ CRATES_PROXY_SRC="${PHASE2_DIR}/crates-proxy"
 SCCACHE_SRC="${PHASE2_DIR}/sccache"
 OBSERVABILITY_SRC="$(cd "${PHASE2_DIR}/../../observability" && pwd)"
 GATES_SRC="${PHASE2_DIR}/gates"
-LIB_DIR="/usr/local/lib/ci-runner-k3s"
+# STAGE MODE (`--stage-to DIR`) copies the artifact tree into DIR and stops before
+# the systemd steps, so the copy logic can be run WITHOUT root and without touching
+# the host. It exists so ./verify-installed-tree.sh can derive the canonical set of
+# installed files by running THIS installer rather than by keeping a second list of
+# them — a second list is the same drift defect one level up (fdse). Nothing else
+# should use it: a real install is the unflagged invocation.
+STAGE_TO=""
+if [ "${1:-}" = "--stage-to" ]; then
+  STAGE_TO="${2:?--stage-to needs a directory}"
+  shift 2
+fi
+
+LIB_DIR="${STAGE_TO:-/usr/local/lib/ci-runner-k3s}"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="converge-ci-stack.service"
 
 log() { printf '\n== %s ==\n' "$*"; }
 
-[ "$(id -u)" -eq 0 ] || { echo "FATAL: must run as root (writes /usr/local/lib and /etc/systemd/system)"; exit 1; }
-command -v systemctl >/dev/null || { echo "FATAL: systemctl not found on PATH"; exit 1; }
+if [ -z "${STAGE_TO}" ]; then
+  [ "$(id -u)" -eq 0 ] || { echo "FATAL: must run as root (writes /usr/local/lib and /etc/systemd/system)"; exit 1; }
+  command -v systemctl >/dev/null || { echo "FATAL: systemctl not found on PATH"; exit 1; }
+fi
 
 # ---------------------------------------------------------------------------
 log "1. Create the self-contained artifact tree under ${LIB_DIR}"
@@ -139,6 +153,12 @@ install -m 0644 "${GATES_SRC}/gate-job-template.yaml" "${LIB_DIR}/gates/gate-job
 install -m 0755 "${GATES_SRC}/render-gate-job.sh" "${LIB_DIR}/gates/render-gate-job.sh"
 
 # ---------------------------------------------------------------------------
+if [ -n "${STAGE_TO}" ]; then
+  echo
+  echo "== STAGED to ${STAGE_TO}; stopping before the systemd steps =="
+  exit 0
+fi
+
 log "8. Install the systemd unit"
 install -m 0644 "${SCRIPT_DIR}/${SERVICE}" "${UNIT_DIR}/${SERVICE}"
 
