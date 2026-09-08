@@ -33,6 +33,7 @@ __all__: list[str] = [
     "WARN_VERDICT",
     "Finding",
     "canonical_plan_slug",
+    "closed_day",
     "is_closed",
     "is_epic_record",
     "is_same_tenant_epic",
@@ -72,6 +73,8 @@ CLOSED_STATUSES = frozenset({"closed", "done"})
 
 _EPIC_TYPE = "epic"
 _METADATA_FIELD = "metadata"
+_CLOSE_STAMP_FIELDS = ("closed_at", "updated_at")
+_DAY_LENGTH = len("YYYY-MM-DD")
 _SLUG_SEPARATOR_RUN = re.compile(r"[^a-z0-9]+")
 _MAX_SLUG_LENGTH = 64
 
@@ -158,3 +161,27 @@ def is_same_tenant_epic(*, record: dict[str, object], tenant_re: re.Pattern[str]
 def is_closed(*, record: dict[str, object]) -> bool:
     """Return True when a record's ledger status is done or closed."""
     return record.get("status") in CLOSED_STATUSES
+
+
+def closed_day(*, record: dict[str, object]) -> str | None:
+    """Return the UTC day a record closed, as `YYYY-MM-DD`, or None when unreadable.
+
+    `closed_at` is the ledger's native closure stamp and is the answer whenever
+    the store wrote one. It is NOT always written: a close performed as a direct
+    status write leaves it null beside an equally-null `resolution` and `audit`
+    (measured on this fleet 2026-07-26, recorded in this repo's
+    `plan/archive/worktree-location-enforcement/handoff.md`), and exactly those
+    hand-closed epics are the legacy population a close-date reader has to be
+    able to place. `updated_at` — which every stored record carries — is
+    therefore the fallback.
+
+    Both keys are dropped ENTIRELY by the ledger's `omitempty` serializer when
+    unset, so absence is read as "unknown" rather than subscripted, and a record
+    carrying neither answers None: an unplaceable close is graded, never
+    grandfathered.
+    """
+    for field in _CLOSE_STAMP_FIELDS:
+        value = record.get(field)
+        if isinstance(value, str) and len(value) >= _DAY_LENGTH:
+            return value[:_DAY_LENGTH]
+    return None
