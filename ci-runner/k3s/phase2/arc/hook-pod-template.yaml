@@ -177,22 +177,35 @@
 #    span carries repo / git.commit.sha / git.branch / ci.event from the
 #    runner's event.json, host.name from CI_RUNNER_NODE_NAME (a fieldRef),
 #    build.env=ci and build.cache.kill_switch, and posts as
-#    service.name=github-ci to CI_CACHE_OTLP_ENDPOINT — the host collector's
-#    pod-reachable KEYLESS listener (otel-collector
-#    config.ci-runner-host.yaml `otlp/pods`). No ingest key enters a job.
+#    service.name=github-ci to the host collector's pod-reachable KEYLESS
+#    listener (otel-collector config.ci-runner-host.yaml `otlp/pods`). No
+#    ingest key enters a job.
 #    PER-NODE ENDPOINT (two-node precondition; plan
-#    k3s-on-gmktec-for-vps-usage, carrier R3): that endpoint is DERIVED, as
-#    `http://$(CI_RUNNER_NODE_HOST_IP):4319` over a `status.hostIP` fieldRef,
-#    so every pod posts to the collector on ITS OWN node. It was a literal
-#    (the cni0 gateway of the first node) until then; that address is not
-#    merely the wrong node from a second node, it does not exist there —
-#    flannel gives each node its own /24, so node 1's gateway is 10.42.1.1.
-#    A literal is therefore unfixable by editing it, and the derivation is
-#    the fix. Preconditions this places on the host collector, co-maintained
-#    in the `otel-collector` repo: the `otlp/pods` receiver must bind an
-#    address reached by the node's OWN address (0.0.0.0:4319, or the node
-#    address) rather than the cni0 gateway alone, and it must run on every
-#    pool node. Both stay keyless — a per-node endpoint adds no credential.
+#    k3s-on-gmktec-for-vps-usage, carrier R3, corrected by carrier R7): that
+#    endpoint is DERIVED IN THE POD, from the pod's OWN DEFAULT GATEWAY, which
+#    IS its node's cni0 bridge — a different address on every node, since
+#    flannel gives each node its own /24. postStart calls
+#    `ci-cache-span publish-endpoint`, which reads the default route and
+#    publishes `http://<gateway>:4319` to the emitter's state dir and, as a
+#    hosts alias, to the cargo shim (item 7). No default route means nothing
+#    is published and both consumers SKIP.
+#    IT WAS A `status.hostIP` fieldRef from PR #1903 until then, and that
+#    address is REFUSED: the `otlp/pods` receiver binds the cni0 gateway and
+#    loopback ONLY, and that bind IS the access control for a keyless
+#    receiver — reachable from the pod CIDR and the host, from nothing on the
+#    LAN. Measured on poweredge-xubuntu 2026-09-07: POST to the cni0 gateway
+#    and to 127.0.0.1 returned HTTP 200; POST to the node's InternalIP
+#    192.168.1.200 — which is exactly what `status.hostIP` resolves to — was
+#    refused. Every job's cache and build spans went there for a month,
+#    invisibly, because the emitter fails soft: no error, no alert, no rows.
+#    Binding the receiver to the LAN address is NOT the fix — it would widen a
+#    keyless ingest endpoint onto the homelab LAN. Before that fieldRef it was
+#    a bare literal, which a second node cannot satisfy at all. So the endpoint
+#    must be derived, and the gateway is the only per-node value that is both
+#    correct and ALREADY BOUND. What this still asks of the host collector,
+#    co-maintained in the `otel-collector` repo: an `otlp/pods` receiver on
+#    EVERY pool node, bound to that node's cni0 gateway. Keyless, and no new
+#    listener anywhere.
 #    The uv generation name comes from `_warm/.uv-generation`,
 #    which the provisioner's seed writes (../local-path-provisioner/).
 #    THE CANARY: with CI_CACHE_CANARY_N=N, the job whose pod name's cksum is
@@ -218,6 +231,17 @@
 #    the same variable in its own workflow (the console does); the values agree.
 #    Fail-soft like item 6: a dead collector costs the shim its bounded POST,
 #    never the job.
+#    THE SHIM READS AN ENV VAR AND NOTHING ELSE — it is baked into a pinned
+#    image, so it can consult no state dir and run no `ip route`. That is why
+#    item 6's derivation publishes a hosts ALIAS as well as a file: this env
+#    value is one cluster-wide literal whose NAME resolves per node. Two
+#    alternatives were weighed and rejected. A PER-NODE VALUE would need one
+#    template per node, and the hook reads exactly one ConfigMap for the whole
+#    cluster, so it multiplies the artifact that item 6's fieldRef already
+#    proved is easy to get silently wrong. A SERVICE in front of the collector
+#    does not avoid the bind question at all: its endpoint address is still a
+#    real node address, so the receiver would still have to bind something
+#    wider than the cni0 gateway — the widening this design exists to refuse.
 apiVersion: v1
 kind: PodTemplate
 spec:
@@ -254,22 +278,16 @@ spec:
           value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
         - name: SCCACHE_REDIS_RW_MODE
           value: READ_ONLY
-        # The address of the node THIS pod was scheduled onto, from the
-        # downward API (header item 6, "PER-NODE ENDPOINT"). Declared before
-        # the two endpoints below because Kubernetes expands `$(VAR)` in an
-        # env value only against variables declared EARLIER in this
-        # container's own env list.
-        - name: CI_RUNNER_NODE_HOST_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.hostIP
-        # Cache telemetry (header item 6): where the pool-provided emitter
-        # posts this job's cache spans — the collector on THIS pod's own node,
-        # KEYLESS; empty disables emission. And the cold canary: one job in N
-        # (deterministic on the pod name) runs every tier cold by construction
-        # and every span it emits says so.
-        - name: CI_CACHE_OTLP_ENDPOINT
-          value: http://$(CI_RUNNER_NODE_HOST_IP):4319
+        # Cache telemetry (header item 6): CI_CACHE_OTLP_ENDPOINT is
+        # deliberately NOT set here. The emitter DERIVES the collector's
+        # address in the pod (postStart's `publish-endpoint` below) and reads
+        # it back from its state dir, because no value expressible in this
+        # manifest is correct: the address that reaches the pod-facing keyless
+        # listener is the node's cni0 bridge, which the downward API does not
+        # carry. Leaving it unset is also what makes an underivable endpoint a
+        # SKIP rather than a POST into a refused address.
+        # The cold canary stays a plain value: one job in N (deterministic on
+        # the pod name) runs every tier cold by construction and says so.
         - name: CI_CACHE_CANARY_N
           value: "20"
         # Build-phase telemetry (header item 7): where the sandbox image's baked
@@ -278,8 +296,12 @@ spec:
         # Set only now that the one Rust consumer pins a sandbox image >= v1.43.1
         # (livespec-dev-tooling-kjanc4): an older shim hardcodes build.env=factory
         # and would label CI-lane spans as factory work.
+        # The shim reads an ENV VAR and nothing else, so this one literal is
+        # per-node by NAME: postStart's `publish-endpoint` resolves the alias
+        # to this pod's own default gateway in /etc/hosts. A pod that could not
+        # derive one publishes no alias, and the name resolves nowhere.
         - name: LIVESPEC_SANDBOX_OTEL_ENDPOINT
-          value: http://$(CI_RUNNER_NODE_HOST_IP):4319
+          value: http://otlp-collector.ci-runner.internal:4319
         - name: CI_RUNNER_NODE_NAME
           valueFrom:
             fieldRef:
@@ -304,6 +326,12 @@ spec:
                 t0=$(date +%s%N 2>/dev/null || echo 0)
                 state=/__w/_temp/_ci_cache
                 mkdir -p "$state" 2>/dev/null && printf '%s' "$t0" > "$state/started_at_ns" 2>/dev/null
+                # Header item 6, "PER-NODE ENDPOINT": derive THIS pod's
+                # collector address from its own default gateway and publish it
+                # for both consumers, before anything that reports. Ahead of the
+                # kill-switch branch below on purpose — a switched-off or canary
+                # job still emits its (cold) spans.
+                [ -x /opt/ci-runner/bin/ci-cache-span ] && /opt/ci-runner/bin/ci-cache-span publish-endpoint >/dev/null 2>&1
                 # `rec` RECORDS a tier's warm-copy facts; the emitter replays them
                 # from preStop with the job identity, which event.json carries
                 # only ~10 s after this hook runs (measured 2026-09-04).
