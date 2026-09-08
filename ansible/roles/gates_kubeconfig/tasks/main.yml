@@ -1,0 +1,95 @@
+---
+# gates_kubeconfig — this host's cluster access for the delegated pre-push gate.
+#
+# R4.S8 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.1. Replaces vps-info services/gates-kubeconfig/
+# install.sh, which was merged in thewoolleyman/vps-info#64 and never run.
+#
+# WHAT THE CREDENTIAL GRANTS. It authenticates as the `gates` namespace's
+# `gate-submitter` ServiceAccount: create/get/list/watch on jobs and pods plus
+# get on pods/log, in that namespace only. No delete, nothing on secrets,
+# nothing cluster-scoped. The Role is this repo's
+# ci-runner/k3s/phase2/gates/gates-rbac.yaml; the host holds only the token.
+
+- name: Install kubectl pinned to the cluster's k3s minor
+  # The checksum is the PUBLISHED one fetched from its own URL, not a digest
+  # computed from the file just downloaded — that would only prove the
+  # download was internally consistent, which is true of any tampered file.
+  ansible.builtin.get_url:
+    url: >-
+      https://dl.k8s.io/release/{{ gates_kubeconfig_kubectl_version }}/bin/linux/{{ _gates_kubeconfig_arch }}/kubectl
+    checksum: >-
+      sha256:https://dl.k8s.io/release/{{ gates_kubeconfig_kubectl_version }}/bin/linux/{{ _gates_kubeconfig_arch }}/kubectl.sha256
+    dest: "{{ gates_kubeconfig_bin_dir }}/kubectl"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  vars:
+    _gates_kubeconfig_arch: "{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else ansible_facts['architecture'] }}"
+
+- name: Install the gates-credential scripts
+  # These stay as shell because they are RUNTIME tools, not provisioning:
+  # with-gates-kubeconfig re-fetches on a 401 in the middle of a gate run,
+  # long after any playbook has exited. The role owns their installation;
+  # it does not own their behaviour.
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ gates_kubeconfig_bin_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - refresh-gates-kubeconfig
+    - with-gates-kubeconfig
+
+- name: Read the rendered gates kubeconfig from the control-plane node
+  # The shell installer needed `sudo -u <invoking user> sudo` here, because the
+  # ssh key that reaches poweredge belongs to the invoking user while the
+  # destination needs root. Ansible has no such problem: the read happens on
+  # poweredge under its own become, and the write happens here under ours.
+  ansible.builtin.slurp:
+    src: "{{ gates_kubeconfig_remote_path }}"
+  become: true
+  delegate_to: "{{ gates_kubeconfig_remote_host }}"
+  register: gates_kubeconfig_rendered
+  changed_when: false
+  no_log: true
+
+- name: Refuse a fetched file that is not a kubeconfig
+  # A truthful-looking but malformed answer is worse than a failure, because it
+  # would overwrite a good credential with a useless one.
+  ansible.builtin.assert:
+    that:
+      - "'kind: Config' in (gates_kubeconfig_rendered.content | b64decode)"
+      - "'server:' in (gates_kubeconfig_rendered.content | b64decode)"
+    fail_msg: >-
+      {{ gates_kubeconfig_remote_host }}:{{ gates_kubeconfig_remote_path }} is not a
+      kubeconfig — refusing to overwrite {{ gates_kubeconfig_dest }}
+    success_msg: fetched content is a kubeconfig
+
+- name: Create the credential directory
+  # `--check` cannot see this: with the directory absent, the copy below is
+  # reported as a would-be change and fails only on a real apply. The shell
+  # installer created it inside refresh-gates-kubeconfig; the role owns it
+  # here so a first apply on a fresh host succeeds.
+  ansible.builtin.file:
+    path: "{{ gates_kubeconfig_dest | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the gates kubeconfig
+  # no_log because the content is a bearer token. It must never reach a diff,
+  # a log line, or a terminal.
+  ansible.builtin.copy:
+    content: "{{ gates_kubeconfig_rendered.content | b64decode }}"
+    dest: "{{ gates_kubeconfig_dest }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true

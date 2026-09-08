@@ -65,6 +65,7 @@ check-work-item-status-vocabulary
 check-wrapper-shape
 
 # Repo-private block.
+check-ansible-lint
 check-lint
 check-format
 check-types

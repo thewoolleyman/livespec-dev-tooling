@@ -1,0 +1,11 @@
+---
+# The cluster's k3s minor. kubectl is supported within one minor of the API
+# server, but pinning to the cluster's own minor removes the question. Bump
+# this when the cluster's k3s minor moves; a mismatch is a silent-skew class
+# of defect, not a loud one.
+gates_kubeconfig_kubectl_version: v1.36.2
+gates_kubeconfig_bin_dir: /usr/local/bin
+gates_kubeconfig_dest: /etc/ci-runner/gates.kubeconfig
+# The control-plane node that renders the credential on every boot.
+gates_kubeconfig_remote_host: poweredge-xubuntu
+gates_kubeconfig_remote_path: /etc/ci-runner/gates.kubeconfig
