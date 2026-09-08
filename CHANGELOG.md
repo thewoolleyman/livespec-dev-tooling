@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.63.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.62.0...v1.63.0) (2026-09-08)
+
+
+### Features
+
+* **cross-repo:** move the lane-watch runner into the package and test it ([8dc9707](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8dc9707d9367a7b6a2f1716a6274960ac5d04070))
+
 ## [1.62.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.61.0...v1.62.0) (2026-09-08)
 
 
