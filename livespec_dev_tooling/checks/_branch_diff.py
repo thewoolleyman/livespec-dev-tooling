@@ -58,7 +58,15 @@ from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-
 __all__: list[str] = [
     "DiffUnavailable",
     "name_only_diff",
+    "staged_name_only",
 ]
+
+# `git diff --cached` compares the INDEX against `HEAD`. It is passed through the
+# same selector slot a range occupies because it answers the same question of the
+# same command — "which non-deleted paths differ" — about a different pair of
+# trees, so it inherits the `returncode` reading and the `GIT_*` scrub rather
+# than growing a second, subtly different spelling of both.
+_STAGED_SELECTOR = "--cached"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -80,11 +88,11 @@ class DiffUnavailable:
     detail: str
 
 
-def name_only_diff(*, diff_range: str, cwd: Path) -> IOResult[str, DiffUnavailable]:
-    """The `--name-only` diff of `diff_range` in `cwd`, deletions excluded.
+def _name_only(*, selector: str, cwd: Path) -> IOResult[str, DiffUnavailable]:
+    """The `--name-only` diff of one git `selector` — a range or `--cached` — in `cwd`.
 
     `IOSuccess` carries the raw newline-separated blob `git` printed — EMPTY
-    when the range genuinely holds no non-deleted paths, which is an answer
+    when the selector genuinely holds no non-deleted paths, which is an answer
     `git` gave rather than one this function assumed. `IOFailure` says the
     diff could not be taken at all.
 
@@ -107,7 +115,7 @@ def name_only_diff(*, diff_range: str, cwd: Path) -> IOResult[str, DiffUnavailab
     try:
         # S603/S607: argv is a fixed list of literal git args; no shell input.
         completed = subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=d", diff_range],
+            ["git", "diff", "--name-only", "--diff-filter=d", selector],
             capture_output=True,
             text=True,
             check=False,
@@ -121,9 +129,35 @@ def name_only_diff(*, diff_range: str, cwd: Path) -> IOResult[str, DiffUnavailab
             DiffUnavailable(
                 reason="diff-failed",
                 detail=(
-                    f"{diff_range}: git diff --name-only exited"
+                    f"{selector}: git diff --name-only exited"
                     f" {completed.returncode} ({completed.stderr.strip()})"
                 ),
             )
         )
     return IOSuccess(completed.stdout)
+
+
+def name_only_diff(*, diff_range: str, cwd: Path) -> IOResult[str, DiffUnavailable]:
+    """The `--name-only` diff of `diff_range` in `cwd`, deletions excluded.
+
+    The read itself, its failure discrimination, and the `GIT_*` scrub live in
+    `_name_only`, which this and `staged_name_only` share: the two questions
+    differ only in which pair of trees `git diff` is pointed at, and a second
+    copy of the body is a second place for the returncode reading to be dropped.
+    """
+    return _name_only(selector=diff_range, cwd=cwd)
+
+
+def staged_name_only(*, cwd: Path) -> IOResult[str, DiffUnavailable]:
+    """The `--name-only` diff of the INDEX against `HEAD` in `cwd`, deletions excluded.
+
+    THE READ A RANGE CANNOT MAKE. At a pre-commit gate the change under
+    judgement is in the index and not yet in any commit, so `origin/master...HEAD`
+    does not carry it; at a pre-push gate the reverse holds and nothing is
+    staged. A gate that must catch a change at BOTH moments needs both reads,
+    and taking only one leaves a hole shaped exactly like a pass.
+
+    Deletions are excluded on the same reading as the range read: a staged
+    deletion removes a path rather than introducing content to judge.
+    """
+    return _name_only(selector=_STAGED_SELECTOR, cwd=cwd)

@@ -246,6 +246,7 @@ check:
         check-per-file-coverage
         check-plan-anchor-declared
         check-plan-epic-parity
+        check-plan-no-live-handoff-file
         check-plan-no-tombstone
         check-plan-record-conformance
         check-plugin-resolution
@@ -855,6 +856,14 @@ check-plan-anchor-declared:
 # `just check`.
 check-plan-epic-parity:
     uv run python -m livespec_dev_tooling.checks.plan_epic_parity
+
+# Plan-lifecycle carrier ban: no commit or push may ADD or MODIFY a live
+# plan/<topic>/handoff.md or plan/<topic>/supervisor-handoff.md. Scoped to the
+# CHANGE (the staged index UNIONed with origin/master...HEAD), not to the tree,
+# so an existing live handoff file is frozen and deletable rather than an
+# instant red. plan/archive/** and a plan's research/ tree are unaffected.
+check-plan-no-live-handoff-file:
+    uv run python -m livespec_dev_tooling.checks.plan_no_live_handoff_file
 
 # Plan-lifecycle tombstone ban: a topic must not exist at BOTH
 # plan/<topic>/ and plan/archive/<topic>/.
