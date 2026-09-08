@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.58.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.58.4...v1.58.5) (2026-09-08)
+
+
+### Bug Fixes
+
+* **ci-runner:** derive the pod OTLP endpoint from its own default gateway ([4353d92](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4353d92850c055af901362b579b3b91766386b9c))
+
 ## [1.58.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.58.3...v1.58.4) (2026-09-08)
 
 
