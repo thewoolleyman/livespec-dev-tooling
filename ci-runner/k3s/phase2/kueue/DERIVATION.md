@@ -753,6 +753,99 @@ The specification clause this bounds — livespec-dev-tooling
 ceiling" — is amended by the proposed change
 `scale-set-ceiling-bounded-to-fair-share` filed the same day.
 
+## The gates quota on gmktec-xubuntu (2026-09-08)
+
+**This section derives a quota that is NOT part of the apportionment above,
+and the ten repositories' churn-slot sum is unchanged by it.** It covers
+`cluster-queue-gates.yaml` — the `gates-flavor` ResourceFlavor, the `gates-cq`
+ClusterQueue, the `gate-priority` WorkloadPriorityClass and the `gates-lq`
+LocalQueue that give GATE Jobs (the `just check` aggregate, offloaded to the
+fleet's second pool node) somewhere to be admitted. Filed under the livespec
+plan `k3s-on-gmktec-for-vps-usage`, epic `livespec-sab5gn`, R4 slice 3.
+
+### It is quota'd on cpu/memory, not on `ci-runner.io/churn-slot`
+
+A gate is not a CI runner and must not spend a CI runner's admission budget.
+Quota'ing gates on the extended resource would mean each admitted gate is one
+fewer runner admitted fleet-wide — drawing down the very budget the gmktec
+plan exists to relieve. So `gates-cq` covers plain `cpu` and `memory` over its
+own flavor, exactly as `cluster-queue-phase1-proof.yaml` does, and it is
+therefore excluded from the apportionment table: it cannot consume a churn
+slot, and the ten `nominalQuota` values still sum to exactly `C`.
+
+For the same reason it sets no `cohortName`. A cohort exists so members lend
+and borrow unused quota; every member of `fleet-ci-runner-pool` is denominated
+in `ci-runner.io/churn-slot` over `churn-slot-flavor`, which `gates-cq` neither
+covers nor sits on. Membership could only ever be inert.
+
+### It does not preempt, and `gate-priority` is not a preemption lever
+
+The plan's research/000 proposed a `WorkloadPriorityClass` so that a gate
+"preempts a queued runner". That is not available and is not being taken. The
+section "`fairSharing.weight` is deliberately left at 1, and is currently
+inert" above records the standing maintainer declaration of 2026-08-30 — never
+evict a healthy running job to rebalance the cohort — which fixes
+`preemption.reclaimWithinCohort`, `preemption.borrowWithinCohort.policy` and
+`preemption.withinClusterQueue` at `Never` for the pool. Reversing it is not
+this slice's to do.
+
+`gates-cq` restates those same three values explicitly (they are also the
+pinned Kueue v0.19.1 API defaults) rather than relying on the defaults, because
+this is the queue a future reader reaches for when they want a gate to jump a
+line, and the answer should be visible in the object.
+
+A DEDICATED QUOTA buys what preemption was asked for. The property wanted was
+"a gate does not wait behind the CI backlog"; separate capacity on a separate
+node delivers it without evicting anything. `gate-priority` (value 1000) then
+orders gates AMONG THEMSELVES — which of four queued gates takes the slot that
+frees — and orders nothing against a runner.
+
+### The two numbers: 15 cpu and 24 Gi
+
+**Envelope.** The plan's research/001 section 3 item 5 found about **50 GiB**
+available to pods on gmktec-xubuntu without evicting the local LLM model from
+its 64 GiB firmware iGPU carveout (a carveout the node's profile,
+`../../phase0-bare-metal/profiles/gmktec-xubuntu.env`, records as off-limits to
+everything in this tree).
+
+**Gate shape.** A `just check` aggregate is estimated at roughly **5 cpu /
+6 Gi**.
+
+**Concurrency target.** **3** concurrent gates — enough that a gate and a
+re-run do not serialize, small enough to leave most of the envelope for the
+node's system pods and anything else the plan later places here.
+
+So:
+
+| term | arithmetic | value |
+|---|---|---|
+| cpu | 3 gates x 5 cpu | **15** |
+| memory, if it tracked the estimate | 3 gates x 6 Gi | 18 Gi |
+| memory, as set | 18 Gi + one gate's headroom | **24 Gi** |
+
+The memory number is deliberately NOT `3 x 6`. Setting it at the estimate
+would make memory the binding term the moment one gate's peak RSS exceeds
+6 Gi, and nobody has measured a gate's peak RSS on this node. At 24 Gi **cpu
+binds first at exactly three gates**, which is the intended behaviour, and an
+over-running gate degrades throughput instead of blocking admission outright.
+24 Gi is about half the ~50 GiB envelope, leaving roughly 26 GiB for the
+node's system pods and future non-gate workload.
+
+**THIS IS A FIRST ESTIMATE TO CONFIRM BY SOAK, NOT A MEASUREMENT.** Both the
+5 cpu / 6 Gi gate shape and the concurrency target of 3 are estimates; only the
+~50 GiB envelope is measured. What a soak must settle: a gate's actual peak cpu
+and RSS, whether three concurrent gates are what the node can absorb without
+the iowait signature the PowerEdge taught this fleet to watch for, and whether
+`cpu` remains the right binding term. Revise both numbers here when it does,
+and record the measurement rather than replacing one estimate with another.
+
+**Admission is not scheduling.** gmktec-xubuntu still carries
+`node-role/ci=pending:NoSchedule` from its profile's `NODE_TAINTS`, and
+`gates-flavor` deliberately declares no `tolerations`. Nothing this quota
+admits can be SCHEDULED until a later item of the same plan opens the node —
+the distinction "The physical cap is the scheduler, not Kueue" draws, applied
+here on purpose so admission capacity can land ahead of the node opening.
+
 ## Recomputing at another C
 
 The derivation is parameterized so a capacity change is mechanical:
