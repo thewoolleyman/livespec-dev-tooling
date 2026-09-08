@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.67.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.0...v1.67.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **ci-runner:** detect installed-vs-committed drift on the CI hosts (livespec-dev-tooling-fdse) ([acacb17](https://github.com/thewoolleyman/livespec-dev-tooling/commit/acacb17b8d438ece4836a7108438d2fa2dbac35f))
+* **fleet:** read the member source walk from git, not the filesystem ([428e4b9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/428e4b94a7d5efa1919ee9bc1b835661c1850e0e))
+
 ## [1.67.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.66.1...v1.67.0) (2026-09-08)
 
 
