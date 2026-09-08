@@ -7,11 +7,34 @@ separate modules because one reaches the filesystem and the other cannot, and
 because the graph's correctness content is worth testing without a tree on
 disk at all.
 
-THE WALK IS AN `rglob`, NOT `git ls-files`, AND THAT IS NOT A SHORTCUT. A
-snapshot is an ARCHIVE OF A REF: it already holds exactly the tracked files,
-so there is no index to consult and no ignored scratch to filter. The git
-choke point `iter_first_party_py_files` uses exists because a CHECKOUT holds
-untracked scratch a walk would otherwise pick up; an archive holds none.
+THE WALK IS TRACKED-ONLY, AND WHICH MECHANISM SUPPLIES "TRACKED" DEPENDS ON
+THE VANTAGE. A snapshot is an ARCHIVE OF A REF: it already holds exactly the
+tracked files, so there is no index to consult and no ignored scratch to
+filter, and an `rglob` over it IS the tracked set. A LOCAL CHECKOUT — the
+self-member vantage `_rows_public_api_conformance._local_root_for` binds — is
+the opposite, and livespec-dev-tooling-xs58 measured what that cost: an entire
+`.venv/lib/python3.10/site-packages/**` tree reached `filter_first_party_py`
+through a parameter literally named `tracked_py`, and entered the member's
+first-party DEFINING universe. The predicate has no `.venv` arm and needs none
+— a gitignored virtualenv is never `git ls-files`-tracked, so it could never
+arrive — so the repair belongs HERE, in the walk that feeds it, and not in the
+predicate. That population defect was invisible for as long as the graph only
+emitted edges for imports that RESOLVE; a vendored `dataclasses.py` under
+site-packages is exactly what makes a stdlib name resolve to a "first-party"
+definer, so no "skip when no candidate resolves" fence could have covered it.
+
+The discriminator between the two vantages is a `.git` at the ROOT rather than
+a `git ls-files` exit code, because ls-files run inside an untracked directory
+that happens to sit under some unrelated repo exits 0 with an EMPTY listing —
+a silently empty member instead of a loud failure, which is the worse of the
+two ways to be wrong.
+
+A FILE TRACKED BUT DELETED from the working tree is DROPPED: the index lists
+it, so the listing is intersected with what is on disk. What this module
+produces is source TEXT, which a deleted file has none of at this vantage, and
+the local vantage exists to grade a member on the tree it ACTUALLY has — so a
+mid-edit deletion is an absent source here, not a whole member lost to
+`MemberSourcesUnreadable` by a read of a path that is gone.
 
 The DEFINING universe is `filter_first_party_py` — the same predicate
 `resolve_check_universe()` applies in a checkout, so what this row scopes and
@@ -45,7 +68,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 
-from livespec_dev_tooling.config import filter_first_party_py, role_path  # noqa: E402
+from livespec_dev_tooling.config import (  # noqa: E402
+    filter_first_party_py,
+    list_tracked_py,
+    role_path,
+)
 from livespec_dev_tooling.fleet._public_api_graph import MemberSources  # noqa: E402
 
 if TYPE_CHECKING:
@@ -69,8 +96,16 @@ class MemberSourcesUnreadable:
 
 
 def _walk_py(*, root: Path) -> tuple[Path, ...]:
-    """Every `.py` under `root`, repo-root-relative and sorted."""
-    return tuple(sorted(path.relative_to(root) for path in root.rglob("*.py")))
+    """Every TRACKED `.py` under `root`, repo-root-relative and sorted.
+
+    A checkout is read from the git INDEX and an archive by `rglob`, per the
+    module docstring's two-vantage rule; `.git` at the root is what tells them
+    apart. The index listing is intersected with what is on disk, so a tracked
+    path deleted from the working tree drops out.
+    """
+    if not (root / ".git").exists():
+        return tuple(sorted(path.relative_to(root) for path in root.rglob("*.py")))
+    return tuple(sorted(rel for rel in list_tracked_py(repo_root=root) if (root / rel).is_file()))
 
 
 def _is_test_source(*, rel: Path, tests_tree_prefix: str) -> bool:

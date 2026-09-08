@@ -7,6 +7,7 @@ restate the classification the test is meant to check.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -141,3 +142,74 @@ def test_a_member_with_no_python_at_all_reads_as_two_empty_universes(*, tmp_path
     sources = read_ok(root=tmp_path)
     assert sources.defining == {}
     assert sources.consuming == {}
+
+
+# --- the LOCAL-CHECKOUT vantage ----------------------------------------------
+#
+# Every case above builds an ARCHIVE — a bare directory with no `.git`, which
+# is what `member_tree_snapshot` materializes and where a walk IS the tracked
+# set. The cases below build a real `tmp_path` git repo instead, because the
+# self member is read from a CHECKOUT, and a checkout holds gitignored scratch.
+# `git` is not a Python spawn (`tests_no_subprocess_spawn` only forbids
+# `sys.executable`/`python`/`python3` argv[0]), so shelling it here is allowed;
+# the env is a hardcoded 3-key dict rather than an `os.environ` passthrough, so
+# COVERAGE_PROCESS_START / COV_CORE_* can never leak into the child.
+
+
+def git(*, cwd: Path, args: list[str]) -> None:
+    """Run `git <args>` in `cwd` with a hermetic env, raising on failure."""
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+
+
+def test_a_gitignored_virtualenv_in_a_checkout_enters_neither_universe(*, tmp_path: Path) -> None:
+    """livespec-dev-tooling-xs58: an untracked tree contributes NOTHING.
+
+    `filter_first_party_py`'s predicate is defined over `git ls-files`-tracked
+    paths and has no `.venv` arm — it does not need one, because a gitignored
+    virtualenv could never arrive. Feeding it a filesystem walk of a checkout
+    violated that, and a whole `site-packages` tree entered the member's
+    first-party DEFINING universe: a vendored `dataclasses.py` in there is what
+    made stdlib names resolve to a "fleet" definer. Both universes are asserted
+    positively as well, so the fix is proven to exclude the virtualenv rather
+    than everything.
+    """
+    git(cwd=tmp_path, args=["init", "-q"])
+    _ = write(root=tmp_path, rel=".gitignore", text=".venv/\n")
+    _ = write(root=tmp_path, rel="pkg/mod.py", text="def compute() -> int:\n    return 1\n")
+    _ = write(root=tmp_path, rel="tests/test_mod.py", text="from pkg.mod import compute\n")
+    _ = write(
+        root=tmp_path,
+        rel=".venv/lib/python3.10/site-packages/dataclasses.py",
+        text="def asdict() -> int:\n    return 2\n",
+    )
+    git(cwd=tmp_path, args=["add", "-A"])
+    sources = read_ok(root=tmp_path)
+    assert [rel for rel in (*sources.defining, *sources.consuming) if rel.parts[0] == ".venv"] == []
+    assert set(sources.defining) == {Path("pkg/mod.py")}
+    assert set(sources.consuming) == {Path("pkg/mod.py"), Path("tests/test_mod.py")}
+
+
+def test_a_tracked_file_deleted_from_the_working_tree_is_absent_not_fatal(
+    *, tmp_path: Path
+) -> None:
+    """The index still lists it; this module's product is source TEXT, which it has none of.
+
+    The local vantage exists to grade a member on the tree it ACTUALLY has, so
+    a file deleted in the working tree is an absent source here — not a whole
+    member lost to `MemberSourcesUnreadable` by a read of a path that is gone.
+    """
+    git(cwd=tmp_path, args=["init", "-q"])
+    _ = write(root=tmp_path, rel="pkg/mod.py", text="def compute() -> int:\n    return 1\n")
+    gone = write(root=tmp_path, rel="pkg/gone.py", text="def vanished() -> int:\n    return 2\n")
+    git(cwd=tmp_path, args=["add", "-A"])
+    gone.unlink()
+    sources = read_ok(root=tmp_path)
+    assert set(sources.defining) == {Path("pkg/mod.py")}
+    assert set(sources.consuming) == {Path("pkg/mod.py")}
