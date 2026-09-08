@@ -5,7 +5,7 @@
     "heading": "## Project intent",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -13,7 +13,7 @@
     "heading": "## Architecture",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -21,7 +21,7 @@
     "heading": "## Definition of Done",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -29,7 +29,7 @@
     "heading": "## Non-goals",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -37,7 +37,7 @@
     "heading": "## CLI surface",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -45,7 +45,7 @@
     "heading": "## Exit-code table",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -53,7 +53,7 @@
     "heading": "## Shared check inventory",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -61,7 +61,7 @@
     "heading": "## Consumer configuration schema",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -69,7 +69,7 @@
     "heading": "## Composite Actions wire contract",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -77,7 +77,7 @@
     "heading": "## Reusable workflows wire contract",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -85,7 +85,7 @@
     "heading": "## Consumer compat block \u2014 pin-and-bump policy",
     "test": "TODO",
     "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (compat-block schema + bump-pin policy relocated from livespec core at v103/v104). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -93,7 +93,7 @@
     "heading": "## Cross-repo coordination automation surface",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -101,7 +101,7 @@
     "heading": "## Semver discipline",
     "test": "TODO",
     "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md \u00a7\"Shared code sync \u2014 livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -109,7 +109,7 @@
     "heading": "## Versioning",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -117,7 +117,7 @@
     "heading": "## Runtime",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -125,7 +125,7 @@
     "heading": "## Dependencies",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -133,7 +133,7 @@
     "heading": "## No network I/O",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -141,7 +141,7 @@
     "heading": "## Semver discipline",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -149,7 +149,7 @@
     "heading": "## CLI shape",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -157,7 +157,7 @@
     "heading": "## Self-application",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -165,7 +165,7 @@
     "heading": "## CI matrix shape",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -173,7 +173,7 @@
     "heading": "## Boundary",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -181,7 +181,7 @@
     "heading": "## Test-Driven Development discipline",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -189,7 +189,7 @@
     "heading": "## Testing approach",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -197,7 +197,7 @@
     "heading": "## Linter rule set",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -205,7 +205,7 @@
     "heading": "## Typechecker rule set",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -213,7 +213,7 @@
     "heading": "## Code coverage thresholds",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -221,7 +221,7 @@
     "heading": "## Comment discipline",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -229,7 +229,7 @@
     "heading": "## Keyword-only arguments",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -237,7 +237,7 @@
     "heading": "## Structural pattern matching",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -245,7 +245,7 @@
     "heading": "## Toolchain pins",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -253,7 +253,7 @@
     "heading": "## Enforcement-suite invocation",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -261,7 +261,7 @@
     "heading": "## Hooks and CI",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -269,7 +269,7 @@
     "heading": "## Commit and merge discipline",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -277,7 +277,7 @@
     "heading": "## Self-application",
     "test": "TODO",
     "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "li-ldtv03"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -341,7 +341,7 @@
     "heading": "## Scenario: a blessed declared-absent spelling parses to a distinct variant carrying its reason",
     "test": "TODO",
     "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_not_applicable_variant_parses_and_carries_its_reason`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -349,7 +349,7 @@
     "heading": "## Scenario: a declared-absent variant with an empty payload is rejected at load",
     "test": "TODO",
     "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_variant_with_empty_reason_is_rejected_at_load`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -357,7 +357,7 @@
     "heading": "## Scenario: the legacy empty spelling on a union key is rejected at load",
     "test": "TODO",
     "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_role_key_variants.test_legacy_empty_target_dirs_is_now_rejected_at_load`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -365,7 +365,7 @@
     "heading": "## Scenario: an empty clean role key makes its consuming check stricter, not blinder",
     "test": "TODO",
     "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision and RESTATED for the rejecting loader in the retire-pre-1-0-stance-and-transitional-accepting-loader revision (Phase 4 replaced the WARN regime with a hard ConfigParseError). TODO is deliberate and NOT a coverage gap in the behavior: the property is already asserted at UNIT tier by `tests.livespec_dev_tooling.checks.test_config_driven_checks.test_no_except_outside_io_runs_without_io_trees`. What is missing is the INTEGRATION-tier (`tests.consumer`) test this project's Heading-taxonomy constraint requires of every `scenarios.md` heading, since a scenario describes user-observable behavior and a unit test cannot demonstrate it end-to-end. Replace TODO when the consumer-tier test lands. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -373,7 +373,7 @@
     "heading": "## Scenario: an unarmed-until payload naming a closed work item is a conformance failure",
     "test": "TODO",
     "reason": "Ratified with the scenario in the role-key-declared-absent-spellings revision; the behavior is DELIBERATELY UNIMPLEMENTED, so no test of ANY tier exists and the integration-tier (`tests.consumer`) requirement is acknowledged as unmet. The verifier must resolve work-item identifiers ACROSS trackers, and no credential class in any current vantage can: the central fleet vantage holds a GitHub credential and reaches no ledger, while the local vantage holds ONE tenant's credential and live declarations cite two. A same-tenant resolver would report green while failing to resolve half the live declarations, which is the silent-consent shape this revision removes. Replace TODO once that vantage decision is made. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -395,7 +395,7 @@
     "heading": "## Scenario: an unparseable pin file is a finding, never a passing row",
     "test": "TODO",
     "reason": "Awaits the integration-tier test landing with the can't-parse carrier conversion (the read_pin_text walker family); scenarios.md headings require an integration-tier-or-above test node id. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-3ztbdq"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -439,7 +439,7 @@
     "heading": "## Scenario: JIT replacement is immediate but installation-budgeted",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; an integration-tier consumer proof is required for this scenario.",
-    "work_item": "livespec-s43svm.5"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -447,7 +447,7 @@
     "heading": "## Scenario: JIT startup batch immediately admits all permitted demand within the half-budget point burst",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
-    "work_item": "livespec-s43svm.5"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -455,7 +455,7 @@
     "heading": "## Scenario: JIT throttle opens one shared circuit",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
-    "work_item": "livespec-s43svm.5"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -463,7 +463,7 @@
     "heading": "## Scenario: JIT fleet capacity borrows fairly without exceeding 482 runners",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
-    "work_item": "livespec-s43svm.5"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -471,7 +471,7 @@
     "heading": "## Scenario: JIT circuit state survives restart without a reburst",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
-    "work_item": "livespec-s43svm.5"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -479,7 +479,7 @@
     "heading": "## Scenario: a routed job reads the warm cache and cannot write it",
     "test": "TODO",
     "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -487,7 +487,7 @@
     "heading": "## Scenario: a job's compilation-cache writes are refused",
     "test": "TODO",
     "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -495,7 +495,7 @@
     "heading": "## Scenario: a cache fault degrades a job to cold and never fails it",
     "test": "TODO",
     "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -503,7 +503,7 @@
     "heading": "## Scenario: a canary job runs cold and is tagged",
     "test": "TODO",
     "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -511,7 +511,7 @@
     "heading": "## Scenario: a stale warm-cache generation fires the trigger",
     "test": "TODO",
     "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -519,7 +519,7 @@
     "heading": "## Scenario: a fabro sandbox hits the shared compilation cache",
     "test": "TODO",
     "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -527,7 +527,7 @@
     "heading": "## Adaptive JIT runner admission budget",
     "test": "TODO",
     "reason": "Implementation follows in livespec-s43svm.5; a controller integration-tier proof is required for this NFR.",
-    "work_item": "livespec-s43svm.5"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -535,7 +535,7 @@
     "heading": "## Runner-pool build cache tiers",
     "test": "TODO",
     "reason": "Seeded by plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip) at revise time 2026-09-04. Replace TODO with the isolation-suite / cache-telemetry test IDs when the first child (warm-cargo-registry, cache-pod-spans, cache-negative-tests) lands.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -543,7 +543,7 @@
     "heading": "## Runner-pool cache telemetry",
     "test": "TODO",
     "reason": "Seeded by plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip) at revise time 2026-09-04. Replace TODO with the isolation-suite / cache-telemetry test IDs when the first child (warm-cargo-registry, cache-pod-spans, cache-negative-tests) lands.",
-    "work_item": "livespec-dev-tooling-efqeip"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -551,7 +551,7 @@
     "heading": "## Runner-pool node rebuild recipe",
     "test": "TODO",
     "reason": "Seeded by livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn) at revise time 2026-09-06. Replace TODO with the test id that asserts the bare-metal stage exists under ci-runner/k3s/phase0-bare-metal/, is named first in the documented rebuild sequence, and reads every node value from a profile, when the phase0 child lands.",
-    "work_item": "livespec-sab5gn"
+    "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -559,6 +559,6 @@
     "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
     "test": "TODO",
     "reason": "Seeded by livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn) at revise time 2026-09-06. A scenario describes end-to-end behavior, so its test MUST resolve to the integration tier or above: the mapped test is the integration-tier rehearsal of the rebuild procedure against a node profile; replace TODO with that test id when it lands.",
-    "work_item": "livespec-sab5gn"
+    "work_item": "livespec-dev-tooling-xx57"
   }
 ]
