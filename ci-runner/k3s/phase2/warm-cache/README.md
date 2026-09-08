@@ -830,27 +830,57 @@ of which alone saves an image, and none of which is allowed to answer
    the `@sha256:` ref are two references to the SAME record — which is
    why the resident count is exactly twice the tag count — so they are
    removed together or not at all.
-4. **Live references, from two sources.** (a) The cluster: every image
+4. **Live references, from three sources.** (a) The cluster: every image
    named by any PodSpec of a Pod, Deployment, StatefulSet, DaemonSet,
    ReplicaSet, Job or CronJob, in every namespace. (b) The node: every
    image and imageRef of every container that exists in containerd,
-   running or not. Reading WORKLOADS and not just running containers is
-   not caution for its own sake — this pool has two objects pinning old
-   tags and holding no pod between runs, and a naive newest-N would have
-   deleted both: `warm-cache-cronjob.yaml` pins
-   `:python-rust-fuzz-v1.46.0` on a half-hourly schedule, and
-   `../isolation/negative-control-job.yaml` pins `:python-v1.40.1` every
-   six hours. The union is taken as widely as the JSON allows — every
-   `"image"`, `"imageID"` and `"imageRef"` string in either dump,
-   including status fields — because over-protection costs disk and
-   under-protection costs a workload.
-5. **Fail closed, twice.** A cluster read that errors, or that succeeds
-   and names no image at all, STOPS the run: an empty result from a query
-   meant to enumerate a live cluster reads exactly like "nothing is
-   protected", which is the one answer that would authorise deleting
-   everything (`.ai/verifying-against-the-right-source.md`). And the
-   protected set is collected AGAIN immediately before the first removal,
-   with every candidate re-tested, so a pod admitted while the script was
+   running or not. (c) **This repository's own committed manifests**,
+   extracted at install time (below). Reading WORKLOADS and not just
+   running containers is not caution for its own sake —
+   `warm-cache-cronjob.yaml` pins `:python-rust-fuzz-v1.46.0` on a
+   half-hourly schedule and holds no pod between runs, so a naive
+   newest-N would have deleted it. Source (c) is the same argument taken
+   one step further, and it was added because the implementation stopped
+   short of it: `../isolation/negative-control-job.yaml` pins
+   `:python-v1.40.1` and is a `kind: Job` applied by hand, with
+   `ttlSecondsAfterFinished` so the object removes itself afterwards —
+   so for almost all of its life it exists only as a file here, and
+   `kubectl get cronjobs,jobs -A` does not see it. A report-only run
+   against `poweredge-xubuntu` on 2026-09-08 protected the CronJob's tag
+   and **listed the negative control's for removal** (`livespec-ifwnqj.7`);
+   both sit far outside the keep window, so both depended entirely on
+   this gate and only one was in it. Reading only DEPLOYED definitions
+   treats "nothing is running it right now" as "nothing needs it", which
+   is the running-containers mistake of source (b) one level up. Source
+   (c) catches a second class the cluster read cannot see either: the
+   container-job image every routed workflow in `.github/workflows/`
+   names. A workflow's pod exists only while the job runs, so between
+   runs that tag is in no cluster object and no container — it is only a
+   line in a committed YAML file. Those name a recent release today,
+   which the keep window covers anyway; the window is not a promise and a
+   pin is. The union is taken as widely as each source allows — every `"image"`,
+   `"imageID"` and `"imageRef"` string in either JSON dump including
+   status fields, and every reference to the scope repository in every
+   YAML file of this repository whatever that file is for — because
+   over-protection costs disk and under-protection costs a workload.
+   Neither scan names what it is allowed to find something in, which is
+   also the answer to "why not a keep-list of protected tags": a
+   hand-maintained one drifts silently, and the drift would be invisible
+   in exactly the way this gap was.
+5. **Fail closed, three times.** A cluster read that errors, or that
+   succeeds and names no image at all, STOPS the run: an empty result
+   from a query meant to enumerate a live cluster reads exactly like
+   "nothing is protected", which is the one answer that would authorise
+   deleting everything (`.ai/verifying-against-the-right-source.md`). A
+   missing, unreadable or empty repo-pins file stops it for the same
+   reason one source along — "this repository pins nothing" is
+   indistinguishable from "the file did not install", and the second
+   would authorise removing exactly what source (c) exists to save.
+   (Sources (a) and (c) are counted and gated SEPARATELY: the repo pins
+   are never empty, so folding them in first would let an empty cluster
+   read sail past the check that exists to catch it.) And the protected
+   set is collected AGAIN immediately before the first removal, with
+   every candidate re-tested, so a pod admitted while the script was
    deciding is not pruned out from under itself. That, plus the fact that
    removing an image reference does not disturb a container already
    running from it, is what "safe to run while CI is active" rests on.
@@ -875,6 +905,35 @@ earlier gate do not consume their family's budget, so the resident set
 settles at N per family plus whatever is protected. The policy can keep
 more than N; it never keeps fewer.
 
+**What the report's MiB column is not.** The candidate total is the
+per-record sizes ADDED UP, and it is not reclaimable disk. The first live
+report-only run summed ~97 GB over 212 candidate records on a node whose
+entire containerd root — every image on it, not just these — measures 24
+GB, and that number was read as free space (`livespec-ifwnqj.7`). It
+cannot be: the byte-identical finding at the top of this section is
+exactly the reason, since containerd stores a shared layer once while a
+per-record sum charges it to every record naming it. There is no
+shared-layer-aware figure to print in its place — CRI's ImageService
+reports a per-image size and exposes no layer graph — so the report
+states in full what the number is and what it is not, immediately beside
+it. What this prune bounds is the RECORD count.
+
+**Where source 4(c)'s data comes from, and how old it is.** The prune
+runs on a node out of `/usr/local/lib/ci-runner-k3s`, where no checkout
+of this repository is guaranteed to exist, so it cannot scan the
+repository itself. `install-sandbox-image-prune.sh` does the scan
+instead, from the tree it is run out of, and installs the result beside
+the script as `prune-sandbox-images.repo-pins` — one image reference per
+line. That makes the file a SNAPSHOT, as old as the last install: a
+manifest whose pin changed afterwards is not protected until the
+installer runs again. It is the same "merging is not deploying" property
+every unit in this tree has, since the installed script is a copy too,
+and the staleness leans safe — a pin DELETED from the repository keeps
+protecting its image until the next install, while a NEWLY added pin is
+unprotected by this gate until then. A new pin is normally a recent
+release the newest-N window already covers; a new pin to an OLD tag is
+the case that needs the installer re-run.
+
 ### Paths
 
 | Path | Role |
@@ -883,10 +942,11 @@ more than N; it never keeps fewer.
 | `registry-mirror/registries.yaml.template` | The node-side artifact, with one `@MIRROR_ENDPOINT@` placeholder. A template and not a file because the endpoint differs by role: the server reaches the mirror on loopback, an agent at the carrier's LAN address. |
 | `registry-mirror/install-registry-mirror.sh` | Renders that template for the run's role and writes `/etc/rancher/k3s/registries.yaml`. Role and carrier address are DERIVED from the profile (`CLUSTER_ROLE`, and the host of `CLUSTER_JOIN_ADDRESS` on an agent), or given explicitly with `--role` / `--mirror-endpoint`. Idempotent — a second run with the same inputs says "unchanged" and writes nothing — and it REFUSES rather than overwrites a `registries.yaml` it did not write, since a hand-written one may carry private-registry credentials. Never restarts k3s. `--dry-run` prints the rendered file and the command sequence and executes nothing. |
 | `registry-mirror/converge-registry-mirror.sh` | The idempotent apply of the cluster objects, with a config-hash stamp so an edit rolls the pod and a bounded rollout wait. Same shape as `../crates-proxy/converge-crates-proxy.sh`, including `--dry-run`. |
-| `sandbox-image-prune/prune-sandbox-images.sh` | The policy. Reports by default; `--apply` removes; `--keep N` sets the per-family budget. Its header states all five gates in full. |
+| `sandbox-image-prune/prune-sandbox-images.sh` | The policy. Reports by default; `--apply` removes; `--keep N` sets the per-family budget. Its header states all five gates in full. Reads `prune-sandbox-images.repo-pins` beside its own installed copy as gate 4(c), and refuses to run if that file is missing or empty. |
+| `sandbox-image-prune/prune-sandbox-images.repo-pins` | NOT in this repository — a data file RENDERED by the installer into `/usr/local/lib/ci-runner-k3s/` beside the script, holding every reference to the scope repository found in this repository's YAML. Regenerated on every install, so re-run the installer after committing a manifest that pins an old tag. |
 | `sandbox-image-prune/prune-sandbox-images.service` + `.timer` | One oneshot pass with `--apply` spelled out in the unit, `Requires=k3s.service` (a safety ordering: without the API server the central gate cannot be answered, and an agent runs `k3s-agent.service`, so the unit cannot start there), every 6 hours with the first tick 30 minutes after boot. |
-| `sandbox-image-prune/install-sandbox-image-prune.sh` | Installs the script to `/usr/local/lib/ci-runner-k3s/` and enables the TIMER (never the service). SERVER-only, as a hard refusal. `--dry-run` prints the plan and executes nothing. |
-| `sandbox-image-prune/prune-sandbox-images-exit-tests.sh` | The prune's exit tests, with `crictl` and `kubectl` faked and every `rmi` sent to a tripwire, so the decisions are proved without a containerd, a cluster, root, or a single image removed anywhere: the ARC runner image is never named; a CronJob-only tag survives while the older release beside it does not; a one-release family keeps its release where a global newest-N would starve it; v1.5.0 is pruned while v1.49.0 is kept; a record holding one kept tag is kept whole; the paired digest ref is shown going with the tag; a bare run removes nothing; `--apply` removes exactly the candidates; a failing and an empty cluster read each stop the run; and a candidate that becomes referenced mid-run is skipped. |
+| `sandbox-image-prune/install-sandbox-image-prune.sh` | Installs the script to `/usr/local/lib/ci-runner-k3s/` and enables the TIMER (never the service). Also renders the repo-pins file above: it reads the scope repository OUT OF the prune script rather than repeating it, scans every YAML file in the repository tree (`.git` and `.venv` excluded) for a reference to it, and REFUSES to install if the scan finds none — zero means the scan looked at the wrong tree, and an empty pins file would disarm gate 4(c) silently. SERVER-only, as a hard refusal. `--dry-run` prints the plan, including the real extracted pins, and installs nothing. |
+| `sandbox-image-prune/prune-sandbox-images-exit-tests.sh` | The prune's exit tests, with `crictl` and `kubectl` faked and every `rmi` sent to a tripwire, so the decisions are proved without a containerd, a cluster, root, or a single image removed anywhere: the ARC runner image is never named; a CronJob-only tag survives while the older release beside it does not; a one-release family keeps its release where a global newest-N would starve it; v1.5.0 is pruned while v1.49.0 is kept; a record holding one kept tag is kept whole; the paired digest ref is shown going with the tag; a bare run removes nothing; `--apply` removes exactly the candidates; a failing and an empty cluster read each stop the run; and a candidate that becomes referenced mid-run is skipped. It also covers gate 4(c) by running the script out of a scratch directory laid out the way the installer lays out `/usr/local/lib/ci-runner-k3s` — the real resolution path, rather than a test-only override that would amount to a knob for aiming a fail-closed gate at a file of the caller's choosing: a release pinned ONLY by a committed manifest is kept, the same fixture with that pin absent from the repository lists it for removal (so the protection is shown to come from that source), and an absent or empty pins file each stop the run. |
 
 ### Applying it — none of this is live yet
 

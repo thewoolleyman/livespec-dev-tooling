@@ -4,6 +4,35 @@
 # the oneshot unit plus its timer into /etc/systemd/system, with the TIMER
 # enabled and started. Item `livespec-h96p`.
 #
+# IT ALSO RENDERS ONE DATA FILE, AND THAT IS THE ONLY REASON THIS INSTALLER
+# READS THE REPOSITORY AT ALL. ./prune-sandbox-images.sh gate 4(c) protects
+# every sandbox image that a manifest COMMITTED HERE pins, not only the ones a
+# live cluster object names — the gap `livespec-ifwnqj.7` recorded, where
+# ../../isolation/negative-control-job.yaml pins `:python-v1.40.1` in a
+# `kind: Job` applied by hand, so no cluster object holds it between runs and
+# the prune listed it for removal. The prune cannot answer that itself: it runs
+# on a node out of /usr/local/lib/ci-runner-k3s, where no checkout of this
+# repository is guaranteed to exist. So the extraction happens HERE, where the
+# repository demonstrably does exist, and the result is installed beside the
+# script as `prune-sandbox-images.repo-pins`, one image reference per line.
+#
+# WHICH MAKES THE FILE A SNAPSHOT. It is as old as the last run of this
+# installer, so a manifest whose pin changed afterwards is not protected until
+# this runs again — the same "merging is NOT deploying" property the installed
+# script itself has, since that is a COPY too. Re-run this after any manifest
+# change that pins an OLD tag; a pin to a recent release is already inside the
+# prune newest-N window and needs nothing.
+#
+# THE SCAN IS DELIBERATELY WIDER THAN THE MANIFESTS ANYONE WOULD THINK TO NAME.
+# Every YAML file in the repository tree is searched for a reference to the
+# prune scope repository, with no list of which files are allowed to carry one
+# — the same shape as the prune JSON text-scrape of the cluster dump, and for
+# the same reason. A keep-list of protected tags, or an allow-list of manifest
+# paths, would drift silently the day someone adds a manifest and forgets, and
+# that drift would be invisible in exactly the way the original gap was. Two
+# directories are excluded because they are not this repository manifests: the
+# `.git` object store, and a `.venv` package install.
+#
 # WHY THE TIMER IS STARTED HERE AND THE SERVICE IS NOT. The unit itself is a
 # bounded pass that removes only what ./prune-sandbox-images.sh's gates leave
 # as surplus, and the timer's first tick is 30 minutes after boot — so there is
@@ -33,7 +62,11 @@
 #
 # NODE-LOCAL, like the sibling installers: re-run after any node rebuild, and
 # after editing ./prune-sandbox-images.sh (the installed copy is a COPY).
-# Requires: root, systemd. `--dry-run` requires neither and executes nothing.
+# Requires: root, systemd. `--dry-run` requires neither and installs nothing.
+# It DOES perform the manifest scan, into a scratch directory of its own and
+# nowhere else, so the pin count it prints is the real one — a dry run that
+# reported a made-up number for the one thing this installer derives would be
+# worse than not printing it.
 #
 # Usage: install-sandbox-image-prune.sh [--dry-run] [--role server|agent] [PROFILE]
 #   PROFILE  path to ../../../phase0-bare-metal/profiles/<node>.env, read for
@@ -50,6 +83,9 @@ UNIT_DIR="/etc/systemd/system"
 SERVICE="prune-sandbox-images.service"
 TIMER="prune-sandbox-images.timer"
 PRUNE="prune-sandbox-images.sh"
+# The prune resolves this name beside its own installed copy, so the two spell
+# it the same way by construction rather than by agreement.
+PINS="${PRUNE%.sh}.repo-pins"
 
 USAGE="usage: ${SCRIPT_NAME} [--dry-run] [--role server|agent] [PROFILE]"
 
@@ -115,9 +151,62 @@ for artifact in "$PRUNE" "$SERVICE" "$TIMER"; do
   [ -f "${SCRIPT_DIR}/${artifact}" ] || die "missing artifact: ${SCRIPT_DIR}/${artifact}"
 done
 
+WORKDIR="$(mktemp -d)"
+cleanup() { rm -rf "$WORKDIR"; }
+trap cleanup EXIT
+
+# ---------------------------------------------------------------------------
+# The repo-pins file (see the header): every reference to the prune scope
+# repository that any YAML file of this repository carries.
+# ---------------------------------------------------------------------------
+# The repository root, reached by walking up out of this tree rather than
+# guessed from `pwd`, so the scan reads the checkout this script belongs to
+# whatever directory it was invoked from. It is then CONFIRMED, because a
+# wrongly-rooted `find` returns nothing and "nothing" is precisely the answer
+# this whole change exists to stop anyone from acting on.
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
+[ -d "${REPO_ROOT}/ci-runner/k3s/phase2" ] || die "expected the repository root five levels above ${SCRIPT_DIR}, but ${REPO_ROOT} has no ci-runner/k3s/phase2. This tree has moved and the walk-up above has not; nothing was installed"
+
+# The scope repository is READ OUT OF the prune script, never repeated here. It
+# is the value gate 1 calls the safety property, and two copies of it is one
+# copy too many: a divergence would leave the prune protecting one repository
+# while this installer extracted pins for another, with nothing anywhere to
+# notice. `die` cannot be used inside the command substitution (it would exit
+# only the subshell), hence the `|| die` on the assignment.
+prune_repository() {  # prune_repository -> the prune scope constant on stdout
+  local matches
+  matches="$(sed -n 's/^REPOSITORY="\([^"]*\)"$/\1/p' "${SCRIPT_DIR}/${PRUNE}")"
+  [ "$(printf '%s\n' "$matches" | grep -c .)" -eq 1 ] || return 1
+  printf '%s' "$matches"
+}
+REPOSITORY="$(prune_repository)" || die "could not read exactly one REPOSITORY=\"...\" line out of ${SCRIPT_DIR}/${PRUNE}. This installer extracts pins for exactly the repository the prune protects and refuses to guess which one that is"
+
+# ERE-escaped in full rather than just the dots the current value happens to
+# contain, so a future scope constant carrying a `+` or a `?` cannot turn this
+# grep into a pattern that matches something else.
+ere_escape() {  # ere_escape STRING -> the same string, safe inside an ERE
+  printf '%s' "$1" | sed -e 's/[\\^$.[|()*+?{]/\\&/g' -e 's/]/\\]/g'
+}
+
+PINS_FILE="${WORKDIR}/${PINS}"
+find "$REPO_ROOT" \( -name .git -o -name .venv \) -prune -o -type f \( -name '*.yaml' -o -name '*.yml' \) -print0 \
+  | xargs -0 -r grep -ohE "$(ere_escape "$REPOSITORY")(:[A-Za-z0-9_][A-Za-z0-9_.-]*|@sha256:[0-9a-f]+)" \
+  | sort -u > "$PINS_FILE" || true
+PIN_COUNT="$(grep -c . "$PINS_FILE" || true)"
+
+# Zero is refused, and it is the same refusal the prune makes when the file is
+# missing. This repository pins at least the warm cache own CronJob image, so a
+# scan finding nothing has looked in the wrong place — a partial checkout, a
+# tree without its manifests — and installing an empty file would disarm gate
+# 4(c) silently, at the exact place it matters. The prune refuses to run with
+# one anyway, so writing it would only move the failure to the next timer tick.
+[ "$PIN_COUNT" -gt 0 ] || die "found no reference to ${REPOSITORY} in any YAML file under ${REPO_ROOT}. This repository pins at least the warm-cache CronJob image, so zero means the scan looked at the wrong tree rather than a repository that pins nothing. Nothing was installed"
+
 printf '== %s plan ==\n' "$SCRIPT_NAME"
 printf 'role:    %s\n' "$ROLE"
 printf 'script:  %s -> %s/%s\n' "$PRUNE" "$LIB_DIR" "$PRUNE"
+printf 'pins:    %s reference(s) to %s found in the YAML of %s -> %s/%s\n' "$PIN_COUNT" "$REPOSITORY" "$REPO_ROOT" "$LIB_DIR" "$PINS"
+while IFS= read -r pin; do printf '           %s\n' "$pin"; done < "$PINS_FILE"
 printf 'units:   %s (enabled + started), %s (installed, never started here)\n' "$TIMER" "$SERVICE"
 
 if [ "$ROLE" = agent ]; then
@@ -142,9 +231,10 @@ if [ "$DRY_RUN" -eq 0 ]; then
   command -v systemctl >/dev/null || die "systemctl not found on PATH"
 fi
 
-log "1. Install the prune script to ${LIB_DIR}"
+log "1. Install the prune script and its repo-pins file to ${LIB_DIR}"
 run install -d -m 0755 "${LIB_DIR}"
 run install -m 0755 "${SCRIPT_DIR}/${PRUNE}" "${LIB_DIR}/${PRUNE}"
+run install -m 0644 "$PINS_FILE" "${LIB_DIR}/${PINS}"
 
 log "2. Install the unit and its timer"
 run install -m 0644 "${SCRIPT_DIR}/${SERVICE}" "${UNIT_DIR}/${SERVICE}"
