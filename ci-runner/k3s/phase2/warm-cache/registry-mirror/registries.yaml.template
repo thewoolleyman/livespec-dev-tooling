@@ -1,0 +1,38 @@
+# registries.yaml — the NODE-side half of the ghcr pull-through cache
+# (./registry-mirror.yaml). Installed to /etc/rancher/k3s/registries.yaml by
+# ./install-registry-mirror.sh, which is the only thing that expands the one
+# placeholder below. Item `livespec-h96p`.
+#
+# A TEMPLATE AND NOT A FILE, for exactly one reason: the endpoint differs by
+# node role, and there is no spelling that is right on both. The cache's store
+# is a hostPath on the node carrying the `ci-cache` tier, so the SERVER reaches
+# it on loopback and an AGENT must reach it at that node's LAN address. The
+# installer derives which from the run's profile — `CLUSTER_ROLE` for the role,
+# `CLUSTER_JOIN_ADDRESS` for the carrier's address on an agent — so the value
+# comes from the same committed profile every other node fact comes from
+# rather than being typed at a call site.
+#
+# k3s reads this file at START, so installing it changes nothing until the next
+# k3s start. That restart is NOT this installer's to take: it kills every
+# running job on the pool (../../k3s-config/config.yaml says the same about its
+# own `tls-san` list). Install it, and let the next reboot or maintenance
+# window pick it up.
+#
+# WHY ONLY ghcr.io IS LISTED. A pull-through instance proxies exactly one
+# upstream, and this one proxies ghcr. Every other registry the node pulls from
+# — docker.io for the mirror's own image, registry.k8s.io, quay.io — is absent
+# here on purpose and keeps behaving exactly as it does today. A registry NOT
+# named in this file is never affected by it.
+#
+# WHAT HAPPENS WHEN THE MIRROR IS DOWN: nothing that matters. Containerd has an
+# implicit default endpoint that k3s documents as "always tried as a last
+# resort, even if there are other endpoints listed for that registry in
+# registries.yaml", so a refused connection to the mirror costs one failed dial
+# and the pull then goes to ghcr as before. That fallback is what makes this
+# file safe to install ahead of the mirror ever running, and it is why
+# `--disable-default-registry-endpoint` — the k3s node flag that removes it —
+# must never be set on this pool.
+mirrors:
+  ghcr.io:
+    endpoint:
+      - "@MIRROR_ENDPOINT@"

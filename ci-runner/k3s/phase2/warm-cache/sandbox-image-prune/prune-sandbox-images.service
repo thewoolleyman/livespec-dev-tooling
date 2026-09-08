@@ -1,0 +1,36 @@
+# prune-sandbox-images.service — one pass of the Fabro sandbox-image prune
+# (see ./prune-sandbox-images.sh for every gate it applies before removing
+# anything). Item `livespec-h96p`.
+#
+# Oneshot rather than a daemon: the work is a bounded pass over one
+# repository's image records, so there is nothing to keep resident between
+# runs, and a oneshot's exit status is a signal the timer records for free.
+#
+# `--apply` IS SPELLED OUT HERE, in the open. The script removes nothing
+# without it — a bare invocation reports and exits — so an operator reading
+# this unit can see exactly which of the two behaviours is scheduled, and
+# `systemctl cat prune-sandbox-images.service` is the whole answer to "does
+# this thing delete images". Drop the flag and the timer becomes a monitor.
+#
+# Requires=k3s.service, and that is a SAFETY ordering rather than a
+# convenience. The prune's central gate is a cluster-wide read of every
+# workload's PodSpec; without the API server it cannot know what is needed, and
+# its own fail-closed check would end the run non-zero on every tick. Requiring
+# the unit is also what keeps this off an agent node structurally: an agent
+# runs `k3s-agent.service`, not `k3s.service`, so this unit cannot start there
+# even if the file were installed by hand. The sibling wedged-runner and
+# runner-pod-lifecycle scans are ordered the same way for the same reason.
+#
+# KUBECONFIG is set here because a systemd service has no login shell, so the
+# cluster credential has to be named explicitly rather than inherited — the
+# same line the sibling arc-log-archive unit carries.
+[Unit]
+Description=Prune surplus Fabro sandbox images from this node's containerd
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ci-runner/k3s/phase2/warm-cache/README.md
+Requires=k3s.service
+After=k3s.service network-online.target
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/lib/ci-runner-k3s/prune-sandbox-images.sh --apply
