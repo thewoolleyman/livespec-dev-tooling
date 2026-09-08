@@ -18,6 +18,11 @@ epic owes close evidence when its slug names a live or archived directory, and
 owes a typed pointer when it is OPEN and its slug names a LIVE one. An epic with
 no directory at all owes neither, and grading it would report a violation of a
 rule the contract does not state.
+
+Close evidence is owed from `CLOSE_EVIDENCE_CUTOFF_DAY` forward, for the same
+reason: an epic closed before the writing primitive existed owes evidence to a
+discipline that had no mechanism, and its only remaining route to green would be
+to fabricate the comment. See that constant for the pinned commit.
 """
 
 from __future__ import annotations
@@ -36,6 +41,7 @@ from livespec_dev_tooling.checks._plan_record_model import (
     ERROR_VERDICT,
     WARN_VERDICT,
     Finding,
+    closed_day,
     is_closed,
     plan_slug_of,
 )
@@ -47,11 +53,29 @@ from livespec_dev_tooling.checks._plan_record_next_action import (
 )
 
 __all__: list[str] = [
+    "CLOSE_EVIDENCE_CUTOFF_DAY",
     "DEFAULT_DAILY_COMMENT_THRESHOLD",
     "timeline_findings",
 ]
 
 DEFAULT_DAILY_COMMENT_THRESHOLD = 6
+
+# The UTC day the archive gate's completeness-review-evidence discipline landed:
+# `livespec-orchestrator-beads-fabro` commit 2a7e9107, "feat: orchestrate plan
+# archive review evidence" (2026-08-16), which added `_plan_archive_review` and
+# the `record_completeness_review_evidence` primitive that WRITES the comment
+# this verdict reads. The check itself shipped 2026-09-06 and is the upper
+# bound; the pinned commit is the earliest day an epic could have carried the
+# evidence at all.
+#
+# This is a GRANDFATHER clause, not a severity knob. An epic closed before that
+# day cannot satisfy the verdict by any honest route — the writing primitive did
+# not exist, the stated remediation (re-run the archive gate) is unavailable on
+# an already-archived plan, and appending the comment after the fact is the
+# fabrication the verdict exists to prevent. Grading those closes reports a
+# violation of a rule that had no mechanism. From the cutoff forward the
+# evidence is required UNCONDITIONALLY, on every route into a closed status.
+CLOSE_EVIDENCE_CUTOFF_DAY = "2026-08-16"
 
 _EVIDENCE_REMEDIATION = (
     "record durable independent completeness-review evidence on the epic "
@@ -115,7 +139,7 @@ def _close_evidence_findings(
     comments: list[dict[str, object]],
     graded: bool,
 ) -> list[Finding]:
-    if not graded or not is_closed(record=epic):
+    if not graded or not is_closed(record=epic) or _closed_before_cutoff(epic=epic):
         return []
     if any(
         is_completeness_review_evidence(text=comment_text(comment=comment)) for comment in comments
@@ -130,6 +154,18 @@ def _close_evidence_findings(
             remediation=_EVIDENCE_REMEDIATION,
         )
     ]
+
+
+def _closed_before_cutoff(*, epic: dict[str, object]) -> bool:
+    """Report whether an epic closed before the evidence discipline existed.
+
+    ISO-8601 days sort lexicographically, so the comparison is the string one.
+    An epic whose close day is UNKNOWN is graded rather than grandfathered: the
+    cutoff excuses records the discipline could not reach, and a record carrying
+    no readable stamp at all is not evidence of an early close.
+    """
+    day = closed_day(record=epic)
+    return day is not None and day < CLOSE_EVIDENCE_CUTOFF_DAY
 
 
 def _next_action_findings(

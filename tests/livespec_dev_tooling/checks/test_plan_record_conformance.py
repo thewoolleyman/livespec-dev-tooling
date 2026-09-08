@@ -155,14 +155,26 @@ def _epic_record(
     slug: str | None = None,
     next_action: object | None = None,
     last_session: str | None = _SESSION,
+    closed_at: str | None = None,
+    updated_at: str | None = None,
 ) -> dict[str, object]:
-    """Build one same-tenant plan epic record."""
-    return {
+    """Build one same-tenant plan epic record.
+
+    The two timestamps are omitted unless declared, mirroring the ledger's
+    `omitempty` serializer: a record the store never stamped drops the key
+    entirely rather than carrying a null.
+    """
+    record: dict[str, object] = {
         "id": item_id,
         "type": "epic",
         "status": status,
         "metadata": _metadata(slug=slug, next_action=next_action, last_session=last_session),
     }
+    if closed_at is not None:
+        record["closed_at"] = closed_at
+    if updated_at is not None:
+        record["updated_at"] = updated_at
+    return record
 
 
 def _conforming_epic(*, slug: str = "live") -> dict[str, object]:
@@ -539,6 +551,55 @@ def test_plan_close_evidence_hits_a_closed_record_without_evidence(
     assert result.returncode == 1
     assert "plan_close_evidence" in result.stderr
     assert _EPIC in result.stderr
+
+
+def test_plan_close_evidence_grandfathers_a_pre_cutoff_close_and_grades_a_later_one(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both cutoff arms: the legacy close is silent, the same record closed later is not."""
+    root = _armed_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _plan_record(root=root, relative="plan/archive/done", anchor=f"{_EPIC}\n")
+    timeline = {_EPIC: [_comment(text="plan-handoff-entry\nauthor: a\n\nnothing durable here")]}
+
+    legacy = _run(
+        cwd=root,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        items=[_epic_record(status="closed", slug="done", closed_at="2026-08-15T23:59:59Z")],
+        comments=timeline,
+    )
+    governed = _run(
+        cwd=root,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        items=[_epic_record(status="closed", slug="done", closed_at="2026-08-16T00:00:01Z")],
+        comments=timeline,
+    )
+
+    assert legacy.returncode == 0
+    assert _EPIC not in legacy.stderr
+    assert governed.returncode == 1
+    assert "plan_close_evidence" in governed.stderr
+    assert _EPIC in governed.stderr
+
+
+def test_plan_close_evidence_reads_updated_at_when_the_close_stamp_is_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A close written as a direct status write leaves no `closed_at` to read."""
+    root = _armed_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _plan_record(root=root, relative="plan/archive/done", anchor=f"{_EPIC}\n")
+
+    result = _run(
+        cwd=root,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        items=[_epic_record(status="closed", slug="done", updated_at="2026-07-26T00:00:00Z")],
+        comments={_EPIC: [_comment(text="plan-handoff-entry\nauthor: a\n\nnothing durable here")]},
+    )
+
+    assert result.returncode == 0
+    assert _EPIC not in result.stderr
 
 
 def test_plan_next_action_typed_hits_an_absent_and_an_ill_typed_pointer(
