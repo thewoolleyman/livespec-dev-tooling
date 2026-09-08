@@ -44,6 +44,10 @@ from typing import NamedTuple
 
 import pytest
 
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
+
 __all__: list[str] = []
 
 
@@ -529,3 +533,31 @@ def test_file_lloc_module_importable_without_running_main() -> None:
     """The check module imports cleanly without invoking main()."""
     module = _load_check_module()
     assert callable(module.main)
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    `SPECIFICATION/contracts.md` section "Configuration loader" puts the catch
+    at this check's `main()` supervisor. This module reached the loader only
+    TRANSITIVELY — it never names `load_config`, it calls
+    `resolve_check_universe`, which parses the consumer config itself to get
+    the `tests_tree_prefix` it filters its walk with. That indirection is why
+    it survived the first sweep of `livespec-dev-tooling-efxa`: the sweep's
+    own repo-wide scan looked for direct `load_config` callers and this module
+    is not one, so it read as compliant while still emitting a raw traceback.
+    Measured 2026-09-08 against a malformed `pyproject.toml`, `main()` here
+    raised `ConfigParseError` where the migrated peers rendered and returned 1.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="file_lloc",
+        check_id="file_lloc",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )

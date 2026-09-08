@@ -39,8 +39,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._role_key_gate import resolve_role_prefixes  # noqa: E402
-from livespec_dev_tooling.config import MirrorPairing, load_config  # noqa: E402
+from livespec_dev_tooling.config import MirrorPairing  # noqa: E402
 
 __all__: list[str] = []
 
@@ -105,7 +106,9 @@ def main() -> int:
     )
     log = structlog.get_logger("tests_mirror_pairing")
     cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
+    config = load_config_or_report(repo_root=cwd, log=log, check_id="tests_mirror_pairing")
+    if config is None:
+        return 1
     # Resolved BEFORE the `or`, not inside the fallback arm. `source_tree_prefixes`
     # is part of this check's configuration surface whether or not the
     # `mirror_pairings` short-circuit consults it, and Phase 1's purpose is a

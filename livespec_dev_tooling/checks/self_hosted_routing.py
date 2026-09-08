@@ -67,13 +67,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._self_hosted_routing_parse import (  # noqa: E402
     fail_open_reason,
     runs_on_values,
     strip_yaml_comments,
     workflow_triggers,
 )
-from livespec_dev_tooling.config import load_config  # noqa: E402
 
 __all__: list[str] = []
 
@@ -247,9 +247,10 @@ def main() -> int:
     )
     log = structlog.get_logger("self_hosted_routing")
     cwd = Path.cwd()
-    gating_labels = _DEFAULT_GATING_LABELS | frozenset(
-        load_config(repo_root=cwd).gating_self_hosted_labels
-    )
+    config = load_config_or_report(repo_root=cwd, log=log, check_id=_CHECK_ID)
+    if config is None:
+        return 1
+    gating_labels = _DEFAULT_GATING_LABELS | frozenset(config.gating_self_hosted_labels)
     findings = _collect_findings(cwd=cwd, gating_labels=gating_labels)
     for trigger in findings.triggers:
         log.error(

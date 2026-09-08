@@ -37,10 +37,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     is_under_any_tree,
-    load_config,
-    resolve_check_universe,
     role_trees,
 )
 
@@ -106,8 +105,10 @@ def _scan_file(*, path: Path) -> list[tuple[int, str]]:
 
 def main() -> int:
     log = _configure_logger()
-    root, universe = resolve_check_universe()
-    config = load_config(repo_root=root)
+    resolved = resolve_check_context_or_report(log=log, check_id="comment_line_anchors")
+    if resolved is None:
+        return 1
+    root, universe, config = resolved
     legacy_offenders = 0
     for rel in universe:
         is_legacy = is_under_any_tree(rel=rel, trees=role_trees(role=config.target_dirs))

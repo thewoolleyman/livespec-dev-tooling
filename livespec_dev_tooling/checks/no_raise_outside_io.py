@@ -85,11 +85,8 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
-from livespec_dev_tooling.config import (  # noqa: E402
-    Config,
-    load_config,
-    resolve_check_universe,
-)
+from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
+from livespec_dev_tooling.config import Config  # noqa: E402
 
 __all__: list[str] = []
 
@@ -200,7 +197,10 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("no_raise_outside_io")
-    root, universe = resolve_check_universe()
+    resolved = resolve_check_context_or_report(log=log, check_id="no_raise_outside_io")
+    if resolved is None:
+        return 1
+    root, universe, config = resolved
     # A genuinely codeless repo is a PASS, not a configuration error. It is the
     # one exemption the railway clause grants, and `resolve_check_universe`
     # raises typed git errors rather than returning a spuriously-empty walk, so
@@ -208,7 +208,6 @@ def main() -> int:
     if not universe:
         log.info("no first-party Python to check", check_id="no_raise_outside_io")
         return 0
-    config = load_config(repo_root=root)
     sources = {rel: (root / rel).read_text(encoding="utf-8") for rel in universe}
     # Derived from the WHOLE universe, exempt files included: `io/` and
     # `errors.py` are exempt from RAISING a domain error, not from DEFINING one.

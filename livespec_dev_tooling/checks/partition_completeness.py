@@ -37,10 +37,9 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
-    load_config,
-    resolve_check_universe,
     role_path,
     role_prefixes,
     role_trees,
@@ -123,8 +122,12 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
 
 def main() -> int:
     log = _configure_logger()
-    root, universe = resolve_check_universe()
-    config = load_config(repo_root=root)
+    resolved = resolve_check_context_or_report(log=log, check_id="partition_completeness")
+    if resolved is None:
+        return 1
+    # The root is unused here: this check reads only the universe and the
+    # config, and resolves each file's claims from the repo-relative path.
+    _root, universe, config = resolved
     for rel in universe:
         claims = _effective_claims(rel=rel, config=config)
         if not claims:

@@ -74,6 +74,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
 from livespec_dev_tooling.checks._no_except_outside_io_markers import (  # noqa: E402
     BOUNDARY_FLAVOR,
     cardinality_offenses,
@@ -85,11 +86,7 @@ from livespec_dev_tooling.checks._no_except_outside_io_ruff import (  # noqa: E4
     RuffProbeUnavailable,
     find_ruff_backstop_gaps,
 )
-from livespec_dev_tooling.config import (  # noqa: E402
-    Config,
-    load_config,
-    resolve_check_universe,
-)
+from livespec_dev_tooling.config import Config  # noqa: E402
 
 __all__: list[str] = []
 
@@ -283,7 +280,10 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("no_except_outside_io")
-    root, universe = resolve_check_universe()
+    resolved = resolve_check_context_or_report(log=log, check_id="no_except_outside_io")
+    if resolved is None:
+        return 1
+    root, universe, config = resolved
     # A genuinely codeless repo is a PASS, not a configuration error. It is the
     # one exemption the railway clause grants, and `resolve_check_universe`
     # raises typed git errors rather than returning a spuriously-empty walk, so
@@ -291,7 +291,6 @@ def main() -> int:
     if not universe:
         log.info("no first-party Python to check", check_id="no_except_outside_io")
         return 0
-    config = load_config(repo_root=root)
     offenders: list[tuple[Path, int, str]] = []
     inspected_files: list[Path] = []
     for rel in universe:

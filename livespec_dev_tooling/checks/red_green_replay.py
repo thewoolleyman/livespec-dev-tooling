@@ -111,6 +111,7 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
     derive_source_prefixes,
@@ -488,6 +489,20 @@ def _dispatch_impl_staged(
 
 
 def main() -> int:
+    log = _configure_logger()
+    # A PRE-FLIGHT load rather than a wrap at the call site, because the
+    # load this gate depends on is not in this frame: it sits inside
+    # `_impl_prefixes_for_current_repo`, reached down BOTH arms below —
+    # `_validate_range` -> `_commit_violates`, and `_classify_staged` — and
+    # its `tuple[str, ...]` return has nowhere to carry an absent config.
+    # Both arms are reachable only through this supervisor, so loading once
+    # here renders the diagnostic and exits non-zero before either runs,
+    # without threading `None` through functions whose types say nothing
+    # about configuration. The ordinary path pays one extra `pyproject.toml`
+    # read; the msg-path arm already performed this load unconditionally via
+    # `_classify_staged`.
+    if load_config_or_report(repo_root=Path.cwd(), log=log, check_id="red_green_replay") is None:
+        return 1
     if len(sys.argv) <= 1:
         # No msg-path argv: the canonical-aggregate / `just check` /
         # pre-push / CI invocation validates the whole branch range
@@ -502,7 +517,6 @@ def main() -> int:
         # verify. Pass for ANY subject prefix — machine checkpoint
         # subjects and empty commits included.
         return 0
-    log = _configure_logger()
     if not impl_paths:
         # A non-`.py` implementation staged beside the test cannot enter
         # the `.py`-only impl bucket, which makes the `test-passed-at-red`

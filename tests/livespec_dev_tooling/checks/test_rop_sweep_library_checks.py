@@ -8,6 +8,8 @@ from types import ModuleType
 
 import pytest
 
+from livespec_dev_tooling.checks import _config_load
+
 __all__: list[str] = []
 
 
@@ -32,8 +34,14 @@ def _run_check(
     universe: tuple[Path, ...] | None = None,
 ) -> tuple[int, str]:
     module = _load_check(name=name)
-    if universe is not None and hasattr(module, "resolve_check_universe"):
-        monkeypatch.setattr(module, "resolve_check_universe", lambda: (root, universe))
+    if universe is not None:
+        # Patched on the SHARED helper rather than on the check module, because
+        # `livespec-dev-tooling-efxa` moved the universe resolution behind
+        # `_config_load.resolve_check_context_or_report` — the check module no
+        # longer carries a `resolve_check_universe` name to substitute. Only the
+        # universe is faked: the fixture's `pyproject.toml` is still parsed for
+        # real, exactly as before.
+        monkeypatch.setattr(_config_load, "resolve_check_universe", lambda: (root, universe))
     monkeypatch.chdir(root)
     rc = module.main()
     captured = capsys.readouterr()

@@ -28,6 +28,9 @@ from livespec_dev_tooling import config as config_module
 from livespec_dev_tooling.checks import no_shadow_ledger_body_identical as _check
 from livespec_dev_tooling.checks.no_shadow_ledger_body_identical import main
 from livespec_dev_tooling.install_no_shadow_ledger import CANONICAL_NO_SHADOW_LEDGER_BODY
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
 
 __all__: list[str] = []
 
@@ -51,9 +54,12 @@ def test_no_shadow_ledger_body_identical_bug_guard_after_gate(
     """If the gate is bypassed, a declared-empty hook path remains a bug."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(_check, "role_absence_exit_code", lambda **_kwargs: None)
+    # The patched seam is the shared supervisor helper the check now loads
+    # through (`livespec-dev-tooling-efxa`), not the raw loader it imported
+    # directly before. Same substitution, one name further along the chain.
     monkeypatch.setattr(
         _check,
-        "load_config",
+        "load_config_or_report",
         lambda **_kwargs: replace(
             config_module.Config(),
             declared_keys=frozenset({"neutral_hook_body_path"}),
@@ -119,3 +125,26 @@ def test_fails_when_path_is_a_directory(*, tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.chdir(tmp_path)
 
     assert main() == 1
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    `SPECIFICATION/contracts.md` section "Configuration loader" puts the catch
+    at this check's `main()` supervisor; before `livespec-dev-tooling-efxa`
+    the `ConfigParseError` escaped from here as an uncaught traceback, which
+    reaches stderr through the interpreter rather than through structlog and
+    so broke the very output discipline this package exists to enforce.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="no_shadow_ledger_body_identical",
+        check_id="no_shadow_ledger_body_identical",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )

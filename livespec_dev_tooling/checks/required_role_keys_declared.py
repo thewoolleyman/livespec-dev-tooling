@@ -40,17 +40,26 @@ _CHECKS_PACKAGE_DIR = Path(__file__).resolve().parent
 _CHECK_RECIPE_HEADER = re.compile(r"^check:\s*$", re.MULTILINE)
 _TARGETS_ARRAY_START = re.compile(r"^\s*targets=\(\s*$", re.MULTILINE)
 _TARGETS_ARRAY_END = re.compile(r"^\s*\)\s*$")
-# BOTH spellings of "this check resolves layout-dependent config" count, and
-# the second one is load-bearing rather than tidy. A module that adopts the
-# shared `_config_load.load_config_or_report` supervisor helper stops importing
+# EVERY spelling of "this check resolves layout-dependent config" counts, and
+# the ones past the first are load-bearing rather than tidy. A module that
+# adopts a shared `_config_load` supervisor helper stops importing
 # `load_config` while remaining exactly as layout-dependent as it was. Counting
 # only the direct import would therefore SHRINK this set on every migration —
 # quietly disarming the declaration gate over a widening slice of the tree,
 # with nothing turning red to say so, since a smaller layout-dependent set
 # makes this check laxer rather than louder.
+#
+# The value is a SET per module, not a single name, because `_config_load` grew
+# a second entry point: `resolve_check_context_or_report`, which the sixteen
+# applies-to-all checks adopt instead (their config is parsed inside
+# `resolve_check_universe`, an earlier frame than their own load). Both names
+# are the same evidence, and a mapping that could hold only one would have
+# dropped all sixteen from this set the day they migrated.
 _LAYOUT_DEPENDENT_IMPORTS = {
-    "livespec_dev_tooling.config": "load_config",
-    "livespec_dev_tooling.checks._config_load": "load_config_or_report",
+    "livespec_dev_tooling.config": frozenset({"load_config"}),
+    "livespec_dev_tooling.checks._config_load": frozenset(
+        {"load_config_or_report", "resolve_check_context_or_report"}
+    ),
 }
 # The remediation is read at the moment someone decides what to write, so it
 # names every legal spelling inline rather than referring to one — the standard
@@ -99,11 +108,11 @@ def _module_resolves_layout_dependent_config(*, path: Path) -> bool:
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
             continue
-        imported_name = _LAYOUT_DEPENDENT_IMPORTS.get(node.module or "")
-        if imported_name is None:
+        imported_names = _LAYOUT_DEPENDENT_IMPORTS.get(node.module or "")
+        if imported_names is None:
             continue
         for alias in node.names:
-            if alias.name == imported_name:
+            if alias.name in imported_names:
                 return True
     return False
 

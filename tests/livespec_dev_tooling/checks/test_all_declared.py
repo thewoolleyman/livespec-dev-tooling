@@ -31,6 +31,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
+
 __all__: list[str] = []
 
 
@@ -354,3 +360,26 @@ def test_module_top_defined_names_helpers_cover_each_node_kind() -> None:
     import_node = ast.parse("import json").body[0]
     assert isinstance(import_node, ast.Import)
     assert module._names_from_import(node=import_node) == {"json"}  # noqa: SLF001
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    `SPECIFICATION/contracts.md` section "Configuration loader" puts the catch
+    at this check's `main()` supervisor; before `livespec-dev-tooling-efxa`
+    the `ConfigParseError` escaped from here as an uncaught traceback, which
+    reaches stderr through the interpreter rather than through structlog and
+    so broke the very output discipline this package exists to enforce.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="all_declared",
+        check_id="all_declared",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )

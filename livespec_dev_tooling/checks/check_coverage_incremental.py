@@ -86,13 +86,13 @@ from livespec_dev_tooling.checks._branch_diff import (  # noqa: E402
     DiffUnavailable,
     name_only_diff,
 )
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._docs_only_change import (  # noqa: E402
     is_docs_only_change,
 )
 from livespec_dev_tooling.config import (  # noqa: E402
     MirrorPairing,
     is_vendored_path,
-    load_config,
     role_prefixes,
 )
 
@@ -387,7 +387,9 @@ def main() -> int:
     log = _configure_logger()
     args = _build_parser().parse_args()
     cwd = Path.cwd()
-    config = load_config(repo_root=cwd)
+    config = load_config_or_report(repo_root=cwd, log=log, check_id="check_coverage_incremental")
+    if config is None:
+        return 1
     impl_paths: list[Path] = list(args.paths)
     derived = not impl_paths
     if derived:

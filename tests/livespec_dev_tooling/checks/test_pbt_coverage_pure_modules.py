@@ -14,6 +14,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
+
 __all__: list[str] = []
 
 
@@ -259,3 +265,26 @@ def test_pbt_coverage_module_importable_without_running_main() -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert callable(module.main), "main should be importable without invocation"
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    `SPECIFICATION/contracts.md` section "Configuration loader" puts the catch
+    at this check's `main()` supervisor; before `livespec-dev-tooling-efxa`
+    the `ConfigParseError` escaped from here as an uncaught traceback, which
+    reaches stderr through the interpreter rather than through structlog and
+    so broke the very output discipline this package exists to enforce.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="pbt_coverage_pure_modules",
+        check_id="pbt_coverage_pure_modules",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )

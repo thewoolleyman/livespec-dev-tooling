@@ -26,6 +26,15 @@ outcome. That module stays unmigrated and is pinned by a control test, so
 any future divergence between the precedent and this generalization is
 visible in one place.
 
+There are TWO entry points because there are two ways a check reaches
+the config, not because there are two diagnostics. `load_config_or_report`
+serves the checks that load it themselves;
+`resolve_check_context_or_report` serves the applies-to-all checks, whose
+FIRST reach is the `load_config` buried inside `resolve_check_universe()`
+— an earlier frame that a wrap of the check's own load line cannot see.
+Both render through one private `_report_parse_failure`, so the single
+definition survives the split.
+
 It owes the RENDERING, not the REJECTION. The loader still raises loudly,
 the caller still exits non-zero, and the raised message still names the
 offending key and its blessed spellings; nothing a consumer's config is
@@ -54,11 +63,13 @@ from livespec_dev_tooling.config import (  # noqa: E402
     Config,
     ConfigParseError,
     load_config,
+    resolve_check_universe,
 )
 
 __all__: list[str] = [
     "CONFIG_PARSE_FAILED_EVENT",
     "load_config_or_report",
+    "resolve_check_context_or_report",
 ]
 
 
@@ -67,6 +78,24 @@ __all__: list[str] = [
 # changing it here would silently retire a string other people's tooling
 # already matches on.
 CONFIG_PARSE_FAILED_EVENT = "consumer config parse failed"
+
+
+def _report_parse_failure(
+    *, log: structlog.stdlib.BoundLogger, check_id: str, exc: ConfigParseError
+) -> None:
+    """Emit the ONE structured event both entry points render.
+
+    Private and shared rather than duplicated per entry point: the whole
+    reason this module exists is that the diagnostic has a single
+    definition, so two copies of it here would reintroduce inside the
+    helper exactly the drift the helper removes from its call sites.
+    """
+    log.exception(
+        CONFIG_PARSE_FAILED_EVENT,
+        check_id=check_id,
+        status="fail",
+        error=str(exc),
+    )
 
 
 def load_config_or_report(
@@ -90,10 +119,44 @@ def load_config_or_report(
     try:
         return load_config(repo_root=repo_root)
     except ConfigParseError as exc:
-        log.exception(
-            CONFIG_PARSE_FAILED_EVENT,
-            check_id=check_id,
-            status="fail",
-            error=str(exc),
-        )
+        _report_parse_failure(log=log, check_id=check_id, exc=exc)
         return None
+
+
+def resolve_check_context_or_report(
+    *, log: structlog.stdlib.BoundLogger, check_id: str
+) -> tuple[Path, tuple[Path, ...], Config] | None:
+    """Resolve `(repo_root, universe, config)`, or render the parse failure.
+
+    The entry point for the applies-to-all checks — the ones that open
+    `main()` with `resolve_check_universe()`. They reach the consumer
+    config TWICE, and the FIRST reach is not their own:
+    `config.iter_first_party_py_files` calls `load_config` itself to get
+    the `tests_tree_prefix` it filters the git-derived walk with, so a
+    malformed `pyproject.toml` raises inside `resolve_check_universe()` —
+    before the check's own `load_config` line is ever evaluated. Wrapping
+    only that later line would leave the traceback exactly where it was
+    and render nothing, so those callers need THIS entry point rather
+    than `load_config_or_report`. Measured 2026-09-08 on `no_inheritance`:
+    the escaping traceback's innermost check frame was
+    `root, universe = resolve_check_universe()`, not the `load_config`
+    line below it.
+
+    The trailing `load_config` is deliberately UNGUARDED. The resolution
+    above it has already parsed the same file successfully, so this call
+    re-reads a config that is known to parse; a second guard here would
+    add a branch no test could reach under this repo's 100% gate.
+
+    ONLY `ConfigParseError` is caught. `resolve_check_universe` also
+    raises `GitToplevelError` and `GitLsFilesError`, and those keep
+    propagating on purpose: they say the check is running outside a git
+    working tree, which is a caller defect rather than a consumer's
+    malformed config, and rendering them as a config diagnostic would
+    misname the failure.
+    """
+    try:
+        root, universe = resolve_check_universe()
+    except ConfigParseError as exc:
+        _report_parse_failure(log=log, check_id=check_id, exc=exc)
+        return None
+    return root, universe, load_config(repo_root=root)

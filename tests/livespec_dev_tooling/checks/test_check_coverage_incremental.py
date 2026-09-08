@@ -50,6 +50,9 @@ from returns.unsafe import unsafe_perform_io
 from structlog.testing import capture_logs
 
 from livespec_dev_tooling.config import MirrorPairing
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
 
 __all__: list[str] = []
 
@@ -939,4 +942,27 @@ def test_resolve_test_paths_still_fails_when_the_paired_test_is_absent(*, tmp_pa
     assert resolved is None, (
         "an `_edges.py` sibling must NOT substitute for the required paired test; "
         f"got {resolved!r}"
+    )
+
+
+def test_main_renders_the_consumer_config_parse_failure(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A malformed consumer config is a structured diagnostic, never a traceback.
+
+    `SPECIFICATION/contracts.md` section "Configuration loader" puts the catch
+    at this check's `main()` supervisor; before `livespec-dev-tooling-efxa`
+    the `ConfigParseError` escaped from here as an uncaught traceback, which
+    reaches stderr through the interpreter rather than through structlog and
+    so broke the very output discipline this package exists to enforce.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="check_coverage_incremental",
+        check_id="check_coverage_incremental",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
