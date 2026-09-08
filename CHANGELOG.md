@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.62.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.61.0...v1.62.0) (2026-09-08)
+
+
+### Features
+
+* **cross-repo:** share the release-lane watcher so every publishing repo reads one implementation ([60fee50](https://github.com/thewoolleyman/livespec-dev-tooling/commit/60fee50571c022e992d6c744bebde8f8b026b33b))
+
 ## [1.61.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.60.0...v1.61.0) (2026-09-08)
 
 
