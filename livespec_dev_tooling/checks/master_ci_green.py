@@ -92,9 +92,11 @@ no `print`, no `sys.stderr.write`.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, TypedDict, cast
 
@@ -103,6 +105,10 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402
+
+from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
+    credential_skip_is_failure,
+)
 
 __all__: list[str] = []
 
@@ -184,6 +190,7 @@ def _classify_failed_gh_call(
     log: structlog.stdlib.BoundLogger,
     stdout_full: str,
     stderr_full: str,
+    env: Mapping[str, str],
 ) -> Literal["skip", "unprovable"]:
     """Classify a failed `gh api` call after it returns non-zero.
 
@@ -204,6 +211,19 @@ def _classify_failed_gh_call(
         )
         return "skip"
     if not _gh_has_stored_credential():
+        if credential_skip_is_failure(env=env):
+            # R4.S6: inside a delegated gate this skip would authorise a push
+            # having never read master CI state. `unprovable` is exit 1.
+            log.error(
+                "gh CLI has no stored credential inside a delegated gate; "
+                "cannot prove master CI is green",
+                stderr=stderr,
+                hint=(
+                    "provision the gate executor with a read-scoped forge "
+                    "credential, or remove this target from the gate recipe"
+                ),
+            )
+            return "unprovable"
         log.warning(
             "gh CLI has no stored credential; skipping master-CI-green check",
             stderr=stderr,
@@ -211,6 +231,17 @@ def _classify_failed_gh_call(
         )
         return "skip"
     if _gh_failed_due_to_invalid_credential(stderr=stderr_full):
+        if credential_skip_is_failure(env=env):
+            log.error(
+                "gh credential was rejected inside a delegated gate; "
+                "cannot prove master CI is green",
+                stderr=stderr,
+                hint=(
+                    "the gate executor's forge credential is invalid or "
+                    "expired; refresh it factory-side"
+                ),
+            )
+            return "unprovable"
         log.warning(
             "gh credential was rejected; skipping master-CI-green check",
             stderr=stderr,
@@ -267,6 +298,7 @@ def _fetch_master_ci_green_check(
             log=log,
             stdout_full=completed.stdout,
             stderr_full=completed.stderr,
+            env=os.environ,
         )
     parsed = json.loads(completed.stdout)
     if not isinstance(parsed, dict):

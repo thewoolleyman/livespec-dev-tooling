@@ -118,6 +118,14 @@ spec:
           command: ["/bin/bash", "-lc"]
           args: ["just check"]
           env:
+            # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
+            # that this run is a delegated gate authorising a push, so a check
+            # that cannot read its credential FAILS here instead of warning and
+            # exiting 0. The signal is explicit and set in exactly this one
+            # place: guessing the context from the environment is what would
+            # make the strict disposition fire on a contributor's machine.
+            - name: LIVESPEC_GATE_CONTEXT
+              value: "1"
             # Requirement 4. The local lane derives nproc / 4, and `nproc` inside
             # a container reports the NODE's 32 threads regardless of this
             # container's cpu request — so an unset value would start 8 workers
@@ -137,6 +145,17 @@ spec:
               value: READ_ONLY
             - name: CI_CACHE_CANARY_N
               value: "20"
+            # The forge credential the two credential-reading targets need
+            # (R4.S6). OPTIONAL: where the Secret is absent the pod still starts
+            # and the check fails with a message naming what is missing, which
+            # tells an operator more than a pod that never starts. Declared and
+            # provisioned per ./gate-credentials.yaml.
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gate-forge-credential
+                  key: GH_TOKEN
+                  optional: true
             - name: CI_RUNNER_NODE_NAME
               valueFrom:
                 fieldRef:
