@@ -1,6 +1,6 @@
 {
   "name": "CI runner pool — PowerEdge: queued, admitted and running by repository",
-  "description": "The PowerEdge (poweredge-xubuntu) self-hosted runner pool, as one page: what is QUEUED and what is RUNNING, and for WHICH repository. Panels 1-2 and 5 read the per-repository signals emitted by ci-runner/observability/ci-pool-attributed-gauges.sh; panels 3-4 read the fleet sums and stall classes emitted by ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh. Defined as code in livespec-dev-tooling ci-runner/observability/boards/ci-runner-pool.json and converged by apply-boards.sh beside it; edit the definition, never this board in the UI. livespec-mqy35a, livespec plan ci-runner-pod-lifecycle-reliability.",
+  "description": "The PowerEdge (poweredge-xubuntu) self-hosted runner pool, as one page: what is QUEUED, what is RUNNING, for WHICH repository, and how long a runner took to start BROKEN INTO ITS PHASES. Panels 1-2 and 5-7 read the per-repository signals emitted by ci-runner/observability/ci-pool-attributed-gauges.sh; panels 3-4 read the fleet sums and stall classes emitted by ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh. Defined as code in livespec-dev-tooling ci-runner/observability/boards/ci-runner-pool.json and converged by apply-boards.sh beside it; edit the definition, never this board in the UI. livespec-mqy35a, livespec plan ci-runner-pod-lifecycle-reliability.",
   "type": "flexible",
   "layout_generation": "manual",
   "tags": [
@@ -14,7 +14,7 @@
       "type": "text",
       "position": {"x_coordinate": 0, "y_coordinate": 0, "height": 3, "width": 12},
       "text_panel": {
-        "content": "# PowerEdge runner pool\n\n**Two datasets, on purpose.** The `livespec` environment is a Honeycomb *Metrics 2.0* environment, so **every** OTLP metric lands in its single `metrics` dataset and an `x-honeycomb-dataset` header is ignored there (measured 2026-08-23). Gauges are therefore told apart by metric NAME plus `host.name`, never by dataset — panels 1-4 all query `metrics`. The running-jobs table (panel 5) is a **wide event** stream, and events auto-route by `service.name`, so it queries the separate `ci-runner-pool` dataset.\n\n**Emitters.** Per-repository gauges and the running-job events: `ci-runner/observability/ci-pool-attributed-gauges.sh` (about every minute). Fleet sums and lifecycle stall classes: `ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (every 5 minutes). Both post to the host collector on `127.0.0.1:4319`.\n\n**This board is code.** Its definition lives at `ci-runner/observability/boards/ci-runner-pool.json` in `thewoolleyman/livespec-dev-tooling` and is converged by `apply-boards.sh` beside it. A change made in this UI is lost on the next apply."
+        "content": "# PowerEdge runner pool\n\n**Two datasets, on purpose.** The `livespec` environment is a Honeycomb *Metrics 2.0* environment, so **every** OTLP metric lands in its single `metrics` dataset and an `x-honeycomb-dataset` header is ignored there (measured 2026-08-23). Gauges are therefore told apart by metric NAME plus `host.name`, never by dataset — panels 1-4 and 7 all query `metrics`. The running-jobs table (panel 5) and the start-phase percentiles (panel 6) are **wide event** streams, and events auto-route by `service.name`, so they query the separate `ci-runner-pool` dataset.\n\n**Start latency is reported PER PHASE.** Panels 6-7 break the runner-pod start into created→scheduled, scheduled→ready and ready→workflow-pod, with the work volume's provisioning inside the first. A single aggregate delta is **not** an acceptance signal — it is four stacked waits summed, so it indicts no component when it moves. One phase, ready→job-assigned, has no cluster timestamp and is not emitted; it sits inside the ready→workflow-pod number, which is therefore an upper bound on the ARC hook rather than the hook's own figure. The emission **samples**: a job whose runner and workflow pods both appear and vanish inside one 60 s tick is never observed, so a gap is an unobserved start and never a stall — `livespec.ci_pool.starts_observed` on panel 7 says which.\n\n**Emitters.** Per-repository gauges and the running-job events: `ci-runner/observability/ci-pool-attributed-gauges.sh` (about every minute). Fleet sums and lifecycle stall classes: `ci-runner/k3s/phase2/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (every 5 minutes). Both post to the host collector on `127.0.0.1:4319`.\n\n**This board is code.** Its definition lives at `ci-runner/observability/boards/ci-runner-pool.json` in `thewoolleyman/livespec-dev-tooling` and is converged by `apply-boards.sh` beside it. A change made in this UI is lost on the next apply."
       }
     },
     {
@@ -129,6 +129,52 @@
         ],
         "orders": [{"op": "MAX", "column": "ci.runner_age_s", "order": "descending"}],
         "time_range": 600,
+        "limit": 100
+      }
+    },
+    {
+      "type": "query",
+      "key": "start-latency-phases",
+      "dataset": "ci-runner-pool",
+      "query_style": "combo",
+      "position": {"x_coordinate": 0, "y_coordinate": 22, "height": 6, "width": 6},
+      "annotation": {
+        "name": "Runner start latency, BROKEN INTO PHASES — P95 per phase",
+        "description": "P95 of each phase of the runner-pod start, from the start wide events (ci.record_kind = start) in the ci-runner-pool EVENTS dataset, where a percentile is exact. Read the phases, never their sum: phase 1 (created -> scheduled) indicts Kueue admission, the scheduler bind and the WaitForFirstConsumer volume provisioning, whose own sub-interval is ci.start_pvc_bound_s inside it; phase 2 (scheduled -> ready) indicts containerd's sandbox, the image and the runner process. ci.start_ready_to_workflow_pod_s is phases 3 AND 4 together and is an UPPER BOUND on the ARC container hook's prepare-job, never the hook's own number — no cluster object timestamps the job assignment that would separate them, so this emitter does not pretend to; a claim about the hook cites the hook's own log. ci.start_created_to_workflow_pod_s rides the same events as the aggregate these phases replace and is NOT charted here: it is the number that could not be acted on. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh."
+      },
+      "query": {
+        "calculations": [
+          {"op": "P95", "column": "ci.start_created_to_scheduled_s"},
+          {"op": "P95", "column": "ci.start_pvc_bound_s"},
+          {"op": "P95", "column": "ci.start_scheduled_to_ready_s"},
+          {"op": "P95", "column": "ci.start_ready_to_workflow_pod_s"}
+        ],
+        "filters": [{"column": "ci.record_kind", "op": "=", "value": "start"}],
+        "time_range": 86400,
+        "limit": 100
+      }
+    },
+    {
+      "type": "query",
+      "key": "start-latency-gauges",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {"x_coordinate": 6, "y_coordinate": 22, "height": 6, "width": 6},
+      "annotation": {
+        "name": "Runner start phases by repository — worst start per tick, with starts observed",
+        "description": "The metrics-dataset half of the same signal, and the named reader that keeps these four gauges from being indistinguishable from an emitter that stopped. MAX of livespec.ci_pool.start_created_to_scheduled_s, .start_scheduled_to_ready_s, .start_ready_to_workflow_pod_s and .start_pvc_bound_s on poweredge-xubuntu, broken down by ci.repository: each tick's datapoint is the WORST start that tick observed for that repository, because a gauge cannot carry a distribution and the slow start is the one that indicts a component. livespec.ci_pool.starts_observed rides the same panel for one reason: this emission SAMPLES starts — a job whose runner pod and workflow pod both appear and vanish inside one 60 s tick is never observed — so a gap in the four phase series means no start was seen, NOT that starts stalled, and starts_observed is emitted every tick, 0 included, to say which. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh."
+      },
+      "query": {
+        "calculations": [
+          {"op": "MAX", "column": "livespec.ci_pool.start_created_to_scheduled_s"},
+          {"op": "MAX", "column": "livespec.ci_pool.start_scheduled_to_ready_s"},
+          {"op": "MAX", "column": "livespec.ci_pool.start_ready_to_workflow_pod_s"},
+          {"op": "MAX", "column": "livespec.ci_pool.start_pvc_bound_s"},
+          {"op": "MAX", "column": "livespec.ci_pool.starts_observed"}
+        ],
+        "filters": [{"column": "host.name", "op": "=", "value": "poweredge-xubuntu"}],
+        "breakdowns": ["ci.repository"],
+        "time_range": 86400,
         "limit": 100
       }
     }

@@ -9,7 +9,13 @@
 # sweeps TILE the timeline without double-counting, and its unit budgets 240 s
 # for one run. Dropping it to a minute would double-count its classes and
 # overrun its own deadline. So the attributed gauges ride a separate,
-# much cheaper unit: two bounded kubectl list calls and one loopback POST.
+# much cheaper unit: four bounded kubectl list calls and two loopback POSTs.
+#
+# THIS INTERVAL IS ALSO THE START SIGNAL'S DEDUP WINDOW. The per-phase start
+# emission (`livespec-ifwnqj.6`) keeps no state between ticks; it reports a
+# start only while the workflow pod is younger than CI_POOL_START_WINDOW_S,
+# which defaults to this 60 s. Change one and the other has to move with it,
+# or a start is either reported twice or not at all.
 #
 # ONE MINUTE because the reader is a live board (the plan's H2,
 # `livespec-mqy35a`) watched while jobs start and finish, and a 5-minute
