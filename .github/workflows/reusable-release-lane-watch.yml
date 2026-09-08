@@ -78,6 +78,7 @@ jobs:
           MIN_CONSECUTIVE: ${{ inputs.min_consecutive }}
         run: |
           set -uo pipefail
+          export PYTHONPATH=.livespec-dev-tooling
           # The runner emits structured diagnostics and a THREE-VALUED exit; the
           # operator annotation is rendered here because it is a presentation
           # concern and `print` is banned in the support tree. Both 1 and 2 red
@@ -85,7 +86,7 @@ jobs:
           # must never be mistaken for one reporting healthy.
           worst=0
           for workflow in ${WORKFLOWS}; do
-            python3 .livespec-dev-tooling/.github/scripts/release_lane_watch_runner.py \
+            python3 -m livespec_dev_tooling.cross_repo.release_lane_watch_runner \
               "${workflow}" && continue
             rc=$?
             if [ "${rc}" = "2" ]; then
