@@ -15,6 +15,8 @@ rather than dying at collection with an import error.
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -202,6 +204,45 @@ def _task_record(
 def _comment(*, text: str, created_at: str = "2026-09-06T01:00:00Z") -> dict[str, object]:
     """Build one ledger comment record."""
     return {"id": "c1", "text": text, "created_at": created_at}
+
+
+def _install_fake_bd(*, bin_dir: Path, comments: list[dict[str, object]], name: str = "bd") -> Path:
+    """Install a `bd` that hides its comment timeline unless asked for it.
+
+    Mirrors the pinned CLI the fleet runs: `bd show --json` omits the
+    `comments` key entirely, and only `--include-comments` streams the bodies.
+    """
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    record: dict[str, object] = {"id": _OTHER_EPIC, "type": "epic", "status": "closed"}
+    quiet = bin_dir / f"{name}-quiet.json"
+    _ = quiet.write_text(json.dumps({"data": [record]}), encoding="utf-8")
+    full = bin_dir / f"{name}-full.json"
+    _ = full.write_text(json.dumps({"data": [{**record, "comments": comments}]}), encoding="utf-8")
+    script = bin_dir / name
+    _ = script.write_text(
+        "#!/usr/bin/env bash\n"
+        'case " $* " in\n'
+        f"  *' --include-comments '*) cat '{full}' ;;\n"
+        f"  *) cat '{quiet}' ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+def _put_on_path(*, bin_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Front `bin_dir` on PATH and clear the pinned-binary override."""
+    monkeypatch.delenv("LIVESPEC_BD_PATH", raising=False)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
+def _export_ledger(*, root: Path, records: list[dict[str, object]]) -> None:
+    """Write the local `.beads/issues.jsonl` export the item reader prefers."""
+    beads = root / ".beads"
+    beads.mkdir(parents=True, exist_ok=True)
+    body = "".join(f"{json.dumps(record)}\n" for record in records)
+    _ = (beads / "issues.jsonl").write_text(body, encoding="utf-8")
 
 
 def _zero_lifecycle(*, item_reader: object) -> int:
@@ -944,6 +985,87 @@ def test_comment_reader_reads_a_show_payload_and_tolerates_failure(
         _fake_subprocess_run(result=SimpleNamespace(returncode=1, stdout="", stderr="boom")),
     )
     assert ledger.bd_comments_reader(repo=tmp_path, item_id="e1") == []
+
+
+def test_comment_reader_asks_bd_for_the_comment_bodies(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The timeline is INVISIBLE to a `bd show --json` that does not ask for it.
+
+    `livespec-dev-tooling-7b6l`: without the flag the reader answered `[]` for
+    every record, so every post-cutoff closed plan epic failed
+    `plan_close_evidence` with its evidence comment sitting unread in the
+    tenant — 8 of the 10 findings from the first armed console run.
+    """
+    ledger = _load(name="_plan_ledger")
+    bin_dir = tmp_path / "bin"
+    _install_fake_bd(bin_dir=bin_dir, comments=[_comment(text=_EVIDENCE)])
+    _put_on_path(bin_dir=bin_dir, monkeypatch=monkeypatch)
+
+    read = ledger.bd_comments_reader(repo=tmp_path, item_id=_OTHER_EPIC)
+
+    assert [comment.get("text") for comment in read] == [_EVIDENCE]
+
+
+def test_comment_reader_resolves_bd_through_the_pinned_path_override(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`LIVESPEC_BD_PATH` names the guarded bd; an unusable value falls back to PATH.
+
+    The same resolution the worktree pack's `check-no-workflow-edits.sh`
+    performs, so the reader and the guard reach one binary rather than two.
+    """
+    ledger = _load(name="_plan_ledger")
+    bin_dir = tmp_path / "bin"
+    _install_fake_bd(bin_dir=bin_dir, comments=[_comment(text="from PATH")])
+    _put_on_path(bin_dir=bin_dir, monkeypatch=monkeypatch)
+    pinned = _install_fake_bd(
+        bin_dir=tmp_path / "pinned", comments=[_comment(text=_EVIDENCE)], name="pinned-bd"
+    )
+
+    monkeypatch.setenv("LIVESPEC_BD_PATH", str(pinned))
+    overridden = ledger.bd_comments_reader(repo=tmp_path, item_id=_OTHER_EPIC)
+    monkeypatch.setenv("LIVESPEC_BD_PATH", str(tmp_path / "absent" / "bd"))
+    fallen_back = ledger.bd_comments_reader(repo=tmp_path, item_id=_OTHER_EPIC)
+
+    assert [comment.get("text") for comment in overridden] == [_EVIDENCE]
+    assert [comment.get("text") for comment in fallen_back] == ["from PATH"]
+
+
+def test_armed_run_over_a_tenant_carrying_evidence_reports_no_close_finding(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An armed run over a fixture ledger whose closed epic carries evidence is clean.
+
+    This one runs the family through its DEFAULT readers — the exported
+    `.beads/issues.jsonl` for the records and a real `bd` process for the
+    timeline — because injecting the comment reader is exactly what hid the
+    missing flag from every other test in this file.
+    """
+    root = _armed_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _plan_record(root=root, relative="plan/archive/done", anchor=f"{_OTHER_EPIC}\n")
+    _export_ledger(
+        root=root,
+        records=[
+            _epic_record(
+                item_id=_OTHER_EPIC,
+                status="closed",
+                slug="done",
+                closed_at="2026-09-06T00:00:00Z",
+            )
+        ],
+    )
+    bin_dir = tmp_path / "bin"
+    _install_fake_bd(bin_dir=bin_dir, comments=[_comment(text=_EVIDENCE)])
+    _put_on_path(bin_dir=bin_dir, monkeypatch=monkeypatch)
+    module = _load(name="plan_record_conformance")
+    monkeypatch.chdir(root)
+
+    returncode = module.main(lifecycle_runner=_zero_lifecycle)
+    captured = capsys.readouterr()
+
+    assert "plan_close_evidence" not in captured.err
+    assert returncode == 0, captured.err
 
 
 def test_module_importable_without_running_main() -> None:
