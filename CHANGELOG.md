@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.59.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.58.6...v1.59.0) (2026-09-08)
+
+
+### Features
+
+* add the shared work-item liveness resolver ([fed9582](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fed95822da4f1b85c2708ca305f79780f10b3a5b))
+* convict a closed or nonexistent TODO owner in the release tier ([9bd6ce7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9bd6ce7271aff9ef7a60066e20d80065192716f3))
+
 ## [1.58.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.58.5...v1.58.6) (2026-09-08)
 
 
