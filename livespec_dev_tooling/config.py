@@ -97,6 +97,7 @@ __all__: list[str] = [
     "is_vendored_path",
     "iter_first_party_py_files",
     "iter_py_files",
+    "list_tracked_py",
     "load_config",
     "load_destructive_cli_allowlist",
     "load_mutation_staging_dir",
@@ -1289,26 +1290,28 @@ def filter_first_party_py(
     return tuple(sorted(out))
 
 
-def iter_first_party_py_files(*, repo_root: Path) -> tuple[Path, ...]:
-    """Return the first-party `.py` universe: `git ls-files '*.py'` minus exemptions.
+def list_tracked_py(*, repo_root: Path) -> tuple[Path, ...]:
+    """Return `git ls-files '*.py'` in `repo_root` as repo-root-relative paths.
 
-    The git-index-derived choke point the fleet-check-coverage design
-    introduces: shells `git ls-files '*.py'` in `repo_root` (an argv
-    list, so the glob is passed literally with no shell expansion),
-    loads the consumer's configured `tests_tree_prefix` via `load_config`
-    (the single source of truth), and passes both through
-    `filter_first_party_py`. Unlike `iter_py_files` (a filesystem
-    `rglob` under a caller-supplied root), this walks the git INDEX —
-    auto-excluding gitignored scratch (`.venv/`, `mutants/`,
-    `__pycache__/`) and finding a non-`livespec`-named package directory
-    with no per-repo config.
+    The git-index listing UNFILTERED — exactly the input
+    `filter_first_party_py` documents for its `tracked_py` parameter, before
+    any exemption is applied. Extracted from `iter_first_party_py_files` (its
+    only caller until livespec-dev-tooling-xs58) so the environment discipline
+    below has ONE home rather than a copy per caller: the fleet member-source
+    walk needs this listing too, and needs it UNFILTERED, because its consuming
+    universe includes the test tree the first-party predicate drops.
 
-    Raises `GitLsFilesError` if the `git ls-files` subprocess exits
-    non-zero (e.g. `repo_root` is not a git working tree). Returns an
-    empty tuple for a repo with genuinely zero first-party `.py` (the
-    verified fleet case: livespec-console-beads-fabro) — that is a
-    legitimate result, not an error; telling the two cases apart is a
-    later fail-closed guard's job, not this function's.
+    Lists the INDEX, so a path tracked but currently DELETED from the working
+    tree IS returned. A caller that needs the file's bytes filters for
+    existence itself; this function reports what git tracks, which is the
+    question it was asked.
+
+    Raises `GitLsFilesError` if the subprocess exits non-zero (e.g. `repo_root`
+    is not a git working tree). ⛔ A non-zero exit is the only failure it can
+    see: `git ls-files` run inside an UNTRACKED directory that happens to sit
+    under some unrelated repo exits 0 with an EMPTY listing, so a caller that
+    cannot guarantee `repo_root` is a working tree must establish that itself
+    rather than read emptiness as an answer.
     """
     # S603/S607: argv is a fixed list of literal git args; no shell input.
     # Every GIT_* var is stripped from the child env: a parent process
@@ -1326,7 +1329,31 @@ def iter_first_party_py_files(*, repo_root: Path) -> tuple[Path, ...]:
     if completed.returncode != 0:
         msg = f"git ls-files failed (exit {completed.returncode}): {completed.stderr.strip()}"
         raise GitLsFilesError(msg)
-    tracked = tuple(Path(line) for line in completed.stdout.splitlines() if line)
+    return tuple(Path(line) for line in completed.stdout.splitlines() if line)
+
+
+def iter_first_party_py_files(*, repo_root: Path) -> tuple[Path, ...]:
+    """Return the first-party `.py` universe: `git ls-files '*.py'` minus exemptions.
+
+    The git-index-derived choke point the fleet-check-coverage design
+    introduces: lists the index via `list_tracked_py` (an argv list, so
+    the glob is passed literally with no shell expansion), loads the
+    consumer's configured `tests_tree_prefix` via `load_config`
+    (the single source of truth), and passes both through
+    `filter_first_party_py`. Unlike `iter_py_files` (a filesystem
+    `rglob` under a caller-supplied root), this walks the git INDEX —
+    auto-excluding gitignored scratch (`.venv/`, `mutants/`,
+    `__pycache__/`) and finding a non-`livespec`-named package directory
+    with no per-repo config.
+
+    Raises `GitLsFilesError` if the `git ls-files` subprocess exits
+    non-zero (e.g. `repo_root` is not a git working tree). Returns an
+    empty tuple for a repo with genuinely zero first-party `.py` (the
+    verified fleet case: livespec-console-beads-fabro) — that is a
+    legitimate result, not an error; telling the two cases apart is a
+    later fail-closed guard's job, not this function's.
+    """
+    tracked = list_tracked_py(repo_root=repo_root)
     config = load_config(repo_root=repo_root)
     neutral_hook_body = role_path(role=config.neutral_hook_body_path)
     return filter_first_party_py(
