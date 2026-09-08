@@ -36,6 +36,15 @@ re-measured over the SAME denominator — nine read, 0 skipped, 0 unparsed, 58
 edges examined, 0 findings — before the flip. REMEDIATE-THEN-FLIP, this repo's
 own ratified doctrine (v034 carve-out 1).
 
+THE ROW CONVICTS ON TWO INDEPENDENT OUTCOMES, and a member can owe both at
+once. The first is the DECLARATION GAP above. The second is a BROKEN CONSUMER:
+a sibling imports a name this member no longer BINDS, which is an `ImportError`
+in that sibling at runtime rather than a missing declaration. The graph used to
+report nothing at all in that case — the edge vanished instead of convicting
+(`livespec-dev-tooling-9s2j`) — so the row was silent in the case that breaks
+the consumer hardest. `_public_api_unresolved` owns that record and the fences
+that keep it from becoming noise.
+
 WHAT THE ROW PUTS IN ITS OWN OUTPUT RATHER THAN IN THIS DOCSTRING, because an
 operator reads the finding and not the source:
 
@@ -100,6 +109,10 @@ from livespec_dev_tooling.fleet._public_api_graph import (  # noqa: E402
     FleetConsumption,
     MemberSources,
     cross_member_consumption,
+)
+from livespec_dev_tooling.fleet._public_api_unresolved import (  # noqa: E402
+    UnresolvedReach,
+    broken_consumer_message,
 )
 
 if TYPE_CHECKING:
@@ -284,6 +297,28 @@ def _undeclared(*, state: FleetConsumption, repo: str) -> tuple[ConsumptionEdge,
     )
 
 
+def _broken_consumers(*, state: FleetConsumption, repo: str) -> tuple[UnresolvedReach, ...]:
+    """Reaches that resolved INTO `repo` and found no file binding the name.
+
+    A SECOND outcome, not a variant of the first: the declaration-gap arm below
+    reports a function this member DOES define and does not declare, while this
+    one reports a name a sibling imports that this member no longer binds at
+    all — an ImportError in that sibling rather than a missing declaration.
+    """
+    return tuple(record for record in state.graph.unresolved if repo in record.defining_members)
+
+
+def _omission_message(*, repo: str, undeclared: tuple[ConsumptionEdge, ...]) -> list[str]:
+    """The declaration-gap sentence for `repo`, or nothing when it owes none."""
+    if not undeclared:
+        return []
+    owed = len({(edge.defining_file, edge.function) for edge in undeclared})
+    return [
+        f"{repo}: cross_repo_public_api omits {owed} function(s) a sibling "
+        f"consumes: {_finding_lines(undeclared=undeclared)}."
+    ]
+
+
 def _finding_lines(*, undeclared: tuple[ConsumptionEdge, ...]) -> str:
     """One line per undeclared name, naming every consumption SITE."""
     by_name: dict[str, list[str]] = {}
@@ -313,14 +348,11 @@ def assert_cross_repo_public_api_declared(*, ctx: FleetContext, member: FleetMem
     absence = _absence_note(state=state, repo=member.repo)
     variants = _variants_note(state=state, repo=member.repo)
     context = f"{absence}. {variants}.{_unparsed_note(state=state, repo=member.repo)}"
-    undeclared = _undeclared(state=state, repo=member.repo)
-    if not undeclared:
-        return RowPass(note=f"{context} {_BLIND_SPOT}")
-    return RowFinding(
-        message=(
-            f"{member.repo}: cross_repo_public_api omits "
-            f"{len({(e.defining_file, e.function) for e in undeclared})} function(s) a sibling "
-            f"consumes: {_finding_lines(undeclared=undeclared)}. {context} "
-            f"{_GUARD_WARNING} {_BLIND_SPOT}"
-        )
+    sentences = _omission_message(
+        repo=member.repo, undeclared=_undeclared(state=state, repo=member.repo)
+    ) + broken_consumer_message(
+        repo=member.repo, records=_broken_consumers(state=state, repo=member.repo)
     )
+    if not sentences:
+        return RowPass(note=f"{context} {_BLIND_SPOT}")
+    return RowFinding(message=f"{' '.join(sentences)} {context} {_GUARD_WARNING} {_BLIND_SPOT}")
