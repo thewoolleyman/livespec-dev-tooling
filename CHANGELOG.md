@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.64.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.64.0...v1.64.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **ci-runner:** protect sandbox images pinned by committed manifests ([35f7e46](https://github.com/thewoolleyman/livespec-dev-tooling/commit/35f7e4644b2963256f74dec9178b02f75b886236))
+
 ## [1.64.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.63.0...v1.64.0) (2026-09-08)
 
 
