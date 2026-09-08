@@ -1,0 +1,212 @@
+{
+  "about": [
+    "Replay corpus for .claude-plugin/hooks/github_rate_limit_guard.py.",
+    "A REDACTED, table-driven fixture of representative command shapes with the",
+    "verdict the guard must return for each. It replaces the session-scratch",
+    "replay harness that produced the measured 40.5% false-positive rate, so no",
+    "later edit -- and no cross-runtime port, where byte-identity is impossible",
+    "-- can re-introduce the defect or simply switch the guard off unnoticed.",
+    "Every command here is synthesized or redacted: no credentials, no session",
+    "ids, no unredacted repo-private paths. Owner/repo pairs are `o`/`r`."
+  ],
+  "measurement": {
+    "source": "plan/github-rate-limit-guard-false-positives/research/001-measurement-and-architecture.md",
+    "window_start": "2026-08-19",
+    "window_end": "2026-08-26",
+    "bash_commands": 73162,
+    "denials": 615,
+    "false_positive_rate_percent": 40.5
+  },
+  "pre_fix_baseline": {
+    "build": "9bf53bc550dc",
+    "vectors_wrong": 8,
+    "note": [
+      "The build that carried the defect. Every vector below records the verdict",
+      "IT returned in `pre_fix_verdict`; the count of vectors whose pre-fix",
+      "verdict disagrees with the expected verdict is pinned here, so a corpus",
+      "that quietly loses a regression vector fails its own arithmetic."
+    ]
+  },
+  "buckets": {
+    "tp": {
+      "expected_verdict": "deny",
+      "measured_denials": 366,
+      "summary": "TRUE -- a real loop or xargs driving real GitHub calls."
+    },
+    "b1": {
+      "expected_verdict": "allow",
+      "measured_denials": 96,
+      "summary": "FALSE -- already in the sanctioned `gh api --cache` form, i.e. denied for obeying the instruction the deny message had just given."
+    },
+    "b2": {
+      "expected_verdict": "allow",
+      "measured_denials": 109,
+      "summary": "FALSE -- no `gh` invocation anywhere; `gh` appears only inside a string, a heredoc body, a path or a regex."
+    },
+    "b3": {
+      "expected_verdict": "allow",
+      "measured_denials": 44,
+      "summary": "FALSE -- one `sleep`, no loop: a single polite poll, not a burst."
+    },
+    "b4": {
+      "expected_verdict": "allow",
+      "measured_denials": null,
+      "summary": "FALSE -- a bounded literal loop over UNCACHED reads, whose iteration count is legible off the command text. Reclassified out of the `tp` population after the measurement, so it carries no measured denial count of its own and is excluded from the baseline arithmetic below."
+    }
+  },
+  "vectors": [
+    {
+      "id": "b2-heredoc-writes-ledger-prose",
+      "bucket": "b2",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "cat > h.md <<'EOF'\nFOR THE MAINTAINER TO ROUTE\nUse `gh api` with a cache.\nEOF",
+      "note": "PROSE ONLY: no loop, no GitHub call. A line-initial `for` under IGNORECASE + MULTILINE hit the shell-loop pattern and the sentence contained the literal text `gh api`. This class recurs in every session that writes ledger prose through a heredoc; a guard that makes people rewrite English is mis-scoped, so it is pinned permanently.",
+      "provenance": "Real denial 2026-08-26, homelab planning session `steady-state-loop-hardening` (redacted)."
+    },
+    {
+      "id": "b2-grep-pattern-mentions-gh-api",
+      "bucket": "b2",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "grep -rnE \"gh api|for loop\" .",
+      "note": "A `grep` denied for the pattern it was searching FOR.",
+      "provenance": "Measurement note, section 2(b)."
+    },
+    {
+      "id": "b2-heredoc-writes-watch-loop",
+      "bucket": "b2",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "cat > w.sh <<'EOF'\nwhile true; do gh api --cache 55s repos/o/r --jq .x; sleep 60; done\nEOF",
+      "note": "A WRITE, not an execution. The guard scans command text and cannot tell them apart, which is a distinct false-positive class from the `--cache` one: heredoc MASKING is what makes this pass, not the cache exemption.",
+      "provenance": "Real denial 2026-08-26, homelab planning session `steady-state-loop-hardening` (redacted)."
+    },
+    {
+      "id": "b1-bounded-loop-of-cached-reads",
+      "bucket": "b1",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "for r in a b c; do gh api --cache 10m repos/o/$r --jq .name; done",
+      "note": "The very remedy `_READ_DENY_REASON` prescribes. A cache hit answers 304, which spends no primary rate-limit budget.",
+      "provenance": "Real denial 2026-08-26, homelab planning session `steady-state-loop-hardening` (redacted)."
+    },
+    {
+      "id": "b1-single-sleep-then-cached-read",
+      "bucket": "b1",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "sleep 30; gh api --cache 5m repos/o/r",
+      "note": "Cached, and the `sleep` is outside every loop body.",
+      "provenance": "Measurement note, section 2(a) probe table."
+    },
+    {
+      "id": "b3-single-polite-poll",
+      "bucket": "b3",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "sleep 30; gh pr view 590",
+      "note": "One sleep, no loop: one read, deliberately spaced. Nothing here repeats.",
+      "provenance": "Measurement note, denial breakdown bucket 4."
+    },
+    {
+      "id": "b4-two-item-literal-loop",
+      "bucket": "b4",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "for N in 1964 1966; do gh pr view $N; done",
+      "note": "Two uncached reads, count legible off the command text.",
+      "provenance": "Real denial 2026-08-26, homelab planning session `steady-state-loop-hardening` (redacted; the contributed original was cached, this is its uncached form)."
+    },
+    {
+      "id": "b4-ten-item-literal-loop",
+      "bucket": "b4",
+      "expected_verdict": "allow",
+      "pre_fix_verdict": "deny",
+      "command": "for i in 1 2 3 4 5 6 7 8 9 10; do gh pr view $i; done",
+      "note": "Exactly at the ten-item literal threshold, so it pins the boundary from below.",
+      "provenance": "Synthesized boundary vector."
+    },
+    {
+      "id": "tp-eleven-item-literal-loop",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "for i in 1 2 3 4 5 6 7 8 9 10 11; do gh pr view $i; done",
+      "note": "REGRESSION CONTROL: one item past the threshold. Pins the boundary from above -- any widening of the bounded-literal exemption has to argue past this vector.",
+      "provenance": "Synthesized boundary vector."
+    },
+    {
+      "id": "tp-seq-substitution-loop",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "for p in $(seq 1 50); do gh pr view $p; done",
+      "note": "A command substitution makes the iteration count unreadable off the text, so no apparent size buys an exemption.",
+      "provenance": "Real true positive, contributed 2026-08-26 as a control."
+    },
+    {
+      "id": "tp-while-true-poll",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "while true; do gh api repos/o/r --jq .x; sleep 5; done",
+      "note": "An unbounded poll of an UNCACHED read: the shape the guard exists for.",
+      "provenance": "Real true positive, contributed 2026-08-26 as a control."
+    },
+    {
+      "id": "tp-literal-loop-sleeping-in-body",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "for i in 1 2 3; do gh pr view $i; sleep 10; done",
+      "note": "REGRESSION CONTROL: a bounded literal list, but a `sleep` INSIDE the body turns enumeration into polling. Sits one small edit away from the exempt `b4` shape.",
+      "provenance": "Synthesized adjacency control."
+    },
+    {
+      "id": "tp-literal-loop-sleeping-first-in-body",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "for i in 1 2 3; do sleep 10; gh pr view $i; done",
+      "note": "REGRESSION CONTROL: `tp-literal-loop-sleeping-in-body` with the `sleep` moved to the FRONT of the body. A body span opens at the END of its `do`, while a first-position `sleep` reaches command position THROUGH that same `do` and so begins before the span it sits in -- an ORDERING escape under which only a non-first sleep was ever detected. Every deny vector for the sleeping-loop rule had the sleep last, so the rule could have been a no-op for the commonest polling shape without a single vector noticing.",
+      "provenance": "Completeness review of the github-rate-limit-guard-false-positives plan, 2026-08-26."
+    },
+    {
+      "id": "tp-multiline-literal-loop-sleeping-in-body",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "for i in 1 2 3\ndo\n  sleep 10\n  gh pr view $i\ndone",
+      "note": "REGRESSION CONTROL: the same poll in the multiline form, where every command in the body is INDENTED. An indented line begins a command just as a bare one does, so a body written this way must read no differently from the single-line form above.",
+      "provenance": "Completeness review of the github-rate-limit-guard-false-positives plan, 2026-08-26."
+    },
+    {
+      "id": "tp-literal-loop-sleeping-behind-a-command-prefix",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "for i in 1 2 3 4 5 6; do gh pr view $i; command sleep 20; done",
+      "note": "REGRESSION CONTROL: a real six-iteration poll from the measured 7-day population, spaced by `command sleep 20`. A `sleep` reached through a prefix -- `command`, `mise exec --`, `timeout`, `env`, a leading assignment -- runs exactly the sleep it would have run unprefixed, so the prefix must not hide it.",
+      "provenance": "Completeness review of the github-rate-limit-guard-false-positives plan, 2026-08-26."
+    },
+    {
+      "id": "tp-xargs-fed-mutation",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "cat ids | xargs -I{} gh api -X PATCH repos/o/r/issues/{}",
+      "note": "A mutation burst with no readable bound at all.",
+      "provenance": "Real true positive, contributed 2026-08-26 as a control."
+    },
+    {
+      "id": "tp-bounded-literal-loop-over-mutations",
+      "bucket": "tp",
+      "expected_verdict": "deny",
+      "pre_fix_verdict": "deny",
+      "command": "for i in 1 2; do gh api -X PATCH repos/o/r/issues/$i; done",
+      "note": "REGRESSION CONTROL: a two-item literal loop, but over MUTATIONS. A mutation costs five points against the same ceiling a read costs one, so the bounded-literal exemption must not reach it.",
+      "provenance": "Synthesized adjacency control."
+    }
+  ]
+}
