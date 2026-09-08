@@ -48,6 +48,15 @@ member on such an edge without saying so would manufacture exactly the
 confidently-wrong finding this epic exists to remove. So every edge carries
 whether its target resolved to ONE defining file.
 
+AN IMPORT THAT RESOLVES TO A FILE BINDING NOTHING IS A SECOND OUTCOME, NOT AN
+ABSENT EDGE. A consumption edge is built only where an import RESOLVES, so
+DELETING a function a sibling still imports made its edge VANISH rather than
+become a violation, and the row reported nothing at all in exactly the case
+that breaks the consumer hardest (`livespec-dev-tooling-9s2j`). Those reaches
+are carried beside the edges as `UnresolvedReach` records, the same way an
+unparsed source is. `_public_api_unresolved` owns the fences that keep them
+from becoming noise — that module's docstring is where they are recorded.
+
 A SOURCE THAT WILL NOT PARSE IS A NAMED BLIND SPOT, NOT A SILENT DROP. Nine
 members' trees are read here, and one syntactically invalid file must not
 propagate a raise through a nine-member sweep — the shape
@@ -74,6 +83,12 @@ from livespec_dev_tooling.checks._import_resolution import (
     name_imports,
     suffix_index,
     top_level_functions,
+)
+from livespec_dev_tooling.fleet._public_api_unresolved import (
+    UnresolvedReach,
+    bound_names,
+    sorted_reaches,
+    unresolved_reach,
 )
 
 if TYPE_CHECKING:
@@ -135,10 +150,17 @@ class UnparsedSource:
 
 @dataclass(frozen=True, kw_only=True)
 class ConsumptionGraph:
-    """Every cross-member consumption, plus what could not be measured."""
+    """Every cross-member consumption, plus what could not be measured.
+
+    `unresolved` rides BESIDE `edges` rather than inside them because it is a
+    different outcome: an edge says a member's function is consumed across a
+    boundary, while an `UnresolvedReach` says a sibling imports a name no file
+    it resolved to binds — a broken consumer rather than a declaration gap.
+    """
 
     edges: tuple[ConsumptionEdge, ...]
     unparsed: tuple[UnparsedSource, ...]
+    unresolved: tuple[UnresolvedReach, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -207,11 +229,18 @@ class _DefiningFacts:
     IMPORTS from another first-party module and re-exports is not among that
     file's own definitions, so a reach resolved to the facade would be dropped
     without it.
+
+    `bindings` is a THIRD, wider set and not a duplicate of `functions`: it is
+    every name the file binds at its top level — classes, constants, imports,
+    `_`-prefixed helpers — because "does this file still bind the name" is the
+    question the RUNTIME asks, while `functions` answers the narrower "is this
+    a public function the Result-return rule scopes".
     """
 
     index: dict[str, frozenset[Path]]
     functions: dict[Path, frozenset[str]]
     reexports: dict[Path, dict[str, str]]
+    bindings: dict[Path, frozenset[str]]
 
 
 def _defining_index(
@@ -228,6 +257,7 @@ def _defining_index(
             texts[qualified] = sources.defining[rel]
             functions[qualified] = _public_functions(tree=tree)
             trees_by_file[qualified] = tree
+    bindings = {qualified: bound_names(tree=tree) for qualified, tree in trees_by_file.items()}
     index = suffix_index(sources=texts)
     reexports = {
         qualified: {
@@ -238,7 +268,7 @@ def _defining_index(
         }
         for qualified, tree in trees_by_file.items()
     }
-    return _DefiningFacts(index=index, functions=functions, reexports=reexports)
+    return _DefiningFacts(index=index, functions=functions, reexports=reexports, bindings=bindings)
 
 
 def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> ConsumptionGraph:
@@ -251,16 +281,22 @@ def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> Consump
     unparsed: list[UnparsedSource] = []
     facts = _defining_index(members=members, unparsed=unparsed)
     edges: list[ConsumptionEdge] = []
+    reaches: list[UnresolvedReach] = []
     for member, sources in members.items():
         trees = _parsed(member=member, sources=sources.consuming, into=unparsed)
         for rel, tree in trees.items():
             current = module_name(rel=_qualified(member=member, rel=rel))
             aliases = module_aliases(tree=tree, current=current, index=facts.index)
-            reached = name_imports(
-                tree=tree, current=current, index=facts.index
-            ) | attribute_reaches(tree=tree, aliases=aliases, index=facts.index)
-            edges.extend(_edges_for(member=member, rel=rel, reached=reached, facts=facts))
-    return ConsumptionGraph(edges=tuple(sorted(edges, key=_edge_order)), unparsed=tuple(unparsed))
+            imported = name_imports(tree=tree, current=current, index=facts.index)
+            attributes = attribute_reaches(tree=tree, aliases=aliases, index=facts.index)
+            reached = {reach: reach in imported for reach in imported | attributes}
+            edges.extend(
+                _edges_for(member=member, rel=rel, reached=reached, facts=facts, into=reaches)
+            )
+    ordered = tuple(sorted(edges, key=_edge_order))
+    return ConsumptionGraph(
+        edges=ordered, unparsed=tuple(unparsed), unresolved=sorted_reaches(records=reaches)
+    )
 
 
 def _through_reexports(
@@ -305,11 +341,23 @@ def _through_reexports(
 
 
 def _edges_for(
-    *, member: str, rel: Path, reached: set[tuple[str, str]], facts: _DefiningFacts
+    *,
+    member: str,
+    rel: Path,
+    reached: Mapping[tuple[str, str], bool],
+    facts: _DefiningFacts,
+    into: list[UnresolvedReach],
 ) -> list[ConsumptionEdge]:
-    """The cross-member edges one consuming file's reaches produce."""
+    """The cross-member edges one consuming file's reaches produce.
+
+    Each reach maps to whether it arrived as `from <module> import <name>`, and
+    ONLY those may produce an `UnresolvedReach` — see `_public_api_unresolved`'s
+    docstring for why an ATTRIBUTE reach may not. Records accumulate `into`
+    rather than riding on the return, matching how `_parsed` collects unparsed
+    sources; both are outcomes the graph carries beside its edges.
+    """
     found: list[ConsumptionEdge] = []
-    for dotted, name in reached:
+    for (dotted, name), by_import in reached.items():
         candidates = facts.index[dotted]
         if any(candidate.parts[0] == member for candidate in candidates):
             # The consuming member defines this module ITSELF, so Python
@@ -338,6 +386,22 @@ def _edges_for(
             # consumer's would fail a member for a file it never opens, which
             # is the 14-false-findings shape the pre-hop guard exists to stop.
             continue
+        if not defining_files and by_import:
+            # The reach resolved to a sibling's file that DOES NOT BIND the
+            # name. The loop below appends nothing here, so before this the
+            # reach VANISHED — silence in the one case that is an ImportError
+            # in the sibling at runtime. Reached only AFTER both short-circuits
+            # above, so no record is emitted on a path either guard would skip.
+            record = unresolved_reach(
+                member=member,
+                rel=rel,
+                module=dotted,
+                name=name,
+                candidates=candidates,
+                bindings=facts.bindings,
+            )
+            if record is not None:
+                into.append(record)
         for defining in sorted(defining_files):
             found.append(
                 ConsumptionEdge(
