@@ -38,6 +38,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-keyword-only-args",
     "check-local-memory-drift-audit",
     "check-main-guard",
+    "check-marketplace-ref-release-only",
     "check-master-ci-green",
     "check-match-keyword-only",
     "check-newtype-domain-primitives",
