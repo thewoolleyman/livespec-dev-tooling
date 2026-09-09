@@ -713,6 +713,13 @@ ban-relative-imports = "all"
 # caller-supplied element and no shell — so S603/S607/S404 are over-strict for
 # it exactly as for the check modules above.
 "livespec_dev_tooling/uv_sync_resilient.py" = ["S603", "S607", "S404"]
+# The heading-coverage debt-register generator (work-item
+# livespec-dev-tooling-0bse.1) reads `git log` / `git show` over ONE
+# repo-relative path via subprocess.run with a fixed argv list — the same
+# documented pattern as the check modules above, and for the same reason: the
+# register's `first_seen` dates are evidence read from history rather than
+# values an author declares. S603/S607/S404 are over-strict for it.
+"livespec_dev_tooling/heading_coverage_debt.py" = ["S603", "S607", "S404"]
 # The fleet-membership surface shells out to `gh`/`git` via
 # subprocess.run with fixed argv lists (the same documented pattern as
 # the check modules above); S105 covers the required-secret NAME
