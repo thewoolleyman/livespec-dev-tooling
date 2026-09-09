@@ -35,7 +35,10 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
-from livespec_dev_tooling.checks._role_key_gate import resolve_role_trees  # noqa: E402
+from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
+    announce_role_absence,
+    resolve_role_trees,
+)
 
 __all__: list[str] = []
 
@@ -77,12 +80,19 @@ def main() -> int:
     if config is None:
         return 1
     offenders: list[Path] = []
-    target_dirs = resolve_role_trees(
+    # Announced BESIDE the accessor, not through it. This check iterates
+    # `target_dirs` in a bare `for` loop with no role gate, so a declared-absent
+    # value walks zero directories and would otherwise pass in silence — the
+    # announcement is what makes that skip observable. It rides its own seam
+    # because its `unarmed_until` arm spawns `bd`, and `resolve_role_trees` is
+    # a total accessor that must not reach the world.
+    announce_role_absence(
         role=config.target_dirs,
         key="target_dirs",
         log=log,
         check_id="claude_md_coverage",
     )
+    target_dirs = resolve_role_trees(role=config.target_dirs)
     for root_rel in target_dirs:
         scope_root = cwd / root_rel
         for directory in _iter_in_scope_dirs(repo_root=cwd, scope_root=scope_root):

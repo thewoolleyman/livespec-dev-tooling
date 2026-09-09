@@ -38,6 +38,7 @@ from livespec_dev_tooling.config import (  # noqa: E402
 )
 
 __all__: list[str] = [
+    "announce_role_absence",
     "ensure_declared_paths_contain_python",
     "resolve_role_prefixes",
     "resolve_role_trees",
@@ -235,6 +236,40 @@ def _announce_absence(
             assert_never(absence)
 
 
+def announce_role_absence(
+    *,
+    role: TreeRole | PrefixRole | ScalarRole,
+    key: str,
+    log: structlog.stdlib.BoundLogger,
+    check_id: str,
+) -> None:
+    """Announce `role`'s declared-absent variant, if it has one. THE SEPARATED IO SEAM.
+
+    This used to run INSIDE `resolve_role_trees` / `resolve_role_prefixes`, and that
+    is the shape this function exists to undo. Those accessors are TOTAL — they
+    always answer `role_trees(role=role)` / `role_prefixes(role=role)` — but the
+    announcement below is not: `_announce_unarmed_until` resolves its payload through
+    `bd_status_reader`, a `bd` subprocess. Folding it into an accessor put the world
+    behind a `tuple[Path, ...]` return, which is exactly the conflation the railway
+    exists to remove and what `public_api_result_typed` convicts.
+
+    Splitting rather than wrapping keeps each half judgeable for what it IS. The
+    accessors are pure and total, so they need no failure track at all; this seam
+    returns `None` because ANNOUNCING is the whole of what it does — there is no
+    value for a caller to branch on, and nothing it could hand back that a
+    consuming check would read.
+
+    Two kinds of consumer reach it. One GATES on the role and arrives through
+    `role_absence_exit_code`, which decides the exit and announces on the way out.
+    The other merely ITERATES a role key and calls this beside the accessor — see
+    `resolve_role_trees` for why that second kind exists and why its silence was
+    the defect worth announcing.
+    """
+    absence = role_absence(role=role)
+    if absence is not None:
+        _announce_absence(absence=absence, key=key, log=log, check_id=check_id)
+
+
 def role_absence_exit_code(
     *,
     config: Config,
@@ -253,44 +288,36 @@ def role_absence_exit_code(
     if key not in config.declared_keys:
         log.error(_UNDECLARED_ROLE_KEY_MESSAGE, check_id=check_id, role=key)
         return 1
-    absence = role_absence(role=role)
-    if absence is None:
+    if role_absence(role=role) is None:
         return None
-    _announce_absence(absence=absence, key=key, log=log, check_id=check_id)
+    announce_role_absence(role=role, key=key, log=log, check_id=check_id)
     return 0
 
 
-def resolve_role_trees(
-    *,
-    role: TreeRole,
-    key: str,
-    log: structlog.stdlib.BoundLogger,
-    check_id: str,
-) -> tuple[Path, ...]:
-    """The declared trees, announcing the variant when the role is declared absent.
+def resolve_role_trees(*, role: TreeRole) -> tuple[Path, ...]:
+    """The declared trees. PURE and TOTAL — it announces nothing and reaches nothing.
 
     For consumers that iterate a role key WITHOUT gating on it — `claude_md_coverage`
     walks `target_dirs` in a bare `for` loop with no gate at all, which is why a
-    declared-empty value there walked zero directories and printed NOTHING. Routing
-    them through here is what makes those silent skips observable.
+    declared-empty value there walked zero directories and printed NOTHING. Making
+    those silent skips observable is `announce_role_absence`'s job, and such a
+    consumer calls that seam BESIDE this accessor rather than through it.
+
+    ⛔ NOTHING THAT REACHES THE WORLD MAY BE ADDED HERE. The announcement did live in
+    this body, and its `unarmed_until` arm spawns `bd` — so a function whose type says
+    `tuple[Path, ...]` could fail, silently, on a tracker query. That is what made the
+    two-call shape worth its cost; re-inlining the announcement to save the second call
+    would restore the defect rather than tidy the seam.
     """
-    absence = role_absence(role=role)
-    if absence is not None:
-        _announce_absence(absence=absence, key=key, log=log, check_id=check_id)
     return role_trees(role=role)
 
 
-def resolve_role_prefixes(
-    *,
-    role: PrefixRole,
-    key: str,
-    log: structlog.stdlib.BoundLogger,
-    check_id: str,
-) -> tuple[str, ...]:
-    """The declared source prefixes, announcing the variant when declared absent."""
-    absence = role_absence(role=role)
-    if absence is not None:
-        _announce_absence(absence=absence, key=key, log=log, check_id=check_id)
+def resolve_role_prefixes(*, role: PrefixRole) -> tuple[str, ...]:
+    """The declared source prefixes. PURE and TOTAL, like `resolve_role_trees`.
+
+    The prefix-role twin of that accessor: same bar, same reason, and its consumers
+    likewise announce through `announce_role_absence` beside this call.
+    """
     return role_prefixes(role=role)
 
 
