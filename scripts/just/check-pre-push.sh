@@ -15,6 +15,23 @@ if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
     exit 0
 fi
 
+# The DELEGATED-GATE fall-through (R4.S7c of plan livespec
+# `k3s-on-gmktec-for-vps-usage`). The switch is `delegated_gate` in this repo's
+# own `[tool.livespec_dev_tooling]` block and it DEFAULTS OFF, so the probe below
+# exits non-zero here and the local aggregate runs exactly as it always has. Only
+# the FALL-THROUGH is replaced when a repo opts in: the green-token skip above is
+# untouched, because S7b writes the SAME token through the SAME CLI a local
+# aggregate does, so a byte-identical tree is skippable whichever path gated it.
+#
+# The probe is silent and its exit code is the whole answer. Every doubt it can
+# have — an absent key, a `false`, a malformed pyproject, a traceback — exits
+# non-zero and lands here, on the strict local path, which is the only direction
+# in which a mistake is merely expensive rather than an ungated push.
+if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
+    echo ":: pre-push: delegated gate is enabled for this repo; gating on the cluster"
+    exec uv run python -m livespec_dev_tooling.gate_remote_delegate run
+fi
+
 # `hook_gate=1` omits the world-gate members enumerated in check.sh. The
 # aggregate is otherwise unchanged, so PR gate ≡ master gate still holds for
 # every member CI runs: the one omitted member is not in the CI matrix either,
