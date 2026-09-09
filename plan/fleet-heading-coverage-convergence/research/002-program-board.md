@@ -50,17 +50,17 @@ consumer-side burn-down item id once filed. The pointer child here is titled
 
 | repository (tenant) | frozen TODO rows | standing owner (interim) | keep-open row owner | burn-down item (in tenant) |
 |---|---|---|---|---|
-| livespec-dev-tooling | 57 | livespec-dev-tooling-xx57 | — | owned here (child of 0bse) |
-| livespec-runtime | 22 | livespec-runtime-4s3 (superseded, D8) | — | filed in runtime tenant |
-| livespec (core) | 7 | livespec-6fb1 (6) | livespec-sab5gn (1, open) | filed in livespec tenant |
-| livespec-console-beads-fabro | 13 | livespec-console-beads-fabro-y9hc | — | filed in console tenant |
-| dolt-server | 43 | dolt-server-w6u | — | filed in dolt-server tenant |
-| livespec-overseer | 2 | overseer-hyfe | — | filed in overseer tenant |
-| livespec-driver-claude | 41 | livespec-driver-claude-axs | — | filed in driver-claude tenant |
-| livespec-driver-codex | 36 | livespec-driver-codex-cea | — | filed in driver-codex tenant |
-| livespec-driver-pi | 42 | livespec-driver-pi-43a | — | filed in driver-pi tenant |
-| livespec-orchestrator-git-jsonl | 25 | bd-gj-6ps | — | filed in git-jsonl tenant |
-| livespec-orchestrator-beads-fabro | 85 | bd-ib-heat (84) | bd-ib-nt3cjv (1, open) | filed in orch-beads tenant |
+| livespec-dev-tooling | 57 | livespec-dev-tooling-xx57 | — | owned here: `livespec-dev-tooling-0bse.5` |
+| livespec-runtime | 22 | livespec-runtime-4s3 (superseded, D8) | — | `livespec-runtime-l5q` ↔ pointer `livespec-dev-tooling-0bse.6` |
+| livespec (core) | 7 | livespec-6fb1 (6) | livespec-sab5gn (1, open) | `livespec-9rhf` ↔ pointer `livespec-dev-tooling-0bse.7` |
+| livespec-console-beads-fabro | 13 | livespec-console-beads-fabro-y9hc | — | `livespec-console-beads-fabro-dxu4` ↔ pointer `livespec-dev-tooling-0bse.8` |
+| dolt-server | 43 | dolt-server-w6u | — | `dolt-server-t1z` ↔ pointer `livespec-dev-tooling-0bse.9` |
+| livespec-overseer | 2 | overseer-hyfe | — | `overseer-7wks` ↔ pointer `livespec-dev-tooling-0bse.10` |
+| livespec-driver-claude | 41 | livespec-driver-claude-axs | — | `livespec-driver-claude-lum` ↔ pointer `livespec-dev-tooling-0bse.11` |
+| livespec-driver-codex | 36 | livespec-driver-codex-cea | — | `livespec-driver-codex-oro` ↔ pointer `livespec-dev-tooling-0bse.12` |
+| livespec-driver-pi | 42 | livespec-driver-pi-43a | — | `livespec-driver-pi-1t4` ↔ pointer `livespec-dev-tooling-0bse.13` |
+| livespec-orchestrator-git-jsonl | 25 | bd-gj-6ps | — | `bd-gj-0of` ↔ pointer `livespec-dev-tooling-0bse.14` |
+| livespec-orchestrator-beads-fabro | 85 | bd-ib-heat (84) | bd-ib-nt3cjv (1, open) | `bd-ib-cvdw` ↔ pointer `livespec-dev-tooling-0bse.15` |
 
 Fleet total at freeze: **373** `TODO` rows. The two keep-open rows
 (`livespec-sab5gn`, `bd-ib-nt3cjv`) were already owned by live items before
@@ -68,7 +68,7 @@ the rollout; they are in the baseline and burn down like every other row.
 
 ## Cross-family pointer
 
-- livespec core's cross-family scenario-tier rule: a pointer item is filed in
+- livespec core's cross-family scenario-tier rule: pointer item `livespec-375s` is filed in
   the `livespec` tenant asking whether a matching amendment is needed once
   dev-tooling's clause is ratified (charter §8 Q2). Referenced, not owned.
 
