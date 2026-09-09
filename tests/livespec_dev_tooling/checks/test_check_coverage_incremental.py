@@ -21,10 +21,41 @@ This module pins the public-API surface via spec-loading the
 not-yet-existing impl module, asserting `main` and the
 mirror-pair-resolution helper exist, and exercising the
 mirror-pair mapping for each of the three impl-tree shapes.
-The end-to-end path is exercised via subprocess invocation in
-the repo's actual cwd (no tmp_path fixture: the script's
+The end-to-end path is exercised by driving `main()` IN-PROCESS
+in the repo's actual cwd (no tmp_path fixture: the script's
 contract is to read repo-root-relative paths and run pytest
 against the real test tree).
+
+FIVE OF THE SIX CHECK INVOCATIONS ARE NOW IN-PROCESS
+(`monkeypatch.chdir(...)` + `monkeypatch.setattr(sys, "argv", ...)` +
+`capsys` + `rc = main()`) rather than `sys.executable` subprocesses: no
+`COVERAGE_PROCESS_START`-instrumented child of this test, no
+`.coverage.*` race under the parallel dispatcher, and materially faster.
+`main()` parses `--paths` through `argparse` and reads `Path.cwd()`, so
+the argv and cwd monkeypatches supply exactly what the child's argv list
+and `cwd=` argument supplied. The check's OWN pytest and `coverage`
+subprocesses are untouched — it still spawns them, and they inherit this
+process's environment exactly as they inherited the retired child's.
+
+THE SIXTH STAYS A SUBPROCESS, ON PURPOSE.
+`test_all_vendored_paths_short_circuit_without_running_the_suite` asserts
+via `timeout=60`: its docstring says outright that the bounded timeout IS
+the assertion, because the property under test is that the check
+SHORT-CIRCUITS instead of falling through to an unfiltered full-suite
+pytest run. `subprocess.run(timeout=...)` is what enforces that bound;
+an in-process `main()` has no equivalent (this repo pins no
+`pytest-timeout`), so converting it would delete the assertion and leave
+a test that hangs for ten minutes on the very regression it exists to
+catch. It is kept and labelled rather than quietly weakened.
+
+`_isolated_git_env` NOW ALSO DROPS `COVERAGE_PROCESS_START` and
+`COV_CORE_*`. It previously stripped only the `GIT_*` family, so those
+two reached every surviving `git` child; scrubbing them is the standing
+requirement on an entry in `subprocess_spawn_allowlist`, which this file
+remains on for its `git` spawns and the timeout-bounded invocation above.
+The two derive-mode tests that passed `env=_isolated_git_env()` to the
+CHECK now get the same `GIT_*` removal applied to this process by
+`_scrub_git_env`, which is what that mapping did for the child.
 
 Output discipline: per spec, the test scaffolding may use
 `subprocess.run` and stdlib imports freely. The check itself
@@ -43,6 +74,7 @@ import subprocess
 import sys
 import types
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 import structlog
@@ -231,7 +263,9 @@ def test_resolve_test_paths_returns_empty_list_for_empty_impl_paths() -> None:
     ), f"empty impl_paths should resolve to empty test_paths; got {test_paths!r}"
 
 
-def test_main_fails_on_unknown_impl_tree(*, tmp_path: Path) -> None:
+def test_main_fails_on_unknown_impl_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--paths` under no recognized impl tree → exit non-zero, ValueError logged.
 
     The path `sandbox/scratch/foo.py` is under no
@@ -243,12 +277,11 @@ def test_main_fails_on_unknown_impl_tree(*, tmp_path: Path) -> None:
     helper.
     """
     _ = tmp_path
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_PATH), "--paths", "sandbox/scratch/foo.py"],
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
+    result = _run_check(
+        cwd=_REPO_ROOT,
+        paths=("sandbox/scratch/foo.py",),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode != 0, (
         f"check_coverage_incremental should exit non-zero on unknown impl tree; "
@@ -261,7 +294,9 @@ def test_main_fails_on_unknown_impl_tree(*, tmp_path: Path) -> None:
     )
 
 
-def test_main_fails_when_mirror_test_does_not_exist(*, tmp_path: Path) -> None:
+def test_main_fails_when_mirror_test_does_not_exist(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--paths` whose mirror-pair points at a non-existent test file → exit non-zero.
 
     Uses a synthetic impl path under `livespec_dev_tooling/checks/`
@@ -275,17 +310,11 @@ def test_main_fails_when_mirror_test_does_not_exist(*, tmp_path: Path) -> None:
     branch.
     """
     _ = tmp_path
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_CHECK_PATH),
-            "--paths",
-            "livespec_dev_tooling/checks/synthesized_nonexistent_xyz.py",
-        ],
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
+    result = _run_check(
+        cwd=_REPO_ROOT,
+        paths=("livespec_dev_tooling/checks/synthesized_nonexistent_xyz.py",),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode != 0, (
         f"check_coverage_incremental should exit non-zero when mirror test missing; "
@@ -298,7 +327,9 @@ def test_main_fails_when_mirror_test_does_not_exist(*, tmp_path: Path) -> None:
     )
 
 
-def test_main_passes_against_fully_covered_real_repo_pair(*, tmp_path: Path) -> None:
+def test_main_passes_against_fully_covered_real_repo_pair(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """End-to-end: invoke the check against `livespec_dev_tooling/checks/all_declared.py`.
 
     `livespec_dev_tooling/checks/all_declared.py` +
@@ -316,17 +347,11 @@ def test_main_passes_against_fully_covered_real_repo_pair(*, tmp_path: Path) -> 
     """
     _ = tmp_path  # signature parity; cwd MUST be the real repo root for the pytest run
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_CHECK_PATH),
-            "--paths",
-            "livespec_dev_tooling/checks/all_declared.py",
-        ],
-        cwd=str(_REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
+    result = _run_check(
+        cwd=_REPO_ROOT,
+        paths=("livespec_dev_tooling/checks/all_declared.py",),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
 
     assert result.returncode == 0, (
@@ -379,7 +404,7 @@ def test_changed_py_impl_paths_empty_when_no_match() -> None:
 
 
 def _isolated_git_env() -> dict[str, str]:
-    """Inherited env with every `GIT_*` var stripped.
+    """Inherited env with every `GIT_*` and coverage var stripped.
 
     pytest may be launched with `GIT_DIR`/`GIT_INDEX_FILE`/`GIT_WORK_TREE`
     set (notably when the suite runs inside a git commit hook). If those
@@ -387,8 +412,32 @@ def _isolated_git_env() -> dict[str, str]:
     targets the OUTER worktree's index instead of the tmp repo's,
     corrupting the real checkout's staging area. Stripping `GIT_*` keeps
     each tmp-repo operation scoped to its own `cwd`.
+
+    `COVERAGE_PROCESS_START` and `COV_CORE_*` are stripped for a separate
+    reason: a child carrying them self-instruments via the pth-installed
+    startup hook and writes `.coverage.*` files that race the parallel check
+    dispatcher. That is the standing requirement on every entry in
+    `subprocess_spawn_allowlist`, which this file is on for its `git` spawns.
     """
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("GIT_", "COV_CORE_")) and k != "COVERAGE_PROCESS_START"
+    }
+
+
+def _scrub_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Strip `GIT_*` from THIS process, for an in-process `main()`.
+
+    The two derive-mode tests below handed the CHECK `env=_isolated_git_env()`
+    so its own `git` children would not target the outer worktree. Driving
+    `main()` in-process, the same protection has to land on the process
+    environment one frame earlier. Only the `GIT_*` family is removed here —
+    the retired child kept `COVERAGE_PROCESS_START`, and the check's own
+    nested pytest run still relies on the ambient coverage configuration.
+    """
+    for key in [name for name in os.environ if name.startswith("GIT_")]:
+        monkeypatch.delenv(key, raising=False)
 
 
 def _git_in(*, tmp_path: Path, args: tuple[str, ...]) -> None:
@@ -400,6 +449,38 @@ def _git_in(*, tmp_path: Path, args: tuple[str, ...]) -> None:
         text=True,
         env=_isolated_git_env(),
     )
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    paths: tuple[str, ...] = (),
+    scrub_git_env: bool = False,
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process under `cwd`.
+
+    `paths` becomes the `--paths` argv tail the child carried; an empty tuple
+    is the no-argument derive-mode invocation. `scrub_git_env` reproduces the
+    `env=_isolated_git_env()` mapping the two derive-mode tests passed.
+    """
+    if scrub_git_env:
+        _scrub_git_env(monkeypatch=monkeypatch)
+    argv = ["check-coverage-incremental", *(("--paths", *paths) if paths else ())]
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.chdir(cwd)
+    returncode = _load_check_module().main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
 
 
 def _init_tmp_repo(*, tmp_path: Path, with_mirror_pairing: bool) -> None:
@@ -458,7 +539,9 @@ def test_derive_paths_from_git_surfaces_changed_impl(*, tmp_path: Path) -> None:
     ], f"expected the changed impl path; got {derived!r}"
 
 
-def test_main_no_args_no_changed_impl_exits_zero(*, tmp_path: Path) -> None:
+def test_main_no_args_no_changed_impl_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No `--paths` and an empty derived set → exit 0 (nothing to gate).
 
     A fresh git repo whose HEAD == origin/master has no diff, so the
@@ -467,13 +550,11 @@ def test_main_no_args_no_changed_impl_exits_zero(*, tmp_path: Path) -> None:
     """
     _init_tmp_repo(tmp_path=tmp_path, with_mirror_pairing=False)
 
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_PATH)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_isolated_git_env(),
+    result = _run_check(
+        cwd=tmp_path,
+        scrub_git_env=True,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode == 0, (
         f"no-arg derive with empty diff should exit 0; "
@@ -485,7 +566,9 @@ def test_main_no_args_no_changed_impl_exits_zero(*, tmp_path: Path) -> None:
     ), f"empty-derive path should log a 'no changed' diagnostic; stderr={result.stderr!r}"
 
 
-def test_main_no_args_nonempty_derive_runs_gate(*, tmp_path: Path) -> None:
+def test_main_no_args_nonempty_derive_runs_gate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No `--paths` + a non-empty derived set → falls through to the per-file gate.
 
     The derived impl `livespec_dev_tooling/checks/derived_mod.py` has NO
@@ -497,13 +580,11 @@ def test_main_no_args_nonempty_derive_runs_gate(*, tmp_path: Path) -> None:
     _init_tmp_repo(tmp_path=tmp_path, with_mirror_pairing=True)
     _commit_changed_impl(tmp_path=tmp_path, with_mirror_test=False)
 
-    result = subprocess.run(
-        [sys.executable, str(_CHECK_PATH)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_isolated_git_env(),
+    result = _run_check(
+        cwd=tmp_path,
+        scrub_git_env=True,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode != 0, (
         f"no-arg derive with a changed impl lacking a mirror test should exit non-zero; "
@@ -812,6 +893,15 @@ def test_all_vendored_paths_short_circuit_without_running_the_suite() -> None:
     that work to reach a wrong answer. A regression re-enters the
     full-suite path and trips the bound instead of hanging the run for
     ten minutes.
+
+    THAT IS ALSO WHY THIS ONE INVOCATION IS STILL A SUBPROCESS while its
+    five siblings were converted to in-process `main()` calls.
+    `subprocess.run(timeout=...)` is what enforces the bound; an
+    in-process call has no equivalent, and this repo pins no
+    `pytest-timeout`. Converting it would delete the assertion and leave
+    a test that hangs for ten minutes on the exact regression it exists
+    to catch, so the spawn is kept deliberately — the file stays on
+    `subprocess_spawn_allowlist` for it and for the `git` spawns above.
     """
     try:
         result = subprocess.run(

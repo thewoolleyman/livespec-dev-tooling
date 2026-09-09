@@ -18,16 +18,50 @@ a classifier — a `def` missing the `*` separator in a
 identical violation in a NEWLY-covered file emits at WARN
 (`newly_covered` / `phase="0-warn"`, exit 0).
 
-The check is invoked as a `sys.executable` subprocess (this file is
-in the documented `subprocess_spawn_allowlist`); pytest-cov's
-pth-installed startup hook instruments the child.
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than through a `sys.executable` subprocess: there is
+no `COVERAGE_PROCESS_START`-instrumented child, so no per-fixture
+`.coverage.*` data file is written and none can race under the parallel
+dispatcher — and the fixture runs materially faster without an interpreter
+start per case. `main()` anchors itself on `Path.cwd()`, so the
+monkeypatched cwd places the fixture exactly where the child's `cwd=`
+argument did, and every assertion target is unchanged: the same int exit
+code and the same diagnostic text, now read off `capsys` rather than off a
+`CompletedProcess`.
+
+The `git` spawn in `_git` STAYS. This check resolves the files it inspects
+from the git-derived first-party `.py` universe, so a real `git init` +
+`git add -A` is the behaviour the fixture exists to produce; replacing it
+would leave the git-index universe untested. Its hardcoded 3-key env keeps
+`COVERAGE_PROCESS_START` / `COV_CORE_*` out of that child, which is the
+standing requirement on an allowlisted spawn — so this file KEEPS its
+`subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the hard rejection of a positional-arg `def` inside `source_trees`;
+the kw-only-separator, zero-arg, dunder, and `self`-then-kw-only
+acceptances; the Phase-0 WARN-only newly-covered offender; the codeless
+repo; the `sorted(key=)`, `.sort(key=)`, attribute-key, and
+lambda-alongside-named-key sort-key carve-outs; and the five
+externally-fixed-convention arms — a double for a stdlib module attr, for a
+stdlib name held by a first-party module, for a stdlib module reached
+through an attribute chain, a stand-in class's methods, and an argparse
+`type=` callback — together with the load-bearing NEGATIVE arm that still
+rejects a positional double of a first-party keyword-only function. The two
+lines the child reached that an in-process call cannot are the module's
+vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__":` line; both are already excluded repo-wide by
+the PRE-EXISTING `exclude_also` patterns in `[tool.coverage.report]`, so
+neither was ever measured here and no new exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -53,7 +87,12 @@ _POSITIONAL_ARG_SOURCE = (
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
-    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ).
+
+    The env is a REPLACEMENT, not a filtered copy of `os.environ`, so
+    `COVERAGE_PROCESS_START` / `COV_CORE_*` cannot reach this child and the
+    developer's own git config cannot reach the fixture.
+    """
     _ = subprocess.run(
         ["git", *args],
         cwd=str(cwd),
@@ -70,16 +109,43 @@ def _init_repo_with_files(*, tmp_path: Path) -> None:
     _git(cwd=tmp_path, args=["add", "-A"])
 
 
-def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """`git init` + stage the fixture, then run the check as a consumer would."""
-    _init_repo_with_files(tmp_path=cwd)
-    return subprocess.run(
-        [sys.executable, str(_KEYWORD_ONLY_ARGS)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "keyword_only_args_under_test",
+        str(_KEYWORD_ONLY_ARGS),
     )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """`git init` + stage the fixture, then invoke the check's `main()` in-process."""
+    _init_repo_with_files(tmp_path=cwd)
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write(*, tmp_path: Path, rel_path: str, source: str) -> None:
@@ -88,7 +154,9 @@ def _write(*, tmp_path: Path, rel_path: str, source: str) -> None:
     _ = full.write_text(source, encoding="utf-8")
 
 
-def test_keyword_only_args_rejects_def_with_positional_arg(*, tmp_path: Path) -> None:
+def test_keyword_only_args_rejects_def_with_positional_arg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `def fn(x: int):` in a `source_trees` file fails hard (exit 1)."""
     _write(
         tmp_path=tmp_path,
@@ -96,7 +164,7 @@ def test_keyword_only_args_rejects_def_with_positional_arg(*, tmp_path: Path) ->
         source=_POSITIONAL_ARG_SOURCE,
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"keyword_only_args should reject positional arg with non-zero exit; "
@@ -115,7 +183,9 @@ def test_keyword_only_args_rejects_def_with_positional_arg(*, tmp_path: Path) ->
     )
 
 
-def test_keyword_only_args_accepts_def_with_kw_only_separator(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_def_with_kw_only_separator(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `def fn(*, x: int):` (kw-only separator present) passes the check (exit 0)."""
     _write(
         tmp_path=tmp_path,
@@ -131,7 +201,7 @@ def test_keyword_only_args_accepts_def_with_kw_only_separator(*, tmp_path: Path)
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept kw-only def with exit 0; "
@@ -140,7 +210,9 @@ def test_keyword_only_args_accepts_def_with_kw_only_separator(*, tmp_path: Path)
     )
 
 
-def test_keyword_only_args_accepts_zero_arg_def(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_zero_arg_def(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `def fn() -> int` (no args) passes the check (exit 0)."""
     _write(
         tmp_path=tmp_path,
@@ -156,7 +228,7 @@ def test_keyword_only_args_accepts_zero_arg_def(*, tmp_path: Path) -> None:
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept zero-arg def with exit 0; "
@@ -165,7 +237,9 @@ def test_keyword_only_args_accepts_zero_arg_def(*, tmp_path: Path) -> None:
     )
 
 
-def test_keyword_only_args_accepts_dunder_methods(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_dunder_methods(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Dunder methods (`__init__`, `__repr__`, etc.) are exempt (exit 0)."""
     _write(
         tmp_path=tmp_path,
@@ -185,7 +259,7 @@ def test_keyword_only_args_accepts_dunder_methods(*, tmp_path: Path) -> None:
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt dunder methods with exit 0; "
@@ -194,7 +268,9 @@ def test_keyword_only_args_accepts_dunder_methods(*, tmp_path: Path) -> None:
     )
 
 
-def test_keyword_only_args_accepts_method_with_self_then_kw_only(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_method_with_self_then_kw_only(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A method `def m(self, *, x: int)` (self + kw-only) passes (exit 0)."""
     _write(
         tmp_path=tmp_path,
@@ -211,7 +287,7 @@ def test_keyword_only_args_accepts_method_with_self_then_kw_only(*, tmp_path: Pa
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept self+kw-only method with exit 0; "
@@ -220,11 +296,13 @@ def test_keyword_only_args_accepts_method_with_self_then_kw_only(*, tmp_path: Pa
     )
 
 
-def test_keyword_only_args_warns_newly_covered_offender(*, tmp_path: Path) -> None:
+def test_keyword_only_args_warns_newly_covered_offender(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A positional-arg `def` OUTSIDE `source_trees` WARNS (newly-covered), exit 0."""
     _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_POSITIONAL_ARG_SOURCE)
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -233,11 +311,13 @@ def test_keyword_only_args_warns_newly_covered_offender(*, tmp_path: Path) -> No
     assert '"level": "error"' not in combined
 
 
-def test_keyword_only_args_accepts_codeless_repo(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_codeless_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A genuinely codeless repo (0 first-party `.py`) passes (exit 0)."""
     _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept a codeless repo with exit 0; "
@@ -260,7 +340,9 @@ def test_keyword_only_args_module_importable_without_running_main() -> None:
     assert callable(module.main), "main should be importable without invocation"
 
 
-def test_keyword_only_args_accepts_sort_key_callable_in_sorted(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_sort_key_callable_in_sorted(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A function used as `key=` in `sorted()` is exempt (exit 0)."""
     _write(
         tmp_path=tmp_path,
@@ -281,7 +363,7 @@ def test_keyword_only_args_accepts_sort_key_callable_in_sorted(*, tmp_path: Path
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt sort key callable used in sorted(); "
@@ -290,7 +372,9 @@ def test_keyword_only_args_accepts_sort_key_callable_in_sorted(*, tmp_path: Path
     )
 
 
-def test_keyword_only_args_accepts_sort_key_callable_in_list_sort(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_sort_key_callable_in_list_sort(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A function used as `key=` in `.sort()` is exempt (exit 0)."""
     _write(
         tmp_path=tmp_path,
@@ -311,7 +395,7 @@ def test_keyword_only_args_accepts_sort_key_callable_in_list_sort(*, tmp_path: P
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt sort key callable used in list.sort(); "
@@ -320,7 +404,9 @@ def test_keyword_only_args_accepts_sort_key_callable_in_list_sort(*, tmp_path: P
     )
 
 
-def test_keyword_only_args_accepts_attribute_sort_key_callable(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_attribute_sort_key_callable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A function used as `key=obj.method` (Attribute) in `sorted()` is exempt (exit 0).
 
     Also exercises a sort call with a non-key keyword (reverse=True) and a
@@ -346,7 +432,7 @@ def test_keyword_only_args_accepts_attribute_sort_key_callable(*, tmp_path: Path
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt attribute sort key callable; "
@@ -356,7 +442,7 @@ def test_keyword_only_args_accepts_attribute_sort_key_callable(*, tmp_path: Path
 
 
 def test_keyword_only_args_lambda_key_does_not_block_named_sort_key_carve_out(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A lambda `key=` does not interfere with the named-key carve-out (exit 0)."""
     _write(
@@ -379,7 +465,7 @@ def test_keyword_only_args_lambda_key_does_not_block_named_sort_key_carve_out(
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should accept named sort-key callable used alongside a lambda key; "
@@ -405,7 +491,7 @@ def test_keyword_only_args_lambda_key_does_not_block_named_sort_key_carve_out(
 
 
 def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_module_attr(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`monkeypatch.setattr(os, "fsync", _boom)` exempts `_boom` (exit 0).
 
@@ -431,7 +517,7 @@ def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_module_attr(
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt a double substituted for a stdlib module attr; "
@@ -441,7 +527,7 @@ def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_module_attr(
 
 
 def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_name_on_a_first_party_module(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`monkeypatch.setattr(mymod, "Path", _redirect)` exempts `_redirect` (exit 0).
 
@@ -467,7 +553,7 @@ def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_name_on_a_fir
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt a double substituted for a stdlib name held by a "
@@ -477,7 +563,7 @@ def test_keyword_only_args_accepts_double_substituted_for_a_stdlib_name_on_a_fir
 
 
 def test_keyword_only_args_accepts_double_substituted_via_an_attribute_chain_to_stdlib(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`monkeypatch.setattr(cfg.subprocess, "run", fake_run)` exempts `fake_run` (exit 0).
 
@@ -501,7 +587,7 @@ def test_keyword_only_args_accepts_double_substituted_via_an_attribute_chain_to_
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt a double reached through an attribute chain whose "
@@ -511,7 +597,7 @@ def test_keyword_only_args_accepts_double_substituted_via_an_attribute_chain_to_
 
 
 def test_keyword_only_args_still_rejects_a_double_of_a_first_party_keyword_only_function(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`monkeypatch.setattr(mod, "run_daemon", _fake_run)` STILL fails (exit 1).
 
@@ -538,7 +624,7 @@ def test_keyword_only_args_still_rejects_a_double_of_a_first_party_keyword_only_
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"keyword_only_args must NOT exempt a double of a first-party function merely "
@@ -552,7 +638,7 @@ def test_keyword_only_args_still_rejects_a_double_of_a_first_party_keyword_only_
 
 
 def test_keyword_only_args_accepts_methods_of_a_class_standing_in_for_a_stdlib_name(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A stand-in class's methods are exempt when the class replaces a stdlib name (exit 0).
 
@@ -582,7 +668,7 @@ def test_keyword_only_args_accepts_methods_of_a_class_standing_in_for_a_stdlib_n
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt methods of a class standing in for a stdlib name; "
@@ -591,7 +677,9 @@ def test_keyword_only_args_accepts_methods_of_a_class_standing_in_for_a_stdlib_n
     )
 
 
-def test_keyword_only_args_accepts_argparse_type_callback(*, tmp_path: Path) -> None:
+def test_keyword_only_args_accepts_argparse_type_callback(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A function passed as `add_argument(..., type=_fn)` is exempt (exit 0).
 
     argparse calls its `type=` callback with one positional string. This is the same
@@ -617,7 +705,7 @@ def test_keyword_only_args_accepts_argparse_type_callback(*, tmp_path: Path) -> 
         ),
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"keyword_only_args should exempt an argparse `type=` callback; "

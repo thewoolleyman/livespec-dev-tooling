@@ -13,16 +13,48 @@ layers' public functions must be Result-typed or
 Documented exemptions (a-f per the canonical row) are NOT
 yet implemented; subsequent cycles widen as concrete files
 surface.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly as the
+child's `cwd=` argument did, and the assertion targets are unchanged —
+the int exit code plus the diagnostic text, now read off `capsys` instead
+of `CompletedProcess`.
+
+The `git` spawn in `_git` STAYS. This check resolves its CONSUMPTION
+universe from the git-derived first-party set, so a real `git init` +
+`git add -A` is the behaviour the fixture exists to produce; replacing it
+with an in-process call would leave the check inspecting nothing and
+every fixture passing vacuously. Its hardcoded 3-key env is a REPLACEMENT
+rather than a filtered copy of `os.environ`, so `COVERAGE_PROCESS_START`
+/ `COV_CORE_*` cannot reach that child — the standing requirement on an
+allowlisted spawn, and why this file KEEPS its
+`subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the non-Result public function, the `@safe` / `@impure_safe`
+lifting arms, the cross-boundary-consumption gate, the annotated-Result
+acceptance, the private-helper and unconsumed-function exemptions, and
+the empty tree. The two lines the child reached that an in-process call
+cannot are the module's vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib.util
 import io
 import subprocess
-import sys
 import tokenize
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -171,25 +203,56 @@ def _consume(*, tmp_path: Path, module: str, name: str) -> None:
     )
 
 
-def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "public_api_result_typed_under_test",
+        str(_PUBLIC_API_RESULT_TYPED),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
     """`git init` + stage the fixture, then run the check as a consumer would.
 
     The check resolves its consumption universe from the git-derived
     first-party set (`resolve_check_universe`), so a fixture must be a real
     git tree — the same fail-closed anchoring every applies-to-all check uses.
+    `main()` then runs IN-PROCESS under the monkeypatched cwd, which is what
+    the retired child's `cwd=` argument supplied.
     """
     _git(cwd=cwd, args=["init", "-q"])
     _git(cwd=cwd, args=["add", "-A"])
-    return subprocess.run(
-        [sys.executable, str(_PUBLIC_API_RESULT_TYPED)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
-def test_public_api_result_typed_rejects_non_result_public_function(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_rejects_non_result_public_function(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A public function in `parse/` returning bare `int` (not Result) fails the check.
 
     The fixture RAISES, and that is load-bearing since livespec v179: the rule
@@ -217,7 +280,7 @@ def test_public_api_result_typed_rejects_non_result_public_function(*, tmp_path:
 
     _consume(tmp_path=tmp_path, module="foo", name="compute")
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"public_api_result_typed should reject non-Result public; "
@@ -230,7 +293,9 @@ def test_public_api_result_typed_rejects_non_result_public_function(*, tmp_path:
     )
 
 
-def test_public_api_result_typed_accepts_result_typed_function(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_accepts_result_typed_function(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A public function returning `Result[...]` passes (exit 0)."""
     package_dir = tmp_path / ".claude-plugin" / "scripts" / "livespec" / "parse"
     package_dir.mkdir(parents=True)
@@ -250,7 +315,7 @@ def test_public_api_result_typed_accepts_result_typed_function(*, tmp_path: Path
 
     _consume(tmp_path=tmp_path, module="foo", name="compute")
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should accept Result-typed public function; "
@@ -258,7 +323,9 @@ def test_public_api_result_typed_accepts_result_typed_function(*, tmp_path: Path
     )
 
 
-def test_public_api_result_typed_accepts_safe_decorated_function(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_accepts_safe_decorated_function(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A public function decorated with `@safe(...)` passes (exit 0).
 
     The body RAISES so the DECORATOR is what makes this pass. Since livespec
@@ -300,7 +367,7 @@ def test_public_api_result_typed_accepts_safe_decorated_function(*, tmp_path: Pa
 
     _consume(tmp_path=tmp_path, module="foo", name="compute")
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should accept @safe-decorated public function; "
@@ -308,7 +375,9 @@ def test_public_api_result_typed_accepts_safe_decorated_function(*, tmp_path: Pa
     )
 
 
-def test_public_api_result_typed_scans_a_private_filename(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_scans_a_private_filename(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `_`-prefixed FILE is scanned; only a `_`-prefixed NAME is disqualified.
 
     ONE FIXTURE, BOTH HALVES OF THE RULE, because the rule is a boundary and a
@@ -378,7 +447,7 @@ def test_public_api_result_typed_scans_a_private_filename(*, tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"public_api_result_typed should scan _-prefixed filenames; "
@@ -395,7 +464,9 @@ def test_public_api_result_typed_scans_a_private_filename(*, tmp_path: Path) -> 
     )
 
 
-def test_public_api_result_typed_skips_module_without_all(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_skips_module_without_all(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A module with NEITHER an `__all__` nor a consumer is out of scope.
 
     This test used to close the `_all_value_names` empty-list branch. That
@@ -419,7 +490,7 @@ def test_public_api_result_typed_skips_module_without_all(*, tmp_path: Path) -> 
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should skip modules without __all__; "
@@ -427,7 +498,9 @@ def test_public_api_result_typed_skips_module_without_all(*, tmp_path: Path) -> 
     )
 
 
-def test_public_api_result_typed_accepts_bare_safe_decorator(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_accepts_bare_safe_decorator(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `@safe` (bare, not Call form) decorator passes the check.
 
     Raises for the same reason as the Call-form case above: a total body would
@@ -458,7 +531,7 @@ def test_public_api_result_typed_accepts_bare_safe_decorator(*, tmp_path: Path) 
 
     _consume(tmp_path=tmp_path, module="foo", name="compute")
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should accept bare @safe decorator; "
@@ -467,8 +540,7 @@ def test_public_api_result_typed_accepts_bare_safe_decorator(*, tmp_path: Path) 
 
 
 def test_public_api_result_typed_rejects_function_without_return_annotation(
-    *,
-    tmp_path: Path,
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A public function without a return annotation fails the check.
 
@@ -497,7 +569,7 @@ def test_public_api_result_typed_rejects_function_without_return_annotation(
 
     _consume(tmp_path=tmp_path, module="foo", name="compute")
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"public_api_result_typed should reject return-less function; "
@@ -505,7 +577,9 @@ def test_public_api_result_typed_rejects_function_without_return_annotation(
     )
 
 
-def test_public_api_result_typed_ignores_private_function(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_ignores_private_function(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `_`-prefixed function is private and ignored by the check.
 
     Even if `_helper` returns `int` directly, it's not in
@@ -527,7 +601,7 @@ def test_public_api_result_typed_ignores_private_function(*, tmp_path: Path) -> 
 
     _consume(tmp_path=tmp_path, module="foo", name="_helper")
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"public_api_result_typed should ignore private function; "
@@ -535,9 +609,11 @@ def test_public_api_result_typed_ignores_private_function(*, tmp_path: Path) -> 
     )
 
 
-def test_public_api_result_typed_rejects_declared_tree_with_no_python(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_rejects_declared_tree_with_no_python(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A declared pure_trees path containing no Python files is a misdeclaration."""
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 1, (
         f"public_api_result_typed should reject a declared tree with no Python files; "
@@ -756,7 +832,9 @@ def test_declared_supervisor_file_does_not_exempt_every_function_in_it() -> None
     ) == [(8, "helper")], "the helper is still on the hook; only the supervisor entry point is not"
 
 
-def test_public_api_result_typed_skips_colocated_test_modules(*, tmp_path: Path) -> None:
+def test_public_api_result_typed_skips_colocated_test_modules(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A test module CO-LOCATED outside `tests/` is not public API; its neighbour is.
 
     The producer-side half of the co-located-tests defect. `tests_tree_prefix`
@@ -816,7 +894,7 @@ def test_public_api_result_typed_skips_colocated_test_modules(*, tmp_path: Path)
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode != 0, (

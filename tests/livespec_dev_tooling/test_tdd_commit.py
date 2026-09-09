@@ -13,6 +13,41 @@ amend) directly. The `git_prefix=["git"]` argument runs a bare git (the
 `git` shim covers the per-step failure branches.
 
 Coverage target: 100% line + branch of `tdd_commit.py`.
+
+The CLI is driven IN-PROCESS (`monkeypatch.setattr(sys, "argv", ...)` +
+`monkeypatch.chdir(...)` + `capsys` + `rc = main()`) rather than as a
+`sys.executable` subprocess: no `COVERAGE_PROCESS_START`-instrumented
+child, no `.coverage.*` race under the parallel dispatcher, and
+materially faster. `main()` parses `sys.argv` through `argparse` and
+defaults `--repo` to `Path.cwd()`, so the two monkeypatches supply
+exactly what the child's argv list and `cwd=` argument supplied. Where
+the exit code came from `argparse` (`--help`, or a missing required
+flag), `SystemExit` is caught in `_run_cli` and translated back into the
+identical int rather than allowed to escape; the assertion targets are
+unchanged.
+
+The `git` spawns STAY — real `git init` / `config` / `add` / `commit` /
+`log` / `show` against the throwaway `tmp_path` repo IS what this helper
+orchestrates, and an in-process stand-in would be a test that no longer
+tests what it claims. So this file KEEPS its
+`subprocess_spawn_allowlist` entry.
+
+`_scrubbed_env` NOW ALSO DROPS `COVERAGE_PROCESS_START` and `COV_CORE_*`.
+It previously removed only the GIT_* passthrough family, so those two
+reached every surviving `git` child — and, once `main()` runs in-process,
+would reach the `git` children `main()` itself spawns from its
+`dict(os.environ)` copy. Scrubbing them is the standing requirement on an
+allowlisted entry; `_scrub_process_env` applies the same removals to this
+process so the in-process path is scrubbed identically to the child path
+it replaced.
+
+Branch parity with the retired spawn: the same four CLI arms are driven —
+the full `--repo` ritual, the cwd default, the `--help` exit, and the
+missing-required-flag rejection. The `if __name__ == "__main__":
+raise SystemExit(main())` line is the one line the child reached that an
+in-process call cannot; it is already excluded repo-wide by the
+PRE-EXISTING `exclude_also` patterns in `[tool.coverage.report]`, so it
+was never measured here and no new exclusion is introduced.
 """
 
 from __future__ import annotations
@@ -22,6 +57,9 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
+
+import pytest
 
 from livespec_dev_tooling import tdd_commit
 
@@ -51,9 +89,38 @@ _GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
 )
 
 
+def _is_scrubbed(*, key: str) -> bool:
+    """True iff `key` must be kept out of a child this test spawns.
+
+    Two families, for two different reasons. The GIT_* passthrough vars above
+    would redirect git at the SURROUNDING repo. `COVERAGE_PROCESS_START` and
+    `COV_CORE_*` would make a child self-instrument via the pth-installed
+    startup hook and write `.coverage.*` files that race the parallel check
+    dispatcher — the standing requirement on every entry in
+    `subprocess_spawn_allowlist`, which this file is on for its `git` spawns.
+    """
+    return (
+        key in _GIT_ENV_PASSTHROUGH_VARS
+        or key == "COVERAGE_PROCESS_START"
+        or key.startswith("COV_CORE_")
+    )
+
+
 def _scrubbed_env() -> dict[str, str]:
-    """Return a copy of `os.environ` with GIT_* hook vars removed."""
-    return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
+    """Return a copy of `os.environ` with the GIT_* and coverage vars removed."""
+    return {k: v for k, v in os.environ.items() if not _is_scrubbed(key=k)}
+
+
+def _scrub_process_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Apply `_scrubbed_env`'s removals to THIS process, for an in-process `main()`.
+
+    `tdd_commit.main()` reads `os.environ` and hands the copy to its own `git`
+    children, so the scrub has to land on the process environment rather than
+    on a `subprocess.run(env=...)` argument — this is what the retired child's
+    `env=_scrubbed_env()` supplied, applied one frame earlier.
+    """
+    for key in [name for name in os.environ if _is_scrubbed(key=name)]:
+        monkeypatch.delenv(key, raising=False)
 
 
 def _init_repo(*, repo: Path) -> None:
@@ -379,8 +446,46 @@ def test_scrubbed_git_env_passes_through_clean_env() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cli_drives_full_ritual_with_no_mise(*, tmp_path: Path) -> None:
-    """`python -m ...tdd_commit --no-mise` drives the ritual against `--repo`."""
+class _CliRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_cli(
+    *,
+    args: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    cwd: Path | None = None,
+) -> _CliRun:
+    """Drive `tdd_commit.main()` in-process with `args` as its argv tail.
+
+    `main()` parses `sys.argv` through `argparse` and defaults `--repo` to
+    `Path.cwd()`, so the argv and cwd monkeypatches supply exactly what the
+    retired child's argv list and `cwd=` argument supplied. `argparse` exits
+    via `SystemExit` for `--help` and for a missing required flag, so that is
+    caught and translated back into the identical int rather than allowed to
+    escape — the assertions still read the same exit code they always did.
+    """
+    _scrub_process_env(monkeypatch=monkeypatch)
+    if cwd is not None:
+        monkeypatch.chdir(cwd)
+    monkeypatch.setattr(sys, "argv", ["tdd-commit", *args])
+    try:
+        returncode = tdd_commit.main()
+    except SystemExit as exit_signal:
+        returncode = 0 if exit_signal.code is None else int(exit_signal.code)
+    captured = capsys.readouterr()
+    return _CliRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
+
+
+def test_cli_drives_full_ritual_with_no_mise(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`tdd_commit --no-mise` drives the ritual against `--repo`."""
     _init_repo(repo=tmp_path)
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_cli.py").write_text(
@@ -388,10 +493,8 @@ def test_cli_drives_full_ritual_with_no_mise(*, tmp_path: Path) -> None:
     )
     (tmp_path / "cli_mod.py").write_text("X: int = 1\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_MODULE_PATH),
+    result = _run_cli(
+        args=[
             "--test",
             "tests/test_cli.py",
             "--impl",
@@ -402,10 +505,8 @@ def test_cli_drives_full_ritual_with_no_mise(*, tmp_path: Path) -> None:
             str(tmp_path),
             "--no-mise",
         ],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
 
     assert (
@@ -416,7 +517,9 @@ def test_cli_drives_full_ritual_with_no_mise(*, tmp_path: Path) -> None:
     assert {"tests/test_cli.py", "cli_mod.py"} <= head_files
 
 
-def test_cli_defaults_repo_to_cwd(*, tmp_path: Path) -> None:
+def test_cli_defaults_repo_to_cwd(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Omitting `--repo` defaults the working tree to the process cwd."""
     _init_repo(repo=tmp_path)
     (tmp_path / "tests").mkdir()
@@ -425,10 +528,8 @@ def test_cli_defaults_repo_to_cwd(*, tmp_path: Path) -> None:
     )
     (tmp_path / "cwd_mod.py").write_text("Y: int = 2\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_MODULE_PATH),
+    result = _run_cli(
+        args=[
             "--test",
             "tests/test_cwd.py",
             "--impl",
@@ -437,11 +538,9 @@ def test_cli_defaults_repo_to_cwd(*, tmp_path: Path) -> None:
             "feat: cwd mod",
             "--no-mise",
         ],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
 
     assert (
@@ -450,37 +549,24 @@ def test_cli_defaults_repo_to_cwd(*, tmp_path: Path) -> None:
     assert _commit_subjects(repo=tmp_path) == ["feat: cwd mod", "chore: baseline"]
 
 
-def test_cli_help_flag_exits_zero(*, tmp_path: Path) -> None:
+def test_cli_help_flag_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`--help` exits 0 with usage text naming the tdd-commit program."""
-    result = subprocess.run(
-        [sys.executable, str(_MODULE_PATH), "--help"],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+    result = _run_cli(args=["--help"], cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "tdd-commit" in result.stdout
 
 
-def test_cli_missing_required_flag_exits_nonzero(*, tmp_path: Path) -> None:
+def test_cli_missing_required_flag_exits_nonzero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Omitting a required flag (--subject) makes argparse exit non-zero."""
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_MODULE_PATH),
-            "--test",
-            "tests/test_x.py",
-            "--impl",
-            "x.py",
-            "--no-mise",
-        ],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_cli(
+        args=["--test", "tests/test_x.py", "--impl", "x.py", "--no-mise"],
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
     assert result.returncode != 0, "argparse must reject a missing required flag"
 

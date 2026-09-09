@@ -23,14 +23,47 @@ severity and the check exits 0 unless
 promotes them to error severity and exit 1. The tests therefore
 come in pairs — what is REPORTED by default, and what FAILS
 under the promotion lever.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly as the
+child's `cwd=` argument did, and the assertion targets are unchanged —
+the int exit code plus the structlog stderr text, now read off `capsys`
+instead of `CompletedProcess`. The promotion lever is supplied by
+`monkeypatch.setenv` in this process rather than by an `env=` mapping on
+a child; `main()` reads it through `os.environ` either way.
+
+The `git` spawn in `_git` STAYS. This check derives its universe from the
+git INDEX, so a real `git init` + `git add -A` is the behaviour the
+fixture exists to produce — an untracked fixture is invisible to the
+check and would pass vacuously. Its hardcoded 3-key env is a REPLACEMENT
+rather than a filtered copy of `os.environ`, so `COVERAGE_PROCESS_START`
+/ `COV_CORE_*` cannot reach that child, which is the standing requirement
+on an allowlisted spawn and why this file KEEPS its
+`subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the warn-tier report and the promoted error-tier failure, the
+`io_trees` and `errors.py` exemptions, the consumer-derived domain-error
+name set, the bug-class exceptions that stay permitted everywhere, and
+the legacy-package layout. The two lines the child reached that an
+in-process call cannot are the module's vendored-path guard
+(`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
-import os
+import importlib.util
 import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -70,22 +103,58 @@ def _init_repo_with_files(*, tmp_path: Path) -> None:
     _git(cwd=tmp_path, args=["add", "-A"])
 
 
-def _run(*, cwd: Path, promote: bool = False) -> subprocess.CompletedProcess[str]:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "no_raise_outside_io_under_test",
+        str(_NO_RAISE_OUTSIDE_IO),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run(
+    *,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    promote: bool = False,
+) -> _CheckRun:
     """`git init` + stage the fixture, then run the check as a consumer would.
 
     `promote=True` sets the severity lever, so warn-tier findings become
     error-tier failures — the shape CI will use once the fleet is clean.
+    `monkeypatch.setenv` supplies it in THIS process, which is exactly what
+    the retired child's `{**os.environ, ...}` mapping supplied; the
+    `promote=False` arm passed `env=None` and so inherited the ambient
+    environment, which an in-process `main()` reading `os.environ` inherits
+    identically.
     """
     _init_repo_with_files(tmp_path=cwd)
-    env = {**os.environ, _PROMOTE_ENV_VAR: "true"} if promote else None
-    return subprocess.run(
-        [sys.executable, str(_NO_RAISE_OUTSIDE_IO)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    if promote:
+        monkeypatch.setenv(_PROMOTE_ENV_VAR, "true")
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write(*, path: Path, body: str) -> None:
@@ -108,7 +177,9 @@ def _write_errors_module(*, tmp_path: Path, names: tuple[str, ...]) -> None:
     _write(path=tmp_path / _LEGACY_PACKAGE / "errors.py", body=body + "\n")
 
 
-def test_no_raise_outside_io_rejects_domain_error_raise_in_pure_layer(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_rejects_domain_error_raise_in_pure_layer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `raise ValidationError(...)` inside `livespec/parse/foo.py` fails the check.
 
     Fixture: a parse-layer module raises a domain error the package itself
@@ -123,7 +194,7 @@ def test_no_raise_outside_io_rejects_domain_error_raise_in_pure_layer(*, tmp_pat
         body='def parse_thing() -> None:\n    raise ValidationError("malformed")\n',
     )
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_raise_outside_io should reject ValidationError raise in parse/; "
@@ -138,7 +209,9 @@ def test_no_raise_outside_io_rejects_domain_error_raise_in_pure_layer(*, tmp_pat
     )
 
 
-def test_no_raise_outside_io_accepts_domain_error_raise_in_io_layer(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_accepts_domain_error_raise_in_io_layer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `raise PreconditionError(...)` inside `livespec/io/fs.py` passes (exit 0).
 
     Pass-case: the io/ layer is the side-effect boundary that
@@ -152,7 +225,7 @@ def test_no_raise_outside_io_accepts_domain_error_raise_in_io_layer(*, tmp_path:
         body='def read_text() -> None:\n    raise PreconditionError("missing")\n',
     )
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_raise_outside_io should accept domain-error raise in io/ with exit 0; "
@@ -161,7 +234,9 @@ def test_no_raise_outside_io_accepts_domain_error_raise_in_io_layer(*, tmp_path:
     )
 
 
-def test_no_raise_outside_io_accepts_domain_error_raise_in_errors_module(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_accepts_domain_error_raise_in_errors_module(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `raise LivespecError(...)` inside `livespec/errors.py` passes (exit 0).
 
     Pass-case: errors.py is the hierarchy definition module
@@ -176,7 +251,7 @@ def test_no_raise_outside_io_accepts_domain_error_raise_in_errors_module(*, tmp_
         ),
     )
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_raise_outside_io should accept domain-error raise in errors.py with exit 0; "
@@ -185,7 +260,9 @@ def test_no_raise_outside_io_accepts_domain_error_raise_in_errors_module(*, tmp_
     )
 
 
-def test_no_raise_outside_io_accepts_bug_class_raise_in_pure_layer(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_accepts_bug_class_raise_in_pure_layer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `raise NotImplementedError(...)` (bug-class) in pure layer passes (exit 0).
 
     Pass-case: bug-class exceptions (TypeError, ValueError,
@@ -207,7 +284,7 @@ def test_no_raise_outside_io_accepts_bug_class_raise_in_pure_layer(*, tmp_path: 
         ),
     )
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_raise_outside_io should accept bug-class raise with exit 0; "
@@ -216,7 +293,9 @@ def test_no_raise_outside_io_accepts_bug_class_raise_in_pure_layer(*, tmp_path: 
     )
 
 
-def test_no_raise_outside_io_accepts_a_codeless_repo(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_accepts_a_codeless_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A genuinely codeless repo (0 tracked first-party `.py`) passes with exit 0.
 
     Replaces a test that asserted a declared source tree containing no Python
@@ -233,7 +312,7 @@ def test_no_raise_outside_io_accepts_a_codeless_repo(*, tmp_path: Path) -> None:
     """
     _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_raise_outside_io should accept a codeless repo with exit 0; "
@@ -257,7 +336,7 @@ def test_no_raise_outside_io_module_importable_without_running_main() -> None:
 
 
 def test_no_raise_outside_io_covers_a_tracked_file_with_source_trees_declared_empty(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`source_trees = []` must NOT mean "scan nothing" — the scope dodge is closed.
 
@@ -291,7 +370,7 @@ def test_no_raise_outside_io_covers_a_tracked_file_with_source_trees_declared_em
     )
     _init_repo_with_files(tmp_path=tmp_path)
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode != 0, (
@@ -303,7 +382,9 @@ def test_no_raise_outside_io_covers_a_tracked_file_with_source_trees_declared_em
     ), f"the diagnostic must name the undeclared-but-tracked offender; combined={combined!r}"
 
 
-def test_no_raise_outside_io_flags_a_consumer_defined_error_name(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_flags_a_consumer_defined_error_name(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A raise of the CONSUMER's own error class is flagged, at warn tier, exit 0.
 
     The defect this pins (`livespec-dev-tooling-6vz`): the domain-error name
@@ -336,7 +417,7 @@ def test_no_raise_outside_io_flags_a_consumer_defined_error_name(*, tmp_path: Pa
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode == 0, (
@@ -356,7 +437,7 @@ def test_no_raise_outside_io_flags_a_consumer_defined_error_name(*, tmp_path: Pa
 
 
 def test_no_raise_outside_io_promotes_consumer_defined_error_findings_under_the_lever(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`LIVESPEC_FAIL_IF_DOMAIN_ERROR_RAISES_EXIST` turns the same finding into exit 1.
 
@@ -375,7 +456,7 @@ def test_no_raise_outside_io_promotes_consumer_defined_error_findings_under_the_
         body='def do_thing() -> None:\n    raise WidgetError("nope")\n',
     )
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode != 0, (
@@ -388,7 +469,7 @@ def test_no_raise_outside_io_promotes_consumer_defined_error_findings_under_the_
 
 
 def test_no_raise_outside_io_ignores_an_error_class_the_consumer_does_not_define(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A raise of a name the repo never defines is NOT an offense, even under the lever.
 
@@ -404,7 +485,7 @@ def test_no_raise_outside_io_ignores_an_error_class_the_consumer_does_not_define
         body='def do_thing() -> None:\n    raise ValidationError("malformed")\n',
     )
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode == 0, (
@@ -413,7 +494,9 @@ def test_no_raise_outside_io_ignores_an_error_class_the_consumer_does_not_define
     )
 
 
-def test_no_raise_outside_io_flags_a_subclass_and_a_dotted_raise(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_flags_a_subclass_and_a_dotted_raise(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Derivation is transitive, and the raise head is matched on its final component.
 
     Two shapes a name-set-of-one would miss, both routine in real consumers:
@@ -439,7 +522,7 @@ def test_no_raise_outside_io_flags_a_subclass_and_a_dotted_raise(*, tmp_path: Pa
         ),
     )
 
-    result = _run(cwd=tmp_path, promote=True)
+    result = _run(cwd=tmp_path, promote=True, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode != 0, (
@@ -451,7 +534,9 @@ def test_no_raise_outside_io_flags_a_subclass_and_a_dotted_raise(*, tmp_path: Pa
     ), f"the diagnostic must name the offending error class; combined={combined!r}"
 
 
-def test_no_raise_outside_io_reports_the_size_of_the_derived_set(*, tmp_path: Path) -> None:
+def test_no_raise_outside_io_reports_the_size_of_the_derived_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Every run reports how many domain-error names it derived.
 
     A count of zero is what vacuity looks like from the outside, and it reads
@@ -465,7 +550,7 @@ def test_no_raise_outside_io_reports_the_size_of_the_derived_set(*, tmp_path: Pa
         body='class WidgetError(Exception):\n    """A consumer-defined domain error."""\n',
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert (

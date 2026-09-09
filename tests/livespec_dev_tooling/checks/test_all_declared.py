@@ -19,17 +19,47 @@ today's hard gate (`error`, exit 1); the identical failure in a
 NEWLY-covered file emits at WARN (`newly_covered` /
 `phase="0-warn"`, exit 0).
 
-The check is invoked as a `sys.executable` subprocess (this file is
-in the documented `subprocess_spawn_allowlist`); pytest-cov's
-pth-installed startup hook instruments the child so per-file
-coverage is measured.
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` root-anchors
+itself from `Path.cwd()`, so the monkeypatched cwd stands in for the
+child's `cwd=` argument exactly, and the assertion targets are unchanged
+— the int exit code plus the structlog diagnostic text, now read off
+`capsys` instead of `CompletedProcess`.
+
+The `git` spawn in `_git` STAYS. This check resolves its universe from
+the git index (`config.resolve_check_universe`), so the `git init` +
+`git add -A` in `_init_repo_with_files` is what decides which fixture
+files the check can see at all — replacing it with an in-process
+stand-in would delete the behaviour under test. Its hardcoded 3-key env
+is a REPLACEMENT for `os.environ`, so `COVERAGE_PROCESS_START` /
+`COV_CORE_*` cannot reach that child; because a spawn remains, this file
+KEEPS its `subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the hard-gate rejections of a missing `__all__` and of an
+undefined `__all__` name inside `source_trees`, the complete-declaration
+acceptance that walks every recognized definition form, both Phase-0
+newly-covered WARN arms (missing `__all__` and undefined name outside
+`source_trees`), the `bin/*.py` wrapper exemption paired with a
+non-wrapper file proving it does not fail open, the `_bootstrap.py`
+counter-case that pins the exemption boundary, and the codeless repo.
+The two lines the child reached that an in-process call cannot are the
+module's vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns
+in `[tool.coverage.report]`, so neither was ever measured here and no
+new exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -74,7 +104,12 @@ _BIN_WRAPPER_SOURCE = (
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
-    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ).
+
+    The env is a REPLACEMENT rather than a filtered copy of `os.environ`, so
+    `COVERAGE_PROCESS_START` / `COV_CORE_*` cannot reach this child and the
+    developer's own git config cannot reach the fixture.
+    """
     _ = subprocess.run(
         ["git", *args],
         cwd=str(cwd),
@@ -91,16 +126,43 @@ def _init_repo_with_files(*, tmp_path: Path) -> None:
     _git(cwd=tmp_path, args=["add", "-A"])
 
 
-def _run_all_declared(*, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """`git init` + stage the fixture, then run the check as a consumer would."""
-    _init_repo_with_files(tmp_path=cwd)
-    return subprocess.run(
-        [sys.executable, str(_ALL_DECLARED)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "all_declared_under_test",
+        str(_ALL_DECLARED),
     )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_all_declared(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """`git init` + stage the fixture, then invoke the check's `main()` in-process."""
+    _init_repo_with_files(tmp_path=cwd)
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write(*, tmp_path: Path, rel_path: str, source: str) -> None:
@@ -109,7 +171,9 @@ def _write(*, tmp_path: Path, rel_path: str, source: str) -> None:
     _ = full.write_text(source, encoding="utf-8")
 
 
-def test_all_declared_rejects_module_missing_all_declaration(*, tmp_path: Path) -> None:
+def test_all_declared_rejects_module_missing_all_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `source_trees` module without `__all__` fails hard (error, exit 1)."""
     _write(
         tmp_path=tmp_path,
@@ -117,7 +181,7 @@ def test_all_declared_rejects_module_missing_all_declaration(*, tmp_path: Path) 
         source=_MISSING_ALL_SOURCE,
     )
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"all_declared should reject module without `__all__` with non-zero exit; "
@@ -132,7 +196,9 @@ def test_all_declared_rejects_module_missing_all_declaration(*, tmp_path: Path) 
     )
 
 
-def test_all_declared_rejects_undefined_name_in_all(*, tmp_path: Path) -> None:
+def test_all_declared_rejects_undefined_name_in_all(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An `__all__` entry not defined in a `source_trees` module fails (exit 1)."""
     _write(
         tmp_path=tmp_path,
@@ -140,7 +206,7 @@ def test_all_declared_rejects_undefined_name_in_all(*, tmp_path: Path) -> None:
         source=_UNDEFINED_NAME_SOURCE,
     )
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"all_declared should reject undefined name in `__all__` with non-zero exit; "
@@ -154,7 +220,9 @@ def test_all_declared_rejects_undefined_name_in_all(*, tmp_path: Path) -> None:
     )
 
 
-def test_all_declared_accepts_module_with_complete_all_declaration(*, tmp_path: Path) -> None:
+def test_all_declared_accepts_module_with_complete_all_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A module with valid `__all__` listing all defined exports passes (exit 0).
 
     The fixture exercises every recognized definition form (`import os`,
@@ -186,7 +254,7 @@ def test_all_declared_accepts_module_with_complete_all_declaration(*, tmp_path: 
     )
     _write(tmp_path=tmp_path, rel_path=".claude-plugin/scripts/livespec/foo.py", source=source)
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"all_declared should accept valid module with exit 0; "
@@ -195,11 +263,13 @@ def test_all_declared_accepts_module_with_complete_all_declaration(*, tmp_path: 
     )
 
 
-def test_all_declared_warns_newly_covered_missing_all(*, tmp_path: Path) -> None:
+def test_all_declared_warns_newly_covered_missing_all(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A missing-`__all__` module OUTSIDE `source_trees` WARNS (newly-covered), exit 0."""
     _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_MISSING_ALL_SOURCE)
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -208,11 +278,13 @@ def test_all_declared_warns_newly_covered_missing_all(*, tmp_path: Path) -> None
     assert '"level": "error"' not in combined
 
 
-def test_all_declared_warns_newly_covered_undefined_name(*, tmp_path: Path) -> None:
+def test_all_declared_warns_newly_covered_undefined_name(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An undefined-`__all__`-name module OUTSIDE `source_trees` WARNS (newly-covered), exit 0."""
     _write(tmp_path=tmp_path, rel_path="pkg/foo.py", source=_UNDEFINED_NAME_SOURCE)
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -222,7 +294,9 @@ def test_all_declared_warns_newly_covered_undefined_name(*, tmp_path: Path) -> N
     assert '"level": "error"' not in combined
 
 
-def test_all_declared_ignores_bin_wrapper_without_all(*, tmp_path: Path) -> None:
+def test_all_declared_ignores_bin_wrapper_without_all(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `bin/*.py` shebang wrapper (no `__all__`) is NOT flagged by all_declared.
 
     The bin-wrapper launchers `wrapper_shape` governs into the canonical
@@ -242,7 +316,7 @@ def test_all_declared_ignores_bin_wrapper_without_all(*, tmp_path: Path) -> None
     )
     _write(tmp_path=tmp_path, rel_path="pkg/normal.py", source=_MISSING_ALL_SOURCE)
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"a bin-wrapper exemption plus a newly-covered normal file must not "
@@ -260,7 +334,9 @@ def test_all_declared_ignores_bin_wrapper_without_all(*, tmp_path: Path) -> None
     assert "newly_covered" in combined
 
 
-def test_all_declared_still_flags_bootstrap_bin_file(*, tmp_path: Path) -> None:
+def test_all_declared_still_flags_bootstrap_bin_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`_bootstrap.py` under `bin/` is NOT a wrapper — it is still flagged.
 
     `wrapper_shape` EXEMPTS `_bootstrap.py` from the canonical wrapper shape
@@ -276,7 +352,7 @@ def test_all_declared_still_flags_bootstrap_bin_file(*, tmp_path: Path) -> None:
         source=_MISSING_ALL_SOURCE,
     )
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -286,11 +362,13 @@ def test_all_declared_still_flags_bootstrap_bin_file(*, tmp_path: Path) -> None:
     assert "newly_covered" in combined
 
 
-def test_all_declared_accepts_codeless_repo(*, tmp_path: Path) -> None:
+def test_all_declared_accepts_codeless_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A genuinely codeless repo (0 first-party `.py`) passes (exit 0)."""
     _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
 
-    result = _run_all_declared(cwd=tmp_path)
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"all_declared should accept a codeless repo with exit 0; "

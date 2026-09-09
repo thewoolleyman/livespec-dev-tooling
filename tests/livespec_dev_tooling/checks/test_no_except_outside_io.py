@@ -9,14 +9,62 @@ BaseException`, bare `except:`) is permitted ONLY as a direct
 child of `main()` in a declared supervisor entry file, and
 only when it carries one of the closed set of sanctioned
 markers.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster — this is the largest
+check-spawn cohort in the suite, so the 45 retired child interpreters
+dominated its runtime. `main()` reads `Path.cwd()`, so the monkeypatched
+cwd anchors the fixture exactly as the child's `cwd=` argument did, and
+the assertion targets are unchanged — the int exit code plus the
+diagnostic text, now read off `capsys` instead of `CompletedProcess`.
+
+The `git` spawn in `_git` STAYS: this check derives its universe from the
+git INDEX, so a real `git init` + `git add -A` is the behaviour the
+fixture exists to produce (an untracked fixture is invisible and would
+pass vacuously), and replacing it with an in-process call would be a test
+that no longer tests what it claims. Its hardcoded 3-key env keeps
+`COVERAGE_PROCESS_START` / `COV_CORE_*` out of that child, which is the
+standing requirement on an allowlisted spawn — so this file KEEPS its
+`subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — narrow catches and `contextlib.suppress` accepted in the pure
+layer; broad catches, broad suppress (bare, aliased, and `async`), and
+bare `except:` rejected there; broad catches accepted in the IO layer;
+the marked supervisor bug-catcher and marked boundary in an entry file
+accepted, while a second boundary in one artifact, the retired
+loop-iteration marker, and an unmarked boundary are rejected; the whole
+marker-shape family (freeform, leading/trailing junk, mid-prose
+containment, string-literal and body-comment placement, multiline clause,
+wrong position); the foreign-code marker's filled, dotted-error-type,
+unfilled-placeholder, prose-error-type, empty-segment, and
+boundary-slot-preserving arms; `try*` broad and marked forms; dotted,
+aliased, and tuple-member broad catches; and the ruff-backstop
+configuration arms (missing pyproject, unset IO trees, inspected-file
+count, ruff-excluded inspected file, `lint.select` without BLE, excludes
+carving only uninspected subsets, a codeless repo, a tracked file with
+`source_trees` declared empty, and position offenses reported alongside
+backstop gaps). The two lines the child reached that an in-process call
+cannot are the check module's own vendored-path guard (`sys.path.insert`)
+and its `if __name__ == "__main__": raise SystemExit(main())` line; both
+are already excluded repo-wide by the PRE-EXISTING `exclude_also`
+patterns in `[tool.coverage.report]`, so neither was ever measured here
+and no new exclusion is introduced. `import sys` remains a live import in
+THIS file for its own vendored-path guard below, which the returns
+imports depend on.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -49,7 +97,13 @@ _FOREIGN_CODE_MARKER = (
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
-    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ)."""
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env (no os.environ).
+
+    `git` is not a Python spawn, so `tests_no_subprocess_spawn` permits it;
+    the hardcoded env is a REPLACEMENT rather than a filtered copy of
+    `os.environ`, so `COVERAGE_PROCESS_START` / `COV_CORE_*` cannot reach
+    this child, and the developer's own git config cannot reach the fixture.
+    """
     _ = subprocess.run(
         ["git", *args],
         cwd=str(cwd),
@@ -60,23 +114,54 @@ def _git(*, cwd: Path, args: list[str]) -> None:
     )
 
 
-def _run(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "no_except_outside_io_under_test",
+        str(_NO_EXCEPT_OUTSIDE_IO),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
     """`git init` + stage the fixture, then run the check as a consumer would.
 
     The check derives its universe from the git INDEX, so a fixture that is not
     a git repo has no universe at all and an untracked file is invisible.
     Staging happens HERE rather than in each test so every fixture gets it —
     an untracked fixture would pass vacuously.
+
+    The check itself runs IN-PROCESS: `main()` is invoked under a
+    monkeypatched cwd and its output read off `capsys`, which is why the
+    fixtures are threaded through rather than passed to a child's `cwd=`.
     """
     _git(cwd=cwd, args=["init", "-q"])
     _git(cwd=cwd, args=["add", "-A"])
-    return subprocess.run(
-        [sys.executable, str(_NO_EXCEPT_OUTSIDE_IO)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
 def _write_module(*, tmp_path: Path, rel: str, body: str) -> None:
@@ -110,7 +195,9 @@ def test_ruff_backstop_noops_without_pyproject(*, tmp_path: Path) -> None:
     assert unsafe_perform_io(outcome.unwrap()) == []
 
 
-def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A NARROW catch in `livespec/parse/foo.py` passes (exit 0).
 
     Narrow-at-the-seam is how a pure layer handles an expected
@@ -131,7 +218,7 @@ def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(*, tmp_path: Pa
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a narrow catch in parse/ with exit 0; "
@@ -141,7 +228,7 @@ def test_no_except_outside_io_accepts_narrow_catch_in_pure_layer(*, tmp_path: Pa
 
 
 def test_no_except_outside_io_accepts_narrow_contextlib_suppress_in_pure_layer(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A NARROW `contextlib.suppress` in a pure layer remains a seam catch."""
     _write_module(
@@ -157,7 +244,7 @@ def test_no_except_outside_io_accepts_narrow_contextlib_suppress_in_pure_layer(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept narrow contextlib.suppress in parse/; "
@@ -166,7 +253,9 @@ def test_no_except_outside_io_accepts_narrow_contextlib_suppress_in_pure_layer(
     )
 
 
-def test_no_except_outside_io_rejects_broad_catch_in_pure_layer(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_broad_catch_in_pure_layer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A BROAD catch in `livespec/parse/foo.py` fails the check.
 
     No position outside a declared supervisor `main()` can host
@@ -186,7 +275,7 @@ def test_no_except_outside_io_rejects_broad_catch_in_pure_layer(*, tmp_path: Pat
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a broad catch in parse/; "
@@ -202,7 +291,7 @@ def test_no_except_outside_io_rejects_broad_catch_in_pure_layer(*, tmp_path: Pat
 
 
 def test_no_except_outside_io_rejects_broad_contextlib_suppress_in_pure_layer(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`contextlib.suppress(Exception)` is a broad catch and fails in pure code."""
     _write_module(
@@ -218,7 +307,7 @@ def test_no_except_outside_io_rejects_broad_contextlib_suppress_in_pure_layer(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject broad contextlib.suppress in parse/; "
@@ -233,7 +322,9 @@ def test_no_except_outside_io_rejects_broad_contextlib_suppress_in_pure_layer(
     )
 
 
-def test_no_except_outside_io_rejects_bare_broad_suppress_import(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_bare_broad_suppress_import(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A bare `suppress` imported from contextlib is still contextlib.suppress."""
     _write_module(
         tmp_path=tmp_path,
@@ -248,7 +339,7 @@ def test_no_except_outside_io_rejects_bare_broad_suppress_import(*, tmp_path: Pa
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject broad suppress imported from contextlib; "
@@ -257,7 +348,9 @@ def test_no_except_outside_io_rejects_bare_broad_suppress_import(*, tmp_path: Pa
     )
 
 
-def test_no_except_outside_io_rejects_aliased_contextlib_suppress(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_aliased_contextlib_suppress(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A module alias does not hide `contextlib.suppress(Exception)`."""
     _write_module(
         tmp_path=tmp_path,
@@ -272,7 +365,7 @@ def test_no_except_outside_io_rejects_aliased_contextlib_suppress(*, tmp_path: P
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject broad suppress through a contextlib alias; "
@@ -282,7 +375,7 @@ def test_no_except_outside_io_rejects_aliased_contextlib_suppress(*, tmp_path: P
 
 
 def test_no_except_outside_io_accepts_marked_supervisor_suppress_boundary(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A marked broad suppress at the supervisor boundary is legal."""
     _write_module(
@@ -299,7 +392,7 @@ def test_no_except_outside_io_accepts_marked_supervisor_suppress_boundary(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a marked supervisor suppress boundary; "
@@ -309,7 +402,7 @@ def test_no_except_outside_io_accepts_marked_supervisor_suppress_boundary(
 
 
 def test_no_except_outside_io_rejects_unmarked_supervisor_suppress_boundary(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Position alone does not legalize a broad suppress boundary."""
     _write_module(
@@ -326,7 +419,7 @@ def test_no_except_outside_io_rejects_unmarked_supervisor_suppress_boundary(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject an unmarked supervisor suppress boundary; "
@@ -335,7 +428,9 @@ def test_no_except_outside_io_rejects_unmarked_supervisor_suppress_boundary(
     )
 
 
-def test_no_except_outside_io_rejects_async_broad_contextlib_suppress(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_async_broad_contextlib_suppress(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`async with contextlib.suppress(Exception)` is still a broad suppress."""
     _write_module(
         tmp_path=tmp_path,
@@ -350,7 +445,7 @@ def test_no_except_outside_io_rejects_async_broad_contextlib_suppress(*, tmp_pat
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject broad async contextlib.suppress; "
@@ -359,7 +454,9 @@ def test_no_except_outside_io_rejects_async_broad_contextlib_suppress(*, tmp_pat
     )
 
 
-def test_no_except_outside_io_rejects_bare_except_in_pure_layer(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_bare_except_in_pure_layer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A bare `except:` is broad and fails outside a marked boundary."""
     _write_module(
         tmp_path=tmp_path,
@@ -374,7 +471,7 @@ def test_no_except_outside_io_rejects_bare_except_in_pure_layer(*, tmp_path: Pat
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a bare except in parse/; "
@@ -383,7 +480,9 @@ def test_no_except_outside_io_rejects_bare_except_in_pure_layer(*, tmp_path: Pat
     )
 
 
-def test_no_except_outside_io_accepts_broad_catch_in_io_layer(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_broad_catch_in_io_layer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A broad catch inside `livespec/io/fs.py` passes (exit 0).
 
     Files under `io_trees` are wholesale exempt — io/ is the
@@ -403,7 +502,7 @@ def test_no_except_outside_io_accepts_broad_catch_in_io_layer(*, tmp_path: Path)
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a broad catch in io/ with exit 0; "
@@ -412,7 +511,9 @@ def test_no_except_outside_io_accepts_broad_catch_in_io_layer(*, tmp_path: Path)
     )
 
 
-def test_no_except_outside_io_accepts_marked_supervisor_bug_catcher(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_marked_supervisor_bug_catcher(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A MARKED broad catch in `commands/seed.py::main()` passes (exit 0).
 
     The sole-boundary exemption: a direct child of `main()` in a
@@ -430,7 +531,7 @@ def test_no_except_outside_io_accepts_marked_supervisor_bug_catcher(*, tmp_path:
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a marked supervisor bug-catcher; "
@@ -439,7 +540,9 @@ def test_no_except_outside_io_accepts_marked_supervisor_bug_catcher(*, tmp_path:
     )
 
 
-def test_no_except_outside_io_accepts_marked_boundary_in_entry_file(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_marked_boundary_in_entry_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A MARKED broad catch in `doctor/run_static.py::main()` passes (exit 0).
 
     The second route into the boundary exemption: a file named
@@ -458,7 +561,7 @@ def test_no_except_outside_io_accepts_marked_boundary_in_entry_file(*, tmp_path:
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a marked boundary in a supervisor entry file; "
@@ -468,7 +571,7 @@ def test_no_except_outside_io_accepts_marked_boundary_in_entry_file(*, tmp_path:
 
 
 def test_no_except_outside_io_rejects_second_marked_boundary_in_one_artifact(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Two MARKED boundary catches in one entry artifact fail the check.
 
@@ -496,7 +599,7 @@ def test_no_except_outside_io_rejects_second_marked_boundary_in_one_artifact(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a SECOND marked boundary catch in one entry "
@@ -505,7 +608,9 @@ def test_no_except_outside_io_rejects_second_marked_boundary_in_one_artifact(
     )
 
 
-def test_no_except_outside_io_rejects_the_retired_loop_iteration_marker(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_the_retired_loop_iteration_marker(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The loop-iteration marker is RETIRED and is no longer a sanctioned escape.
 
     This test is the INVERSION of an earlier one that asserted a boundary catch and
@@ -546,7 +651,7 @@ def test_no_except_outside_io_rejects_the_retired_loop_iteration_marker(*, tmp_p
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"the retired loop-iteration marker must no longer conform: a broad catch "
@@ -557,7 +662,7 @@ def test_no_except_outside_io_rejects_the_retired_loop_iteration_marker(*, tmp_p
 
 
 def test_no_except_outside_io_foreign_code_suppress_does_not_consume_boundary_slot(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreign-code suppress is accounted per invocation surface, not per artifact.
 
@@ -583,7 +688,7 @@ def test_no_except_outside_io_foreign_code_suppress_does_not_consume_boundary_sl
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"a foreign-code suppress must not consume the artifact's boundary slot; "
@@ -592,7 +697,9 @@ def test_no_except_outside_io_foreign_code_suppress_does_not_consume_boundary_sl
     )
 
 
-def test_no_except_outside_io_rejects_unmarked_supervisor_bug_catcher(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_unmarked_supervisor_bug_catcher(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """An UNMARKED broad catch in `commands/seed.py::main()` fails the check.
 
     Position alone does not legalize a broad catch: the boundary
@@ -610,7 +717,7 @@ def test_no_except_outside_io_rejects_unmarked_supervisor_bug_catcher(*, tmp_pat
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject an unmarked supervisor bug-catcher; "
@@ -619,7 +726,9 @@ def test_no_except_outside_io_rejects_unmarked_supervisor_bug_catcher(*, tmp_pat
     )
 
 
-def test_no_except_outside_io_rejects_freeform_marker_on_boundary(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_freeform_marker_on_boundary(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A broad catch at a sanctioned position with a FREE-FORM reason fails.
 
     The marker set is closed. Any other reason wording — however
@@ -637,7 +746,7 @@ def test_no_except_outside_io_rejects_freeform_marker_on_boundary(*, tmp_path: P
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a free-form marker on a boundary catch; "
@@ -646,7 +755,9 @@ def test_no_except_outside_io_rejects_freeform_marker_on_boundary(*, tmp_path: P
     )
 
 
-def test_no_except_outside_io_rejects_marker_with_trailing_junk(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_marker_with_trailing_junk(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A sanctioned wording with APPENDED text fails: the set is exact.
 
     The closed set admits no suffix. Text appended after a sanctioned
@@ -666,7 +777,7 @@ def test_no_except_outside_io_rejects_marker_with_trailing_junk(*, tmp_path: Pat
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a sanctioned marker with trailing junk; "
@@ -675,7 +786,9 @@ def test_no_except_outside_io_rejects_marker_with_trailing_junk(*, tmp_path: Pat
     )
 
 
-def test_no_except_outside_io_rejects_marker_with_leading_junk(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_marker_with_leading_junk(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A sanctioned wording EMBEDDED in a larger comment fails.
 
     A comment that merely CONTAINS the wording is not the directive
@@ -696,7 +809,7 @@ def test_no_except_outside_io_rejects_marker_with_leading_junk(*, tmp_path: Path
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a sanctioned wording embedded in prose; "
@@ -705,7 +818,9 @@ def test_no_except_outside_io_rejects_marker_with_leading_junk(*, tmp_path: Path
     )
 
 
-def test_no_except_outside_io_rejects_marker_contained_mid_prose(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_marker_contained_mid_prose(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A comment containing the full directive mid-prose is not a marker."""
     _write_module(
         tmp_path=tmp_path,
@@ -719,7 +834,7 @@ def test_no_except_outside_io_rejects_marker_contained_mid_prose(*, tmp_path: Pa
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject the directive plus wording embedded mid-prose; "
@@ -728,7 +843,9 @@ def test_no_except_outside_io_rejects_marker_contained_mid_prose(*, tmp_path: Pa
     )
 
 
-def test_no_except_outside_io_accepts_filled_foreign_code_marker(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_filled_foreign_code_marker(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A foreign-code marker with BOTH template slots filled passes.
 
     The fifth sanctioned wording is a template: `<surface>` and
@@ -748,7 +865,7 @@ def test_no_except_outside_io_accepts_filled_foreign_code_marker(*, tmp_path: Pa
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a filled foreign-code isolation marker; "
@@ -758,7 +875,7 @@ def test_no_except_outside_io_accepts_filled_foreign_code_marker(*, tmp_path: Pa
 
 
 def test_no_except_outside_io_rejects_foreign_code_marker_with_trailing_junk(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreign-code marker with text after `, reported` fails.
 
@@ -778,7 +895,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_trailing_junk(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a foreign-code marker with trailing junk; "
@@ -788,7 +905,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_trailing_junk(
 
 
 def test_no_except_outside_io_accepts_foreign_code_marker_with_dotted_error_type(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreign-code marker whose `<ErrorType>` is a dotted identifier passes.
 
@@ -809,7 +926,7 @@ def test_no_except_outside_io_accepts_foreign_code_marker_with_dotted_error_type
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a dotted-identifier ErrorType; "
@@ -819,7 +936,7 @@ def test_no_except_outside_io_accepts_foreign_code_marker_with_dotted_error_type
 
 
 def test_no_except_outside_io_rejects_foreign_code_marker_with_unfilled_placeholders(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreign-code marker shipping the LITERAL template placeholders fails.
 
@@ -841,7 +958,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_unfilled_placehol
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject literal unfilled template placeholders; "
@@ -851,7 +968,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_unfilled_placehol
 
 
 def test_no_except_outside_io_rejects_foreign_code_marker_with_prose_error_type(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreign-code marker whose `<ErrorType>` slot holds prose fails.
 
@@ -874,7 +991,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_prose_error_type(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject prose in the ErrorType slot; "
@@ -884,7 +1001,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_prose_error_type(
 
 
 def test_no_except_outside_io_rejects_foreign_code_marker_with_empty_segments(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A foreign-code marker with EMPTY template slots fails.
 
@@ -905,7 +1022,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_empty_segments(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a foreign-code marker with empty segments; "
@@ -915,7 +1032,7 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_empty_segments(
 
 
 def test_no_except_outside_io_rejects_sanctioned_marker_at_wrong_position(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A sanctioned marker on a broad catch in a HELPER still fails.
 
@@ -941,7 +1058,7 @@ def test_no_except_outside_io_rejects_sanctioned_marker_at_wrong_position(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a sanctioned marker in a helper; "
@@ -950,7 +1067,9 @@ def test_no_except_outside_io_rejects_sanctioned_marker_at_wrong_position(
     )
 
 
-def test_no_except_outside_io_accepts_narrow_catch_in_helper(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_narrow_catch_in_helper(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A narrow catch in a helper of a supervisor entry file passes.
 
     Position rules bind broad catches only; a narrow catch needs
@@ -974,7 +1093,7 @@ def test_no_except_outside_io_accepts_narrow_catch_in_helper(*, tmp_path: Path) 
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a narrow catch in a helper; "
@@ -983,7 +1102,9 @@ def test_no_except_outside_io_accepts_narrow_catch_in_helper(*, tmp_path: Path) 
     )
 
 
-def test_no_except_outside_io_rejects_marker_on_handler_body(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_marker_on_handler_body(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A sanctioned marker on the handler BODY does not legalize the catch.
 
     Only the `except …:` clause itself carries the declaration;
@@ -1002,7 +1123,7 @@ def test_no_except_outside_io_rejects_marker_on_handler_body(*, tmp_path: Path) 
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a marker sitting on the handler body; "
@@ -1081,7 +1202,9 @@ def test_no_except_outside_io_accepts_marked_try_star_boundary(
     assert offenses == []
 
 
-def test_no_except_outside_io_rejects_dotted_broad_catch(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_dotted_broad_catch(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`except builtins.Exception` is broad despite its dotted spelling.
 
     Reading the operand's whole rendering would classify the dotted form
@@ -1105,7 +1228,7 @@ def test_no_except_outside_io_rejects_dotted_broad_catch(*, tmp_path: Path) -> N
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a dotted broad catch; "
@@ -1114,7 +1237,9 @@ def test_no_except_outside_io_rejects_dotted_broad_catch(*, tmp_path: Path) -> N
     )
 
 
-def test_no_except_outside_io_rejects_aliased_broad_catch(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_aliased_broad_catch(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A broad builtin rebound by an aliased import is still broad."""
     _write_module(
         tmp_path=tmp_path,
@@ -1131,7 +1256,7 @@ def test_no_except_outside_io_rejects_aliased_broad_catch(*, tmp_path: Path) -> 
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject an aliased broad catch; "
@@ -1140,7 +1265,9 @@ def test_no_except_outside_io_rejects_aliased_broad_catch(*, tmp_path: Path) -> 
     )
 
 
-def test_no_except_outside_io_rejects_marker_on_body_comment(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_marker_on_body_comment(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A marker on a COMMENT line inside the handler body does not legalize it.
 
     A body comment is not a statement, so a span ending at the first body
@@ -1160,7 +1287,7 @@ def test_no_except_outside_io_rejects_marker_on_body_comment(*, tmp_path: Path) 
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a marker on a handler-body comment; "
@@ -1169,7 +1296,9 @@ def test_no_except_outside_io_rejects_marker_on_body_comment(*, tmp_path: Path) 
     )
 
 
-def test_no_except_outside_io_rejects_marker_in_string_literal(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_marker_in_string_literal(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Marker text inside a STRING LITERAL on the clause line is inert.
 
     Only a real comment token declares a boundary contract; scanning raw
@@ -1187,7 +1316,7 @@ def test_no_except_outside_io_rejects_marker_in_string_literal(*, tmp_path: Path
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject marker text inside a string literal; "
@@ -1196,7 +1325,9 @@ def test_no_except_outside_io_rejects_marker_in_string_literal(*, tmp_path: Path
     )
 
 
-def test_no_except_outside_io_accepts_narrow_dotted_catch(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_narrow_dotted_catch(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Resolving the operand's tail must not misread a narrow dotted catch.
 
     `json.JSONDecodeError` shares the dotted SHAPE with the broad form
@@ -1217,7 +1348,7 @@ def test_no_except_outside_io_accepts_narrow_dotted_catch(*, tmp_path: Path) -> 
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a narrow dotted catch; "
@@ -1226,7 +1357,9 @@ def test_no_except_outside_io_accepts_narrow_dotted_catch(*, tmp_path: Path) -> 
     )
 
 
-def test_no_except_outside_io_rejects_broad_member_of_catch_tuple(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_broad_member_of_catch_tuple(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`except (ValueError, Exception)` is broad — the tuple does not narrow it."""
     _write_module(
         tmp_path=tmp_path,
@@ -1241,7 +1374,7 @@ def test_no_except_outside_io_rejects_broad_member_of_catch_tuple(*, tmp_path: P
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a tuple containing Exception; "
@@ -1250,7 +1383,9 @@ def test_no_except_outside_io_rejects_broad_member_of_catch_tuple(*, tmp_path: P
     )
 
 
-def test_no_except_outside_io_accepts_multiline_clause_marker(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_multiline_clause_marker(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A marker on the closing line of a MULTI-LINE `except` clause is honored."""
     _write_module(
         tmp_path=tmp_path,
@@ -1266,7 +1401,7 @@ def test_no_except_outside_io_accepts_multiline_clause_marker(*, tmp_path: Path)
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should honor a marker on a multi-line except clause; "
@@ -1275,7 +1410,9 @@ def test_no_except_outside_io_accepts_multiline_clause_marker(*, tmp_path: Path)
     )
 
 
-def test_no_except_outside_io_runs_when_io_trees_unset(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_runs_when_io_trees_unset(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """With `io_trees` unset the check RUNS rather than no-opping.
 
     A flat-layout consumer declares `source_trees` and no
@@ -1300,7 +1437,7 @@ def test_no_except_outside_io_runs_when_io_trees_unset(*, tmp_path: Path) -> Non
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io must inspect the source tree when io_trees is unset; "
@@ -1314,7 +1451,9 @@ def test_no_except_outside_io_runs_when_io_trees_unset(*, tmp_path: Path) -> Non
     )
 
 
-def test_no_except_outside_io_reports_inspected_file_count(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_reports_inspected_file_count(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A passing run reports how many files it inspected.
 
     An inspected count of zero is otherwise indistinguishable
@@ -1330,7 +1469,7 @@ def test_no_except_outside_io_reports_inspected_file_count(*, tmp_path: Path) ->
         body="def do_thing() -> None:\n    return None\n",
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should pass a catch-free source tree; "
@@ -1343,7 +1482,9 @@ def test_no_except_outside_io_reports_inspected_file_count(*, tmp_path: Path) ->
     )
 
 
-def test_no_except_outside_io_rejects_ruff_excluded_inspected_file(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_ruff_excluded_inspected_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Every inspected file must also be inside Ruff's BLE-selected file set."""
     _write_pyproject(
         tmp_path=tmp_path,
@@ -1364,7 +1505,7 @@ def test_no_except_outside_io_rejects_ruff_excluded_inspected_file(*, tmp_path: 
         body="def do_thing() -> None:\n    return None\n",
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should fail closed when Ruff excludes an inspected file; "
@@ -1377,7 +1518,9 @@ def test_no_except_outside_io_rejects_ruff_excluded_inspected_file(*, tmp_path: 
     )
 
 
-def test_no_except_outside_io_rejects_ruff_lint_select_without_ble(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_rejects_ruff_lint_select_without_ble(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The semantic backstop is absent when Ruff does not enable BLE/BLE001."""
     _write_pyproject(
         tmp_path=tmp_path,
@@ -1395,7 +1538,7 @@ def test_no_except_outside_io_rejects_ruff_lint_select_without_ble(*, tmp_path: 
         body="def do_thing() -> None:\n    return None\n",
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_except_outside_io should fail closed when Ruff does not select BLE/BLE001; "
@@ -1409,7 +1552,7 @@ def test_no_except_outside_io_rejects_ruff_lint_select_without_ble(*, tmp_path: 
 
 
 def test_no_except_outside_io_accepts_excludes_that_only_carve_uninspected_subsets(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Ruff excludes for files the check never inspects do not fail the invariant."""
     _write_pyproject(
@@ -1446,7 +1589,7 @@ def test_no_except_outside_io_accepts_excludes_that_only_carve_uninspected_subse
     # actually inspected.
     _ = (tmp_path / ".gitignore").write_text("__pycache__/\nmutants/\n", encoding="utf-8")
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept Ruff excludes that only carve uninspected files; "
@@ -1454,7 +1597,9 @@ def test_no_except_outside_io_accepts_excludes_that_only_carve_uninspected_subse
     )
 
 
-def test_no_except_outside_io_accepts_a_codeless_repo(*, tmp_path: Path) -> None:
+def test_no_except_outside_io_accepts_a_codeless_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A genuinely codeless repo (0 tracked first-party `.py`) passes with exit 0.
 
     Replaces two tests that pinned the `source_trees_exit_code` role-key gate —
@@ -1473,7 +1618,7 @@ def test_no_except_outside_io_accepts_a_codeless_repo(*, tmp_path: Path) -> None
     """
     _ = (tmp_path / "README.md").write_text("no code\n", encoding="utf-8")
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_except_outside_io should accept a codeless repo with exit 0; "
@@ -1483,7 +1628,7 @@ def test_no_except_outside_io_accepts_a_codeless_repo(*, tmp_path: Path) -> None
 
 
 def test_no_except_outside_io_covers_a_tracked_file_with_source_trees_declared_empty(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`source_trees = []` must NOT mean "scan nothing" — the scope dodge is closed.
 
@@ -1509,7 +1654,7 @@ def test_no_except_outside_io_covers_a_tracked_file_with_source_trees_declared_e
         body="def swallow() -> None:\n    try:\n        pass\n    except Exception:\n        pass\n",
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     combined = result.stdout + result.stderr
     assert result.returncode != 0, (
@@ -1536,7 +1681,7 @@ def test_no_except_outside_io_module_importable_without_running_main() -> None:
 
 
 def test_no_except_outside_io_reports_position_offenses_alongside_backstop_gaps(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A backstop gap must NOT suppress the position offenses found in the same run.
 
@@ -1582,7 +1727,7 @@ def test_no_except_outside_io_reports_position_offenses_alongside_backstop_gaps(
         ),
     )
 
-    result = _run(cwd=tmp_path)
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
     combined = result.stdout + result.stderr
 
     assert result.returncode != 0, (

@@ -31,21 +31,61 @@ Covered behaviors:
 - the Stop-hook response shapes (`_allow_response`, `_block_response`,
   `_hook_event_name`) and their emission on stdout (`_emit`);
 - the end-to-end hook protocol via in-process `main()` calls (stdin
-  JSON in, response JSON out) plus subprocess invocations of the
-  script exactly as the Claude Code hook runs it, asserting the
-  emitted JSON on both the block and the allow path.
+  JSON in, response JSON out), asserting the emitted JSON on both the
+  block and the allow path.
 
 Private names are imported via from-imports (the package-private
 access model, mirroring `tests/livespec_dev_tooling/fleet/`);
 monkeypatch seams use the string-target form so collaborator
 functions are patched on the module the callers resolve against.
+
+**The guard script runs IN-PROCESS.** `test_script_blocks_then_allows_
+end_to_end` used to spawn `[sys.executable, subagent_stop_guard.py]`
+through `_run_script`; that helper now calls `main()` directly. The
+motive is the child, not the call: a `sys.executable` child inherits
+`COVERAGE_PROCESS_START`, self-instruments under `pytest --cov`, and
+drops a `.coverage.<host>.<pid>` file that races the parallel
+dispatcher's combine step, while paying a fresh interpreter start on
+each arm. Nothing about the acceptance property above is weakened —
+the helper still reads the RESPONSE OBJECT off stdout through the same
+`_response` parser and still fails against the retired stderr/exit-2
+protocol, because an empty stdout has no response to parse.
+
+The payload reaches `main()` the way the child got it: the script
+reads stdin with one `sys.stdin.read()`, so
+`monkeypatch.setattr(sys, "stdin", io.StringIO(payload))` supplies
+exactly those bytes. The `env=` mapping the spawn built by hand is now
+applied to the live environment — the GIT_* hook family it filtered out
+is already deleted by the autouse `_scrub_git_hook_env` fixture, and
+`_STATE_DIR_ENV` plus the fake-`gh` `PATH` are set with
+`monkeypatch.setenv` at the same points the mapping set them, so the
+guard's own `git` and `gh` probes see the identical environment.
+`main()` returns the int `raise SystemExit(main())` would have handed
+the shell, so no `SystemExit` is raised and none is translated.
+
+The `git` spawns in `_git` STAY: this guard derives its markers from
+REAL repository state — uncommitted tracked changes, unpushed commits,
+distance from canonical — so the fixtures must build genuine repos,
+and the guard itself shells out to `git` and `gh` under test. Their
+hardcoded env is a REPLACEMENT for `os.environ` rather than a filtered
+copy, so `COVERAGE_PROCESS_START` / `COV_CORE_*` cannot reach those
+children, and this file KEEPS its `subprocess_spawn_allowlist` entry
+for them.
+
+Branch parity with the retired spawn: the same payload drives the same
+two arms — the unpushed-commit block with its handoff instruction and
+hook-event name, then, after a push and with an armed-PR `gh` stub on
+PATH, the allow response. The only line the child reached that an
+in-process call cannot is the module's
+`if __name__ == "__main__": raise SystemExit(main())`, already excluded
+repo-wide by the pre-existing `exclude_also` patterns in
+`[tool.coverage.report]`, so no new exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import io
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -83,7 +123,6 @@ __all__: list[str] = []
 
 _MODULE = "livespec_dev_tooling.agent_hooks.subagent_stop_guard"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _REPO_ROOT / "livespec_dev_tooling" / "agent_hooks" / "subagent_stop_guard.py"
 
 # Vars git sets when invoking hooks (lefthook pre-commit / pre-push /
 # commit-msg). The guard's internal `git -C <worktree>` probes inherit
@@ -775,7 +814,7 @@ def test_main_fails_open_on_internal_crash(
 
 
 # ---------------------------------------------------------------------------
-# subprocess end-to-end — exactly as the Claude Code hook invokes it.
+# end-to-end — the hook protocol exactly as Claude Code drives it.
 #
 # THIS PAIR IS THE ACCEPTANCE TEST for livespec-dev-tooling-4s2sey: it
 # reads the bytes that actually cross the wire, so it fails against the
@@ -784,19 +823,30 @@ def test_main_fails_open_on_internal_crash(
 # ---------------------------------------------------------------------------
 
 
-def _run_script(*, payload: str, env: dict[str, str]) -> tuple[int, dict[str, object]]:
-    result = subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=payload,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    return result.returncode, _response(stdout=result.stdout)
+def _run_script(
+    *,
+    payload: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[int, dict[str, object]]:
+    """Drive the hook end to end: JSON payload on stdin, exit code + parsed stdout out.
+
+    The retired spawn handed `payload` to the child on its stdin pipe; the
+    script reads it with a single `sys.stdin.read()`, so a monkeypatched
+    `io.StringIO` delivers byte-for-byte what the child received, and the
+    response object is read off `capsys` stdout by the same `_response`
+    parser that read `CompletedProcess.stdout`. `main()` returns the int the
+    `raise SystemExit(main())` line would have carried to the shell, so no
+    `SystemExit` translation is involved.
+    """
+    monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+    exit_code = main()
+    return exit_code, _response(stdout=capsys.readouterr().out)
 
 
-def test_script_blocks_then_allows_end_to_end(tmp_path: Path) -> None:
+def test_script_blocks_then_allows_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     worktree = _make_pushed_repo(tmp_path=tmp_path)
     _add_unpushed_commit(worktree=worktree)
     transcript = tmp_path / "transcript.jsonl"
@@ -807,10 +857,13 @@ def test_script_blocks_then_allows_end_to_end(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     payload = json.dumps({"session_id": "e2e", "transcript_path": str(transcript)})
-    env = {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
-    env[_STATE_DIR_ENV] = str(state_dir)
+    # The env the spawn built by hand is now applied to the live process
+    # environment: the GIT_* hook family is already deleted by the autouse
+    # `_scrub_git_hook_env` fixture (the same vars the spawn filtered out),
+    # and the state dir is set the way the child received it.
+    monkeypatch.setenv(_STATE_DIR_ENV, str(state_dir))
 
-    blocked_code, blocked = _run_script(payload=payload, env=env)
+    blocked_code, blocked = _run_script(payload=payload, monkeypatch=monkeypatch, capsys=capsys)
     assert blocked_code == 0
     assert blocked["decision"] == "block"
     hook_specific = blocked["hookSpecificOutput"]
@@ -822,10 +875,13 @@ def test_script_blocks_then_allows_end_to_end(tmp_path: Path) -> None:
     assert _BLOCK_HANDOFF_INSTRUCTION in context
 
     _push_branch(worktree=worktree)
-    env["PATH"] = _install_fake_gh(
-        tmp_path=tmp_path,
-        stdout='{"state": "OPEN", "autoMergeRequest": {"enabledAt": "2026-06-12T00:00:00Z"}}',
+    monkeypatch.setenv(
+        "PATH",
+        _install_fake_gh(
+            tmp_path=tmp_path,
+            stdout='{"state": "OPEN", "autoMergeRequest": {"enabledAt": "2026-06-12T00:00:00Z"}}',
+        ),
     )
-    allowed_code, allowed = _run_script(payload=payload, env=env)
+    allowed_code, allowed = _run_script(payload=payload, monkeypatch=monkeypatch, capsys=capsys)
     assert allowed_code == 0
     assert allowed == {"continue": True, "suppressOutput": True}
