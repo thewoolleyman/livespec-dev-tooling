@@ -267,6 +267,78 @@ def _contents_args(*, path: str) -> tuple[str, ...]:
     )
 
 
+# The path is spelled literally here rather than read off the row module, as
+# `_AGENTS_ARGS` already spells `AGENTS.md`: a fixture states the OBSERVED
+# shape, and reading the constant inside a module-level helper would raise at
+# Red before any assertion ran.
+_CLAUDE_MD_PATH = ".claude/CLAUDE.md"
+_REGULAR_FILE_MODE = "100644"
+_SYMLINK_MODE = "120000"
+
+
+def _surface_context_with_claude_md(*, agents: str, mode: str) -> FleetContext:
+    """A complete-surface context whose tree carries `.claude/CLAUDE.md` at `mode`."""
+    payload = {"tree": [{"path": _CLAUDE_MD_PATH, "mode": mode}], "truncated": False}
+    table = {
+        _AGENTS_ARGS: _ok(stdout=agents),
+        _SETTINGS_ARGS: _ok(stdout=_SETTINGS_WITH_GUARD),
+        _TREE_ARGS: _ok(stdout=json.dumps(payload)),
+    }
+    return make_context(table=table)
+
+
+def test_a_regular_file_claude_md_is_a_finding() -> None:
+    """A `.claude/CLAUDE.md` blob that is not a symlink is a definitive finding.
+
+    The FIRST assertion is the behavioral one: before the leg exists this
+    fixture is a complete surface and the row passes, so the Red leg fails on
+    a genuine assertion rather than on a missing name.
+    """
+    ctx = _surface_context_with_claude_md(agents=_conformant_agents(), mode=_REGULAR_FILE_MODE)
+    outcome = assert_agent_instruction_surface(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert rows_instructions.CLAUDE_MD_PATH in outcome.message
+    assert rows_instructions.CLAUDE_MD_SYMLINK_TARGET in outcome.message
+
+
+def test_a_symlink_claude_md_passes() -> None:
+    """The mode the fleet actually carries — 120000 — satisfies the leg."""
+    ctx = _surface_context_with_claude_md(agents=_conformant_agents(), mode=_SYMLINK_MODE)
+    assert assert_agent_instruction_surface(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_a_claude_md_absent_from_the_tree_is_not_a_finding() -> None:
+    """Absence is a different obligation; this leg judges only a blob it can see."""
+    table = _tree_table(paths=["AGENTS.md"])
+    table[_AGENTS_ARGS] = _ok(stdout=_conformant_agents())
+    table[_SETTINGS_ARGS] = _ok(stdout=_SETTINGS_WITH_GUARD)
+    assert assert_agent_instruction_surface(ctx=make_context(table=table), member=_MEMBER) == (
+        RowPass()
+    )
+
+
+def test_a_regular_file_claude_md_outranks_the_recipe_warning() -> None:
+    """The error-severity symlink leg is reported before the warning-severity recipe.
+
+    Same hazard as `test_a_missing_heading_outranks_the_recipe_warning`:
+    reporting the recipe first would downgrade a definitive error to a warning.
+    """
+    ctx = _surface_context_with_claude_md(
+        agents=_agents(protocol_body=_RAW_WORKTREE_ADD_BODY), mode=_REGULAR_FILE_MODE
+    )
+    outcome = assert_agent_instruction_surface(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert rows_instructions.CLAUDE_MD_PATH in outcome.message
+
+
+def test_the_manual_hint_names_the_claude_md_symlink() -> None:
+    """An operator who follows the hint verbatim satisfies every leg of the row."""
+    hint = rows_instructions.AGENT_INSTRUCTION_SURFACE_HINT
+    assert _CLAUDE_MD_PATH in hint
+    assert rows_instructions.CLAUDE_MD_SYMLINK_TARGET in hint
+
+
 def test_ai_references_resolve_pass() -> None:
     table = _tree_table(paths=["AGENTS.md", ".ai/agent-disciplines.md", "README.md"])
     table[_contents_args(path="AGENTS.md")] = _ok(

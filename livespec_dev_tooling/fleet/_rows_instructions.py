@@ -13,6 +13,21 @@ Per the fleet's can't-read-is-not-absent discipline, a member whose
 a false finding. A finding names every missing universal-core heading and,
 when absent, the unregistered beads-access guard hook.
 
+THE ROW ALSO ASSERTS THE CLAUDE-SURFACE ALIAS. `.claude/CLAUDE.md` must be a
+SYMLINK to `../AGENTS.md`; a real file there is a second agent-instruction
+surface, free to drift from the first, and the drift is invisible to any
+reader who opens only one of them. That leg reads the member's TREE, because
+no other surface can answer it — the contents API resolves an in-repo symlink
+to its target's bytes, so both shapes read identically through it. What the
+tree cannot carry is the link TEXT (it lives in the blob), so the leg asserts
+that the entry IS a symlink and names the target to restore; it does not
+verify where an existing symlink points. It ships ARMED at error severity on a
+measured offender count of ZERO: on 2026-09-09 all ten manifest members were
+read on their own canonical refs and nine carried mode 120000 at that path,
+the two impl-plugin members the row covers among them, while
+livespec-console-beads-fabro has no such path at all — which this leg does not
+flag, absence being a different obligation.
+
 THE ROW ALSO CARRIES ONE CONTENT PREDICATE, and the headings are otherwise
 asserted only as headings. The `## Repository mutation protocol` section must
 name `just worktree-create` — the recipe that adds the worktree under the
@@ -61,6 +76,8 @@ from livespec_dev_tooling.fleet._context import (
 __all__: list[str] = [
     "AGENTS_PATH",
     "AGENT_INSTRUCTION_SURFACE_HINT",
+    "CLAUDE_MD_PATH",
+    "CLAUDE_MD_SYMLINK_TARGET",
     "MUTATION_PROTOCOL_HEADING",
     "REQUIRED_AGENTS_HEADINGS",
     "SETTINGS_PATH",
@@ -74,6 +91,13 @@ __all__: list[str] = [
 AGENTS_PATH = "AGENTS.md"
 SETTINGS_PATH = ".claude/settings.json"
 _GUARD_MARKER = "beads-access-guard"
+
+# The Claude-surface alias of `AGENTS.md`, and the relative target it must
+# carry. A symlink is the whole obligation: a real file at this path is a
+# SECOND agent-instruction surface, free to drift from the first, and the
+# drift is invisible to every reader who opens only one of them.
+CLAUDE_MD_PATH = ".claude/CLAUDE.md"
+CLAUDE_MD_SYMLINK_TARGET = "../AGENTS.md"
 
 MUTATION_PROTOCOL_HEADING = "## Repository mutation protocol"
 
@@ -109,8 +133,9 @@ WORKTREE_CREATE_SENTENCE = (
 AGENT_INSTRUCTION_SURFACE_HINT = (
     "bring AGENTS.md up to the fleet-universal agent-instruction core and register the "
     "beads-access guard hook (.claude/hooks/beads-access-guard.sh) in .claude/settings.json, "
-    "in a repo-local commit; the mutation-protocol section must name the worktree recipe — "
-    f"{WORKTREE_CREATE_SENTENCE}"
+    f"in a repo-local commit; {CLAUDE_MD_PATH} must be a symlink to {CLAUDE_MD_SYMLINK_TARGET} "
+    "rather than a second instruction file; the mutation-protocol section must name the "
+    f"worktree recipe — {WORKTREE_CREATE_SENTENCE}"
 )
 
 _H2_PREFIX = "## "
@@ -153,11 +178,20 @@ def assert_agent_instruction_surface(*, ctx: FleetContext, member: FleetMember) 
     universal-core heading and, when the beads-access guard is not
     registered in `.claude/settings.json`, the missing guard.
 
-    A member whose surface is structurally complete is then checked for the
-    ONE content predicate: its mutation-protocol section must name the
-    worktree-creation recipe. That leg is reported at WARNING severity and
-    reported SECOND — a structurally absent section is the more serious
-    defect, and reporting the recipe first would downgrade it to a warning.
+    A structurally complete surface is then checked for the Claude-surface
+    alias: `.claude/CLAUDE.md` must be a SYMLINK, not a second instruction
+    file free to drift from `AGENTS.md`. The verdict comes off the member's
+    tree because no other surface can give it — the contents API resolves an
+    in-repo symlink to its target's bytes, so a symlink and a divergent real
+    file read identically there. An unreadable tree yields an empty path set
+    and therefore no finding, per can't-read-is-not-absent; the sibling
+    `assert_agent_ai_references_resolve` row is what surfaces that blindness
+    as a skip.
+
+    Last comes the ONE content predicate: the mutation-protocol section must
+    name the worktree-creation recipe. That leg is reported at WARNING
+    severity and reported LAST — the two legs above are definitive errors,
+    and reporting the recipe first would downgrade either to a warning.
     """
     agents = ctx.file_text(repo=member.repo, path=AGENTS_PATH)
     if agents is None:
@@ -173,6 +207,21 @@ def assert_agent_instruction_surface(*, ctx: FleetContext, member: FleetMember) 
             message=(
                 f"{member.repo}: agent-instruction surface incomplete — missing "
                 f"{', '.join(missing)}"
+            )
+        )
+    # An unreadable tree carries an EMPTY path set, so this condition is false
+    # and no finding is manufactured from a read that never landed. A TRUNCATED
+    # tree still supports the finding: the entry it lists carries its own mode,
+    # and truncation only limits what absence can prove — which this leg, which
+    # judges only a blob it can see, never claims.
+    tree = ctx.tree(repo=member.repo)
+    if CLAUDE_MD_PATH in tree.paths and CLAUDE_MD_PATH not in tree.symlink_paths:
+        return RowFinding(
+            message=(
+                f"{member.repo}: {CLAUDE_MD_PATH} is a regular file, not a symlink to "
+                f"{CLAUDE_MD_SYMLINK_TARGET} — it is a second agent-instruction surface "
+                f"free to drift from {AGENTS_PATH}; replace it in a repo-local commit with "
+                f"`rm {CLAUDE_MD_PATH} && ln -s {CLAUDE_MD_SYMLINK_TARGET} {CLAUDE_MD_PATH}`"
             )
         )
     if WORKTREE_CREATE_COMMAND not in mutation_protocol_section(agents_text=agents):
