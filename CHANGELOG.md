@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.83.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.3...v1.83.4) (2026-09-09)
+
+
+### Bug Fixes
+
+* **role-key-gate:** separate the declared-absent announcement from the role accessors ([41965c6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/41965c6b21093f00a049a253dc4ea0fdaf9a0c28))
+
 ## [1.83.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.2...v1.83.3) (2026-09-09)
 
 
