@@ -32,7 +32,6 @@ set -euo pipefail
 # LLOC ceiling"); its release-tier reds are a burn-down concern, not a
 # wiring one.
 echo ":: doc-only subset: repo-state checks for non-.py input surfaces"
-just check-heading-coverage
 just check-claude-md-coverage
 just check-comment-line-anchors
 just check-agents-ai-references-resolve
@@ -45,6 +44,31 @@ if git diff --cached --name-only | grep -qx 'tests/heading-coverage.json'; then
         just check-no-todo-registry
 else
     just check-no-todo-registry
+fi
+
+# check-heading-coverage ALWAYS runs — it is a repo-state check over input
+# surfaces a doc-only changeset can touch, exactly like the six above. Its
+# direction 5 (the TODO-`reason` acknowledgment guard, plan
+# fleet-heading-coverage-convergence charter D4, ratified at v064) is the one
+# direction with a lever: unset it REPORTS a non-acknowledging reason at
+# warning level, and LIVESPEC_SCOPE_HEADING_COVERAGE_REASONS_TO_HEAD_DIFF arms
+# the VERDICT for the rows this commit AUTHORS.
+#
+# The arming is scoped for the same reason the two levers above are, and
+# against the same incident (livespec-dev-tooling-3ztbdq): at P1 landing all
+# 373 heading-coverage TODO rows across the fleet carry reasons this guard
+# rejects, so a whole-registry verdict would refuse every commit for rows it
+# never touched and make the shared co-edit registry unwritable again. Those
+# rows burn down under the plan's P2 track; what this arming refuses is a NEW
+# cop-out. An out-of-scope finding is still reported (warning,
+# `out_of_staged_scope`), and a baseline git cannot produce falls back to
+# judging every reason rather than to judging none.
+if git diff --cached --name-only | grep -qx 'tests/heading-coverage.json'; then
+    echo ":: staged changeset edits tests/heading-coverage.json — arming the TODO-reason acknowledgment guard for the rows this commit authors"
+    LIVESPEC_SCOPE_HEADING_COVERAGE_REASONS_TO_HEAD_DIFF=true \
+        just check-heading-coverage
+else
+    just check-heading-coverage
 fi
 
 # The shrink-only debt ratchet (plan fleet-heading-coverage-convergence
