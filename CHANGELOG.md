@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.67.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.3...v1.67.4) (2026-09-09)
+
+
+### Bug Fixes
+
+* **cross_repo:** widen the uses: ref scan set to nested workflow templates ([c649e6d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c649e6d8fc9dedee8239ca92c5f8c1eb34891126))
+
 ## [1.67.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.2...v1.67.3) (2026-09-09)
 
 
