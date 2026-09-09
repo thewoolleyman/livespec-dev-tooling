@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.83.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.5...v1.83.6) (2026-09-09)
+
+
+### Bug Fixes
+
+* **checks:** put the config-load supervisor helpers on the IOResult railway ([0aff76a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0aff76a1bebacffe8d83e5e16ee587f8a6722de5))
+
 ## [1.83.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.4...v1.83.5) (2026-09-09)
 
 
