@@ -719,12 +719,19 @@ check-heading-coverage:
 
 # The shrink-only heading-coverage debt ratchet (plan
 # fleet-heading-coverage-convergence charter D3, ratified at v064). Always
-# invoked plainly; the module self-manages its ONE lever
-# (`LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF`), which the
-# authoring-time pre-commit subset sets to narrow the VERDICT to the rows a
+# invoked plainly; the module self-manages both of its levers.
+# `LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF`, which the
+# authoring-time pre-commit subset sets, narrows the VERDICT to the rows a
 # commit authors. Unset here, so the aggregate, pre-push and CI judge the whole
-# register. Regenerate the register with `just
-# generate-heading-coverage-debt-register` — it is never authored by hand.
+# register. `LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` — no_todo_registry's
+# release lever, SHARED rather than duplicated, because the ratified clause
+# pairs liveness and age in one sentence — arms the age bound (charter D5):
+# unset, an overdue row warns and the direction contributes no exit code; set,
+# a row whose first-seen date is older than the configured bound (default 30
+# days) fails. Age stays release-tier-only because it depends on the CLOCK
+# rather than on anything a commit authors, and a per-commit verdict on it
+# could turn master red with no landed change. Regenerate the register with
+# `just generate-heading-coverage-debt-register` — it is never authored by hand.
 check-heading-coverage-debt-register:
     uv run python -m livespec_dev_tooling.checks.heading_coverage_debt_register
 

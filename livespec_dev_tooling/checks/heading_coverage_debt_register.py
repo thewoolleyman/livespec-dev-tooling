@@ -28,6 +28,17 @@ row must carry the key three plus `work_item` and `first_seen`. Debt with no
 owner and no clock is debt the liveness gate and the release-tier age bound
 (charter D4/D5) cannot judge.
 
+A fifth, the AGE BOUND (charter D5), is the one direction that is
+RELEASE-TIER-ONLY: a `TODO` whose register `first_seen` is older than the
+repository's configured bound (default 30 days) fails when
+`LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` is set, and only warns
+otherwise. Age depends on the CLOCK rather than on anything a commit
+authors, so a per-commit verdict on it could turn master red with no landed
+change. It lives whole in the private sibling `_heading_coverage_age_bound`
+— the same cohesion split as `heading_coverage`'s reason guard — which owns
+the bound's configuration, the date arithmetic, the tier decision and both
+of its diagnostics.
+
 NON-BREAKING BY CONSTRUCTION. The register is generated from the live
 registry (`livespec_dev_tooling.heading_coverage_debt`), so at adoption the
 baseline IS today's set and every direction is satisfied on an untouched
@@ -86,6 +97,10 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._heading_coverage_age_bound import (  # noqa: E402
+    judged_age_findings,
+    report_age_violations,
+)
 from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
     COVERAGE_PATH,
     REGISTER_PATH,
@@ -303,9 +318,17 @@ def main() -> int:
             registry_rows=registry_rows,
             register_rows=register_rows,
         )
+    # The age direction is NOT narrowed by the staged-diff scope above, and
+    # cannot be: it is armed by the release lever, which the authoring-time
+    # subset never sets for this check, so there is no commit whose authorship
+    # a narrowing could be measured against.
+    aged = judged_age_findings(
+        registry_rows=registry_rows, register_rows=register_rows, repo_root=cwd
+    )
     for finding in findings:
         _emit(finding=finding, failing=True)
-    return 1 if findings else 0
+    report_age_violations(findings=aged)
+    return 1 if findings or aged else 0
 
 
 if __name__ == "__main__":

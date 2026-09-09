@@ -647,6 +647,17 @@ def _as_bool(*, value: object, key: str) -> bool:
     return value
 
 
+def _as_positive_int(*, value: object, key: str) -> int:
+    # `bool` is refused BEFORE the `int` test, not after it: TOML `true` is a
+    # Python `bool`, and `bool` is a subclass of `int`, so `true` would
+    # otherwise parse as the bound `1`. Same ordering, same reason, as
+    # `_as_bool`'s note about a bare TOML `1`.
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        msg = f"`{key}` must be a positive integer"
+        raise ConfigParseError(msg)
+    return value
+
+
 def _spellings_hint(*, key: str) -> str:
     """The remediation clause every role-key diagnostic ends with.
 
@@ -924,6 +935,39 @@ def load_scenario_tiers(*, repo_root: Path) -> tuple[str, ...] | None:
     if table is None or "scenario_tiers" not in table:
         return None
     return _as_str_tuple(value=table["scenario_tiers"], key="scenario_tiers")
+
+
+def load_heading_coverage_todo_age_bound_days(*, repo_root: Path) -> int | None:
+    """Return the heading-coverage `TODO` age bound in days, or `None` if absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block, key
+    `heading_coverage_todo_age_bound_days` — how many days a `TODO` row may sit
+    in the shrink-only debt register before the RELEASE tier of
+    `heading_coverage_debt_register` refuses it (charter D5 of plan
+    `fleet-heading-coverage-convergence`, ratified into this repository's
+    `SPECIFICATION/non-functional-requirements.md` section "Scenario-tier
+    coverage"). Returns `None` when the whole block is absent OR the key is
+    omitted, so the calling check applies the ratified default of 30 rather than
+    this loader inventing one.
+
+    Raises `ConfigParseError` on anything that is not a POSITIVE integer. Zero or
+    a negative bound is not a stricter setting but an unsatisfiable one — every
+    row is born past it, including the row a spec-first change is obliged to
+    file — and a float or a string is a typo rather than a policy. `bool` is
+    refused first because TOML `true` satisfies `isinstance(value, int)`, the
+    same ordering `_as_bool` documents.
+
+    Like `scenario_tiers` and `plan_lifecycle_anchor`, this is intentionally NOT
+    a `Config` role key: it is a single-check concern, so it is read directly off
+    the table rather than threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "heading_coverage_todo_age_bound_days" not in table:
+        return None
+    return _as_positive_int(
+        value=table["heading_coverage_todo_age_bound_days"],
+        key="heading_coverage_todo_age_bound_days",
+    )
 
 
 def load_slf001_exempt_globs(*, repo_root: Path) -> tuple[str, ...]:
