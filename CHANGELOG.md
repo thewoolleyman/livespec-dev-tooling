@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.83.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.82.2...v1.83.0) (2026-09-09)
+
+
+### Features
+
+* **gates:** resolve the gated repository from the gate context, not the clone origin ([419a111](https://github.com/thewoolleyman/livespec-dev-tooling/commit/419a1115752e34a31f79bf63a49367d8374f7758))
+
+
+### Bug Fixes
+
+* **agent-hooks:** put the venue deny hint on the IOResult railway ([21bbef1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/21bbef145855487c7cd3cb61f26a6d471d04abc3))
+* **cross-repo:** put the release-lane run fetch on the IOResult railway ([caf2224](https://github.com/thewoolleyman/livespec-dev-tooling/commit/caf22240f9d14ea8dba274053a6d0a9447340e53))
+
 ## [1.82.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.82.1...v1.82.2) (2026-09-09)
 
 
