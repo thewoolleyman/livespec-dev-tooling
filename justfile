@@ -227,6 +227,7 @@ check:
         check-keyword-only-args
         check-local-memory-drift-audit
         check-main-guard
+        check-marketplace-ref-release-only
         check-master-ci-green
         check-match-keyword-only
         check-newtype-domain-primitives
@@ -750,6 +751,14 @@ check-local-memory-drift-audit:
 
 check-main-guard:
     uv run python -m livespec_dev_tooling.checks.main_guard
+
+# Refuse a committed `.claude/settings.json` that pins a shared
+# `thewoolleyman/livespec*` plugin marketplace to any ref other than `release`.
+# The plugin marketplace registry is HOST-GLOBAL — one ref per marketplace name,
+# shared by every checkout — so a tag pin here rewrites the slot every sibling
+# repo reads and silently breaks their `ensure-plugins`.
+check-marketplace-ref-release-only:
+    uv run python -m livespec_dev_tooling.checks.marketplace_ref_release_only
 
 check-master-ci-green:
     uv run python -m livespec_dev_tooling.checks.master_ci_green
