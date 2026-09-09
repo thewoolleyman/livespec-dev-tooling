@@ -71,7 +71,11 @@ a suite that passes while testing something the hook never does. Only
 the spawns that invoke the CHECK for its exit code and stderr are
 targets. Because 84 spawns remain, this file KEEPS its
 `subprocess_spawn_allowlist` entry — removing it would redden
-`check-tests-no-subprocess-spawn`.
+`check-tests-no-subprocess-spawn`. Those 84 children go on paying that
+entry's standing cost, so `_scrubbed_env` drops `COVERAGE_PROCESS_START`
+and `COV_CORE_*` alongside the GIT_* vars: an allowlisted spawn must not
+self-instrument and write `.coverage.*` files that race the parallel
+check dispatcher.
 
 All 42 check spawns now go through `_run_check`, which drives `main()`
 in-process (`monkeypatch.chdir` + a monkeypatched `sys.argv` + `capsys`).
@@ -169,9 +173,27 @@ _GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
 )
 
 
+def _is_scrubbed(*, key: str) -> bool:
+    """True iff `key` must be kept out of a `git` child this file spawns.
+
+    Two families, for two different reasons. The GIT_* passthrough vars above
+    would redirect git at the SURROUNDING repo instead of the tmp_path
+    fixture. `COVERAGE_PROCESS_START` and `COV_CORE_*` would make a child
+    self-instrument via the pth-installed startup hook and write `.coverage.*`
+    files that race the parallel check dispatcher — the standing requirement
+    on every entry in `subprocess_spawn_allowlist`, which this file remains on
+    for its 84 surviving `git` spawns.
+    """
+    return (
+        key in _GIT_ENV_PASSTHROUGH_VARS
+        or key == "COVERAGE_PROCESS_START"
+        or key.startswith("COV_CORE_")
+    )
+
+
 def _scrubbed_env() -> dict[str, str]:
-    """Return a copy of `os.environ` with GIT_* hook vars removed."""
-    return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
+    """Return a copy of `os.environ` with the GIT_* and coverage vars removed."""
+    return {k: v for k, v in os.environ.items() if not _is_scrubbed(key=k)}
 
 
 @pytest.fixture(autouse=True)
