@@ -426,6 +426,17 @@ def _isolated_git_env() -> dict[str, str]:
     }
 
 
+# The `GIT_*` names that actually redirect git at another worktree. They are
+# scrubbed UNCONDITIONALLY rather than only when ambient, so `_scrub_git_env`'s
+# loop body runs on every invocation. Iterating only `os.environ` made the body
+# reachable ONLY when the launching shell happened to export a `GIT_*` var — it
+# does inside a commit hook and under a `GIT_EDITOR`-exporting shell, and does
+# not under a bare `just check`. That made this file's coverage a function of
+# the ambient environment: 100% locally, 99% (this line missing) in the janitor,
+# which is what reddened `check-per-file-coverage` on an otherwise-green tree.
+_REDIRECTING_GIT_ENV_NAMES: tuple[str, ...] = ("GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE")
+
+
 def _scrub_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip `GIT_*` from THIS process, for an in-process `main()`.
 
@@ -435,8 +446,15 @@ def _scrub_git_env(*, monkeypatch: pytest.MonkeyPatch) -> None:
     environment one frame earlier. Only the `GIT_*` family is removed here —
     the retired child kept `COVERAGE_PROCESS_START`, and the check's own
     nested pytest run still relies on the ambient coverage configuration.
+
+    The scrub set is the three redirecting names UNION whatever `GIT_*` is
+    ambient, so the removal is env-independent (see
+    `_REDIRECTING_GIT_ENV_NAMES`) while still covering vars this list does not
+    name. `raising=False` keeps a name that is not set a no-op, so the union
+    only ever widens what is removed — it never changes the resulting env.
     """
-    for key in [name for name in os.environ if name.startswith("GIT_")]:
+    ambient_git_names = {name for name in os.environ if name.startswith("GIT_")}
+    for key in sorted(ambient_git_names.union(_REDIRECTING_GIT_ENV_NAMES)):
         monkeypatch.delenv(key, raising=False)
 
 
