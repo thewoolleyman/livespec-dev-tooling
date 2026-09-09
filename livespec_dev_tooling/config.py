@@ -542,6 +542,19 @@ class Config:
     # ordinary case — a repo with no self-hosted capacity declares nothing and
     # the check stays a no-op there.
     gating_self_hosted_labels: tuple[str, ...] = ()
+    # Bare FILENAMES of the DIRECT-CHILD `.py` files under `BIN_WRAPPER_TREE`
+    # that are NOT shebang wrappers — pre-import machinery `wrapper_shape` must
+    # not hold to the canonical 5-statement shape, and that `all_declared` must
+    # therefore still require an `__all__` from. `_bootstrap.py` is the baseline
+    # because statement 2 of that very shape imports it. A repo whose pre-import
+    # machinery outgrows one module declares the second filename here instead of
+    # waiting on a dev-tooling release and a pin bump — the rigidity that pushed
+    # livespec core's currency package out of `bin/` entirely (epic
+    # livespec-c1k9). A declaration ADDS to this baseline rather than replacing
+    # it (see `load_config`), so no consumer can configure `_bootstrap.py` out of
+    # the set and leave the wrapper shape demanding that the bootstrap module
+    # conform to a shape that imports the bootstrap module.
+    bin_non_wrapper_files: tuple[str, ...] = ("_bootstrap.py",)
     # Repo-root-relative directories whose DIRECT-CHILD `.py` modules form an
     # invocation-set surface — one element per module, named by its stem — for
     # `release_bump_classification` (its sole behavioral consumer). OPTIONAL:
@@ -1117,6 +1130,23 @@ def load_config(*, repo_root: Path) -> Config:
         overrides["gating_self_hosted_labels"] = _as_str_tuple(
             value=table["gating_self_hosted_labels"], key="gating_self_hosted_labels"
         )
+    if "bin_non_wrapper_files" in table:
+        # ADDITIVE, unlike every other key parsed here: the declared names are
+        # appended to the baseline rather than substituted for it, so adopting a
+        # second pre-import module cannot drop `_bootstrap.py` out of the
+        # non-wrapper set. That substitution would not merely relax a check — it
+        # would demand `_bootstrap.py` conform to a wrapper shape whose own
+        # statement 2 is `from _bootstrap import bootstrap`, which is
+        # unsatisfiable. Same posture `self_hosted_routing` takes when it unions
+        # `gating_self_hosted_labels` onto its own built-in label; the union runs
+        # in the loader rather than at a check because the consuming predicate
+        # (`is_bin_wrapper`) lives here and is shared by two checks.
+        overrides["bin_non_wrapper_files"] = tuple(
+            dict.fromkeys(
+                baseline.bin_non_wrapper_files
+                + _as_str_tuple(value=table["bin_non_wrapper_files"], key="bin_non_wrapper_files")
+            )
+        )
     if "invocation_set_trees" in table:
         overrides["invocation_set_trees"] = _as_str_tuple(
             value=table["invocation_set_trees"], key="invocation_set_trees"
@@ -1150,6 +1180,9 @@ def load_config(*, repo_root: Path) -> Config:
         tests_tree_prefix=overrides.get("tests_tree_prefix", baseline.tests_tree_prefix),
         gating_self_hosted_labels=overrides.get(
             "gating_self_hosted_labels", baseline.gating_self_hosted_labels
+        ),
+        bin_non_wrapper_files=overrides.get(
+            "bin_non_wrapper_files", baseline.bin_non_wrapper_files
         ),
         target_dirs=overrides.get("target_dirs", baseline.target_dirs),
         invocation_set_trees=overrides.get("invocation_set_trees", baseline.invocation_set_trees),
@@ -1495,35 +1528,42 @@ def derive_source_prefixes(*, config: Config) -> tuple[str, ...]:
 
 
 # The single definition of the `bin/*.py` shebang-wrapper set. A wrapper is
-# a DIRECT-CHILD `*.py` under `.claude-plugin/scripts/bin/`, excluding
-# `_bootstrap.py` (which carries real bootstrap logic, not the canonical
-# 5-statement wrapper shape). `wrapper_shape` enforces that exact shape over
-# this set — a shape that by construction carries NO `__all__` — and
-# `all_declared` imports the SAME predicate to drop these launchers from its
-# `__all__` universe (they are thin launchers with no public API to declare).
-# Factored here beside `is_under_any_tree` so neither check hardcodes a
-# second, independently-drifting `bin/*.py` glob. `BIN_WRAPPER_TREE` is
-# exported so `wrapper_shape` scans exactly the tree the predicate matches.
+# a DIRECT-CHILD `*.py` under `.claude-plugin/scripts/bin/`, excluding the
+# consumer's `bin_non_wrapper_files` (`_bootstrap.py` by default, which
+# carries real bootstrap logic, not the canonical 5-statement wrapper shape).
+# `wrapper_shape` enforces that exact shape over this set — a shape that by
+# construction carries NO `__all__` — and `all_declared` imports the SAME
+# predicate to drop these launchers from its `__all__` universe (they are thin
+# launchers with no public API to declare). Factored here beside
+# `is_under_any_tree` so neither check hardcodes a second,
+# independently-drifting `bin/*.py` glob. `BIN_WRAPPER_TREE` is exported so
+# `wrapper_shape` scans exactly the tree the predicate matches.
 BIN_WRAPPER_TREE = _p(".claude-plugin", "scripts", "bin")
-_BIN_WRAPPER_EXEMPT_NAMES = frozenset({"_bootstrap.py"})
 
 
-def is_bin_wrapper(*, rel: Path) -> bool:
+def is_bin_wrapper(*, rel: Path, config: Config) -> bool:
     """True iff `rel` (a repo-root-relative path) is a `bin/*.py` shebang wrapper.
 
     The shared wrapper-identity both `wrapper_shape` and `all_declared`
     read as their single source of truth: `rel` is a wrapper when it is a
     DIRECT-CHILD `.py` file of `BIN_WRAPPER_TREE`
-    (`.claude-plugin/scripts/bin/`) and is not one of
-    `_BIN_WRAPPER_EXEMPT_NAMES` (`_bootstrap.py`). A file nested deeper than
-    a direct child, a non-`.py` file, a file outside the tree, and the
-    exempt `_bootstrap.py` are all NOT wrappers — mirroring `wrapper_shape`'s
-    non-recursive `bin/*.py` glob minus its `_bootstrap.py` exemption.
+    (`.claude-plugin/scripts/bin/`) and its NAME is not one of
+    `config.bin_non_wrapper_files`. A file nested deeper than a direct
+    child, a non-`.py` file, a file outside the tree, and every declared
+    non-wrapper file are all NOT wrappers — mirroring `wrapper_shape`'s
+    non-recursive `bin/*.py` glob minus its non-wrapper exemption.
+
+    The exemption is NAME-scoped, never a path glob, and the direct-child
+    test is what scopes it: declaring `_bootstrap.py` exempts the bin root's
+    `_bootstrap.py` and NOT a `bin/sub/_bootstrap.py`. The nested file is
+    not a wrapper either — it fails the direct-child test — so
+    `all_declared` still demands its `__all__` and a bare name in the
+    declaration cannot silently reach down the tree.
     """
     return (
         rel.parent == BIN_WRAPPER_TREE
         and rel.suffix == ".py"
-        and rel.name not in _BIN_WRAPPER_EXEMPT_NAMES
+        and rel.name not in config.bin_non_wrapper_files
     )
 
 

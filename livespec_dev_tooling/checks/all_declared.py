@@ -15,10 +15,12 @@ construction carries NO `__all__`, and they are thin launchers
 with no meaningful public API to declare. They drop out of this
 check's universe entirely (neither ERROR nor WARN) via the SAME
 wrapper-identity `wrapper_shape` uses (`config.is_bin_wrapper`),
-so the two checks never conflict on the same file. `_bootstrap.py`
-is NOT a wrapper (`wrapper_shape` exempts it from the shape), so
-it is NOT dropped — the exemption is scoped to the wrapper set and
-does not fail open.
+so the two checks never conflict on the same file. A NON-WRAPPER
+bin file is NOT dropped: `_bootstrap.py`, and every further
+filename the consumer declares in `bin_non_wrapper_files`, is
+exempt from the wrapper SHAPE and carries real module code, so
+this check still requires its `__all__`. The exemption is scoped
+to the wrapper set and does not fail open.
 
 The check walks the git-derived first-party `.py` universe
 (`config.resolve_check_universe`), parses each via `ast`, and
@@ -65,6 +67,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
+    Config,
     is_bin_wrapper,
     is_under_any_tree,
 )
@@ -143,9 +146,7 @@ class _Findings(NamedTuple):
     newly_undefined: list[tuple[Path, str]]
 
 
-def _scan_universe(
-    *, universe: tuple[Path, ...], root: Path, source_trees: tuple[Path, ...]
-) -> _Findings:
+def _scan_universe(*, universe: tuple[Path, ...], root: Path, config: Config) -> _Findings:
     """Classify every file's `__all__` findings into legacy vs newly-covered."""
     findings = _Findings(
         legacy_missing=[], newly_missing=[], legacy_undefined=[], newly_undefined=[]
@@ -155,13 +156,17 @@ def _scan_universe(
         # them into the canonical 5-statement form, which by construction
         # carries NO `__all__`, and they are thin launchers with no public
         # API to declare. Skip via the SAME wrapper-identity `wrapper_shape`
-        # uses (`config.is_bin_wrapper`), so the two checks never conflict.
-        # `_bootstrap.py` is NOT a wrapper (wrapper_shape exempts it from the
-        # shape), so it is NOT skipped here — the exemption does not fail open.
-        if is_bin_wrapper(rel=rel):
+        # uses (`config.is_bin_wrapper`), so the two checks never conflict —
+        # which is why the consumer's `bin_non_wrapper_files` declaration has
+        # to reach BOTH checks through the one predicate rather than only the
+        # one that names the key. A non-wrapper bin file is NOT skipped here
+        # (`_bootstrap.py` carries an `__all__` today): the exemption is from
+        # the wrapper SHAPE, not from declaring a public surface, so it does
+        # not fail open.
+        if is_bin_wrapper(rel=rel, config=config):
             continue
         tree = ast.parse((root / rel).read_text(encoding="utf-8"))
-        is_legacy = is_under_any_tree(rel=rel, trees=source_trees)
+        is_legacy = is_under_any_tree(rel=rel, trees=config.source_trees)
         names = _all_value_names(tree=tree)
         if names is None:
             (findings.legacy_missing if is_legacy else findings.newly_missing).append(rel)
@@ -192,7 +197,7 @@ def main() -> int:
     if not universe:
         log.info("no first-party Python to check")
         return 0
-    findings = _scan_universe(universe=universe, root=root, source_trees=config.source_trees)
+    findings = _scan_universe(universe=universe, root=root, config=config)
     for path in findings.legacy_missing:
         log.error("module missing `__all__: list[str]` declaration", file=str(path))
     for path, name in findings.legacy_undefined:

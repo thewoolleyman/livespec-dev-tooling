@@ -1371,17 +1371,105 @@ def test_is_bin_wrapper_identifies_the_wrapper_set() -> None:
     """`is_bin_wrapper` is the single wrapper-identity both checks share.
 
     A DIRECT-CHILD `.claude-plugin/scripts/bin/*.py` file is a wrapper
-    UNLESS it is the exempt `_bootstrap.py`. A non-`.py` file under the
-    tree, a file nested deeper than a direct child, and a file outside the
-    tree are all NOT wrappers. This pins every branch of the predicate so
-    `wrapper_shape` and `all_declared` read ONE definition.
+    UNLESS its name is one of the config's non-wrapper files — which is
+    exactly `_bootstrap.py` for a consumer that declares nothing. A
+    non-`.py` file under the tree, a file nested deeper than a direct
+    child, and a file outside the tree are all NOT wrappers. This pins
+    every branch of the predicate so `wrapper_shape` and `all_declared`
+    read ONE definition.
     """
     bin_tree = Path(".claude-plugin") / "scripts" / "bin"
-    assert is_bin_wrapper(rel=bin_tree / "seed.py") is True
-    assert is_bin_wrapper(rel=bin_tree / "_bootstrap.py") is False
-    assert is_bin_wrapper(rel=bin_tree / "notes.txt") is False
-    assert is_bin_wrapper(rel=Path("pkg") / "mod.py") is False
-    assert is_bin_wrapper(rel=bin_tree / "sub" / "deep.py") is False
+    baseline = Config()
+    assert is_bin_wrapper(rel=bin_tree / "seed.py", config=baseline) is True
+    assert is_bin_wrapper(rel=bin_tree / "_bootstrap.py", config=baseline) is False
+    assert is_bin_wrapper(rel=bin_tree / "notes.txt", config=baseline) is False
+    assert is_bin_wrapper(rel=Path("pkg") / "mod.py", config=baseline) is False
+    assert is_bin_wrapper(rel=bin_tree / "sub" / "deep.py", config=baseline) is False
+
+
+def test_is_bin_wrapper_honours_declared_non_wrapper_files() -> None:
+    """A declared filename leaves the wrapper set; an undeclared sibling stays in it.
+
+    The predicate half of `livespec-dev-tooling-g28`. Both directions are
+    asserted together because only the pair proves the exemption was
+    CONFIGURED rather than widened: `_currency.py` drops out, and the
+    equally-underscored `_other.py` beside it does not.
+    """
+    bin_tree = Path(".claude-plugin") / "scripts" / "bin"
+    declared = Config(bin_non_wrapper_files=("_bootstrap.py", "_currency.py"))
+    assert is_bin_wrapper(rel=bin_tree / "_currency.py", config=declared) is False
+    assert is_bin_wrapper(rel=bin_tree / "_other.py", config=declared) is True
+    assert is_bin_wrapper(rel=bin_tree / "_bootstrap.py", config=declared) is False
+
+
+def test_bin_non_wrapper_files_exemption_is_name_scoped_not_a_path_glob() -> None:
+    """A declared name nested below the bin root is not exempted by the bare match.
+
+    The exemption is name-scoped to DIRECT CHILDREN, and this pins the
+    consequence rather than the mechanism: `bin/sub/_currency.py` is not a
+    wrapper (it fails the direct-child test), so `all_declared` still
+    demands its `__all__` and the declaration cannot silently reach down
+    the tree. Read the two assertions together — the bin-root file and the
+    nested file are both `False`, and only the reason differs.
+    """
+    bin_tree = Path(".claude-plugin") / "scripts" / "bin"
+    declared = Config(bin_non_wrapper_files=("_bootstrap.py", "_currency.py"))
+    assert is_bin_wrapper(rel=bin_tree / "_currency.py", config=declared) is False
+    assert is_bin_wrapper(rel=bin_tree / "sub" / "_currency.py", config=declared) is False
+    assert is_bin_wrapper(rel=bin_tree / "sub" / "seed.py", config=declared) is False
+
+
+def test_bin_non_wrapper_files_defaults_to_bootstrap_when_undeclared(*, tmp_path: Path) -> None:
+    """Undeclared MUST resolve to exactly `_bootstrap.py` — the back-compat pin.
+
+    Moving the exemption off a hardcoded frozenset onto configuration is
+    only safe if a consumer that declares nothing keeps today's verdict, so
+    this asserts the baseline VALUE rather than only the check's behaviour.
+    """
+    _write_pyproject(repo_root=tmp_path, body="[tool.livespec_dev_tooling]\n")
+    config = load_config(repo_root=tmp_path)
+    assert config.bin_non_wrapper_files == ("_bootstrap.py",)
+
+
+def test_bin_non_wrapper_files_declaration_adds_to_the_baseline(*, tmp_path: Path) -> None:
+    """A declaration is ADDITIVE: the declared names join `_bootstrap.py`, never replace it.
+
+    The one key here parsed as a union rather than an override. Substituting
+    would not merely relax the check — it would hold `_bootstrap.py` to a
+    wrapper shape whose own statement 2 is `from _bootstrap import
+    bootstrap`, which no file can satisfy.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=('[tool.livespec_dev_tooling]\nbin_non_wrapper_files = ["_currency.py"]\n'),
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.bin_non_wrapper_files == ("_bootstrap.py", "_currency.py")
+
+
+def test_bin_non_wrapper_files_redeclaring_the_baseline_does_not_duplicate_it(
+    *, tmp_path: Path
+) -> None:
+    """Naming `_bootstrap.py` explicitly is legal and idempotent, not a second entry."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'bin_non_wrapper_files = ["_bootstrap.py", "_currency.py"]\n'
+        ),
+    )
+    config = load_config(repo_root=tmp_path)
+    assert config.bin_non_wrapper_files == ("_bootstrap.py", "_currency.py")
+
+
+def test_bin_non_wrapper_files_rejects_a_non_string_entry(*, tmp_path: Path) -> None:
+    """A schema-violating entry is a hard `ConfigParseError`, naming the key."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nbin_non_wrapper_files = [7]\n",
+    )
+    with pytest.raises(ConfigParseError, match="bin_non_wrapper_files"):
+        _ = load_config(repo_root=tmp_path)
 
 
 def test_resolve_check_universe_returns_root_and_universe(
