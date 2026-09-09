@@ -78,6 +78,7 @@ __all__: list[str] = [
     "MirrorPairing",
     "NotApplicable",
     "PrefixRole",
+    "RepoLocalCiSkip",
     "RoleAbsence",
     "ScalarRole",
     "SingleMeaningVariant",
@@ -102,6 +103,7 @@ __all__: list[str] = [
     "load_destructive_cli_allowlist",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
+    "load_repo_local_ci_skips",
     "load_scenario_tiers",
     "load_slf001_exempt_globs",
     "load_subprocess_spawn_allowlist",
@@ -511,6 +513,47 @@ class MirrorPairing:
 
 
 @dataclass(frozen=True, kw_only=True)
+class RepoLocalCiSkip:
+    """One repo-local aggregate slug this repo declares is NOT mirrored into CI.
+
+    `ci_matrix_completeness` limb (a) requires every CANONICAL `just check`
+    aggregate slug to be run by some CI job. A REPO-LOCAL slug — one with no
+    backing `checks/<slug>.py` module, so `canonical_check_slugs` never
+    discovers it — was outside that universe BY CONSTRUCTION, which is how
+    seventeen repo-local gates across six fleet repos came to sit in a `just
+    check` aggregate that no CI job runs (livespec-dev-tooling-8o8e.18). The
+    exposure is every path to master that runs no local hook: a web edit, a bot
+    commit, release automation, a fan-out pin bump.
+
+    ⛔ NOT EVERY ABSENCE IS A DEFECT, AND THAT IS THE WHOLE DESIGN. Some
+    repo-local gates genuinely cannot run in per-PR CI — the precedent is
+    livespec-overseer's `check-codex-skill-picker`, which can only ever SKIP on
+    a hosted runner, and "a matrix entry that can only skip manufactures a green
+    row that reads as coverage". The finding was never "wire all seventeen"; it
+    was that NONE of them says so anywhere a checker reads, so no one can tell a
+    deliberate exclusion from an unreviewed one. This key is where a repo says
+    it, and `ci_matrix_completeness` is what reads it.
+
+    ⛔ AND THE CARRIER IS PER-REPO ON PURPOSE, not a fleet-wide tuple beside
+    `canonical_checks._WORLD_GATE_CHECK_SLUGS`. That registry can be fleet-wide
+    because every entry is CANONICAL, hence a fact about a module that ships to
+    every member. A repo-local slug is the opposite: it exists in exactly ONE
+    repo's aggregate, so a shared tuple listing `check-fork-drift` (console) and
+    `check-ansible-lint` (dev-tooling) could not also assert that each entry is
+    a real aggregate member — the assertion that makes a STALE declaration fail
+    rather than pass unnoticed — without convicting every sibling that does not
+    wire it.
+
+    `reason` is part of the parsed VALUE rather than a TOML comment, for the
+    same reason `unarmed_until` carries a ledger id: an unexplained declaration
+    is indistinguishable from one that arrived by inheritance.
+    """
+
+    slug: str
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class Config:
     """Typed layout configuration. The bare `Config()` is the flat baseline.
 
@@ -870,6 +913,42 @@ def _parse_single_meaning_variants(*, value: object) -> tuple[SingleMeaningVaria
     return tuple(out)
 
 
+def _parse_repo_local_ci_skips(*, value: object) -> tuple[RepoLocalCiSkip, ...]:
+    """Parse the declared repo-local CI-skip slugs, rejecting an unexplained entry.
+
+    A DELIBERATELY DIFFERENT ENTRY SHAPE from the `{file, function, reason}`
+    keys: what is declared here is a `just` TARGET, not a location in a source
+    tree, so the shared parser's `file` + `function` slots have nothing to hold.
+
+    ⛔ THE LOADER ENFORCES THE SCHEMA ONLY. Whether a declared slug is a real
+    member of the repo's `just check` aggregate needs the JUSTFILE (or the
+    `check-targets.txt` inventory), which this loader does not read — so that
+    bound lives with the consumer, `checks/ci_matrix_completeness`, and a
+    STALE entry surfaces there as a finding rather than being silently
+    ignored. A successful parse is evidence about the shape and nothing more.
+    """
+    if not isinstance(value, list):
+        msg = "`repo_local_ci_skips` must be an array of {slug, reason} tables"
+        raise ConfigParseError(msg)
+    entries = cast("list[object]", value)
+    out: list[RepoLocalCiSkip] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            msg = "each `repo_local_ci_skips` entry must be a table"
+            raise ConfigParseError(msg)
+        table = cast("dict[str, Any]", entry)
+        slug = table.get("slug")
+        reason = table.get("reason")
+        if not isinstance(slug, str):
+            msg = "each `repo_local_ci_skips` entry needs a string `slug`"
+            raise ConfigParseError(msg)
+        if not isinstance(reason, str) or not reason.strip():
+            msg = f"`repo_local_ci_skips` entry `{slug}` needs a non-empty `reason`"
+            raise ConfigParseError(msg)
+        out.append(RepoLocalCiSkip(slug=slug, reason=reason))
+    return tuple(out)
+
+
 def _parse_pyproject(*, repo_root: Path) -> dict[str, Any] | None:
     """Return the parsed `pyproject.toml` document, or None if the file is absent."""
     pyproject = repo_root / "pyproject.toml"
@@ -1074,6 +1153,42 @@ def load_subprocess_spawn_allowlist(*, repo_root: Path) -> tuple[str, ...] | Non
     return _as_str_tuple(
         value=table["subprocess_spawn_allowlist"], key="subprocess_spawn_allowlist"
     )
+
+
+def load_repo_local_ci_skips(*, repo_root: Path) -> tuple[RepoLocalCiSkip, ...] | None:
+    """Return the `repo_local_ci_skips` entries, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `repo_local_ci_skips` — an array of `{slug, reason}` tables naming the
+    REPO-LOCAL (non-canonical) `just check` aggregate members this repo
+    declares are deliberately not mirrored into `.github/workflows/ci.yml`, and
+    why. Consumed by `checks/ci_matrix_completeness`, which requires every
+    OTHER repo-local aggregate slug to be run by some CI job
+    (livespec-dev-tooling-8o8e.18). See `RepoLocalCiSkip` for why the carrier is
+    per-repo rather than a fleet-wide registry.
+
+    Returns `None` when the whole block is absent OR the key is omitted, so the
+    calling check applies its documented default (empty — nothing declared, so
+    every repo-local gap is reported). Raises `ConfigParseError` on a
+    non-array value, a non-table entry, or an entry missing its `slug` or its
+    non-empty `reason`.
+
+    ⛔ AN ABSENT KEY AND AN EMPTY ARRAY MEAN THE SAME THING HERE, and that is
+    safe in a way it is NOT for the union role keys: this key is
+    RELAXING-ONLY, so empty is its STRICT end. Nothing is excused, every
+    repo-local gap is reported, and a repo that has never heard of the key gets
+    the strictest reading rather than a blinder one.
+
+    Like `scenario_tiers`, `destructive_cli_allowlist` and
+    `subprocess_spawn_allowlist`, this is intentionally NOT a `Config` role
+    key: it is a single-check concern (`ci_matrix_completeness`), so it is read
+    directly off the table rather than threaded through the typed layout
+    dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "repo_local_ci_skips" not in table:
+        return None
+    return _parse_repo_local_ci_skips(value=table["repo_local_ci_skips"])
 
 
 def load_mutation_staging_dir(*, repo_root: Path) -> Path | None:
