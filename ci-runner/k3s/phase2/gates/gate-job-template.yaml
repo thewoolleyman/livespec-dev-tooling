@@ -183,6 +183,28 @@ spec:
             # make the strict disposition fire on a contributor's machine.
             - name: LIVESPEC_GATE_CONTEXT
               value: "1"
+            # R4.S7 slice B (livespec-dev-tooling-rwmo.2): WHAT this run is
+            # gating, which the pod cannot work out for itself. Both
+            # credential-reading targets name their repository from the clone —
+            # `check-branch-protection-alignment` parses `origin` against a
+            # github.com-only pattern, `check-master-ci-green` hands `gh` the
+            # `{owner}`/`{repo}` placeholders it expands from that same remote —
+            # and this clone's origin is the in-cluster git-daemon URL, which is
+            # not github.com and carries no owner segment at all. So a TOKEN
+            # ALONE does not arm those two checks; without this they fail here
+            # having never identified the repository they were judging.
+            #
+            # NOT a rewritten origin, because origin is load-bearing for the
+            # initContainer's `.base` fetch into refs/remotes/origin/master —
+            # the name eight range-judging aggregate members resolve.
+            #
+            # Read ONLY where LIVESPEC_GATE_CONTEXT is set, so the variable is
+            # inert everywhere else and cannot silently repoint a contributor's
+            # checks at another repository. An EMPTY value (render-gate-job.sh
+            # could not derive the identity) reads as "no repository named",
+            # which fails those two targets the same way a missing token does.
+            - name: LIVESPEC_GATE_REPOSITORY
+              value: "@@GATED_REPOSITORY@@"
             # Requirement 4. The local lane derives nproc / 4, and `nproc` inside
             # a container reports the NODE's 32 threads regardless of this
             # container's cpu request — so an unset value would start 8 workers

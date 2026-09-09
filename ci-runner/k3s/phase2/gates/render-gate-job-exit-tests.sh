@@ -26,7 +26,10 @@
 #      `just check` in the gate container, and the aggregate is still the last
 #      thing that runs;
 #   K. mutants of I and J are CAUGHT by those same checks, so neither is
-#      vacuously true — the same discipline case E applies to case D.
+#      vacuously true — the same discipline case E applies to case D;
+#   L. the GATED REPOSITORY's github.com identity is derived from the gated
+#      clone's own origin and rendered into LIVESPEC_GATE_REPOSITORY — and a
+#      tree with no github.com origin renders EMPTY rather than a guess.
 #
 # WHY I AND J EXIST (livespec-dev-tooling-rwmo.1). The sandbox used to be a
 # `--depth 1` fetch of one ref into a bare `git init`, so eight members of
@@ -300,6 +303,51 @@ elif GATE_JOB_TEMPLATE="${nobootstrap}" "${RENDERER}" --repo-root "${SCRATCH}/re
   fi
 else
   fail "renderer errored on the no-bootstrap mutant template instead of rendering it"
+fi
+
+echo "== L. the gated repository's github.com identity reaches the pod =="
+# R4.S7 slice B (livespec-dev-tooling-rwmo.2). The pod's own clone cannot name
+# the repository it is gating — its only remote is the git-daemon URL, which is
+# not github.com — so the renderer derives the identity HERE, from the gated
+# clone's origin, and the manifest carries it as LIVESPEC_GATE_REPOSITORY.
+#
+# The fixture gets a REAL `git init` + origin rather than a stubbed git: the
+# derivation under test is exactly "what does this clone say it is". Git's
+# global config is scrubbed so a host-level `url.<base>.insteadOf` cannot
+# rewrite the remote this case exists to read.
+repo_origin="${SCRATCH}/repo-origin"
+make_repo "${repo_origin}" "ghcr.io/thewoolleyman/livespec-python:v1.64.2"
+git_scrubbed() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git "$@"; }
+git_scrubbed init --quiet "${repo_origin}" 2>/dev/null
+git_scrubbed -C "${repo_origin}" remote add origin \
+  "https://github.com/thewoolleyman/livespec-dev-tooling.git" 2>/dev/null
+origin_out="${SCRATCH}/origin.yaml"
+if "${RENDERER}" --repo-root "${repo_origin}" --tree-hash "${HASH_A}" > "${origin_out}" 2>/dev/null; then
+  if grep -qF 'value: "thewoolleyman/livespec-dev-tooling"' "${origin_out}"; then
+    pass "the github.com owner/repo is derived from origin and rendered"
+  else
+    fail "the rendered manifest does not name the gated repository: $(grep -A1 -F 'LIVESPEC_GATE_REPOSITORY' "${origin_out}")"
+  fi
+else
+  fail "renderer errored on the fixture repo carrying a github.com origin"
+fi
+
+# The negative half, and the control that keeps the positive one honest: the
+# SAME renderer against a tree with NO github.com origin — every other fixture
+# in this suite — must render an EMPTY value rather than refusing, and rather
+# than leaking `--repo` (a bare mirror name) into a slot that must hold
+# owner/repo. Two fixtures, one renderer, two different values: the identity
+# can only have come from the clone. Empty is what the checks read as "no
+# repository was named".
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     > "${SCRATCH}/no-origin.yaml" 2>/dev/null; then
+  if grep -A1 -F 'name: LIVESPEC_GATE_REPOSITORY' "${SCRATCH}/no-origin.yaml" | grep -qF 'value: ""'; then
+    pass "a repo with no github.com origin renders an empty identity, not a guess"
+  else
+    fail "expected an empty identity: $(grep -A1 -F 'name: LIVESPEC_GATE_REPOSITORY' "${SCRATCH}/no-origin.yaml")"
+  fi
+else
+  fail "renderer errored on the fixture repo with no origin"
 fi
 
 echo
