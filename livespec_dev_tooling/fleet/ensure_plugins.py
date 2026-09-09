@@ -12,7 +12,19 @@ import sys
 from pathlib import Path
 from typing import Protocol, cast
 
-from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
+# `returns` is VENDORED, not installed, so a bare import resolves only if some
+# EARLIER import in the same process already put `_vendor/` on `sys.path`. This
+# module is an entry point (`python -m livespec_dev_tooling.fleet.
+# ensure_plugins`), and the `returns` import below sorts BEFORE the sibling
+# imports that establish the path, so it establishes it itself exactly as
+# `_ensure_plugin_commands` does.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (  # noqa: E402
     ArtifactReader,
     CacheDirRemover,
     artifact_record_findings,
@@ -20,7 +32,7 @@ from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
     plugin_artifact_findings,
     remove_plugin_cache_dir,
 )
-from livespec_dev_tooling.fleet._ensure_plugin_commands import (
+from livespec_dev_tooling.fleet._ensure_plugin_commands import (  # noqa: E402
     PluginCommandOutcome,
     PluginCommandResult,
     PluginCommandRunner,
@@ -30,7 +42,7 @@ from livespec_dev_tooling.fleet._ensure_plugin_commands import (
     run_from_settings,
     subprocess_runner,
 )
-from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
 
 __all__: list[str] = [
     "ArtifactReader",
@@ -64,14 +76,24 @@ def _marketplace_of(*, plugin: str) -> str:
 
 
 def _split_enablement(*, raw: object) -> tuple[tuple[str, ...], tuple[str, ...], str | None]:
-    """(enabled, explicitly-disabled, shape-finding) from an enabledPlugins value."""
+    """(enabled, explicitly-disabled, shape-finding) from an enabledPlugins value.
+
+    The list arm FORWARDS the parser's own `reason` rather than restating it.
+    It used to answer every unreadable list with one fixed sentence, because
+    the sentinel it read gave it nothing else to say; the finding now names the
+    offending entry, which is what an operator editing a long array needs.
+
+    The mapping arm keeps its own loop instead of delegating: it must report
+    the explicitly-DISABLED names too, and the parser deliberately answers with
+    the enabled set alone.
+    """
     if raw is None:
         return ((), (), None)
     if isinstance(raw, list):
         names = enabled_plugin_names(raw=cast("list[object]", raw))
-        if names is None:
-            return ((), (), "enabledPlugins list entries must be strings")
-        return (names, (), None)
+        if isinstance(names, Failure):
+            return ((), (), names.failure().reason)
+        return (names.unwrap(), (), None)
     if not isinstance(raw, dict):
         return ((), (), "enabledPlugins must be a JSON object")
     on: list[str] = []

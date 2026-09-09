@@ -23,6 +23,24 @@ fields here. What the two DO share is the one FAILURE track
 (`InvocationNotPerformed`), which is where the drift that made this
 worth filing actually was, and which they now share in fact rather than
 in intent.
+
+THE PARSING HALF RIDES ITS OWN RAILWAY — livespec-dev-tooling-qndn,
+cluster 7. The conversion above put the INVOCATION half on `IOResult`; it
+left `enabled_plugin_names` answering every malformed `enabledPlugins`
+value with `None`, the same word it used for nothing being wrong. That
+sentinel collapsed THREE conditions, each a different edit to
+`.claude/settings.json`: the value is not a collection at all, a list
+entry is not a plugin name, or a mapping value is not an enable flag.
+`PluginEnablementMalformed` keeps them apart and names the offending
+entry or key.
+
+⚠️ `Result`, NOT `IOResult`, and the difference is not cosmetic. The
+parser reads no file and spawns nothing — it is handed an already-decoded
+JSON value — so an `IOResult` would claim an effect that is not there and
+would force every caller through `unsafe_perform_io` for a pure answer.
+The command seam above stays `IOResult` because it really does spawn.
+`checks/_ci_matrix_parse` makes the same split between its pure recipe
+parsers and its file reads.
 """
 
 from __future__ import annotations
@@ -45,6 +63,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
@@ -54,9 +73,13 @@ from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
 )
 
 __all__: list[str] = [
+    "ENABLEMENT_FLAG_NOT_A_BOOLEAN",
+    "ENABLEMENT_NAME_NOT_A_STRING",
+    "ENABLEMENT_NOT_A_COLLECTION",
     "PluginCommandOutcome",
     "PluginCommandResult",
     "PluginCommandRunner",
+    "PluginEnablementMalformed",
     "enabled_plugin_names",
     "marketplace_repo_ref",
     "planned_commands",
@@ -95,6 +118,36 @@ class PluginCommandRunner(Protocol):
     def __call__(self, *, args: tuple[str, ...]) -> PluginCommandOutcome: ...
 
 
+# The three distinguishable ways an `enabledPlugins` value is not an
+# enablement, kept apart because each names a DIFFERENT edit to
+# `.claude/settings.json`. Collapsed onto one `None` they were the same word,
+# and the operator was told only that something about the key was wrong.
+ENABLEMENT_NOT_A_COLLECTION = "enablement_not_a_collection"
+ENABLEMENT_NAME_NOT_A_STRING = "enablement_name_not_a_string"
+ENABLEMENT_FLAG_NOT_A_BOOLEAN = "enablement_flag_not_a_boolean"
+
+
+@dataclass(frozen=True, kw_only=True)
+class PluginEnablementMalformed:
+    """The `enabledPlugins` value is not a shape an enablement can be read from.
+
+    Deliberately NOT inhabited by "the file declares no plugins": that is
+    `Success(())`, and keeping the two apart is the whole point. `kind` is a
+    small closed vocabulary (the three module constants), matching
+    `InvocationNotPerformed`'s spelling in this same package rather than
+    inventing a second convention; `detail` names the offending ENTRY or KEY,
+    which is what an operator has to go and edit.
+    """
+
+    kind: str
+    detail: str
+
+    @property
+    def reason(self) -> str:
+        """One human-readable line, ready to render as a settings-file finding."""
+        return f"enabledPlugins {self.detail}"
+
+
 def marketplace_repo_ref(*, entry: object) -> str | None:
     """The `<repo>@<ref>` target for one extraKnownMarketplaces entry."""
     if not isinstance(entry, dict):
@@ -110,26 +163,53 @@ def marketplace_repo_ref(*, entry: object) -> str | None:
     return f"{repo}@{ref}"
 
 
-def enabled_plugin_names(*, raw: object) -> tuple[str, ...] | None:
-    """The enabled plugin names from settings, preserving file order."""
+def _malformed(*, kind: str, detail: str) -> Result[tuple[str, ...], PluginEnablementMalformed]:
+    """The failure track, naming WHICH malformation the value carries."""
+    return Failure(PluginEnablementMalformed(kind=kind, detail=detail))
+
+
+def enabled_plugin_names(*, raw: object) -> Result[tuple[str, ...], PluginEnablementMalformed]:
+    """The enabled plugin names from settings, preserving file order.
+
+    AN ABSENT KEY IS AN ANSWER, NOT A FAILURE: a settings file that declares
+    no `enabledPlugins` is well-formed and simply enables nothing, so it is
+    `Success(())`. Only a value enablement cannot be READ from lands on the
+    failure track. The pre-conversion spelling of the two was `()` and `None`,
+    which differ by one `is None` arm a caller has to remember to write —
+    and `not ()` and `not None` are both true, so forgetting it reads as
+    "nothing is enabled" rather than as an error.
+
+    The two accepted shapes are the mapping (`{name: bool}`, where `false` is
+    an explicit DISABLE rather than a malformation) and the legacy list of
+    names, in which every entry is enabled.
+    """
     if raw is None:
-        return ()
+        return Success(())
     if isinstance(raw, list):
-        names: list[str] = []
-        for item in cast("list[object]", raw):
+        listed: list[str] = []
+        for index, item in enumerate(cast("list[object]", raw)):
             if not isinstance(item, str):
-                return None
-            names.append(item)
-        return tuple(names)
+                return _malformed(
+                    kind=ENABLEMENT_NAME_NOT_A_STRING,
+                    detail=f"list entries must be strings; entry {index} is {type(item).__name__}",
+                )
+            listed.append(item)
+        return Success(tuple(listed))
     if not isinstance(raw, dict):
-        return None
+        return _malformed(
+            kind=ENABLEMENT_NOT_A_COLLECTION,
+            detail=f"must be a JSON object or array; got {type(raw).__name__}",
+        )
     names: list[str] = []
     for key, enabled in cast("dict[str, object]", raw).items():
         if not isinstance(enabled, bool):
-            return None
+            return _malformed(
+                kind=ENABLEMENT_FLAG_NOT_A_BOOLEAN,
+                detail=f"values must be JSON booleans; {key!r} is not",
+            )
         if enabled:
             names.append(key)
-    return tuple(names)
+    return Success(tuple(names))
 
 
 def planned_commands(*, settings_text: str) -> tuple[tuple[str, ...], ...]:
@@ -145,10 +225,16 @@ def planned_commands(*, settings_text: str) -> tuple[tuple[str, ...], ...]:
             repo_ref = marketplace_repo_ref(entry=entry)
             if repo_ref is not None:
                 commands.append(("claude", "plugin", "marketplace", "add", repo_ref))
+    # An unreadable enablement derives no install/update commands, and the
+    # marketplace registrations this text DOES support still stand. The
+    # malformation is not swallowed anywhere: `ensure` runs
+    # `settings_findings` — which reports this same failure's `reason` — as a
+    # precondition BEFORE it reaches the planner, so the diagnostic an
+    # operator acts on is already emitted by the time control gets here.
     plugins = enabled_plugin_names(raw=settings.get("enabledPlugins"))
-    if plugins is None:
+    if isinstance(plugins, Failure):
         return tuple(commands)
-    for plugin in plugins:
+    for plugin in plugins.unwrap():
         commands.append(("claude", "plugin", "install", plugin, "-s", "project"))
         commands.append(("claude", "plugin", "update", plugin, "-s", "project"))
     return tuple(commands)
