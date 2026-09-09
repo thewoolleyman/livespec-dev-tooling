@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.80.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.80.0...v1.80.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **checks:** put the plan-record ledger and plan-tree readers on the IOResult railway ([ea6b04f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ea6b04f4e588eafa3a5f2dbef5e7ea8d95f88bfc))
+
 ## [1.80.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.79.0...v1.80.0) (2026-09-09)
 
 
