@@ -139,9 +139,11 @@ def collect_entries(*, lines: list[str], head: int) -> tuple[tuple[int, str], ..
 def matrix_anchor(*, lines: list[str]) -> Anchor | None:
     """Return the `matrix.target:` list carrying the aggregate slug, or None.
 
-    That list is guaranteed to exist wherever this reconcile can matter: a
-    consumer whose CI does not run `check-aggregate-completeness` cannot be
-    failed by `check-ci-matrix-completeness` for a slug the aggregate wires.
+    None is a ROUTINE result, not an error: the caller falls back to
+    `batch_anchor` for the batched shape, and escalates only when NEITHER
+    resolves. This docstring used to claim such a list "is guaranteed to exist
+    wherever this reconcile can matter" — the very claim this module's header
+    records as false, and which cost five consumers two releases each.
     """
     in_matrix = False
     for index, raw in enumerate(lines):
