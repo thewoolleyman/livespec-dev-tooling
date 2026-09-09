@@ -25,13 +25,14 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
+from livespec_dev_tooling.just_recipe_headers import recipe_header_present
+
 __all__: list[str] = [
     "check_recipe_bounds",
     "insert_missing_inventory_slugs",
     "insert_missing_targets",
     "inventory_slugs",
     "missing_recipe_chunks",
-    "recipe_header_present",
     "reconcile_inventory_text",
     "rewrite_renamed_references",
     "target_indent",
@@ -60,31 +61,6 @@ def token_for(*, line: str) -> str | None:
         return None
     token = stripped.split("#", 1)[0].strip()
     return token if token.startswith(_CHECK_PREFIX) else None
-
-
-def recipe_header_present(*, justfile_text: str, slug: str) -> bool:
-    r"""Return True when `justfile_text` already defines a `<slug>` recipe header.
-
-    A just recipe header sits at column 0 (no leading whitespace): the recipe
-    name, then optional parameters/dependencies, then `:`. The lookahead
-    `(?=[ \t:])` requires the character immediately after the slug to be
-    whitespace or the colon — never `-` — so a `<slug>` lookup does NOT match a
-    longer `<slug>-<suffix>:` header (prefix-collision guard). This recognizes
-    EVERY recipe-header form for the slug:
-
-    - bare `check-foo:`
-    - variadic `check-foo *args:`
-    - named / defaulted params `check-foo msg_path:` / `check-foo a b:` /
-      `check-foo p="x":`
-
-    The pre-extraction guard matched only the bare `check-foo:` header, so it
-    re-appended a duplicate recipe when a consumer hand-defined the check in a
-    PARAMETERIZED form (both Driver repos define `check-red-green-replay *args:`
-    that way) — the redefinition then broke the consumer's `just` parse.
-    Matching any header form is the fix.
-    """
-    header = re.compile(rf"^{re.escape(slug)}(?=[ \t:])[^\n]*?:", re.MULTILINE)
-    return header.search(justfile_text) is not None
 
 
 def rewrite_renamed_references(
@@ -233,13 +209,17 @@ def insert_missing_targets(
 def missing_recipe_chunks(*, justfile_text: str, missing: tuple[str, ...]) -> list[str]:
     """Return a zero-arg `check-<slug>:` recipe chunk for each missing slug lacking a recipe.
 
-    A slug whose recipe header is already defined in ANY form (bare, variadic,
-    or named-param — see `recipe_header_present`) gets NO chunk, so a
-    parameterized hand-defined recipe is never duplicated.
+    A slug the justfile already CLAIMS gets NO chunk, so nothing hand-defined is
+    ever duplicated. What counts as claimed is not decided here: it is the
+    single-sourced `just_recipe_headers.recipe_header_present`, the same
+    decision `checks/canonical_recipe_fidelity` asks — a recipe header in any
+    form (bare, variadic, named-param, `@`-quiet) or an `alias <slug> := ...`,
+    but NOT a `<slug> := "x"` variable assignment, which leaves the name free
+    for the recipe this appends.
     """
     chunks: list[str] = []
     for slug in missing:
-        if recipe_header_present(justfile_text=justfile_text, slug=slug):
+        if recipe_header_present(justfile_text=justfile_text, name=slug):
             continue
         module = slug.removeprefix(_CHECK_PREFIX).replace("-", "_")
         chunks.append(f"\n{slug}:\n    {_RECIPE_MODULE_STEM}{module}\n")
