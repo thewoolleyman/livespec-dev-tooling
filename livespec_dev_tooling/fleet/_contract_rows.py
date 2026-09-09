@@ -38,6 +38,10 @@ from livespec_dev_tooling.fleet._contract_model import (
     RowFn,
 )
 from livespec_dev_tooling.fleet._reconcile_shims import reconcile_shim_workflows
+from livespec_dev_tooling.fleet._rows_aggregate_gate import (
+    AGGREGATE_GATE_HINT,
+    assert_aggregate_gate_wired,
+)
 from livespec_dev_tooling.fleet._rows_baseline import (
     assert_acceptance_mode_declared,
     assert_baseline_harnesses,
@@ -294,6 +298,32 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
             "worktree_discipline declaration are all yours to commit (the installer "
             "prints the declaration line as guidance; livespec-dev-tooling-7ix8)"
         ),
+    ),
+    # The row that makes a CANONICAL CHECK'S DELIVERY visible from the fleet
+    # vantage (livespec-dev-tooling-739o, failure class 1 — the only one of that
+    # item's three classes still live when it was re-measured on 2026-09-09).
+    # `check-aggregate-completeness` and `check-ci-matrix-completeness` are the
+    # two meta-gates that make every OTHER canonical slug arrive, and they are
+    # per-repo SELF-reads: a member that omits them omits its own detector, so
+    # nothing anywhere went red and the release fan-out reported success.
+    #
+    # DEV_TOOLING_PIN_CLASSES, reused rather than respelled: the population that
+    # owes this obligation is exactly the population that CONSUMES dev-tooling's
+    # canonical slugs, which is what that set already names. The enforcement
+    # suite is the SOURCE of the slugs and asserts its own aggregate in-repo.
+    #
+    # ARMED AT WARNING, and the severity is a judgement about CONSEQUENCE that
+    # the asserter's docstring states in full — not a soft-arming device. The
+    # measured offender count on origin/master 2026-09-09 is ONE, its repair is
+    # owned by another tenant, and error severity would EXCLUDE it from release
+    # dispatch and freeze the pin staleness the item documents. Promotion is a
+    # one-word change once that member wires the two slugs; arming before that
+    # adoption is what `plan/rop-railway-enforcement/` records as forbidden.
+    _manual_committed_file_row(
+        row_id="aggregate-gate-wired",
+        applies_to=DEV_TOOLING_PIN_CLASSES,
+        assert_member=assert_aggregate_gate_wired,
+        manual_hint=AGGREGATE_GATE_HINT,
     ),
     _manual_committed_file_row(
         row_id="acceptance-mode-declared",

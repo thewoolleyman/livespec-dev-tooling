@@ -167,6 +167,25 @@ ROW_SCOPE_DECLARATIONS: tuple[RowScopeDeclaration, ...] = (
             "wrong — livespec passes the headings and fails the guard."
         ),
     ),
+    RowScopeDeclaration(
+        row_id="aggregate-gate-wired",
+        excluded=frozenset({"enforcement-suite"}),
+        kind=CLAUSE_SCOPED,
+        clause=(
+            "livespec-dev-tooling SPECIFICATION/contracts.md section "
+            '"Shared check inventory" (the wiring-completeness invariant)'
+        ),
+        reason=(
+            "The invariant obliges every CONSUMER of a canonical slug to wire it into "
+            "`just check` AND its CI matrix; livespec-dev-tooling is the repo the slugs "
+            "are DEFINED in, not a consumer reached through the pin web, and the two "
+            "meta-gates it would be asserted on are the ones it ships. It asserts its "
+            "own aggregate in-repo, where those gates are self-reads that work precisely "
+            "because it wires them — the failure this row exists for is a member that "
+            "omits them and so runs no detector at all. Same population, same reason, as "
+            "the sibling dev-tooling-pin row: one class, named, not a plane."
+        ),
+    ),
 )
 
 
