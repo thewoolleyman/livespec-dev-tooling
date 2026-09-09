@@ -1,0 +1,345 @@
+---
+# storage_layout — the node's three LABEL-keyed CI storage tiers, the two bind
+# mounts that put containerd's store and the local-path PVC root on them, and
+# the k3s drop-in that refuses to start k3s unless both binds are mounted.
+#
+# Replaces ci-runner/k3s/phase2/storage-layout/install-storage-layout.sh, with
+# ONE deliberate narrowing recorded in tasks/migrate_live_stores.yml.
+#
+# THE LAYOUT — the five fstab lines, byte-exact, in storage_layout_fstab:
+#   LABEL=ci-cache       /var/cache/ci-runner                 ext4
+#   LABEL=ci-containerd  /var/cache/ci-runner/k3s-containerd  ext4
+#   LABEL=ci-workvols    /var/cache/ci-runner/k3s-storage     xfs
+#   bind /var/cache/ci-runner/k3s-containerd -> /var/lib/rancher/k3s/agent/containerd
+#   bind /var/cache/ci-runner/k3s-storage    -> /var/lib/rancher/k3s/storage
+# Each bind requires ITS OWN SOURCE mount, not merely the cache volume:
+# otherwise systemd may bind the empty mountpoint directory before the tier
+# volume lands on it, and k3s would run on the cache volume — or on / — silently,
+# since every path exists either way.
+#
+# WHY lineinfile AND NOT A MOUNT MODULE: the mount module lives in
+# ansible.posix, which this tree does not carry — ansible-core alone is what
+# runs here and what the lint gate resolves against. lineinfile is also the
+# closer conversion: the shell ensures FIVE BYTE-EXACT lines and REPLACES a
+# differing line for the same mountpoint, which is exactly a keyed lineinfile
+# and not what a mount module's own line format would produce.
+#
+# IT NEVER FORMATS AND NEVER DESTROYS DATA. On a node whose tiers are already
+# live it changes nothing: that no-op is its contract.
+
+- name: Enumerate the node's block devices
+  # check_mode: false because a registered `command` is skipped under --check,
+  # and the label resolution below would then refuse every tier on a host whose
+  # tiers are perfectly fine. A read.
+  ansible.builtin.command: lsblk -rno PATH,TYPE
+  register: storage_layout_lsblk
+  changed_when: false
+  check_mode: false
+  become: true
+
+- name: Probe each block device's filesystem label
+  # `blkid -p` probes the superblock DIRECTLY, bypassing the blkid cache that
+  # goes stale after a `tune2fs -L` — which is exactly what a media swap does.
+  # lsblk's own LABEL column reads udev and carries the same staleness.
+  ansible.builtin.command: blkid -p -s LABEL -o value {{ item }}
+  register: storage_layout_labels
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  loop: >-
+    {{ storage_layout_lsblk.stdout_lines
+       | map('split', ' ')
+       | selectattr(1, 'in', ['part', 'lvm', 'crypt', 'md', 'disk'])
+       | map(attribute=0) | list }}
+  loop_control:
+    label: "{{ item }}"
+
+- name: Resolve each tier label to the devices carrying it
+  # A LIST of records rather than a label-keyed dict: a dict whose KEYS are
+  # themselves templates is not a shape Ansible resolves, and a list keeps the
+  # label, its own mountpoint and its devices together where every consumer
+  # below needs all three.
+  ansible.builtin.set_fact:
+    storage_layout_tiers:
+      - label: "{{ storage_layout_label_cache }}"
+        mount: "{{ storage_layout_cache_mount }}"
+        devices: >-
+          {{ storage_layout_labels.results | selectattr('stdout', 'equalto', storage_layout_label_cache)
+             | map(attribute='item') | list }}
+      - label: "{{ storage_layout_label_containerd }}"
+        mount: "{{ storage_layout_containerd_src }}"
+        devices: >-
+          {{ storage_layout_labels.results | selectattr('stdout', 'equalto', storage_layout_label_containerd)
+             | map(attribute='item') | list }}
+      - label: "{{ storage_layout_label_workvols }}"
+        mount: "{{ storage_layout_workvols_src }}"
+        devices: >-
+          {{ storage_layout_labels.results | selectattr('stdout', 'equalto', storage_layout_label_workvols)
+             | map(attribute='item') | list }}
+
+- name: Refuse a tier label that does not resolve to exactly one block device
+  # Zero means the volume is not formatted or not labelled yet: mkfs with the
+  # role label and rsync the data in first. Two means a media swap is half done:
+  # relabel the OLD volume so exactly one carries the role label.
+  ansible.builtin.assert:
+    that:
+      - item.devices | length == 1
+    fail_msg: >-
+      {{ item.devices | length }} block devices carry LABEL={{ item.label }}
+      ({{ item.devices | join(', ') | default('none', true) }}); exactly one must
+    success_msg: "LABEL={{ item.label }} -> {{ item.devices | join(', ') }}"
+  loop: "{{ storage_layout_tiers }}"
+  loop_control:
+    label: "{{ item.label }}"
+
+- name: Release a tier volume automounted somewhere other than its own mountpoint
+  ansible.builtin.include_tasks: release_foreign_mounts.yml
+
+- name: Read the current fstab
+  ansible.builtin.slurp:
+    src: /etc/fstab
+  register: storage_layout_fstab_content
+  become: true
+
+- name: Refuse a mountpoint that fstab already names more than once
+  # The shell's ensure_line refuses here and tells the operator to reconcile by
+  # hand. lineinfile would not: given two matching lines it rewrites the LAST
+  # and leaves the earlier one in place, so a duplicate would survive silently
+  # and the mount that actually happens would depend on which line systemd's
+  # generator won with. Refusing keeps the shell's contract.
+  ansible.builtin.assert:
+    that:
+      - >-
+        (storage_layout_fstab_content.content | b64decode).splitlines()
+        | select('match', '^[^#]\S*\s+' ~ (item.path | regex_escape) ~ '\s')
+        | list | length <= 1
+    fail_msg: >-
+      /etc/fstab carries more than one line for {{ item.path }}; reconcile them by hand
+      before this role rewrites either
+    success_msg: "/etc/fstab names {{ item.path }} at most once"
+  loop: "{{ storage_layout_fstab }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Ensure the five managed fstab lines
+  # Keyed on the MOUNTPOINT, so an existing but DIFFERENT line for one of the
+  # five is replaced rather than duplicated — the shell's own rule. `backup`
+  # writes the previous /etc/fstab beside it before the first change of a run,
+  # which is the shell's .pre-storage-layout- copy.
+  #
+  # `insertafter: EOF` so a line this role adds lands at the end, never above an
+  # unrelated entry it does not manage.
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^[^#]\\S*\\s+{{ item.path | regex_escape }}\\s"
+    line: "{{ item.line }}"
+    insertafter: EOF
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  become: true
+  loop: "{{ storage_layout_fstab }}"
+  loop_control:
+    label: "{{ item.path }}"
+  notify: Reload systemd for the storage layout
+
+- name: Publish the changed fstab as mount units before mounting from it
+  ansible.builtin.meta: flush_handlers
+
+- name: Check which of the cache mountpoint and bind targets exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: storage_layout_root_dirs
+  become: true
+  loop:
+    - "{{ storage_layout_cache_mount }}"
+    - "{{ storage_layout_containerd_dir }}"
+    - "{{ storage_layout_storage_dir }}"
+
+- name: Create the cache mountpoint and the two bind targets
+  # These three are plain directories on the ROOT filesystem, so they are safe
+  # to create before anything is mounted. The two TIER mountpoints are not, and
+  # are created further down.
+  #
+  # CREATED ONLY WHEN ABSENT, and that is the shell's ensure_dir contract rather
+  # than an optimisation. k3s creates its own containerd store and local-path
+  # root 0700; a task that ENFORCED 0755 would loosen them on every converge,
+  # which is a permission change this role has no business making. The mode
+  # below therefore applies at creation and never afterwards.
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ storage_layout_root_dirs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not item.stat.exists
+
+- name: Mount the cache tier the other two tiers live on
+  # FIRST and alone: the two tier mountpoints are directories ON this volume.
+  # Created while it is not mounted they would land on / where the mounted
+  # volume then hides them — the fresh-host bootstrap whose omission used to
+  # leave fstab written and nothing mounted.
+  ansible.builtin.include_tasks: mount_target.yml
+  vars:
+    storage_layout_mount_target: "{{ storage_layout_cache_mount }}"
+
+- name: Check which tier mountpoints exist on the cache volume
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: storage_layout_tier_dirs
+  become: true
+  loop:
+    - "{{ storage_layout_containerd_src }}"
+    - "{{ storage_layout_workvols_src }}"
+
+- name: Create the two tier mountpoints on the cache volume
+  # Created only when absent, for the reason above: once a tier is mounted here
+  # this path IS the tier filesystem's root, whose mode came with the store.
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ storage_layout_tier_dirs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not item.stat.exists
+
+- name: Mount the containerd tier
+  ansible.builtin.include_tasks: mount_target.yml
+  vars:
+    storage_layout_mount_target: "{{ storage_layout_containerd_src }}"
+
+- name: Mount the local-path tier
+  ansible.builtin.include_tasks: mount_target.yml
+  vars:
+    storage_layout_mount_target: "{{ storage_layout_workvols_src }}"
+
+- name: Move a live k3s store onto its tier before any bind can hide it
+  ansible.builtin.include_tasks: migrate_live_stores.yml
+
+- name: Bind containerd's store onto its tier
+  # AFTER the migration decision above, never before: a bind laid over a
+  # directory that already holds content HIDES it, and on 2026-09-07 that put a
+  # freshly formatted tier over gmktec-xubuntu's running containerd store, which
+  # the kubelet then spent ten minutes an hour reporting as missing.
+  ansible.builtin.include_tasks: mount_target.yml
+  vars:
+    storage_layout_mount_target: "{{ storage_layout_containerd_dir }}"
+
+- name: Bind the local-path root onto its tier
+  ansible.builtin.include_tasks: mount_target.yml
+  vars:
+    storage_layout_mount_target: "{{ storage_layout_storage_dir }}"
+
+- name: Create the k3s drop-in directory
+  # Explicit, because --check cannot see past a missing parent.
+  #
+  # OBSERVATION CARRIED OVER FROM THE SHELL, not a change: the drop-in is
+  # written under k3s.service.d on BOTH roles, while an agent runs
+  # k3s-agent.service, so it is inert there. Fixing that is a separate decision
+  # about the agent's ordering, not part of this conversion.
+  ansible.builtin.file:
+    path: "{{ storage_layout_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the k3s drop-in that requires both binds
+  ansible.builtin.copy:
+    src: "{{ storage_layout_phase2_dir }}/storage-layout/{{ storage_layout_dropin_name }}"
+    dest: "{{ storage_layout_dropin_dir }}/{{ storage_layout_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the storage layout
+
+- name: Verify the fstab this role wrote
+  # A post-install verification of what the mounts above produced, so it stays
+  # skipped under --check.
+  #
+  # findmnt --verify checks EVERY line and exits non-zero on any error, so an
+  # unrelated entry — an unplugged USB backup disk, harmless at boot thanks to
+  # `nofail` — would otherwise fail this role after it had already written its
+  # lines. Its output is read and only the five managed mountpoints are fatal.
+  ansible.builtin.command: findmnt --verify --tab-file /etc/fstab
+  register: storage_layout_verify
+  changed_when: false
+  failed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Refuse a verification error on one of the five managed lines
+  ansible.builtin.assert:
+    that:
+      - storage_layout_verify.stdout is not search('^\d+ parse errors', multiline=True)
+      - storage_layout_managed_verify_errors | length == 0
+    fail_msg: >-
+      /etc/fstab failed verification for a managed line:
+      {{ storage_layout_managed_verify_errors | join('; ') }}
+    success_msg: /etc/fstab verifies for every managed line
+  vars:
+    # findmnt --verify prints each mountpoint at column 0 with its findings
+    # indented beneath it, so a target is in error when an [E] line appears in
+    # its own indented block. The pattern captures the target of every such
+    # block; only the five this role manages are fatal.
+    storage_layout_verify_error_targets: >-
+      {{ storage_layout_verify.stdout | default('')
+         | regex_findall('^(\S+)\n(?:[ \t]+\[.\][^\n]*\n)*?[ \t]+\[E\]', multiline=True) }}
+    storage_layout_managed_verify_errors: >-
+      {{ storage_layout_verify_error_targets
+         | select('in', storage_layout_fstab | map(attribute='path') | list) | list }}
+  when: not ansible_check_mode
+
+- name: Re-read the node's mount table
+  # The play's facts were gathered before this role mounted anything, so the
+  # assertion below would read a stale table and pass on a host where nothing
+  # was actually mounted.
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - mounts
+  when: not ansible_check_mode
+
+- name: Report a managed mountpoint that is not mounted, under --check
+  # WITHOUT THIS A DRY RUN IS BLIND HERE. The mounts are `command` tasks, which
+  # --check skips, so an unmounted tier produces neither a would-be change nor
+  # the assertion below — a drift report would show nothing at all for the one
+  # thing this role most needs to report. The play's facts were gathered before
+  # the role ran, which under --check is exactly the host's current state.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: {{ storage_layout_unmounted | join(', ') }}
+      {{ 'is' if storage_layout_unmounted | length == 1 else 'are' }} not mounted;
+      a real run would mount {{ 'it' if storage_layout_unmounted | length == 1 else 'them' }}
+      from the fstab lines above
+  vars:
+    storage_layout_unmounted: >-
+      {{ storage_layout_fstab | map(attribute='path')
+         | reject('in', ansible_facts['mounts'] | map(attribute='mount') | list) | list }}
+  when:
+    - ansible_check_mode
+    - storage_layout_unmounted | length > 0
+
+- name: Refuse a managed mountpoint that is not mounted
+  # The half-applied state the shell installer was written to end: fstab
+  # carrying the five lines with nothing mounted, and an exit code that said it
+  # had worked.
+  ansible.builtin.assert:
+    that:
+      - item in (ansible_facts['mounts'] | map(attribute='mount') | list)
+    fail_msg: "{{ item }} is not mounted; the layout is HALF APPLIED"
+    success_msg: "{{ item }} is mounted"
+  loop: "{{ storage_layout_fstab | map(attribute='path') | list }}"
+  when: not ansible_check_mode

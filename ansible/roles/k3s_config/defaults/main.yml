@@ -1,0 +1,21 @@
+---
+# The committed phase-2 tree this role distributes. Referenced rather than
+# copied into the role's own files/: the shipped config.yaml and
+# config.agent.yaml are the source of truth for the cluster's k3s settings, and
+# a second copy under roles/ would be a second thing to drift.
+k3s_config_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+# The node's role, from the inventory. install-node.sh read it from the node's
+# phase0-bare-metal profile; the inventory is where that fact lives now.
+k3s_config_cluster_role: "{{ cluster_role }}"
+k3s_config_dest: /etc/rancher/k3s/config.yaml
+# A SERVER path. An agent deploys no packaged component, so it gets neither the
+# directory nor the marker — and any marker an earlier server-config run left on
+# it is removed.
+k3s_config_manifests_dir: /var/lib/rancher/k3s/server/manifests
+k3s_config_skip_marker: /var/lib/rancher/k3s/server/manifests/local-storage.yaml.skip
+# The bound and cadence k3s-runtime-ready.sh owns: a k3s (re)start on this
+# hardware reaches a serving containerd in single-digit seconds, and the one
+# measured failure needed five.
+k3s_config_wait_seconds: 120
+k3s_config_poll_seconds: 2
+k3s_config_containerd_socket: /run/k3s/containerd/containerd.sock

@@ -1,0 +1,115 @@
+---
+# THE ONE PLACE THIS ROLE IS NARROWER THAN THE SHELL, stated rather than papered
+# over.
+#
+# install-storage-layout.sh reads a directory that a bind mount COVERS by
+# unmounting it inside a private mount namespace (`unshare -m`), which is how it
+# distinguishes "the tier already holds the store" from "the bind is already
+# laid over the only copy of the store". No Ansible module can do that, and
+# reproducing it as a raw `unshare` here would be the hand-rolled shell this
+# conversion exists to remove. So this role DETECTS that state and REFUSES,
+# naming the installer that repairs it, rather than guessing.
+#
+# What it does handle is the plain case: a bind target that still holds a store
+# on the root filesystem while its tier does not. That is the one-time bootstrap
+# of a node whose k3s was installed before the tiers existed, and it is gated
+# behind storage_layout_allow_live_migration because it stops the node's k3s.
+
+- name: Read whether the containerd tier already holds its store
+  # The MARKER, not an entry count. containerd's metadata database is created
+  # before anything can use the store; a grpc socket directory or the
+  # half-written content store a failed `ctr pull` leaves behind is not a store.
+  ansible.builtin.stat:
+    path: "{{ storage_layout_containerd_src }}/{{ storage_layout_containerd_store_marker }}"
+  register: storage_layout_containerd_tier_store
+  become: true
+
+- name: Read what the local-path tier holds
+  # For the local-path root any entry IS the store, so this is an entry count —
+  # minus lost+found, which mkfs.ext4 puts on every fresh filesystem and which
+  # made a freshly formatted tier look occupied on 2026-09-07.
+  ansible.builtin.find:
+    paths: "{{ storage_layout_workvols_src }}"
+    file_type: any
+    hidden: true
+    excludes:
+      - lost+found
+  register: storage_layout_workvols_tier_entries
+  become: true
+
+- name: Read what each bind target holds
+  ansible.builtin.find:
+    paths: "{{ item }}"
+    file_type: any
+    hidden: true
+    excludes:
+      - lost+found
+  register: storage_layout_bind_target
+  become: true
+  loop:
+    - "{{ storage_layout_containerd_dir }}"
+    - "{{ storage_layout_storage_dir }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Classify each store's migration state
+  ansible.builtin.set_fact:
+    storage_layout_migrations:
+      - role: containerd
+        dir: "{{ storage_layout_containerd_dir }}"
+        src: "{{ storage_layout_containerd_src }}"
+        tier_holds_store: "{{ storage_layout_containerd_tier_store.stat.exists }}"
+        bind_mounted: >-
+          {{ storage_layout_containerd_dir in (ansible_facts['mounts'] | map(attribute='mount') | list) }}
+        target_entries: "{{ storage_layout_bind_target.results[0].matched | default(0) }}"
+      - role: storage
+        dir: "{{ storage_layout_storage_dir }}"
+        src: "{{ storage_layout_workvols_src }}"
+        tier_holds_store: "{{ storage_layout_workvols_tier_entries.matched | default(0) | int > 0 }}"
+        bind_mounted: >-
+          {{ storage_layout_storage_dir in (ansible_facts['mounts'] | map(attribute='mount') | list) }}
+        target_entries: "{{ storage_layout_bind_target.results[1].matched | default(0) }}"
+
+- name: Refuse a bind already laid over a store its tier does not carry
+  # The `repair` verdict of the shell installer. Seeing under a live bind needs
+  # a private mount namespace, which this role does not open; refusing is the
+  # honest answer, and the shell installer is the repair.
+  ansible.builtin.assert:
+    that:
+      - (item.tier_holds_store | bool) or not (item.bind_mounted | bool)
+    fail_msg: >-
+      {{ item.dir }} is bind-mounted while {{ item.src }} carries no {{ item.role }} store.
+      Whatever lies under that bind may be the only copy, and reading it needs a private
+      mount namespace this role does not open. Run
+      ci-runner/k3s/phase2/storage-layout/install-storage-layout.sh on this host,
+      which performs that probe and the repair.
+    success_msg: "{{ item.role }}: nothing hidden under {{ item.dir }}"
+  loop: "{{ storage_layout_migrations }}"
+  loop_control:
+    label: "{{ item.role }}"
+
+- name: Select the stores that must move onto their tier
+  ansible.builtin.set_fact:
+    storage_layout_pending_migrations: >-
+      {{ storage_layout_migrations
+         | rejectattr('tier_holds_store', 'truthy')
+         | rejectattr('bind_mounted', 'truthy')
+         | selectattr('target_entries', 'truthy') | list }}
+
+- name: Refuse a live-store migration that was not authorised for this run
+  # A bind over a live store would HIDE it, which is the one thing this role must
+  # never do — so it stops instead, rather than mounting the bind anyway.
+  ansible.builtin.assert:
+    that:
+      - storage_layout_allow_live_migration
+    fail_msg: >-
+      {{ storage_layout_pending_migrations | map(attribute='dir') | join(', ') }}
+      holds content its tier does not carry, so binding the tier over it would hide the store.
+      Moving it stops this node's k3s. Re-run with storage_layout_allow_live_migration=true
+      to authorise that, or run the shell installer under an operator's eye.
+    success_msg: live-store migration authorised
+  when: storage_layout_pending_migrations | length > 0
+
+- name: Move each live store onto its tier
+  ansible.builtin.include_tasks: perform_migration.yml
+  when: storage_layout_pending_migrations | length > 0

@@ -1,0 +1,88 @@
+---
+# datastore_tmpfs — the tmpfs mount unit for the k3s kine/SQLite datastore,
+# ENABLED for the next boot and NEVER started.
+#
+# Replaces ci-runner/k3s/phase2/datastore-tmpfs/install-datastore-tmpfs.sh.
+#
+# WHY NEVER STARTED HERE: the mount goes OVER
+# /var/lib/rancher/k3s/server/db. Starting it while k3s is RUNNING would hide
+# the live datastore from under a running SQLite — data-loss-shaped and
+# unrecoverable for that session. Activation is a reboot, or a deliberate
+# cutover with k3s stopped. This role only enables, which is why the mount task
+# below carries `enabled: true` and no `state:`.
+#
+# SERVER-ONLY: an agent holds no k3s datastore of either kind. The play, not
+# this role, decides that — an agent simply never runs it.
+
+- name: Read the state of the reconstruct-on-boot units
+  ansible.builtin.service_facts:
+
+- name: Refuse a host that cannot rebuild an empty cluster
+  # The pre-gate, and it is not caution-by-habit: with a volatile datastore the
+  # cluster is EMPTY at every boot, so the units that reinject the GitHub App
+  # secret and converge the stack are what make the next boot a working pool
+  # rather than a dead one.
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['services'][item] is defined
+      - ansible_facts['services'][item]['status'] == 'enabled'
+    fail_msg: >-
+      {{ item }} is not enabled. Install and enable the reconstruct-on-boot units
+      before making the datastore volatile.
+    success_msg: "{{ item }}: enabled"
+  loop: "{{ datastore_tmpfs_required_units }}"
+
+- name: Check whether the datastore mount unit is already installed
+  # Read BEFORE the task that writes it: under --check the unit file is only
+  # would-be written, and an unguarded enable would fail with "Could not find
+  # the requested service" and blame the host.
+  ansible.builtin.stat:
+    path: "{{ datastore_tmpfs_unit_dir }}/{{ datastore_tmpfs_mount_unit }}"
+  register: datastore_tmpfs_unit_present
+  become: true
+
+- name: Install the datastore tmpfs mount unit
+  ansible.builtin.copy:
+    src: "{{ datastore_tmpfs_phase2_dir }}/datastore-tmpfs/{{ datastore_tmpfs_mount_unit }}"
+    dest: "{{ datastore_tmpfs_unit_dir }}/{{ datastore_tmpfs_mount_unit }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the datastore tmpfs
+
+- name: Create the k3s drop-in directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ datastore_tmpfs_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the k3s drop-in that requires the datastore mount
+  # Only a host with a volatile datastore gets this. The directory under the
+  # mount is not a usable fallback, so k3s must not start on it — it fails loud
+  # instead. Read this drop-in before any rollback: with it in place,
+  # `systemctl start k3s` pulls the mount back in.
+  ansible.builtin.copy:
+    src: "{{ datastore_tmpfs_phase2_dir }}/datastore-tmpfs/{{ datastore_tmpfs_dropin_name }}"
+    dest: "{{ datastore_tmpfs_dropin_dir }}/{{ datastore_tmpfs_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the datastore tmpfs
+
+- name: Publish a changed unit before enabling it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the datastore mount for the next boot
+  # `enabled: true` and NO `state:`. Anything that started this mount now would
+  # hide a running k3s's live datastore.
+  ansible.builtin.systemd_service:
+    name: "{{ datastore_tmpfs_mount_unit }}"
+    enabled: true
+  become: true
+  when: not ansible_check_mode or datastore_tmpfs_unit_present.stat.exists

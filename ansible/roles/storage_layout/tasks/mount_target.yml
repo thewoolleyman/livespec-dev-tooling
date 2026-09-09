@@ -1,0 +1,21 @@
+---
+# Mount ONE managed target from the fstab lines this role has already ensured.
+#
+# `mount <target>` and not a mount module, because the mount module lives in
+# ansible.posix and this tree runs ansible-core alone. Idempotence comes from
+# util-linux itself: mounting an already-mounted target exits non-zero with
+# "already mounted", which is read as no-change rather than as a failure. That
+# is also why the targets are mounted one include at a time — each reads the
+# host as it is after the previous one, which is the bookkeeping the shell kept
+# by hand in MOUNT_PLANNED.
+
+- name: Mount {{ storage_layout_mount_target }}
+  # noqa: command-instead-of-module — the mount module is ansible.posix.mount,
+  # and ansible.posix is not available to this tree.
+  ansible.builtin.command: mount {{ storage_layout_mount_target }}
+  register: storage_layout_mount_result
+  changed_when: storage_layout_mount_result.rc == 0
+  failed_when:
+    - storage_layout_mount_result.rc != 0
+    - "'already mounted' not in storage_layout_mount_result.stderr"
+  become: true

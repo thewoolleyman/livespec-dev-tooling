@@ -10,25 +10,48 @@
 # them: the editor backend precedes its progressive-web-app proxy, and the VNC
 # desktop precedes the two desktop applications that need its display.
 
+# Each role is tagged so an operator can converge a subset. That matters here
+# because this host carries services with very different interruption costs --
+# a timer is free to restart, the editor backend is not -- and because a
+# failure in one role's package step must not be able to withhold the other
+# seventeen.
 - name: Dev host services
   hosts: vps
   gather_facts: true
   roles:
-    - arq_root_snapshot
-    - arq_docker_volume_snapshot
-    - arq_smb_source
-    - restic_backup
-    - vnc_desktop
-    - onepassword_desktop
-    - claude_desktop
-    - btop_loop
-    - code_serve_web
-    - code_pwa_proxy
-    - ssh_hardening
-    - keyring_quota
-    - tmux_config
-    - claude_code_hooks
-    - claude_ntfy
-    - codex_config
-    - honeycomb_mcp
-    - honeycomb_trigger_recipients_check
+    - role: arq_root_snapshot
+      tags: [arq_root_snapshot]
+    - role: arq_docker_volume_snapshot
+      tags: [arq_docker_volume_snapshot]
+    - role: arq_smb_source
+      tags: [arq_smb_source]
+    - role: restic_backup
+      tags: [restic_backup]
+    - role: vnc_desktop
+      tags: [vnc_desktop]
+    - role: onepassword_desktop
+      tags: [onepassword_desktop]
+    - role: claude_desktop
+      tags: [claude_desktop]
+    - role: btop_loop
+      tags: [btop_loop]
+    - role: code_serve_web
+      tags: [code_serve_web]
+    - role: code_pwa_proxy
+      tags: [code_pwa_proxy]
+    - role: ssh_hardening
+      tags: [ssh_hardening]
+    - role: keyring_quota
+      tags: [keyring_quota]
+    - role: tmux_config
+      tags: [tmux_config]
+    - role: claude_code_hooks
+      tags: [claude_code_hooks]
+    - role: claude_ntfy
+      tags: [claude_ntfy]
+    - role: codex_config
+      tags: [codex_config]
+    - role: honeycomb_mcp
+      tags: [honeycomb_mcp]
+    - role: honeycomb_trigger_recipients_check
+      tags: [honeycomb_trigger_recipients_check]

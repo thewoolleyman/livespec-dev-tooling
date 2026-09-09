@@ -1,0 +1,9 @@
+---
+- name: Load the AppArmor profile
+  # -r replaces an already-loaded profile of the same name, so this is a no-op
+  # on an unchanged file and a live update on a changed one.
+  ansible.builtin.command: >-
+    {{ apparmor_profile_parser.results | selectattr('stat.exists')
+       | map(attribute='item') | first }} -r -W {{ apparmor_profile_dest }}
+  become: true
+  changed_when: true

@@ -1,0 +1,5 @@
+---
+- name: Reload systemd for the converge unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true

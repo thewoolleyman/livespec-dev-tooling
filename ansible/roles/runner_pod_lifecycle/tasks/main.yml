@@ -1,0 +1,25 @@
+---
+# runner_pod_lifecycle — the 5-minute report-only diagnosis of runner-pod
+# lifecycle stalls: PVC binding, StartError, listener staleness, capacity-absent,
+# populator stalled, api-unavailable. It emits livespec.ci_lifecycle.* gauges to
+# the node's OTLP listener and deletes nothing.
+#
+# Replaces
+# ci-runner/k3s/phase2/runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh,
+# INCLUDING its agent branch.
+#
+# NO MODE ARGUMENT, unlike wedged_runner: this scan is report-only by design, so
+# there is no remedy to choose between.
+#
+# SERVER-ONLY, AND THE AGENT PATH REMOVES RATHER THAN INSTALLS, for the reasons
+# the sibling roles state: a k3s.service ordering an agent cannot satisfy, an
+# admin kubeconfig only a server holds, and a cluster-wide read the server's own
+# timer already performs.
+
+- name: Remove the server-only runner-pod-lifecycle units from an agent
+  ansible.builtin.include_tasks: remove_units.yml
+  when: runner_pod_lifecycle_cluster_role == 'agent'
+
+- name: Install the runner-pod-lifecycle scan on the server
+  ansible.builtin.include_tasks: install_units.yml
+  when: runner_pod_lifecycle_cluster_role == 'server'

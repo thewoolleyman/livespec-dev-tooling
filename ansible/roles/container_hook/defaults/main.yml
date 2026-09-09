@@ -1,0 +1,19 @@
+---
+container_hook_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+container_hook_hooks_root: /usr/local/lib/ci-runner-k3s/hooks
+container_hook_storage_root: /var/lib/rancher/k3s/storage
+# The runner version the fleet pins. It is stated ONCE here and then ASSERTED
+# against every arc/values-*.yaml below, rather than being read out of one of
+# them: a values file left behind at a bump would otherwise select a hook path
+# no install ever creates, and nothing else in this tree would notice.
+container_hook_runner_version: 2.336.0
+container_hook_runner_image: >-
+  ghcr.io/actions/actions-runner:2.336.0@sha256:0cfdcc701ce933c6d243c6b0b2da767366dc9f2e99961d4c3754b0b78084cdda
+# The staging directory the externals extraction is driven from. The extraction
+# stays a SCRIPT (see tasks/main.yml) and that script sources two siblings, so
+# the whole set travels rather than one file.
+container_hook_stage_dir: /var/tmp/ci-runner-container-hook
+container_hook_stage_files:
+  - container-hook/extract-externals.sh
+  - container-hook/runner-image.sh
+  - k3s-runtime-ready.sh

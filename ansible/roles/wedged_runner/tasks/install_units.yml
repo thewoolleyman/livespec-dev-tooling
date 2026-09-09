@@ -1,0 +1,113 @@
+---
+- name: Refuse a wedged-runner mode that is neither report nor clear
+  ansible.builtin.assert:
+    that:
+      - wedged_runner_mode in ['report', 'clear']
+    fail_msg: "wedged_runner_mode must be 'report' or 'clear', got '{{ wedged_runner_mode }}'"
+    success_msg: "wedged-runner mode: {{ wedged_runner_mode }}"
+
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ wedged_runner_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the wedged-runner scan script
+  # The unit's ExecStart path; installing the unit without it yields a timer
+  # that fires every five minutes and fails every time.
+  ansible.builtin.copy:
+    src: "{{ wedged_runner_phase2_dir }}/wedged-runner/scan-wedged-runners.sh"
+    dest: "{{ wedged_runner_lib_dir }}/scan-wedged-runners.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the wedged-runner timer is already installed
+  # Read BEFORE the tasks that write the units: under --check they are only
+  # would-be written, and an unguarded systemd_service would fail with "Could
+  # not find the requested service" and blame the host.
+  ansible.builtin.stat:
+    path: "{{ wedged_runner_unit_dir }}/{{ wedged_runner_timer }}"
+  register: wedged_runner_timer_present
+  become: true
+
+- name: Install the wedged-runner service with its mode substituted
+  # The shipped unit says MODE_PLACEHOLDER so an un-edited copy fails loudly.
+  # 'report' substitutes the empty string, which is what the scan reads as
+  # report-only; 'clear' substitutes --clear.
+  vars:
+    # Hoisted out of the copy below so the expression can be wrapped without any
+    # question of where a newline lands: everything here is one scalar, and the
+    # task body references a single name.
+    wedged_runner_rendered_unit: >-
+      {{ lookup('ansible.builtin.file',
+      wedged_runner_phase2_dir ~ '/wedged-runner/' ~ wedged_runner_service)
+      | replace('MODE_PLACEHOLDER', '--clear' if wedged_runner_mode == 'clear' else '') }}
+  ansible.builtin.copy:
+    # A YAML literal block, so the rendered unit ends in the newline the file
+    # lookup strips. Without it every run would rewrite the unit to remove its
+    # final newline and report a change that is not one.
+    content: |
+      {{ wedged_runner_rendered_unit }}
+    dest: "{{ wedged_runner_unit_dir }}/{{ wedged_runner_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the wedged-runner units
+
+- name: Install the wedged-runner timer
+  ansible.builtin.copy:
+    src: "{{ wedged_runner_phase2_dir }}/wedged-runner/{{ wedged_runner_timer }}"
+    dest: "{{ wedged_runner_unit_dir }}/{{ wedged_runner_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the wedged-runner units
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the wedged-runner timer
+  # Guarded rather than forced check_mode: false — forcing it would arm a live
+  # timer during a run that promised to change nothing.
+  ansible.builtin.systemd_service:
+    name: "{{ wedged_runner_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or wedged_runner_timer_present.stat.exists
+
+- name: Read the wedged-runner timer's active state
+  # THE ASSERTION THE SHELL INSTALLER DID NOT HAVE UNTIL 2026-09-07: it ran
+  # `systemctl status` with `|| true` and printed DONE over a timer that was in
+  # fact `failed (Result: resources)`. ActiveState and not is-active, because
+  # the WORD is the diagnosis: `failed` means the service it triggers could not
+  # start at all, and `inactive` would mean something else entirely.
+  #
+  # A post-install verification of what the arming above produced, so it stays
+  # skipped under --check rather than being made check-mode-safe.
+  ansible.builtin.systemd_service:
+    name: "{{ wedged_runner_timer }}"
+  register: wedged_runner_timer_state
+  changed_when: false
+  failed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Refuse a wedged-runner timer that is not active
+  ansible.builtin.assert:
+    that:
+      - wedged_runner_timer_state.status.ActiveState | default('absent') == 'active'
+    fail_msg: >-
+      {{ wedged_runner_timer }} is
+      '{{ wedged_runner_timer_state.status.ActiveState | default("absent") }}', expected 'active' —
+      {{ wedged_runner_service }} is NOT armed on this node
+    success_msg: "{{ wedged_runner_timer }} is active"
+  when: not ansible_check_mode

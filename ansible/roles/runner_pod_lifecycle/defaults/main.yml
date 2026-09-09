@@ -1,0 +1,7 @@
+---
+runner_pod_lifecycle_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+runner_pod_lifecycle_cluster_role: "{{ cluster_role }}"
+runner_pod_lifecycle_lib_dir: /usr/local/lib/ci-runner-k3s
+runner_pod_lifecycle_unit_dir: /etc/systemd/system
+runner_pod_lifecycle_service: scan-runner-pod-lifecycle.service
+runner_pod_lifecycle_timer: scan-runner-pod-lifecycle.timer

@@ -1,0 +1,12 @@
+---
+arc_log_archive_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+arc_log_archive_cluster_role: "{{ cluster_role }}"
+arc_log_archive_lib_dir: /usr/local/lib/ci-runner-k3s
+arc_log_archive_unit_dir: /etc/systemd/system
+arc_log_archive_service: archive-arc-logs.service
+arc_log_archive_timer: archive-arc-logs.timer
+# 0750 rather than 0755 on both: ARC logs carry installation ids, session uuids
+# and repository names. None of that is a credential, but none of it needs to be
+# world-readable on a host that also runs job containers.
+arc_log_archive_log_dir: /var/log/arc-archive
+arc_log_archive_state_dir: /var/lib/ci-runner-k3s/arc-log-archive

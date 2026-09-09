@@ -1,0 +1,15 @@
+---
+- name: Reload systemd for the iDRAC thermal unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+
+- name: Converge the iDRAC cooling configuration
+  # The shell installer's "apply NOW so the live host matches git without
+  # waiting for a reboot". It is read-then-write and a converged host makes no
+  # change, but it does write iDRAC firmware state, so it runs only when the
+  # script itself changed and never under --check.
+  ansible.builtin.command: "{{ host_thermal_lib_dir }}/apply-idrac-thermal.sh"
+  become: true
+  changed_when: true
+  when: not ansible_check_mode

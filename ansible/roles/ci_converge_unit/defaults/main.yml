@@ -1,0 +1,95 @@
+---
+ci_converge_unit_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+# The ONE file in the installed set that comes from outside phase2/.
+ci_converge_unit_observability_dir: "{{ role_path }}/../../../ci-runner/observability"
+ci_converge_unit_lib_dir: /usr/local/lib/ci-runner-k3s
+ci_converge_unit_unit_dir: /etc/systemd/system
+ci_converge_unit_service: converge-ci-stack.service
+# Every directory install-converge-unit.sh creates, all 0755. Listed rather than
+# left to the copies, because --check cannot see past a missing parent.
+ci_converge_unit_directories:
+  - ""
+  - arc
+  - kueue
+  - kueue/core
+  - local-path-provisioner
+  - warm-cache
+  - warm-cache/pypi-proxy
+  - crates-proxy
+  - sccache
+  - observability
+  - gates
+# The named members of the installed tree, with the mode each is installed
+# under. The three GLOBS the shell uses — arc/values-*.yaml minus the EXAMPLE
+# template, kueue/core/*.yaml, kueue/cluster-queue-*.yaml — are resolved at run
+# time in tasks/main.yml rather than enumerated here, so a new per-repo queue or
+# scale set travels with no edit to this role, exactly as it travels with no
+# edit to the installer.
+ci_converge_unit_files:
+  - src: reconstruct/converge-ci-stack.sh
+    dest: converge-ci-stack.sh
+    mode: "0755"
+  - src: reconstruct/render-sa-kubeconfig.sh
+    dest: render-sa-kubeconfig.sh
+    mode: "0755"
+  - src: arc/converge-hook-pod-template.sh
+    dest: arc/converge-hook-pod-template.sh
+    mode: "0755"
+  - src: arc/hook-pod-template.yaml
+    dest: arc/hook-pod-template.yaml
+    mode: "0644"
+  - src: kueue/resource-flavor.yaml
+    dest: kueue/resource-flavor.yaml
+    mode: "0644"
+  - src: local-path-provisioner/local-path-provisioner.yaml
+    dest: local-path-provisioner/local-path-provisioner.yaml
+    mode: "0644"
+  - src: warm-cache/converge-warm-cache.sh
+    dest: warm-cache/converge-warm-cache.sh
+    mode: "0755"
+  - src: warm-cache/warm-cache-cronjob.yaml
+    dest: warm-cache/warm-cache-cronjob.yaml
+    mode: "0644"
+  # 0644 and not 0755: this is a ConfigMap PAYLOAD executed inside the populator
+  # pod, never on the host.
+  - src: warm-cache/warm-cache-populate.sh
+    dest: warm-cache/warm-cache-populate.sh
+    mode: "0644"
+  - src: warm-cache/verify-uv-cache.py
+    dest: warm-cache/verify-uv-cache.py
+    mode: "0644"
+  - src: warm-cache/uv_cache_layout.py
+    dest: warm-cache/uv_cache_layout.py
+    mode: "0644"
+  - src: warm-cache/pypi-proxy/pypi-proxy.yaml
+    dest: warm-cache/pypi-proxy/pypi-proxy.yaml
+    mode: "0644"
+  - src: crates-proxy/converge-crates-proxy.sh
+    dest: crates-proxy/converge-crates-proxy.sh
+    mode: "0755"
+  - src: crates-proxy/crates-proxy.yaml
+    dest: crates-proxy/crates-proxy.yaml
+    mode: "0644"
+  - src: sccache/converge-sccache-redis.sh
+    dest: sccache/converge-sccache-redis.sh
+    mode: "0755"
+  - src: sccache/sccache-redis.yaml
+    dest: sccache/sccache-redis.yaml
+    mode: "0644"
+  - src: gates/gates-rbac.yaml
+    dest: gates/gates-rbac.yaml
+    mode: "0644"
+  # Shipped, never applied: the template carries placeholder markers and is not
+  # a valid manifest until render-gate-job.sh substitutes them, so the converge
+  # must NOT kubectl apply it. The gate client renders and submits; the converge
+  # only puts them on the host.
+  - src: gates/gate-job-template.yaml
+    dest: gates/gate-job-template.yaml
+    mode: "0644"
+  - src: gates/render-gate-job.sh
+    dest: gates/render-gate-job.sh
+    mode: "0755"
+# The reapply unit converge step 1b needs. Its absence is a WARNING, not a
+# failure: a converge without it still builds the cluster stack and says so.
+ci_converge_unit_reapply_service: reapply-node-extended-resource.service
+ci_converge_unit_reapply_script: patch-node-churn-capacity.sh

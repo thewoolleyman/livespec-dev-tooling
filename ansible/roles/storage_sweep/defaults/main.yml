@@ -1,0 +1,11 @@
+---
+storage_sweep_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+storage_sweep_cluster_role: "{{ cluster_role }}"
+storage_sweep_lib_dir: /usr/local/lib/ci-runner-k3s
+storage_sweep_unit_dir: /etc/systemd/system
+storage_sweep_service: sweep-runner-scratch.service
+storage_sweep_dropin_dir: /etc/systemd/system/sweep-runner-scratch.service.d
+# The shipped drop-in is named agent-ordering.conf; the installed copy carries
+# the 10- prefix that orders it among any siblings, exactly as the shell wrote it.
+storage_sweep_dropin_name: 10-agent-ordering.conf
+storage_sweep_datastore_mount_unit: var-lib-rancher-k3s-server-db.mount

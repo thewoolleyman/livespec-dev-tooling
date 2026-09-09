@@ -1,0 +1,124 @@
+---
+# storage_sweep — the boot-ordered sweep of orphaned local-path volume
+# directories, ENABLED for the next boot and never started.
+#
+# Replaces ci-runner/k3s/phase2/storage-sweep/install-storage-sweep.sh.
+#
+# WHY NEVER STARTED HERE: the sweep removes every local-path volume directory
+# and is safe ONLY before the node's k3s unit on an empty-datastore boot. The
+# sweep script refuses to run under a live k3s; this role does not try.
+#
+# ROLE-AWARE. A server gets the base unit alone, ordered Before=k3s.service. An
+# agent additionally gets a drop-in re-ordering it Before=k3s-agent.service and
+# clearing After=, because k3s.service is not the name of the k3s unit an agent
+# runs.
+#
+# WHAT IT DOES NOT DO: it never REMOVES the agent drop-in on a server run. A
+# node whose role changes is a REBUILD — a new profile, a different k3s install
+# — not a re-run of this role. If a role is ever flipped in place, remove
+# /etc/systemd/system/sweep-runner-scratch.service.d/ by hand first.
+
+- name: Read the state of the datastore mount unit
+  # `service_facts` enumerates .service units only, so the mount unit is read
+  # directly. The systemd module with NO state, enabled or masked requested is a
+  # pure read and changes nothing; failed_when: false because a host that has
+  # never had the unit installed is an answer, not an error.
+  ansible.builtin.systemd_service:
+    name: "{{ storage_sweep_datastore_mount_unit }}"
+  register: storage_sweep_datastore_state
+  changed_when: false
+  failed_when: false
+  become: true
+  when: storage_sweep_cluster_role == 'server'
+
+- name: Refuse a server whose datastore is not volatile
+  # The sweep is only meaningful on a node whose datastore is volatile: on a
+  # persistent-datastore node the unit's condition never holds and it would be
+  # inert clutter.
+  #
+  # SKIPPED ON AN AGENT, with its reason: an agent node holds no k3s datastore,
+  # so there is no mount unit to gate on — datastore_tmpfs is a role an agent
+  # never runs.
+  ansible.builtin.assert:
+    that:
+      - storage_sweep_datastore_state.status.UnitFileState | default('absent') == 'enabled'
+    fail_msg: >-
+      {{ storage_sweep_datastore_mount_unit }} is
+      '{{ storage_sweep_datastore_state.status.UnitFileState | default("absent") }}', not 'enabled'.
+      The sweep is only meaningful on a volatile-datastore node; run the
+      datastore_tmpfs role first.
+    success_msg: "{{ storage_sweep_datastore_mount_unit }}: enabled"
+  when: storage_sweep_cluster_role == 'server'
+
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ storage_sweep_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the scratch sweep script
+  ansible.builtin.copy:
+    src: "{{ storage_sweep_phase2_dir }}/storage-sweep/sweep-runner-scratch.sh"
+    dest: "{{ storage_sweep_lib_dir }}/sweep-runner-scratch.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the sweep unit is already installed
+  # Read BEFORE the task that writes it, so the enable below can be guarded
+  # rather than failing under --check on a unit systemd has not seen.
+  ansible.builtin.stat:
+    path: "{{ storage_sweep_unit_dir }}/{{ storage_sweep_service }}"
+  register: storage_sweep_unit_present
+  become: true
+
+- name: Install the scratch sweep unit
+  ansible.builtin.copy:
+    src: "{{ storage_sweep_phase2_dir }}/storage-sweep/{{ storage_sweep_service }}"
+    dest: "{{ storage_sweep_unit_dir }}/{{ storage_sweep_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the scratch sweep
+
+- name: Create the sweep drop-in directory on an agent
+  ansible.builtin.file:
+    path: "{{ storage_sweep_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: storage_sweep_cluster_role == 'agent'
+
+- name: Install the agent ordering drop-in
+  # An empty assignment RESETS the list that key has accumulated, which is how
+  # `Before=` then `Before=k3s-agent.service` replaces the server ordering
+  # rather than adding to it, and how the bare `After=` clears it.
+  ansible.builtin.copy:
+    src: "{{ storage_sweep_phase2_dir }}/storage-sweep/agent-ordering.conf"
+    dest: "{{ storage_sweep_dropin_dir }}/{{ storage_sweep_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: storage_sweep_cluster_role == 'agent'
+  notify: Reload systemd for the scratch sweep
+
+- name: Publish a changed unit before enabling it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the scratch sweep for the next boot
+  # `enabled: true` and NO `state:`: starting it would remove every local-path
+  # volume directory on a node whose k3s is up.
+  ansible.builtin.systemd_service:
+    name: "{{ storage_sweep_service }}"
+    enabled: true
+  become: true
+  when: not ansible_check_mode or storage_sweep_unit_present.stat.exists

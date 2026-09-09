@@ -1,0 +1,26 @@
+---
+# host_tools_ci — the operator-facing host tools the CI runner pool carries in
+# /usr/local/bin.
+#
+# Replaces ci-runner/k3s/phase2/host-tools/install-host-tools.sh.
+#
+# WHY THIS EXISTS AT ALL: on 2026-09-06 btop-loop was written straight to
+# /usr/local/bin on poweredge-xubuntu, which made it the one host change of that
+# day with no repository realization. Everything on a CI host is meant to be
+# rebuildable from scratch, so the tool lives in the repository and a node run
+# installs it with every other node-local mechanism.
+#
+# btop-loop restarts btop after its abnormal exit: btop 1.4.6 aborts when one
+# collect-and-draw cycle exceeds its hard-coded 5 s stall limit, which a CI
+# fan-out with thousands of processes and hundreds of veth interfaces reliably
+# causes.
+
+- name: Install the operator host tools
+  ansible.builtin.copy:
+    src: "{{ host_tools_ci_phase2_dir }}/host-tools/{{ item }}"
+    dest: "{{ host_tools_ci_bin_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ host_tools_ci_tools }}"

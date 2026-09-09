@@ -1,0 +1,65 @@
+---
+# The agent cleanup install-runner-pod-lifecycle-scan.sh performs before it
+# refuses. The TIMER goes before the SERVICE it triggers.
+
+- name: Check whether the server-only runner-pod-lifecycle units are present
+  ansible.builtin.stat:
+    path: "{{ runner_pod_lifecycle_unit_dir }}/{{ item }}"
+  register: runner_pod_lifecycle_stale
+  become: true
+  loop:
+    - "{{ runner_pod_lifecycle_timer }}"
+    - "{{ runner_pod_lifecycle_service }}"
+
+- name: Disable and stop the server-only runner-pod-lifecycle units
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}"
+    enabled: false
+    state: stopped
+  become: true
+  loop: "{{ runner_pod_lifecycle_stale.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Remove the server-only runner-pod-lifecycle unit files
+  ansible.builtin.file:
+    path: "{{ runner_pod_lifecycle_unit_dir }}/{{ item.item }}"
+    state: absent
+  become: true
+  loop: "{{ runner_pod_lifecycle_stale.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+  notify: Reload systemd for the runner-pod-lifecycle units
+
+- name: Publish the removal before clearing the failed state
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the failed state of the removed units
+  # A deleted unit file stays `not-found failed` in the manager until
+  # reset-failed runs or the host reboots.
+  # noqa: command-instead-of-module — the systemd module cannot address a
+  # unit whose FILE is gone but whose failed state the manager still holds:
+  # it reads LoadState=not-found and errors "Could not find the requested
+  # service". That state is exactly what this reads, so there is no module
+  # for it. check_mode: false so the clear below is not silently dropped
+  # from a dry run's plan.
+  ansible.builtin.command: systemctl is-failed {{ item }}
+  register: runner_pod_lifecycle_failed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  loop:
+    - "{{ runner_pod_lifecycle_timer }}"
+    - "{{ runner_pod_lifecycle_service }}"
+
+- name: Clear the residual failed state
+  ansible.builtin.command: systemctl reset-failed {{ item.item }}
+  become: true
+  loop: "{{ runner_pod_lifecycle_failed.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stdout | default('') == 'failed'
+  changed_when: true
