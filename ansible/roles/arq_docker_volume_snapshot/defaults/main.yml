@@ -1,0 +1,30 @@
+---
+# Commands the installer REFUSED to proceed without and did not install. They
+# stay preconditions here for the same reason: rsync and flock come from the
+# base system, and docker is provisioned by whatever owns the container runtime,
+# never by a backup role.
+arq_docker_volume_snapshot_required_commands:
+  - rsync
+  - flock
+  - systemctl
+  - docker
+
+# The source tree. Docker owns it; this role only reads it, and asserts it
+# exists because the runner exits 1 when it does not.
+arq_docker_volume_snapshot_source_dir: /var/lib/docker/volumes
+
+# The destination sits in the ubuntu user's state directory, not under /srv,
+# because it is pulled by the Arq client through the same path the rest of
+# /home is pulled through. The runner creates it root-owned at run time.
+arq_docker_volume_snapshot_state_dir: /home/ubuntu/.local/state/arq-vps-docker-volume-snapshot
+
+arq_docker_volume_snapshot_bin: /usr/local/sbin/arq-vps-docker-volume-snapshot
+arq_docker_volume_snapshot_unit_dir: /etc/systemd/system
+
+# 30 minutes ahead of arq_root_snapshot's 03:00 build, so the volume copy is
+# already complete when the root snapshot runs and the two never contend for
+# disk.
+arq_docker_volume_snapshot_on_calendar: "*-*-* 02:30:00 America/Los_Angeles"
+
+arq_docker_volume_snapshot_documentation_url: >-
+  file:/home/ubuntu/workspace/vps-info/services/arq-vps-docker-volume-snapshot/README.md

@@ -1,0 +1,27 @@
+---
+# Package source. Anthropic publishes an apt repository, which is preferred over
+# a downloaded binary so the app tracks upstream through the host's normal
+# unattended-upgrade path rather than through a re-run of this role.
+claude_desktop_key_url: https://downloads.claude.ai/claude-desktop/key.asc
+claude_desktop_keyring: /usr/share/keyrings/claude-desktop-archive-keyring.asc
+claude_desktop_repo: >-
+  deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc]
+  https://downloads.claude.ai/claude-desktop/apt/stable stable main
+
+# gnome-keyring is not a nicety. Claude Desktop stores its session through the
+# Secret Service API, so without a keyring the sign-in does not survive a
+# restart and the operator re-authenticates on every launch.
+# ca-certificates backs the TLS of both the key fetch and apt itself.
+# desktop-file-utils supplies desktop-file-validate, which the shell called only
+# if it happened to be installed.
+claude_desktop_packages:
+  - claude-desktop
+  - gnome-keyring
+  - ca-certificates
+  - desktop-file-utils
+
+claude_desktop_applications_dir: /usr/local/share/applications
+
+# The session this app is launched from. Not a hard precondition: the package
+# installs fine on a host with no desktop, it simply has nowhere to display.
+claude_desktop_session_unit: vnc-desktop.service

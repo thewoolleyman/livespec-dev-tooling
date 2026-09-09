@@ -1,0 +1,214 @@
+---
+# honeycomb_trigger_recipients_check -- a daily assertion that the critical
+# Honeycomb triggers still have somewhere to send.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info
+# services/honeycomb-trigger-recipients-check/install.sh.
+#
+# ROOT SCOPE -- the only root-scope role in this group. The installer refuses
+# unless `id -u` is 0 and AGENTS.md invokes it with sudo, because it writes
+# system systemd units. `become: true` is on every task that touches
+# /etc/systemd/system or the system systemd instance, and off everywhere else.
+#
+# WHY THIS EXISTS. On 2026-07-09 the dolt-server S3 backup broke and stayed
+# broken for eleven days: 265 consecutive hourly failures, zero notifications.
+# Nothing on the host was wrong. Both Honeycomb triggers were enabled, correctly
+# configured and evaluating. They simply had NO RECIPIENTS, dropped seventeen
+# days earlier by an edit that correctly quietened a genuinely noisy trigger --
+# and quietened every future signal with it. A trigger with no recipients is
+# silent AND looks identical to a healthy one, and nothing on this host could
+# see it, because it is purely remote configuration state.
+
+- name: Look for the check script in the vps-info checkout
+  ansible.builtin.stat:
+    path: "{{ honeycomb_trigger_recipients_check_script }}"
+  become: false
+  register: honeycomb_trigger_recipients_check_script_stat
+
+- name: Require the vps-info checkout to carry the check script
+  # A precondition the role does NOT create. The script runs in place from the
+  # checkout -- the unit's ExecStart names it there and nothing copies it onto
+  # the host -- so this is a runtime dependency of the unit, not just a source
+  # for it.
+  ansible.builtin.assert:
+    that:
+      - honeycomb_trigger_recipients_check_script_stat.stat.exists
+    fail_msg: >-
+      {{ honeycomb_trigger_recipients_check_script }} is missing. Clone
+      thewoolleyman/vps-info to
+      {{ honeycomb_trigger_recipients_check_checkout }}, or correct
+      honeycomb_trigger_recipients_check_checkout in this host's host_vars.
+      Installing the unit without it would arm a timer that fails at exec once
+      a day.
+    success_msg: "the check script is present in the checkout"
+
+- name: Look for the 1Password service-account wrapper
+  ansible.builtin.stat:
+    path: "{{ honeycomb_trigger_recipients_check_env_wrapper }}"
+  become: false
+  register: honeycomb_trigger_recipients_check_wrapper_stat
+
+- name: Require the 1Password service-account wrapper
+  # PROMOTED from the installer's silence to a refusal. The installer never
+  # checked this path directly; it only ran the wrapper inside a probe whose
+  # failure was a warning. But the wrapper IS the unit's ExecStart, so a missing
+  # one is not a degraded check -- it is a unit that cannot start at all, which
+  # is precisely the invisible-failure shape this service exists to catch.
+  ansible.builtin.assert:
+    that:
+      - honeycomb_trigger_recipients_check_wrapper_stat.stat.exists
+    fail_msg: >-
+      {{ honeycomb_trigger_recipients_check_env_wrapper }} is missing, and it is
+      this unit's ExecStart. Install it from the 1password-env-wrapper repo
+      (canonical copy at
+      /data/projects/1password-env-wrapper/with-homelab-env.sh) before applying
+      this role.
+    success_msg: "the 1Password wrapper is present"
+
+- name: Look for the alert unit this check reports its own failures to
+  ansible.builtin.stat:
+    path: >-
+      {{ honeycomb_trigger_recipients_check_unit_dir }}/{{ honeycomb_trigger_recipients_check_alert_unit }}
+  become: false
+  register: honeycomb_trigger_recipients_check_alert_stat
+
+- name: Warn when the alert unit is absent
+  # A WARNING, not a refusal, and the asymmetry is deliberate. The ExecStart
+  # dependencies above decide whether the check can run at all; this one decides
+  # only whether its FAILURE is heard. The check still does useful work without
+  # it, and the unit ships from a different repo (dolt-server), so refusing here
+  # would couple this role's applicability to another repo's rollout order.
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ honeycomb_trigger_recipients_check_alert_unit }} is not
+      installed in {{ honeycomb_trigger_recipients_check_unit_dir }}, so this
+      check's OnFailure target does not resolve and a failing run will notify
+      nobody. It ships from the dolt-server repo.
+  when: not honeycomb_trigger_recipients_check_alert_stat.stat.exists
+
+- name: Make the check script executable in the checkout
+  # This sets a mode inside a git checkout the role does not own, knowingly: the
+  # unit exec's the path directly. git already records mode 100755, so on a
+  # clean checkout it is a no-op; it repairs a clone or copy made under a umask
+  # that dropped the bit.
+  #
+  # A LITERAL 0755 IS RIGHT HERE and a symbolic a+x would be wrong, which is the
+  # reverse of the sibling honeycomb_mcp role. This installer ran `chmod 0755`,
+  # naming an exact mode, where honeycomb-mcp's ran `chmod +x`, adding bits. The
+  # live file measured 0775, so a first apply tightens it -- drift the shell
+  # installer would correct identically, not something this role invented.
+  #
+  # owner and group are deliberately NOT set. The role owns the one bit the unit
+  # needs and nothing else, and imposing an ownership on the operator's checkout
+  # from a root-scope task is how a checkout stops being editable by the person
+  # who has to edit it.
+  ansible.builtin.file:
+    path: "{{ honeycomb_trigger_recipients_check_script }}"
+    mode: "0755"
+  become: true
+
+- name: Probe for the Honeycomb Configuration key
+  # Run as the account the UNIT runs as, which is a deliberate departure from
+  # the installer. That probe ran as root, because the installer had to; the
+  # unit runs as ubuntu. A wrapper that resolves the key for root and not for
+  # ubuntu would have satisfied the installer and failed every actual run -- the
+  # probe would have been evidence about the wrong environment.
+  ansible.builtin.command:
+    argv:
+      - "{{ honeycomb_trigger_recipients_check_env_wrapper }}"
+      - bash
+      - -lc
+      - test -n "${HONEYCOMB_TRIGGER_RECIPIENT_AUDIT_CONFIG_API_KEY:-}"
+  become: true
+  become_user: "{{ honeycomb_trigger_recipients_check_service_user }}"
+  register: honeycomb_trigger_recipients_check_key_probe
+  changed_when: false
+  failed_when: false
+  no_log: true
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+
+- name: Warn when the Honeycomb Configuration key is missing
+  # WARN-ONLY, exactly as the installer had it, and for its stated reason: the
+  # units may be staged before the key reaches 1Password. Every run exits 2 until
+  # it is added, which is loud in its own right -- and the OnFailure alert above
+  # is what makes that loudness reach a person.
+  #
+  # The probe is no_log, so this message says nothing about its output; it names
+  # what to add and where.
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: HONEYCOMB_TRIGGER_RECIPIENT_AUDIT_CONFIG_API_KEY does not resolve
+      through {{ honeycomb_trigger_recipients_check_env_wrapper }} for
+      {{ honeycomb_trigger_recipients_check_service_user }}. The timer will
+      install, and every run will exit 2 until the key is added to the 1Password
+      `homelab` Environment. It must be a Honeycomb CONFIGURATION key (v1 API)
+      holding manageTriggers AND manageRecipients -- a Management key will not
+      work, and no scope grant bridges them.
+  when: honeycomb_trigger_recipients_check_key_probe.rc != 0
+
+- name: Look for an already-installed trigger-recipients timer
+  # Read BEFORE the templates below write it, because the enable task and the
+  # restart handler both need to know whether the unit exists on disk NOW rather
+  # than whether it would exist after an apply.
+  ansible.builtin.stat:
+    path: >-
+      {{ honeycomb_trigger_recipients_check_unit_dir }}/{{ honeycomb_trigger_recipients_check_timer_name }}
+  become: false
+  register: honeycomb_trigger_recipients_check_timer_stat
+
+- name: Install the trigger-recipients check unit
+  ansible.builtin.template:
+    src: honeycomb-trigger-recipients-check.service.j2
+    dest: >-
+      {{ honeycomb_trigger_recipients_check_unit_dir }}/{{ honeycomb_trigger_recipients_check_service_name }}
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the trigger-recipients timer
+
+- name: Install the trigger-recipients check timer
+  ansible.builtin.template:
+    src: honeycomb-trigger-recipients-check.timer.j2
+    dest: >-
+      {{ honeycomb_trigger_recipients_check_unit_dir }}/{{ honeycomb_trigger_recipients_check_timer_name }}
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the trigger-recipients timer
+
+- name: Enable and start the trigger-recipients timer
+  # ONLY the timer is enabled. The service carries no [Install] section and is
+  # static: enabling it would be meaningless, and starting it would run the
+  # check as a side effect of provisioning -- which, on a host whose key is not
+  # yet in 1Password, means an exit 2 and an OnFailure alert fired by the
+  # installation itself.
+  #
+  # The installer's closing `systemctl is-active --quiet` verification is
+  # DROPPED, not forgotten: `state: started` is that assertion. The module fails
+  # if the timer does not reach it, and re-reading the state afterwards would
+  # only re-ask the question the module already answered.
+  #
+  # THE `when` IS A CHECK-MODE GUARD, and it is deliberately not
+  # `check_mode: false`. Under --check the templates above only WOULD write the
+  # unit, so on a host that does not have it yet systemd cannot resolve the name
+  # and this task fails with "Could not find the requested service", a fault the
+  # role invented for itself. Skipping it there is right; running it there with
+  # check_mode: false would be worse still, since it would enable and start a
+  # live timer during a run that promised to change nothing. Where the unit IS
+  # already installed the task runs normally under --check and reports genuine
+  # enable/start drift.
+  ansible.builtin.systemd_service:
+    name: "{{ honeycomb_trigger_recipients_check_timer_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or honeycomb_trigger_recipients_check_timer_stat.stat.exists

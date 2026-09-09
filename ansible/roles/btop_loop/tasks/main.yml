@@ -1,0 +1,110 @@
+---
+# btop_loop — a crash-restart wrapper around btop, for a human to type.
+#
+# R4.S8 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info services/btop-loop/install.sh.
+#
+# btop SIGABRTs under a CI fan-out with thousands of processes, and it leaves
+# the terminal in its alternate screen with raw input when it does. The wrapper
+# restores the terminal and restarts it; quitting normally exits the loop. There
+# is no unit, no timer and nothing to enable — this is a foreground command, so
+# the verification at the end of this role stands in for the `systemctl
+# is-active` that a service role would finish with.
+
+- name: Assert this host is the one btop-loop is provisioned for
+  # The inventory is the primary guard; this is defence in depth against a
+  # mis-scoped --limit. It matters because the same file is installed on three
+  # hosts from three different repositories, and the digest pin below is only
+  # meaningful if each host takes its copy from its own provisioner. The shell
+  # measured the kernel hostname rather than the tailnet label for a reason: this
+  # node's tailnet label is `vps` but its kernel hostname is its VM id, so a
+  # label-derived check would refuse on the very host it targets.
+  ansible.builtin.assert:
+    that: ansible_facts['hostname'] == btop_loop_expected_hostname
+    fail_msg: >-
+      this role targets {{ btop_loop_expected_hostname }} but
+      {{ inventory_hostname }} reports {{ ansible_facts['hostname'] }}.
+      hp-xubuntu is served by fabro-hosts services/host-tools/; poweredge-xubuntu
+      and gmktec-xubuntu by this repository's ci-runner/k3s/phase2/host-tools/.
+    success_msg: "{{ ansible_facts['hostname'] }} is the intended host"
+
+- name: Find btop on the target's PATH
+  ansible.builtin.find:
+    paths: "{{ ansible_facts['env']['PATH'].split(':') }}"
+    patterns: btop
+    file_type: any
+  register: btop_loop_btop_copies
+
+- name: Assert btop is installed
+  # btop-loop supervises btop and does nothing without it. Installing the wrapper
+  # onto a host with no btop leaves a command that fails on every invocation,
+  # which is worse than not installing it: an operator reaches for it during an
+  # incident and gets a bare error. btop comes from the Ubuntu archive and this
+  # role deliberately does not install it, matching the shell's refusal.
+  ansible.builtin.assert:
+    that: btop_loop_btop_copies.files | length > 0
+    fail_msg: >-
+      btop is not on {{ inventory_hostname }}'s PATH. Run
+      `sudo apt-get install -y btop`, then re-run this role.
+    success_msg: btop is installed
+
+- name: Measure the digest of the btop-loop this role ships
+  # Read on the CONTROLLER, against the copy in this role, before anything is
+  # sent to the host. ansible.builtin.copy can only verify a SHA-1 checksum in
+  # flight, and the fleet pin is SHA-256, so the comparison happens here.
+  ansible.builtin.stat:
+    path: "{{ role_path }}/files/btop-loop"
+    checksum_algorithm: sha256
+  become: false
+  delegate_to: localhost
+  register: btop_loop_source_stat
+
+- name: Assert the shipped btop-loop matches the fleet's pinned digest
+  ansible.builtin.assert:
+    that: btop_loop_source_stat.stat.checksum == btop_loop_pinned_sha256
+    fail_msg: >-
+      btop-loop has diverged from the fleet's pinned digest.
+      want {{ btop_loop_pinned_sha256 }}, got {{ btop_loop_source_stat.stat.checksum }}.
+      Changing the tool means changing it in fabro-hosts and in this repository's
+      ci-runner host-tools too, and re-recording the digest in all three.
+    success_msg: btop-loop matches the fleet's pinned digest
+
+- name: Install btop-loop
+  # `validate` runs bash -n on the target before the file is moved into place,
+  # which is where the shell's separate parse check goes. The directory is not
+  # created first: /usr/local/bin is part of the filesystem hierarchy standard
+  # and the shell's `install -d` on it was defensive rather than load-bearing.
+  ansible.builtin.copy:
+    src: btop-loop
+    dest: "{{ btop_loop_bin_dir }}/btop-loop"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  become: true
+
+- name: Find every btop-loop on the target's PATH
+  # `install` succeeding proves a file landed at a path; it does not prove that
+  # path is what `btop-loop` resolves to, and a copy earlier on PATH would shadow
+  # it silently. The shell checked this by digesting whatever `command -v`
+  # returned, which finds the winner but not the loser. Enumerating the PATH
+  # instead reports every shadowing copy, so the operator learns what to delete.
+  ansible.builtin.find:
+    paths: "{{ ansible_facts['env']['PATH'].split(':') }}"
+    patterns: btop-loop
+    file_type: any
+  register: btop_loop_installed_copies
+
+- name: Assert nothing on PATH shadows the installed btop-loop
+  # Phrased as "no OTHER copy exists" rather than "exactly one copy exists" so it
+  # holds under --check, where the copy above has not run and the count is zero.
+  ansible.builtin.assert:
+    that:
+      - >-
+        btop_loop_installed_copies.files | map(attribute='path')
+        | reject('equalto', btop_loop_bin_dir ~ '/btop-loop') | list | length == 0
+    fail_msg: >-
+      another btop-loop is on PATH and may shadow
+      {{ btop_loop_bin_dir }}/btop-loop:
+      {{ btop_loop_installed_copies.files | map(attribute='path') | list }}
+    success_msg: "{{ btop_loop_bin_dir }}/btop-loop is the only copy on PATH"

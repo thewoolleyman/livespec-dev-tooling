@@ -1,0 +1,7 @@
+[Unit]
+Description=Emergency disk reclamation when / runs low
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart={{ disk_guard_script_path }}

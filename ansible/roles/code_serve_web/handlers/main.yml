@@ -1,0 +1,13 @@
+---
+- name: Restart code-serve-web
+  # A restart, not a reload: `code serve-web` has no reload path, and the unit
+  # itself is what changes when the role's variables move.
+  ansible.builtin.systemd_service:
+    name: "{{ code_serve_web_unit_name }}"
+    state: restarted
+    daemon_reload: true
+  become: true
+  # Same guard as the arming task in tasks/main.yml. A handler fires under
+  # --check too, because the template reports a would-be change, and
+  # restarting a unit the dry run has not written would fail.
+  when: not ansible_check_mode or code_serve_web_unit_file.stat.exists

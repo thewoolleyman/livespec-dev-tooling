@@ -1,0 +1,35 @@
+---
+# Defaults for claude_ntfy.
+#
+# USER SCOPE. vps-info's AGENTS.md installs this as
+# `services/claude-ntfy/install.sh   # no sudo -- user-level Claude config`, and
+# the only artifact it manages on disk is ~/.claude/settings.json.
+claude_ntfy_owner: "{{ ansible_facts['user_id'] }}"
+claude_ntfy_group: "{{ ansible_facts['user_gid'] }}"
+claude_ntfy_home: "{{ ansible_facts['user_dir'] }}"
+claude_ntfy_settings: "{{ claude_ntfy_home }}/.claude/settings.json"
+
+# The ntfy topic this host publishes to. It is genuinely per-host -- it is the
+# machine's notification ADDRESS, and two machines sharing one would interleave
+# their notifications on the maintainer's phone with nothing to tell them apart.
+# HOST_VARS.md carries the vps value; this default exists so the variable is
+# never undefined, not because a fleet-wide topic would be correct.
+claude_ntfy_topic: vps-claude-ready-4267
+
+# The ntfy server. Empty means "do not write the key at all", which leaves the
+# plugin on its own default of https://ntfy.sh. That is the shell's behaviour
+# for an unset CLAUDE_NTFY_SERVER, and it matters: writing the default value
+# explicitly would pin the host to a URL the plugin is free to change.
+claude_ntfy_server: ""
+
+claude_ntfy_marketplace_repo: thewoolleyman/claude-code-ntfy
+claude_ntfy_marketplace_name: claude-code-ntfy
+claude_ntfy_plugin: ntfy-notify@claude-code-ntfy
+
+# What the plugin's hook handler shells out to at notification time, plus the
+# CLI that installs the plugin at all. The role probes for these and refuses;
+# it does not install them.
+claude_ntfy_required_commands:
+  - jq
+  - curl
+  - claude

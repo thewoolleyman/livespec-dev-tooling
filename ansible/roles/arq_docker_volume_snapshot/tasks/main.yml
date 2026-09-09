@@ -1,0 +1,163 @@
+---
+# arq_docker_volume_snapshot — a readable copy of the Docker volume tree.
+#
+# Replaces vps-info services/arq-vps-docker-volume-snapshot/install.sh.
+# /var/lib/docker is excluded from both the Arq root snapshot and the restic
+# backup because it is mostly regenerable layer storage. The VOLUMES underneath
+# it are not regenerable, so they are copied out to somewhere both backups
+# already cover.
+#
+# SCOPE: root. The units land in /etc/systemd/system and the runner reads
+# /var/lib/docker/volumes, which is 0710 root:root. Determined from the
+# installer's require_root guard and from the unit paths it writes.
+
+- name: Locate the commands the snapshot runner needs
+  # `which` rather than a package check: the installer tested for the COMMANDS,
+  # and docker in particular may come from any of several packages or from a
+  # vendor tarball. check_mode is disabled so this read-only probe still answers
+  # under `--check`, where a skipped command task would leave the assert below
+  # with nothing to read.
+  ansible.builtin.command:
+    cmd: "which {{ item }}"
+  become: true
+  register: arq_docker_volume_snapshot_which
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop: "{{ arq_docker_volume_snapshot_required_commands }}"
+
+- name: Refuse to install without rsync, flock, systemctl and docker
+  # These do NOT migrate into the role. The installer refused rather than
+  # installing them, and a backup role has no business provisioning a container
+  # runtime. Failing here names the missing command instead of leaving a timer
+  # that fails nightly at 02:30.
+  ansible.builtin.assert:
+    that:
+      - arq_docker_volume_snapshot_which.results | rejectattr('rc', 'equalto', 0) | list | length == 0
+    fail_msg: >-
+      Missing required commands:
+      {{ arq_docker_volume_snapshot_which.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | join(', ') }}.
+      Install them on the host first; this role deliberately does not.
+    success_msg: rsync, flock, systemctl and docker are all on PATH
+
+- name: Check that Docker has a volumes directory
+  ansible.builtin.stat:
+    path: "{{ arq_docker_volume_snapshot_source_dir }}"
+  become: true
+  register: arq_docker_volume_snapshot_source
+
+- name: Refuse to install without a Docker volumes directory
+  # The runner exits 1 when the source is absent. Asserting it here turns a
+  # nightly failing timer into a failed converge with a name attached.
+  ansible.builtin.assert:
+    that:
+      - arq_docker_volume_snapshot_source.stat.exists
+      - arq_docker_volume_snapshot_source.stat.isdir
+    fail_msg: >-
+      {{ arq_docker_volume_snapshot_source_dir }} is not a directory — Docker is
+      not installed or has never run. Provision the container runtime first.
+    success_msg: "{{ arq_docker_volume_snapshot_source_dir }} exists"
+
+- name: Check whether the docker-volume snapshot timer unit is already installed
+  # Read BEFORE the unit is written. Under `--check` the template below writes
+  # nothing, so arming a not-yet-existing timer would fail with systemd's
+  # "Could not find the requested service" — a fault the role invented rather
+  # than found.
+  ansible.builtin.stat:
+    path: "{{ arq_docker_volume_snapshot_unit_dir }}/arq-vps-docker-volume-snapshot.timer"
+  become: true
+  register: arq_docker_volume_snapshot_timer_unit
+
+- name: Check whether the docker-volume snapshot service unit is already installed
+  # Same reason, for the handler: the immediate-snapshot handler starts the
+  # SERVICE, and handlers are notified and run under `--check` too.
+  ansible.builtin.stat:
+    path: "{{ arq_docker_volume_snapshot_unit_dir }}/arq-vps-docker-volume-snapshot.service"
+  become: true
+  register: arq_docker_volume_snapshot_service_unit
+
+- name: Install the docker-volume snapshot runner
+  # Stays shell for the same reason as the root snapshot's runner: a flock
+  # guard, a long exclude set, and rsync's status 24 treated as success. The
+  # role owns its installation, not its behaviour.
+  ansible.builtin.copy:
+    src: arq-vps-docker-volume-snapshot.sh
+    dest: "{{ arq_docker_volume_snapshot_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  notify: Run an immediate docker-volume snapshot
+
+- name: Install the docker-volume snapshot service unit
+  ansible.builtin.template:
+    src: arq-vps-docker-volume-snapshot.service.j2
+    dest: "{{ arq_docker_volume_snapshot_unit_dir }}/arq-vps-docker-volume-snapshot.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Run an immediate docker-volume snapshot
+
+- name: Install the docker-volume snapshot timer unit
+  ansible.builtin.template:
+    src: arq-vps-docker-volume-snapshot.timer.j2
+    dest: "{{ arq_docker_volume_snapshot_unit_dir }}/arq-vps-docker-volume-snapshot.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Run an immediate docker-volume snapshot
+
+- name: Enable and start the docker-volume snapshot timer
+  # Only the timer. The service unit has no [Install] section, so it is static
+  # and triggered by the timer alone. daemon_reload sits here rather than in a
+  # handler because handlers run after this task, and on a first apply systemd
+  # would not yet know the unit exists.
+  ansible.builtin.systemd_service:
+    name: arq-vps-docker-volume-snapshot.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # NOT check_mode: false — that would arm a live timer during a run that
+  # promised to change nothing. Where the timer already exists this runs
+  # normally under `--check` and reports genuine enable/start drift; where it
+  # does not, it is skipped and the would-be unit-file add says so instead.
+  when: not ansible_check_mode or arq_docker_volume_snapshot_timer_unit.stat.exists
+
+- name: Run any pending immediate snapshot before verifying it
+  # Handlers normally run at the end of the play, which is after the check
+  # below. Flushing them here preserves the installer's order: install, run one
+  # snapshot, then confirm the snapshot actually produced its marker.
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the snapshot's last-success marker
+  # POST-INSTALL VERIFICATION, so it is deliberately skipped under `--check`:
+  # a dry run never starts the snapshot, so the marker it checks for has not
+  # been written. This is the opposite case from a precondition probe, which
+  # must run in check mode.
+  ansible.builtin.stat:
+    path: "{{ arq_docker_volume_snapshot_state_dir }}/last-success.txt"
+  become: true
+  register: arq_docker_volume_snapshot_marker
+  when: not ansible_check_mode
+
+- name: Confirm a snapshot has completed
+  # This is the one installer verification worth keeping: no module guarantees
+  # that the runner SUCCEEDED, only that it was started, and rsync tolerating
+  # status 24 means a partial copy still exits 0. The marker is written last, so
+  # its presence is the only evidence the run reached the end.
+  #
+  # Skipped under `--check`, where the handler above never ran and a fresh host
+  # would therefore have no marker to find.
+  ansible.builtin.assert:
+    that:
+      - arq_docker_volume_snapshot_marker.stat.exists
+      - arq_docker_volume_snapshot_marker.stat.size > 0
+    fail_msg: >-
+      {{ arq_docker_volume_snapshot_state_dir }}/last-success.txt is missing or
+      empty — the snapshot service started but did not finish. Check
+      `journalctl -u arq-vps-docker-volume-snapshot.service`.
+    success_msg: a docker-volume snapshot has completed
+  when: not ansible_check_mode

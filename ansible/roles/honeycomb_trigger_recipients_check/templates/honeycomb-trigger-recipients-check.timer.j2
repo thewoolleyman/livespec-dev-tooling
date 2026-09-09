@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Daily check that critical Honeycomb triggers have recipients
+
+[Timer]
+OnCalendar={{ honeycomb_trigger_recipients_check_on_calendar }}
+# Missed runs fire on resume, so a host that was down does not silently skip
+# the check -- the same Persistent=true reasoning as dolt-backup.timer.
+Persistent=true
+RandomizedDelaySec={{ honeycomb_trigger_recipients_check_randomized_delay }}
+
+[Install]
+WantedBy=timers.target

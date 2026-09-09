@@ -1,0 +1,6 @@
+---
+- name: Update the desktop database
+  ansible.builtin.command:
+    cmd: update-desktop-database {{ onepassword_desktop_applications_dir }}
+  become: true
+  changed_when: true

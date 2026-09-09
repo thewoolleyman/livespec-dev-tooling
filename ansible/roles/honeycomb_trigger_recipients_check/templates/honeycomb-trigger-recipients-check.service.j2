@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Assert critical Honeycomb triggers still have recipients attached
+Documentation=file://{{ honeycomb_trigger_recipients_check_checkout }}/plan/dolt-reboot-safety/handoff.md
+# The check that watches the watchman must not itself fail silently. Reuse the
+# dolt-server alert handler (Honeycomb event -> trigger -> email, + ntfy) whose
+# delivery is proven.
+OnFailure={{ honeycomb_trigger_recipients_check_alert_target }}
+
+[Service]
+Type=oneshot
+User={{ honeycomb_trigger_recipients_check_service_user }}
+# with-homelab-env.sh injects
+# HONEYCOMB_TRIGGER_RECIPIENT_AUDIT_CONFIG_API_KEY from the 1Password `homelab`
+# Environment. The secret exists only in this process's environment: never a
+# file, never git, never an argv.
+#
+# BOTH PATHS POINT OUT OF THIS ROLE. The wrapper ships from the
+# 1password-env-wrapper repo, and the check script runs in place from the
+# vps-info checkout -- nothing copies it onto the host. The role asserts both
+# before writing this unit, because a unit whose ExecStart does not resolve
+# fails at exec time, once a day, quietly.
+ExecStart={{ honeycomb_trigger_recipients_check_env_wrapper }} {{ honeycomb_trigger_recipients_check_script }}

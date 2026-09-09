@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Rendered by the code_pwa_proxy Ansible role. Edit the role, not this file.
+[Unit]
+Description=PWA service worker injection proxy for code-serve-web (nginx)
+Documentation=https://nginx.org/en/docs/
+After=network-online.target {{ code_pwa_proxy_backend_unit }} tailscaled.service
+Wants=network-online.target tailscaled.service
+Requires={{ code_pwa_proxy_backend_unit }}
+
+[Service]
+Type=simple
+PIDFile={{ code_pwa_proxy_pid_file }}
+ExecStartPre={{ code_pwa_proxy_nginx_bin }} -t -c {{ code_pwa_proxy_conf_dir }}/nginx.conf
+ExecStart={{ code_pwa_proxy_nginx_bin }} -c {{ code_pwa_proxy_conf_dir }}/nginx.conf
+ExecReload={{ code_pwa_proxy_nginx_bin }} -c {{ code_pwa_proxy_conf_dir }}/nginx.conf -s reload
+TimeoutStopSec=5s
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+# ~/.tmux.conf.local — local overrides, sourced at the END of ~/.tmux.conf
+# (-> ~/.acfs/tmux/tmux.conf), so settings here win over the acfs-managed base.
+#
+# Managed by vps-info: services/tmux-config/ — edit there and re-run install.sh.
+
+# The acfs base caps the left status component at 30 columns, which truncates
+# descriptive agent/worktree session names even on wide clients. Raise the cap;
+# this is only a maximum, so short names still consume only their actual width
+# and tmux can still truncate the status line when the client is genuinely narrow.
+set -g status-left-length 100
+
+# The acfs base config sets `detach-on-destroy off` ("NTM compatibility"), which
+# makes tmux jump the client into another surviving session when the current one
+# exits — easy to Ctrl-D through several unrelated sessions by accident.
+# Override: when a session is destroyed, detach straight back to the terminal.
+set -g detach-on-destroy on

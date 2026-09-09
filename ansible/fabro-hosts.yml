@@ -1,0 +1,48 @@
+---
+# The Fabro sandbox-host services, migrated from the `fabro-hosts` repository.
+#
+# Two plays because the two machines carry different sets: `hp-xubuntu` is a
+# dedicated sandbox host and takes everything, while the VPS is the maintainer's
+# dev host and takes only the services it actually runs. The split is measured
+# from the live machines, not assumed from the presence of a `hosts/<host>.env`
+# file — `storage-reclaim` ships one for `hp-xubuntu` and is not installed
+# there, which the drift report surfaces as a whole service missing.
+#
+# `fabro_server` is included rather than listed, because a host runs more than
+# one Fabro instance and the role installs exactly one per invocation. Looping
+# in the play keeps every task's `when`, `notify` and handler scoped to a single
+# unit; a `roles:` entry would run it once per host and silently install only
+# whichever instance happened to be resolved.
+
+- name: Fabro sandbox host
+  hosts: hp-xubuntu
+  gather_facts: true
+  roles:
+    - container_reclaim
+    - storage_reclaim
+    - disk_guard
+    - host_tools
+    - sccache_redis
+  tasks:
+    - name: Install every Fabro instance on this host
+      ansible.builtin.include_role:
+        name: fabro_server
+      loop: "{{ fabro_server_instances }}"
+      loop_control:
+        loop_var: fabro_server_instance
+        label: "{{ fabro_server_instance.unit_name }}"
+
+- name: Fabro services on the dev host
+  hosts: vps
+  gather_facts: true
+  roles:
+    - container_reclaim
+    - storage_reclaim
+  tasks:
+    - name: Install every Fabro instance on this host
+      ansible.builtin.include_role:
+        name: fabro_server
+      loop: "{{ fabro_server_instances }}"
+      loop_control:
+        loop_var: fabro_server_instance
+        label: "{{ fabro_server_instance.unit_name }}"

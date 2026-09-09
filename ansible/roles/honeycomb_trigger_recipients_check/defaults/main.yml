@@ -1,0 +1,47 @@
+---
+# Defaults for honeycomb_trigger_recipients_check.
+#
+# ROOT SCOPE. This is the one root-scope role in this group. vps-info's
+# AGENTS.md installs it as
+# `sudo /data/projects/vps-info/services/honeycomb-trigger-recipients-check/install.sh`,
+# and the installer refuses outright unless `id -u` is 0, because it writes
+# system systemd units. Every task below that touches /etc/systemd/system or
+# the system systemd instance carries `become: true`.
+
+# THE CHECK RUNS IN PLACE FROM THE vps-info CHECKOUT. The unit's ExecStart names
+# the script at its checkout path and nothing copies it onto the host, so the
+# checkout is a runtime dependency of the unit this role installs -- and the role
+# does not own the checkout. It asserts the script is there and refuses
+# otherwise. Moving the checkout silently breaks the timer: the unit still
+# exists, still fires daily, and fails at exec with no recipient to tell.
+honeycomb_trigger_recipients_check_checkout: /data/projects/vps-info
+honeycomb_trigger_recipients_check_script: >-
+  {{ honeycomb_trigger_recipients_check_checkout }}/services/honeycomb-trigger-recipients-check/check-trigger-recipients.sh
+
+# The 1Password service-account wrapper the unit's ExecStart invokes. It ships
+# from the 1password-env-wrapper repo; neither vps-info nor this role installs
+# it. It injects HONEYCOMB_TRIGGER_RECIPIENT_AUDIT_CONFIG_API_KEY into the
+# check's environment and nowhere else -- never a file, never git, never argv.
+honeycomb_trigger_recipients_check_env_wrapper: /usr/local/bin/with-homelab-env.sh
+
+# The OnFailure target. A CROSS-REPO dependency: the templated unit ships from
+# the dolt-server repo, not from vps-info. It is what makes this check's own
+# failure visible, so a missing one recreates in miniature the outage the check
+# exists to prevent -- a watchman with nobody to report to.
+honeycomb_trigger_recipients_check_alert_unit: dolt-backup-alert@.service
+honeycomb_trigger_recipients_check_alert_target: >-
+  dolt-backup-alert@honeycomb-trigger-recipients-check.service
+
+# The account the check runs as. It must be an account the 1Password wrapper can
+# serve, and it is deliberately not root: the check only reads a remote API.
+honeycomb_trigger_recipients_check_service_user: ubuntu
+
+honeycomb_trigger_recipients_check_unit_dir: /etc/systemd/system
+honeycomb_trigger_recipients_check_service_name: honeycomb-trigger-recipients-check.service
+honeycomb_trigger_recipients_check_timer_name: honeycomb-trigger-recipients-check.timer
+
+# Schedule. Daily with a ten-minute jitter, catching up after downtime, matching
+# dolt-backup.timer's reasoning: a host that was off is exactly the host whose
+# check must not be silently skipped.
+honeycomb_trigger_recipients_check_on_calendar: daily
+honeycomb_trigger_recipients_check_randomized_delay: 600

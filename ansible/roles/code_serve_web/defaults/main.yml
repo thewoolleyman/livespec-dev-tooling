@@ -1,0 +1,38 @@
+---
+# The loopback endpoint `code serve-web` binds. Nothing here is ever meant to
+# reach a routable address: the host has a public IP and the editor runs with
+# --without-connection-token, so its only access control is that it cannot be
+# reached except through Tailscale Serve, which the code_pwa_proxy role owns.
+code_serve_web_listen_address: 127.0.0.1
+code_serve_web_listen_port: 8000
+
+# The unprivileged account the editor runs as. Not interchangeable: every
+# workspace, extension and setting the maintainer has lives in this home.
+code_serve_web_user: ubuntu
+code_serve_web_group: ubuntu
+code_serve_web_home: /home/ubuntu
+
+# `present` installs VS Code and then leaves the installed version alone.
+# The shell installer this role replaces ran `apt-get install -y code` on
+# EVERY invocation, which silently upgraded the editor as a side effect of
+# re-running the installer. A converge may run while the maintainer is using
+# that editor, so an upgrade is made an explicit choice here: set this to
+# `latest` for a run that is meant to upgrade.
+code_serve_web_package_state: present
+
+code_serve_web_unit_name: code-serve-web.service
+code_serve_web_unit_path: /etc/systemd/system/code-serve-web.service
+code_serve_web_apt_key_url: https://packages.microsoft.com/keys/microsoft.asc
+code_serve_web_apt_repo_url: https://packages.microsoft.com/repos/code
+code_serve_web_apt_architectures: amd64,arm64,armhf
+# Composed once here so the keyring path in the source line cannot drift from
+# the keyring the conversion step actually writes.
+code_serve_web_apt_repo_line: >-
+  deb [arch={{ code_serve_web_apt_architectures }}
+  signed-by={{ code_serve_web_apt_keyring }}]
+  {{ code_serve_web_apt_repo_url }} stable main
+code_serve_web_apt_keyring_dir: /etc/apt/keyrings
+code_serve_web_apt_keyring: /etc/apt/keyrings/packages.microsoft.gpg
+# The armoured key is kept beside the dearmoured one so the conversion below
+# has a stable `creates:` pair and never re-fetches on a converge.
+code_serve_web_apt_key_asc: /etc/apt/keyrings/packages.microsoft.asc

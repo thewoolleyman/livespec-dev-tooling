@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+# Rendered by the code_serve_web Ansible role. Edit the role, not this file.
+[Unit]
+Description=VS Code serve-web (loopback, fronted by Tailscale Serve)
+Documentation=https://code.visualstudio.com/docs/remote/vscode-server
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User={{ code_serve_web_user }}
+Group={{ code_serve_web_group }}
+Environment=HOME={{ code_serve_web_home }}
+WorkingDirectory={{ code_serve_web_home }}
+ExecStart=/usr/bin/code serve-web --host {{ code_serve_web_listen_address }} --port {{ code_serve_web_listen_port }} --without-connection-token --accept-server-license-terms
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

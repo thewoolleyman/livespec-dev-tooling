@@ -1,0 +1,55 @@
+---
+# Defaults for storage_reclaim. These are the FLEET defaults; anything that
+# genuinely varies per machine is supplied from the inventory's host_vars, and
+# this role's HOST_VARS.md carries the measured values for each host it targets.
+#
+# Five variables are deliberately NOT defaulted, because no value would be
+# correct on an unknown host and a wrong one is worse than a refusal. Four of
+# them name paths and accounts this role would otherwise be guessing at:
+#
+#   storage_reclaim_canonical_host    the machine's tailnet name
+#   storage_reclaim_system_hostname   what `hostname -s` reports there
+#   storage_reclaim_service_user      the account that OWNS the worktrees
+#   storage_reclaim_home              that account's home directory
+#
+# Leaving them undefined makes the env-file and unit templates fail with an
+# undefined-variable error naming the missing variable, which is exactly the
+# refusal the shell installer produced with `: "${NAME:?...}"`.
+
+# The group the service runs under. Defaulted to the service user's own name
+# because both hosts use a matching user-private group; override where they
+# differ.
+storage_reclaim_service_group: "{{ storage_reclaim_service_user }}"
+
+# Where the reclaimer looks for worktrees. An absent root is NOT an error --
+# the reclaimer treats it as an empty inventory -- so this default is the
+# fleet's convention rather than a claim that the directory exists.
+storage_reclaim_worktree_root: "{{ storage_reclaim_home }}/.worktrees"
+
+# Space-separated roots holding the clones that supply the REGISTERED worktree
+# set. Orphan detection differences the on-disk worktrees against that set, so
+# a wrong value here reports live worktrees as orphans.
+storage_reclaim_checkout_roots: "{{ storage_reclaim_home }}/repos"
+
+# ARTIFACT HORIZON, in days. Derived from a measured curve across all 574
+# worktrees on the vps: 30d reclaims 101.9 GB, 21d reclaims 120.6 GB, 14d
+# reclaims 165.3 GB, 10d reclaims 165.5 GB, 7d reclaims 174.7 GB. Between 10
+# and 14 days the curve is flat -- 0.2 GB for five more worktrees -- so 14 days
+# costs essentially nothing against 10 while being four days more conservative.
+# Below 7 days it starts charging actively-used worktrees for a shrinking
+# return.
+storage_reclaim_artifact_idle_days: 14
+
+# ORPHAN HORIZON, in days, deliberately far more conservative than the artifact
+# horizon: a build artifact regenerates, an orphaned worktree holding unpushed
+# work does not. The orphan REPORT is unconditional and ignores this value.
+storage_reclaim_orphan_idle_days: 30
+
+# systemd OnCalendar expression for the timer.
+storage_reclaim_on_calendar: daily
+
+storage_reclaim_libexec_dir: /usr/local/libexec
+storage_reclaim_unit_dir: /etc/systemd/system
+storage_reclaim_script_dest: "{{ storage_reclaim_libexec_dir }}/storage-reclaim.sh"
+storage_reclaim_env_dest: "{{ storage_reclaim_libexec_dir }}/storage-reclaim.env"
+storage_reclaim_timer_name: storage-reclaim.timer

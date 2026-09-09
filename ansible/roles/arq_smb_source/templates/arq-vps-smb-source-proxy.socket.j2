@@ -1,0 +1,19 @@
+# Managed by Ansible (role: arq_smb_source). Local edits are overwritten.
+[Unit]
+Description=Tailnet SMB socket for Arq VPS backup source
+
+[Socket]
+# The tailnet address only. Binding a literal rather than a wildcard is what
+# keeps SMB off the public interface even if Samba's own binding were wrong.
+ListenStream={{ arq_smb_source_tailscale_ip }}:445
+{% if arq_smb_source_socket_free_bind %}
+# Bind the tailnet address even before tailscaled has configured it, so the
+# socket does not lose a boot-time race. Present on the live host, absent from
+# vps-info's committed unit; see arq_smb_source_socket_free_bind.
+FreeBind=true
+{% endif %}
+NoDelay=true
+Service=arq-vps-smb-source-proxy.service
+
+[Install]
+WantedBy=sockets.target

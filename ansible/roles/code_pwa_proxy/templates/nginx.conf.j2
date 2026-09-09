@@ -1,0 +1,89 @@
+# {{ ansible_managed }}
+# Rendered by the code_pwa_proxy Ansible role. Edit the role, not this file.
+#
+# nginx config for code-pwa-proxy.
+#
+# Stand-alone reverse proxy in front of `code serve-web`. Lives between
+# Tailscale Serve and the editor backend so we can inject the one thing
+# Microsoft's serve-web doesn't ship: a registered service worker.
+# Without that, Chrome's PWA "Install app" gate stays hidden — only "Add
+# to home screen" is offered. With the SW + Microsoft's existing manifest,
+# the install gate appears and the editor installs as a real PWA.
+#
+# Listens on loopback only — Tailscale Serve fronts us on :{{ code_pwa_proxy_serve_https_port }}.
+
+worker_processes 1;
+# Pid file at a stable, predictable path. Directory under /run is owned
+# by root; ExecStart runs nginx as root (workers drop to www-data per
+# the bundled nginx-common defaults).
+pid                  {{ code_pwa_proxy_pid_file }};
+error_log            stderr warn;
+daemon off;
+
+events {
+    worker_connections 256;
+}
+
+http {
+    # Core MIME map so types{} declarations work and content-type defaults make sense.
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Access log goes to journald via stderr if ever enabled; off by
+    # default to keep the editor's high-volume traffic out of the
+    # journal. nginx workers can't reliably open /dev/stdout under
+    # systemd anyway (fork/fd inheritance issue).
+    access_log off;
+    sendfile on;
+    tcp_nopush on;
+    server_tokens off;
+
+    # Standard websocket upgrade plumbing — VS Code serve-web uses
+    # WebSockets to drive the workbench connection.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    server {
+        listen {{ code_pwa_proxy_listen_address }}:{{ code_pwa_proxy_listen_port }};
+
+        # Generous timeouts so VS Code's long-lived workbench WS stays open.
+        proxy_read_timeout 1d;
+        proxy_send_timeout 1d;
+
+        # Serve our 4-line no-op service worker. Chrome only needs *a*
+        # SW with a fetch handler registered to satisfy installability —
+        # it doesn't have to do anything useful.
+        location = /sw.js {
+            root {{ code_pwa_proxy_conf_dir }};
+            try_files /sw.js =404;
+            default_type application/javascript;
+            add_header Cache-Control "no-cache";
+        }
+
+        # Everything else: proxy to `code serve-web` on loopback, and
+        # inject the SW registration into HTML responses.
+        location / {
+            proxy_pass {{ code_pwa_proxy_backend_url }};
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+
+            # Disable upstream compression so sub_filter can find the
+            # `</body>` token. nginx will recompress for the downstream
+            # if the client requests it.
+            proxy_set_header Accept-Encoding "";
+
+            # Inject the SW registration into the workbench HTML.
+            # sub_filter defaults to text/html only — exactly what we
+            # want. `</body>` is HTML-only anyway, but the type filter
+            # avoids buffering large JS/CSS responses through sub_filter.
+            sub_filter_once on;
+            sub_filter "</body>" "<script>{{ code_pwa_proxy_sw_registration }}</script></body>";
+        }
+    }
+}

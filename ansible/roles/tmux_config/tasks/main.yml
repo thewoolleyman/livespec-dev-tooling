@@ -1,0 +1,339 @@
+---
+# tmux_config — the ubuntu account's tmux override, and the removal of the
+# oh-my-zsh tmux plugin that shadows the real binary.
+#
+# Replaces vps-info services/tmux-config/install.sh. USER-SCOPE: vps-info's
+# AGENTS.md lists this among the installers run WITHOUT sudo ("no sudo —
+# user-level config"), every path it touches is under $HOME, and it installs no
+# unit. So this role uses no `become` anywhere, and needs no `scope: user` on a
+# systemd module because it drives no systemd at all — the one live effect it
+# has is applied to a running tmux server through the tmux client.
+#
+# WHAT THE PLUGIN REMOVAL IS FOR. The oh-my-zsh tmux plugin defines
+# `alias tmux=_zsh_tmux_plugin_run` and `alias tds=_tmux_directory_session`.
+# Claude Code snapshots the shell per session, and that snapshot keeps aliases
+# but drops single-underscore function definitions. Inside a Claude Code Bash
+# call `tmux` therefore expanded to a function that was not there, exiting 127.
+# `tksv` is oh-my-zsh's four-keystroke alias for tearing down the whole tmux
+# server — the exact fleet-destroying operation this host has been hit by, so
+# dropping it is deliberate rather than incidental.
+#
+# TWO LAYERS, because acfs re-templates acfs.zshrc on an installer re-run or a
+# version bump: the plugins-list edit is the fix, and the unalias guard in
+# ~/.zshrc.local — which acfs does not own and ~/.zshrc sources afterwards — is
+# what makes the fix survive being reverted.
+
+- name: Look for the acfs-managed tmux configuration
+  ansible.builtin.stat:
+    path: "{{ tmux_config_home }}/.tmux.conf"
+    follow: true
+  register: tmux_config_tmux_conf
+
+- name: Look for the acfs-managed zsh configuration
+  ansible.builtin.stat:
+    path: "{{ tmux_config_acfs_zshrc }}"
+  register: tmux_config_acfs_stat
+
+- name: Look for the user's zsh configuration
+  ansible.builtin.stat:
+    path: "{{ tmux_config_home }}/.zshrc"
+    follow: true
+  register: tmux_config_zshrc
+
+- name: Require the acfs dotfiles this role extends
+  # PREFLIGHT. acfs is a separate dotfile manager this role does not provision
+  # and cannot install: it owns ~/.tmux.conf, ~/.zshrc and ~/.acfs/zsh/. Every
+  # edit below is an OVERRIDE layered on files acfs must already have written,
+  # so failing here is the point — the alternative is writing an override that
+  # nothing ever sources.
+  ansible.builtin.assert:
+    that:
+      - tmux_config_tmux_conf.stat.exists
+      - tmux_config_acfs_stat.stat.exists
+      - tmux_config_zshrc.stat.exists
+    fail_msg: >-
+      the acfs dotfiles are not installed for this account
+      ({{ tmux_config_home }}/.tmux.conf, {{ tmux_config_acfs_zshrc }},
+      {{ tmux_config_home }}/.zshrc). Run the acfs installer for this user first.
+    success_msg: the acfs dotfiles this role extends are present
+
+- name: Read the acfs-managed tmux configuration
+  ansible.builtin.slurp:
+    src: "{{ tmux_config_home }}/.tmux.conf"
+  register: tmux_config_tmux_conf_raw
+
+- name: Read the user's zsh configuration
+  ansible.builtin.slurp:
+    src: "{{ tmux_config_home }}/.zshrc"
+  register: tmux_config_zshrc_raw
+
+- name: Require both acfs configurations to source their local overrides
+  # PREFLIGHT. acfs sources ~/.tmux.conf.local at the END of its own tmux
+  # config, and ~/.zshrc.local after acfs.zshrc. Both orderings are what make
+  # an override win. If an acfs update ever drops either line, the files this
+  # role writes become inert and nothing else would say so.
+  ansible.builtin.assert:
+    that:
+      - "'tmux.conf.local' in (tmux_config_tmux_conf_raw['content'] | b64decode)"
+      - "'zshrc.local' in (tmux_config_zshrc_raw['content'] | b64decode)"
+    fail_msg: >-
+      ~/.tmux.conf does not source ~/.tmux.conf.local, or ~/.zshrc does not
+      source ~/.zshrc.local. The overrides this role installs would never load.
+    success_msg: both acfs configurations source their local overrides
+
+- name: Derive the status bar width from the shipped tmux override
+  # Read from the file this role ships rather than restated as a variable, so
+  # the value applied to a running server cannot drift from the value written
+  # to disk. The lookup runs on the CONTROL node, against role_path.
+  ansible.builtin.set_fact:
+    tmux_config_status_left_length: >-
+      {{ lookup('ansible.builtin.file',
+                role_path ~ '/files/' ~ tmux_config_local_conf_name)
+         | regex_search('(?m)^set -g status-left-length ([0-9]+)$', '\1')
+         | default([], true) | join('') }}
+
+- name: Require exactly one numeric status bar width in the shipped override
+  ansible.builtin.assert:
+    that:
+      - tmux_config_status_left_length is match('^[0-9]+$')
+    fail_msg: >-
+      files/{{ tmux_config_local_conf_name }} does not carry exactly one
+      `set -g status-left-length <n>` line, so the live-apply step below has no
+      value to apply.
+    success_msg: "status-left-length is {{ tmux_config_status_left_length }}"
+
+- name: Install the tmux local override
+  ansible.builtin.copy:
+    src: "{{ tmux_config_local_conf_name }}"
+    dest: "{{ tmux_config_home }}/.tmux.conf.local"
+    owner: "{{ ansible_facts['user_id'] }}"
+    group: "{{ ansible_facts['user_gid'] }}"
+    mode: "0644"
+
+- name: Read the acfs zsh configuration
+  ansible.builtin.slurp:
+    src: "{{ tmux_config_acfs_zshrc }}"
+  register: tmux_config_acfs_raw
+
+- name: Note the acfs zsh configuration as lines
+  # Held as LINES rather than as one string, because every question this role
+  # asks of the file is a question about whole lines: which line opens the
+  # plugins list, which closes it, and which lines inside it name a plugin.
+  ansible.builtin.set_fact:
+    tmux_config_acfs_lines: >-
+      {{ (tmux_config_acfs_raw['content'] | b64decode).splitlines() }}
+
+- name: Require the acfs plugins list to still be in its multi-line form
+  # The shell filtered the plugins list with awk, scoped to the block, so a
+  # `tmux` substring elsewhere in the file — and `tmuxinator` on the next line
+  # — were both left alone. The removal below uses a line-scoped module and
+  # cannot express that scope itself, so the scope is asserted here instead:
+  # if acfs ever switches to a single-line `plugins=(git tmux ...)` form, no
+  # line equals `plugins=(` and this fails loudly rather than shipping a dead
+  # fix or editing the wrong line.
+  ansible.builtin.assert:
+    that:
+      - "'plugins=(' in tmux_config_acfs_lines"
+      - "')' in tmux_config_acfs_lines[tmux_config_acfs_lines.index('plugins=(') + 1 :]"
+    fail_msg: >-
+      the plugins list in {{ tmux_config_acfs_zshrc }} is no longer a multi-line
+      `plugins=(` ... `)` block. Remove the `tmux` entry by hand and re-run.
+    success_msg: the acfs plugins list is in its expected multi-line form
+
+- name: Note the lines following the start of the acfs plugins list
+  ansible.builtin.set_fact:
+    tmux_config_plugins_tail: >-
+      {{ tmux_config_acfs_lines[tmux_config_acfs_lines.index('plugins=(') + 1 :] }}
+
+- name: Note the contents of the acfs plugins block
+  ansible.builtin.set_fact:
+    tmux_config_plugins_block: >-
+      {{ tmux_config_plugins_tail[: tmux_config_plugins_tail.index(')')] }}
+
+- name: Require every bare tmux line in the acfs zshrc to be inside that block
+  # This is the other half of the scope the awk filter had. If a line
+  # consisting only of `tmux` ever appears outside the plugins block — where it
+  # would be a command, not a plugin name — the removal below would delete it
+  # too, so the role refuses instead.
+  ansible.builtin.assert:
+    that:
+      - >-
+        (tmux_config_acfs_lines | select('match', '^\s*tmux\s*$') | list | length)
+        == (tmux_config_plugins_block | select('match', '^\s*tmux\s*$') | list | length)
+    fail_msg: >-
+      {{ tmux_config_acfs_zshrc }} has a bare `tmux` line outside its plugins
+      block. Removing plugin entries by line would take that one too — resolve
+      it by hand and re-run.
+    success_msg: every bare tmux line is inside the plugins block
+
+- name: Create the acfs backup directory
+  ansible.builtin.file:
+    path: "{{ tmux_config_backup_dir }}"
+    state: directory
+    owner: "{{ ansible_facts['user_id'] }}"
+    group: "{{ ansible_facts['user_gid'] }}"
+    mode: "0755"
+  when: tmux_config_plugins_block | select('match', '^\s*tmux\s*$') | list | length > 0
+
+- name: Back up the acfs zsh configuration before removing the tmux plugin
+  # acfs owns this file and will re-template it; the backup is what makes the
+  # edit reversible in the window before it does.
+  ansible.builtin.copy:
+    src: "{{ tmux_config_acfs_zshrc }}"
+    dest: >-
+      {{ tmux_config_backup_dir }}/acfs.zshrc.{{
+         ansible_facts['date_time']['iso8601_basic_short'] }}.bak
+    remote_src: true
+    owner: "{{ ansible_facts['user_id'] }}"
+    group: "{{ ansible_facts['user_gid'] }}"
+    mode: "0644"
+  when: tmux_config_plugins_block | select('match', '^\s*tmux\s*$') | list | length > 0
+
+- name: Remove the oh-my-zsh tmux plugin from the acfs plugins list
+  # No owner/group/mode here on purpose: acfs owns this file's identity and
+  # permissions, and this role is editing one line of it, not claiming it.
+  ansible.builtin.lineinfile:
+    path: "{{ tmux_config_acfs_zshrc }}"
+    regexp: '^\s*tmux\s*$'
+    state: absent
+
+- name: Look for the existing unalias guard
+  ansible.builtin.find:
+    paths: "{{ tmux_config_home }}"
+    patterns: .zshrc.local
+    contains: '^unalias tmux '
+    hidden: true
+  register: tmux_config_unalias_guard
+
+- name: Append the unalias guard to the user's zsh overrides
+  # Guarded on the guard's own text rather than left to blockinfile's markers,
+  # because the shell installer wrote this block WITHOUT markers. On a host it
+  # has already run, unguarded blockinfile would append a second copy. Once
+  # this task has run, its markers are what future runs see.
+  ansible.builtin.blockinfile:
+    path: "{{ tmux_config_zshrc_local }}"
+    create: true
+    owner: "{{ ansible_facts['user_id'] }}"
+    group: "{{ ansible_facts['user_gid'] }}"
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: tmux_config unalias guard"
+    block: |
+      # The oh-my-zsh tmux plugin aliases `tmux` to the function
+      # _zsh_tmux_plugin_run (and `tds` to _tmux_directory_session). Claude
+      # Code's per-session shell snapshot keeps aliases but drops
+      # single-underscore function definitions, so inside a Claude Code Bash
+      # call `tmux` expanded to a missing function and exited 127.
+      #
+      # The plugin is removed from the `plugins=(...)` list in
+      # ~/.acfs/zsh/acfs.zshrc, but acfs re-templates that file on an installer
+      # re-run or version bump. This file is sourced AFTER acfs.zshrc and acfs
+      # does not own it, so these unaliases are what make the fix survive that.
+      # `tksv` is oh-my-zsh's four-keystroke alias for the tmux server-teardown
+      # command — the exact fleet-destroying operation this host has been hit
+      # by; dropping it is deliberate, not incidental.
+      #
+      # Guarded so it stays silent when the aliases are already absent.
+      # Managed by the tmux_config Ansible role.
+      unalias tmux tksv tds tl tmuxconf 2>/dev/null || true
+  when: tmux_config_unalias_guard.matched == 0
+
+- name: Verify the shell and apply the override to a running tmux server
+  # Deliberately skipped under --check. The shell probe verifies the
+  # ~/.zshrc.local guard and the acfs edit this role would have made, and the
+  # tmux tasks mutate a live server holding the maintainer's sessions. Every
+  # PRECONDITION this role has — the acfs dotfiles, both source lines, the
+  # plugins-block shape and scope — is asserted above with check-mode-safe
+  # modules, so a dry run still exercises all of them.
+  when: not ansible_check_mode
+  block:
+    - name: Resolve tmux in a fresh interactive shell
+      # `zsh -lc` is NOT sufficient: zsh reads .zshrc only for interactive
+      # shells, so a login-but-non-interactive shell loads no oh-my-zsh
+      # aliases at all and would pass vacuously.
+      ansible.builtin.command:
+        argv:
+          - zsh
+          - -i
+          - -c
+          - type tmux
+      register: tmux_config_resolved
+      changed_when: false
+      failed_when: false
+
+    - name: Require the interactive shell to resolve tmux to the real binary
+      ansible.builtin.assert:
+        that:
+          - (tmux_config_resolved.stdout | trim) == ('tmux is ' ~ tmux_config_tmux_bin)
+        fail_msg: >-
+          a fresh interactive shell resolves tmux to
+          "{{ tmux_config_resolved.stdout | trim | default('nothing', true) }}",
+          expected "tmux is {{ tmux_config_tmux_bin }}". An alias is still
+          shadowing the binary.
+        success_msg: the interactive shell resolves tmux to {{ tmux_config_tmux_bin }}
+
+    - name: Read the running tmux server's global options
+      # A non-zero exit here means no server is running, which is not an error:
+      # the override on disk will be read at the next server start.
+      ansible.builtin.command:
+        argv:
+          - "{{ tmux_config_tmux_bin }}"
+          - show-options
+          - -g
+      register: tmux_config_server_options
+      changed_when: false
+      failed_when: false
+
+    - name: Apply detach-on-destroy to the running tmux server
+      # NEVER restart or kill the server to pick up the config: it holds the
+      # maintainer's live sessions. tmux reads its config only at server start,
+      # so a running server is updated through the client instead.
+      ansible.builtin.command:
+        argv:
+          - "{{ tmux_config_tmux_bin }}"
+          - set-option
+          - -g
+          - detach-on-destroy
+          - "on"
+      changed_when: true
+      when:
+        - tmux_config_server_options.rc == 0
+        - "'detach-on-destroy on' not in tmux_config_server_options.stdout"
+
+    - name: Apply the status bar width to the running tmux server
+      ansible.builtin.command:
+        argv:
+          - "{{ tmux_config_tmux_bin }}"
+          - set-option
+          - -g
+          - status-left-length
+          - "{{ tmux_config_status_left_length }}"
+      changed_when: true
+      when:
+        - tmux_config_server_options.rc == 0
+        - >-
+          ('status-left-length ' ~ tmux_config_status_left_length)
+          not in tmux_config_server_options.stdout
+
+    - name: Re-read the running tmux server's global options
+      ansible.builtin.command:
+        argv:
+          - "{{ tmux_config_tmux_bin }}"
+          - show-options
+          - -g
+      register: tmux_config_server_options_after
+      changed_when: false
+      failed_when: false
+      when: tmux_config_server_options.rc == 0
+
+    - name: Require the running tmux server to carry the override
+      ansible.builtin.assert:
+        that:
+          - "'detach-on-destroy on' in tmux_config_server_options_after.stdout"
+          - >-
+            ('status-left-length ' ~ tmux_config_status_left_length)
+            in tmux_config_server_options_after.stdout
+        fail_msg: >-
+          the running tmux server did not take the override. Its sessions are
+          untouched; inspect `{{ tmux_config_tmux_bin }} show-options -g`.
+        success_msg: the running tmux server carries the override
+      when: tmux_config_server_options.rc == 0

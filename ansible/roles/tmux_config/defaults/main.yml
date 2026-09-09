@@ -1,0 +1,20 @@
+---
+# USER-SCOPE ROLE. Every path below is inside the connecting user's home, so
+# this role uses no `become` at all and installs no unit. `user_dir` is the
+# connecting account's home, which is the account whose shell and tmux server
+# these settings are for.
+tmux_config_home: "{{ ansible_facts['user_dir'] }}"
+
+# tmux is called by absolute path throughout, the same defence in depth the
+# shell installer used: an acfs re-template can restore the oh-my-zsh tmux
+# plugin, whose `alias tmux=_zsh_tmux_plugin_run` does not survive a Claude
+# Code shell snapshot.
+tmux_config_tmux_bin: /usr/bin/tmux
+
+tmux_config_local_conf_name: tmux.conf.local
+tmux_config_acfs_zshrc: "{{ tmux_config_home }}/.acfs/zsh/acfs.zshrc"
+tmux_config_zshrc_local: "{{ tmux_config_home }}/.zshrc.local"
+
+# Backups go outside /tmp deliberately: /tmp is a tmpfs and does not survive a
+# reboot, which is exactly when the backup would be wanted.
+tmux_config_backup_dir: "{{ tmux_config_home }}/backups/acfs"

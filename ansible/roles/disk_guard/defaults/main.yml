@@ -1,0 +1,45 @@
+---
+# LOW-WATER THRESHOLD, in whole GB of `df` available space on the LOWER of `/`
+# and the docker data-root's filesystem. Below it the guard prunes containers,
+# images and builder cache, vacuums the journal to 200M and runs apt-get clean.
+# 40 is hp-xubuntu's incident value, chosen on 2026-08-22 and never re-derived:
+# at that host's measured ~4 GB/hour accumulation it is roughly ten hours of
+# headroom against the fifteen-minute check interval. It is the default here
+# rather than a required variable because a host with no value set is better
+# guarded at hp's number than not guarded at all.
+disk_guard_threshold_gb: 40
+
+# /usr/local/sbin, NOT this repo's usual /usr/local/libexec. The 2026-08-22
+# hotfix has occupied that path ever since, and the live disk-guard.service
+# names it, so writing there replaces the untracked bytes in place. Moving the
+# path would be a behaviour change dressed as a tidy-up.
+disk_guard_script_path: /usr/local/sbin/disk-guard.sh
+
+# Where the guard reads its threshold. This value must agree with the ENV_FILE
+# literal inside disk-guard.sh, which this role installs verbatim from files/
+# and therefore cannot collapse into a variable the way it collapses the
+# ExecStart path. Changing one without the other silently un-guards the host.
+disk_guard_env_path: /usr/local/libexec/disk-guard.env
+
+disk_guard_unit_dir: /etc/systemd/system
+
+# The two unit pairs, in the order the shell installer listed them. The .service
+# halves are oneshot and are never started directly; only the timers are armed.
+disk_guard_units:
+  - disk-guard.service
+  - disk-guard.timer
+  - docker-prune.service
+  - docker-prune.timer
+disk_guard_timers:
+  - disk-guard.timer
+  - docker-prune.timer
+
+# Every reclaiming action the guard takes is silenced with `>/dev/null 2>&1` in
+# the live logic, so a missing tool leaves a guard that reports success while
+# reclaiming nothing. The installer checked for these before arming a timer
+# against them, and so does this role.
+disk_guard_required_tools:
+  - journalctl
+  - apt-get
+  - logger
+  - df

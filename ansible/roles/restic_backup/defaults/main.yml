@@ -1,0 +1,26 @@
+---
+restic_backup_packages:
+  - restic
+
+# sbin, not bin: the runner must read /etc/shadow, /root, the ssh host keys and
+# /etc/credstore, so it is root-only by design.
+restic_backup_bin: /usr/local/sbin/vps-restic-backup
+restic_backup_config_dir: /etc/vps-restic-backup
+restic_backup_exclude_file: "{{ restic_backup_config_dir }}/excludes.txt"
+restic_backup_unit_dir: /etc/systemd/system
+
+# Twice daily. 03:30 sits 30 minutes after arq_root_snapshot's 03:00 build so
+# the two never contend for disk, even though restic backs up the LIVE paths and
+# not that snapshot.
+restic_backup_on_calendar: "*-*-* 03,15:30:00 America/Los_Angeles"
+restic_backup_randomized_delay_sec: 180
+# A full run over a large host can genuinely take hours; the default 90s start
+# timeout would kill it.
+restic_backup_timeout_start_sec: 6h
+
+# The 1Password credential wrapper. Owned by the 1password-env-wrapper repo, NOT
+# by this role — asserted, never installed.
+restic_backup_credential_wrapper: /usr/local/bin/with-homelab-env.sh
+
+restic_backup_documentation_url: >-
+  file:/home/ubuntu/workspace/vps-info/services/vps-restic-backup/README.md

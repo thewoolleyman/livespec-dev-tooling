@@ -1,0 +1,108 @@
+---
+# arq_root_snapshot — the pruned root-state mirror the Mac's Arq client pulls.
+#
+# Replaces vps-info services/arq-vps-root-snapshot/install.sh. Arq has no Linux
+# agent, so the host cannot push; it can only publish a stable tree for the Mac
+# to read. Building that tree is what this service does, and arq_smb_source is
+# what exports it.
+#
+# SCOPE: root. Every unit installed here lands in /etc/systemd/system and the
+# runner reads paths only root can read (/etc/shadow, /root, ssh host keys), so
+# `become: true` is on every task. Determined from the installer's require_root
+# guard and from the unit paths it writes.
+#
+# The shell installer had no preconditions it did not create — it installs its
+# own packages and its own directory — so this role opens with no preflight
+# assert. arq_docker_volume_snapshot, arq_smb_source and restic_backup all do
+# have one; the absence here is a finding about this service, not an omission.
+
+- name: Install the packages the snapshot runner needs
+  # `package` rather than `apt`: the module is portable and the fleet's roles use
+  # it. It carries no equivalent of the installer's `apt-get update -qq`, so on a
+  # host whose apt cache is stale AND which is missing one of these packages, the
+  # install fails with "no package matching" and the operator must refresh the
+  # cache once. On an already-converged host the task is a no-op and the cache
+  # never matters.
+  ansible.builtin.package:
+    name: "{{ arq_root_snapshot_packages }}"
+    state: present
+  become: true
+
+- name: Create the snapshot destination directory
+  # The runner mkdir -p's this itself at run time, but creating it here means a
+  # `--check` run against a fresh host reports the directory as a would-be
+  # change instead of silently depending on the first real execution.
+  ansible.builtin.file:
+    path: "{{ arq_root_snapshot_current_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the snapshot runner
+  # This stays shell. It is a RUNTIME tool with real control flow — a flock
+  # guard, per-tree rsync filter sets, and a tolerance for rsync's status 24
+  # (source files vanished mid-copy, which is normal on a live host). Ansible
+  # would express none of that better, and the role owns its installation, not
+  # its behaviour.
+  ansible.builtin.copy:
+    src: arq-vps-root-snapshot.sh
+    dest: "{{ arq_root_snapshot_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the snapshot timer unit is already installed
+  # Read BEFORE the unit is written, so the enable task below can tell "already
+  # armed on this host" from "would be created by this apply". Under `--check`
+  # nothing is written, so arming a unit that does not exist yet would fail with
+  # systemd's "Could not find the requested service" — a fault the role invented
+  # rather than found.
+  ansible.builtin.stat:
+    path: "{{ arq_root_snapshot_unit_dir }}/arq-vps-root-snapshot.timer"
+  become: true
+  register: arq_root_snapshot_timer_unit
+
+- name: Install the snapshot service unit
+  ansible.builtin.template:
+    src: arq-vps-root-snapshot.service.j2
+    dest: "{{ arq_root_snapshot_unit_dir }}/arq-vps-root-snapshot.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the snapshot timer unit
+  ansible.builtin.template:
+    src: arq-vps-root-snapshot.timer.j2
+    dest: "{{ arq_root_snapshot_unit_dir }}/arq-vps-root-snapshot.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Enable and start the snapshot timer
+  # Only the TIMER is enabled. The service unit carries no [Install] section —
+  # it is static, triggered by the timer alone — so enabling it would fail.
+  #
+  # daemon_reload is set here rather than in a handler because handlers run at
+  # the end of the play, which is after this task: on a first apply the unit
+  # files would not yet be visible to systemd and the enable would fail.
+  #
+  # The installer's verification (`systemctl is-enabled` + `is-active`) is
+  # dropped: it asserted exactly the state this module converges to, so it could
+  # only ever restate the module's own result.
+  ansible.builtin.systemd_service:
+    name: arq-vps-root-snapshot.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # NOT check_mode: false — that would arm a live timer during a run that
+  # promised to change nothing. Where the unit already exists this runs normally
+  # under `--check` and reports genuine enable/start drift; where it does not,
+  # it is skipped, and the would-be unit-file add already tells the operator the
+  # service is absent.
+  when: not ansible_check_mode or arq_root_snapshot_timer_unit.stat.exists

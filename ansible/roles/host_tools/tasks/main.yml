@@ -1,0 +1,102 @@
+---
+# host_tools — the operator convenience executables on a factory host.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage, work-item
+# livespec-sab5gn.4. Replaces fabro-hosts services/host-tools/install.sh.
+#
+# THIS ROLE INSTALLS NO SYSTEMD UNIT, and that absence is deliberate rather than
+# unfinished. btop-loop is a foreground wrapper a human types at a terminal:
+# nothing supervises it and nothing arms it. A later tool that does need a unit
+# belongs in its own role, not bolted onto this one.
+#
+# WHAT btop-loop IS. btop is the process monitor an operator watches a factory
+# host through. Under a CI fan-out with thousands of processes it crashes with
+# SIGABRT and leaves the terminal in its alternate screen with raw input, so the
+# crash costs both the monitor and the shell. btop-loop restarts btop whenever
+# it exits abnormally, restoring the terminal first.
+#
+# THE DUPLICATE COPY. files/btop-loop is byte-identical to the copy this
+# repository already installs on the CI pool at
+# ci-runner/k3s/phase2/host-tools/btop-loop, sha256
+# c570ef8abf330b969d91d37319b6c147af30daec6c818f4bd5263e8b40768c27 — the digest
+# measured on poweredge-xubuntu, gmktec-xubuntu, hp-xubuntu and vps on
+# 2026-09-08, and the digest fabro-hosts pinned in its own install.test.sh.
+# Changing the tool means changing every copy in one deliberate move.
+
+- name: Install the monitor btop-loop supervises
+  # install.sh REFUSED a host without btop, reasoning that a wrapper around an
+  # absent monitor is a command failing on every invocation, discovered
+  # mid-incident. That reasoning is right about the outcome and wrong about the
+  # remedy here: a shell script run under sudo cannot install packages without
+  # surprising the operator, but declaring package state is what this tool is
+  # for. Asserting instead would let the role leave a host in exactly the broken
+  # state the refusal was written to prevent, while a package task simply fixes
+  # it — and on hp-xubuntu, where /usr/bin/btop is already present, it is a
+  # no-op. `present`, never `latest`: the monitor's version is not this role's
+  # business.
+  ansible.builtin.package:
+    name: "{{ host_tools_btop_package }}"
+    state: present
+  become: true
+
+- name: Create the operator tool directory
+  # install.sh created it with `install -d`. It exists on every host these roles
+  # target, but owning it here is what lets `--check` on a fresh host report the
+  # copy below rather than fail on a missing parent.
+  ansible.builtin.file:
+    path: "{{ host_tools_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the operator tools
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ host_tools_bin_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ host_tools_tools }}"
+
+- name: Resolve each installed tool on PATH
+  # Kept from install.sh's verify_installed, because the copy above proves only
+  # that a file landed at a path — not that the path is the one the tool's bare
+  # name resolves to. An older copy earlier on PATH would shadow it silently.
+  #
+  # The shell compared sha256 digests here. Comparing the resolved PATH against
+  # the destination is equivalent and shorter: if the name resolves to the file
+  # just written, its contents are what was just written.
+  #
+  # This measures the PATH of a non-interactive ssh session, which is not
+  # necessarily the operator's interactive PATH. The shell had the same limit,
+  # measuring sudo's.
+  #
+  # SKIPPED UNDER --check, and deliberately so: this is a post-install
+  # VERIFICATION exercising a file the check run has not written, unlike the
+  # read-only preflight probes in the sibling roles, which carry
+  # `check_mode: false` so a dry run still evaluates their preconditions. The
+  # command module skips itself under --check and the assert below stands down
+  # with it.
+  ansible.builtin.command:
+    cmd: which {{ item }}
+  register: host_tools_resolved
+  changed_when: false
+  failed_when: false
+  loop: "{{ host_tools_tools }}"
+
+- name: Refuse a tool shadowed by an earlier copy on PATH
+  # Compared as two ordered lists rather than per-tool, so the failure names
+  # every shadowed tool at once instead of stopping at the first.
+  ansible.builtin.assert:
+    that:
+      - host_tools_resolved.results | map(attribute='stdout') | list ==
+        host_tools_tools | map('regex_replace', '^', host_tools_bin_dir ~ '/') | list
+    fail_msg: >-
+      Expected every tool to resolve under {{ host_tools_bin_dir }}, but PATH
+      resolved {{ host_tools_resolved.results | map(attribute='stdout') | list }}.
+      Something earlier on PATH is shadowing an installed tool.
+    success_msg: every installed tool resolves to the copy just written
+  when: host_tools_resolved is not skipped

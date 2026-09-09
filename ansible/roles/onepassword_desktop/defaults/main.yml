@@ -1,0 +1,33 @@
+---
+# The account that owns the VNC desktop session. 1Password runs as this user so
+# it attaches to that user's X display, session bus and login keyring.
+onepassword_desktop_user: ubuntu
+onepassword_desktop_group: ubuntu
+onepassword_desktop_home: /home/ubuntu
+
+# The session unit this one is a client of. onepassword_desktop is started by
+# that unit's x11vnc -afteraccept hook and reads the D-Bus address its start
+# script writes, so it cannot function while that unit is down.
+onepassword_desktop_required_unit: vnc-desktop.service
+
+# Package source. Per https://support.1password.com/install-linux/#debian-or-ubuntu.
+onepassword_desktop_key_url: https://downloads.1password.com/linux/keys/1password.asc
+onepassword_desktop_armored_key: /usr/share/keyrings/1password-archive-keyring.asc
+onepassword_desktop_keyring: /usr/share/keyrings/1password-archive-keyring.gpg
+onepassword_desktop_repo: >-
+  deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg]
+  https://downloads.1password.com/linux/debian/amd64 stable main
+
+# debsig-verify policy. This is what defends against a hostile mirror serving a
+# rogue .deb that apt's own repository signature would still accept.
+onepassword_desktop_debsig_key_id: AC2D62742012EA22
+onepassword_desktop_debsig_policy_url: https://downloads.1password.com/linux/debian/debsig/1password.pol
+
+onepassword_desktop_unit_name: 1password-desktop.service
+onepassword_desktop_unit_path: /etc/systemd/system/1password-desktop.service
+# The 1password package's own post-install hook writes this file and comments
+# out any duplicate .list. The role defers to it rather than competing with it.
+onepassword_desktop_vendor_sources: /etc/apt/sources.list.d/1password.sources
+onepassword_desktop_applications_dir: /usr/local/share/applications
+onepassword_desktop_autostart_dir: /home/ubuntu/.config/autostart
+onepassword_desktop_autostart_file: /home/ubuntu/.config/autostart/1password.desktop

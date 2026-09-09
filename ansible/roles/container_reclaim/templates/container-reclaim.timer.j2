@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Periodic container-layer reclamation (exited containers, then images)
+
+[Timer]
+OnCalendar={{ container_reclaim_on_calendar }}
+# Spread the two factories so their prunes never coincide.
+RandomizedDelaySec=30m
+# Catch up after downtime: a host that was off is exactly the host whose exited
+# containers are now well past the horizon.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

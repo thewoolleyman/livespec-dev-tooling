@@ -1,0 +1,35 @@
+[Desktop Entry]
+# Managed by the Ansible role vnc_desktop. Edit the role, not this file.
+#
+# Repo-owned override of /usr/share/applications/com.google.Chrome.desktop.
+#
+# Chrome ships TWO identical entries. This one carries the reverse-DNS
+# application ID required by the XDG desktop portal, and is NoDisplay=true so
+# the menu shows only one "Google Chrome". Overriding just google-chrome.desktop
+# would leave the portal path still launching the vanilla profile, so both are
+# overridden. Keep this file in sync with google-chrome.desktop — the only
+# intended difference is NoDisplay.
+#
+# See google-chrome-wrapper.sh for why Exec= points at the wrapper.
+Version=1.0
+Name=Google Chrome
+GenericName=Web Browser
+Comment=Access the Internet
+Exec={{ vnc_desktop_bin_dir }}/google-chrome-stable %U
+TryExec={{ vnc_desktop_bin_dir }}/google-chrome-stable
+StartupNotify=true
+Terminal=false
+Icon=google-chrome
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=application/pdf;application/rdf+xml;application/rss+xml;application/xhtml+xml;application/xhtml_xml;application/xml;image/gif;image/jpeg;image/png;image/webp;text/html;text/xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/google-chrome;
+NoDisplay=true
+Actions=new-window;new-private-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec={{ vnc_desktop_bin_dir }}/google-chrome-stable
+
+[Desktop Action new-private-window]
+Name=New Incognito Window
+Exec={{ vnc_desktop_bin_dir }}/google-chrome-stable --incognito

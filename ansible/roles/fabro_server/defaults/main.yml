@@ -1,0 +1,141 @@
+---
+# fabro_server — the host-direct Fabro dark-factory server and web console.
+#
+# Replaces fabro-hosts services/fabro-server/{install.sh,render-unit.sh,
+# render-settings.sh} and their hosts/<host>.env values files.
+#
+# THE ROLE ACTS ON ONE INSTANCE PER INVOCATION. A host runs more than one
+# Fabro server, because Fabro holds exactly one GitHub integration per server
+# and the mi-homelab organisation's App is private to that organisation, so it
+# cannot share the fleet server. The playbook therefore loops the role over
+# the host's instance list rather than the role looping internally, which
+# keeps every task's `when`, `notify` and handler scoped to a single unit:
+#
+#     - name: Install every Fabro instance on this host
+#       ansible.builtin.include_role:
+#         name: fabro_server
+#       loop: "{{ fabro_server_instances }}"
+#       loop_control:
+#         loop_var: fabro_server_instance
+#         label: "{{ fabro_server_instance.unit_name }}"
+#
+# ADDING A THIRD INSTANCE. Append one more mapping to that host's
+# `fabro_server_instances` in host_vars, with a `unit_name`, `home_dir` and
+# `port` no other instance on the host uses; the role asserts all three are
+# unique before it touches anything. Nothing in the role changes. Four pieces
+# of out-of-band state must exist first, none of which this role creates:
+# the instance's <home_dir>/storage/server.env, its settings.toml, its GitHub
+# App private key in the instance's own Fabro vault, and a `tailscale serve`
+# mapping for the new port in the tailscale-admin repository. The Fabro
+# binary at <host_home>/.fabro/bin/fabro is shared and needs nothing new.
+
+# The host's instances. Supplied per host in host_vars; see HOST_VARS.md for
+# the four that exist today. The role reads this list only to prove the
+# instances do not collide with one another.
+fabro_server_instances: []
+
+# The single instance this invocation installs, set by the playbook's
+# loop_var. Empty here so the role fails its own preflight assert with a
+# readable message rather than a Jinja error when a caller forgets it.
+#
+# Every axis below must be spelled explicitly in each instance mapping:
+#
+#   unit_name           systemd unit stem, e.g. fabro-server-mi-homelab
+#   home_dir            per-instance state root: storage/, settings.toml
+#   port                loopback bind, and the verifier's probe target
+#   canonical_host      tailnet name:port; the verifier's Host: header
+#   cli_target_url      loopback on every host; auth.json is keyed by it
+#   max_concurrent_runs the sole machine-wide capacity control
+#   github_app_id       which factory bot this instance publishes as
+#   otel_dropin         present | absent | unmanaged; see below
+#
+# render-unit.sh defaulted three of these (unit_name to fabro-server,
+# home_dir to $HOME/.fabro, port to 32276) so that the two pre-instance
+# values files needed no edit. That compatibility debt is deliberately NOT
+# carried over. The template's own header records why it is a hazard: an
+# instance that relied on the defaults would silently share the fleet
+# server's state directory. Requiring all three spelled out costs three lines
+# per instance in host_vars and removes that failure class entirely.
+fabro_server_instance: {}
+
+# --- per-host axes, identical across the instances on one host -------------
+#
+# Left undefined on purpose. The shell renderer exited 3 on an unset name;
+# leaving these undefined is the same refusal, raised by Ansible before any
+# file is written. Supply them in host_vars — see HOST_VARS.md.
+#
+#   fabro_server_host_user       service account: ubuntu on vps, cwoolley on hp
+#   fabro_server_host_group      follows the account
+#   fabro_server_host_home       follows the account; every ~/.fabro path with it
+#   fabro_server_host_checkout   the stable primary checkout the server runs in
+
+# The verifier's retry budget, in ~1s attempts. render-unit.sh REQUIRED this
+# with no default, so a values file that forgot it was refused. A role
+# default is safer than that refusal, but only if the default is 300 and not
+# the verifier script's own 60: cold SlateDB warmup under host load can
+# exceed 60s, which fails ExecStartPost, which makes Restart=always kill a
+# half-booted server — a crash loop that does not recover. Observed on vps
+# 2026-08-17. All four instances set 300 today; 300 is the value that makes
+# a forgotten variable harmless instead of latent.
+fabro_server_web_verify_attempts: 300
+
+# --- restart policy --------------------------------------------------------
+#
+# THE ROLE DOES NOT RESTART A FABRO SERVER UNLESS THIS IS TRUE.
+#
+# install.sh restarted unconditionally, guarded by require_quiet_server:
+# it asked the instance's own /api/v1/health, and if the server answered, ran
+# `fabro --json ps` as the service account and exited 3 while any run was
+# active. That guard is preserved below as a preflight assert, but a guard
+# alone is not enough here. A handler fires at the end of a play, minutes
+# after the check that cleared it, and a Fabro run admitted in between would
+# be killed by the restart. Anything the orchestrator dispatches during a
+# converge run lands in exactly that window.
+#
+# So the safe default is that a changed unit file is written and left to take
+# effect at the next restart the operator chooses, with Ansible reporting the
+# instance as changed. Set this true for a deliberate, attended restart of a
+# quiet server; the preflight then re-checks that it really is quiet.
+fabro_server_restart_allowed: false
+
+# --- settings.toml ---------------------------------------------------------
+#
+# False means the settings template is rendered in permanent check mode and
+# only reports drift; true means it is written. Read the long comment on that
+# task in tasks/main.yml before setting this true on any host: vps's live
+# settings.toml is hand-maintained and holds its explicit
+# max_concurrent_runs = 10.
+fabro_server_manage_settings: false
+
+# 0600 is the mode the newer instances carry. vps's fleet settings.toml is
+# currently 0664 on a shared box carrying dozens of user sessions, so the
+# drift report will flag that too; that is a real finding, not noise.
+fabro_server_settings_mode: "0600"
+
+# --- otel.conf, an OPEN DECISION -------------------------------------------
+#
+# Per-instance, three-valued, and deliberately not a boolean:
+#
+#   present    install the OTLP drop-in
+#   absent     remove it — this instance is decided NOT to export
+#   unmanaged  no decision has been made; leave whatever is on the host
+#
+# fabro-hosts' README records an unresolved call: installing the shipped set
+# on vps "newly adds OTLP export … a behavior change, not a transcription —
+# make that call deliberately". THIS ROLE DOES NOT MAKE THAT CALL. Measuring
+# all four instances on 2026-09-09 narrows it further than the README's
+# host-level statement: the drop-in is present on hp's two instances and on
+# vps's mi-homelab instance, and absent on exactly one — vps's fleet
+# `fabro-server`. So HOST_VARS.md sets `present` on three and `unmanaged` on
+# that one, and the open decision is now a single word in one place.
+#
+# A boolean could not express this. `false` would mean "decided against OTLP
+# on vps", which nobody decided, and would make the role actively delete the
+# drop-in anywhere it was flipped. `unmanaged` says undecided and does
+# nothing. Note that `absent` really does remove the file: setting it on an
+# hp instance would strip working telemetry.
+fabro_server_otel_dropin_default: unmanaged
+
+# --- shared, host-invariant destinations -----------------------------------
+fabro_server_libexec_dir: /usr/local/libexec
+fabro_server_unit_dir: /etc/systemd/system

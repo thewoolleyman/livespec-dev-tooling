@@ -1,0 +1,64 @@
+#!/bin/bash
+# Managed by the Ansible role vnc_desktop. Edit the role, not this file.
+#
+# Chrome launcher wrapper — pins the VNC profile.
+#
+# Installed as BOTH /usr/local/bin/google-chrome and
+# /usr/local/bin/google-chrome-stable, which precede /usr/bin on PATH.
+#
+# Why this exists: the persistent VNC browser runs with
+# --user-data-dir=~/.config/google-chrome-vnc (see vnc-desktop-start.sh), but
+# every stock launch path omits that flag and so opens the vanilla
+# ~/.config/google-chrome profile instead — a SECOND, independent browser with
+# no extensions, history, or logins. Chrome's singleton lock is per
+# user-data-dir, so it does not attach to the running one; the user just sees
+# an empty Chrome and concludes their profile was wiped.
+#
+# This wrapper closes the path that a .desktop override cannot reach: XFCE's
+# exo helper. The panel's "Web Browser" button runs
+# `exo-open --launch WebBrowser`, which resolves via
+# /usr/share/xfce4/helpers/google-chrome.desktop whose X-XFCE-Commands is `%B`
+# — "run the binary, no arguments". There is nowhere in that mechanism to put a
+# flag, so the flag has to live in the binary that %B resolves to.
+#
+# It is also the single source of truth for the profile path: the .desktop
+# overrides in this directory deliberately carry NO --user-data-dir and just
+# point Exec= here.
+
+set -euo pipefail
+
+REAL_CHROME={{ vnc_desktop_chrome_binary }}
+PROFILE="${HOME}/{{ vnc_desktop_chrome_profile_subdir }}"
+
+# Leave the argv untouched if the caller already chose a profile. This is what
+# keeps vnc-desktop-start.sh correct — it calls bare `google-chrome` (so it
+# reaches this wrapper via PATH) but already passes its own --user-data-dir,
+# and must not get a second, conflicting one.
+inject=1
+for arg in "$@"; do
+    case "$arg" in
+        --user-data-dir|--user-data-dir=*)
+            inject=0
+            break
+            ;;
+    esac
+done
+
+if [[ "$inject" -eq 1 ]]; then
+    set -- --user-data-dir="$PROFILE" "$@"
+fi
+
+# Test hook: print the argv this wrapper would exec, instead of execing it.
+# The vnc_desktop role asserts on this, so the injection logic is covered by a
+# real regression test rather than by inspection.
+#
+# This check MUST sit after BOTH branches converge on a single exit point. An
+# earlier revision exec'd straight from inside the pass-through branch, which
+# skipped the hook and made the installer's self-test launch real Chrome
+# windows — the exact bug this whole file exists to prevent.
+if [[ -n "${GOOGLE_CHROME_WRAPPER_DRYRUN:-}" ]]; then
+    printf '%s\n' "$REAL_CHROME" "$@"
+    exit 0
+fi
+
+exec "$REAL_CHROME" "$@"

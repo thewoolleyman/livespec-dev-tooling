@@ -1,0 +1,18 @@
+---
+- name: Restart the trigger-recipients timer
+  # Restarting the TIMER re-arms it against a changed OnCalendar or jitter and
+  # runs nothing. The SERVICE is deliberately never restarted from here: its
+  # ExecStart is the check itself, and a failing check invokes the OnFailure
+  # alert -- so restarting it on a unit-file edit would page the maintainer as a
+  # side effect of a provisioning run.
+  #
+  # The `when` is the same check-mode guard the enable task carries, and it is
+  # needed here for the same reason: handlers DO run under --check when notified,
+  # so a would-be template write on a host without the unit would notify a
+  # restart of a unit systemd cannot resolve.
+  ansible.builtin.systemd_service:
+    name: "{{ honeycomb_trigger_recipients_check_timer_name }}"
+    daemon_reload: true
+    state: restarted
+  become: true
+  when: not ansible_check_mode or honeycomb_trigger_recipients_check_timer_stat.stat.exists

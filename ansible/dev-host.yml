@@ -1,0 +1,34 @@
+---
+# The maintainer's dev host, migrated from the `vps-info` repository.
+#
+# This machine is also the Ansible control node, so it manages itself over a
+# local connection: a run needs no ssh credential toward it and no inbound
+# reachability to it.
+#
+# Order matters in two places, and both are expressed as role dependencies
+# rather than by position here, so a play that runs one role alone still gets
+# them: the editor backend precedes its progressive-web-app proxy, and the VNC
+# desktop precedes the two desktop applications that need its display.
+
+- name: Dev host services
+  hosts: vps
+  gather_facts: true
+  roles:
+    - arq_root_snapshot
+    - arq_docker_volume_snapshot
+    - arq_smb_source
+    - restic_backup
+    - vnc_desktop
+    - onepassword_desktop
+    - claude_desktop
+    - btop_loop
+    - code_serve_web
+    - code_pwa_proxy
+    - ssh_hardening
+    - keyring_quota
+    - tmux_config
+    - claude_code_hooks
+    - claude_ntfy
+    - codex_config
+    - honeycomb_mcp
+    - honeycomb_trigger_recipients_check

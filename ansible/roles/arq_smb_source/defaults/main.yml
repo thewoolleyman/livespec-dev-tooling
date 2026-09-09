@@ -1,0 +1,56 @@
+---
+arq_smb_source_packages:
+  - samba
+  - smbclient
+
+# A system account with no home and no shell. It exists only as a Samba passdb
+# identity; nothing ever logs in as it.
+arq_smb_source_user: arq-vps-backup
+
+# Root-only directory holding the generated share password. The human reads it
+# with `sudo cat` when creating or rotating the Arq plan on the Mac.
+arq_smb_source_config_dir: /etc/arq-vps-smb-source
+arq_smb_source_password_file: "{{ arq_smb_source_config_dir }}/smb-password"
+# 36 raw bytes, base64-encoded. Long enough that the password is not the weak
+# link behind the tailnet ACL.
+arq_smb_source_password_bytes: 36
+
+# The share. The path is arq_root_snapshot's destination; the two roles are
+# coupled through this literal rather than through a cross-role variable
+# reference, because a role's defaults are not a stable public interface.
+arq_smb_source_share_name: vps-root
+arq_smb_source_share_path: /srv/arq-vps-root-snapshot/current
+
+# Samba binds ONLY here. Everything from outside arrives through the proxy.
+arq_smb_source_loopback_address: 127.0.0.1
+
+# This host's Tailscale IPv4. systemd-socket-proxyd binds it and forwards to
+# loopback smbd, so the tailnet reaches the share and eth0 never does. It is a
+# per-host fact: see HOST_VARS.md.
+arq_smb_source_tailscale_ip: 100.89.189.118
+
+# Listener strings that must NOT appear on port 445. The wildcards catch a
+# Samba config that lost `bind interfaces only`; per-host public addresses are
+# added through arq_smb_source_public_listeners.
+arq_smb_source_forbidden_listeners:
+  - "0.0.0.0:445"
+  - "[::]:445"
+  - "*:445"
+# Per-host public addresses that must never serve SMB. Empty by default because
+# a public address is a property of the machine, not of the role: see
+# HOST_VARS.md.
+arq_smb_source_public_listeners: []
+
+# FreeBind lets the socket unit bind an address that is not configured yet.
+# The live vps host carries this and vps-info's committed unit does not — it was
+# hand-edited onto the machine and never committed back, so it appears nowhere
+# in that repository's history. Without it the socket races tailscaled at boot
+# and fails to bind the tailnet address, which is presumably why someone added
+# it. The migration carries the host's behaviour rather than silently reverting
+# an undocumented fix; set it false only with evidence that the race is gone.
+arq_smb_source_socket_free_bind: true
+
+arq_smb_source_smb_conf: /etc/samba/smb.conf
+arq_smb_source_unit_dir: /etc/systemd/system
+# Shipped by systemd itself. Asserted rather than installed.
+arq_smb_source_socket_proxyd: /lib/systemd/systemd-socket-proxyd

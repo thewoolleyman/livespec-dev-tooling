@@ -1,0 +1,68 @@
+---
+# The X display the whole session hangs off. Xvfb creates it, XFCE renders into
+# it, and x11vnc exports it; nothing else on this host uses a display.
+vnc_desktop_display: ":1"
+vnc_desktop_screen_geometry: 1920x1080x24
+
+# The tailnet address x11vnc binds to, and the port it serves. Binding the
+# literal address rather than a wildcard IS the access control here: the desktop
+# is reachable over the tailnet and from nowhere else. Host-specific — see
+# HOST_VARS.md.
+vnc_desktop_tailscale_ip: 100.89.189.118
+vnc_desktop_vnc_port: 5900
+
+# The account that owns the desktop session. The unit runs as this user, and the
+# Chrome profile, the VNC password file and the D-Bus session all live in its
+# home. Fleet-wide default rather than a host fact.
+vnc_desktop_user: ubuntu
+vnc_desktop_group: ubuntu
+vnc_desktop_home: /home/ubuntu
+
+# Google Chrome. The real binary arrives with the google-chrome-stable package,
+# which this role deliberately does not install (see the preflight assert).
+vnc_desktop_chrome_binary: /opt/google/chrome/google-chrome
+# Held as a suffix rather than an absolute path because the wrapper resolves it
+# against the invoking user's $HOME at launch time, exactly as the shell did.
+vnc_desktop_chrome_profile_subdir: .config/google-chrome-vnc
+vnc_desktop_chrome_profile_dir: "{{ vnc_desktop_home }}/{{ vnc_desktop_chrome_profile_subdir }}"
+# Chrome's DevTools Protocol endpoint. playwright-mcp attaches here, so the
+# address stays on loopback and the port is the one the MCP registration names.
+vnc_desktop_cdp_address: 127.0.0.1
+vnc_desktop_cdp_port: 9222
+
+vnc_desktop_bin_dir: /usr/local/bin
+vnc_desktop_unit_path: /etc/systemd/system/vnc-desktop.service
+vnc_desktop_applications_dir: /usr/local/share/applications
+
+# The unit x11vnc's -afteraccept hook brings up once a VNC client authenticates.
+# Named here rather than baked into the start script so the coupling to the
+# onepassword_desktop role is visible from this file.
+vnc_desktop_afteraccept_unit: 1password-desktop
+
+# xvfb, x11-utils and desktop-file-utils are absent from the shell installer's
+# apt line even though it calls Xvfb, xdpyinfo and desktop-file-validate. They
+# are declared here because an undeclared prerequisite is exactly the kind of
+# host state a role exists to stop depending on. xdotool is deliberately not
+# listed: its only use was a diagnostic the shell already discarded with `|| true`.
+vnc_desktop_packages:
+  - xfce4-session
+  - xfce4-panel
+  - xfwm4
+  - xfdesktop4
+  - xfce4-settings
+  - xfce4-sntray-plugin
+  - thunar
+  - x11vnc
+  - dbus-x11
+  - xterm
+  - xvfb
+  - x11-utils
+  - desktop-file-utils
+
+# Restarting this unit tears down the live X session, and with it the Chrome the
+# maintainer's browser automation is attached to over CDP and any unlocked
+# 1Password vault. The shell installer restarted unconditionally on every run,
+# which is why running it during live work was never safe. This role leaves the
+# running session alone by default; set this true for the deliberate pass that
+# picks up a changed start script or unit.
+vnc_desktop_restart: false

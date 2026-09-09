@@ -59,8 +59,29 @@ enforcement suite and has nothing to do with provisioning hosts. Both
 versions are pinned exactly in the justfile recipes, which remain the single
 source of truth for how the tool is invoked.
 
-## Roles
+## The playbooks
 
-| Role | Hosts | Replaces |
+| Playbook | Hosts | Migrated from |
 |---|---|---|
-| `gates_kubeconfig` | `dev_hosts` | `vps-info` `services/gates-kubeconfig/install.sh` |
+| `gates-kubeconfig.yml` | `vps` | `vps-info` `services/gates-kubeconfig/` |
+| `fabro-hosts.yml` | `hp-xubuntu`, `vps` | `fabro-hosts` `services/` |
+| `dev-host.yml` | `vps` | `vps-info` `services/` |
+
+Roles live one per replaced service, named for the service with hyphens
+becoming underscores. Each carries its own `defaults/main.yml`; values that
+genuinely vary by machine live in `inventory/host_vars/<host>.yml` rather than
+in a role, so a role never has to ask which host it is running on.
+
+## Preconditions are asserted, not provisioned
+
+Nineteen steps across the two host-record repositories are things an installer
+refuses without and does not create: a built binary, a generated token file, a
+private key loaded into a vault, a `tailscale serve` mapping owned by another
+repository, a package the installer expects to already be there. None of them
+migrate. Each becomes a preflight assertion at the top of its role, naming what
+the operator must do and where, so a first apply on a rebuilt host fails at the
+start rather than halfway through.
+
+A few cannot be observed from the target host at all, such as a mapping in
+another repository's state. Those are named in comments rather than faked as
+checks.

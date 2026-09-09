@@ -1,0 +1,260 @@
+---
+# honeycomb_mcp -- key-authenticated Honeycomb MCP for Claude Code.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info services/honeycomb-mcp/install.sh.
+#
+# USER SCOPE, NOT ROOT. Every task carries `become: false`. The plugin cache is
+# under the operator account's home, and the vps-info checkout is that account's
+# too; a root-owned file in either is a repair the operator then cannot make.
+#
+# WHAT IT REPLACES AND WHY. The honeycomb plugin ships an OAuth HTTP MCP
+# definition whose token expires roughly hourly and whose renewal is a browser
+# callback. This host is headless, so that renewal cannot be completed cleanly
+# at all. The role repoints the plugin's .mcp.json at a stdio wrapper that
+# carries a static Management-key bearer header instead: no OAuth, no expiry,
+# nothing to re-authenticate in a long-lived session.
+#
+# THE PLUGIN ITSELF STAYS INSTALLED AND UNCHANGED. Only its MCP file is
+# rewritten, and the server keeps the name `honeycomb`, so the plugin's skills
+# and agents are untouched and tools stay in the
+# mcp__plugin_honeycomb_honeycomb__* namespace.
+
+- name: Look for the Honeycomb MCP stdio wrapper in the vps-info checkout
+  ansible.builtin.stat:
+    path: "{{ honeycomb_mcp_wrapper }}"
+  become: false
+  register: honeycomb_mcp_wrapper_stat
+
+- name: Require the vps-info checkout to carry the stdio wrapper
+  # A precondition the role does NOT create. The wrapper runs IN PLACE from the
+  # checkout -- nothing copies it onto the host -- so the checkout at this exact
+  # path is a runtime dependency of the .mcp.json this role writes, not merely a
+  # source of it. A missing checkout means every Claude session's Honeycomb MCP
+  # fails to spawn.
+  ansible.builtin.assert:
+    that:
+      - honeycomb_mcp_wrapper_stat.stat.exists
+    fail_msg: >-
+      {{ honeycomb_mcp_wrapper }} is missing. Clone thewoolleyman/vps-info to
+      {{ honeycomb_mcp_checkout }} as {{ honeycomb_mcp_owner }}, or correct
+      honeycomb_mcp_checkout in this host's host_vars. This role points at the
+      checkout; it does not create it.
+    success_msg: "{{ honeycomb_mcp_wrapper }} is present"
+
+- name: Look for the 1Password service-account wrapper
+  ansible.builtin.stat:
+    path: "{{ honeycomb_mcp_onepassword_wrapper }}"
+  become: false
+  register: honeycomb_mcp_op_wrapper_stat
+
+- name: Require the 1Password service-account wrapper
+  # Another precondition the role does not create: it ships from the
+  # 1password-env-wrapper repo, and the service-account token behind it is
+  # delivered out of band. Without it the stdio wrapper exits 127 at every
+  # session start.
+  ansible.builtin.assert:
+    that:
+      - honeycomb_mcp_op_wrapper_stat.stat.exists
+    fail_msg: >-
+      {{ honeycomb_mcp_onepassword_wrapper }} is missing. Install it from the
+      1password-env-wrapper repo (canonical copy at
+      /data/projects/1password-env-wrapper/with-homelab-env.sh) before applying
+      this role.
+    success_msg: "{{ honeycomb_mcp_onepassword_wrapper }} is present"
+
+- name: Make the stdio wrapper executable in the checkout
+  # This mutates a git checkout the role does not own, and it does so knowingly:
+  # Claude Code exec's the path directly, so a wrapper without the bit is a
+  # connection that fails at session start. git already records mode 100755, so
+  # on a clean checkout this is a no-op; it repairs a clone or copy made under a
+  # umask that dropped the bit.
+  #
+  # owner and group are deliberately NOT set. The role does not own this file,
+  # only the one bit it needs, and imposing an ownership on somebody's checkout
+  # is a larger claim than the wrapper's executability warrants.
+  #
+  # THE MODE IS SYMBOLIC, AND THAT IS THE POINT. The installer ran `chmod +x`,
+  # which ADDS the execute bits and touches nothing else. A literal "0755" is
+  # not the same instruction: the live file is 0775, so 0755 would silently
+  # strip a group-write bit the installer never had an opinion about. A dry run
+  # against the vps caught exactly that, reporting 0775 -> 0755 as a change this
+  # role had invented. `a+x` is idempotent and reproduces the shell.
+  ansible.builtin.file:
+    path: "{{ honeycomb_mcp_wrapper }}"
+    mode: a+x
+  become: false
+
+- name: Check that the stdio wrapper parses
+  # The installer's `bash -n`, kept. It guards a real and recorded failure: the
+  # wrapper's payload is one single-quoted string, and a stray quote inside it
+  # once truncated the payload from 569 to 520 characters -- dropping the `exec
+  # npx` that is the whole point of the script -- while `bash -n` still reported
+  # the FILE as valid. So this proves less than it looks like it proves, and it
+  # is kept because it still catches the coarser breakages for free.
+  ansible.builtin.command:
+    argv: [bash, -n, "{{ honeycomb_mcp_wrapper }}"]
+  become: false
+  changed_when: false
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+
+- name: Verify a Honeycomb Management key resolves from the 1Password Environment
+  # KEPT as a command: nothing else can answer this. The probe prints only WHICH
+  # variable name resolved, never the value, and the task is no_log anyway --
+  # the child shell holds the key in its environment, and a -vvv run would
+  # otherwise be a place for it to surface.
+  #
+  # The sudo fallback mirrors the wrapper's own: when with-homelab-env.sh is
+  # present but not executable by this account, it is invoked through
+  # `sudo -n WRAPPER_STAGE=1`, which is how the wrapper re-enters itself.
+  #
+  # Both variable names are accepted. HONEYCOMB_MCP_KEY was renamed to
+  # HONEYCOMB_MGMT_API_KEY on 2026-07-21 because the same Management key is also
+  # the credential for the Honeycomb v2 REST API; the migration is additive, so
+  # requiring only one name would break this role on one side of it or the other.
+  ansible.builtin.command:
+    argv: >-
+      {{ (honeycomb_mcp_op_wrapper_stat.stat.executable | default(false))
+         | ternary([], ['sudo', '-n', 'WRAPPER_STAGE=1', '--'])
+         + [honeycomb_mcp_onepassword_wrapper, 'bash', '-lc', _honeycomb_mcp_key_probe] }}
+  become: false
+  register: honeycomb_mcp_key_probe
+  changed_when: false
+  failed_when: false
+  no_log: true
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+  vars:
+    _honeycomb_mcp_key_probe: >-
+      K="${HONEYCOMB_MGMT_API_KEY:-${HONEYCOMB_MCP_KEY:-}}"; test -n "$K" || exit 1;
+      if [ -n "${HONEYCOMB_MGMT_API_KEY:-}" ]; then echo NEW; else echo LEGACY; fi
+
+- name: Require a Honeycomb Management key in the 1Password homelab Environment
+  # The installer died here and the role keeps that. Writing a .mcp.json that
+  # points at a wrapper with no key to inject produces an MCP server that starts
+  # and then fails every call -- a connection that looks configured and answers
+  # nothing.
+  #
+  # The assert reads only the probe's exit status. Its stdout is never quoted
+  # into a message, so nothing from that child environment can reach a log.
+  ansible.builtin.assert:
+    that:
+      - honeycomb_mcp_key_probe.rc == 0
+    fail_msg: >-
+      Neither HONEYCOMB_MGMT_API_KEY nor HONEYCOMB_MCP_KEY resolves through
+      {{ honeycomb_mcp_onepassword_wrapper }}. Add a Honeycomb Management API
+      key (<KeyID>:<Secret>, scopes Model Context Protocol read+write and
+      Environments read) as HONEYCOMB_MGMT_API_KEY to the 1Password `homelab`
+      Environment. An ingest key or a Configuration key will not work -- they
+      are different key TYPES on different APIs.
+    success_msg: "a Honeycomb Management key resolves"
+
+- name: Report that the key still resolves under its legacy name
+  # The installer printed this NOTE, and it is the evidence half of an additive
+  # migration: silence across a full cycle of use is what makes it safe to
+  # delete HONEYCOMB_MCP_KEY from 1Password. The message is static, so nothing
+  # from the no_log probe leaks through it.
+  ansible.builtin.debug:
+    msg: >-
+      NOTE: the Honeycomb key resolved via the LEGACY HONEYCOMB_MCP_KEY. Add
+      HONEYCOMB_MGMT_API_KEY to the 1Password `homelab` Environment and keep
+      both until the old name is proven unused.
+  when: honeycomb_mcp_key_probe.stdout is search('LEGACY')
+
+- name: Find the honeycomb plugin's MCP definitions
+  # hidden: true is load-bearing -- the file is called .mcp.json, and find skips
+  # dotfiles by default, so without it this returns an empty list on a host
+  # where the plugin is installed and the assert below misreports it as absent.
+  ansible.builtin.find:
+    paths: "{{ honeycomb_mcp_plugin_cache }}"
+    patterns: .mcp.json
+    file_type: file
+    recurse: true
+    hidden: true
+  become: false
+  register: honeycomb_mcp_definitions
+
+- name: Require the honeycomb Claude Code plugin to be installed
+  # A precondition the role does NOT create. The role repoints a plugin's MCP
+  # file; it does not install plugins. Installing one here would also install
+  # its skills and agents as a side effect of configuring a credential.
+  ansible.builtin.assert:
+    that:
+      - honeycomb_mcp_definitions.matched > 0
+    fail_msg: >-
+      No .mcp.json under {{ honeycomb_mcp_plugin_cache }}. Install the plugin
+      first, as {{ honeycomb_mcp_owner }}:
+      claude plugin install honeycomb@honeycomb-plugins
+    success_msg: "{{ honeycomb_mcp_definitions.matched }} plugin MCP definition(s) found"
+
+- name: Preserve the vendor OAuth MCP definition
+  # `force: false` writes only when the .bak is absent, which is what preserves
+  # the ORIGINAL vendor definition across repeated repairs -- the installer's
+  # once-only backup, expressed as a property of the task rather than as a
+  # branch inside it.
+  #
+  # This is a byte copy where the installer re-serialised the JSON. The byte
+  # copy is strictly better: a rollback then restores exactly what the vendor
+  # shipped, not a reformatting of it.
+  #
+  # It shares the installer's one weakness, unchanged: if the .bak is deleted
+  # while the .mcp.json is already patched, the next run backs up the PATCHED
+  # file and the vendor definition is gone. `claude plugin update` restores it.
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ item.path }}.bak"
+    remote_src: true
+    force: false
+    owner: "{{ honeycomb_mcp_owner }}"
+    group: "{{ honeycomb_mcp_group }}"
+    mode: "0644"
+  become: false
+  loop: "{{ honeycomb_mcp_definitions.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Point the honeycomb plugin at the key-authenticated stdio wrapper
+  # The whole file is replaced rather than merged, matching the installer: the
+  # vendor definition names an OAuth HTTP transport, and a merge would leave
+  # both transports declared for one server name.
+  #
+  # sort_keys=False keeps the vendor's own key order (type before command).
+  # copy compares content, so a converge over an already-patched host writes
+  # nothing and reports no change.
+  #
+  # The installer's fourth step re-read each file and asserted the parse and the
+  # command. That is DROPPED, not forgotten: copy with `content` guarantees the
+  # bytes it just wrote, and re-reading them would assert the filesystem rather
+  # than the configuration.
+  #
+  # MODE 0644 IS A DELIBERATE STANDARDISATION, not a reproduction. The installer
+  # wrote through a temp file and left whatever the account umask produced,
+  # measured at 0664 on the vps, so an already-patched definition reports a
+  # mode-only change on the first apply. That is a one-off, not recurring drift.
+  ansible.builtin.copy:
+    content: "{{ _honeycomb_mcp_definition | to_nice_json(indent=2, sort_keys=False) }}\n"
+    dest: "{{ item.path }}"
+    owner: "{{ honeycomb_mcp_owner }}"
+    group: "{{ honeycomb_mcp_group }}"
+    mode: "0644"
+  become: false
+  loop: "{{ honeycomb_mcp_definitions.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  vars:
+    # Built as a Jinja dict literal, not as YAML with a templated key. Ansible
+    # templates dict VALUES but not dict KEYS, so the natural-looking YAML form
+    # writes the literal string "{{ honeycomb_mcp_server_name }}" as the server
+    # name and every Honeycomb tool then resolves under a namespace no client
+    # asks for. Verified against ansible-core 2.21.4 rather than assumed.
+    _honeycomb_mcp_definition: >-
+      {{ {honeycomb_mcp_server_name: {'type': 'stdio', 'command': honeycomb_mcp_wrapper}} }}

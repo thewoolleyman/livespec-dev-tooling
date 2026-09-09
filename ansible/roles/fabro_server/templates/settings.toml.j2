@@ -1,0 +1,52 @@
+{#
+  The Fabro server's settings.toml, one per INSTANCE.
+
+  Body transcribed from fabro-hosts services/fabro-server/settings.toml.in,
+  header stripped from _version onward exactly as render-settings.sh did.
+
+  READ tasks/main.yml before assuming this file is applied. By default the
+  task that renders it runs in permanent check mode and only REPORTS drift,
+  because a live settings.toml on vps is hand-maintained. Writing is opt-in
+  per instance.
+
+  This file carries no credential material. The browser-auth secrets live in
+  the mode-0600 <home-dir>/storage/server.env and the CLI dev token in
+  ~/.fabro/auth.json; neither is templated here, which is what makes it safe
+  to render this task with diff output turned on.
+-#}
+_version = 1
+
+[cli.target]
+type = "http"
+# Deliberately loopback on every host, NOT the tailnet name: auth.json is keyed
+# by this URL, so pointing it at the tailnet name silently invalidates the
+# stored CLI credential. The API does not expose this key, so check-settings.sh
+# parses it out of this file by hand.
+url = "{{ fabro_server_cli_target_url }}"
+
+[server.api]
+url = "https://{{ fabro_server_canonical_host }}/api/v1"
+
+[server.auth]
+methods = ["dev-token"]
+
+[server.integrations.github]
+strategy = "app"
+app_id = "{{ fabro_server_github_app_id }}"
+
+[server.listen]
+address = "127.0.0.1:{{ fabro_server_port }}"
+type = "tcp"
+
+[server.scheduler]
+# The SOLE machine-wide capacity control since bd-ib-vmve deleted the
+# client-side dispatch cap. Never leave this table out: an absent table reads
+# as the built-in default (5) with no warning anywhere, which is exactly how hp
+# ran half of vps's concurrency unnoticed.
+max_concurrent_runs = {{ fabro_server_max_concurrent_runs }}
+
+[server.web]
+enabled = true
+# Must be the tailnet name, not loopback: Fabro 308-redirects / to this URL, so
+# a loopback value bounces remote browsers to their own 127.0.0.1.
+url = "https://{{ fabro_server_canonical_host }}"

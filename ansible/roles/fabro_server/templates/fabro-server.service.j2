@@ -1,0 +1,63 @@
+{#
+  The Fabro dark-factory systemd unit, one per INSTANCE.
+
+  Body transcribed from fabro-hosts services/fabro-server/fabro-server.service.in
+  with each @NAME@ placeholder rewritten to its {{ fabro_server_* }} variable.
+  The .in file's own explanatory header is NOT carried over: render-unit.sh
+  stripped everything above [Unit] before substituting, because that header
+  documents the @NAME@ convention literally and would have tripped the
+  renderer's unsubstituted-placeholder guard. Rendering from [Unit] onward
+  keeps this template byte-comparable with the units the shell installed.
+
+  That guard itself does not migrate. render-unit.sh exited 4 when any
+  @[A-Z_]+@ survived substitution; Ansible raises AnsibleUndefinedVariable on
+  the first unset name instead, before anything is written. Same failure, one
+  layer down, with nothing to maintain.
+
+  The in-body comments below are the live unit's own and are deliberately
+  preserved verbatim, so that rendering this template and diffing it against a
+  host's installed unit stays the verification the fabro-hosts README
+  describes. No "managed by Ansible" banner is added for the same reason: it
+  would put a permanent difference into every one of those diffs.
+-#}
+# {{ ansible_managed }}
+[Unit]
+Description=Fabro dark-factory server and web console ({{ fabro_server_unit_name }})
+Documentation=https://github.com/thewoolleyman/fabro
+After=network-online.target docker.service tailscaled.service
+Wants=network-online.target docker.service tailscaled.service
+
+[Service]
+Type=simple
+User={{ fabro_server_host_user }}
+Group={{ fabro_server_host_group }}
+Environment=HOME={{ fabro_server_host_home }}
+# Cold SlateDB warmup under host load can exceed the verifier's default 60s
+# budget, which makes ExecStartPost fail, which makes Restart=always kill a
+# half-booted server -- a self-reinforcing crash loop that does not recover.
+# Observed on vps 2026-08-17 (killed run fabro-run-01M06K2HZ6YNG6BWJ03HP696PT,
+# exit 137). See bd-ib-l3nptz.2 and bd-ib-l3nptz.15.
+Environment=FABRO_WEB_VERIFY_ATTEMPTS={{ fabro_server_web_verify_attempts }}
+# Supplied to ExecStartPost's verifier so ONE shared verifier script serves
+# every host. Without this the script falls back to its vps-shaped default and
+# each host needs its own forked copy.
+Environment=FABRO_CANONICAL_HOST={{ fabro_server_canonical_host }}
+# The verifier probes THIS instance's loopback port, not the fleet default.
+Environment=FABRO_BASE_URL=http://127.0.0.1:{{ fabro_server_port }}
+EnvironmentFile={{ fabro_server_home_dir }}/storage/server.env
+# OAuth-only posture: the agent's model auth is CLAUDE_CODE_OAUTH_TOKEN,
+# injected into the sandbox per dispatch. An API key in the SERVER env bills
+# API cost and can leak into the sandbox.
+UnsetEnvironment=ANTHROPIC_API_KEY OPENAI_API_KEY
+WorkingDirectory={{ fabro_server_host_checkout }}
+# --storage-dir and --config are passed EXPLICITLY even for the default
+# instance, where they equal Fabro's built-ins: an instance that relied on the
+# defaults would silently share the fleet server's state.
+ExecStart={{ fabro_server_host_home }}/.fabro/bin/fabro server start --foreground --bind 127.0.0.1:{{ fabro_server_port }} --web --no-upgrade-check --storage-dir {{ fabro_server_home_dir }}/storage --config {{ fabro_server_home_dir }}/settings.toml
+ExecStartPost=/usr/local/libexec/fabro-server-verify-web
+Restart=always
+RestartSec=5
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

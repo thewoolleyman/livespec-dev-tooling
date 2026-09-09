@@ -1,0 +1,28 @@
+---
+# Packages the snapshot runner needs. rsync does the copying; zstd is what the
+# Arq client on the Mac uses to compress what it pulls, so the host must be able
+# to produce it even though this role never invokes zstd itself.
+arq_root_snapshot_packages:
+  - rsync
+  - zstd
+
+# The snapshot tree Samba later exports read-only. `current` is the live mirror;
+# the parent also holds last-success.txt, which the runner writes.
+arq_root_snapshot_base_dir: /srv/arq-vps-root-snapshot
+arq_root_snapshot_current_dir: "{{ arq_root_snapshot_base_dir }}/current"
+
+# The runner lives in sbin rather than bin because it is root-only: it reads
+# every host path including /etc/shadow and /root.
+arq_root_snapshot_bin: /usr/local/sbin/arq-vps-root-snapshot
+arq_root_snapshot_unit_dir: /etc/systemd/system
+
+# Daily, in the Mac's timezone rather than UTC, because the cadence exists to
+# sit ~30 minutes ahead of the Arq plan's 03:30 pull. Moving this without moving
+# the Arq plan makes the Mac back up a day-old tree.
+arq_root_snapshot_on_calendar: "*-*-* 03:00:00 America/Los_Angeles"
+
+# The unit's Documentation= link. It still points into the vps-info checkout
+# because that is where the runbook lives; this role took over the installation,
+# not the prose.
+arq_root_snapshot_documentation_url: >-
+  file:/home/ubuntu/workspace/vps-info/services/arq-vps-root-snapshot/README.md

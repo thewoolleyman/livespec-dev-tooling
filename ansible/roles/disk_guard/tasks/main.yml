@@ -1,0 +1,216 @@
+---
+# disk_guard — hp-xubuntu's low-water disk reclaimer, plus its routine daily prune.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage, work-item
+# livespec-sab5gn.4. Replaces fabro-hosts services/disk-guard/install.sh and
+# render-unit.sh, which relocated the untracked 2026-08-22 disk-full hotfix into
+# git. This role relocates it once more, from a shell installer into desired
+# state, so a threshold change costs a host_vars edit rather than an ssh session.
+#
+# TWO UNIT PAIRS, NOT ONE, and they do different jobs. docker-prune.timer is the
+# ROUTINE control: a daily container/image/builder prune with age filters.
+# disk-guard.timer is the BACKSTOP for when accumulation outruns a day: every
+# fifteen minutes, if the lower of / and the docker data-root's filesystem has
+# fewer than disk_guard_threshold_gb available, it prunes with no age filter,
+# vacuums the journal to 200M and runs apt-get clean.
+#
+# THE RENDERED UNITS ARE BYTE-IDENTICAL to what hp-xubuntu has run since
+# 2026-08-22, so a first apply there changes no behaviour. The live digests the
+# replaced templates recorded, for an operator comparing against the host:
+#   disk-guard.service    6e9151bb9fd8d0cff6ad11db8cfc99f50b68297dfa138545a63ce2d0e2f8cc1e
+#   disk-guard.timer      cf32d235c680180a69afe6cc899f83efde4d2a0de1d8872066a969926ff47fa6
+#   docker-prune.service  7e49c0f2b648b4a1ca3aa437c6409118e5a4522a8128d4fb58e7097fb29bd858
+#   docker-prune.timer    e90c298d46c32f1c543a1af1c030e39bc158d107ee53d79b1fa7a5043f6c650c
+# The one exception is disk-guard.service's ExecStart, now a variable: the shell
+# held that path twice, once as the installer's SCRIPT_DEST and once as a
+# literal in the unit, and the two could disagree without anything noticing.
+#
+# THE HOST GUARD DOES NOT MIGRATE. install.sh compared `hostname -s` against
+# DISK_GUARD_SYSTEM_HOSTNAME so one host's values could never be applied on
+# another. Inventory targeting is that guard now, which is why neither key
+# reaches the installed env file. (The shell measured the KERNEL hostname rather
+# than a tailnet label because vps answers `vmi3006760`, not `vps` — not a
+# concern for this role, which has only ever had hp-xubuntu values, but the
+# reason the shell it replaces looks the way it does.)
+
+- name: Refuse a threshold that is not a whole number of gigabytes
+  # install.sh checked this before touching the host, and so does this task: the
+  # value reaches disk-guard.sh through an env file and is then compared with
+  # `-lt` against a `df` reading. A non-numeric value makes that comparison a
+  # shell error the guard silences, leaving a timer that fires every fifteen
+  # minutes and reclaims nothing.
+  ansible.builtin.assert:
+    that:
+      - disk_guard_threshold_gb | string is match('^[0-9]+$')
+    fail_msg: >-
+      disk_guard_threshold_gb must be a whole number of GB, got
+      '{{ disk_guard_threshold_gb }}'
+    success_msg: threshold is a whole number of GB
+
+- name: Probe the container daemon for its data-root
+  # One probe covers three of install.sh's separate refusals: a missing docker
+  # CLI, an unreachable daemon, and a daemon that reports no data-root. The
+  # guard measures the lower of / and this filesystem, so a wrong or absent
+  # answer here is a guard watching the wrong disk.
+  #
+  # {% raw %} keeps Go's own template syntax out of Jinja's hands; the two use
+  # the same braces and Ansible templates every module argument.
+  ansible.builtin.command:
+    cmd: docker info --format '{% raw %}{{.DockerRootDir}}{% endraw %}'
+  become: true
+  register: disk_guard_data_root
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse to arm a guard with no reachable container layer
+  # Every reclaiming action is a daemon call silenced with >/dev/null 2>&1, so
+  # with the daemon down the prunes are no-ops that still exit 0 — a guard
+  # reporting success while reclaiming nothing.
+  ansible.builtin.assert:
+    that:
+      - disk_guard_data_root.rc == 0
+      - disk_guard_data_root.stdout | trim | length > 0
+    fail_msg: >-
+      The container daemon did not report a data-root on this host. Install
+      docker and start docker.service, then re-run; this role does not provision
+      the container layer it guards.
+    success_msg: >-
+      daemon reports data-root {{ disk_guard_data_root.stdout | trim }}; the
+      guard watches the lower of / and that filesystem
+
+- name: Probe for the system tools the guard invokes
+  # `which` rather than a shell `command -v`, so the task is a plain command and
+  # not a shell whose only shell-ism is a builtin lookup.
+  ansible.builtin.command:
+    cmd: which {{ item }}
+  register: disk_guard_tool_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop: "{{ disk_guard_required_tools }}"
+
+- name: Refuse to arm a guard whose reclaim tools are missing
+  ansible.builtin.assert:
+    that:
+      - disk_guard_tool_probe.results | rejectattr('rc', 'equalto', 0) | list | length == 0
+    fail_msg: >-
+      Not on PATH: {{ disk_guard_tool_probe.results | rejectattr('rc', 'equalto', 0)
+      | map(attribute='item') | join(', ') }}. The guard silences every
+      reclaiming call, so a missing tool is a silent no-op rather than an error.
+    success_msg: every reclaim tool the guard invokes is on PATH
+
+- name: Create the guard's script and env directories
+  # install.sh created both with `install -d`. `--check` on a fresh host cannot
+  # see past a missing directory, so owning them here is what lets a check run
+  # report the file writes below rather than fail on them.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ disk_guard_script_path | dirname }}"
+    - "{{ disk_guard_env_path | dirname }}"
+
+- name: Install the disk-guard reclamation script
+  # Verbatim from files/, not a template: this is the relocated hotfix, whose
+  # reclamation logic is byte-faithful to what ran on hp from 2026-08-22. It
+  # stays a POSIX shell script because the timer executes it unattended long
+  # after any playbook has exited; the role owns its installation, not its
+  # behaviour.
+  ansible.builtin.copy:
+    src: disk-guard.sh
+    dest: "{{ disk_guard_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the guard's host values
+  # The script refuses to run without this file rather than falling back to a
+  # built-in threshold, so it is a hard dependency of the units armed below.
+  ansible.builtin.template:
+    src: disk-guard.env.j2
+    dest: "{{ disk_guard_env_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Look for the two timers already installed on this host
+  # Read BEFORE the units are written, so it records what the host had rather
+  # than what this play is about to give it. The arming task and the restart
+  # handler both read it, for the reason given there.
+  ansible.builtin.stat:
+    path: "{{ disk_guard_unit_dir }}/{{ item }}"
+  become: true
+  register: disk_guard_timer_state
+  loop: "{{ disk_guard_timers }}"
+
+- name: Render the disk-guard and docker-prune units
+  # `template` rather than `copy` even though only one of the four carries a
+  # placeholder today. The shell kept its substitution loop over an empty
+  # required-variable list for the same reason: the first per-host axis should
+  # land as a placeholder in the existing file, never as a forked unit.
+  #
+  # render-unit.sh's "exit 4 if any @NAME@ remains" guard has no counterpart
+  # here and needs none — an undefined variable is a Jinja error.
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ disk_guard_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the disk-guard timers
+  loop: "{{ disk_guard_units }}"
+
+- name: Verify the installed guard with a dry run
+  # Kept from install.sh, because no module guarantees what it proves: that the
+  # installed script runs on THIS host, reads the installed env file, and
+  # measures the filesystems it is supposed to measure. --dry-run reads `df` and
+  # `docker info` and prunes nothing. It runs before the timers are armed, so a
+  # guard that cannot run never gets a schedule — a failing task ends the play.
+  #
+  # SKIPPED UNDER --check, and deliberately so: this exercises a script the
+  # check run has not written. Verifying a state the dry run did not bring about
+  # would prove nothing. The command module skips itself under --check, so this
+  # needs no guard of its own.
+  ansible.builtin.command:
+    cmd: "{{ disk_guard_script_path }} --dry-run"
+  become: true
+  register: disk_guard_dry_run
+  changed_when: false
+
+- name: Arm the disk-guard and docker-prune timers
+  # Only the timers are enabled; both .service halves are oneshot units the
+  # timers invoke. daemon_reload here rather than in a separate task so a first
+  # apply can see units written moments earlier in the same play.
+  #
+  # install.sh followed each `systemctl start` with an is-active check; the
+  # module fails unless the unit reaches the requested state, so the check has
+  # nothing left to catch.
+  #
+  # THE `when` IS A CHECK-MODE GUARD, NOT A CONDITION ON THE APPLY. Under
+  # --check the template above writes nothing, so on a host that does not
+  # already carry the timer this module would fail with "Could not find the
+  # requested service" — the role reporting a fault it created itself, in
+  # exactly the case where the operator most needs the dry run to finish and
+  # say so. Where the timer IS already installed the task runs normally under
+  # --check and reports genuine enable/start drift. `check_mode: false` would
+  # be the wrong fix here: it would enable and start a live unit during a run
+  # that promised to change nothing.
+  ansible.builtin.systemd_service:
+    name: "{{ disk_guard_timer.item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or disk_guard_timer.stat.exists
+  loop: "{{ disk_guard_timer_state.results }}"
+  loop_control:
+    loop_var: disk_guard_timer
+    label: "{{ disk_guard_timer.item }}"

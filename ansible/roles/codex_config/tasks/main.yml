@@ -1,0 +1,147 @@
+---
+# codex_config -- host-wide Codex defaults for this machine's operator account.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info services/codex-config/install.sh.
+#
+# USER SCOPE, NOT ROOT. Every task carries `become: false`. The installer went
+# further than the other user-scope services here and refused outright when run
+# as anyone but the operator account, because ~/.codex/config.toml holds that
+# account's model, project-trust, plugin, MCP, hook and TUI settings; a sudo run
+# would write root's file and leave the operator's untouched, with a success
+# message either way.
+#
+# THE ROLE DOES NOT SHIP A config.toml, and that is the design, not an omission.
+# It drives Codex's own config editor for one key, so the operation is additive
+# and every machine-local setting in that file survives. A rendered config.toml
+# would be a second source of truth for settings that are not in any repository.
+
+- name: Require Ansible to be connected as the Codex operator account
+  # The installer's `id -un` guard, kept whole. `become: false` above makes the
+  # connection user the account that will be configured, so this assert is the
+  # whole of the guard rather than half of it.
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['user_id'] == codex_config_user
+    fail_msg: >-
+      Connected to {{ inventory_hostname }} as {{ ansible_facts['user_id'] }},
+      but this role configures ~{{ codex_config_user }}/.codex/config.toml.
+      Set codex_config_user in this host's host_vars, or connect as that
+      account. Do not run this role with become.
+    success_msg: "connected as {{ codex_config_user }}"
+
+- name: Probe for the Codex CLI
+  # Probed through `env` so a missing binary yields rc 127 from a program that
+  # certainly exists; invoking `codex` directly would fail the module rather
+  # than the command and leave no rc for the assert to read.
+  ansible.builtin.command:
+    argv: [/usr/bin/env, codex, --version]
+  become: false
+  register: codex_config_cli_probe
+  changed_when: false
+  failed_when: false
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+
+- name: Require the Codex CLI
+  # A precondition the role does NOT create. Codex is installed for this account
+  # by acfs, out of band; a provisioning role that installed a coding agent as a
+  # side effect of setting one of its feature flags would be the wrong owner.
+  ansible.builtin.assert:
+    that:
+      - codex_config_cli_probe.rc == 0
+    fail_msg: >-
+      codex is not on PATH for {{ codex_config_user }} on
+      {{ inventory_hostname }}. Install the Codex CLI for that account first;
+      this role only configures it.
+    success_msg: "codex resolves"
+
+- name: Read the current Codex feature states
+  ansible.builtin.command:
+    argv: [codex, features, list]
+  become: false
+  register: codex_config_feature_list
+  changed_when: false
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+
+- name: Report that an apply would enable the Codex feature
+  # `codex features enable` is a command, so --check skips it rather than
+  # reporting a would-be change, and this tree hides skipped tasks. Without this
+  # line a host that has never had the feature enabled reads as converged.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: Codex does not report {{ codex_config_feature }} as
+      {{ codex_config_enabled_state }}. An apply would run: codex features enable
+      {{ codex_config_feature }}
+  when:
+    - ansible_check_mode
+    - _codex_config_state != codex_config_enabled_state
+  vars:
+    _codex_config_line: >-
+      {{ codex_config_feature_list.stdout_lines
+         | select('search', '^' ~ codex_config_feature ~ '[ \t]') | first | default('') }}
+    _codex_config_state: >-
+      {{ (_codex_config_line.split() | last) if _codex_config_line | length > 0 else '' }}
+
+- name: Enable the Codex feature
+  # `codex features enable` is idempotent on its own, so the listing above is
+  # not needed for correctness -- it is needed for REPORTING. Run unconditionally
+  # the task would be marked changed on every converge, and a drift report whose
+  # every line is a change reports nothing. changed_when is a bare true because
+  # the `when` already restricts the task to the case where it changes something.
+  ansible.builtin.command:
+    argv: [codex, features, enable, "{{ codex_config_feature }}"]
+  become: false
+  changed_when: true
+  when: _codex_config_state != codex_config_enabled_state
+  vars:
+    _codex_config_line: >-
+      {{ codex_config_feature_list.stdout_lines
+         | select('search', '^' ~ codex_config_feature ~ '[ \t]') | first | default('') }}
+    _codex_config_state: >-
+      {{ (_codex_config_line.split() | last) if _codex_config_line | length > 0 else '' }}
+
+- name: Read the Codex feature states back
+  # KEPT as a command, not dropped. Nothing about `codex features enable`
+  # exiting 0 proves the feature is on: it is a vendor CLI writing a file this
+  # role deliberately does not read, and the installer verified for that reason.
+  #
+  # POST-WRITE VERIFICATION, so unlike the probes above it deliberately does NOT
+  # get check_mode: false. It exercises an effect that --check did not produce,
+  # because the enable above was skipped there; asserting on it would be
+  # asserting a would-be change. Both it and its assert are skipped under
+  # --check, and the skipped enable already reports the drift.
+  ansible.builtin.command:
+    argv: [codex, features, list]
+  become: false
+  register: codex_config_feature_verify
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Require the Codex feature to be enabled
+  ansible.builtin.assert:
+    that:
+      - _codex_config_state == codex_config_enabled_state
+    fail_msg: >-
+      Codex does not report {{ codex_config_feature }} as
+      {{ codex_config_enabled_state }} in ~{{ codex_config_user }}/.codex/config.toml
+      (reported: {{ _codex_config_state | default('nothing', true) }}). The
+      feature name may have changed upstream -- Codex classifies it as under
+      development.
+    success_msg: "{{ codex_config_feature }} is enabled"
+  when: not ansible_check_mode
+  vars:
+    _codex_config_line: >-
+      {{ codex_config_feature_verify.stdout_lines
+         | select('search', '^' ~ codex_config_feature ~ '[ \t]') | first | default('') }}
+    _codex_config_state: >-
+      {{ (_codex_config_line.split() | last) if _codex_config_line | length > 0 else '' }}

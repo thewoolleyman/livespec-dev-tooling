@@ -1,0 +1,147 @@
+---
+# restic_backup — the VPS-native backup to S3.
+#
+# Replaces vps-info services/vps-restic-backup/install.sh. This is the
+# independent counterpart to the Arq path: where Arq needs the Mac to pull a
+# pre-pruned SMB snapshot, restic backs up the LIVE paths from here on a timer,
+# and restore also runs here.
+#
+# SCOPE: root. The units land in /etc/systemd/system and the runner reads
+# /etc/shadow, /root, the ssh host keys and /etc/credstore. Determined from the
+# installer's require_root guard and from the unit paths it writes.
+#
+# THIS ROLE INSTALLS BUT DOES NOT RUN A BACKUP, deliberately, exactly as the
+# installer did. The repository credentials (VPS_RESTIC_REPOSITORY,
+# VPS_RESTIC_PASSWORD, VPS_RESTIC_AWS_ACCESS_KEY_ID,
+# VPS_RESTIC_AWS_SECRET_ACCESS_KEY, VPS_RESTIC_S3_BUCKET, VPS_RESTIC_S3_REGION)
+# live in the 1Password "homelab" Environment and are imported by a human once,
+# out of band. No secret is read, written, or templated anywhere in this role.
+# After the first apply on a new host, the operator runs
+# `sudo {{ restic_backup_bin }} doctor` and then starts the service once.
+
+- name: Check for the 1Password credential wrapper
+  ansible.builtin.stat:
+    path: "{{ restic_backup_credential_wrapper }}"
+  register: restic_backup_wrapper
+
+- name: Refuse to install without the 1Password credential wrapper
+  # Owned by the 1password-env-wrapper repo. It does NOT migrate into this role:
+  # a backup role has no business provisioning the fleet's secret loader, and
+  # the service-account token behind it is delivered out of band. The runner
+  # exits 127 without it, at 03:30, in a log nobody reads — so it fails here
+  # instead, at apply time, naming the file and its owner.
+  ansible.builtin.assert:
+    that:
+      - restic_backup_wrapper.stat.exists
+      - restic_backup_wrapper.stat.executable
+    fail_msg: >-
+      {{ restic_backup_credential_wrapper }} is missing or not executable.
+      Install it from the 1password-env-wrapper repo before applying this role;
+      the backup runner re-execs through it to load the repository credentials.
+    success_msg: the 1Password credential wrapper is present and executable
+
+- name: Install restic
+  # `package` rather than `apt`: the module is portable and the fleet's roles use
+  # it. It carries no equivalent of the installer's `apt-get update -qq`, so on a
+  # host whose apt cache is stale AND which is missing one of these packages, the
+  # install fails with "no package matching" and the operator must refresh the
+  # cache once. On an already-converged host the task is a no-op and the cache
+  # never matters.
+  ansible.builtin.package:
+    name: "{{ restic_backup_packages }}"
+    state: present
+  become: true
+
+- name: Create the backup configuration directory
+  ansible.builtin.file:
+    path: "{{ restic_backup_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the restic exclude file
+  # World-readable on purpose: it is a policy document, not a secret, and the
+  # README asks a human to keep it aligned by hand with the rsync filters in
+  # arq_root_snapshot's runner. The two lists are parallel and in different
+  # syntaxes; nothing mechanical checks them against each other.
+  ansible.builtin.copy:
+    src: vps-restic-excludes.txt
+    dest: "{{ restic_backup_exclude_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the restic backup runner
+  # Stays shell. It is a RUNTIME tool, not provisioning: it re-execs itself
+  # through the 1Password wrapper, maps VPS_RESTIC_* to RESTIC_*/AWS_* in the
+  # child environment only, and carries the operator subcommands (doctor,
+  # snapshots, restore, check, unlock, forget, exec) that a human needs long
+  # after any playbook has exited.
+  #
+  # `validate` replaces the installer's post-install `bash -n`: the syntax check
+  # now runs on the temporary file, so a broken runner never reaches
+  # {{ restic_backup_bin }} at all.
+  ansible.builtin.copy:
+    src: vps-restic-backup.sh
+    dest: "{{ restic_backup_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  become: true
+
+- name: Check whether the restic backup timer unit is already installed
+  # Read BEFORE the unit is written. Under `--check` the template below writes
+  # nothing, so arming a not-yet-existing timer would fail with systemd's
+  # "Could not find the requested service" — a fault the role invented rather
+  # than found.
+  ansible.builtin.stat:
+    path: "{{ restic_backup_unit_dir }}/vps-restic-backup.timer"
+  become: true
+  register: restic_backup_timer_unit
+
+- name: Install the restic backup service unit
+  ansible.builtin.template:
+    src: vps-restic-backup.service.j2
+    dest: "{{ restic_backup_unit_dir }}/vps-restic-backup.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the restic backup timer unit
+  ansible.builtin.template:
+    src: vps-restic-backup.timer.j2
+    dest: "{{ restic_backup_unit_dir }}/vps-restic-backup.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Enable and start the restic backup timer
+  # Only the TIMER. The service unit carries no [Install] section — it is
+  # static, triggered by the timer alone. No handler restarts anything: the
+  # service is a oneshot, and restarting it would mean starting a multi-hour
+  # backup because an exclude line changed.
+  #
+  # daemon_reload sits here rather than in a handler because handlers run after
+  # this task, and on a first apply systemd would not yet know the units exist.
+  #
+  # The installer's verification (`bash -n`, `systemctl is-enabled`,
+  # `is-active`, `test -f` on the exclude file) is gone: the syntax check moved
+  # into the copy's validate above, and the other three asserted exactly the
+  # state the file and systemd modules converge to.
+  ansible.builtin.systemd_service:
+    name: vps-restic-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # NOT check_mode: false — that would arm a live timer during a run that
+  # promised to change nothing. Where the timer already exists this runs
+  # normally under `--check` and reports genuine enable/start drift; where it
+  # does not, it is skipped and the would-be unit-file add says so instead.
+  when: not ansible_check_mode or restic_backup_timer_unit.stat.exists

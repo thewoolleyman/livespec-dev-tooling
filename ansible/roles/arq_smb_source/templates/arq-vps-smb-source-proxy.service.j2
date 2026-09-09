@@ -1,0 +1,10 @@
+# Managed by Ansible (role: arq_smb_source). Local edits are overwritten.
+[Unit]
+Description=Tailnet SMB proxy for Arq VPS backup source
+Requires=smbd.service arq-vps-smb-source-proxy.socket
+After=smbd.service
+
+[Service]
+ExecStart=/lib/systemd/systemd-socket-proxyd {{ arq_smb_source_loopback_address }}:445
+PrivateTmp=true
+NoNewPrivileges=true

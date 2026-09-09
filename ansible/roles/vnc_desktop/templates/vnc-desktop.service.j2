@@ -1,0 +1,23 @@
+# Managed by the Ansible role vnc_desktop. Edit the role, not this file.
+[Unit]
+# The shell said "openbox", which this session stopped using at the XFCE rewrite.
+Description=VNC Desktop (Xvfb + XFCE + x11vnc on the tailnet, {{ vnc_desktop_tailscale_ip }}:{{ vnc_desktop_vnc_port }})
+After=network.target tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+User={{ vnc_desktop_user }}
+# /run/vnc-desktop/ holds the D-Bus session address that peer units (notably
+# 1password-desktop.service) attach to via EnvironmentFile=.
+RuntimeDirectory=vnc-desktop
+RuntimeDirectoryMode=0700
+# Block VNC port on all IPv6 interfaces — x11vnc's -no6 flag doesn't suppress
+# the libvncserver wildcard socket, so we enforce it at the firewall level.
+ExecStartPre=+/sbin/ip6tables -I INPUT -p tcp --dport {{ vnc_desktop_vnc_port }} -j DROP
+ExecStopPost=+/sbin/ip6tables -D INPUT -p tcp --dport {{ vnc_desktop_vnc_port }} -j DROP
+ExecStart={{ vnc_desktop_bin_dir }}/vnc-desktop-start.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

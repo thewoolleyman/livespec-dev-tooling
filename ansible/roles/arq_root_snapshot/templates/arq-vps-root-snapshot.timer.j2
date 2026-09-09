@@ -1,0 +1,14 @@
+# Managed by Ansible (role: arq_root_snapshot). Local edits are overwritten.
+[Unit]
+Description=Build stable root-state snapshot before Arq VPS backup
+
+[Timer]
+# Daily: builds the pruned Arq SMB source once a day. Feeds ONLY the Mac Arq
+# plan (restic backs up live, not this snapshot), so its cadence matches the
+# Arq plan. Set the Mac Arq plan ~30m later (03:30) to pull the fresh snapshot.
+OnCalendar={{ arq_root_snapshot_on_calendar }}
+Persistent=true
+Unit=arq-vps-root-snapshot.service
+
+[Install]
+WantedBy=timers.target

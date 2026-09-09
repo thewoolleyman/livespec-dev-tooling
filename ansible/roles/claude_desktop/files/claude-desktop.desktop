@@ -1,0 +1,22 @@
+[Desktop Entry]
+Name=Claude
+Comment=Desktop application for Claude.ai
+GenericName=AI Assistant
+Keywords=AI;Chat;Assistant;Claude;Code;LLM;
+Exec=claude-desktop --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-features=UseSkiaRenderer,CanvasOopRasterization %U
+Icon=claude-desktop
+Type=Application
+StartupNotify=true
+StartupWMClass=claude-desktop
+SingleMainWindow=true
+Categories=Office;
+MimeType=x-scheme-handler/claude;
+Actions=NewChat;NewCode;
+
+[Desktop Action NewChat]
+Name=New chat
+Exec=claude-desktop --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-features=UseSkiaRenderer,CanvasOopRasterization claude://claude.ai/new
+
+[Desktop Action NewCode]
+Name=New Claude Code session
+Exec=claude-desktop --disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --disable-features=UseSkiaRenderer,CanvasOopRasterization claude://code/new

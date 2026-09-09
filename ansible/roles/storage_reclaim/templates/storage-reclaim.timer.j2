@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Periodic build-artifact and orphaned-worktree reclamation
+
+[Timer]
+OnCalendar={{ storage_reclaim_on_calendar }}
+# Spread the two factories so they never walk their trees at the same moment.
+RandomizedDelaySec=30m
+# Catch up after downtime: a host that was off for a week is exactly the host
+# whose artifacts are now past the horizon.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,91 @@
+# restic --exclude-file for the VPS -> S3 backup.
+#
+# This mirrors the pruning done by services/arq-vps-root-snapshot (rsync
+# filters) so the restic and Arq backups cover the same content. The two lists
+# are PARALLEL (different syntaxes) and must be kept aligned by hand: if you add
+# an exclude to arq-vps-root-snapshot.sh, add it here too, and vice versa.
+#
+# restic matching: a pattern with no "/" matches a base name anywhere in the
+# tree; a pattern with "/" (or a leading "/") matches the full path; "**" spans
+# directories; a leading "!" re-includes. See `restic help backup`.
+#
+# Two deliberate policies (mirror these in arq-vps-root-snapshot.sh):
+#   * .git is backed up EVERYWHERE (never excluded).
+#   * /data is backed up VERBATIM (the final "!/data" re-include below).
+
+# --- pseudo / volatile filesystems and volatile state -----------------------
+/dev
+/proc
+/sys
+/run
+/tmp
+/var/tmp
+/var/cache
+/mnt
+/media
+/lost+found
+/snap
+
+# --- container + package-manager bulk (recreated, not host state) -----------
+/var/lib/docker
+/var/lib/containerd
+/var/lib/dpkg/info
+/var/lib/snapd/cache
+/var/lib/snapd/snaps
+/var/lib/systemd/coredump
+
+# --- do NOT back up the 9GB Arq snapshot mirror (Arq's own source tree) ------
+/srv/arq-vps-root-snapshot
+
+# --- systemd journal (large, volatile; text logs are still captured) --------
+/var/log/journal
+
+# --- dependency / cache / build trees (match by base name, anywhere) --------
+.cache
+.cargo
+.rustup
+.npm
+.pnpm-store
+.gradle
+.bun
+.venv
+venv
+node_modules
+site-packages
+__pycache__
+target
+dist
+build
+.mypy_cache
+.ruff_cache
+.claude-flow
+.worktrees
+*.pyc
+.DS_Store
+*.swap
+*.tmp
+
+# --- deeper dependency paths (need path context) ----------------------------
+**/go/pkg
+**/.gradle/caches
+**/.claude/plugins
+**/.claude/worktrees
+**/.codex/plugins
+**/.codex/.tmp
+**/.local/share/pnpm
+**/.local/share/uv
+**/.local/share/mise/installs
+**/.local/share/mise/downloads
+**/.local/share/claude/versions
+**/.local/share/JetBrains/Daemon
+**/.vscode-server/extensions
+**/.vscode/cli
+**/.vscode/extensions
+
+# --- VERBATIM: re-include everything under /data ----------------------------
+# /data/projects (== ~/workspace symlink) holds the user's repos and must be
+# backed up in full — .git, node_modules, .venv, build artifacts, everything.
+# This "!" negation comes LAST, so it overrides every exclude above for any
+# path under /data (verified: it re-includes dirs AND file-globs like *.pyc).
+# NOTE: .git is intentionally NOT excluded anywhere (backed up host-wide).
+!/data

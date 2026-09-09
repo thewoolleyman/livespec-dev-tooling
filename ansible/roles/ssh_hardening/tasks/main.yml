@@ -1,0 +1,123 @@
+---
+# ssh_hardening — key-only public SSH on the vps host.
+#
+# Replaces vps-info services/ssh-hardening/install.sh. ROOT-SCOPE: it writes
+# into /etc/ssh/sshd_config.d and reloads a system unit; the shell installer
+# refuses unless EUID is 0.
+#
+# CONFIG-ONLY SERVICE. This role tunes an OS unit through a drop-in. It does
+# NOT own that unit's enablement, so nothing here enables ssh.service — the
+# daemon's presence and enablement are the operating system's business, and
+# claiming them would make this role responsible for a state it never set.
+#
+# THE RISK THIS ROLE CARRIES. A bad sshd configuration locks every remote
+# session out of the host. Three separate things stand in the way, in order:
+#
+#   1. `validate:` on the copy below runs `sshd -t` against the STAGED file, so
+#      a syntactically bad drop-in is never installed at all. The shell wrote
+#      the file first and tested afterwards, which leaves the broken file on
+#      disk when the test fails.
+#   2. The effective-configuration assert runs while the daemon is still
+#      running its OLD configuration, because the reload is a HANDLER and
+#      handlers are flushed after it. A failed assert therefore leaves the
+#      running daemon untouched.
+#   3. That assert refuses to let the reload proceed unless public-key
+#      authentication is still enabled — the one setting whose loss, combined
+#      with password authentication being off, is unrecoverable over SSH.
+#
+# Tailscale SSH is an independent recovery path that does not read this
+# configuration at all; it is governed by tailscale-admin/policy.hujson.
+
+- name: Remove the legacy hand-applied sshd drop-in
+  ansible.builtin.file:
+    path: "{{ ssh_hardening_dropin_dir }}/{{ ssh_hardening_legacy_dropin_name }}"
+    state: absent
+  become: true
+  notify: Reload sshd
+
+- name: Install the sshd hardening drop-in
+  # `validate:` is the shell's `sshd -t`, moved to before the file exists.
+  # It parses the staged copy as a configuration in its own right, which is
+  # what catches a malformed directive; the effective-value check below is
+  # what catches a drop-in that parses but does not win.
+  ansible.builtin.copy:
+    src: "{{ ssh_hardening_dropin_name }}"
+    dest: "{{ ssh_hardening_dropin_dir }}/{{ ssh_hardening_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "{{ ssh_hardening_sshd_bin }} -t -f %s"
+  become: true
+  notify: Reload sshd
+
+- name: Prove the new configuration before reloading the daemon
+  # Deliberately skipped under --check. This is a POST-INSTALL verification,
+  # not a precondition: `sshd -T` reports the effective configuration of the
+  # drop-in set ON DISK, and under a dry run this role's drop-in is a would-be
+  # write. On an un-hardened host it would report the pre-hardening values and
+  # this assert would blame the host for the dry run's own restraint.
+  #
+  # This does NOT weaken the pre-activation gate. That gate is the `validate:`
+  # argument on the copy above, which runs against the candidate file before
+  # the module writes anything, INCLUDING under --check. The two mechanisms
+  # are separate: `validate:` proves the drop-in parses, this proves it wins.
+  when: not ansible_check_mode
+  block:
+    - name: Read the effective sshd configuration
+      # Kept as a command rather than folded into `validate:`, deliberately.
+      # `sshd -T` resolves the WHOLE include set — this drop-in together with
+      # cloud-init's and anything else in the directory — so it answers a
+      # question the staged-file validation structurally cannot: which value
+      # actually wins. It reads from disk, not from the running daemon, so it
+      # describes the configuration the pending reload is about to adopt.
+      ansible.builtin.command:
+        argv:
+          - "{{ ssh_hardening_sshd_bin }}"
+          - -T
+      become: true
+      register: ssh_hardening_effective
+      changed_when: false
+
+    - name: Refuse to reload unless the hardening took and key auth survives
+      # `sshd -T` canonicalises `prohibit-password` to its older synonym
+      # `without-password`, so both spellings are accepted.
+      ansible.builtin.assert:
+        that:
+          - ssh_hardening_effective.stdout is search('(?im)^passwordauthentication no$')
+          - ssh_hardening_effective.stdout is search('(?im)^kbdinteractiveauthentication no$')
+          - >-
+            ssh_hardening_effective.stdout is
+            search('(?im)^permitrootlogin (prohibit-password|without-password)$')
+          - ssh_hardening_effective.stdout is search('(?im)^pubkeyauthentication yes$')
+        fail_msg: >-
+          the effective sshd configuration is not what this role installs, or
+          public-key authentication is off. The daemon has NOT been reloaded and
+          is still running its previous configuration. Inspect
+          `{{ ssh_hardening_sshd_bin }} -T` and the other drop-ins in
+          {{ ssh_hardening_dropin_dir }} before disconnecting.
+        success_msg: >-
+          public SSH will be key-only, root login key-only, public-key auth intact
+
+- name: Reload sshd now that the configuration is proven
+  # Flushed inside the role rather than at the end of the play, so the reload
+  # and the check that follows it belong to the same unit of work.
+  ansible.builtin.meta: flush_handlers
+
+- name: Confirm the daemon survived the reload
+  # Deliberately skipped under --check: a dry run performs no reload, so there
+  # is no reload for this to have survived.
+  when: not ansible_check_mode
+  block:
+    - name: Read the host's service state
+      ansible.builtin.service_facts:
+      become: true
+
+    - name: Require the ssh daemon to still be running
+      ansible.builtin.assert:
+        that:
+          - ssh_hardening_service_name in ansible_facts['services']
+          - ansible_facts['services'][ssh_hardening_service_name]['state'] == 'running'
+        fail_msg: >-
+          {{ ssh_hardening_service_name }} is not running after the reload. Do not
+          disconnect: recover over Tailscale SSH or the provider console.
+        success_msg: "{{ ssh_hardening_service_name }} is running"

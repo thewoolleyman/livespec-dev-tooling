@@ -1,0 +1,11 @@
+# Managed by Ansible (role: arq_docker_volume_snapshot). Local edits are overwritten.
+[Unit]
+Description=Run Docker volume snapshot before Arq VPS backup
+
+[Timer]
+OnCalendar={{ arq_docker_volume_snapshot_on_calendar }}
+Persistent=true
+Unit=arq-vps-docker-volume-snapshot.service
+
+[Install]
+WantedBy=timers.target

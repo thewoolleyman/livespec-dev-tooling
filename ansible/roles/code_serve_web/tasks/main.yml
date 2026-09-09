@@ -1,0 +1,169 @@
+---
+# code_serve_web — the VS Code `serve-web` editor backend on the vps host.
+#
+# Replaces vps-info services/code-serve-web/install.sh. ROOT-SCOPE throughout:
+# the shell installer refuses to run unless EUID is 0, every path it writes is
+# under /etc, and the unit is a SYSTEM unit. The editor process itself drops to
+# the unprivileged `ubuntu` account, but that is expressed by User=/Group= in
+# the unit rather than by become_user here, exactly as the shell had it.
+#
+# This role publishes nothing. The Tailscale Serve mapping that makes the
+# editor reachable belongs to code_pwa_proxy, which asserts this role has run.
+
+- name: Detect Microsoft's vendor-managed deb822 apt source
+  # The `code` package's own post-install hook writes vscode.sources. Two
+  # source files for one repository with different Signed-By paths make apt
+  # error out, so when the vendor file is present this role installs no source
+  # of its own and removes the .list it used to write.
+  #
+  # THE LEADING AND TRAILING `.*` ARE LOAD-BEARING — do not tidy them away.
+  # `find`'s `contains` anchors each line at its start (re.match, not
+  # re.search), unlike the `grep -q` this replaces. Without them the pattern
+  # never matches the deb822 `URIs: https://...` line, `matched` comes back 0,
+  # and the role silently takes the wrong branch: it writes a second source
+  # file for a repository the vendor already owns. That is not a loud failure
+  # — it is a clean run with an empty result, which is why it is called out
+  # here rather than left to be rediscovered.
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: vscode.sources
+    contains: '.*packages\.microsoft\.com/repos/code.*'
+  become: true
+  register: code_serve_web_vendor_source
+
+- name: Remove the duplicate VS Code apt source
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/vscode.list
+    state: absent
+  become: true
+  when: code_serve_web_vendor_source.matched > 0
+
+- name: Create the apt keyring directory
+  ansible.builtin.file:
+    path: "{{ code_serve_web_apt_keyring_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: code_serve_web_vendor_source.matched == 0
+
+- name: Fetch Microsoft's apt signing key
+  ansible.builtin.get_url:
+    url: "{{ code_serve_web_apt_key_url }}"
+    dest: "{{ code_serve_web_apt_key_asc }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: code_serve_web_vendor_source.matched == 0
+
+- name: Convert Microsoft's signing key into an apt keyring
+  # `gpg --dearmor` is what the shell piped curl into. It stays a command
+  # because ansible.builtin.apt_key is deprecated and the collection modules
+  # that replace it are not available in this harness-neutral tree.
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --yes
+      - --dearmor
+      - --output
+      - "{{ code_serve_web_apt_keyring }}"
+      - "{{ code_serve_web_apt_key_asc }}"
+    creates: "{{ code_serve_web_apt_keyring }}"
+  become: true
+  when: code_serve_web_vendor_source.matched == 0
+
+- name: Add the VS Code apt repository
+  # Written as the plain one-line .list the shell installer wrote, rather than
+  # through ansible.builtin.apt_repository, which is deprecated and removed in
+  # ansible-core 2.25. deb822_repository is not the replacement here either:
+  # its natural output path, /etc/apt/sources.list.d/vscode.sources, is the
+  # exact file Microsoft's own post-install hook owns and that the detection
+  # task above defers to. Cache refresh, the other thing apt_repository did,
+  # is covered by update_cache on the install below.
+  ansible.builtin.copy:
+    content: "{{ code_serve_web_apt_repo_line }}\n"
+    dest: /etc/apt/sources.list.d/vscode.list
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: code_serve_web_vendor_source.matched == 0
+
+- name: Install the VS Code package
+  ansible.builtin.apt:
+    name: code
+    state: "{{ code_serve_web_package_state }}"
+    update_cache: true
+  become: true
+
+- name: Look for an existing code-serve-web unit
+  # Registered so the arming task below can tell "the unit is already
+  # installed" from "this run would install it". Under --check the template
+  # writes nothing, so on a host without the unit ansible.builtin.systemd_service
+  # fails with "Could not find the requested service" — the role reporting a
+  # fault it created itself, in exactly the case where the dry run most needs
+  # to complete and say the service is absent.
+  ansible.builtin.stat:
+    path: "{{ code_serve_web_unit_path }}"
+  become: true
+  register: code_serve_web_unit_file
+
+- name: Install the code-serve-web unit
+  ansible.builtin.template:
+    src: code-serve-web.service.j2
+    dest: "{{ code_serve_web_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart code-serve-web
+
+- name: Enable and start code-serve-web
+  ansible.builtin.systemd_service:
+    name: "{{ code_serve_web_unit_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # Wherever the unit already exists this runs normally, so genuine
+  # enable/start drift is still reported under --check. It is skipped only in
+  # the dry-run case where the unit file is a would-be write, and there the
+  # file add above already tells the operator the service is not installed.
+  # NOT check_mode: false — that would arm and start a live unit during a run
+  # that promised to change nothing.
+  when: not ansible_check_mode or code_serve_web_unit_file.stat.exists
+
+- name: Apply any pending code-serve-web restart before verifying
+  # Handlers otherwise run at the END of the play, so the checks below would
+  # inspect the process the new unit was supposed to replace.
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify code-serve-web is serving
+  # The shell's post-install verification was `systemctl is-active`, an `ss`
+  # listener grep and a curl. Only the last two are kept, as native probes:
+  # a bound listener answering HTTP is strictly stronger evidence than
+  # is-active, which a unit can report while the editor is failing to bind.
+  #
+  # Deliberately skipped under --check: these exercise the unit and package
+  # this role would have written, which a dry run has not written.
+  when: not ansible_check_mode
+  block:
+    - name: Wait for the editor to bind its loopback port
+      ansible.builtin.wait_for:
+        host: "{{ code_serve_web_listen_address }}"
+        port: "{{ code_serve_web_listen_port }}"
+        timeout: 60
+
+    - name: Probe the editor over HTTP
+      # `code serve-web` answers / with a redirect or an error page depending
+      # on version; any numeric status proves the backend is alive, which is
+      # the same bar the shell installer set.
+      ansible.builtin.uri:
+        url: >-
+          http://{{ code_serve_web_listen_address }}:{{ code_serve_web_listen_port }}/
+        method: GET
+        status_code: [200, 301, 302, 400, 401, 403, 404, 405]
+        timeout: 10

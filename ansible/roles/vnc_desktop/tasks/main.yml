@@ -1,0 +1,292 @@
+---
+# vnc_desktop — the headless graphical session this host is operated through.
+#
+# R4.S8 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info services/vnc-desktop/install.sh.
+#
+# WHAT IT PROVIDES. Xvfb renders an X display with no monitor behind it; XFCE
+# runs a session on that display; x11vnc exports it on the tailnet address only;
+# and a respawn loop keeps exactly one Chrome alive on a pinned profile with the
+# DevTools Protocol open, which is what the maintainer's browser automation
+# attaches to. onepassword_desktop and claude_desktop are clients of this
+# session, not peers of it: the first is started by this role's x11vnc hook and
+# reads the D-Bus address this role's start script writes.
+
+- name: Look for the real Google Chrome binary
+  ansible.builtin.stat:
+    path: "{{ vnc_desktop_chrome_binary }}"
+  register: vnc_desktop_chrome_stat
+
+- name: Assert Google Chrome is installed
+  # The wrapper installed below exists only to add one flag to this binary, and
+  # the respawn loop invokes it on every iteration. Chrome comes from Google's
+  # own apt repository, which no role in this tree owns, so its absence is a
+  # precondition to report rather than a step to perform.
+  ansible.builtin.assert:
+    that:
+      - vnc_desktop_chrome_stat.stat.exists
+      - vnc_desktop_chrome_stat.stat.executable
+    fail_msg: >-
+      {{ vnc_desktop_chrome_binary }} is missing or not executable on
+      {{ inventory_hostname }}. Install the google-chrome-stable package
+      (Google's apt repository at https://dl.google.com/linux/chrome/deb/)
+      and re-run.
+    success_msg: Google Chrome is installed
+
+- name: Look for the VNC password file
+  ansible.builtin.stat:
+    path: "{{ vnc_desktop_home }}/.vnc/passwd"
+  become: true
+  register: vnc_desktop_passwd_stat
+
+- name: Assert the VNC password has been set
+  # x11vnc is exec'd with -rfbauth pointing at this file, so without it the
+  # service starts and then refuses every client. The shell installer printed
+  # this as a NOTE at the very END, after it had already restarted the session —
+  # so the operator learned about it from a desktop that would not let them in.
+  # It is a human, out-of-band step (`x11vnc -storepasswd ~/.vnc/passwd`) that
+  # nothing here can perform, which makes it a preflight, not a task.
+  ansible.builtin.assert:
+    that: vnc_desktop_passwd_stat.stat.exists
+    fail_msg: >-
+      {{ vnc_desktop_home }}/.vnc/passwd does not exist, so x11vnc would accept
+      no clients. As {{ vnc_desktop_user }} on {{ inventory_hostname }}, run
+      `x11vnc -storepasswd ~/.vnc/passwd`, then re-run this role.
+    success_msg: the VNC password file is present
+
+- name: Assert the wrapper directory precedes /usr/bin on PATH
+  # XFCE's panel launches the browser through exo's `%B` helper, which resolves
+  # `google-chrome-stable` by NAME off PATH and has nowhere to put a flag, so the
+  # wrapper wins only if its directory comes first. The shell asserted this with
+  # `command -v`; a shell builtin is not reachable through ansible.builtin.command,
+  # so the same question is answered from the PATH of the account Ansible connects
+  # as — which is the account XFCE runs as, and therefore the PATH that decides.
+  ansible.builtin.assert:
+    that:
+      - vnc_desktop_bin_dir in _vnc_desktop_path_entries
+      - >-
+        _vnc_desktop_path_entries.index(vnc_desktop_bin_dir)
+        < (_vnc_desktop_path_entries.index('/usr/bin')
+           if '/usr/bin' in _vnc_desktop_path_entries else 99)
+    fail_msg: >-
+      {{ vnc_desktop_bin_dir }} does not precede /usr/bin on PATH
+      ({{ ansible_facts['env']['PATH'] }}), so exo would still launch Chrome on
+      the vanilla profile.
+    success_msg: "{{ vnc_desktop_bin_dir }} precedes /usr/bin on PATH"
+  vars:
+    _vnc_desktop_path_entries: "{{ ansible_facts['env']['PATH'].split(':') }}"
+
+- name: Install the XFCE and x11vnc desktop stack
+  # No display manager, no screensaver and no power manager: all three are
+  # meaningless on a machine whose only display is a framebuffer in RAM.
+  # xfce4-sntray-plugin is what makes 1Password's AppIndicator tray icon appear,
+  # and dbus-x11 supplies the dbus-launch the start script builds the session on.
+  ansible.builtin.package:
+    name: "{{ vnc_desktop_packages }}"
+    state: present
+  become: true
+
+- name: Install the session start script
+  # `validate` runs bash -n against the rendered file before it is moved into
+  # place, so a template that renders to invalid shell can never become the
+  # ExecStart of a service that is about to be restarted.
+  ansible.builtin.template:
+    src: vnc-desktop-start.sh.j2
+    dest: "{{ vnc_desktop_bin_dir }}/vnc-desktop-start.sh"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  become: true
+  notify: Restart vnc-desktop
+
+- name: Install the Chrome profile wrapper
+  # The .desktop overrides below cover the menu and xdg-open; this wrapper is the
+  # only thing that covers XFCE's exo helper, which runs the BINARY by name with
+  # no arguments. Both routes end here, so the profile path has exactly one owner.
+  ansible.builtin.template:
+    src: google-chrome-wrapper.sh.j2
+    dest: "{{ vnc_desktop_bin_dir }}/google-chrome-stable"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  become: true
+
+- name: Link google-chrome to the wrapper
+  ansible.builtin.file:
+    src: "{{ vnc_desktop_bin_dir }}/google-chrome-stable"
+    dest: "{{ vnc_desktop_bin_dir }}/google-chrome"
+    state: link
+    owner: root
+    group: root
+  become: true
+
+- name: Self-test the Chrome wrapper with no caller-supplied profile
+  # DRYRUN makes the wrapper print the argv it WOULD exec instead of execing it,
+  # so this launches no browser.
+  #
+  # POST-INSTALL VERIFICATION, so the --check skip is deliberate: this exercises
+  # the wrapper the task above writes, and under a dry run that file has not been
+  # written. It is NOT given check_mode:false, which would make a dry run test
+  # whichever wrapper happens to be on disk and then fail the run for state the
+  # apply would have corrected.
+  ansible.builtin.command:
+    argv:
+      - "{{ vnc_desktop_bin_dir }}/google-chrome-stable"
+      - https://example.com
+  environment:
+    GOOGLE_CHROME_WRAPPER_DRYRUN: "1"
+    HOME: "{{ vnc_desktop_home }}"
+  become: false
+  changed_when: false
+  register: vnc_desktop_wrapper_default_profile
+  when: not ansible_check_mode
+
+- name: Assert the wrapper injected the VNC profile
+  # Getting this wrong is silent rather than loud: a missing --user-data-dir
+  # opens a second browser on an empty profile, which reads to a human as their
+  # logins and extensions having been wiped. Skipped under --check with the
+  # probe it reads.
+  ansible.builtin.assert:
+    that:
+      - >-
+        ('--user-data-dir=' ~ vnc_desktop_chrome_profile_dir)
+        in vnc_desktop_wrapper_default_profile.stdout_lines
+    fail_msg: >-
+      the wrapper did not inject --user-data-dir={{ vnc_desktop_chrome_profile_dir }};
+      it emitted {{ vnc_desktop_wrapper_default_profile.stdout_lines | default([]) }}
+    success_msg: the wrapper injects the VNC profile
+  when: not ansible_check_mode
+
+- name: Self-test the Chrome wrapper with a caller-supplied profile
+  # This is the case that protects the start script: it passes its own
+  # --user-data-dir, and a second, conflicting one makes Chrome refuse to start.
+  # Post-install verification, skipped under --check for the reason above.
+  ansible.builtin.command:
+    argv:
+      - "{{ vnc_desktop_bin_dir }}/google-chrome-stable"
+      - --user-data-dir=/tmp/other
+      - https://example.com
+  environment:
+    GOOGLE_CHROME_WRAPPER_DRYRUN: "1"
+    HOME: "{{ vnc_desktop_home }}"
+  become: false
+  changed_when: false
+  register: vnc_desktop_wrapper_explicit_profile
+  when: not ansible_check_mode
+
+- name: Assert the wrapper left an explicit profile alone
+  ansible.builtin.assert:
+    that:
+      - >-
+        vnc_desktop_wrapper_explicit_profile.stdout_lines
+        | select('match', '--user-data-dir') | list | length == 1
+      - "'--user-data-dir=/tmp/other' in vnc_desktop_wrapper_explicit_profile.stdout_lines"
+    fail_msg: >-
+      the wrapper doubled or overrode an explicit profile; it emitted
+      {{ vnc_desktop_wrapper_explicit_profile.stdout_lines | default([]) }}
+    success_msg: the wrapper passes an explicit profile through untouched
+  when: not ansible_check_mode
+
+- name: Create the local applications directory
+  ansible.builtin.file:
+    path: "{{ vnc_desktop_applications_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the Chrome desktop-entry overrides
+  # /usr/local/share precedes /usr/share in XDG_DATA_DIRS, so these win over the
+  # vendor entries for both the XFCE menu and xdg-open. Chrome ships two entries
+  # and only the reverse-DNS one is reachable through the XDG desktop portal, so
+  # overriding just one would leave the portal path on the vanilla profile.
+  #
+  # These are templates rather than verbatim copies for one reason: the shell
+  # installer VERIFIED the entry's Exec= line against a literal wrapper path.
+  # Rendering the entry and the wrapper's destination from the same variable
+  # removes the drift that check existed to catch, so the check goes away with it.
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ vnc_desktop_applications_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: desktop-file-validate %s
+  become: true
+  loop:
+    - google-chrome.desktop
+    - com.google.Chrome.desktop
+  notify: Update the desktop database
+
+- name: Look for the vnc-desktop unit file
+  # Read BEFORE the template below writes it, so the result describes the host as
+  # found rather than as this role would leave it. Under --check that template
+  # only reports a would-be write, and ansible.builtin.systemd_service cannot
+  # evaluate a unit that is not on disk: it fails with "Could not find the
+  # requested service", which is the role inventing a fault and blaming the host.
+  # The enable/start task and the restart handler are gated on this, so a dry run
+  # against a host WITHOUT the unit skips them and still completes, while a dry
+  # run against a host that HAS it reports genuine enable/start drift.
+  ansible.builtin.stat:
+    path: "{{ vnc_desktop_unit_path }}"
+  become: true
+  register: vnc_desktop_unit_stat
+
+- name: Install the vnc-desktop unit
+  ansible.builtin.template:
+    src: vnc-desktop.service.j2
+    dest: "{{ vnc_desktop_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart vnc-desktop
+
+- name: Enable vnc-desktop and start it if it is not running
+  # `state: started` starts a stopped service and leaves a running one strictly
+  # alone. Picking up a CHANGED unit or start script is the restart handler's
+  # job, and that handler is off by default — so an apply against the live host
+  # never interrupts the session the maintainer is working in.
+  ansible.builtin.systemd_service:
+    name: vnc-desktop.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or vnc_desktop_unit_stat.stat.exists
+
+- name: Verify the VNC port is listening on the tailnet address
+  # Replaces the shell's `ss -tlnp | grep :5900`. This is a real post-condition
+  # rather than a redundant one: systemd reports the unit active as soon as
+  # x11vnc is exec'd, which happens before it has bound anything.
+  #
+  # POST-INSTALL VERIFICATION, so it is skipped under --check on purpose: a dry
+  # run has started nothing, and a port that is not listening there is the
+  # expected result rather than a finding.
+  ansible.builtin.wait_for:
+    host: "{{ vnc_desktop_tailscale_ip }}"
+    port: "{{ vnc_desktop_vnc_port }}"
+    timeout: 30
+  when: not ansible_check_mode
+
+- name: Look for the session environment file
+  ansible.builtin.stat:
+    path: /run/vnc-desktop/session.env
+  become: true
+  register: vnc_desktop_session_env_stat
+
+- name: Assert the session environment file was written
+  # {{ vnc_desktop_afteraccept_unit }}.service reads this file with
+  # EnvironmentFile=, so its absence is not cosmetic: the peer unit then has no
+  # DISPLAY and no session bus. The start script writes it immediately after
+  # dbus-launch, so a missing file localises the failure to the session setup.
+  ansible.builtin.assert:
+    that: vnc_desktop_session_env_stat.stat.exists
+    fail_msg: >-
+      /run/vnc-desktop/session.env is missing — vnc-desktop-start.sh did not get
+      past dbus-launch. Check `journalctl -u vnc-desktop` on {{ inventory_hostname }}.
+    success_msg: the session environment file is present
+  when: not ansible_check_mode

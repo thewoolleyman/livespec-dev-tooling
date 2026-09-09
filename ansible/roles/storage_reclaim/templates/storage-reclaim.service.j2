@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Reclaim build-artifact and orphaned-worktree storage
+Documentation=https://github.com/thewoolleyman/fabro-hosts
+# Deliberately NOT ordered after fabro-server: this reclaims regenerable build
+# artifacts belonging to interactive sessions, and must not gate the factory.
+
+[Service]
+Type=oneshot
+User={{ storage_reclaim_service_user }}
+Group={{ storage_reclaim_service_group }}
+Environment=HOME={{ storage_reclaim_home }}
+# The reclaimer runs as the OWNING USER, never as root. Everything it may
+# delete lives under that user's worktree root, and running unprivileged means
+# a configuration mistake cannot reach a root-owned path at all.
+ExecStart={{ storage_reclaim_script_dest }} {{ storage_reclaim_env_dest }} --apply
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=multi-user.target

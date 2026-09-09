@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# btop-loop — run btop in the current terminal and restart it whenever it exits
+# abnormally (for example the SIGABRT crashes seen under a CI fan-out with
+# thousands of processes). Quitting btop normally (q or Esc) exits the loop;
+# Ctrl-C also stops it. Any arguments are passed straight to btop.
+#
+# After a crash the terminal is often left in btop's alternate screen with raw
+# input, so the loop restores it before restarting.
+set -u
+
+restore_terminal() {
+  tput rmcup 2>/dev/null || true
+  tput cnorm 2>/dev/null || true
+  stty sane 2>/dev/null || true
+}
+
+trap 'restore_terminal; exit 0' INT TERM
+
+while true; do
+  btop "$@"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    exit 0
+  fi
+  restore_terminal
+  printf '\n[btop-loop] btop exited with status %s at %s; restarting in 1 s (Ctrl-C to stop)\n' \
+    "$rc" "$(date -u +%FT%TZ)" >&2
+  sleep 1
+done

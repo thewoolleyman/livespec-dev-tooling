@@ -1,0 +1,11 @@
+---
+keyring_quota_sysctl_dir: /etc/sysctl.d
+keyring_quota_conf_name: 99-keyring-quota.conf
+keyring_quota_sysctl_bin: /usr/sbin/sysctl
+
+# The ceilings this role installs and then proves took effect. They duplicate
+# the values in files/99-keyring-quota.conf, which is where the measurements
+# behind them are recorded — so the first task asserts the two agree rather
+# than letting them drift into disagreement unnoticed.
+keyring_quota_maxbytes: 131072
+keyring_quota_maxkeys: 1000
