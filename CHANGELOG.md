@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.72.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.71.0...v1.72.0) (2026-09-09)
+
+
+### Features
+
+* **checks:** block committing or pushing live plan handoff files ([f946aad](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f946aad612643d1679e4180f097265713460beac))
+
 ## [1.71.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.70.0...v1.71.0) (2026-09-09)
 
 
