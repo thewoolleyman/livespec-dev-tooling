@@ -82,7 +82,7 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Consumer compat block \u2014 pin-and-bump policy",
+    "heading": "## Consumer compat block — pin-and-bump policy",
     "test": "TODO",
     "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (compat-block schema + bump-pin policy relocated from livespec core at v103/v104). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-xx57"
@@ -100,7 +100,7 @@
     "spec_file": "contracts.md",
     "heading": "## Semver discipline",
     "test": "TODO",
-    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md \u00a7\"Shared code sync \u2014 livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
+    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md §\"Shared code sync — livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
@@ -560,5 +560,69 @@
     "test": "TODO",
     "reason": "Seeded by livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn) at revise time 2026-09-06. A scenario describes end-to-end behavior, so its test MUST resolve to the integration tier or above: the mapped test is the integration-tier rehearsal of the rebuild procedure against a node profile; replace TODO with that test id when it lands.",
     "work_item": "livespec-dev-tooling-xx57"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.1 (ratchet) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.1"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage TODO row already in the debt register passes the armed tier for an unrelated commit",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.1 (ratchet) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.1"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: resolving a heading-coverage TODO to a real test requires removing its debt-register entry",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.1 (ratchet) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.1"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage debt register that grows beyond its baseline fails",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.1 (ratchet) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.1"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage TODO reason asserting non-testability is rejected while one acknowledging an owed test passes",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.2 (reason guard) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage TODO older than the age bound fails the release tier but passes the per-commit tier",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.3 (age bound) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: with an empty heading-coverage debt register any TODO row fails the per-commit tier",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.4 (retirement at zero) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the heading-coverage debt register regenerates from the live registry and matches byte-for-byte",
+    "test": "TODO",
+    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.1 (ratchet) through this repo's factory. TODO acknowledges the owed integration-tier test.",
+    "work_item": "livespec-dev-tooling-0bse.1"
   }
 ]
