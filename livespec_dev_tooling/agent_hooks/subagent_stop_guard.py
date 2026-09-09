@@ -53,8 +53,10 @@ Marker derivation (all DERIVED — no sentinel files):
    c. only when the branch is fully pushed AND carries work ahead of
       `origin/master` (the fleet-wide canonical branch): an open PR
       without auto-merge armed, or no PR at all, via `gh pr view
-      --json state,autoMergeRequest` (fail-open on any `gh` failure,
-      with a hard subprocess timeout).
+      <pushed-branch> --json state,autoMergeRequest` (fail-open on any
+      `gh` failure, with a hard subprocess timeout). The branch is
+      resolved from the LOCAL UPSTREAM CONFIG, never from the local
+      branch name — see `_pushed_branch_name`.
 
 Anti-wedge: blocks are capped at `_MAX_BLOCKS_PER_SESSION` per
 session id (counter file under `$LIVESPEC_STOP_GUARD_STATE_DIR`,
@@ -99,6 +101,7 @@ __all__: list[str] = []
 
 
 _CANONICAL_REMOTE_REF = "origin/master"
+_REFS_HEADS_PREFIX = "refs/heads/"
 _MAX_WORKTREES = 8
 _MAX_BLOCKS_PER_SESSION = 3
 _GH_TIMEOUT_SECONDS = 8
@@ -192,16 +195,61 @@ def _pr_payload_marker(*, stdout: str) -> str | None:
     return None
 
 
+def _pushed_branch_name(*, worktree: Path) -> str | None:
+    """The branch name this worktree's commits were actually PUSHED under; None if unknown.
+
+    ⛔ THE LOCAL BRANCH NAME IS NOT THE PUSH NAME, and reading it as one
+    is the `livespec-dev-tooling-i655` defect rather than a nicety. A
+    dispatch routinely works on a local branch (`ci-matrix-rowxc6`) whose
+    commits reach the forge under a different ref
+    (`feat/livespec-dev-tooling-rowxc6`); resolving the PR by the local
+    name finds nothing, and the guard reports a FULLY MERGED branch as
+    "pushed but has NO PR". That marker's remedy — `gh pr create` — is
+    then structurally impossible: the forge refuses with "No commits
+    between master and <branch>" because every patch is already on
+    master. The marker cannot be discharged by following its own
+    instructions, so the sub-agent is hard-blocked at turn end and
+    escapes only via the anti-wedge cap.
+
+    The upstream is read from `branch.<name>.merge` rather than from
+    `@{upstream}`: that config key is LOCAL, so it survives the
+    remote-tracking ref being pruned after a merge deleted the remote
+    branch — exactly the state a rebase-merged leftover is in, and the
+    state in which `@{upstream}` itself stops resolving.
+
+    A branch pushed without an upstream falls back to its local name —
+    the old behavior, still correct when the two names agree. A detached
+    HEAD or a broken `git` yields None, and the caller fails open.
+    """
+    head = _run_git(worktree=worktree, args=["rev-parse", "--abbrev-ref", "HEAD"])
+    local = head.stdout.strip() if head.returncode == 0 else ""
+    if not local or local == "HEAD":
+        return None
+    merge = _run_git(worktree=worktree, args=["config", "--get", f"branch.{local}.merge"])
+    upstream_ref = merge.stdout.strip() if merge.returncode == 0 else ""
+    if upstream_ref.startswith(_REFS_HEADS_PREFIX):
+        return upstream_ref.removeprefix(_REFS_HEADS_PREFIX)
+    return local
+
+
 def _unarmed_pr_marker(*, worktree: Path) -> str | None:
     """Marker text when the worktree's pushed branch lacks an armed PR; None otherwise.
 
-    Fail-open contract: any `gh` failure other than the explicit
-    "no pull requests found" answer (missing binary, network error,
-    auth failure, timeout, malformed payload) yields None.
+    The branch is named EXPLICITLY to `gh pr view` — see
+    `_pushed_branch_name` for why letting `gh` default to the checkout's
+    current branch misreports a rename as a missing pull request.
+
+    Fail-open contract: an unresolvable push name, and any `gh` failure
+    other than the explicit "no pull requests found" answer (missing
+    binary, network error, auth failure, timeout, malformed payload),
+    yield None.
     """
+    branch = _pushed_branch_name(worktree=worktree)
+    if branch is None:
+        return None
     try:
         result = subprocess.run(
-            ["gh", "pr", "view", "--json", "state,autoMergeRequest"],
+            ["gh", "pr", "view", branch, "--json", "state,autoMergeRequest"],
             cwd=str(worktree),
             capture_output=True,
             text=True,
