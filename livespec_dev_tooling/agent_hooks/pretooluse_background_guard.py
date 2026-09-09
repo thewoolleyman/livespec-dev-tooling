@@ -54,7 +54,11 @@ resolve, and naming the one-line install command first where they do
 not (livespec-dev-tooling-h7qp). That concern, its filesystem probe
 and its clause text live in the sibling `_deny_hint` module; the
 rationale for the venue-awareness and for declining self-install is
-recorded there.
+recorded there. That composition rides the `IOResult` railway
+(livespec-dev-tooling-qndn.10) because the probe can fail to answer,
+and `_hint_text` below is where this module consumes it — a venue that
+could not be read still DENIES, since the only other verdict this hook
+has is the fail-open ALLOW.
 
 Wire-up (consuming repo's committed `.claude/settings.json`): a
 `PreToolUse` hook entry with matcher `Bash` whose command is
@@ -98,6 +102,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.agent_hooks._deny_hint import deny_hint  # noqa: E402
 
@@ -311,6 +317,24 @@ def _load_hook_input(*, raw: str) -> dict[str, object] | None:
     return cast("dict[str, object]", payload)
 
 
+def _hint_text(*, cwd: Path) -> str:
+    """Consume the deny-hint railway — a venue that could not be probed still DENIES.
+
+    `deny_hint` fails when a path its prescription rests on is there and
+    refuses to be read, and that failure must NOT be allowed to reach
+    `main`'s fail-open boundary: the only verdict available there is
+    ALLOW, which would let through the bare backgrounded gate this hook
+    exists to deny. So the failure is consumed HERE. It renders its own
+    hint, which is why this consumption composes no clause text of its
+    own — the denied agent gets a complete remedy on either track, and
+    only the CLAIM the hint makes about the venue differs.
+    """
+    composed = deny_hint(cwd=cwd)
+    if isinstance(composed, IOFailure):
+        return unsafe_perform_io(composed.failure()).hint
+    return unsafe_perform_io(composed.unwrap())
+
+
 def _guard(*, raw_input: str, log: structlog.stdlib.BoundLogger) -> int:
     hook_input = _load_hook_input(raw=raw_input)
     if hook_input is None:
@@ -330,7 +354,7 @@ def _guard(*, raw_input: str, log: structlog.stdlib.BoundLogger) -> int:
         check_id="pretooluse-background-guard-deny",
         gate=gate,
         command=tool_input.get("command"),
-        hint=deny_hint(cwd=Path.cwd()),
+        hint=_hint_text(cwd=Path.cwd()),
     )
     return 2
 

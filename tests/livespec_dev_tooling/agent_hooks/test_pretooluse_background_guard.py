@@ -89,6 +89,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
+from returns.io import IOFailure
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.agent_hooks._deny_hint import (
     _INSTALL_COMMAND,
@@ -467,6 +469,24 @@ def _install_pack(*, root: Path) -> None:
     _ = (pack_dir / "gate-run.sh").write_text(CANONICAL_GATE_RUN_BODY, encoding="utf-8")
 
 
+def _body(*, path: Path) -> str:
+    """The text of a path the caller has ALREADY confirmed is a readable file.
+
+    `_read_text` answers on the `IOResult` railway
+    (livespec-dev-tooling-qndn.10); every call site here has just passed
+    `is_file()`, so the success track is the only one reachable and this
+    helper keeps the unwrap out of the comprehensions below.
+    """
+    return unsafe_perform_io(_read_text(path=path).unwrap())
+
+
+def _resolves(*, root: Path | None) -> bool:
+    """`_gate_recipes_resolve`'s answer, asserting it ANSWERED at all."""
+    resolved = _gate_recipes_resolve(root=root)
+    assert not isinstance(resolved, IOFailure), f"venue probe did not answer: {resolved}"
+    return unsafe_perform_io(resolved.unwrap())
+
+
 def _resolvable_recipes(*, root: Path) -> set[str]:
     """Every recipe name `just` would resolve at `root`, imports followed.
 
@@ -476,13 +496,13 @@ def _resolvable_recipes(*, root: Path) -> set[str]:
     which is the silent no-op this work-item is about.
     """
     bodies = [
-        _read_text(path=root / name)
+        _body(path=root / name)
         for name in ("justfile", "Justfile", ".justfile")
         if (root / name).is_file()
     ]
     for body in list(bodies):
         bodies.extend(
-            _read_text(path=root / target)
+            _body(path=root / target)
             for target in _IMPORT_LINE.findall(body)
             if (root / target).is_file()
         )
@@ -644,27 +664,28 @@ def test_installed_pack_worktree_prescribes_the_runner_directly(
 
 def test_gate_recipes_resolve_needs_fragment_import_and_runner(tmp_path: Path) -> None:
     """Each of the three conditions is load-bearing, and rootless is False."""
-    assert _gate_recipes_resolve(root=None) is False
+    assert _resolves(root=None) is False
 
     root = tmp_path / "repo"
     root.mkdir()
     _ = (root / "justfile").write_text(_CONSUMER_JUSTFILE, encoding="utf-8")
     # Fragment absent: the `import?` no-ops and nothing declares the recipes.
-    assert _gate_recipes_resolve(root=root) is False
+    # ABSENCE is an ANSWER — it rides the success track, not the failure one.
+    assert _resolves(root=root) is False
 
     _install_pack(root=root)
-    assert _gate_recipes_resolve(root=root) is True
+    assert _resolves(root=root) is True
 
     # Runner body missing: `just gate-start` resolves but cannot run.
     (root / "dev-tooling" / "gate-run.sh").unlink()
-    assert _gate_recipes_resolve(root=root) is False
+    assert _resolves(root=root) is False
 
     # Fragment installed but never imported by the root justfile — the
     # 6-of-7-repos presentation this item absorbed.
     _install_pack(root=root)
     _ = (root / "justfile").write_text("check:\n    @echo check\n", encoding="utf-8")
-    assert _imports_pack_fragment(root=root) is False
-    assert _gate_recipes_resolve(root=root) is False
+    assert unsafe_perform_io(_imports_pack_fragment(root=root).unwrap()) is False
+    assert _resolves(root=root) is False
 
 
 def test_repo_root_finds_worktree_git_file_and_gives_up_outside_a_repo(tmp_path: Path) -> None:
@@ -678,12 +699,56 @@ def test_repo_root_finds_worktree_git_file_and_gives_up_outside_a_repo(tmp_path:
     outside = tmp_path / "outside"
     outside.mkdir()
     assert _repo_root(start=outside) is None
-    assert deny_hint(cwd=outside).find(_INSTALL_COMMAND) > 0
+    assert unsafe_perform_io(deny_hint(cwd=outside).unwrap()).find(_INSTALL_COMMAND) > 0
 
 
-def test_read_text_degrades_an_unreadable_path_to_empty(tmp_path: Path) -> None:
-    """A probe must never raise into the hook's fail-open boundary."""
-    assert _read_text(path=tmp_path) == ""
+def test_read_text_tells_an_absent_path_from_an_unreadable_one(tmp_path: Path) -> None:
+    """A probe must never raise into the hook's fail-open boundary — and must not lie.
+
+    Both non-answers are VALUES, because raising would reach `main`'s
+    fail-open catch and ALLOW the bare backgrounded gate. They are no
+    longer the same value: an absent path is the answer the probe is
+    looking for and reads as the empty body, while a path that is there
+    and unreadable establishes nothing and takes the failure track
+    (livespec-dev-tooling-qndn.10).
+    """
+    assert unsafe_perform_io(_read_text(path=tmp_path / "absent").unwrap()) == ""
+
+    unreadable = _read_text(path=tmp_path)
+    assert isinstance(unreadable, IOFailure)
+    assert unsafe_perform_io(unreadable.failure()).path == str(tmp_path)
+
+
+def test_an_unreadable_venue_still_denies_and_names_the_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The hook's OTHER verdict is fail-open ALLOW, so the failure track stops here.
+
+    A venue probe that cannot answer must not become an allow: the gate
+    is still being bare-backgrounded, and this hook exists to deny that.
+    The deny therefore stands, and the hint says what it could not read
+    instead of asserting a prescription arm nothing established.
+    """
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+    _install_pack(root=worktree)
+    # A pack fragment that is a DIRECTORY: present, and refusing to yield
+    # text. The root justfile stays readable, so the recipes it really does
+    # declare are still resolvable and the actionability assertion below is
+    # judging the hint rather than an unreadable venue.
+    fragment = worktree / "dev-tooling" / "worktree.just"
+    fragment.unlink()
+    fragment.mkdir()
+
+    hint = _deny_hint(monkeypatch=monkeypatch, cwd=worktree, capsys=capsys)
+
+    assert str(fragment) in hint
+    assert "could NOT be established" in hint
+    _assert_hint_is_actionable(hint=hint, root=worktree)
+    assert _INSTALL_COMMAND in hint
 
 
 # ---------------------------------------------------------------------------
