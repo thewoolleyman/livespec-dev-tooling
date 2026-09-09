@@ -27,12 +27,52 @@ ruling of 2026-07-26, which holds that a daemon does not get a
 per-iteration broad catch ("let it crash, systemd restarts";
 exactly one broad catch per program, in `main()`).
 
+Each accounting unit is policed by its OWN position rule, and
+they are not interchangeable. A BOUNDARY catch is positioned by
+declaration: a direct child of `main()` in a declared entry
+artifact. A FOREIGN-CODE catch is positioned by DERIVATION: per
+spec section "ROP composition" it sits outside the `main()`
+boundary and must wrap ONLY the foreign call, so its guarded
+block must be exactly one call statement
+(`wraps_only_the_foreign_call`). The two are kept apart on
+purpose — granting foreign-code surfaces the `main()`-boundary
+exemption instead would be a position exemption inferred rather
+than declared, which the same 2026-07-26 ruling rejected.
+
+That derived rule was mechanized by
+livespec-dev-tooling-u4xw, carried forward from `x6t6` leg (b)
+which the ruling did not dissolve. Before it, a well-formed
+foreign-code marker constrained nothing about what its catch
+guarded, so one wrapping a block of first-party code with a
+foreign call somewhere inside it passed — re-labelling every
+bug in that block as "the extension crashed". The live
+population at mechanization time was ZERO marker sites across
+all ten fleet repos, so the rule was armed against no existing
+site; it exists so the FIRST real surface is judged.
+
 Neither mechanism covers the whole rule on its own: the
-pairing of each catch with its correct marker flavor, and
-per-flavor contract discharge, both remain review-enforced.
-The loop-iteration POSITION rule is no longer among the gaps —
-it ceased to exist with the flavor rather than being
-mechanized.
+pairing of each catch with its correct marker flavor, and the
+REMAINING per-flavor contract discharge (capturing the
+traceback into a typed bug-class error, surfacing it loudly in
+the findings), both remain review-enforced. The loop-iteration
+POSITION rule is no longer among the gaps — it ceased to exist
+with the flavor rather than being mechanized.
+
+The SPEC's enforcement narration is a CROSS-REPO deliverable
+and is NOT landed by that mechanization. The enforcement-split
+paragraphs in livespec's
+`SPECIFICATION/non-functional-requirements.md` (sections
+"Supervisor discipline" and "ROP composition") still file the
+wrap-only clause under review-enforced contract discharge, and
+a factory branch on this repo cannot edit that one. The exact
+amendment is carried for maintainer-side landing in
+livespec-dev-tooling's `docs/foreign-code-catch-position.md`,
+alongside the zero-population measurement and the limit of the
+derivation (the marker names the foreign surface in prose and
+nothing binds that name to a call, so `wrap(_extension())`
+reads as one call statement). Until it lands the two sides
+disagree — in the direction of the spec UNDERSTATING what is
+enforced, which is the safe direction but not a resting place.
 
 The universe is the GIT-DERIVED first-party set
 (`resolve_check_universe`), so a new module is covered the
@@ -77,10 +117,13 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
 from livespec_dev_tooling.checks._no_except_outside_io_markers import (  # noqa: E402
     BOUNDARY_FLAVOR,
+    FOREIGN_POSITION_REASON,
+    SEPARATE_FLAVOR,
     cardinality_offenses,
     comment_lines,
     sanctioned_marker_flavor,
     statement_colons,
+    wraps_only_the_foreign_call,
 )
 from livespec_dev_tooling.checks._no_except_outside_io_ruff import (  # noqa: E402
     RuffProbeUnavailable,
@@ -99,6 +142,28 @@ _UNMARKED_REASON = (
     "`# noqa: BLE001 — …` marker is banned"
 )
 _MISPLACED_REASON = "broad catch outside io/ and the sole supervisor boundary is banned"
+
+
+def _marked_catch_offense(
+    *, flavor: str | None, at_boundary: bool, guarded: list[ast.stmt]
+) -> str | None:
+    """Reason this broad catch offends, or `None` when it is legal.
+
+    The foreign-code flavor is judged by its OWN clause rather than by the
+    `main()`-boundary gate. Per spec section "ROP composition" it is accounted
+    per EXTENSION INVOCATION SURFACE and "sits OUTSIDE a `main()` boundary",
+    so routing it through `boundary_lines` would reject every conforming site
+    by construction — the flavor could legalize nothing at all. Its position
+    is instead DERIVED from the call it isolates. That derivation is what
+    keeps this from being the position exemption the 2026-07-26 ruling
+    rejected: nothing here widens the set of `main()` direct-children, and no
+    tree is granted a wholesale exemption.
+    """
+    if flavor == SEPARATE_FLAVOR:
+        return None if wraps_only_the_foreign_call(guarded=guarded) else FOREIGN_POSITION_REASON
+    if flavor == BOUNDARY_FLAVOR and at_boundary:
+        return None
+    return _UNMARKED_REASON if at_boundary else _MISPLACED_REASON
 
 
 def _is_under_any(*, rel_path: Path, trees: tuple[Path, ...]) -> bool:
@@ -218,16 +283,14 @@ def _find_offending_suppress_lines(
                 suppress_names=suppress_names,
             ):
                 continue
-            flavor = (
-                sanctioned_marker_flavor(node=node, comments=comments, colons=colons)
-                if at_boundary
-                else None
+            flavor = sanctioned_marker_flavor(node=node, comments=comments, colons=colons)
+            offense = _marked_catch_offense(
+                flavor=flavor, at_boundary=at_boundary, guarded=node.body
             )
-            if flavor is not None:
-                if flavor == BOUNDARY_FLAVOR:
-                    exempted_boundary_lines.append(node.lineno)
-                continue
-            out.append((node.lineno, _UNMARKED_REASON if at_boundary else _MISPLACED_REASON))
+            if offense is not None:
+                out.append((node.lineno, offense))
+            elif flavor == BOUNDARY_FLAVOR:
+                exempted_boundary_lines.append(node.lineno)
     return out, exempted_boundary_lines
 
 
@@ -247,16 +310,14 @@ def _find_offending_handlers(*, source: str, position_exempt: bool) -> list[tupl
         for handler in try_node.handlers:
             if not _is_broad(handler=handler, broad_names=broad_names):
                 continue
-            flavor = (
-                sanctioned_marker_flavor(node=handler, comments=comments, colons=colons)
-                if at_boundary
-                else None
+            flavor = sanctioned_marker_flavor(node=handler, comments=comments, colons=colons)
+            offense = _marked_catch_offense(
+                flavor=flavor, at_boundary=at_boundary, guarded=try_node.body
             )
-            if flavor is not None:
-                if flavor == BOUNDARY_FLAVOR:
-                    exempted_boundary_lines.append(handler.lineno)
-                continue
-            out.append((handler.lineno, _UNMARKED_REASON if at_boundary else _MISPLACED_REASON))
+            if offense is not None:
+                out.append((handler.lineno, offense))
+            elif flavor == BOUNDARY_FLAVOR:
+                exempted_boundary_lines.append(handler.lineno)
     suppress_offenses, suppress_boundary_lines = _find_offending_suppress_lines(
         tree=tree,
         comments=comments,

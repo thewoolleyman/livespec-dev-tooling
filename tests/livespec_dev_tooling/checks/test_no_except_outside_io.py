@@ -680,7 +680,7 @@ def test_no_except_outside_io_foreign_code_suppress_does_not_consume_boundary_sl
             "\n"
             "def main() -> int:\n"
             f"    with contextlib.suppress(Exception):  {_FOREIGN_CODE_MARKER}\n"
-            "        _ = 1 / 0\n"
+            "        _ = _extension()\n"
             "    try:\n"
             "        return 0\n"
             f"    except Exception:  {_SUPERVISOR_MARKER}\n"
@@ -852,6 +852,11 @@ def test_no_except_outside_io_accepts_filled_foreign_code_marker(
     `<ErrorType>` are filled per site and the wording ends at the
     literal `, reported`. A filled instance at a sanctioned position
     is conforming.
+
+    The guarded block is a lone call because the foreign-code flavor
+    carries its own POSITION rule (it must wrap ONLY the foreign call);
+    this test isolates the WORDING question, so its fixture satisfies
+    that rule rather than colliding with it.
     """
     _write_module(
         tmp_path=tmp_path,
@@ -859,7 +864,7 @@ def test_no_except_outside_io_accepts_filled_foreign_code_marker(
         body=(
             "def main() -> int:\n"
             "    try:\n"
-            "        return 0\n"
+            "        return _extension()\n"
             f"    except Exception:  {_FOREIGN_CODE_MARKER}\n"
             "        return 1\n"
         ),
@@ -919,7 +924,7 @@ def test_no_except_outside_io_accepts_foreign_code_marker_with_dotted_error_type
         body=(
             "def main() -> int:\n"
             "    try:\n"
-            "        return 0\n"
+            "        return _extension()\n"
             "    except Exception:  # noqa: BLE001 — foreign-code isolation:"
             " template render crash captured as json.JSONDecodeError, reported\n"
             "        return 1\n"
@@ -1026,6 +1031,151 @@ def test_no_except_outside_io_rejects_foreign_code_marker_with_empty_segments(
 
     assert result.returncode != 0, (
         f"no_except_outside_io should reject a foreign-code marker with empty segments; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_foreign_code_catch_wrapping_first_party_code(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A foreign-code catch guarding MORE than the foreign call fails.
+
+    Spec §"ROP composition" requires the foreign-code catch to wrap
+    ONLY the foreign call. A catch spanning a block of first-party code
+    with the foreign call somewhere inside it re-labels every bug in
+    that block as "the extension crashed" — the misattribution the
+    clause exists to prevent — so a multi-statement guarded block is an
+    offense even at a sanctioned `main()` boundary, where nothing
+    previously constrained it.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/commands/seed.py",
+        body=(
+            "def main() -> int:\n"
+            "    try:\n"
+            "        outcome = _extension()\n"
+            "        outcome += 1\n"
+            f"    except Exception:  {_FOREIGN_CODE_MARKER}\n"
+            "        outcome = 1\n"
+            "    return outcome\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a foreign-code catch wrapping first-party code beyond the foreign call must be "
+        f"flagged; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_accepts_foreign_code_catch_around_a_lone_call(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A foreign-code catch wrapping exactly one call passes OUTSIDE `main()`.
+
+    The foreign-code flavor is accounted per EXTENSION INVOCATION
+    SURFACE, not per process entry artifact, so it is not confined to a
+    declared supervisor `main()`; spec §"ROP composition" says outright
+    that it sits outside the `main()` boundary and is governed by its
+    own clause. Its position is therefore DERIVED from the call it
+    isolates — never granted wholesale to a tree — and a pure-layer
+    module invoking a user-supplied extension is exactly that surface.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "from collections.abc import Callable\n"
+            "\n"
+            "\n"
+            "def run_extension(*, extension: Callable[[], int]) -> int:\n"
+            "    try:\n"
+            "        return extension()\n"
+            f"    except Exception:  {_FOREIGN_CODE_MARKER}\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a foreign-code catch wrapping only the foreign call must not be flagged; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_rejects_foreign_code_catch_around_a_block_outside_main(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Outside `main()` the foreign-code marker still buys only the lone call.
+
+    This is the control for the acceptance above: the pure layer is not
+    a permitted TREE, and the marker is not a portable licence for one.
+    A guarded block that is a `for` statement — a compound statement,
+    not a call — spans an unbounded amount of first-party code, so it
+    is flagged in exactly the position where the lone call passed.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "from collections.abc import Callable\n"
+            "\n"
+            "\n"
+            "def run_extensions(*, extensions: list[Callable[[], int]]) -> int:\n"
+            "    outcome = 0\n"
+            "    try:\n"
+            "        for extension in extensions:\n"
+            "            outcome += extension()\n"
+            f"    except Exception:  {_FOREIGN_CODE_MARKER}\n"
+            "        outcome = 1\n"
+            "    return outcome\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a foreign-code catch around a compound statement must be flagged outside main() "
+        f"too; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_no_except_outside_io_accepts_foreign_code_catch_around_an_awaited_call(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`await extension()` is the lone foreign call, not an extra statement.
+
+    An `await` wraps the call it suspends on; the guarded block is
+    still exactly one invocation of foreign code. Reading the `Await`
+    node as "not a call" would flag every async extension surface,
+    which would make the position rule reject the conforming form.
+    """
+    _write_module(
+        tmp_path=tmp_path,
+        rel=".claude-plugin/scripts/livespec/parse/foo.py",
+        body=(
+            "from collections.abc import Awaitable, Callable\n"
+            "\n"
+            "\n"
+            "async def run_extension(*, extension: Callable[[], Awaitable[int]]) -> int:\n"
+            "    try:\n"
+            "        return await extension()\n"
+            f"    except Exception:  {_FOREIGN_CODE_MARKER}\n"
+            "        return 1\n"
+        ),
+    )
+
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a foreign-code catch around an awaited lone call must not be flagged; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
