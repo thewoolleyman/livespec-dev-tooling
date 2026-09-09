@@ -20,6 +20,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (  # noqa: E402
@@ -75,14 +76,22 @@ def _marketplace_of(*, plugin: str) -> str:
 
 
 def _split_enablement(*, raw: object) -> tuple[tuple[str, ...], tuple[str, ...], str | None]:
-    """(enabled, explicitly-disabled, shape-finding) from an enabledPlugins value."""
+    """(enabled, explicitly-disabled, shape-finding) from an enabledPlugins value.
+
+    The legacy LIST spelling delegates to `enabled_plugin_names` and reads its
+    failure TRACK, so an unreadable list can no longer arrive here as an empty
+    name set. The mapping spelling is parsed here rather than delegated because
+    this caller needs the split the seam deliberately does not make: an
+    explicitly-`false` plugin is a DISABLE the vacuity findings below report on,
+    and the seam answers only with what is enabled.
+    """
     if raw is None:
         return ((), (), None)
     if isinstance(raw, list):
         names = enabled_plugin_names(raw=cast("list[object]", raw))
-        if names is None:
-            return ((), (), "enabledPlugins list entries must be strings")
-        return (names, (), None)
+        if isinstance(names, Failure):
+            return ((), (), names.failure().finding)
+        return (names.unwrap(), (), None)
     if not isinstance(raw, dict):
         return ((), (), "enabledPlugins must be a JSON object")
     on: list[str] = []
