@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.78.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.77.1...v1.78.0) (2026-09-09)
+
+
+### Features
+
+* **checks:** require repo-local aggregate slugs to be CI-covered or declared ([e0b961f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e0b961f4849d012c1cc69e663259d59e8517c3cf))
+* **config:** declare repo-local CI-skip slugs with their reasons ([454bb50](https://github.com/thewoolleyman/livespec-dev-tooling/commit/454bb5052c93bd697057e368e3d9d07e41df19a8))
+
 ## [1.77.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.77.0...v1.77.1) (2026-09-09)
 
 
