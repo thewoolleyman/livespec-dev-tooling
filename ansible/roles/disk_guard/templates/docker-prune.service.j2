@@ -1,0 +1,14 @@
+[Unit]
+Description=Reclaim Docker/containerd image + build storage
+Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Images in use by a RUNNING container are never removed by prune, so live
+# fabro dispatches are safe. until=72h keeps recent sandbox tags hot so a
+# dispatch does not pay a re-pull, while bounding accumulation.
+ExecStart=/usr/bin/docker container prune -f --filter until=24h
+ExecStart=/usr/bin/docker image prune -a -f --filter until=72h
+ExecStart=/usr/bin/docker builder prune -a -f

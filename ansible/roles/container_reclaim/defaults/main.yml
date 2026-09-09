@@ -1,0 +1,43 @@
+---
+# Defaults for container_reclaim. These are the FLEET defaults; anything that
+# genuinely varies per machine is supplied from the inventory's host_vars, and
+# this role's HOST_VARS.md carries the measured values for each host it targets.
+#
+# Two variables are deliberately NOT defaulted, because no value would be
+# correct on an unknown host and a wrong one is worse than a refusal:
+#
+#   container_reclaim_canonical_host   the machine's tailnet name
+#   container_reclaim_system_hostname  what `hostname -s` reports there
+#
+# Leaving them undefined makes the env-file template fail with an
+# undefined-variable error naming the missing variable, which is exactly the
+# refusal the shell installer produced with `: "${NAME:?...}"`.
+
+# The reclaimer runs as root, and unlike its storage_reclaim sibling it has no
+# choice: every action it takes is a call to the container daemon over a
+# root-owned socket, and the store roots it measures are unreadable otherwise
+# (measured on the vps at 1 MB as a normal user against 17163 MB as root).
+container_reclaim_service_user: root
+container_reclaim_service_group: root
+
+# CONTAINER HORIZON, in hours. Derived from the vps's measured writable-layer
+# population, which is bimodal with an empty middle between 12 hours and four
+# days: every horizon inside that flat region reclaims the same 20652 MB, so
+# the choice within it is free. 48 hours sits comfortably inside it and still
+# grants two days of post-mortem access to a failed run's container.
+container_reclaim_container_idle_hours: 48
+
+# IMAGE HORIZON, in hours. Derived from the asymmetry of the two mistakes:
+# pruning a wanted image costs one ~2.3 GB re-pull, while keeping unreferenced
+# tags cost roughly 14 GB per tag in the hp incident. Retention is about six
+# times more expensive than a re-pull, so this errs aggressive.
+container_reclaim_image_idle_hours: 72
+
+# systemd OnCalendar expression for the timer.
+container_reclaim_on_calendar: hourly
+
+container_reclaim_libexec_dir: /usr/local/libexec
+container_reclaim_unit_dir: /etc/systemd/system
+container_reclaim_script_dest: "{{ container_reclaim_libexec_dir }}/container-reclaim.sh"
+container_reclaim_env_dest: "{{ container_reclaim_libexec_dir }}/container-reclaim.env"
+container_reclaim_timer_name: container-reclaim.timer

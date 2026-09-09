@@ -1,0 +1,30 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Reclaim container-layer storage (exited containers, then images)
+Documentation=https://github.com/thewoolleyman/fabro-hosts
+# Requires the container runtime to be up: every action is a daemon call, and
+# with docker.service down the prunes are no-ops that would still report success.
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User={{ container_reclaim_service_user }}
+Group={{ container_reclaim_service_group }}
+# THIS ONE RUNS AS ROOT, AND THAT IS A REAL DIFFERENCE FROM storage-reclaim.
+# Its sibling deliberately runs unprivileged because everything it may delete is
+# a plain file under one user's worktree root, so dropping privilege removes the
+# blast radius entirely. This service cannot do that: every action it takes is a
+# call to the container daemon over a root-owned socket. The blast radius is
+# therefore bounded by the DAEMON's own semantics rather than by file
+# permissions -- which is exactly why the must-not-regress property (never
+# remove anything held by a RUNNING container) is asserted by a test rather than
+# assumed, and why this script never deletes a path itself.
+ExecStart={{ container_reclaim_script_dest }} {{ container_reclaim_env_dest }} --apply
+Nice=10
+IOSchedulingClass=idle
+# A prune on a large store is slow; hp held 64 containers and 49 GB of snapshots.
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=multi-user.target

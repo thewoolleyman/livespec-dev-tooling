@@ -1,0 +1,196 @@
+---
+# container_reclaim — the periodic reclamation of this host's CONTAINER layer.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces fabro-hosts
+# services/container-reclaim/install.sh together with its render-unit.sh, the
+# two *.in unit templates, and the per-host hosts/<host>.env files.
+#
+# WHAT IT RECLAIMS, AND WHY THAT IS NOT "PRUNE UNUSED IMAGES". The store is
+# dominated by the per-container writable layers of EXITED containers, and a
+# writable layer is released when its container is removed, not when an image is
+# pruned. So `container prune` is the primary lever and `image prune` the
+# secondary one. A mechanism scoped to images would run clean, exit 0, report
+# success, and leave 99% of the store untouched.
+#
+# TWO GUARDS FROM THE SHELL INSTALLER DO NOT APPEAR HERE AS TASKS.
+# `require_root` is `become: true` on every task below. `require_host_matches`,
+# which refused to apply one host's values on another, is inventory targeting:
+# each machine's values reach it through host_vars and cannot reach any other.
+# The reclaimer script ALSO re-checks that guard at run time against the
+# RECLAIM_SYSTEM_HOSTNAME this role writes into its env file, so a wrong value
+# still fails loudly -- at the dry-run verification below, before the timer is
+# ever armed. On the vps that value is the Contabo-assigned `vmi3006760`, not
+# the tailnet label `vps`; a hostname derived from the tailnet name would refuse
+# to run on the very host it targets.
+
+- name: Look up the account the reclaim service will run as
+  # fail_key is false so a missing account reaches the assert below, which can
+  # say what to create and where. getent's own failure names only the key.
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ container_reclaim_service_user }}"
+    fail_key: false
+  become: true
+
+- name: Require the reclaim service account to exist
+  # A precondition the role does NOT create: account provisioning belongs to
+  # whoever owns this machine's users, and inventing one here would hide a
+  # misconfigured host_vars entry behind a silently-created account.
+  ansible.builtin.assert:
+    that:
+      - container_reclaim_service_user in ansible_facts['getent_passwd']
+    fail_msg: >-
+      No account '{{ container_reclaim_service_user }}' on
+      {{ inventory_hostname }}. Create it, or correct
+      container_reclaim_service_user in this host's host_vars.
+    success_msg: "account {{ container_reclaim_service_user }} exists"
+
+- name: Ask the container daemon for its data-root
+  # This is the shell installer's require_inputs docker leg, kept whole: it
+  # proves the CLI exists, that the daemon answers, and that it reports a store
+  # root. With the daemon down every prune is a no-op that still exits 0 -- a
+  # guard reporting success while reclaiming nothing, which is the exact failure
+  # this service was written to prevent.
+  #
+  # The role deliberately does NOT install docker. A machine with no container
+  # layer has nothing for this service to reclaim, so the right outcome is a
+  # refusal naming the cause, not a container runtime appearing as a side effect
+  # of a reclamation role.
+  #
+  # check_mode: false because `command` is not check-mode-capable and is SKIPPED
+  # under --check, which leaves the register empty and fails the assert below
+  # with a message describing a daemon fault that does not exist. This probe
+  # reads and changes nothing, so running it during a dry run is correct: an
+  # operator asking whether the apply would work is asking exactly this
+  # question, and `--check --diff` is this migration's drift report.
+  ansible.builtin.command:
+    cmd: docker info --format '{% raw %}{{.DockerRootDir}}{% endraw %}'
+  become: true
+  register: container_reclaim_daemon_probe
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Require a reachable container daemon reporting a store root
+  ansible.builtin.assert:
+    that:
+      - container_reclaim_daemon_probe.rc == 0
+      - container_reclaim_daemon_probe.stdout | trim | length > 0
+    fail_msg: >-
+      Cannot reach the container daemon on {{ inventory_hostname }}, or it
+      reported no data-root. Install the docker CLI and start docker.service,
+      then re-run. Probe exit status
+      {{ container_reclaim_daemon_probe.rc }}:
+      {{ container_reclaim_daemon_probe.stderr | default('') | trim }}
+    success_msg: >-
+      daemon reports data-root
+      {{ container_reclaim_daemon_probe.stdout | default('') | trim }}
+
+- name: Create the reclaimer directory
+  # `--check` cannot see past this: with the directory absent, the copy and
+  # templates below are reported as would-be changes and fail only on a real
+  # apply. Owning it here is what makes a first apply on a fresh host succeed.
+  ansible.builtin.file:
+    path: "{{ container_reclaim_libexec_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the container reclaimer
+  # Verbatim from fabro-hosts services/container-reclaim/container-reclaim.sh.
+  # It stays shell because it is the RUNTIME tool the timer executes, long after
+  # any playbook has exited; the role owns its installation, not its behaviour.
+  # The shell installer checked that this file existed and was executable before
+  # copying it -- a repo-side check that no longer has anything to catch, since
+  # a missing files/ entry fails this task by name.
+  ansible.builtin.copy:
+    src: container-reclaim.sh
+    dest: "{{ container_reclaim_script_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the container reclaimer's host values
+  # The reclaimer reads its horizons from this file rather than from its unit,
+  # so a horizon change is a file change and not a daemon-reload.
+  ansible.builtin.template:
+    src: container-reclaim.env.j2
+    dest: "{{ container_reclaim_env_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the container-reclaim service unit
+  # The shell rendered this from container-reclaim.service.in by substituting
+  # @NAME@ placeholders, then refused to install if any placeholder survived
+  # (exit 4). Jinja raises an undefined-variable error for the same condition,
+  # so that guard is not reimplemented.
+  ansible.builtin.template:
+    src: container-reclaim.service.j2
+    dest: "{{ container_reclaim_unit_dir }}/container-reclaim.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the container-reclaim timer
+
+- name: Check whether the container-reclaim timer unit is already installed
+  # Read BEFORE the template below writes it, so it records the host's state
+  # rather than this run's intent. It exists only to keep the arm task from
+  # failing a dry run; see that task for why.
+  ansible.builtin.stat:
+    path: "{{ container_reclaim_unit_dir }}/{{ container_reclaim_timer_name }}"
+  register: container_reclaim_timer_unit_stat
+  become: true
+
+- name: Install the container-reclaim timer unit
+  ansible.builtin.template:
+    src: container-reclaim.timer.j2
+    dest: "{{ container_reclaim_unit_dir }}/{{ container_reclaim_timer_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the container-reclaim timer
+
+- name: Verify the installed reclaimer with a dry run
+  # KEPT from the shell installer, because the module cannot guarantee what it
+  # guarantees: that the reclaimer this host just received actually RUNS here,
+  # before a timer starts invoking it unattended with --apply. Without an
+  # argument the script is a dry run and mutates nothing, so changed_when is
+  # false.
+  #
+  # DELIBERATELY NO check_mode: false HERE, unlike the daemon probe above. Under
+  # --check nothing has been written to this host, so the script this task would
+  # execute does not exist yet; letting `command`'s default skip apply is the
+  # correct behaviour. The probe above is a question about the host, which a dry
+  # run can answer; this is a question about a file the dry run did not write.
+  ansible.builtin.command:
+    cmd: "{{ container_reclaim_script_dest }} {{ container_reclaim_env_dest }}"
+  become: true
+  changed_when: false
+
+- name: Arm the container-reclaim timer
+  # The TIMER is enabled, never the service: the service is a oneshot whose
+  # ExecStart carries --apply, so starting it would run a reclamation rather
+  # than install one.
+  #
+  # The `when` covers a dry run on a host that does not have the timer yet.
+  # systemd cannot evaluate a unit that only would-be exists, so the module
+  # fails with "Could not find the requested service" -- a dry run reporting a
+  # fault it created itself. Where the unit IS already installed the task runs
+  # under --check normally and reports real enable/start drift, which is the
+  # signal worth having. NOT check_mode: false, which would enable and start a
+  # live timer during a report that promised to change nothing.
+  ansible.builtin.systemd_service:
+    name: "{{ container_reclaim_timer_name }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or container_reclaim_timer_unit_stat.stat.exists

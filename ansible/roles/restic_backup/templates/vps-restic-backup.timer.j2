@@ -1,0 +1,15 @@
+# Managed by Ansible (role: restic_backup). Local edits are overwritten.
+[Unit]
+Description=Twice-daily VPS restic backup to S3
+
+[Timer]
+# Every ~12h. Independent of arq-vps-root-snapshot (restic backs up live, not
+# the snapshot); 03:30 just sits 30m after the daily 03:00 snapshot build so the
+# two do not contend for I/O.
+OnCalendar={{ restic_backup_on_calendar }}
+Persistent=true
+RandomizedDelaySec={{ restic_backup_randomized_delay_sec }}
+Unit=vps-restic-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+---
+- name: Reload sshd
+  # Reload, never restart: a restart drops every established session, and this
+  # is the daemon every remote session on the host depends on. sshd re-reads
+  # its configuration on SIGHUP and leaves existing connections alone.
+  #
+  # This handler is reached only after the lockout guard in tasks/main.yml has
+  # passed, so the running daemon is never asked to adopt a configuration that
+  # has not been proven to still accept public keys.
+  ansible.builtin.systemd_service:
+    name: "{{ ssh_hardening_service_name }}"
+    state: reloaded
+  become: true

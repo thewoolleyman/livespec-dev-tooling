@@ -1,0 +1,106 @@
+---
+# claude_desktop — the native Claude Desktop app in the VNC session.
+#
+# R4.S8 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info services/claude-desktop/install.sh.
+#
+# The role installs a package and one desktop-entry override. It starts nothing:
+# the app is launched by a human from the XFCE menu, and its first sign-in is an
+# interactive step through VNC that nothing here can perform.
+
+- name: Install the Claude Desktop prerequisites
+  # Ordered first because apt and the key fetch below both need working TLS
+  # roots. `curl` is NOT installed: the shell needed it to fetch the signing key
+  # and this role uses ansible.builtin.get_url, which goes through the target's
+  # Python rather than a subprocess, so the dependency disappears with the
+  # mechanism. The application package itself is installed after the repository
+  # is added, further down.
+  ansible.builtin.package:
+    name:
+      - ca-certificates
+      - desktop-file-utils
+    state: present
+  become: true
+
+- name: Create the keyring directory
+  ansible.builtin.file:
+    path: "{{ claude_desktop_keyring | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Fetch the Claude Desktop package signing key
+  # Stored ASCII-armored. apt has accepted armored keyrings through signed-by
+  # since 1.4, so unlike the 1Password path there is no dearmor step and no
+  # second binary copy of the same key to keep in step.
+  ansible.builtin.get_url:
+    url: "{{ claude_desktop_key_url }}"
+    dest: "{{ claude_desktop_keyring }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Add the Claude Desktop apt repository
+  # update_cache is stated rather than left to the default because it is what
+  # replaces the shell's separate `apt-get update`.
+  ansible.builtin.apt_repository:
+    repo: "{{ claude_desktop_repo }}"
+    filename: claude-desktop
+    state: present
+    update_cache: true
+  become: true
+
+- name: Install Claude Desktop and its keyring backend
+  ansible.builtin.package:
+    name: "{{ claude_desktop_packages }}"
+    state: present
+  become: true
+
+- name: Create the local applications directory
+  ansible.builtin.file:
+    path: "{{ claude_desktop_applications_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the Claude Desktop menu override
+  # /usr/local/share precedes /usr/share in XDG_DATA_DIRS, so this shadows the
+  # vendor entry. It exists for two reasons: it files the app under Office so it
+  # is findable in the XFCE menu, and it disables GPU acceleration, which Xvfb
+  # cannot provide — the vendor entry launches into a black window here.
+  #
+  # `validate` runs desktop-file-validate before the file is moved into place.
+  # The shell ran it afterwards and only if the tool happened to be installed;
+  # desktop-file-utils is now a declared package, so the check always happens.
+  ansible.builtin.copy:
+    src: claude-desktop.desktop
+    dest: "{{ claude_desktop_applications_dir }}/claude-desktop.desktop"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: desktop-file-validate %s
+  become: true
+  notify: Update the desktop database
+
+- name: Gather service state for the session check
+  ansible.builtin.service_facts:
+
+- name: Warn when the VNC desktop session is not running
+  # A warning, not an assert, and deliberately so: unlike onepassword_desktop
+  # this app reads nothing the session writes, so the install is complete and
+  # correct on a host with no desktop up. What is missing is only somewhere to
+  # display it. The shell drew the same distinction, and a meta/main.yml
+  # dependency could not have expressed it — a role dependency is unconditional.
+  ansible.builtin.debug:
+    msg: >-
+      {{ claude_desktop_session_unit }} is not running on {{ inventory_hostname }},
+      so there is no X session to launch Claude into. Claude Desktop is installed;
+      start that unit before reaching for XFCE menu > Office > Claude.
+  when: >-
+    claude_desktop_session_unit not in ansible_facts['services']
+    or ansible_facts['services'][claude_desktop_session_unit]['state'] != 'running'

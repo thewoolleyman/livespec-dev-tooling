@@ -1,0 +1,91 @@
+#!/bin/bash
+# Managed by the Ansible role vnc_desktop. Edit the role, not this file.
+set -euo pipefail
+
+DISPLAY_NUM={{ vnc_desktop_display }}
+TAILSCALE_IP={{ vnc_desktop_tailscale_ip }}
+SESSION_ENV_FILE=/run/vnc-desktop/session.env
+
+# Start Xvfb
+Xvfb "$DISPLAY_NUM" -screen 0 {{ vnc_desktop_screen_geometry }} -ac +extension GLX +render -noreset &
+
+# Wait for X to be ready (up to 5s)
+for i in $(seq 1 10); do
+    if DISPLAY="$DISPLAY_NUM" xdpyinfo >/dev/null 2>&1; then
+        break
+    fi
+    sleep 0.5
+done
+
+export DISPLAY="$DISPLAY_NUM"
+
+# Start a per-session D-Bus so GUI apps (1Password, Chrome extension bridge,
+# XFCE itself) attach to a single bus. Capture the address and persist it to a
+# file so peer systemd units (1password-desktop.service) can EnvironmentFile= it.
+eval "$(dbus-launch --sh-syntax)"
+umask 077
+printf 'DBUS_SESSION_BUS_ADDRESS=%s\nDISPLAY=%s\n' \
+    "$DBUS_SESSION_BUS_ADDRESS" "$DISPLAY_NUM" > "$SESSION_ENV_FILE"
+
+# Start the XFCE session (xfwm4 WM + xfce4-panel taskbar + xfdesktop wallpaper
+# + xfsettingsd). Inherits DBUS_SESSION_BUS_ADDRESS from above so it shares the
+# session bus with 1Password / Chrome extension.
+startxfce4 &
+
+# Chrome respawn loop with CDP enabled so playwright-mcp can attach via
+# --cdp-endpoint http://127.0.0.1:9222. If Chrome exits (user closes it,
+# crash), the loop brings it back — playwright-mcp depends on the CDP endpoint.
+#
+# `set +e` is load-bearing. The subshell inherits errexit from the top of this
+# script, and a failing command in a loop BODY does trigger it — so any
+# non-zero Chrome exit killed the loop outright instead of respawning. The loop
+# only ever survived a clean quit (exit 0), i.e. it worked for the one case it
+# wasn't needed and died for every case it was. Observed 2026-08-04: Chrome was
+# SIGKILLed (exit 137), the loop went defunct, and the browser stayed down until
+# relaunched by hand.
+(set +e; while true; do
+    google-chrome \
+        --no-first-run \
+        --disable-session-crashed-bubble \
+        --disable-gpu \
+        --user-data-dir="${HOME}/{{ vnc_desktop_chrome_profile_subdir }}" \
+        --remote-debugging-port={{ vnc_desktop_cdp_port }} \
+        --remote-debugging-address={{ vnc_desktop_cdp_address }}
+    sleep 2
+done) &
+
+# Run x11vnc in foreground — systemd tracks this as the main process.
+#
+# -afteraccept fires after a VNC client successfully authenticates: bring
+# 1password-desktop up if it isn't already. The is-active guard means a second
+# VNC client joining an existing session does NOT restart 1Password (avoids
+# tearing down an unlocked vault). RuntimeMaxSec=2h on the 1password unit still
+# enforces the hard cap.
+#
+# NO -noxdamage. It was here from the very first commit with no justification
+# (cargo-culted from the common x11vnc recipe) and it is a pure performance
+# tax: without the DAMAGE extension x11vnc cannot know WHICH pixels changed,
+# so it brute-force scans the whole 1920x1080 framebuffer forever, and Xvfb
+# burns just as much CPU serving those reads. Measured 2026-08-09 with an
+# animating browser tab on screen: x11vnc 65% of a core, Xvfb 42%, and ~12%
+# each even at idle. This Xvfb advertises DAMAGE (confirmed via xdpyinfo), so
+# there is nothing to work around. Re-add it ONLY if stale/unrepainted screen
+# regions actually appear, and write down the repro if you do.
+#
+# -threads gives each client its own input and output thread. Single-threaded
+# x11vnc reads client input from the SAME loop that scans and encodes, so a
+# saturated output stream starves input reads: on 2026-08-09 the client's
+# keystrokes and mouse events backed up to 115 KB unread in the socket receive
+# queue while the desktop looked hard-frozen. Threading decouples the two.
+# Stability caveat in the man page applies to pre-0.9.8; this host runs 0.9.17.
+exec x11vnc \
+    -display "$DISPLAY_NUM" \
+    -forever \
+    -rfbauth "${HOME}/.vnc/passwd" \
+    -listen "$TAILSCALE_IP" \
+    -rfbport {{ vnc_desktop_vnc_port }} \
+    -shared \
+    -threads \
+    -no6 \
+    -quiet \
+    -afteraccept 'systemctl is-active --quiet {{ vnc_desktop_afteraccept_unit }} || sudo systemctl start {{ vnc_desktop_afteraccept_unit }}'

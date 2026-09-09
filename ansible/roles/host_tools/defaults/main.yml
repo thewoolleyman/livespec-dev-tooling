@@ -1,0 +1,18 @@
+---
+# /usr/local/bin, not this repo's usual /usr/local/libexec or /usr/local/sbin:
+# these are meant to be typed by name on an interactive PATH. libexec is for
+# what another program invokes and sbin is for root-only administration;
+# btop-loop is neither.
+host_tools_bin_dir: /usr/local/bin
+
+# The tool set is the service's IDENTITY, not a host value. A host wanting a
+# different set is a different role, not a different variable — which is why
+# the shell kept this list in install.sh and out of hosts/<host>.env. It is a
+# variable here only so the tasks can loop over it.
+host_tools_tools:
+  - btop-loop
+
+# btop-loop supervises btop and does nothing without it. See the preflight
+# comment in tasks/main.yml for why this role installs the package rather than
+# refusing a host that lacks it, as the shell installer did.
+host_tools_btop_package: btop

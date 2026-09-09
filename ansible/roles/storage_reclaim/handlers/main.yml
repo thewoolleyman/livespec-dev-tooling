@@ -1,0 +1,16 @@
+---
+- name: Restart the storage-reclaim timer
+  # Restarting the TIMER re-arms it against the new OnCalendar and is not
+  # disruptive; it does not run a reclamation. The service is never restarted
+  # here for exactly the opposite reason: its ExecStart carries --apply.
+  #
+  # The `when` matches the arm task's, and for the same reason: under --check
+  # the unit templates report a change and notify this handler, but on a host
+  # that does not have the timer yet systemd cannot restart a unit that only
+  # would-be exists.
+  ansible.builtin.systemd_service:
+    name: "{{ storage_reclaim_timer_name }}"
+    daemon_reload: true
+    state: restarted
+  become: true
+  when: not ansible_check_mode or storage_reclaim_timer_unit_stat.stat.exists

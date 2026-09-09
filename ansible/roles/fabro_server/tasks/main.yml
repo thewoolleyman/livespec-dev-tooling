@@ -1,0 +1,626 @@
+---
+# fabro_server — install and supervise ONE Fabro dark-factory instance.
+#
+# R4.S8 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces fabro-hosts
+# services/fabro-server/install.sh together with the two renderers it drove,
+# render-unit.sh and render-settings.sh, and the four hosts/<host>.env values
+# files those read. Live values move to host_vars; see HOST_VARS.md.
+#
+# WHAT THIS ROLE IS ALLOWED TO DO. It writes the shared verifier, one unit
+# file, and one OTLP drop-in, then makes sure the unit is enabled and running.
+# It does NOT restart a running server unless told it may, does NOT write
+# settings.toml unless told to, does NOT kill any process, and does not create
+# any of the five pieces of out-of-band state the instance needs. Every one of
+# those refusals is a preflight assert below rather than a mid-run failure,
+# because this service is the orchestrator's own server: on both hosts it is
+# carrying live Fabro runs while this role runs against it.
+#
+# THE HOST GUARD DOES NOT MIGRATE. install.sh refused to apply one host's
+# values on another, comparing the values file's canonical host against both
+# `hostname -s` and the tailnet label from `tailscale status`. It needed both
+# because the two names differ on vps: the OS hostname is the provider's VM id
+# `vmi3006760` while the canonical host is built from the tailnet name `vps`.
+# Under Ansible that guard is inventory targeting — a host's values reach only
+# that host because they are that host's host_vars — so it is deliberately not
+# reimplemented as a task. The vmi3006760/vps split survives only as this
+# note and as the inventory entry's name, which is the tailnet label.
+#
+# THERE IS NO fabro_server_system_hostname VARIABLE, AND THAT IS ON PURPOSE.
+# fabro-hosts' services/storage-reclaim/hosts/vps.env carries a note, dated
+# 2026-08-22 and still on master, saying "services/fabro-server/install.sh
+# still derives it, so it cannot currently run on vps". That claim has since
+# rotted. As committed today install.sh derives `expected` from the canonical
+# host but then accepts EITHER name:
+#
+#   [[ "${expected}" == "${os_name}" || ( -n "${tailnet_name}" && "${expected}" == "${tailnet_name}" ) ]]
+#
+# On vps that is vps == vmi3006760 (false) OR vps == vps (true), so the guard
+# passes. The installer's own comment dates the fix 2026-08-23, one day after
+# the note was written. The reclaim services record the system hostname as its
+# own value because the env file they SHIP is read back at runtime by a script
+# on the host; nothing in this role reads a hostname at all, so recording one
+# here would be a variable no task consumes. The real value is in
+# HOST_VARS.md as documentation.
+
+- name: Resolve this instance's axes
+  # Facts rather than block vars, because the restart handler resolves its
+  # unit name in the host's variable context and cannot see a block's scope.
+  # These are overwritten at the top of every loop iteration, so they always
+  # describe the instance being installed. They do persist past the last
+  # iteration holding that instance's values; nothing downstream reads them.
+  ansible.builtin.set_fact:
+    fabro_server_unit_name: "{{ fabro_server_instance.unit_name }}"
+    fabro_server_home_dir: "{{ fabro_server_instance.home_dir }}"
+    fabro_server_port: "{{ fabro_server_instance.port }}"
+    fabro_server_canonical_host: "{{ fabro_server_instance.canonical_host }}"
+    fabro_server_cli_target_url: "{{ fabro_server_instance.cli_target_url }}"
+    fabro_server_max_concurrent_runs: "{{ fabro_server_instance.max_concurrent_runs }}"
+    fabro_server_github_app_id: "{{ fabro_server_instance.github_app_id }}"
+    fabro_server_otel_dropin: "{{ fabro_server_instance.otel_dropin | default(fabro_server_otel_dropin_default) }}"
+
+- name: Refuse an instance mapping that does not spell every axis
+  # render-unit.sh exited 3 naming the one variable a values file had missed.
+  # This is that message, raised once for the whole mapping and before any
+  # host state is read, rather than as a Jinja undefined error part-way
+  # through rendering a unit file.
+  ansible.builtin.assert:
+    that:
+      - fabro_server_instance | length > 0
+      - _fabro_server_required_keys | difference(fabro_server_instance.keys() | list) | length == 0
+    fail_msg: >-
+      This instance mapping is incomplete. Every one of
+      {{ _fabro_server_required_keys | join(', ') }} must be spelled out in the
+      host's fabro_server_instances entry; missing
+      {{ _fabro_server_required_keys | difference(fabro_server_instance.keys() | list) | join(', ') | default('the whole mapping', true) }}.
+      See roles/fabro_server/HOST_VARS.md.
+    success_msg: instance mapping is complete
+  vars:
+    _fabro_server_required_keys:
+      - unit_name
+      - home_dir
+      - port
+      - canonical_host
+      - cli_target_url
+      - max_concurrent_runs
+      - github_app_id
+      - otel_dropin
+
+- name: Refuse two instances on this host that would share a unit, a state directory or a port
+  # fabro-hosts proved this from the render, in install.test.sh, because the
+  # shell installer only ever saw one values file at a time and could not.
+  # Ansible sees the whole host's list, so the proof moves from a repo-side
+  # test to the play that does the installing. A collision here is not a
+  # cosmetic clash: two units sharing a home_dir share a SlateDB store.
+  ansible.builtin.assert:
+    that:
+      - (fabro_server_instances | map(attribute='unit_name', default='') | list | unique | length) == (fabro_server_instances | length)
+      - (fabro_server_instances | map(attribute='home_dir', default='') | list | unique | length) == (fabro_server_instances | length)
+      - (fabro_server_instances | map(attribute='port', default='') | list | unique | length) == (fabro_server_instances | length)
+    fail_msg: >-
+      Two entries in this host's fabro_server_instances share a unit_name, a
+      home_dir or a port. Each instance needs all three to itself.
+    success_msg: this host's instances are distinct
+  when: fabro_server_instances | length > 1
+
+- name: Refuse an unrecognised otel drop-in disposition
+  # A three-valued word rather than a boolean, so that "nobody has decided"
+  # is expressible and is not silently the same as "decided against". A typo
+  # would read as false under a boolean and quietly remove a live drop-in.
+  ansible.builtin.assert:
+    that:
+      - fabro_server_otel_dropin in ['present', 'absent', 'unmanaged']
+    fail_msg: >-
+      otel_dropin for {{ fabro_server_unit_name }} is
+      '{{ fabro_server_otel_dropin }}'; it must be present, absent or unmanaged.
+    success_msg: otel drop-in disposition is understood
+
+# --- preflight: the out-of-band state this role refuses to create ----------
+#
+# install.sh's require_inputs, minus the two source files it checked for,
+# which are now role files and cannot be missing. Every check below stands in
+# for a manual step documented in fabro-hosts' README. They are grouped at the
+# top on purpose: the shell discovered a missing binary after it had already
+# written the unit file, and the point of moving them here is that a host with
+# unfinished prerequisites is left exactly as it was found.
+#
+# check_mode: false on each probe, because these are reads. Without it a
+# `--check` drift report would skip its own preconditions and report on a host
+# it never actually inspected.
+
+- name: Look for the Fabro binary this host's instances share
+  ansible.builtin.stat:
+    path: "{{ fabro_server_host_home }}/.fabro/bin/fabro"
+  become: true
+  register: fabro_server_binary
+  check_mode: false
+
+- name: Refuse a host with no built Fabro binary
+  ansible.builtin.assert:
+    that:
+      - fabro_server_binary.stat.exists
+      - fabro_server_binary.stat.executable
+    fail_msg: >-
+      {{ fabro_server_host_home }}/.fabro/bin/fabro is missing or not
+      executable. This role never builds or downloads it. Build it in the
+      pinned factory-integration worktree — `cargo clean --release -p
+      fabro-spa` then `cargo dev build --release -p fabro-cli`, the targeted
+      clean being required because Cargo will not otherwise refresh the
+      gitignored SPA assets — and replace the binary atomically per the
+      livespec-orchestrator-beads-fabro runbook. The binary is shared by every
+      instance on the host; only its state is per-instance.
+    success_msg: the shared Fabro binary is present and executable
+
+- name: Look for the checkout this instance runs in
+  ansible.builtin.stat:
+    path: "{{ fabro_server_host_checkout }}"
+  become: true
+  register: fabro_server_checkout
+  check_mode: false
+
+- name: Refuse an instance whose checkout is missing
+  ansible.builtin.assert:
+    that:
+      - fabro_server_checkout.stat.exists
+      - fabro_server_checkout.stat.isdir
+    fail_msg: >-
+      {{ fabro_server_host_checkout }} is not a directory. The server runs
+      from the stable primary checkout, never a disposable worktree; clone it
+      before applying this role.
+    success_msg: the instance's checkout is present
+
+- name: Look for the instance's generated server environment file
+  ansible.builtin.stat:
+    path: "{{ fabro_server_home_dir }}/storage/server.env"
+  become: true
+  register: fabro_server_env_file
+  check_mode: false
+
+- name: Refuse an instance with no generated server environment file
+  ansible.builtin.assert:
+    that:
+      - fabro_server_env_file.stat.exists
+    fail_msg: >-
+      {{ fabro_server_home_dir }}/storage/server.env does not exist. It holds
+      this instance's generated SESSION_SECRET and FABRO_DEV_TOKEN, is
+      mode 0600, and is created by Fabro itself — never by this role and never
+      by the installer it replaces. Start the instance's server once by hand to
+      generate it, then re-run.
+    success_msg: the instance's server.env exists
+
+- name: Probe for the variable names the instance's server.env must carry
+  # A grep on the host rather than a slurp back to the controller: the file
+  # holds two live secrets, and presence is the only thing being established.
+  # The argv carries the variable NAME and the path, never a value, and
+  # `grep -q` prints nothing on either outcome. no_log is belt-and-braces on
+  # a task whose subject is a secret file; the names survive it because the
+  # assert below reads `item` out of the registered results, which no_log
+  # suppresses from display without suppressing from the play.
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -qE
+      - "^{{ item }}=.+"
+      - "{{ fabro_server_home_dir }}/storage/server.env"
+  become: true
+  register: fabro_server_secret_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+  loop:
+    - SESSION_SECRET
+    - FABRO_DEV_TOKEN
+
+- name: Refuse an instance whose server.env is missing a required variable
+  ansible.builtin.assert:
+    that:
+      - fabro_server_secret_probe.results | rejectattr('rc', 'eq', 0) | list | length == 0
+    fail_msg: >-
+      {{ fabro_server_home_dir }}/storage/server.env is missing
+      {{ fabro_server_secret_probe.results | rejectattr('rc', 'eq', 0) | map(attribute='item') | join(' and ') }}.
+      The unit loads that file with EnvironmentFile=, so a server started
+      without it has no browser auth. Regenerate the file rather than editing
+      one in by hand.
+    success_msg: the instance's server.env carries both required variables
+
+# TWO PRECONDITIONS HAVE NO CHECK, AND FAKING ONE WOULD BE WORSE THAN NONE.
+#
+# The `tailscale serve` mapping that publishes this instance's loopback port
+# on the tailnet is owned by the tailscale-admin repository, deliberately: the
+# mapping is a tailnet fact, not a host-provisioning one. install.sh "neither
+# creates nor verifies it" and neither does this role. It is not observable
+# from here in any honest way — `tailscale serve status` would answer for the
+# node's whole configuration, which this role has no business asserting on,
+# and a probe of the published URL would test the tailnet rather than the
+# host. Its absence shows up as a console that answers on loopback and not on
+# the canonical host.
+#
+# The GitHub App private key lives inside the instance's own Fabro vault, put
+# there with `fabro secret set GITHUB_APP_PRIVATE_KEY --value-stdin`. Reading
+# the vault to check would mean holding a private key in a play's variables to
+# prove it exists. Its absence shows up the first time the instance tries to
+# act as its App.
+
+- name: Probe for the curl the installed verifier runs at every unit start
+  # install.sh required curl and jq. Only curl survives: it is what
+  # fabro-server-verify-web calls from ExecStartPost on every single start, so
+  # its absence would turn every restart into a crash loop. jq was the
+  # installer's own JSON reader and Ansible does not need one.
+  ansible.builtin.command:
+    argv: [curl, --version]
+  register: fabro_server_curl
+  changed_when: false
+  failed_when: fabro_server_curl.rc != 0
+  check_mode: false
+
+- name: Ask systemd whether this instance is already supervised
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ fabro_server_unit_name }}.service"]
+  become: true
+  register: fabro_server_is_active
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Ask the instance's own health endpoint whether something is serving its port
+  # The instance's own loopback port, not whichever server the CLI's default
+  # target happens to name. Read-only, and it feeds both guards below.
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/health"
+    timeout: 2
+  register: fabro_server_health
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Refuse a port served by something systemd is not supervising
+  # install.sh's stop_legacy_daemon, as a refusal rather than a kill. The
+  # shell read the pid from <home_dir>/storage/server.json and sent SIGTERM,
+  # but only after proving /proc/<pid>/exe shared an inode with the trusted
+  # binary or one of its `fabro.*` siblings. Ansible has no faithful way to
+  # express that inode comparison, and the comparison is the entire reason the
+  # kill was safe — so the role names the situation and stops. Killing a
+  # process holding a factory's port is an operator's decision, not a
+  # converge step.
+  ansible.builtin.assert:
+    that:
+      - not (fabro_server_health.status | default(-1) == 200 and fabro_server_is_active.stdout | trim != 'active')
+    fail_msg: >-
+      Something is serving http://127.0.0.1:{{ fabro_server_port }} while
+      {{ fabro_server_unit_name }}.service is
+      '{{ fabro_server_is_active.stdout | trim }}' — almost certainly an
+      unsupervised Fabro daemon predating systemd management. Stop it by hand
+      before re-running: read .pid from
+      {{ fabro_server_home_dir }}/storage/server.json, confirm
+      `readlink -f /proc/<pid>/exe` resolves under
+      {{ fabro_server_host_home }}/.fabro/bin/, then send it SIGTERM and wait
+      for it to exit. This role does not kill processes.
+    success_msg: nothing unsupervised is holding this instance's port
+
+- name: Ask this instance whether any Fabro run is active
+  # install.sh's require_quiet_server, and it runs only when a restart is
+  # actually on the table. FABRO_SERVER pins the probe to THIS instance; the
+  # CLI's default target is whatever settings.toml names, which on a
+  # two-instance host is the other server half the time.
+  ansible.builtin.command:
+    argv: ["{{ fabro_server_host_home }}/.fabro/bin/fabro", --json, ps]
+  become: true
+  become_user: "{{ fabro_server_host_user }}"
+  environment:
+    HOME: "{{ fabro_server_host_home }}"
+    FABRO_SERVER: "http://127.0.0.1:{{ fabro_server_port }}"
+  register: fabro_server_ps
+  changed_when: false
+  check_mode: false
+  when:
+    - fabro_server_restart_allowed | bool
+    - fabro_server_health.status | default(-1) == 200
+
+- name: Refuse to restart a factory that is carrying runs
+  # Necessary but not sufficient, and the gap is why fabro_server_restart_allowed
+  # defaults to false rather than this check standing alone: a run admitted
+  # between this assert and the handler at the end of the play would still be
+  # killed. Nothing inside Ansible closes that window. Quiescing the instance
+  # first — `fabro` admission paused, or the dispatcher stopped — is what
+  # makes an attended restart safe.
+  ansible.builtin.assert:
+    that:
+      - (fabro_server_ps.stdout | from_json | length) == 0
+    fail_msg: >-
+      {{ fabro_server_unit_name }} has
+      {{ fabro_server_ps.stdout | from_json | length }} active run(s);
+      refusing to interrupt them. Re-run when the instance is quiet, or leave
+      fabro_server_restart_allowed false to install the files and restart
+      later.
+    success_msg: this instance has no active runs
+  when: not (fabro_server_ps.skipped | default(false))
+
+# --- install ---------------------------------------------------------------
+
+- name: Create the shared libexec directory
+  # The shell created it with `install -d` on every run. Ansible needs it as
+  # its own task for the same reason the gates_kubeconfig role does: with the
+  # directory absent, `--check` reports the copy below as a would-be change
+  # and then fails only on a real apply.
+  ansible.builtin.file:
+    path: "{{ fabro_server_libexec_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the shared web-console verifier
+  # One copy per host, shared by every instance, because the unit supplies
+  # FABRO_CANONICAL_HOST and FABRO_BASE_URL per instance. fabro-hosts proved
+  # with a negative control that the variable is load-bearing and the fork is
+  # not: the unmodified vps verifier exits 0 against hp when the variable is
+  # set and 1 when it is not. Copied byte-for-byte, so it stays identical to
+  # what both hosts run today (sha256 06763080…).
+  ansible.builtin.copy:
+    src: fabro-server-verify-web
+    dest: "{{ fabro_server_libexec_dir }}/fabro-server-verify-web"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Look for the unit file before this role would write it
+  # Registered so the systemd tasks below can tell "this instance is already
+  # installed" from "this instance does not exist yet". Under `--check` the
+  # template task writes nothing, so systemd would be asked to act on a unit
+  # that is not on disk and would fail with "Could not find the requested
+  # service" — the role reporting a fault it created itself, on precisely the
+  # host where the operator most needs the dry run to complete and say the
+  # instance is missing.
+  ansible.builtin.stat:
+    path: "{{ fabro_server_unit_dir }}/{{ fabro_server_unit_name }}.service"
+  become: true
+  register: fabro_server_unit_file
+  check_mode: false
+
+- name: Install the instance's systemd unit
+  # render-unit.sh plus `install -m 0644`, in one task. The renderer's
+  # unsubstituted-placeholder guard is not reimplemented: it exited 4 when an
+  # @NAME@ survived, and Ansible raises AnsibleUndefinedVariable on the first
+  # unset name before writing anything, which is the same refusal for free.
+  ansible.builtin.template:
+    src: fabro-server.service.j2
+    dest: "{{ fabro_server_unit_dir }}/{{ fabro_server_unit_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Fabro instance files changed
+
+- name: Remove the superseded verify-timeout drop-in
+  # A hand-made drop-in that predates the unit carrying
+  # FABRO_WEB_VERIFY_ATTEMPTS itself. install.sh deleted it on every run and
+  # so does this, unconditionally: leaving it would be harmless today but it
+  # is a second place the crash-loop budget can be set, and the whole reason
+  # the value moved into the template is that a live-only override does not
+  # survive a rebuild. Live as of 2026-09-09 on vps's fleet instance only.
+  ansible.builtin.file:
+    path: "{{ fabro_server_unit_dir }}/{{ fabro_server_unit_name }}.service.d/verify-timeout-override.conf"
+    state: absent
+  become: true
+  notify: Fabro instance files changed
+
+- name: Create the instance's drop-in directory
+  # install.sh created this unconditionally; here it is created only where a
+  # drop-in is actually going into it. An empty .d directory means nothing to
+  # systemd, and the removal of the legacy verify-timeout drop-in above works
+  # whether or not the directory exists, so the unconditional version would
+  # only leave empty directories on instances that hold no drop-in.
+  ansible.builtin.file:
+    path: "{{ fabro_server_unit_dir }}/{{ fabro_server_unit_name }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: fabro_server_otel_dropin == 'present'
+
+- name: Install the OTLP drop-in
+  # Copied byte-for-byte from fabro-hosts, header comment and all, including
+  # its now-inaccurate claim to be installed as fabro-server.service.d/ —
+  # true of the fleet instance only. Byte-identity with what three of the four
+  # live instances already carry (sha256 02caac32…) is worth more than a
+  # corrected comment, because it keeps this task silent on those three and
+  # makes any diff it does report a real one.
+  ansible.builtin.copy:
+    src: otel.conf
+    dest: "{{ fabro_server_unit_dir }}/{{ fabro_server_unit_name }}.service.d/otel.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: fabro_server_otel_dropin == 'present'
+  notify: Fabro instance files changed
+
+- name: Remove the OTLP drop-in
+  # Reached only where an instance is explicitly decided AGAINST exporting.
+  # It really does delete the file; see the defaults for why the undecided
+  # case is a third word rather than this one.
+  ansible.builtin.file:
+    path: "{{ fabro_server_unit_dir }}/{{ fabro_server_unit_name }}.service.d/otel.conf"
+    state: absent
+  become: true
+  when: fabro_server_otel_dropin == 'absent'
+  notify: Fabro instance files changed
+
+- name: Note that this instance's OTLP export is nobody's decision yet
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: otel_dropin is
+      unmanaged, so this role leaves the drop-in exactly as it found it.
+      fabro-hosts' README records the open call — installing the shipped
+      drop-in newly adds OTLP export, which is a behaviour change and not a
+      transcription. Resolve it by setting otel_dropin to present or absent in
+      this host's host_vars.
+  when: fabro_server_otel_dropin == 'unmanaged'
+
+# --- settings.toml: report by default, write only on request ---------------
+#
+# install.sh deliberately rendered nothing here, and fabro-hosts' README gives
+# the load-bearing reason: vps's live settings.toml is HAND-MAINTAINED and is
+# where its explicit max_concurrent_runs = 10 lives. A role that wrote it
+# would overwrite the fleet's fallback factory's real configuration.
+#
+# But shipping the renderer and never running it is what caused the defect it
+# exists for. hp ran max_concurrent_runs=5 against vps's 10, invisibly, for
+# weeks, because hp's settings.toml had no [server.scheduler] table at all and
+# an absent table does not read as absent — it reads as the built-in default,
+# with no warning anywhere. A checker existed; a repair did not.
+#
+# The middle option is the one the README itself asks for and could not build:
+# "it should carry a --dry-run-style diff against the live file before it
+# writes anything". That is Ansible's check mode, and it can be pinned to a
+# single task. So the reporting task below runs in check mode ALWAYS — not
+# only under `--check` — with diff forced on regardless of the command line.
+# A converge run therefore prints the exact drift between what version control
+# says the instance's settings should be and what the host actually holds,
+# every time, and writes nothing. Setting fabro_server_manage_settings true
+# swaps in the writing task, which is a separate deliberate act.
+#
+# Two tasks rather than one with a templated check_mode, because a check-mode
+# task still fires its notify: a phantom "change" that was never written would
+# restart a live factory. Mutually exclusive `when`s make that impossible.
+
+- name: Report drift between the instance's settings.toml and version control
+  ansible.builtin.template:
+    src: settings.toml.j2
+    dest: "{{ fabro_server_home_dir }}/settings.toml"
+    owner: "{{ fabro_server_host_user }}"
+    group: "{{ fabro_server_host_group }}"
+    mode: "{{ fabro_server_settings_mode }}"
+  become: true
+  check_mode: true
+  diff: true
+  register: fabro_server_settings_drift
+  when: not (fabro_server_manage_settings | bool)
+
+- name: Name the settings drift in the run output
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}:
+      {{ fabro_server_home_dir }}/settings.toml differs from what this role
+      would render. Nothing was written. The diff above is the whole finding;
+      apply it by hand, or set fabro_server_manage_settings true for a
+      deliberate write. Remember that a resolved value can come from the file
+      or from a built-in default, so read the diff for absent TABLES and not
+      only for changed numbers.
+  when:
+    - not (fabro_server_manage_settings | bool)
+    - fabro_server_settings_drift is changed
+
+- name: Install the instance's settings.toml
+  # Reached only when an operator has asked for it. Fabro reads settings.toml
+  # at start, so a change here needs a restart to take effect; the notify
+  # carries that, and fabro_server_restart_allowed still governs whether the
+  # restart actually happens.
+  ansible.builtin.template:
+    src: settings.toml.j2
+    dest: "{{ fabro_server_home_dir }}/settings.toml"
+    owner: "{{ fabro_server_host_user }}"
+    group: "{{ fabro_server_host_group }}"
+    mode: "{{ fabro_server_settings_mode }}"
+  become: true
+  diff: true
+  when: fabro_server_manage_settings | bool
+  notify: Fabro instance files changed
+
+# --- supervise -------------------------------------------------------------
+
+- name: Enable the instance and make sure it is running
+  # `systemctl enable --now`, with the reload the shell ran separately. Note
+  # that `state: started` is not `restarted`: it starts a stopped unit and
+  # leaves a running one alone. Picking up a changed unit file is the
+  # handler's job, and the handler is the thing that can refuse.
+  #
+  # The `when` is the check-mode guard, and it is deliberately NOT
+  # `check_mode: false` — that would enable and START a live Fabro server
+  # during a run that promised to change nothing. Where the unit is already
+  # installed the task runs under `--check` and reports genuine enable/start
+  # drift; where the instance is absent it is skipped, and the would-be file
+  # additions above are what tell the operator it is not there. The rule this
+  # follows: a read-only probe gets `check_mode: false` so it RUNS, a task
+  # that would mutate a live host gets a `when` so it is SKIPPED.
+  ansible.builtin.systemd_service:
+    name: "{{ fabro_server_unit_name }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or fabro_server_unit_file.stat.exists
+
+- name: Apply any pending restart for this instance before verifying it
+  # Handlers otherwise run at the END of the play, by which time the loop has
+  # moved on and the facts at the top of this file describe the LAST instance.
+  # Two instances notifying one handler would then dedupe into a single
+  # restart of the wrong unit. Flushing inside each iteration keeps the
+  # handler pinned to the instance that notified it, and it also puts the
+  # restart before the verification below rather than after the whole play.
+  ansible.builtin.meta: flush_handlers
+
+# --- verify ----------------------------------------------------------------
+
+- name: Verify the instance's web console and its JavaScript bundle
+  # install.sh's post-install probe, kept. It is the only check that a binary
+  # built without embedded SPA assets fails, and a bare curl cannot replace
+  # it: Fabro 404s a request lacking the canonical Host header and
+  # `Accept: text/html`, so a naive probe reads a healthy server as down.
+  #
+  # FABRO_WEB_VERIFY_ATTEMPTS is deliberately not passed, exactly as the shell
+  # did not pass it, leaving the verifier's own 60-attempt budget. The 300 in
+  # the unit covers a cold SlateDB warmup during ExecStartPost; by the time
+  # systemd reports the unit active that warmup is already done, so a long
+  # budget here would only make a genuinely broken server take five minutes to
+  # say so.
+  #
+  # This task and the two below it are POST-INSTALL VERIFICATION, not probes,
+  # so they are deliberately left to skip under `--check`: they exercise a
+  # verifier and a running process that a dry run did not install or restart.
+  # Adding `check_mode: false` here would verify the OLD server and report it
+  # as though it were the new one.
+  ansible.builtin.command:
+    argv: ["{{ fabro_server_libexec_dir }}/fabro-server-verify-web"]
+  become: true
+  environment:
+    FABRO_BASE_URL: "http://127.0.0.1:{{ fabro_server_port }}"
+    FABRO_CANONICAL_HOST: "{{ fabro_server_canonical_host }}"
+  changed_when: false
+
+- name: Read the running instance's main PID
+  ansible.builtin.command:
+    argv: [systemctl, show, -p, MainPID, --value, "{{ fabro_server_unit_name }}.service"]
+  become: true
+  register: fabro_server_main_pid
+  changed_when: false
+
+- name: Read the working directory the running instance actually has
+  ansible.builtin.stat:
+    path: "/proc/{{ fabro_server_main_pid.stdout | trim }}/cwd"
+    follow: false
+  become: true
+  register: fabro_server_running_cwd
+  when:
+    - not ansible_check_mode
+    - fabro_server_main_pid.stdout | default('') | trim not in ['', '0']
+
+- name: Refuse an instance running from anywhere but its declared checkout
+  # install.sh's exit 7. The failure it catches is a server started from a
+  # disposable worktree, which works until the worktree is reaped.
+  ansible.builtin.assert:
+    that:
+      - fabro_server_running_cwd.stat.lnk_source == fabro_server_host_checkout
+    fail_msg: >-
+      {{ fabro_server_unit_name }} is running in
+      {{ fabro_server_running_cwd.stat.lnk_source | default('an unreadable directory') }},
+      not {{ fabro_server_host_checkout }}. The server must run from the
+      stable primary checkout; a disposable worktree disappears underneath it.
+    success_msg: this instance is running in its declared checkout
+  when:
+    - not ansible_check_mode
+    - not (fabro_server_running_cwd.skipped | default(false))

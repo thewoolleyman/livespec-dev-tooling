@@ -1,0 +1,43 @@
+---
+# The one restart in the role, and it refuses by default.
+#
+# `systemctl restart` on a Fabro server kills whatever it is carrying. Both
+# hosts run live factories, so this handler is gated on an explicit
+# fabro_server_restart_allowed, and the preflight in tasks/main.yml re-checks
+# that the instance has no active runs before that flag is honoured.
+#
+# The unit name comes from a fact rather than from the handler's own scope, so
+# tasks/main.yml flushes handlers inside each loop iteration. Without that
+# flush, two instances notifying this one handler would collapse into a single
+# restart carrying the last iteration's unit name.
+
+- name: Restart the Fabro instance
+  listen: Fabro instance files changed
+  ansible.builtin.systemd_service:
+    name: "{{ fabro_server_unit_name }}.service"
+    state: restarted
+    daemon_reload: true
+  become: true
+  when:
+    # Both halves matter. The first is the live-factory refusal; the second is
+    # the check-mode guard, because under `--check` the unit file this handler
+    # was notified about was never written, and systemd cannot restart a unit
+    # that is not on disk.
+    - fabro_server_restart_allowed | bool
+    - not ansible_check_mode or fabro_server_unit_file.stat.exists
+
+- name: Say which instance was left needing a restart
+  listen: Fabro instance files changed
+  # A changed unit file that is not applied is not a no-op — the host now
+  # holds a file describing a server that is not the one running. Naming it is
+  # what stops that becoming invisible drift of the kind this whole migration
+  # exists to end.
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: files changed
+      but the running server was NOT restarted, because
+      fabro_server_restart_allowed is false. The instance keeps serving its
+      current runs under the OLD configuration until someone restarts it.
+      Quiesce the instance and re-run with -e fabro_server_restart_allowed=true,
+      or restart it by hand.
+  when: not (fabro_server_restart_allowed | bool)

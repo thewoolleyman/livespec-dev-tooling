@@ -1,0 +1,152 @@
+---
+# claude_code_hooks -- the tmux-fleet guard, a Claude Code PreToolUse(Bash) hook.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info
+# services/claude-code-hooks/install.sh.
+#
+# USER SCOPE, NOT ROOT, AND SAID SO EXPLICITLY. vps-info's AGENTS.md installs
+# this as `services/claude-code-hooks/install.sh   # no sudo`, and every path
+# the installer touches is under $HOME. Each task therefore carries
+# `become: false`, which is stronger than merely omitting `become`: a task-level
+# false also overrides a play that turns become on for its other roles. A
+# root-owned ~/.claude/settings.json is not a cosmetic ownership wart -- Claude
+# Code then cannot write its own settings, so the guard's own re-wiring, the
+# plugin state, and the env block all fail from that point on.
+#
+# WHY THE GUARD EXISTS. On 2026-07-18 dispatched subagents destroyed the
+# maintainer's ~20-pane tmux fleet twice in one day with `tmux kill-server` on
+# the default socket, once bare and once via TMUX_TMPDIR. Prose guidance in
+# AGENTS.md did not reach them. Only a mechanical guard propagates to a
+# dispatched agent, which is what makes this a provisioned host artifact rather
+# than a documented convention.
+
+- name: Create the Claude Code hooks directory
+  ansible.builtin.file:
+    path: "{{ claude_code_hooks_dir }}"
+    state: directory
+    owner: "{{ claude_code_hooks_owner }}"
+    group: "{{ claude_code_hooks_group }}"
+    mode: "0755"
+  become: false
+
+- name: Install the tmux-fleet guard
+  # The guard is a single self-contained stdlib-only script that carries its own
+  # 100-case regression corpus, so `files/` holds it verbatim rather than a
+  # template: nothing in it is host-specific, and a substitution point would be
+  # a place for the guard and its corpus to disagree.
+  ansible.builtin.copy:
+    # Under files/_vendor/ rather than files/. A `_vendor` path segment is
+    # this repository's declared exemption for INSTALLED FOREIGN CONTENT —
+    # bytes it ships to a host but does not govern by its own code rules —
+    # and that is exactly what this is: a 420-line guard copied verbatim onto
+    # the host, whose maintenance question is "does it still match what the
+    # host needs", not "does it meet this library's per-file LLOC ceiling".
+    # Without the segment the repo's own Python gates judge a payload as if it
+    # were library source, and the file fails a 250-line ceiling it was never
+    # written against.
+    src: _vendor/tmux-fleet-guard.py
+    dest: "{{ claude_code_hooks_guard_dest }}"
+    owner: "{{ claude_code_hooks_owner }}"
+    group: "{{ claude_code_hooks_group }}"
+    mode: "0755"
+  become: false
+
+- name: Prove the installed guard still blocks what it must
+  # This is the installer's refuse-to-wire-a-broken-guard gate, kept as a
+  # command because no module can assert it: the corpus lives inside the script.
+  # It runs against the INSTALLED copy, after the copy above, exactly as the
+  # shell did -- so a regression reaches ~/.claude/hooks/ but never reaches
+  # settings.json, and Claude Code goes on using whatever was wired before.
+  #
+  # POST-WRITE VERIFICATION, so it is deliberately skipped under --check rather
+  # than given check_mode: false. It exercises the file the copy above would
+  # write, which on a dry run does not exist; and on a host that has an OLDER
+  # copy installed it would test that one while claiming to have tested this
+  # role's. Neither is a fact a drift report should assert on.
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ claude_code_hooks_guard_dest }}"
+      - --selftest
+  become: false
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Look for existing Claude Code settings
+  ansible.builtin.stat:
+    path: "{{ claude_code_hooks_settings }}"
+  become: false
+  register: claude_code_hooks_settings_stat
+
+- name: Read the existing Claude Code settings
+  # no_log because this file also holds Claude Code's `env` block, which on this
+  # host carries secrets. A slurp would otherwise print the whole file at -vvv.
+  ansible.builtin.slurp:
+    src: "{{ claude_code_hooks_settings }}"
+  become: false
+  register: claude_code_hooks_settings_raw
+  when: claude_code_hooks_settings_stat.stat.exists
+  no_log: true
+
+- name: Decide whether the guard is already wired
+  # The installer appends its entry only when no PreToolUse hook already names
+  # the guard, and leaves the file byte-identical otherwise. That test is
+  # reproduced here rather than rendering the whole file from a template,
+  # because settings.json is written by Claude Code itself and by several other
+  # installers on this host; a template would silently discard their keys on
+  # every converge.
+  #
+  # A missing file is not an error: the installer created one from an empty
+  # object, and so does this.
+  ansible.builtin.set_fact:
+    claude_code_hooks_settings_data: "{{ _claude_code_hooks_current }}"
+    claude_code_hooks_wired: "{{ 'tmux-fleet-guard.py' in _claude_code_hooks_commands }}"
+  become: false
+  no_log: true
+  vars:
+    _claude_code_hooks_current: >-
+      {{ (claude_code_hooks_settings_raw.content | b64decode | from_json)
+         if claude_code_hooks_settings_stat.stat.exists else {} }}
+    _claude_code_hooks_commands: >-
+      {{ ((_claude_code_hooks_current.hooks | default({})).PreToolUse | default([]))
+         | map(attribute='hooks', default=[]) | flatten
+         | map(attribute='command', default='') | join(' ') }}
+
+- name: Wire the PreToolUse Bash guard into the Claude Code settings
+  # no_log for the same reason the slurp has it: `content` is the entire
+  # settings file, so an Ansible diff of this task would print every secret in
+  # the env block to the terminal and to any log capturing the run.
+  #
+  # sort_keys=False keeps the installer's json.dump behaviour, so the rewrite
+  # reorders nothing a human put there. `backup: true` is the counterpart of the
+  # installer's cp to settings.json.bak; Ansible timestamps its backups instead
+  # of using a fixed name, which is the better of the two -- a second repair run
+  # under the shell overwrote the only copy of the pre-change file.
+  #
+  # Mode 0600 is a deliberate tightening: the installer set no mode at all and
+  # left the file at the account's umask, while the sibling claude-ntfy
+  # installer chmods its temp copy of this very file to 600 before moving it
+  # into place. 0600 is what the file's contents have always warranted.
+  ansible.builtin.copy:
+    content: "{{ _claude_code_hooks_next | to_nice_json(indent=2, sort_keys=False) }}\n"
+    dest: "{{ claude_code_hooks_settings }}"
+    owner: "{{ claude_code_hooks_owner }}"
+    group: "{{ claude_code_hooks_group }}"
+    mode: "0600"
+    backup: true
+  become: false
+  no_log: true
+  when: not claude_code_hooks_wired
+  vars:
+    _claude_code_hooks_entry:
+      matcher: "{{ claude_code_hooks_matcher }}"
+      hooks:
+        - type: command
+          command: "{{ claude_code_hooks_command }}"
+    _claude_code_hooks_hooks: "{{ claude_code_hooks_settings_data.hooks | default({}) }}"
+    _claude_code_hooks_next: >-
+      {{ claude_code_hooks_settings_data
+         | combine({'hooks': _claude_code_hooks_hooks
+                    | combine({'PreToolUse': (_claude_code_hooks_hooks.PreToolUse | default([]))
+                               + [_claude_code_hooks_entry]})}) }}

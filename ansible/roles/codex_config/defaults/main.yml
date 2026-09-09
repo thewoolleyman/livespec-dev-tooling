@@ -1,0 +1,21 @@
+---
+# Defaults for codex_config.
+#
+# USER SCOPE, and the installer it replaces went out of its way to say so: it
+# refuses to run under sudo or as any account but the host's Codex operator,
+# because ~/.codex/config.toml is that account's file and running it elsewhere
+# would silently configure the wrong account.
+#
+# The operator account is per-host: it is `ubuntu` on the vps and `cwoolley` on
+# the other three legacy machines, so HOST_VARS.md carries the value and this
+# default exists only so the variable is never undefined.
+codex_config_user: ubuntu
+
+# The Codex feature to enable. It exposes Codex's native request_user_input
+# picker to interactive Default-mode sessions. A skill can tell Codex to call a
+# tool, but cannot make an unavailable tool appear in the model's tool set, so
+# the feature has to be on before any Default-mode skill can depend on it.
+codex_config_feature: default_mode_request_user_input
+
+# What `codex features list` prints in the final column for an enabled feature.
+codex_config_enabled_state: "true"

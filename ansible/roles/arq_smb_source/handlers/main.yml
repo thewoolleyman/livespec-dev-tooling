@@ -1,0 +1,23 @@
+---
+# Restarts, not `state: restarted` inline: a Samba restart drops any Arq
+# transfer in flight, so it must happen only when the config or a unit actually
+# changed.
+- name: Restart Samba
+  ansible.builtin.systemd_service:
+    name: smbd.service
+    state: restarted
+  become: true
+  # Handlers are notified and run under `--check` too, so they need the same
+  # guard the arm tasks carry: skip rather than fail on a host where check mode
+  # has not installed the unit being restarted.
+  when: not ansible_check_mode or 'smbd.service' in (ansible_facts['services'] | default({}))
+
+- name: Restart the tailnet SMB proxy socket
+  # Restarting the SOCKET is what re-reads ListenStream. The proxy service is
+  # socket-activated, so it follows.
+  ansible.builtin.systemd_service:
+    name: arq-vps-smb-source-proxy.socket
+    state: restarted
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or arq_smb_source_socket_unit.stat.exists

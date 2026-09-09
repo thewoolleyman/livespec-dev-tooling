@@ -1,0 +1,125 @@
+---
+# keyring_quota — the per-uid kernel keyring ceilings the 1Password env
+# wrappers need on the vps host.
+#
+# Replaces vps-info services/keyring-quota/install.sh. ROOT-SCOPE: it writes
+# into /etc/sysctl.d and changes kernel tunables; the shell installer refuses
+# unless EUID is 0. The ceilings it raises are per-NON-ROOT-uid, so the effect
+# lands on the `ubuntu` account even though the work is done as root.
+#
+# CONFIG-ONLY SERVICE. There is no unit here and none is enabled: the drop-in
+# is read by systemd-sysctl at boot, which this role does not own. What it
+# does own is making the values effective NOW as well as at the next boot,
+# which is why the apply step exists at all.
+#
+# The failure this prevents is silent. On `keyctl padd` EDQUOT the wrapper
+# still returns the right answer, having resolved it through a full `op run`
+# against a shared, account-wide daily quota. It looks like a working cache
+# while rate-limiting the whole fleet — so this role asserts the effective
+# values rather than trusting that writing the file was enough.
+
+- name: Require the shipped drop-in to declare the ceilings this role asserts
+  # Cheap guard against the one drift this role can cause on its own: someone
+  # edits the .conf, or these defaults, and the other half stays behind. The
+  # file is read on the CONTROL node, so this costs no connection.
+  ansible.builtin.assert:
+    that:
+      - >-
+        keyring_quota_shipped_conf is
+        search('(?m)^kernel\.keys\.maxbytes = ' ~ keyring_quota_maxbytes ~ '$')
+      - >-
+        keyring_quota_shipped_conf is
+        search('(?m)^kernel\.keys\.maxkeys = ' ~ keyring_quota_maxkeys ~ '$')
+    fail_msg: >-
+      files/{{ keyring_quota_conf_name }} and this role's defaults disagree about
+      the keyring ceilings. Reconcile them — the .conf carries the measurements
+      the numbers come from.
+    success_msg: the shipped drop-in and this role's defaults agree
+  vars:
+    keyring_quota_shipped_conf: >-
+      {{ lookup('ansible.builtin.file', role_path ~ '/files/' ~ keyring_quota_conf_name) }}
+
+- name: Read the live per-uid keyring byte ceiling
+  ansible.builtin.slurp:
+    src: /proc/sys/kernel/keys/maxbytes
+  become: true
+  register: keyring_quota_live_maxbytes
+
+- name: Read the live per-uid keyring key ceiling
+  ansible.builtin.slurp:
+    src: /proc/sys/kernel/keys/maxkeys
+  become: true
+  register: keyring_quota_live_maxkeys
+
+- name: Install the keyring quota sysctl drop-in
+  # Copied verbatim rather than written through a sysctl module: the file is
+  # mostly its own rationale, including the measurement that justifies each
+  # number, and a module that renders `key = value` would throw all of it away.
+  ansible.builtin.copy:
+    src: "{{ keyring_quota_conf_name }}"
+    dest: "{{ keyring_quota_sysctl_dir }}/{{ keyring_quota_conf_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Apply and prove the keyring quota
+  # Deliberately skipped under --check: the apply is a mutating command, and
+  # the assert that follows it verifies ceilings that only that apply would
+  # have set. The two live-value reads that decide whether an apply is needed
+  # are `slurp` tasks OUTSIDE this block, so they run in check mode and the
+  # apply is correctly reported as would-run or skipped.
+  when: not ansible_check_mode
+  block:
+    - name: Apply the keyring quota to the running kernel
+      # Conditioned on the LIVE values rather than on whether the copy above
+      # reported a change. That covers both cases the shell covered by simply
+      # re-applying every run: a freshly written file, and a ceiling that has
+      # drifted since boot. When the live values already match, applying the
+      # file would change nothing and is skipped.
+      ansible.builtin.command:
+        argv:
+          - "{{ keyring_quota_sysctl_bin }}"
+          - --quiet
+          - --load
+          - "{{ keyring_quota_sysctl_dir }}/{{ keyring_quota_conf_name }}"
+      become: true
+      changed_when: true
+      when: >-
+        (keyring_quota_live_maxbytes['content'] | b64decode | trim | int)
+          != (keyring_quota_maxbytes | int)
+        or (keyring_quota_live_maxkeys['content'] | b64decode | trim | int)
+          != (keyring_quota_maxkeys | int)
+
+    - name: Re-read the per-uid keyring byte ceiling
+      ansible.builtin.slurp:
+        src: /proc/sys/kernel/keys/maxbytes
+      become: true
+      register: keyring_quota_effective_maxbytes
+
+    - name: Re-read the per-uid keyring key ceiling
+      ansible.builtin.slurp:
+        src: /proc/sys/kernel/keys/maxkeys
+      become: true
+      register: keyring_quota_effective_maxkeys
+
+    - name: Require the ceilings to have actually taken effect
+      # A drop-in shadowed by a later-sorting file, or a key this kernel does
+      # not expose, would otherwise leave the role looking installed while
+      # changing nothing at all.
+      ansible.builtin.assert:
+        that:
+          - >-
+            (keyring_quota_effective_maxbytes['content'] | b64decode | trim | int)
+            == (keyring_quota_maxbytes | int)
+          - >-
+            (keyring_quota_effective_maxkeys['content'] | b64decode | trim | int)
+            == (keyring_quota_maxkeys | int)
+        fail_msg: >-
+          the effective per-uid keyring ceilings are not the installed ones — the
+          1Password wrapper cache will still hit EDQUOT and fall back to a full
+          `op run` per call. Check for a later-sorting drop-in in
+          {{ keyring_quota_sysctl_dir }}.
+        success_msg: >-
+          the per-uid keyring ceilings are effective; the wrapper cache can hold
+          the full wrapper set

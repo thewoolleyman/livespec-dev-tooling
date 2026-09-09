@@ -1,0 +1,206 @@
+---
+# storage_reclaim — the periodic reclamation of build artifacts and orphaned
+# git worktrees under one user's worktree root.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces fabro-hosts
+# services/storage-reclaim/install.sh together with its render-unit.sh, the two
+# *.in unit templates, and the per-host hosts/<host>.env files.
+#
+# ITS SIBLING container_reclaim RUNS AS ROOT AND THIS ONE MUST NOT. Everything
+# this service may delete is a plain file under one user's worktree root, so
+# running unprivileged removes the blast radius entirely rather than bounding
+# it. The only tasks below that become root are the ones writing into
+# /usr/local/libexec and /etc/systemd/system.
+#
+# TWO GUARDS FROM THE SHELL INSTALLER DO NOT APPEAR HERE AS TASKS.
+# `require_root` is `become: true` on the tasks that need it.
+# `require_host_matches`, which refused to apply one host's values on another,
+# is inventory targeting: each machine's values reach it through host_vars and
+# cannot reach any other. The reclaimer script ALSO re-checks that guard at run
+# time against the RECLAIM_SYSTEM_HOSTNAME this role writes into its env file,
+# so a wrong value still fails loudly -- at the dry-run verification below,
+# before the timer is ever armed. On the vps that value is the
+# Contabo-assigned `vmi3006760`, not the tailnet label `vps`; a hostname
+# derived from the tailnet name would refuse to run on the very host it
+# targets.
+
+- name: Look up the account that owns the worktrees
+  # fail_key is false so a missing account reaches the assert below, which can
+  # say what to create and where. getent's own failure names only the key.
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ storage_reclaim_service_user }}"
+    fail_key: false
+  become: true
+
+- name: Require the worktree-owning account to exist
+  # A precondition the role does NOT create: this service deletes files inside
+  # a real person's home directory, so the account has to pre-exist for the
+  # configuration to mean anything. Creating one here would let a typo in
+  # host_vars produce an empty home and a service that reclaims nothing while
+  # reporting success.
+  ansible.builtin.assert:
+    that:
+      - storage_reclaim_service_user in ansible_facts['getent_passwd']
+    fail_msg: >-
+      No account '{{ storage_reclaim_service_user }}' on
+      {{ inventory_hostname }}. Create it, or correct
+      storage_reclaim_service_user in this host's host_vars.
+    success_msg: "account {{ storage_reclaim_service_user }} exists"
+
+- name: Check the home directory the service will run against
+  ansible.builtin.stat:
+    path: "{{ storage_reclaim_home }}"
+  register: storage_reclaim_home_stat
+
+- name: Require the home directory to exist
+  # The unit sets HOME to this path and the reclaimer resolves relative work
+  # from it. A missing home is a wrong host_vars entry, not a host to
+  # provision.
+  ansible.builtin.assert:
+    that:
+      - storage_reclaim_home_stat.stat.exists
+      - storage_reclaim_home_stat.stat.isdir
+    fail_msg: >-
+      {{ storage_reclaim_home }} is not a directory on {{ inventory_hostname }}.
+      Correct storage_reclaim_home in this host's host_vars to the home of
+      {{ storage_reclaim_service_user }}.
+    success_msg: "{{ storage_reclaim_home }} exists"
+
+- name: Check whether this host has a worktree layer at all
+  ansible.builtin.stat:
+    path: "{{ storage_reclaim_worktree_root }}"
+  register: storage_reclaim_worktree_root_stat
+
+- name: Report a host with no worktree layer
+  # NOT an assert, and that asymmetry with the two guards above is deliberate.
+  # hp has no worktree root at all, and the reclaimer treats a missing root as
+  # an empty inventory rather than an error -- the mechanism is installed there
+  # so that if the layer ever appears it is already being reclaimed and already
+  # being reported. Saying so out loud is what keeps that from looking like a
+  # silently misconfigured install.
+  ansible.builtin.debug:
+    msg: >-
+      {{ storage_reclaim_worktree_root }} does not exist on
+      {{ inventory_hostname }}; the reclaimer will report an empty inventory.
+  when: not storage_reclaim_worktree_root_stat.stat.exists
+
+- name: Create the reclaimer directory
+  # `--check` cannot see past this: with the directory absent, the copy and
+  # templates below are reported as would-be changes and fail only on a real
+  # apply. Owning it here is what makes a first apply on a fresh host succeed.
+  ansible.builtin.file:
+    path: "{{ storage_reclaim_libexec_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the storage reclaimer
+  # Verbatim from fabro-hosts services/storage-reclaim/storage-reclaim.sh. It
+  # stays shell because it is the RUNTIME tool the timer executes, long after
+  # any playbook has exited; the role owns its installation, not its behaviour.
+  # The shell installer checked that this file existed and was executable
+  # before copying it -- a repo-side check that no longer has anything to
+  # catch, since a missing files/ entry fails this task by name.
+  #
+  # Root-owned and not writable by the service user: the account this runs as
+  # must not be able to edit the thing that deletes its files.
+  ansible.builtin.copy:
+    src: storage-reclaim.sh
+    dest: "{{ storage_reclaim_script_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the storage reclaimer's host values
+  # The reclaimer reads its horizons and roots from this file rather than from
+  # its unit, so a horizon change is a file change and not a daemon-reload.
+  ansible.builtin.template:
+    src: storage-reclaim.env.j2
+    dest: "{{ storage_reclaim_env_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the storage-reclaim service unit
+  # The shell rendered this from storage-reclaim.service.in by substituting
+  # @NAME@ placeholders, then refused to install if any placeholder survived
+  # (exit 4). Jinja raises an undefined-variable error for the same condition,
+  # so that guard is not reimplemented.
+  ansible.builtin.template:
+    src: storage-reclaim.service.j2
+    dest: "{{ storage_reclaim_unit_dir }}/storage-reclaim.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the storage-reclaim timer
+
+- name: Check whether the storage-reclaim timer unit is already installed
+  # Read BEFORE the template below writes it, so it records the host's state
+  # rather than this run's intent. It exists only to keep the arm task from
+  # failing a dry run; see that task for why.
+  ansible.builtin.stat:
+    path: "{{ storage_reclaim_unit_dir }}/{{ storage_reclaim_timer_name }}"
+  register: storage_reclaim_timer_unit_stat
+  become: true
+
+- name: Install the storage-reclaim timer unit
+  ansible.builtin.template:
+    src: storage-reclaim.timer.j2
+    dest: "{{ storage_reclaim_unit_dir }}/{{ storage_reclaim_timer_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the storage-reclaim timer
+
+- name: Verify the installed reclaimer with a dry run
+  # KEPT from the shell installer, because the module cannot guarantee what it
+  # guarantees: that the reclaimer this host just received actually RUNS here,
+  # AS THE SERVICE ACCOUNT, before a timer starts invoking it unattended with
+  # --apply. Without an argument the script is a dry run and mutates nothing,
+  # so changed_when is false.
+  #
+  # DELIBERATELY NO check_mode: false HERE. Under --check nothing has been
+  # written to this host, so the script this task would execute does not exist
+  # yet; letting `command`'s default skip apply is the correct behaviour. This
+  # role's read-only preconditions are all `getent` and `stat`, which are
+  # check-mode-safe and run under --check without needing the override.
+  #
+  # The installer reached the service account with `sudo -u <user> env HOME=`;
+  # become_user does the same and needs no HOME override, since become sets it.
+  # It is stated explicitly all the same, because the unit states it and the
+  # value of this task is that it runs under the unit's environment.
+  ansible.builtin.command:
+    cmd: "{{ storage_reclaim_script_dest }} {{ storage_reclaim_env_dest }}"
+  become: true
+  become_user: "{{ storage_reclaim_service_user }}"
+  environment:
+    HOME: "{{ storage_reclaim_home }}"
+  changed_when: false
+
+- name: Arm the storage-reclaim timer
+  # The TIMER is enabled, never the service: the service is a oneshot whose
+  # ExecStart carries --apply, so starting it would run a reclamation rather
+  # than install one.
+  #
+  # The `when` covers a dry run on a host that does not have the timer yet.
+  # systemd cannot evaluate a unit that only would-be exists, so the module
+  # fails with "Could not find the requested service" -- a dry run reporting a
+  # fault it created itself. Where the unit IS already installed the task runs
+  # under --check normally and reports real enable/start drift, which is the
+  # signal worth having. NOT check_mode: false, which would enable and start a
+  # live timer during a report that promised to change nothing.
+  ansible.builtin.systemd_service:
+    name: "{{ storage_reclaim_timer_name }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or storage_reclaim_timer_unit_stat.stat.exists

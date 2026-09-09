@@ -1,0 +1,13 @@
+# Managed by Ansible (role: arq_root_snapshot). Local edits are overwritten.
+[Unit]
+Description=Build stable root-state snapshot for Arq VPS backup
+Documentation={{ arq_root_snapshot_documentation_url }}
+
+[Service]
+Type=oneshot
+ExecStart={{ arq_root_snapshot_bin }}
+# The snapshot competes with everything else on the host for disk. It is never
+# urgent — nothing waits on it but a timer — so it yields on both CPU and I/O.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

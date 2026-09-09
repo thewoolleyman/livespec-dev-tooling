@@ -1,0 +1,378 @@
+---
+# arq_smb_source — the read-only SMB export the Mac's Arq client backs up from.
+#
+# Replaces vps-info services/arq-vps-smb-source/install.sh. Arq has no Linux
+# agent and cannot be driven from here, so the host publishes arq_root_snapshot's
+# tree over SMB and the Mac pulls it. Samba binds loopback only;
+# systemd-socket-proxyd binds the Tailscale address and forwards inward, so the
+# share is reachable across the tailnet and never from the public interface.
+#
+# SCOPE: root. Units land in /etc/systemd/system, the credential lives under
+# /etc, and the share is served with `force user = root`. Determined from the
+# installer's require_root guard and from the paths it writes.
+#
+# NOT PROVISIONED HERE, asserted instead: tailscaled must be up with this host's
+# tailnet address configured, and systemd must ship systemd-socket-proxyd. The
+# Arq plan on the Mac is out of band entirely — Arq has no plan-creation CLI, so
+# a human pastes the share URL, the username, and the password from
+# {{ arq_smb_source_password_file }} into the Arq app once, and again on every
+# rotation.
+
+- name: Check that systemd ships the socket proxy
+  ansible.builtin.stat:
+    path: "{{ arq_smb_source_socket_proxyd }}"
+  register: arq_smb_source_proxyd
+
+- name: Refuse to install without systemd-socket-proxyd
+  ansible.builtin.assert:
+    that:
+      - arq_smb_source_proxyd.stat.exists
+    fail_msg: >-
+      {{ arq_smb_source_socket_proxyd }} is missing. The tailnet proxy unit's
+      ExecStart points at it; without it the share would be loopback-only.
+    success_msg: systemd-socket-proxyd is present
+
+- name: Refuse to install without this host's tailnet address configured
+  # The socket unit binds a literal address, so tailscaled being down or the
+  # host holding a different tailnet IP makes the socket fail to start — late,
+  # and with a systemd error rather than an explanation. Assert it up front.
+  # Tailscale itself is provisioned elsewhere; this role never touches it.
+  ansible.builtin.assert:
+    that:
+      - arq_smb_source_tailscale_ip in ansible_facts['all_ipv4_addresses']
+    fail_msg: >-
+      {{ arq_smb_source_tailscale_ip }} is not configured on this host. Bring
+      tailscaled up, or correct arq_smb_source_tailscale_ip in host_vars.
+    success_msg: "{{ arq_smb_source_tailscale_ip }} is configured on this host"
+
+- name: Install Samba and the SMB client
+  # smbclient is not needed to SERVE the share. It is here because the
+  # verification below reads the share back the way Arq will.
+  #
+  # `package` rather than `apt`: the module is portable and the fleet's roles use
+  # it. It carries no equivalent of the installer's `apt-get update -qq`, so on a
+  # host whose apt cache is stale AND which is missing one of these packages, the
+  # install fails with "no package matching" and the operator must refresh the
+  # cache once. On an already-converged host the task is a no-op and the cache
+  # never matters.
+  ansible.builtin.package:
+    name: "{{ arq_smb_source_packages }}"
+    state: present
+  become: true
+
+- name: Enumerate the systemd units this host already knows
+  # Check-mode-safe, unlike shelling out to systemctl, and it answers the only
+  # question the smbd/nmbd guards below need. Under `--check` the package task
+  # above installed nothing, so on a host without Samba those units genuinely do
+  # not exist and arming them would fail with a fault this role invented.
+  ansible.builtin.service_facts:
+  become: true
+
+- name: Create the SMB backup account
+  ansible.builtin.user:
+    name: "{{ arq_smb_source_user }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+  become: true
+
+- name: Create the credential directory
+  ansible.builtin.file:
+    path: "{{ arq_smb_source_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: Generate the SMB share password once
+  # `creates` is what makes this idempotent AND non-destructive: regenerating
+  # the password on every converge would silently break the Arq plan on the Mac,
+  # which holds a copy a human pasted in. openssl writes the file itself, so the
+  # secret never passes through argv, a register, or a diff. no_log is belt and
+  # braces — nothing here should print, and nothing is allowed to.
+  ansible.builtin.command:
+    cmd: "openssl rand -base64 {{ arq_smb_source_password_bytes }} -out {{ arq_smb_source_password_file }}"
+    creates: "{{ arq_smb_source_password_file }}"
+  become: true
+  no_log: true
+
+- name: Check whether the SMB credential exists
+  # Read after the generate task, so a real apply sees the file it just created
+  # and a `--check` run on a host that has never been converged sees it absent.
+  # stat rather than a shelled-out `test`, because stat is check-mode-safe.
+  ansible.builtin.stat:
+    path: "{{ arq_smb_source_password_file }}"
+  become: true
+  register: arq_smb_source_password_stat
+
+- name: Enforce the credential file's ownership and mode
+  # openssl writes under the ambient umask. The enclosing directory is 0700
+  # root-only, so there is no window in which anyone else could read it, but the
+  # file's own mode is stated rather than inherited.
+  #
+  # Guarded on the stat because ansible.builtin.file defaults to state: file and
+  # fails outright on a missing path — which is what a `--check` run against an
+  # unconverged host would hand it, the generate task above having been skipped.
+  ansible.builtin.file:
+    path: "{{ arq_smb_source_password_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  when: arq_smb_source_password_stat.stat.exists
+
+- name: Read the SMB password back
+  # Same guard, same reason: there is nothing to slurp before the first apply.
+  ansible.builtin.slurp:
+    src: "{{ arq_smb_source_password_file }}"
+  become: true
+  register: arq_smb_source_password_raw
+  no_log: true
+  when: arq_smb_source_password_stat.stat.exists
+
+- name: Set the Samba passdb entry for the backup account
+  # Not idempotent by nature — smbpasswd has no "is it already this password"
+  # query — so it converges to the known password every run and reports no
+  # change. The password arrives on stdin, never in argv.
+  ansible.builtin.command:
+    cmd: "smbpasswd -s -a {{ arq_smb_source_user }}"
+    stdin: "{{ arq_smb_source_password }}\n{{ arq_smb_source_password }}"
+  become: true
+  vars:
+    arq_smb_source_password: "{{ arq_smb_source_password_raw.content | b64decode | trim }}"
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Enable the Samba passdb entry
+  ansible.builtin.command:
+    cmd: "smbpasswd -e {{ arq_smb_source_user }}"
+  become: true
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Create the share root
+  # arq_root_snapshot owns this directory too, and both roles agree on 0755
+  # root:root. It is created here as well so that arq_smb_source can be applied
+  # to a host before the snapshot role has ever run, exporting an empty tree
+  # rather than failing to start.
+  ansible.builtin.file:
+    path: "{{ arq_smb_source_share_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the Samba configuration
+  # `validate` replaces the installer's separate testparm call: the config is
+  # parsed before it is moved into place, so a bad edit can never become the
+  # live smb.conf. `backup` replaces the hand-rolled timestamped cp — Ansible
+  # keeps the previous file beside the new one on every content change.
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: "{{ arq_smb_source_smb_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+    validate: testparm -s %s
+  become: true
+  notify: Restart Samba
+
+- name: Check whether the tailnet SMB proxy socket unit is already installed
+  # Read BEFORE the unit is written. Under `--check` the templates below write
+  # nothing, so arming a not-yet-existing socket would fail with systemd's
+  # "Could not find the requested service" — a fault the role invented rather
+  # than found.
+  ansible.builtin.stat:
+    path: "{{ arq_smb_source_unit_dir }}/arq-vps-smb-source-proxy.socket"
+  become: true
+  register: arq_smb_source_socket_unit
+
+- name: Install the tailnet SMB proxy service unit
+  ansible.builtin.template:
+    src: arq-vps-smb-source-proxy.service.j2
+    dest: "{{ arq_smb_source_unit_dir }}/arq-vps-smb-source-proxy.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the tailnet SMB proxy socket
+
+- name: Install the tailnet SMB proxy socket unit
+  ansible.builtin.template:
+    src: arq-vps-smb-source-proxy.socket.j2
+    dest: "{{ arq_smb_source_unit_dir }}/arq-vps-smb-source-proxy.socket"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the tailnet SMB proxy socket
+
+- name: Disable NetBIOS name serving
+  # nmbd ships with samba and would otherwise announce this host on every
+  # attached network. Nothing here needs browsing; the client is one Mac holding
+  # a literal share URL.
+  ansible.builtin.systemd_service:
+    name: nmbd.service
+    enabled: false
+    state: stopped
+  become: true
+  # nmbd comes from the samba package, which a `--check` run does not install.
+  when: not ansible_check_mode or 'nmbd.service' in (ansible_facts['services'] | default({}))
+
+- name: Enable and start Samba
+  ansible.builtin.systemd_service:
+    name: smbd.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # NOT check_mode: false — that would start a live Samba during a run that
+  # promised to change nothing. Where smbd is already installed this runs
+  # normally under `--check` and reports genuine enable/start drift.
+  when: not ansible_check_mode or 'smbd.service' in (ansible_facts['services'] | default({}))
+
+- name: Enable and start the tailnet SMB proxy socket
+  # Only the SOCKET is enabled. The proxy service is socket-activated and has no
+  # [Install] section of its own. daemon_reload sits here rather than in a
+  # handler because handlers run after this task, and on a first apply systemd
+  # would not yet know the units exist.
+  ansible.builtin.systemd_service:
+    name: arq-vps-smb-source-proxy.socket
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # Same split as above: a would-mutate task gets a `when` guard so it is
+  # skipped rather than failing, never check_mode: false.
+  when: not ansible_check_mode or arq_smb_source_socket_unit.stat.exists
+
+- name: Apply pending Samba restarts before verifying
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for both SMB listeners to accept connections
+  # POST-INSTALL VERIFICATION — deliberately skipped under `--check`, because a
+  # dry run never started the units whose ports this waits on. That is the
+  # opposite case from a precondition probe, which must run in check mode.
+  #
+  # The installer slept 2 seconds here. systemd reports a socket-activated unit
+  # active as soon as it is armed, which is before smbd has finished binding, so
+  # the audit below could read a listener table that is merely early rather than
+  # wrong. Waiting on the ports themselves makes the verification deterministic
+  # instead of racing a fixed sleep.
+  ansible.builtin.wait_for:
+    host: "{{ item }}"
+    port: 445
+    timeout: 30
+  loop:
+    - "{{ arq_smb_source_loopback_address }}"
+    - "{{ arq_smb_source_tailscale_ip }}"
+  when: not ansible_check_mode
+
+- name: Read the listeners on the SMB port
+  # POST-INSTALL VERIFICATION, skipped under `--check` for the same reason: on
+  # an unconverged host nothing is listening yet, and asserting otherwise would
+  # blame the host for what the dry run declined to do. No check_mode: false
+  # here — that keyword belongs on preconditions, which this is not.
+  #
+  # The installer's listener audit is kept in full. No module guarantees this:
+  # smb.conf could lose `bind interfaces only`, or a future edit could widen
+  # `interfaces`, and the result would be a world-reachable SMB server that
+  # every other check in this role still calls healthy.
+  ansible.builtin.command:
+    cmd: ss -tln
+  become: true
+  register: arq_smb_source_listeners
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Refuse an SMB listener anywhere but loopback and the tailnet
+  ansible.builtin.assert:
+    that:
+      - arq_smb_source_loopback_address + ':445' in arq_smb_source_listeners.stdout
+      - arq_smb_source_tailscale_ip + ':445' in arq_smb_source_listeners.stdout
+      - (arq_smb_source_forbidden_listeners + arq_smb_source_public_listeners)
+        | select('in', arq_smb_source_listeners.stdout) | list | length == 0
+    fail_msg: >-
+      SMB listeners are wrong. Expected {{ arq_smb_source_loopback_address }}:445
+      and {{ arq_smb_source_tailscale_ip }}:445 and nothing else. Observed:
+      {{ arq_smb_source_listeners.stdout }}
+    success_msg: SMB listens on loopback and the tailnet address only
+  when: not ansible_check_mode
+
+- name: Verify SMB authentication over loopback
+  # POST-INSTALL VERIFICATION, skipped under `--check`.
+  #
+  # The password goes in through the PASSWD environment variable rather than
+  # `-U user%password`, which is what the installer used: argv is readable by
+  # every local user through /proc, and this credential is meant to be
+  # root-only. If a future smbclient stops honouring PASSWD the probe fails
+  # closed — it prompts, gets no tty, and errors — rather than passing on a
+  # blank password.
+  #
+  # argv rather than a command string because `--option=client min
+  # protocol=SMB3` is ONE argument containing spaces, which a plain cmd would
+  # split into three.
+  ansible.builtin.command:
+    argv:
+      - smbclient
+      - "-L"
+      - "//{{ arq_smb_source_loopback_address }}"
+      - "-U"
+      - "{{ arq_smb_source_user }}"
+      - "-m"
+      - SMB3
+      - "--option=client min protocol=SMB3"
+  become: true
+  environment:
+    PASSWD: "{{ arq_smb_source_password_raw.content | b64decode | trim }}"
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Verify the share is readable over loopback
+  # POST-INSTALL VERIFICATION, skipped under `--check`.
+  ansible.builtin.command:
+    argv:
+      - smbclient
+      - "//{{ arq_smb_source_loopback_address }}/{{ arq_smb_source_share_name }}"
+      - "-U"
+      - "{{ arq_smb_source_user }}"
+      - "-m"
+      - SMB3
+      - "--option=client min protocol=SMB3"
+      - "-c"
+      - ls
+  become: true
+  environment:
+    PASSWD: "{{ arq_smb_source_password_raw.content | b64decode | trim }}"
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode
+
+- name: Verify the share is readable through the tailnet proxy
+  # POST-INSTALL VERIFICATION, skipped under `--check`.
+  #
+  # The loopback read proves Samba and the passdb; only this one proves the
+  # socket proxy actually forwards, which is the path Arq uses.
+  ansible.builtin.command:
+    argv:
+      - smbclient
+      - "//{{ arq_smb_source_tailscale_ip }}/{{ arq_smb_source_share_name }}"
+      - "-U"
+      - "{{ arq_smb_source_user }}"
+      - "-m"
+      - SMB3
+      - "--option=client min protocol=SMB3"
+      - "-c"
+      - ls
+  become: true
+  environment:
+    PASSWD: "{{ arq_smb_source_password_raw.content | b64decode | trim }}"
+  changed_when: false
+  no_log: true
+  when: not ansible_check_mode

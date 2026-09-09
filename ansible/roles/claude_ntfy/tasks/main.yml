@@ -1,0 +1,223 @@
+---
+# claude_ntfy -- push notification when the top-level Claude agent stops or asks.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info services/claude-ntfy/install.sh.
+#
+# USER SCOPE, NOT ROOT. Every task carries `become: false`. See the same note in
+# roles/claude_code_hooks/tasks/main.yml -- both roles write the one
+# ~/.claude/settings.json, and a root-owned copy of it breaks Claude Code for
+# the account that has to write it.
+#
+# THIS SERVICE HAS NO UNIT. Nothing here runs as a daemon; the notification is
+# sent by a hook handler inside an externally-sourced plugin
+# (github: thewoolleyman/claude-code-ntfy), and what the role provisions is the
+# plugin's presence plus two settings keys.
+
+- name: Probe for the commands the ntfy plugin needs at notification time
+  # Probed through `env` rather than invoked directly, so a missing command
+  # yields rc 127 from a program that certainly exists. Calling `jq --version`
+  # directly would fail the MODULE, not the command, and the registered result
+  # would carry no rc for the assert below to read.
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - "{{ item }}"
+      - --version
+  become: false
+  loop: "{{ claude_ntfy_required_commands }}"
+  register: claude_ntfy_command_probe
+  changed_when: false
+  failed_when: false
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+
+- name: Require the commands the ntfy plugin needs at notification time
+  # A precondition the role does NOT create. `claude` is the Claude Code CLI
+  # this whole host exists to run, and jq and curl are what the plugin's hook
+  # handler shells out to when it publishes. Installing a Claude Code runtime as
+  # a side effect of a notification role would be the wrong owner for it.
+  ansible.builtin.assert:
+    that:
+      - _claude_ntfy_missing | length == 0
+    fail_msg: >-
+      Not on PATH for {{ claude_ntfy_owner }} on {{ inventory_hostname }}:
+      {{ _claude_ntfy_missing | join(', ') }}. Install each one for that
+      account, then re-run. This role does not install them.
+    success_msg: "jq, curl and claude all resolve"
+  vars:
+    _claude_ntfy_missing: >-
+      {{ claude_ntfy_command_probe.results | rejectattr('rc', 'equalto', 0)
+         | map(attribute='item') | list }}
+
+- name: Look for the Claude Code settings file
+  ansible.builtin.stat:
+    path: "{{ claude_ntfy_settings }}"
+  become: false
+  register: claude_ntfy_settings_stat
+
+- name: Require the Claude Code settings file to exist
+  # The installer hard-failed here and the role keeps that, because the file is
+  # created by Claude Code on first launch and nothing else knows what else
+  # belongs in it. Writing a fresh one from an empty object would be a valid
+  # JSON file that quietly discarded the account's model, permission and MCP
+  # configuration -- the sibling claude_code_hooks role may create one because
+  # a bare PreToolUse entry is complete on its own; a topic in an otherwise
+  # empty file is not.
+  ansible.builtin.assert:
+    that:
+      - claude_ntfy_settings_stat.stat.exists
+    fail_msg: >-
+      {{ claude_ntfy_settings }} does not exist. Launch Claude Code once as
+      {{ claude_ntfy_owner }} to create it, then re-run.
+    success_msg: "{{ claude_ntfy_settings }} exists"
+
+- name: List the configured Claude Code marketplaces
+  ansible.builtin.command:
+    argv: [claude, plugin, marketplace, list]
+  become: false
+  register: claude_ntfy_marketplace_list
+  changed_when: false
+  failed_when: false
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+
+- name: Report that an apply would add the ntfy marketplace
+  # A DRIFT REPORT THAT CANNOT SEE A CLI CHANGE IS NOT A DRIFT REPORT. `command`
+  # is not check-mode-safe, so under --check Ansible skips the task below rather
+  # than reporting it as a would-be change -- and this tree's ansible.cfg sets
+  # display_skipped_hosts = False, so the skipped task vanishes from the output
+  # entirely. The operator would read a clean report on a host where the work has
+  # never been done. This debug is the missing line. It fires only under --check
+  # and only when the change is actually needed, so an apply and a converged host
+  # both stay silent.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: marketplace {{ claude_ntfy_marketplace_name }} is not configured.
+      An apply would run: claude plugin marketplace add
+      {{ claude_ntfy_marketplace_repo }}
+  when:
+    - ansible_check_mode
+    - claude_ntfy_marketplace_name not in claude_ntfy_marketplace_list.stdout
+
+- name: Add the ntfy marketplace
+  # `claude plugin marketplace add` is not idempotent, so the listing above is
+  # the idempotence probe -- the same substring test the installer used. The
+  # command is only ever run when it will change something, which is why
+  # changed_when is a bare true rather than a test on its output.
+  ansible.builtin.command:
+    argv: [claude, plugin, marketplace, add, "{{ claude_ntfy_marketplace_repo }}"]
+  become: false
+  changed_when: true
+  when: claude_ntfy_marketplace_name not in claude_ntfy_marketplace_list.stdout
+
+- name: List the installed Claude Code plugins
+  ansible.builtin.command:
+    argv: [claude, plugin, list]
+  become: false
+  register: claude_ntfy_plugin_list
+  changed_when: false
+  failed_when: false
+  # check_mode: false because this is a READ-ONLY probe that a later assert reads.
+  # `command` is not check-mode-safe, so under --check Ansible would skip it, the
+  # registered result would carry no rc, and the assert would fail blaming the
+  # host for a task that never ran. A drift report has to be able to evaluate a
+  # precondition; running a probe that changes nothing is how it does that.
+  check_mode: false
+
+- name: Report that an apply would install the ntfy-notify plugin
+  # Same missing line as the marketplace report above, and on the vps this is the
+  # one that fires: the marketplace is registered but the plugin is not installed.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: plugin {{ claude_ntfy_plugin }} is not installed, so nothing on this
+      host sends the notification. An apply would run: claude plugin install
+      {{ claude_ntfy_plugin }}
+  when:
+    - ansible_check_mode
+    - claude_ntfy_plugin not in claude_ntfy_plugin_list.stdout
+
+- name: Install the ntfy-notify plugin
+  # Deliberately unpinned, matching the installer. AGENTS.md requires >= 0.1.3
+  # in prose only; the CLI takes no version argument, so a pin here would be a
+  # comment claiming an enforcement that does not exist.
+  ansible.builtin.command:
+    argv: [claude, plugin, install, "{{ claude_ntfy_plugin }}"]
+  become: false
+  changed_when: true
+  when: claude_ntfy_plugin not in claude_ntfy_plugin_list.stdout
+
+- name: Read the Claude Code settings
+  # Read AFTER the plugin install, so the enabled-state assert below reads the
+  # state the install just produced rather than the state before it.
+  # no_log: this file holds the account's env block, which carries secrets.
+  ansible.builtin.slurp:
+    src: "{{ claude_ntfy_settings }}"
+  become: false
+  register: claude_ntfy_settings_raw
+  no_log: true
+
+- name: Load the Claude Code settings
+  ansible.builtin.set_fact:
+    claude_ntfy_settings_data: "{{ claude_ntfy_settings_raw.content | b64decode | from_json }}"
+  become: false
+  no_log: true
+
+- name: Require the ntfy-notify plugin to be enabled
+  # PROMOTED from the installer's warning to a failure. An installed-but-
+  # disabled plugin is the exact shape of this service's only failure mode: the
+  # host looks provisioned, every artifact is present, and no notification is
+  # ever sent. A warning printed once into a converge log is not where that gets
+  # noticed. The fix is one command, named in the message.
+  ansible.builtin.assert:
+    that:
+      - claude_ntfy_settings_data.enabledPlugins[claude_ntfy_plugin] | default(false)
+    fail_msg: >-
+      {{ claude_ntfy_plugin }} is installed but not enabled in
+      {{ claude_ntfy_settings }}, so no notification will ever be sent.
+      Fix with: claude plugin enable {{ claude_ntfy_plugin }}
+    success_msg: "{{ claude_ntfy_plugin }} is enabled"
+  # Check-mode guard of the same shape as a systemd arming task. On a host where
+  # the plugin was ALREADY installed before this run, the assert runs under
+  # --check and reports genuine disabled-drift. Where it was not, the install
+  # above was only a would-be change, so asserting on its effect would blame the
+  # host for work the dry run declined to do; the skipped install is the report.
+  when: not ansible_check_mode or claude_ntfy_plugin in claude_ntfy_plugin_list.stdout
+
+- name: Set the ntfy topic in the Claude Code settings
+  # no_log: `content` is the whole settings file. The topic itself is also kept
+  # out of the output -- it is not a credential, but publishing to an ntfy topic
+  # needs nothing except the topic, so it is treated as one here.
+  #
+  # Only the two env keys are touched and every other key is carried through
+  # unchanged, which is what the installer's jq merge did and why it did it:
+  # this file holds secrets that no repository has a copy of.
+  #
+  # `backup: true` replaces the installer's cp to settings.json.bak. Ansible
+  # timestamps its backups, so a second repair run no longer overwrites the only
+  # copy of the pre-change file.
+  ansible.builtin.copy:
+    content: "{{ _claude_ntfy_next | to_nice_json(indent=2, sort_keys=False) }}\n"
+    dest: "{{ claude_ntfy_settings }}"
+    owner: "{{ claude_ntfy_owner }}"
+    group: "{{ claude_ntfy_group }}"
+    mode: "0600"
+    backup: true
+  become: false
+  no_log: true
+  when: _claude_ntfy_desired_env != _claude_ntfy_env
+  vars:
+    _claude_ntfy_env: "{{ claude_ntfy_settings_data.env | default({}) }}"
+    _claude_ntfy_desired_env: >-
+      {{ _claude_ntfy_env
+         | combine({'CLAUDE_NTFY_TOPIC': claude_ntfy_topic})
+         | combine({'CLAUDE_NTFY_SERVER': claude_ntfy_server} if claude_ntfy_server else {}) }}
+    _claude_ntfy_next: "{{ claude_ntfy_settings_data | combine({'env': _claude_ntfy_desired_env}) }}"

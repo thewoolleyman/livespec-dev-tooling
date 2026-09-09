@@ -1,0 +1,14 @@
+---
+- name: Restart code-pwa-proxy
+  # nginx can reload, but this unit's ExecReload re-reads only the config —
+  # a changed unit file needs a restart, and restarting a proxy that holds
+  # nothing but forwarded connections is cheap.
+  ansible.builtin.systemd_service:
+    name: "{{ code_pwa_proxy_unit_name }}"
+    state: restarted
+    daemon_reload: true
+  become: true
+  # Same guard as the arming task in tasks/main.yml. A handler fires under
+  # --check too, because the template reports a would-be change, and
+  # restarting a unit the dry run has not written would fail.
+  when: not ansible_check_mode or code_pwa_proxy_unit_file.stat.exists

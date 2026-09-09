@@ -1,0 +1,183 @@
+---
+# sccache_redis — the factory host's compilation cache.
+#
+# Phase 2 of livespec plan k3s-on-gmktec-for-vps-usage, work-item
+# livespec-sab5gn.4. Replaces fabro-hosts services/sccache-redis/install.sh and
+# render-unit.sh (console plan optimize-console-builds,
+# livespec-console-beads-fabro-di6fn5).
+#
+# WHAT IT IS. A RAM-only redis, published ONLY on the docker bridge gateway,
+# that the fabro sandboxes' sccache uses as its backend. Every fabro dispatch of
+# a Rust consumer otherwise compiles fully cold in a fresh container. Two host
+# facts shape the wiring: fabro's docker provider exposes no volume mount, so
+# the cache cannot be a host directory and must be a network endpoint; and fabro
+# spawns ACP nodes under a fail-closed env allowlist, so SCCACHE_* env cannot
+# reach cargo and the sandbox image carries the endpoint as files instead. This
+# role is the host-side half only.
+#
+# TRUST, RECORDED RATHER THAN HIDDEN. Unlike the CI pool's redis, which has one
+# trusted writer, here the SANDBOXES are the writers — there is no separate
+# trusted builder on the factory, and a sandbox already executes the
+# repository's own code. The blast radius of a poisoned entry is the other
+# sandboxes on this host until LRU or a restart clears it, the same boundary as
+# the baked registry they already share. There is no auth: an ACL with a
+# per-sandbox credential would need fabro to project it, which the env allowlist
+# forbids.
+#
+# THE HOST GUARD DOES NOT MIGRATE. install.sh compared `hostname -s` against
+# SCCACHE_REDIS_SYSTEM_HOSTNAME; inventory targeting is that guard now. The
+# gateway check below is a different thing and does migrate — it is about this
+# host's docker configuration, not about which host this is.
+
+- name: Refuse an empty value in any field of the rendered unit
+  # render-unit.sh checked each of these six was set AND non-empty before
+  # substituting it. Jinja catches an UNDEFINED variable on its own, but an
+  # empty string substitutes silently — and an empty --maxmemory or --publish
+  # argument yields a unit that starts a redis with the wrong limits or on the
+  # wrong address rather than one that fails to start.
+  #
+  # `| string` because the port is an integer, which has no length.
+  ansible.builtin.assert:
+    that:
+      - sccache_redis_container | string | length > 0
+      - sccache_redis_bind_addr | string | length > 0
+      - sccache_redis_port | string | length > 0
+      - sccache_redis_image | string | length > 0
+      - sccache_redis_maxmemory | string | length > 0
+      - sccache_redis_container_memory | string | length > 0
+    fail_msg: >-
+      Every field of the sccache-redis unit must carry a non-empty value; check
+      this host's host_vars against the role defaults.
+    success_msg: every field of the unit carries a value
+
+- name: Probe the container daemon
+  # The cache IS a container, so an unreachable daemon is not a degraded install
+  # but no install at all. This role does not provision the container layer.
+  #
+  # {% raw %} keeps Go's template braces out of Jinja's hands.
+  ansible.builtin.command:
+    cmd: docker info --format '{% raw %}{{.ServerVersion}}{% endraw %}'
+  become: true
+  register: sccache_redis_daemon
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse to install a container cache with no container daemon
+  ansible.builtin.assert:
+    that:
+      - sccache_redis_daemon.rc == 0
+    fail_msg: >-
+      Cannot reach the container daemon on this host. Install docker and start
+      docker.service, then re-run.
+    success_msg: container daemon reachable
+
+- name: Read this host's docker bridge gateway
+  ansible.builtin.command:
+    cmd: >-
+      docker network inspect bridge
+      --format '{% raw %}{{range .IPAM.Config}}{{.Gateway}}{{end}}{% endraw %}'
+  become: true
+  register: sccache_redis_gateway
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse a bind address that is not this host's bridge gateway
+  # The whole confinement argument rests on this address. Bound anywhere else,
+  # the cache is either unreachable from the sandboxes that must write to it or
+  # reachable from the tailnet, and an unauthenticated redis whose writers are
+  # the sandboxes must never be the second.
+  ansible.builtin.assert:
+    that:
+      - sccache_redis_gateway.rc == 0
+      - sccache_redis_gateway.stdout | trim == sccache_redis_bind_addr
+    fail_msg: >-
+      This role would bind {{ sccache_redis_bind_addr }} but the docker bridge
+      gateway here is '{{ sccache_redis_gateway.stdout | trim }}'. Set
+      sccache_redis_bind_addr in this host's host_vars to the measured gateway.
+    success_msg: "{{ sccache_redis_bind_addr }} is this host's bridge gateway"
+
+- name: Look for the cache unit already installed on this host
+  # Read BEFORE the unit is written, so it records what the host had rather than
+  # what this play is about to give it. The arming task and the restart handler
+  # both read it, for the reason given there.
+  ansible.builtin.stat:
+    path: "{{ sccache_redis_unit_dir }}/{{ sccache_redis_service }}"
+  become: true
+  register: sccache_redis_unit_state
+
+- name: Render the sccache-redis unit
+  # render-unit.sh's "exit 4 if any @NAME@ remains" guard needs no counterpart:
+  # an undefined variable is a Jinja error.
+  ansible.builtin.template:
+    src: sccache-redis.service.j2
+    dest: "{{ sccache_redis_unit_dir }}/{{ sccache_redis_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the sccache-redis cache
+
+- name: Arm the sccache-redis cache
+  # install.sh restarted unconditionally so a changed image digest would take
+  # effect. Here the handler restarts only when the unit actually changed, which
+  # is the same guarantee — every host value, the image digest included, is in
+  # the unit's ExecStart — without discarding a warm cache on a no-op run.
+  # `started` still covers a unit that is down for any other reason.
+  #
+  # THE `when` IS A CHECK-MODE GUARD, NOT A CONDITION ON THE APPLY. Under
+  # --check the template above writes nothing, so on a host that does not
+  # already carry the unit this module would fail with "Could not find the
+  # requested service" — the role reporting a fault it created itself, in
+  # exactly the case where the operator most needs the dry run to finish and
+  # say so. Where the unit IS already installed the task runs normally under
+  # --check and reports genuine enable/start drift. `check_mode: false` would
+  # be the wrong fix here: it would enable and start a live unit during a run
+  # that promised to change nothing.
+  ansible.builtin.systemd_service:
+    name: "{{ sccache_redis_service }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or sccache_redis_unit_state.stat.exists
+
+- name: Apply any pending restart before verifying the cache
+  # Handlers otherwise run at the end of the play, so the verification below
+  # would PING the container the restart is about to replace and pass on the
+  # strength of the OLD one. This flushes every pending handler in the play, not
+  # only this role's; that is harmless here because the roles this tree runs
+  # alongside notify only restarts, which are safe to take early.
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify redis answers on the published address
+  # Kept from install.sh, and the most load-bearing task in the role: an
+  # `active` unit with nothing answering is exactly the probe that lies. The
+  # PING goes through the PUBLISHED address rather than the container's
+  # loopback, because that is the address the sandboxes will use.
+  #
+  # A `Ran out of retries` failure here means the cache did not answer within
+  # {{ sccache_redis_ping_retries }} attempts; read `journalctl -u
+  # {{ sccache_redis_service }}` for why.
+  #
+  # SKIPPED UNDER --check, deliberately: this is a post-install VERIFICATION,
+  # exercising a cache the check run has not armed, so verifying it would prove
+  # nothing. Unlike the read-only probes above — which carry `check_mode: false`
+  # so a dry run still evaluates the preconditions — this one needs an explicit
+  # `when`, because the command module's own check-mode skip is not enough here:
+  # it reports "would have run" without running, that output never contains
+  # PONG, and the retry loop would then exhaust every attempt and fail the run,
+  # turning a drift report into a red play against a perfectly healthy cache.
+  ansible.builtin.command:
+    cmd: >-
+      docker exec {{ sccache_redis_container }}
+      redis-cli -h {{ sccache_redis_bind_addr }} -p {{ sccache_redis_port }} ping
+  become: true
+  register: sccache_redis_ping
+  changed_when: false
+  failed_when: false
+  retries: "{{ sccache_redis_ping_retries }}"
+  delay: "{{ sccache_redis_ping_delay }}"
+  until: "'PONG' in (sccache_redis_ping.stdout | default(''))"
+  when: not ansible_check_mode

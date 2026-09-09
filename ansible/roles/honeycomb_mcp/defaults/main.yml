@@ -1,0 +1,42 @@
+---
+# Defaults for honeycomb_mcp.
+#
+# USER SCOPE. vps-info's AGENTS.md installs this as
+# `services/honeycomb-mcp/install.sh   # no sudo -- user-level Claude config`.
+# Everything it touches is either under the account's ~/.claude/plugins cache or
+# inside the account's own checkout of vps-info.
+honeycomb_mcp_owner: "{{ ansible_facts['user_id'] }}"
+honeycomb_mcp_group: "{{ ansible_facts['user_gid'] }}"
+honeycomb_mcp_home: "{{ ansible_facts['user_dir'] }}"
+
+# THE ROLE INSTALLS NOTHING AT THIS PATH -- IT POINTS AT IT. The stdio wrapper
+# runs in place from the vps-info checkout, and the path below is written
+# verbatim into the plugin's .mcp.json as the command Claude Code executes. So
+# the checkout is a host dependency of a file this role writes, and the role
+# does not own the checkout: it asserts the wrapper is there and refuses
+# otherwise. Moving or removing the checkout breaks the MCP connection with no
+# other signal.
+#
+# The literal /data/projects path, not ~/workspace: the installer resolved the
+# symlink with `pwd -P` before writing it, because Claude Code exec's the string
+# and a path through a symlink is one more thing that can be replaced underneath
+# it.
+honeycomb_mcp_checkout: /data/projects/vps-info
+honeycomb_mcp_wrapper: "{{ honeycomb_mcp_checkout }}/services/honeycomb-mcp/honeycomb-mcp.sh"
+
+# The 1Password service-account wrapper that injects HONEYCOMB_MGMT_API_KEY into
+# the wrapper's child environment. It comes from the 1password-env-wrapper repo
+# and is NOT installed by anything in vps-info or by this role.
+honeycomb_mcp_onepassword_wrapper: /usr/local/bin/with-homelab-env.sh
+
+# Where the honeycomb plugin's Claude Code MCP definitions live. One directory
+# per installed plugin version, each holding a .mcp.json, all of which are
+# patched -- a stale version directory left behind by an update would otherwise
+# keep serving the vendor OAuth definition to any session that resolved it.
+honeycomb_mcp_plugin_cache: >-
+  {{ honeycomb_mcp_home }}/.claude/plugins/cache/honeycomb-plugins/honeycomb
+
+# The MCP server name. It is deliberately unchanged from the vendor definition
+# so the tool namespace stays mcp__plugin_honeycomb_honeycomb__*, which is what
+# leaves the plugin's skills and agents working after the repoint.
+honeycomb_mcp_server_name: honeycomb

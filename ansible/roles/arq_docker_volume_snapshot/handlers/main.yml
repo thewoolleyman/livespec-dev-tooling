@@ -1,0 +1,15 @@
+---
+# The installer ran `systemctl start` on the service immediately after
+# installing it, so that a fresh install leaves a usable snapshot behind rather
+# than an empty destination until 02:30 the next morning. That is a handler:
+# it should fire when the runner or a unit actually changed, not on every
+# converge of an already-correct host.
+- name: Run an immediate docker-volume snapshot
+  ansible.builtin.systemd_service:
+    name: arq-vps-docker-volume-snapshot.service
+    state: started
+  become: true
+  # Handlers are notified and run under `--check` too, so the same guard the arm
+  # task carries applies here: skip rather than fail when check mode has not
+  # written the unit this handler starts.
+  when: not ansible_check_mode or arq_docker_volume_snapshot_service_unit.stat.exists

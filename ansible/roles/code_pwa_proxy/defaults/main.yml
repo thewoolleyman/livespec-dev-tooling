@@ -1,0 +1,38 @@
+---
+# The proxy's own loopback endpoint. Tailscale Serve is the only thing in
+# front of it, so it must never bind a routable address.
+code_pwa_proxy_listen_address: 127.0.0.1
+code_pwa_proxy_listen_port: 8001
+
+# The editor backend this proxy fronts, owned by the code_serve_web role.
+# Both values are asserted before anything is installed.
+code_pwa_proxy_backend_unit: code-serve-web.service
+code_pwa_proxy_backend_url: http://127.0.0.1:8000
+
+code_pwa_proxy_unit_name: code-pwa-proxy.service
+code_pwa_proxy_unit_path: /etc/systemd/system/code-pwa-proxy.service
+code_pwa_proxy_conf_dir: /etc/code-pwa-proxy
+code_pwa_proxy_pid_file: /run/code-pwa-proxy.pid
+code_pwa_proxy_nginx_bin: /usr/sbin/nginx
+code_pwa_proxy_nginx_package: nginx-light
+# Any of these flavours already on the host satisfies this role. The shell
+# installer checked for all three and installed nginx-light only when none was
+# present, so asking for nginx-light unconditionally would pull a second
+# flavour onto a host that already had nginx-full.
+code_pwa_proxy_nginx_flavour_pattern: ^nginx-(light|core|full)$
+# The distro's own nginx unit binds :80 and would fight anything else serving
+# there. This role runs its own unit against its own config directory, so the
+# bundled one is disabled rather than reused.
+code_pwa_proxy_distro_nginx_unit: nginx.service
+
+# The whole point of the proxy: Microsoft's serve-web ships a valid web app
+# manifest but no service worker, and Chrome's PWA install gate needs both.
+# This is injected into every HTML response by sub_filter, and the string is
+# also what the post-install probe greps for, so it lives in one place.
+code_pwa_proxy_sw_registration: "navigator.serviceWorker.register('/sw.js').catch(console.warn);"
+
+# Tailscale Serve publication. The hostname is a HOST FACT, not a default —
+# see HOST_VARS.md in this role directory.
+code_pwa_proxy_tailscale_bin: /usr/bin/tailscale
+code_pwa_proxy_serve_hostname: vps.perch-rudd.ts.net
+code_pwa_proxy_serve_https_port: 8443

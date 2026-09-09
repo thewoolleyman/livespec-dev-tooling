@@ -1,0 +1,30 @@
+---
+# Defaults for claude_code_hooks.
+#
+# USER SCOPE. Every path below resolves under the connecting account's own home
+# directory, so nothing here is a fleet-wide constant that an operator would
+# override per host; the account is.
+#
+# Owner and group are taken from the account Ansible connects as rather than
+# hardcoded to `ubuntu`, so the role is correct on any machine in the legacy
+# inventory. The group is the numeric primary GID rather than a name, because a
+# name would be a guess: user-private groups make it `ubuntu` on this host, but
+# nothing in the fact set promises that on another.
+claude_code_hooks_owner: "{{ ansible_facts['user_id'] }}"
+claude_code_hooks_group: "{{ ansible_facts['user_gid'] }}"
+claude_code_hooks_home: "{{ ansible_facts['user_dir'] }}"
+
+claude_code_hooks_dir: "{{ claude_code_hooks_home }}/.claude/hooks"
+claude_code_hooks_guard_dest: "{{ claude_code_hooks_dir }}/tmux-fleet-guard.py"
+claude_code_hooks_settings: "{{ claude_code_hooks_home }}/.claude/settings.json"
+
+# The command string written into settings.json. It must match what the
+# installer wrote -- bare `python3` plus the absolute destination -- because the
+# already-wired test below recognises an existing entry by the guard's filename
+# appearing inside this string.
+claude_code_hooks_command: "python3 {{ claude_code_hooks_guard_dest }}"
+
+# The Claude Code tool name the hook fires on. Only Bash commands can carry a
+# tmux invocation, so widening this would cost a subprocess on every tool call
+# and catch nothing.
+claude_code_hooks_matcher: Bash

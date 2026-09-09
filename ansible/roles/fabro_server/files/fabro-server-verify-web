@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Refuse to call fabro-server ready unless the console and its JavaScript load.
+
+set -euo pipefail
+
+BASE_URL="${FABRO_BASE_URL:-http://127.0.0.1:32276}"
+CANONICAL_HOST="${FABRO_CANONICAL_HOST:-vps.perch-rudd.ts.net:32276}"
+RUNS_URL="${BASE_URL}/runs"
+LOGIN_URL="${BASE_URL}/login"
+ATTEMPTS="${FABRO_WEB_VERIFY_ATTEMPTS:-60}"
+body="$(mktemp)"
+trap 'rm -f "${body}"' EXIT
+
+for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
+    if curl -fsS --max-time 5 -H "Host: ${CANONICAL_HOST}" -H 'Accept: text/html' "${RUNS_URL}" -o /dev/null \
+        && curl -fsS --max-time 5 -H "Host: ${CANONICAL_HOST}" -H 'Accept: text/html' "${LOGIN_URL}" -o "${body}" \
+        && grep -qF '<title>Fabro</title>' "${body}"; then
+        asset_path="$(grep -oE 'src="[^"]+\.js"' "${body}" | head -n 1 | cut -d '"' -f 2 || true)"
+        if [[ -n "${asset_path}" ]] \
+            && curl -fsS --max-time 10 -H "Host: ${CANONICAL_HOST}" "${BASE_URL}${asset_path}" -o /dev/null; then
+            exit 0
+        fi
+    fi
+    sleep 1
+done
+
+echo "ERROR: Fabro web console failed verification at ${RUNS_URL} and ${LOGIN_URL}" >&2
+exit 1

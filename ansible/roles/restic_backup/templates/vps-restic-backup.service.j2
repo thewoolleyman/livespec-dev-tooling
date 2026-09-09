@@ -1,0 +1,16 @@
+# Managed by Ansible (role: restic_backup). Local edits are overwritten.
+[Unit]
+Description=VPS restic backup to S3 (independent of the Arq/Mac backup)
+Documentation={{ restic_backup_documentation_url }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root; the script self-loads the homelab secrets via
+# `sudo -n OPENV_KEEP_PRIVILEGES=1 with-homelab-env.sh` and stays root so it can
+# read root-only host state (/etc/shadow, /root, ssh host keys, /etc/credstore).
+ExecStart={{ restic_backup_bin }} backup
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec={{ restic_backup_timeout_start_sec }}

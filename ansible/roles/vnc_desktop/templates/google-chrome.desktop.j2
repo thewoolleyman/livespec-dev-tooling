@@ -1,0 +1,38 @@
+[Desktop Entry]
+# Managed by the Ansible role vnc_desktop. Edit the role, not this file.
+#
+# Repo-owned override of /usr/share/applications/google-chrome.desktop.
+# Installs to /usr/local/share/applications/, which precedes /usr/share in
+# XDG_DATA_DIRS, so this entry wins for BOTH the XFCE Applications menu and
+# xdg-open (this file is the registered default web browser handler —
+# `xdg-settings get default-web-browser` returns google-chrome.desktop).
+#
+# The vendor entry runs `/usr/bin/google-chrome-stable` with no
+# --user-data-dir, which opens the vanilla ~/.config/google-chrome profile
+# instead of the persistent VNC one. Exec= here points at the wrapper, which
+# owns the profile path; see google-chrome-wrapper.sh.
+#
+# Localized Name/GenericName/Comment strings from the vendor file are dropped:
+# this host runs en-US and duplicating ~180 translated lines would be dead
+# weight to keep in sync.
+Version=1.0
+Name=Google Chrome
+GenericName=Web Browser
+Comment=Access the Internet
+Exec={{ vnc_desktop_bin_dir }}/google-chrome-stable %U
+TryExec={{ vnc_desktop_bin_dir }}/google-chrome-stable
+StartupNotify=true
+Terminal=false
+Icon=google-chrome
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=application/pdf;application/rdf+xml;application/rss+xml;application/xhtml+xml;application/xhtml_xml;application/xml;image/gif;image/jpeg;image/png;image/webp;text/html;text/xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/google-chrome;
+Actions=new-window;new-private-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec={{ vnc_desktop_bin_dir }}/google-chrome-stable
+
+[Desktop Action new-private-window]
+Name=New Incognito Window
+Exec={{ vnc_desktop_bin_dir }}/google-chrome-stable --incognito

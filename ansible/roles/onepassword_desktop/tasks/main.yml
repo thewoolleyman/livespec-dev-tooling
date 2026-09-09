@@ -1,0 +1,327 @@
+---
+# onepassword_desktop — the 1Password 8 desktop app inside the VNC session.
+#
+# R4.S8 of livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn),
+# work-item livespec-sab5gn.4. Replaces vps-info
+# services/1password-desktop/install.sh.
+#
+# LIFECYCLE, which is the whole point of this role. The app is NOT started at
+# boot and NOT enabled. x11vnc's -afteraccept hook in the vnc_desktop role
+# starts it when a VNC client authenticates, and RuntimeMaxSec=2h in the unit
+# kills it two hours later whether or not anyone remembered to lock the vault.
+# Every task below that looks like a detour — the immutable autostart entry, the
+# three-verb sudoers drop-in, the deliberately unenabled unit — exists to keep
+# that one cap from being bypassed.
+
+- name: Gather service state for the session preflight
+  ansible.builtin.service_facts:
+
+- name: Assert the VNC desktop session is running
+  # This is a hard precondition, not an ordering hint, which is why it is an
+  # assert rather than a meta/main.yml dependency. A role dependency would
+  # guarantee that the vnc_desktop TASKS ran; what this app needs is that the
+  # SERVICE is up, because 1password-desktop.service reads
+  # /run/vnc-desktop/session.env with EnvironmentFile= and that file exists only
+  # while the session is live. The two are not the same claim, and the second is
+  # the one that matters.
+  ansible.builtin.assert:
+    that:
+      - onepassword_desktop_required_unit in ansible_facts['services']
+      - ansible_facts['services'][onepassword_desktop_required_unit]['state'] == 'running'
+    fail_msg: >-
+      {{ onepassword_desktop_required_unit }} is not running on
+      {{ inventory_hostname }}. It owns /run/vnc-desktop/session.env and its
+      x11vnc -afteraccept hook drives this service's lifecycle. Apply the
+      vnc_desktop role first and confirm the session came up.
+    success_msg: "{{ onepassword_desktop_required_unit }} is running"
+
+- name: Fetch the 1Password package signing key
+  ansible.builtin.get_url:
+    url: "{{ onepassword_desktop_key_url }}"
+    dest: "{{ onepassword_desktop_armored_key }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: onepassword_desktop_key_download
+
+- name: Look for the dearmored 1Password keyring
+  ansible.builtin.stat:
+    path: "{{ onepassword_desktop_keyring }}"
+  become: true
+  register: onepassword_desktop_keyring_stat
+
+- name: Dearmor the 1Password signing key
+  # The shell piped curl straight into gpg and so re-fetched the key on every
+  # run. Keeping the armored source on disk lets the download be conditional and
+  # gives this conversion an honest trigger: it runs when the key is new or when
+  # the dearmored copy is missing, and not otherwise.
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --batch
+      - --yes
+      - --dearmor
+      - --output
+      - "{{ onepassword_desktop_keyring }}"
+      - "{{ onepassword_desktop_armored_key }}"
+  become: true
+  changed_when: true
+  when: >-
+    onepassword_desktop_key_download is changed
+    or not onepassword_desktop_keyring_stat.stat.exists
+
+- name: Look for the vendor-managed 1Password apt source
+  ansible.builtin.stat:
+    path: "{{ onepassword_desktop_vendor_sources }}"
+  become: true
+  register: onepassword_desktop_vendor_sources_stat
+
+- name: Add the 1Password apt repository
+  # ONLY as a bootstrap, and only while the vendor's own source file is absent.
+  # Once the 1password package is installed its post-install hook writes
+  # 1password.sources and COMMENTS OUT the duplicate 1password.list, which is
+  # the state this host is in now. Enforcing the .list unconditionally would
+  # re-enable a second definition of the same repository that the vendor
+  # deliberately disabled, against this repo's standing rule to defer to a
+  # vendor's own .sources file. The shell avoided it only by accident, through a
+  # `[[ ! -f ]]` guard that a commented-out file happens to satisfy.
+  #
+  # update_cache is stated rather than left to the default because it is what
+  # replaces the shell's separate `apt-get update`, and a reader should not have
+  # to know the module's default to see that the cache is refreshed here.
+  ansible.builtin.apt_repository:
+    repo: "{{ onepassword_desktop_repo }}"
+    filename: 1password
+    state: present
+    update_cache: true
+  become: true
+  when: not onepassword_desktop_vendor_sources_stat.stat.exists
+
+- name: Create the debsig policy and keyring directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - /etc/debsig/policies/{{ onepassword_desktop_debsig_key_id }}
+    - /usr/share/debsig/keyrings/{{ onepassword_desktop_debsig_key_id }}
+
+- name: Fetch the 1Password debsig policy
+  ansible.builtin.get_url:
+    url: "{{ onepassword_desktop_debsig_policy_url }}"
+    dest: /etc/debsig/policies/{{ onepassword_desktop_debsig_key_id }}/1password.pol
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the debsig verification keyring
+  # The shell downloaded and dearmored the SAME key a second time to land it
+  # here. One fetch and one conversion produce identical bytes, and copying them
+  # makes it explicit that apt and debsig-verify trust one key, not two.
+  ansible.builtin.copy:
+    src: "{{ onepassword_desktop_keyring }}"
+    dest: /usr/share/debsig/keyrings/{{ onepassword_desktop_debsig_key_id }}/debsig.gpg
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: not ansible_check_mode or onepassword_desktop_keyring_stat.stat.exists
+
+- name: Install the 1Password desktop package
+  ansible.builtin.package:
+    name: 1password
+    state: present
+  become: true
+
+- name: Install the 1Password lifecycle sudoers drop-in
+  # x11vnc's -afteraccept hook runs `sudo systemctl start 1password-desktop` as
+  # {{ onepassword_desktop_user }}, and the XFCE menu entry below runs `sudo
+  # systemctl restart`. Both need this, and it is scoped to those three verbs on
+  # that one unit and nothing else. `validate` runs visudo BEFORE the file is
+  # moved into place, so a malformed drop-in can never reach /etc/sudoers.d and
+  # lock the account out of sudo — the shell ran visudo after installing it.
+  ansible.builtin.copy:
+    src: sudoers.d-1password-desktop
+    dest: /etc/sudoers.d/1password-desktop
+    owner: root
+    group: root
+    mode: "0440"
+    validate: visudo -cf %s
+  become: true
+
+- name: Look for the 1password-desktop unit file
+  # Read BEFORE the copy below writes it. Under --check that copy only reports a
+  # would-be write, and ansible.builtin.systemd_service cannot evaluate a unit
+  # that is not on disk: it fails with "Could not find the requested service",
+  # a fault the role invented for itself. Gating the systemd task on this lets a
+  # dry run against a host without the unit complete, while a dry run against a
+  # host that has it still reports genuine enable-state drift.
+  ansible.builtin.stat:
+    path: "{{ onepassword_desktop_unit_path }}"
+  become: true
+  register: onepassword_desktop_unit_stat
+
+- name: Install the 1password-desktop unit
+  ansible.builtin.copy:
+    src: 1password-desktop.service
+    dest: "{{ onepassword_desktop_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Reload systemd after installing the 1password-desktop unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+
+- name: Clear any boot autostart left by an older 1password-desktop unit
+  # The unit deliberately carries no [Install] section, so systemd reports it
+  # `static` and it cannot be enabled; this role never starts it either, because
+  # starting at boot would spend the 2h cap on idle hours. The shell's
+  # `systemctl disable … || true` existed to clear a symlink left behind on a
+  # host provisioned by an older revision that DID have an [Install] section.
+  #
+  # It is conditional rather than unconditional because an unconditional
+  # `enabled: false` against a `static` unit reports CHANGED on every single run
+  # — systemd never moves to `disabled`, so the module never converges. That
+  # turns the drift report this migration exists to produce into a permanent
+  # false positive. Reading the enablement state first makes the task fire only
+  # when there is genuinely a symlink to remove.
+  ansible.builtin.systemd_service:
+    name: "{{ onepassword_desktop_unit_name }}"
+    enabled: false
+  become: true
+  when: >-
+    ansible_facts['services'].get(onepassword_desktop_unit_name, {}).get('status', 'static')
+    == 'enabled'
+
+- name: Read the installed 1Password autostart entry
+  # Read before write, so the immutable flag is cleared only when the content
+  # actually has to change. Without this the chattr pair below would report a
+  # change on every single run and make the drift report useless.
+  ansible.builtin.slurp:
+    src: "{{ onepassword_desktop_autostart_file }}"
+  become: true
+  register: onepassword_desktop_autostart_installed
+  changed_when: false
+  failed_when: false
+
+- name: Read the installed autostart entry's file attributes
+  ansible.builtin.stat:
+    path: "{{ onepassword_desktop_autostart_file }}"
+  become: true
+  register: onepassword_desktop_autostart_stat
+
+- name: Decide what the autostart entry needs
+  # Named once here because three tasks below branch on the same two questions,
+  # and repeating a lookup inside three `when:` clauses invites them to drift.
+  ansible.builtin.set_fact:
+    onepassword_desktop_autostart_rewrite: >-
+      {{ onepassword_desktop_autostart_installed.content is not defined
+         or (onepassword_desktop_autostart_installed.content | b64decode | trim)
+            != (lookup('ansible.builtin.file', '1password-autostart.desktop') | trim) }}
+    onepassword_desktop_autostart_immutable: >-
+      {{ 'immutable' in (onepassword_desktop_autostart_stat.stat.attributes | default([])) }}
+
+- name: Create the user autostart directory
+  ansible.builtin.file:
+    path: "{{ onepassword_desktop_autostart_dir }}"
+    state: directory
+    owner: "{{ onepassword_desktop_user }}"
+    group: "{{ onepassword_desktop_group }}"
+    mode: "0700"
+  become: true
+
+- name: Clear the immutable flag before rewriting the autostart entry
+  # An immutable file cannot be replaced, so the flag has to come off first —
+  # but only when the content is actually about to change.
+  ansible.builtin.file:
+    path: "{{ onepassword_desktop_autostart_file }}"
+    state: file
+    attributes: "-i"
+    owner: "{{ onepassword_desktop_user }}"
+    group: "{{ onepassword_desktop_group }}"
+    mode: "0600"
+  become: true
+  when:
+    - onepassword_desktop_autostart_rewrite | bool
+    - onepassword_desktop_autostart_immutable | bool
+
+- name: Install the neutralized 1Password autostart entry
+  # 1Password REWRITES ~/.config/autostart/1password.desktop on every launch, so
+  # deleting the entry does not stick (verified 2026-08-06: removed, relaunched,
+  # back in 15s). An XFCE-autostarted instance is a child of xfce4-session, so it
+  # lands in the vnc-desktop.service cgroup and RuntimeMaxSec=2h NEVER applies —
+  # the 2h cap silently becomes a no-op (found running 1d8h). Worse, the unit then
+  # reads inactive, so the x11vnc -afteraccept guard takes the start branch on
+  # EVERY VNC connect, spawning a throwaway instance that hits the Secret Service
+  # and exits. That keyring churn produced the gnome-keyring prompt storm behind
+  # the 2026-08-06 VNC input deadlock.
+  ansible.builtin.copy:
+    src: 1password-autostart.desktop
+    dest: "{{ onepassword_desktop_autostart_file }}"
+    owner: "{{ onepassword_desktop_user }}"
+    group: "{{ onepassword_desktop_group }}"
+    mode: "0600"
+  become: true
+  when: onepassword_desktop_autostart_rewrite | bool
+
+- name: Pin the 1Password autostart entry immutable
+  # `-i`/`+i` rather than the bare `i` form, which is NOT the same instruction:
+  # Ansible turns a bare `i` into `chattr =i`, meaning "these flags and no
+  # others". On ext4 every file also carries `e` (extents), which the filesystem
+  # will not let chattr clear, so `chattr =i` fails with "Operation not supported"
+  # and takes the apply down with it. `+i` adds the one flag and leaves `e` alone.
+  #
+  # Conditional so it never fires against a file that is already immutable, which
+  # is what keeps the sequence idempotent: in the steady state the clear, the
+  # copy and this task all skip or report unchanged.
+  ansible.builtin.file:
+    path: "{{ onepassword_desktop_autostart_file }}"
+    state: file
+    attributes: "+i"
+    owner: "{{ onepassword_desktop_user }}"
+    group: "{{ onepassword_desktop_group }}"
+    mode: "0600"
+  become: true
+  when: >-
+    onepassword_desktop_autostart_rewrite | bool
+    or not (onepassword_desktop_autostart_immutable | bool)
+
+- name: Install desktop-file-utils
+  # Declared because this role's handler runs update-desktop-database, which
+  # ships in this package. The shell swallowed that command's failure with
+  # `2>/dev/null || true`, which turned a missing tool into a silently stale
+  # menu cache; declaring the package lets the handler fail honestly instead.
+  ansible.builtin.package:
+    name: desktop-file-utils
+    state: present
+  become: true
+
+- name: Create the local applications directory
+  ansible.builtin.file:
+    path: "{{ onepassword_desktop_applications_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the Restart 1Password menu entry
+  # The only in-session way to re-lock the vault and reset the 2h cap without
+  # reaching for an ssh terminal. It shells out to the sudoers verbs above.
+  ansible.builtin.copy:
+    src: restart-1password.desktop
+    dest: "{{ onepassword_desktop_applications_dir }}/restart-1password.desktop"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Update the desktop database

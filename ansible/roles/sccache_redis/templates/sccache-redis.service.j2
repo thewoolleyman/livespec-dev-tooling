@@ -1,0 +1,44 @@
+[Unit]
+Description=sccache compilation cache (redis) for the fabro sandboxes on this host
+Documentation=https://github.com/thewoolleyman/fabro-hosts
+# The cache IS a container; nothing here works without the daemon.
+After=docker.service
+Requires=docker.service
+
+[Service]
+# A long-running `docker run` in the foreground: systemd owns the process, the
+# daemon owns the container, and `Restart=always` covers both a redis crash and
+# a daemon restart (the container dies with the daemon; systemd starts it again).
+Type=simple
+# A stale container from a previous life must not block the name; `-` so a
+# missing one is not a failure.
+ExecStartPre=-/usr/bin/docker rm -f {{ sccache_redis_container }}
+# Published ONLY on the docker bridge gateway: reachable from every sandbox as
+# {{ sccache_redis_bind_addr }}:{{ sccache_redis_port }} (the same path the sandboxes'
+# cargo telemetry shim uses for the OTLP receiver), and from nothing outside
+# the host. protected-mode is off because clients are never loopback; there is
+# no auth -- the sandboxes are the writers by design (README, "Trust").
+# RAM-only, no persistence: an LRU cache that would be rebuilt from cold anyway.
+# The container limit sits above maxmemory for redis's own overhead.
+ExecStart=/usr/bin/docker run --rm --name {{ sccache_redis_container }} \
+    --publish {{ sccache_redis_bind_addr }}:{{ sccache_redis_port }}:6379 \
+    --memory {{ sccache_redis_container_memory }} \
+    --read-only --tmpfs /data \
+    --user 999:999 \
+    --log-driver journald \
+    {{ sccache_redis_image }} \
+    redis-server \
+        --bind 0.0.0.0 \
+        --protected-mode no \
+        --maxmemory {{ sccache_redis_maxmemory }} \
+        --maxmemory-policy allkeys-lru \
+        --save "" \
+        --appendonly no \
+        --maxclients 10000 \
+        --tcp-keepalive 60
+ExecStop=/usr/bin/docker stop -t 10 {{ sccache_redis_container }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

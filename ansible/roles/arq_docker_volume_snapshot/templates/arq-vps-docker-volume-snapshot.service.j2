@@ -1,0 +1,10 @@
+# Managed by Ansible (role: arq_docker_volume_snapshot). Local edits are overwritten.
+[Unit]
+Description=Snapshot Docker volumes for Arq VPS filesystem backup
+Documentation={{ arq_docker_volume_snapshot_documentation_url }}
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart={{ arq_docker_volume_snapshot_bin }}

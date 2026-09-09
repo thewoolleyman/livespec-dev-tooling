@@ -1,0 +1,18 @@
+---
+# The drop-in directory the OS sshd_config Includes, and the name this role
+# writes into it. The `00-` prefix is load-bearing: sshd takes the FIRST value
+# it obtains for each keyword and the Include glob expands lexically, so this
+# file has to sort ahead of the cloud-init drop-in at `50-`. Renaming it to a
+# number >= 50 silently un-hardens the host.
+ssh_hardening_dropin_dir: /etc/ssh/sshd_config.d
+ssh_hardening_dropin_name: 00-ssh-hardening.conf
+
+# An earlier hand-applied name for the same settings. Left in place it is a
+# second, unmanaged source of truth at the same sort position.
+ssh_hardening_legacy_dropin_name: 00-disable-password-auth.conf
+
+# Debian and Ubuntu name the daemon's unit `ssh.service`; the RHEL family uses
+# `sshd.service`. This role configures an OS unit it does not own, so it
+# reloads that unit and never enables it.
+ssh_hardening_service_name: ssh.service
+ssh_hardening_sshd_bin: /usr/sbin/sshd

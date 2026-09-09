@@ -1,0 +1,280 @@
+---
+# code_pwa_proxy — the nginx service-worker injection proxy that makes
+# `code serve-web` installable as a PWA, and the Tailscale Serve mapping that
+# publishes it.
+#
+# Replaces vps-info services/code-pwa-proxy/install.sh. ROOT-SCOPE throughout:
+# the shell installer refuses unless EUID is 0, it writes under /etc, and both
+# the unit it installs and the distro unit it disables are system units.
+#
+# ORDERING AGAINST code_serve_web. vps-info's README states the install order
+# ("Run in order — the proxy depends on the editor backend"). That is expressed
+# here as a PREFLIGHT ASSERT rather than a meta/main.yml dependency, because a
+# meta dependency would RUN the whole code_serve_web role every time this one
+# is applied — including its apt work against an editor the maintainer may be
+# using at that moment. An assert states the requirement without taking an
+# action the operator did not ask for, and names the fix when it is unmet.
+
+- name: Read the host's service state
+  ansible.builtin.service_facts:
+  become: true
+
+- name: Require the editor backend before installing the proxy
+  ansible.builtin.assert:
+    that:
+      - code_pwa_proxy_backend_unit in ansible_facts['services']
+      - ansible_facts['services'][code_pwa_proxy_backend_unit]['state'] == 'running'
+    fail_msg: >-
+      {{ code_pwa_proxy_backend_unit }} is not installed and running. This proxy
+      forwards to it and its unit carries Requires={{ code_pwa_proxy_backend_unit }},
+      so it cannot start without it. Apply the code_serve_web role to this host
+      first, then re-run.
+    success_msg: "{{ code_pwa_proxy_backend_unit }} is running"
+
+- name: Look for the Tailscale CLI
+  ansible.builtin.stat:
+    path: "{{ code_pwa_proxy_tailscale_bin }}"
+  register: code_pwa_proxy_tailscale
+
+- name: Require the Tailscale CLI before installing the proxy
+  # This role publishes the proxy over Tailscale Serve but does not provision
+  # Tailscale: the node's enrolment, its tag and Serve being enabled at the
+  # tailnet level all live in the tailscale-admin repo. Failing here is the
+  # point — the shell installer got as far as installing and starting nginx
+  # before discovering the same thing.
+  ansible.builtin.assert:
+    that:
+      - code_pwa_proxy_tailscale.stat.exists
+      - code_pwa_proxy_tailscale.stat.executable
+    fail_msg: >-
+      {{ code_pwa_proxy_tailscale_bin }} is missing or not executable. Enrol this
+      host in the tailnet and enable Tailscale Serve for it (tailscale-admin
+      repo), then re-run.
+    success_msg: the Tailscale CLI is present
+
+- name: Read the host's installed packages
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Install nginx
+  # Skipped when any accepted flavour is already installed, which is what the
+  # shell's three dpkg probes amounted to. Unconditionally requesting
+  # nginx-light would add a second flavour on a host that already had
+  # nginx-full, and both would then claim the same distro unit.
+  ansible.builtin.apt:
+    name: "{{ code_pwa_proxy_nginx_package }}"
+    state: present
+    update_cache: true
+  become: true
+  when: >-
+    ansible_facts['packages'].keys()
+    | select('match', code_pwa_proxy_nginx_flavour_pattern) | list | length == 0
+
+- name: Disable the distro nginx unit
+  ansible.builtin.systemd_service:
+    name: "{{ code_pwa_proxy_distro_nginx_unit }}"
+    enabled: false
+    state: stopped
+  become: true
+  # Under --check the apt task above installs nothing, so on a host with no
+  # nginx this unit does not exist and systemd_service would fail on a unit
+  # the role itself would have provided. The service-facts read at the top of
+  # the role is what distinguishes the two cases.
+  when: >-
+    not ansible_check_mode
+    or code_pwa_proxy_distro_nginx_unit in ansible_facts['services']
+
+- name: Create the proxy configuration directory
+  ansible.builtin.file:
+    path: "{{ code_pwa_proxy_conf_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the no-op service worker
+  # Installed BEFORE the nginx config, because the config's validation below
+  # is the gate that must not be tripped by a half-installed tree.
+  ansible.builtin.copy:
+    src: sw.js
+    dest: "{{ code_pwa_proxy_conf_dir }}/sw.js"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart code-pwa-proxy
+
+- name: Install the proxy nginx configuration
+  # The shell installed the config and THEN ran `nginx -t`, which leaves a
+  # broken config on disk when it fails. `validate:` runs the identical check
+  # against the staged copy and refuses to install it at all, so a bad config
+  # can never become the file this host's unit reads.
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ code_pwa_proxy_conf_dir }}/nginx.conf"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "{{ code_pwa_proxy_nginx_bin }} -t -c %s"
+  become: true
+  notify: Restart code-pwa-proxy
+
+- name: Look for an existing code-pwa-proxy unit
+  # Registered so the arming task below can tell "the unit is already
+  # installed" from "this run would install it". Under --check the template
+  # writes nothing, so on a host without the unit ansible.builtin.systemd_service
+  # fails with "Could not find the requested service" — a fault the role
+  # created itself, on precisely the host whose dry run needs to complete.
+  ansible.builtin.stat:
+    path: "{{ code_pwa_proxy_unit_path }}"
+  become: true
+  register: code_pwa_proxy_unit_file
+
+- name: Install the code-pwa-proxy unit
+  ansible.builtin.template:
+    src: code-pwa-proxy.service.j2
+    dest: "{{ code_pwa_proxy_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart code-pwa-proxy
+
+- name: Enable and start code-pwa-proxy
+  ansible.builtin.systemd_service:
+    name: "{{ code_pwa_proxy_unit_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # Runs normally wherever the unit already exists, so genuine enable/start
+  # drift is still reported under --check; skipped only where the unit file is
+  # a would-be write. NOT check_mode: false — that would arm and start a live
+  # unit during a run that promised to change nothing.
+  when: not ansible_check_mode or code_pwa_proxy_unit_file.stat.exists
+
+- name: Apply any pending code-pwa-proxy restart before verifying
+  # Without this the probes below would read the old worker set, and the
+  # Tailscale Serve mapping would be pointed at a proxy that has not yet
+  # picked up the config it is being verified against.
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the proxy on loopback
+  # Deliberately skipped under --check: every task here exercises the nginx
+  # config and the unit this role would have written, which a dry run has not
+  # written. Asserting on them in check mode would blame the host for the dry
+  # run's own restraint.
+  when: not ansible_check_mode
+  block:
+    - name: Wait for the proxy to bind its loopback port
+      ansible.builtin.wait_for:
+        host: "{{ code_pwa_proxy_listen_address }}"
+        port: "{{ code_pwa_proxy_listen_port }}"
+        timeout: 60
+
+    - name: Fetch the service worker through the proxy
+      ansible.builtin.uri:
+        url: >-
+          http://{{ code_pwa_proxy_listen_address }}:{{ code_pwa_proxy_listen_port }}/sw.js
+        method: GET
+        return_content: true
+        timeout: 10
+      register: code_pwa_proxy_sw_probe
+
+    - name: Fetch the workbench HTML through the proxy
+      ansible.builtin.uri:
+        url: >-
+          http://{{ code_pwa_proxy_listen_address }}:{{ code_pwa_proxy_listen_port }}/
+        method: GET
+        return_content: true
+        timeout: 10
+      register: code_pwa_proxy_html_probe
+
+    - name: Confirm the service worker is served and injected on loopback
+      # Serving sw.js is not enough on its own: without the injected
+      # registration nothing ever asks for it, and Chrome's install gate
+      # stays hidden with no error anywhere. Both halves are checked.
+      ansible.builtin.assert:
+        that:
+          - "\"addEventListener('fetch'\" in code_pwa_proxy_sw_probe.content"
+          - code_pwa_proxy_sw_registration in code_pwa_proxy_html_probe.content
+        fail_msg: >-
+          the proxy answered but the service worker was not served, or sub_filter
+          did not inject its registration into the workbench HTML
+        success_msg: sw.js is served and its registration is injected
+
+- name: Read the current Tailscale Serve configuration
+  # check_mode: false because this is a READ-ONLY probe, and Serve state lives
+  # in tailscaled rather than in a file. Whether the mapping exists is genuine
+  # host drift that an operator asking "would an apply do anything?" needs to
+  # see, and a command task is skipped under --check unless told otherwise.
+  # The publish below is the mutating half and stays skipped.
+  ansible.builtin.command:
+    argv:
+      - "{{ code_pwa_proxy_tailscale_bin }}"
+      - serve
+      - status
+  become: true
+  register: code_pwa_proxy_serve_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Publish the proxy over Tailscale Serve
+  # Tailscale Serve state lives in tailscaled, not in a file, so there is no
+  # module for it and no file for Ansible to compare. Idempotence comes from
+  # the status read above — the same probe the shell used. A command task is
+  # not check-mode capable, so a dry run skips this rather than reconfiguring
+  # tailscaled; the probe above is what reports the drift in that mode.
+  ansible.builtin.command:
+    argv:
+      - "{{ code_pwa_proxy_tailscale_bin }}"
+      - serve
+      - --bg
+      - --yes
+      - "--https={{ code_pwa_proxy_serve_https_port }}"
+      - >-
+        http://{{ code_pwa_proxy_listen_address }}:{{ code_pwa_proxy_listen_port }}
+  become: true
+  changed_when: true
+  when: >-
+    ('http://' ~ code_pwa_proxy_listen_address ~ ':' ~ code_pwa_proxy_listen_port)
+    not in code_pwa_proxy_serve_status.stdout
+    or code_pwa_proxy_serve_status.stdout is not search(
+      '(?m)^https://' ~ (code_pwa_proxy_serve_hostname | regex_escape)
+      ~ ':' ~ code_pwa_proxy_serve_https_port)
+
+- name: Verify the published endpoint
+  # Deliberately skipped under --check, for the same reason as the loopback
+  # block: under a dry run the proxy config was not written and the Serve
+  # mapping was not published, so there is nothing yet to verify.
+  when: not ansible_check_mode
+  block:
+    - name: Verify the published HTTPS endpoint end to end
+      # Tailscale Serve provisions its certificate on first use, so the first
+      # attempts after a fresh mapping can fail while that happens. The shell
+      # retried eight times with a three-second gap; so does this.
+      ansible.builtin.uri:
+        url: >-
+          https://{{ code_pwa_proxy_serve_hostname }}:{{ code_pwa_proxy_serve_https_port }}/
+        method: GET
+        return_content: true
+        status_code: [200, 301, 302, 400, 401, 403, 404, 405]
+        timeout: 10
+      register: code_pwa_proxy_https_probe
+      until: code_pwa_proxy_https_probe.status | default(0) > 0
+      retries: 8
+      delay: 3
+
+    - name: Confirm the injection survives the published path
+      # The loopback check above cannot see a Serve mapping pointed at the
+      # wrong backend: that path answers, and answers with un-injected HTML.
+      ansible.builtin.assert:
+        that:
+          - code_pwa_proxy_sw_registration in code_pwa_proxy_https_probe.content
+        fail_msg: >-
+          https://{{ code_pwa_proxy_serve_hostname }}:{{ code_pwa_proxy_serve_https_port }}/
+          responded but its HTML carries no injected service-worker registration —
+          the Serve mapping is probably pointed at the editor rather than the proxy
+        success_msg: the published endpoint serves injected HTML
