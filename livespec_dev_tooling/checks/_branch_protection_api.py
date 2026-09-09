@@ -7,6 +7,11 @@ the one that broke the ceiling. This module is the cohesive half: everything
 that TALKS TO THE FORGE and nothing that decides anything. The alignment
 verdict, and what an unreadable state costs, stay with the check.
 
+Two reads live here, against two endpoints, because the protection facts the
+merge-gate contract names are split across them: the `required_status_checks`
+object carries `contexts` and `strict`, and `enforce_admins` has its own
+sub-endpoint.
+
 The names stay private and are re-exported by the check module, so a caller —
 or a test — still reaches them through `branch_protection_alignment`.
 """
@@ -23,8 +28,10 @@ from typing import cast
 import structlog
 
 __all__: list[str] = [
+    "_AdminEnforcement",
     "_ProtectionAbsent",
     "_RequiredContexts",
+    "_fetch_admin_enforcement",
     "_fetch_required_contexts",
     "_resolve_owner_repo",
 ]
@@ -73,11 +80,32 @@ class _RequiredContexts:
 
     `contexts` is the required-checks list; `strict` is the
     require-branches-up-to-date flag, which MUST be OFF per livespec
-    NFR section "CI as a merge gate (branch protection)".
+    `SPECIFICATION/non-functional-requirements.md` section "CI as a merge gate
+    (branch protection)".
+
+    `owner_repo` and `branch` are the PROVENANCE of that read — the address
+    this object was fetched from, recorded so a caller needing a second read
+    against the same branch (`_fetch_admin_enforcement`) addresses it from the
+    resolution this one already did rather than repeating a symref lookup and,
+    where that misses, a whole repo-object call.
     """
 
     contexts: frozenset[str]
     strict: bool
+    owner_repo: str
+    branch: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class _AdminEnforcement:
+    """The default branch's `enforce_admins` flag, as the forge reported it.
+
+    Exists only when the flag was actually READ. `None` in place of this
+    object is a DIFFERENT answer from `enabled=False` — it says the run did
+    not see the flag at all — and the caller reports the two differently.
+    """
+
+    enabled: bool
 
 
 def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger) -> str | None:
@@ -265,4 +293,59 @@ def _fetch_required_contexts(
             if isinstance(entry, str):
                 contexts.add(entry)
     strict = bool(payload.get("strict"))
-    return _RequiredContexts(contexts=frozenset(contexts), strict=strict)
+    return _RequiredContexts(
+        contexts=frozenset(contexts),
+        strict=strict,
+        owner_repo=owner_repo,
+        branch=branch,
+    )
+
+
+def _fetch_admin_enforcement(
+    *, log: structlog.stdlib.BoundLogger, protection: _RequiredContexts
+) -> _AdminEnforcement | None:
+    """Read the default branch's `enforce_admins` flag, or None when unread.
+
+    Its OWN endpoint, because the `required_status_checks` object
+    `_fetch_required_contexts` reads does not carry the flag at all: a
+    repository that turned admin enforcement off — letting exactly the
+    accounts that do the merging merge straight past a red required check —
+    reads as fully aligned on that endpoint alone
+    (livespec-dev-tooling-65c). The address comes from the `protection`
+    read that necessarily preceded this one.
+
+    `None` means the flag was NOT READ: the call failed, the body was not an
+    object, or the object carried no boolean `enabled`. The caller must not
+    treat that as enabled. It is also not the ordinary can't-read case the
+    check skips on — reaching here means the required-checks read already
+    succeeded, so the token demonstrably holds the admin scope both reads
+    need, and a failure on the second endpoint is anomalous.
+    """
+    api_path = (
+        f"repos/{protection.owner_repo}/branches/{protection.branch}/protection/enforce_admins"
+    )
+    completed = subprocess.run(
+        ["gh", "api", api_path],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        log.warning(
+            "gh api call failed reading the enforce_admins sub-endpoint",
+            stderr=completed.stderr.strip()[:200],
+            api_path=api_path,
+        )
+        return None
+    parsed = json.loads(completed.stdout)
+    if not isinstance(parsed, dict):
+        return None
+    # Same typed parse boundary as the required-checks read above: the
+    # `isinstance` narrowing plus the cast keep the `enabled` guard a
+    # load-bearing runtime check rather than an `Any` passthrough. It is an
+    # IDENTITY test against `bool`, not a truthiness read, so an object
+    # missing the key reads as unread instead of as disabled.
+    enabled = cast("dict[str, object]", parsed).get("enabled")
+    if not isinstance(enabled, bool):
+        return None
+    return _AdminEnforcement(enabled=enabled)
