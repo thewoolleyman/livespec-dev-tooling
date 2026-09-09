@@ -43,7 +43,18 @@ install-worktree-pack:
     uv run python -m livespec_dev_tooling.install_worktree_pack
 
 check:
-    echo ok
+    #!/usr/bin/env bash
+    # The aggregate wires the two canonical meta-gates, so a member built from
+    # this fixture is conformant for the `aggregate-gate-wired` row too. The
+    # shared "fully wired member" fixture has to satisfy EVERY row a green-fleet
+    # sweep runs, not only the pack rows this module tests — a member whose
+    # aggregate is unenumerable makes that row skip, and a row skipped for its
+    # every applicable member is BLIND, which fails the run.
+    targets=(
+        check-aggregate-completeness
+        check-ci-matrix-completeness
+    )
+    for target in "${targets[@]}"; do just "${target}"; done
 """
 WIRED_GITIGNORE = """\
 # Worktree-discipline pack.

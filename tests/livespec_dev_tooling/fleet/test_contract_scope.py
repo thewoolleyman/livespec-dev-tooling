@@ -171,12 +171,17 @@ def test_agent_instruction_surface_is_declared_an_adoption_debt() -> None:
     assert adoption_debt_row_ids() == ("agent-instruction-surface",)
 
 
-def test_the_other_three_narrowings_are_declared_clause_scoped() -> None:
-    # The contrast is the point: three rows are narrow because their clauses are
+def test_the_other_narrowings_are_declared_clause_scoped() -> None:
+    # The contrast is the point: these rows are narrow because their clauses are
     # narrow, and exactly one is narrow because adoption has not landed. Before
-    # this module the four were indistinguishable.
+    # this module the two kinds were indistinguishable.
     clause_scoped = {d.row_id for d in ROW_SCOPE_DECLARATIONS if d.kind == CLAUSE_SCOPED}
-    assert clause_scoped == {"workflow-release-dispatch", "copier-answers", "dev-tooling-pin"}
+    assert clause_scoped == {
+        "workflow-release-dispatch",
+        "copier-answers",
+        "dev-tooling-pin",
+        "aggregate-gate-wired",
+    }
     for declaration in ROW_SCOPE_DECLARATIONS:
         assert declaration.clause, declaration.row_id
         assert declaration.reason, declaration.row_id
