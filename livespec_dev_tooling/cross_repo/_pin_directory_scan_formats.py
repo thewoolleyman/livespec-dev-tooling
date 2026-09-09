@@ -5,9 +5,12 @@ formats that scan a DIRECTORY of files rather than reading a single
 well-known file). Per `SPECIFICATION/contracts.md` section "Pin autodiscovery
 rules", the directory-scan formats are:
 
-- `.github/workflows/*.yml` / `*.yaml` `uses:` ref — every line of the
-  form `uses: <owner>/<repo>/<path>@<ref>` in any GitHub Actions
-  workflow file.
+- `.github/workflows/` `uses:` ref — every line of the form
+  `uses: <owner>/<repo>/<path>@<ref>` in any GitHub Actions workflow
+  file OR workflow TEMPLATE. Its scan set is defined over three axes:
+  every `.github/workflows/` directory at ANY DEPTH beneath the walk
+  root, the `*.jinja` template suffix alongside `*.yml` / `*.yaml`, and
+  an exclusion that refuses to descend into a nested repository.
 - fabro-sandbox docker image tag — the
   `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` line in
   every Fabro `workflow.toml` under either `.claude-plugin/.fabro/workflows/`
@@ -224,19 +227,72 @@ _WORKFLOW_USES_RE = re.compile(
 )
 
 
+# The `uses:` ref format's SCAN SET, per section "Pin autodiscovery rules",
+# over three axes. DIRECTORY: every `.github/workflows/` at any depth, since a
+# consumer that carries workflows under a nested product or template tree holds
+# the same pins. SUFFIX: `*.jinja` workflow TEMPLATES alongside the `*.yml` /
+# `*.yaml` workflows they render into — a template's `uses:` line has the
+# identical shape, so it is the same pin in the same format. EXCLUSION: never
+# descend into a directory carrying a `.git` entry.
+_GITHUB_DIR_NAME = ".github"
+_WORKFLOWS_DIR_NAME = "workflows"
+_GIT_ENTRY_NAME = ".git"
+_WORKFLOW_USES_SUFFIXES = (".jinja", ".yaml", ".yml")
+
+
+def _workflow_uses_files(*, root: Path) -> list[Path]:
+    """Every workflow file and workflow template under `root`'s OWN tree.
+
+    The EXCLUSION axis is what makes an any-depth walk safe, and it is not
+    defensive: measured across the fleet on 2026-08-21, a consumer root can
+    contain vendored clones of OTHER fleet repositories (a `.pi/git/` cache)
+    and agent worktrees (`.claude/worktrees/`), each carrying REAL pins that
+    belong to a DIFFERENT repository. Attributing them here would misreport
+    this consumer's pin currency, and the corresponding rewrite would MUTATE
+    another repository's checkout. This walk is purely filesystem-based — no
+    git index, no ignore filtering — so neither tracking nor `.gitignore`
+    discriminates; a `.git` entry does, as a DIRECTORY for a nested clone and
+    as a FILE for a linked worktree.
+
+    The root's own `.git` is skipped by NAME rather than by that test: it is
+    git's internal store rather than a nested repository, and descending it
+    would walk the object store and, for a repository with submodules, another
+    repository's git directory under `.git/modules/`.
+
+    A symlinked directory is not descended either. It can leave this tree
+    entirely — reintroducing exactly the cross-repository misattribution above
+    — and a symlink to one of its own ancestors would spin an unguarded
+    recursive walk until it exhausted the path limit.
+
+    An ABSENT root, an absent `.github/workflows/`, or one holding no matching
+    file are all ANSWERS rather than failures: the consumer simply carries no
+    pins of this format, which section "Pin autodiscovery rules" makes
+    normative tolerance for.
+    """
+    if not root.is_dir():
+        return []
+    found: list[Path] = []
+    pending: list[Path] = [root]
+    while pending:
+        for child in pending.pop().iterdir():
+            if child.is_symlink() or not child.is_dir():
+                continue
+            if child.name == _GIT_ENTRY_NAME or (child / _GIT_ENTRY_NAME).exists():
+                continue
+            if child.name == _WORKFLOWS_DIR_NAME and child.parent.name == _GITHUB_DIR_NAME:
+                for entry in child.iterdir():
+                    if entry.is_file() and entry.suffix in _WORKFLOW_USES_SUFFIXES:
+                        found.append(entry)
+                continue
+            pending.append(child)
+    return sorted(found)
+
+
 def walk_github_workflow_uses(
     *, root: Path, source_repo_filter: str | None, log: structlog.stdlib.BoundLogger
 ) -> PinWalkResult:
-    workflows_dir = root / ".github" / "workflows"
-    # An ABSENT directory is an ANSWER, not a failure: a consumer with no
-    # `.github/workflows/` simply carries no pins of this format, which
-    # section "Pin autodiscovery rules" makes normative tolerance for. The same
-    # reading applies to a `glob` yielding nothing below.
-    if not workflows_dir.is_dir():
-        return IOSuccess([])
     out: list[dict[str, str]] = []
-    yml_paths = sorted(list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")))
-    for yml_path in yml_paths:
+    for yml_path in _workflow_uses_files(root=root):
         rel_path = str(yml_path.relative_to(root))
         read = read_pin_text(path=yml_path, pin_walk="walk_github_workflow_uses")
         if isinstance(read, IOFailure):
