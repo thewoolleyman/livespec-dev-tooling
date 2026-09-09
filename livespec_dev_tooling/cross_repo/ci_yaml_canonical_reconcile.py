@@ -8,12 +8,27 @@ surface", when a bumped livespec-dev-tooling release adds a new module under
 consumer's `justfile` `check:` aggregate adopts it (the justfile reconcile, run
 one step earlier). `check-ci-matrix-completeness` then asserts the canonical
 slugs CI RUNS are a SUPERSET of the canonical slugs that aggregate WIRES — so a
-bump that reconciled the justfile ALONE left CI's hand-maintained
-`strategy.matrix.target` list short the new entry, and the bump PR was red by
-construction on a check whose diagnosis was correct. This module closes that
-half of the reconcile: it inserts each newly-adopted canonical slug, in
-alphabetical position, into the consumer's `.github/workflows/ci.yml` matrix
-target list that ALREADY carries `check-aggregate-completeness`.
+bump that reconciled the justfile ALONE left CI's hand-maintained wiring short
+the new entry, and the bump PR was red by construction on a check whose
+diagnosis was correct. This module closes that half of the reconcile: it
+inserts each newly-adopted canonical slug, in alphabetical position, into the
+consumer's `.github/workflows/ci.yml`.
+
+TWO WRITE TARGETS, because consumers mirror the aggregate in two shapes — and
+this module understands BOTH (`_ci_yaml_reconcile_parse` owns the anchors):
+
+- a `strategy.matrix.target:` list that already carries
+  `check-aggregate-completeness` (`matrix_anchor`), the original shape; or
+- the BATCHED accumulator block that invokes the aggregate from a `run:` line
+  as `just check-aggregate-completeness || failed="$failed ..."`
+  (`batch_anchor`), the shape most of the fleet — including this repo's own
+  ci.yml — now runs.
+
+⚠ This paragraph is load-bearing PROSE, so keep it true. It once described the
+matrix as the ONLY write target for two and a half weeks after `batch_anchor`
+landed, and on 2026-09-08 a triage pass read THIS DOCSTRING rather than the
+code, concluded the batched defect was still live, and the item was promoted to
+P0 on that reading. The code was already correct; only this text was not.
 
 Correct-by-construction with the gate it feeds: the slug arithmetic mirrors
 `ci_matrix_completeness._evaluate` and SHARES that check's `_ci_matrix_parse`
@@ -39,10 +54,14 @@ since it landed — so it is read from this module's own `canonical_checks`
 import and then intersected with the consumer's canonical set, which cannot name
 a check the consumer does not carry.
 
-Failure discipline: when a consumer has canonical slugs to adopt but carries NO
-matrix target list to adopt them into, this module emits a GitHub Actions
-`::error::` naming the exact YAML lines to add and exits NON-ZERO — failing the
-bump job rather than opening a PR that is knowably red by construction.
+Failure discipline: when a consumer has canonical slugs to adopt but carries
+NEITHER shape — no anchor matrix AND no batched accumulator block invoking the
+aggregate — it is genuinely unreconcilable, and this module emits a GitHub
+Actions `::error::` naming the exact YAML lines to add and exits NON-ZERO —
+failing the bump job rather than opening a PR that is knowably red by
+construction. That branch is what keeps the guard honest: a reconciler that
+found a write target in EVERY consumer would have deleted the guard rather than
+fixed it.
 
 Output discipline mirrors the sibling `justfile_canonical_reconcile`: the pure
 `reconcile_ci_yaml_text` / `_reconcile` core does no I/O, and `main()` owns the
