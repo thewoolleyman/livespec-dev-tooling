@@ -15,13 +15,22 @@ nonexistent `master`; livespec-dev-tooling-17o):
    `livespec/SPECIFICATION/non-functional-requirements.md` section "CI as a
    merge gate (branch protection)".
 
-2. ALIGNMENT gate (only when protection exists). A `strict`-off
-   assertion plus a two-direction comparison between the
+2. ALIGNMENT gate (only when protection exists). An `enforce_admins`-on
+   and `strict`-off assertion plus a two-direction comparison between the
    required-checks list and ci.yml (its matrix legs AND its top-level
    jobs), preventing the v039-D1-style drift where a CI job is added or
    removed without updating the default branch's required-checks list
    (or vice versa):
 
+   - `enforce_admins` is not enabled → ERROR (it MUST be on: with it
+     off the required checks bind everyone EXCEPT the accounts that do
+     the merging, so the red-CI merge gate is advisory for exactly the
+     population it exists to constrain). The flag is not carried by the
+     `required_status_checks` object, so the check issues a second read
+     against that branch's `protection/enforce_admins` sub-endpoint; an
+     unread flag fails too, and is NOT the graceful skip below, because
+     the required-checks read that preceded it proves the admin scope
+     both reads need (livespec-dev-tooling-65c).
    - `required_status_checks.strict` is enabled → ERROR (strict MUST
      be OFF: strict makes GitHub keep a behind PR current by merging
      the default branch into its branch, injecting a merge commit that
@@ -47,8 +56,9 @@ nonexistent `master`; livespec-dev-tooling-17o):
      should-be-required.
 
 External state: the script shells out to `gh api` to fetch the
-required-checks list. The three outcomes are distinguished by the
-GitHub API response:
+required-checks list (and, once that succeeds, the branch's
+`enforce_admins` flag from its own sub-endpoint). The three outcomes
+are distinguished by the GitHub API response:
 
 - API succeeds with a contexts list → run the alignment gate.
 - API returns the canonical "Branch not protected" 404 → the answer
@@ -82,9 +92,11 @@ Exit codes:
   alignment gate is not met).
 - `4` — check failed with structured stderr findings: default-branch
   protection is definitively absent (`failure_mode`
-  `protection_absent`), or `required_status_checks.strict` is enabled
-  (`failure_mode` `strict_enabled`; strict MUST be OFF), or a required
-  check has no matching ci.yml job (`failure_mode`
+  `protection_absent`), or `enforce_admins` is off (`failure_mode`
+  `enforce_admins_disabled`) or could not be read (`failure_mode`
+  `enforce_admins_unreadable`), or `required_status_checks.strict` is
+  enabled (`failure_mode` `strict_enabled`; strict MUST be OFF), or a
+  required check has no matching ci.yml job (`failure_mode`
   `required_check_missing_from_ci`), or a ci.yml matrix leg is not
   required while NO required aggregate gate covers it (`failure_mode`
   `unrequired_leg_without_aggregate_gate`).
@@ -107,6 +119,8 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402
 
 from livespec_dev_tooling.checks._branch_protection_api import (  # noqa: E402
+    _AdminEnforcement,
+    _fetch_admin_enforcement,
     _fetch_required_contexts,
     _ProtectionAbsent,
 )
@@ -199,6 +213,54 @@ def _run_alignment_gate(
     return 0
 
 
+def _enforce_admins_exit_code(
+    *, log: structlog.stdlib.BoundLogger, admins: _AdminEnforcement | None
+) -> int:
+    """The exit code owed by the admin-enforcement assertion: `4` or `0`.
+
+    `enforce_admins` MUST be enabled. With it off, the required checks are
+    still required — of everyone except the accounts that do the merging, who
+    may merge straight past a red one, which is the population the gate exists
+    to constrain (livespec `SPECIFICATION/non-functional-requirements.md`
+    section "CI as a merge gate (branch protection)").
+
+    An UNREAD flag fails too, and deliberately does not take the graceful-skip
+    path the unreadable-protection case takes. That path exists because
+    "can't read" is indistinguishable from "absent" for a caller holding no
+    admin scope. Here the caller demonstrably holds it — the required-checks
+    read this follows could not have succeeded otherwise — so the skip's
+    premise does not hold, and reporting a merge gate green off a flag this
+    run never saw would certify an invariant it did not verify.
+    """
+    if admins is None:
+        log.error(
+            "could not read enforce_admins on the default branch; refusing to "
+            "report a merge gate this run did not verify",
+            failure_mode="enforce_admins_unreadable",
+            hint=(
+                "the required-checks read from the same branch succeeded, so "
+                "this is not the ordinary missing-admin-scope skip; re-run and "
+                "check gh auth status and the forge's status if it persists"
+            ),
+        )
+        return 4
+    if not admins.enabled:
+        log.error(
+            "enforce_admins is not enabled on the default branch; an admin can "
+            "merge past a red required check",
+            failure_mode="enforce_admins_disabled",
+            hint=(
+                "enable enforce_admins (include administrators) on the default "
+                "branch's protection per livespec/SPECIFICATION/"
+                'non-functional-requirements.md §"CI as a merge gate '
+                '(branch protection)"; with it off the required checks bind '
+                "everyone except the accounts that do the merging"
+            ),
+        )
+        return 4
+    return 0
+
+
 def _unreadable_protection_exit_code(
     *,
     log: structlog.stdlib.BoundLogger,
@@ -275,6 +337,13 @@ def main() -> int:
             ),
         )
         return 4
+    # Evaluated BEFORE the strict early-return so a branch that is both
+    # strict-on and admin-unenforced reports both findings; the operator then
+    # fixes one protection page once rather than discovering the second defect
+    # on the next run.
+    admins_code = _enforce_admins_exit_code(
+        log=log, admins=_fetch_admin_enforcement(log=log, protection=fetched)
+    )
     if fetched.strict:
         log.error(
             "required_status_checks.strict is enabled; strict MUST be OFF",
@@ -290,12 +359,15 @@ def main() -> int:
             ),
         )
         return 4
-    return _run_alignment_gate(
+    alignment_code = _run_alignment_gate(
         log=log,
         required=fetched.contexts,
         matrix_targets=matrix_targets,
         job_names=job_names,
     )
+    # Both gates answer in the same two values (`4` or `0`) and both have
+    # already emitted their findings, so the larger is the check's verdict.
+    return max(alignment_code, admins_code)
 
 
 if __name__ == "__main__":

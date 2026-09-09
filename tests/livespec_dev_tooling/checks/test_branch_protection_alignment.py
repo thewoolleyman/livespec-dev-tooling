@@ -227,6 +227,8 @@ def _install_fake_gh(
     git_returncode: int = 0,
     git_head_ref: str | None = "refs/remotes/origin/master",
     repo_payload: str | None = None,
+    enforce_admins_payload: str = '{"enabled": true}',
+    enforce_admins_returncode: int = 0,
 ) -> str:
     """Install fake `gh` + `git` shell stubs at tmp_path/bin, return PATH including it.
 
@@ -247,6 +249,15 @@ def _install_fake_gh(
     `returncode`, mirroring real `gh api`, which on an error puts the
     JSON error body on stdout AND a human `gh: <message> (HTTP <code>)`
     line on stderr.
+
+    The `.../protection/enforce_admins` sub-endpoint is dispatched
+    SEPARATELY, with `enforce_admins_payload` / `enforce_admins_returncode`,
+    because it is a second read against a different endpoint whose payload
+    shape (`{"enabled": <bool>}`) is nothing like the
+    `required_status_checks` object. Its default is the aligned state
+    (`enabled: true`), so every fixture that is not about admin enforcement
+    keeps producing exactly the findings it produced before the flag was
+    read at all.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
@@ -262,9 +273,18 @@ def _install_fake_gh(
             "fi\n"
         )
     )
+    enforce_admins_block = (
+        'case "$2" in\n'
+        "*/protection/enforce_admins)\n"
+        f"cat <<'ADMINS_EOF'\n{enforce_admins_payload}\nADMINS_EOF\n"
+        f"exit {enforce_admins_returncode}\n"
+        ";;\n"
+        "esac\n"
+    )
     gh_script = (
         "#!/bin/sh\n"
         f"printf '%s\\n' \"$*\" >> '{bin_dir}/gh.argv'\n"
+        f"{enforce_admins_block}"
         f"{repo_dispatch_block}"
         f"cat <<'STUB_EOF'\n{stdout}\nSTUB_EOF\n"
         f"{gh_stderr_block}"
@@ -504,6 +524,136 @@ def test_strict_enabled_fails(
     )
     assert "strict_enabled" in result.stderr
     assert "strict" in result.stderr
+
+
+def test_enforce_admins_disabled_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Protection present with `enforce_admins` DISABLED → exit 4.
+
+    `enforce_admins` MUST be enabled per livespec
+    `SPECIFICATION/non-functional-requirements.md` section "CI as a merge gate
+    (branch protection)": with it off, an admin merges straight past a red
+    required check and the whole merge gate is advisory for exactly the
+    accounts that do the merging. The matrix is otherwise aligned and
+    `strict` is off, so this fixture isolates the admin-enforcement
+    assertion (livespec-dev-tooling-65c).
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        enforce_admins_payload='{"enabled": false}',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, (
+        f"expected exit 4 when enforce_admins is disabled; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "enforce_admins_disabled" in result.stderr
+    assert "enforce_admins" in result.stderr
+
+
+def test_enforce_admins_enabled_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Protection present with `enforce_admins` ENABLED → exit 0, no finding.
+
+    The control half of the pair: a fix that flagged admin enforcement
+    under BOTH payloads would not have read the flag at all. Also pins the
+    endpoint the flag is read FROM — the `required_status_checks` object
+    does not carry `enforce_admins`, so the check must issue a second read
+    against the `.../protection/enforce_admins` sub-endpoint, and the gh
+    argv log is the evidence that it did.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        enforce_admins_payload='{"enabled": true}',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 0, (
+        f"expected exit 0 when enforce_admins is enabled; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "enforce_admins" not in result.stderr
+    argv_log = _gh_argv_log(tmp_path=tmp_path)
+    assert "repos/test-owner/test-repo/branches/master/protection/enforce_admins" in argv_log
+
+
+def test_enforce_admins_endpoint_error_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The `enforce_admins` read ERRORS after the required-checks read succeeded → exit 4.
+
+    This is NOT the ordinary can't-read case the check skips on. Reaching
+    here means the required-checks read already succeeded, so the token
+    demonstrably holds the admin scope both reads need; a failure on the
+    second endpoint is anomalous, and reporting a green merge gate off a
+    flag this run never saw would certify an invariant it did not verify.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        enforce_admins_payload='{"message": "Server Error", "status": "500"}',
+        enforce_admins_returncode=1,
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, (
+        f"expected exit 4 when the enforce_admins read errors; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "enforce_admins_unreadable" in result.stderr
+
+
+def test_enforce_admins_shapeless_payload_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The `enforce_admins` payload parses to a non-object → exit 4 (unreadable).
+
+    Pins the `isinstance(parsed, dict)` False branch: a successful call
+    whose body is not the documented `{"enabled": <bool>}` object leaves
+    the flag unread, which is the same answer as an errored call and MUST
+    NOT be read as enabled.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        enforce_admins_payload='"not an object"',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, (
+        f"expected exit 4 on a non-object enforce_admins payload; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "enforce_admins_unreadable" in result.stderr
+
+
+def test_enforce_admins_non_bool_enabled_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The `enforce_admins` object carries no boolean `enabled` → exit 4 (unreadable).
+
+    Pins the `isinstance(enabled, bool)` False branch. An object missing
+    the key is the shape that would otherwise be read as falsy-and-
+    therefore-disabled OR as truthy-and-therefore-enabled depending on the
+    coercion used; it is neither, because nothing was read.
+    """
+    _setup_repo_with_ci_yml(tmp_path=tmp_path, matrix_targets=["check-foo"])
+    fake_path = _install_fake_gh(
+        tmp_path=tmp_path,
+        stdout=_checks_payload(contexts=["check-foo"]),
+        enforce_admins_payload='{"url": "https://api.github.com/x"}',
+    )
+    result = _run_check(cwd=tmp_path, env_path=fake_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert result.returncode == 4, (
+        f"expected exit 4 when enforce_admins carries no boolean `enabled`; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert "enforce_admins_unreadable" in result.stderr
 
 
 def test_protection_absent_fails(
