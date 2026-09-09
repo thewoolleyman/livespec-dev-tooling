@@ -1,0 +1,233 @@
+# git-daemon.yaml — the READ-ONLY in-cluster git daemon that serves the gate
+# source mirror (R4.S4, livespec-dev-tooling-2hno; plan livespec
+# k3s-on-gmktec-for-vps-usage, epic livespec-sab5gn; design in that plan's
+# research/003 section E and correction 3).
+#
+# WHAT IT IS FOR. A gate Job runs the gated repository's own `just check` over
+# the exact tree being pushed, on whichever node Kueue admits it to. The tree
+# has to reach that pod without going through GitHub. The driver host pushes
+# HEAD to a bare mirror on the `ci-cache` tier over Tailscale SSH
+# (./README.md, "The receive path"); this daemon serves that mirror over the
+# git protocol so a pod on ANY node can fetch it by cluster DNS.
+#
+# THE ONE VALUE. The mirror carries `refs/gates/<tree-hash>`, where
+# <tree-hash> is `git rev-parse HEAD^{tree}` on the pushing side — the SAME
+# value livespec_dev_tooling.green_token keys its marker on, and the same
+# value ./gate-job-template.yaml's initContainer re-derives after checkout and
+# refuses to proceed without. One value names the pushed tree, the served ref
+# and the written token, which is what makes a verdict inseparable from the
+# tree it was produced against.
+#
+# THE URL THIS MUST ANSWER AT. ./render-gate-job.sh defaults --source-url to
+# `git://git-gates.gates.svc.cluster.local/<repo>.git`, so the Service below is
+# named `git-gates` in the `gates` namespace on the git protocol's port 9418,
+# and --base-path makes `/<repo>.git` resolve to `<mirror root>/<repo>.git`.
+# Changing either name here without changing that default (or having every
+# client pass --source-url) breaks every gate — loudly, at the initContainer,
+# never as a false green.
+#
+# READ-ONLY, TWICE OVER.
+#   1. `--export-all` is deliberately ABSENT, so the daemon serves ONLY a
+#      repository carrying a `git-daemon-export-ok` marker. ./converge-gates-
+#      mirror.sh writes that marker into the mirrors it creates and nowhere
+#      else, so nothing but the mirror is reachable even though the daemon can
+#      see the whole mirror root.
+#   2. `git daemon` enables upload-pack alone by default; receive-pack is off,
+#      and `--forbid-override=receive-pack` means a per-repository
+#      `daemon.receivepack` setting cannot turn it back on. Pushes reach the
+#      mirror over SSH, never over this port.
+# The hostPath is additionally mounted `readOnly: true`, so even a defect in
+# the above cannot write through it. Verified 2026-09-09 against git 2.53.0
+# that a `--depth 1` fetch of one ref succeeds against a mirror the daemon
+# cannot write to at all: upload-pack needs no scratch space in the
+# repository, so shallow fetch and a read-only mount are compatible. That
+# matters because ./gate-job-template.yaml fetches `--depth 1`.
+#
+# NODE PINNING. The mirror is a hostPath on ONE node's `ci-cache` tier, so
+# this pod carries the same `ci-runner.io/cache-tier-carrier` selector as the
+# crates proxy, the PyPI proxy, the sccache redis and the warm-cache CronJob
+# (../crates-proxy/crates-proxy.yaml, "NODE PINNING"). Unschedulable is the
+# correct failure: a pending pod is visible, an empty mirror on the wrong node
+# would answer fetches with "ref not found" and read as a repository problem.
+#
+# THE NAMESPACE IS NOT DECLARED HERE. `gates` ships in
+# ../kueue/cluster-queue-gates.yaml — one live object, one committed source,
+# the same split ./gates-rbac.yaml keeps.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-gates-gitconfig
+  namespace: gates
+data:
+  # WHY THIS EXISTS AT ALL. git refuses to operate on a repository owned by a
+  # different user ("detected dubious ownership"). The mirror is owned by the
+  # host account the SSH receive path lands as; this pod runs as an unrelated
+  # unprivileged uid. Without this the daemon would serve nothing and say so
+  # only in its own log.
+  #
+  # WHY IT IS A FILE AND NOT `-c safe.directory=...`. git reads safe.directory
+  # through read_very_early_config, which ignores command-line and
+  # GIT_CONFIG_COUNT settings by design — the setting is deliberately only
+  # honoured from system and global config. GIT_CONFIG_GLOBAL (set on the
+  # container below) points the global file HERE, which is the supported way
+  # to supply it without writing into the image or the mirror.
+  #
+  # WHY `*` IS SAFE HERE. This container mounts exactly two things: the mirror,
+  # read-only, and this ConfigMap. There is no other repository for the value
+  # to widen access to, and the daemon's own read-only posture is enforced by
+  # the flags and the mount, not by ownership.
+  #
+  # This also keeps the manifest free of a hardcoded host uid: the daemon
+  # serves the mirror whoever owns it, so changing the receive account is a
+  # ./converge-gates-mirror.sh argument and not a manifest edit.
+  gitconfig: |
+    [safe]
+    	directory = *
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-gates
+  namespace: gates
+  labels:
+    app.kubernetes.io/name: git-gates
+    app.kubernetes.io/part-of: livespec-ci-gates
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: one daemon over one mirror on one node, and a
+  # config change should replace it rather than briefly run two. A fetch during
+  # the swap fails, and a gate that cannot fetch fails CLOSED at its
+  # initContainer — the intended direction.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: git-gates
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: git-gates
+        app.kubernetes.io/part-of: livespec-ci-gates
+    spec:
+      # The node that carries the `ci-cache` tier this pod's hostPath lives on.
+      nodeSelector:
+        ci-runner.io/cache-tier-carrier: "true"
+      # No Kueue queue-name label and no ci-runner.io/churn-slot request: not a
+      # CI job, and it must never occupy a runner slot.
+      #
+      # It serves a git repository and has no business reading the API server.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: git-daemon
+          # Pinned by tag AND digest (../README.md "Pinned versions — nothing
+          # floats `latest`"), digest read from the registry 2026-09-09.
+          #
+          # WHY THIS IMAGE. `git daemon` is NOT in every image that ships git:
+          # Alpine splits it into a `git-daemon` subpackage, and the layers of
+          # `alpine/git:v2.49.1` were inspected on 2026-09-09 and carry
+          # git-upload-pack but no git-daemon at all. Debian keeps
+          # /usr/lib/git-core/git-daemon in the main `git` package, and the
+          # amd64 layers of this image were inspected the same way and do carry
+          # it. Bump the tag and the digest together, and re-check that the
+          # binary is still present.
+          image: docker.io/library/buildpack-deps:bookworm-scm@sha256:4274ea4975976f86239384ac206f98af5f0978fd8f054886eec1371fc7664025
+          imagePullPolicy: IfNotPresent
+          command: ["git"]
+          args:
+            - "daemon"
+            - "--verbose"
+            - "--reuseaddr"
+            - "--listen=0.0.0.0"
+            - "--port=9418"
+            - "--base-path=/srv/gates-mirror"
+            # NO --export-all, deliberately: see the header. Only a repository
+            # carrying git-daemon-export-ok is served.
+            - "--forbid-override=receive-pack"
+            # A gate fetch is short and the queue admits three gates at a time;
+            # this bounds a runaway client without ever being reached in normal
+            # use.
+            - "--max-connections=32"
+          env:
+            - name: GIT_CONFIG_GLOBAL
+              value: /etc/git-gates/gitconfig
+            # git wants a HOME for its config search even when GIT_CONFIG_GLOBAL
+            # names the file outright; uid 65534 has no home directory in this
+            # image and an unset HOME makes git report a confusing error.
+            - name: HOME
+              value: /tmp
+          ports:
+            - name: git
+              containerPort: 9418
+              protocol: TCP
+          # NO hostPort, deliberately, and this is the one place the difference
+          # from ../crates-proxy/crates-proxy.yaml is load-bearing: the crates
+          # proxy is reached from off the pod network, this daemon must not be.
+          # It serves whatever tree a push put in the mirror, so its only
+          # consumers are gate pods, over the ClusterIP below.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              # No cpu limit (throttling a fetch would look like a hung gate);
+              # the memory limit equals the request so the daemon is
+              # Guaranteed-class for memory and is not evicted under node
+              # pressure while a gate is fetching through it.
+              memory: "64Mi"
+          readinessProbe:
+            tcpSocket:
+              port: git
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: git
+            periodSeconds: 30
+          volumeMounts:
+            - name: mirror
+              mountPath: /srv/gates-mirror
+              readOnly: true
+            - name: gitconfig
+              mountPath: /etc/git-gates
+              readOnly: true
+      volumes:
+        - name: mirror
+          hostPath:
+            path: /var/cache/ci-runner/gates-mirror
+            # `Directory`, NOT `DirectoryOrCreate`. The sibling hostPath
+            # singletons use DirectoryOrCreate because an empty cache is
+            # harmless; this directory has to exist with the OWNERSHIP the SSH
+            # receive path needs, and kubelet would create it root-owned 0755,
+            # which silently breaks every push. ./converge-gates-mirror.sh owns
+            # its creation; a Pending pod is the correct signal that it has not
+            # run.
+            type: Directory
+        - name: gitconfig
+          configMap:
+            name: git-gates-gitconfig
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git-gates
+  namespace: gates
+  labels:
+    app.kubernetes.io/name: git-gates
+    app.kubernetes.io/part-of: livespec-ci-gates
+spec:
+  selector:
+    app.kubernetes.io/name: git-gates
+  ports:
+    - name: git
+      port: 9418
+      targetPort: git
