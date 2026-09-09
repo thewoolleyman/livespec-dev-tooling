@@ -55,11 +55,42 @@ from typing import NamedTuple
 
 import pytest
 
+from tests.livespec_dev_tooling.checks.config_parse_rendering import (
+    assert_main_renders_the_parse_failure,
+)
+
 __all__: list[str] = []
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WRAPPER_SHAPE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "wrapper_shape.py"
+# A pre-import bin module: real logic rather than the canonical 5-statement
+# launcher, so it FAILS the wrapper shape unless the exemption reaches it.
+# Byte-shaped after the real `_bootstrap.py` the exemption was written for.
+_PRE_IMPORT_SOURCE = (
+    "#!/usr/bin/env python3\n"
+    '"""Pre-import machinery. Not a launcher."""\n'
+    "from __future__ import annotations\n"
+    "\n"
+    "import sys\n"
+    "\n"
+    "__all__: list[str] = []\n"
+    "\n"
+    "\n"
+    "def bootstrap() -> None:\n"
+    "    if sys.version_info < (3, 10):\n"
+    '        sys.stderr.write("python too old\\n")\n'
+    "        raise SystemExit(127)\n"
+)
+
+
+def _declare_non_wrapper_files(*, repo_root: Path, names: tuple[str, ...]) -> None:
+    """Write a consumer block declaring `bin_non_wrapper_files`."""
+    declared = ", ".join(f'"{name}"' for name in names)
+    _ = (repo_root / "pyproject.toml").write_text(
+        f"[tool.livespec_dev_tooling]\nbin_non_wrapper_files = [{declared}]\n",
+        encoding="utf-8",
+    )
 
 
 def _load_check_module() -> ModuleType:
@@ -398,6 +429,114 @@ def test_wrapper_shape_exempts_bootstrap_file(
         f"wrapper_shape should exempt _bootstrap.py with exit 0; "
         f"got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_wrapper_shape_default_exemption_is_exactly_bootstrap(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A consumer declaring NOTHING exempts `_bootstrap.py` and nothing else.
+
+    The back-compat pin for `livespec-dev-tooling-g28`, which moved the
+    non-wrapper bin exemption off a hardcoded frozenset onto the consumer's
+    `bin_non_wrapper_files` key. This fixture carries no `pyproject.toml` at
+    all, so the loader returns the bare baseline: `_bootstrap.py` still
+    passes and a SECOND pre-import module still fails, exactly as before the
+    key existed.
+    """
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "bin"
+    package_dir.mkdir(parents=True)
+    _ = (package_dir / "_bootstrap.py").write_text(_PRE_IMPORT_SOURCE, encoding="utf-8")
+    _ = (package_dir / "_currency.py").write_text(_PRE_IMPORT_SOURCE, encoding="utf-8")
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, (
+        f"an UNDECLARED second pre-import module must still fail the wrapper "
+        f"shape; got returncode={result.returncode} combined={combined!r}"
+    )
+    assert (
+        "_currency.py" in combined
+    ), f"the finding must name the offending file; combined={combined!r}"
+    assert "_bootstrap.py" not in combined, (
+        f"the built-in `_bootstrap.py` exemption must survive the move to "
+        f"configuration; combined={combined!r}"
+    )
+
+
+def test_wrapper_shape_exempts_a_declared_non_wrapper_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `bin_non_wrapper_files` declaration exempts the named file.
+
+    The positive control for `livespec-dev-tooling-g28`. A consumer whose
+    pre-import machinery outgrew a single module declares the second
+    filename and that file is no longer held to the 5-statement shape — no
+    dev-tooling release and pin bump required to add one.
+    """
+    _declare_non_wrapper_files(repo_root=tmp_path, names=("_currency.py",))
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "bin"
+    package_dir.mkdir(parents=True)
+    _ = (package_dir / "_currency.py").write_text(_PRE_IMPORT_SOURCE, encoding="utf-8")
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a DECLARED non-wrapper bin file must be exempt; "
+        f"got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_wrapper_shape_declared_exemption_is_not_a_blanket(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A declared exemption still convicts an UNDECLARED non-wrapper sibling.
+
+    The negative control for `livespec-dev-tooling-g28`, and the half that
+    proves the check was configured rather than deleted: in ONE fixture the
+    declared `_currency.py` passes while the undeclared `_other.py` — a
+    file of identical, equally non-canonical shape — is convicted by name.
+    """
+    _declare_non_wrapper_files(repo_root=tmp_path, names=("_currency.py",))
+    package_dir = tmp_path / ".claude-plugin" / "scripts" / "bin"
+    package_dir.mkdir(parents=True)
+    _ = (package_dir / "_currency.py").write_text(_PRE_IMPORT_SOURCE, encoding="utf-8")
+    _ = (package_dir / "_other.py").write_text(_PRE_IMPORT_SOURCE, encoding="utf-8")
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, (
+        f"an undeclared non-wrapper bin file must still fail; "
+        f"got returncode={result.returncode} combined={combined!r}"
+    )
+    assert (
+        "_other.py" in combined
+    ), f"the finding must name the undeclared offender; combined={combined!r}"
+    assert (
+        "_currency.py" not in combined
+    ), f"the declared file must not be surfaced at all; combined={combined!r}"
+
+
+def test_wrapper_shape_renders_the_config_parse_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A malformed consumer config renders the structured diagnostic, not a traceback.
+
+    Reading `bin_non_wrapper_files` made this check a config CONSUMER, so it
+    inherits the supervisor contract every other loader-reaching check
+    carries: `ConfigParseError` is caught at `main()` and rendered through
+    structlog. Driven through the shared helper so this call site agrees
+    with the other migrated ones by construction.
+    """
+    assert_main_renders_the_parse_failure(
+        module_slug="wrapper_shape",
+        check_id="wrapper_shape",
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
     )
 
 

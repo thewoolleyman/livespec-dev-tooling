@@ -1,10 +1,10 @@
-"""wrapper_shape — `bin/*.py` 5-statement shebang-wrapper shape (except `_bootstrap.py`).
+"""wrapper_shape — `bin/*.py` 5-statement shebang-wrapper shape (except the non-wrapper files).
 
 Per `python-skill-script-style-requirements.md` section "Canonical
 target list" (the `check-wrapper-shape` row), every
-`.claude-plugin/scripts/bin/*.py` file (except
-`_bootstrap.py`) MUST conform to the 5-statement shebang-
-wrapper shape (the shebang is a comment, not a Python
+`.claude-plugin/scripts/bin/*.py` file that is not one of the
+consumer's NON-WRAPPER files MUST conform to the 5-statement
+shebang-wrapper shape (the shebang is a comment, not a Python
 statement, and is not part of the AST body):
 
     #!/usr/bin/env python3
@@ -39,6 +39,21 @@ Any deviation (extra statements, missing pieces, wrong
 order, wrong identifiers) surfaces as a violation. The
 shebang line is a comment and isn't part of the AST body.
 
+The NON-WRAPPER set is consumer-declared. `_bootstrap.py` is the
+baseline — statement 2 above imports it, so it can never be held
+to the shape — and a consumer whose pre-import machinery outgrows
+that one module adds the further filenames through the
+`bin_non_wrapper_files` key of its `[tool.livespec_dev_tooling]`
+block. The declared names are UNIONED with the baseline, never
+substituted for it (`config.load_config`), and the exemption is
+NAME-scoped to DIRECT CHILDREN of the bin root: a declared name
+nested in a subdirectory is not exempted by the bare name match.
+Before that key existed the single allowed filename was hardcoded
+in this shared, git-pinned package, so a repo needing a second
+pre-import module had to wait on a dev-tooling release and a pin
+bump — the rigidity that pushed livespec core's currency package
+out of `bin/` entirely (epic livespec-c1k9).
+
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
 dev-tooling/**. Diagnostics flow through structlog (JSON to
@@ -59,6 +74,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.config import (  # noqa: E402
     BIN_WRAPPER_TREE,
     is_bin_wrapper,
@@ -72,6 +88,8 @@ __all__: list[str] = []
 # main import → SystemExit(main())). This constant names the
 # load-bearing count.
 _CANONICAL_WRAPPER_STMT_COUNT: int = 5
+
+_CHECK_ID = "wrapper_shape"
 
 # The main-import statement of a canonical wrapper imports `main`
 # from the OWNING plugin's package. For livespec-core that package
@@ -164,15 +182,19 @@ def main() -> int:
     )
     log = structlog.get_logger("wrapper_shape")
     cwd = Path.cwd()
+    config = load_config_or_report(repo_root=cwd, log=log, check_id=_CHECK_ID)
+    if config is None:
+        return 1
     bin_root = cwd / BIN_WRAPPER_TREE
     offenders: list[Path] = []
     if bin_root.is_dir():
         for py_file in sorted(bin_root.glob("*.py")):
             rel = py_file.relative_to(cwd)
             # `is_bin_wrapper` is the single wrapper-identity source of
-            # truth (shared with `all_declared`): it filters out the exempt
-            # `_bootstrap.py` so this check governs exactly the wrapper set.
-            if not is_bin_wrapper(rel=rel):
+            # truth (shared with `all_declared`): it filters out the
+            # consumer's declared non-wrapper files — `_bootstrap.py` by
+            # default — so this check governs exactly the wrapper set.
+            if not is_bin_wrapper(rel=rel, config=config):
                 continue
             source = py_file.read_text(encoding="utf-8")
             if not _is_compliant_wrapper(source=source):

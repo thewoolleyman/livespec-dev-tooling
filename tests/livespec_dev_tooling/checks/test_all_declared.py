@@ -362,6 +362,79 @@ def test_all_declared_still_flags_bootstrap_bin_file(
     assert "newly_covered" in combined
 
 
+def test_all_declared_still_flags_a_declared_non_wrapper_bin_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `bin_non_wrapper_files` declaration reaches THIS check too, and it tightens.
+
+    `livespec-dev-tooling-g28` made the non-wrapper bin set consumer-declared,
+    and both checks read it through the one `config.is_bin_wrapper` predicate.
+    Declaring `_currency.py` therefore does not buy a blanket exemption: it says
+    the file is pre-import MACHINERY rather than a launcher, so `wrapper_shape`
+    stops holding it to the 5-statement shape and all_declared starts requiring
+    its `__all__` — exactly `_bootstrap.py`'s standing. The undeclared
+    `foo.py` wrapper in the same fixture still drops out, which is what
+    proves the declaration moved one file rather than disarming the skip.
+    """
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nbin_non_wrapper_files = ["_currency.py"]\n',
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/bin/_currency.py",
+        source=_MISSING_ALL_SOURCE,
+    )
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/bin/foo.py",
+        source=_BIN_WRAPPER_SOURCE,
+    )
+
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    combined = result.stdout + result.stderr
+    assert ".claude-plugin/scripts/bin/_currency.py" in combined, (
+        f"a DECLARED non-wrapper bin file is module code, not a launcher, and "
+        f"must still owe an `__all__`; stderr={result.stderr!r}"
+    )
+    assert ".claude-plugin/scripts/bin/foo.py" not in combined, (
+        f"the declaration must not disarm the wrapper skip for undeclared "
+        f"wrappers; stderr={result.stderr!r}"
+    )
+
+
+def test_all_declared_flags_a_declared_name_nested_below_the_bin_root(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The declaration is NAME-scoped to direct children, never a path glob.
+
+    The nesting half of `livespec-dev-tooling-g28`. `bin/sub/_currency.py`
+    carries the declared NAME but is not a direct child of the bin root, so
+    the bare name match does not reach it: it is not a wrapper, all_declared
+    does not skip it, and the missing `__all__` is surfaced by name. A
+    declaration that leaked into subdirectories would silence this finding
+    while looking identical from the config file.
+    """
+    _ = (tmp_path / "pyproject.toml").write_text(
+        '[tool.livespec_dev_tooling]\nbin_non_wrapper_files = ["_currency.py"]\n',
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/bin/sub/_currency.py",
+        source=_MISSING_ALL_SOURCE,
+    )
+
+    result = _run_all_declared(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    combined = result.stdout + result.stderr
+    assert ".claude-plugin/scripts/bin/sub/_currency.py" in combined, (
+        f"a declared name NESTED below the bin root must not be exempted by "
+        f"the bare name match; stderr={result.stderr!r}"
+    )
+
+
 def test_all_declared_accepts_codeless_repo(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
