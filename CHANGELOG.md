@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.69.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.68.1...v1.69.0) (2026-09-09)
+
+
+### Features
+
+* **config:** make the non-wrapper bin exemption config-driven ([cb42255](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cb4225592bc13278b8ec2916870c8580853ec1c3))
+
 ## [1.68.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.68.0...v1.68.1) (2026-09-09)
 
 
