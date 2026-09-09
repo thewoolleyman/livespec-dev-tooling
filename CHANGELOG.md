@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.76.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.75.0...v1.76.0) (2026-09-09)
+
+
+### Features
+
+* **gates:** decide a delegated gate fail-closed and write the green token ([2e2463a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e2463a67a00ce54f21885333da2fc85a182e83c))
+
 ## [1.75.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.74.0...v1.75.0) (2026-09-09)
 
 
