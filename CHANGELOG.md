@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.74.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.73.0...v1.74.0) (2026-09-09)
+
+
+### Features
+
+* **cross-repo:** decide the durable release-lane-red issue transition ([68c8d31](https://github.com/thewoolleyman/livespec-dev-tooling/commit/68c8d31b83a4d5ab5be26a7f6ae1b21eb3ff7eb2))
+* **cross-repo:** reconcile the release-lane-red issue against the watched set ([e749246](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e749246611cc21acbbfb50d06e83fb6cb42b1071))
+
+
+### Bug Fixes
+
+* gate just recipe bodies on POSIX-sh validity, not shape alone ([035626b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/035626bbb0fea433f7e6b058da8e2ce7c378c6c3))
+
 ## [1.73.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.72.0...v1.73.0) (2026-09-09)
 
 
