@@ -22,6 +22,37 @@ duplicated rather than imported because each `dev-tooling/checks/
 <name>.py` is a self-contained Python module per the directory's
 CLAUDE.md.
 
+MARKER LIVENESS IS RESOLVED BY THE SHARED RESOLVER. The ownership
+marker is a STAND-DOWN on an explicitly named work-item id, so it
+falls under the one exception this repository's
+`SPECIFICATION/spec.md` §"Non-goals" carves to the network-I/O
+prohibition — and that clause requires "one shared mechanism, not
+per-gate hand-rolls". `checks/_work_item_liveness` IS that
+mechanism; this check reaches it through `main`'s `ledger_reader`
+seam, so a unit test supplies a deterministic double and no test
+needs a reachable tracker.
+
+Until this adoption the seam here was a local `_probe_marker_liveness`
+that returned `None` unconditionally, so the branch convicting a
+dead owner was UNREACHABLE in every consuming repository and the
+release tier passed BY CONSTRUCTION. Where the store now answers, an
+owner that is closed or that the store does not hold resolves False
+and IS convicted, naming the id and its resolved status. Where it
+does not answer — no `bd` on the host, no credential projection, a
+release on hosted CI that cannot reach a loopback ledger — the
+snapshot is `None`, the file PASSES, and a `liveness_unverified`
+diagnostic says so. An unreachable tracker is not a passing liveness
+check, and the two must never be indistinguishable.
+
+That default is what makes the teeth landable: a repo whose host
+cannot reach its own tenant is byte-behaviour-identical to before
+the resolver existed, so arming the mechanism reddens nothing on
+merge. Liveness stays confined to the RELEASE tier for the same
+reason `checks/no_todo_registry` confines it there — a per-commit
+verdict depending on mutable external state could flip master red
+with no commit, which livespec core's `.ai/ci-gate-discipline.md`
+treats as a real broken state rather than a notification.
+
 Output discipline: per spec, `print` (T20) and
 `sys.stderr.write` (`check-no-write-direct`) are banned in
 dev-tooling/**. Diagnostics flow through structlog (JSON to
@@ -46,6 +77,12 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
+from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
+    LedgerReader,
+    bd_status_reader,
+    resolve_liveness,
+    resolved_status,
+)
 from livespec_dev_tooling.config import is_under_any_tree  # noqa: E402
 
 __all__: list[str] = []
@@ -76,21 +113,6 @@ def _owner_marker(*, source: str) -> str | None:
         match = _OWNER_MARKER_RE.match(tok.string.strip())
         if match is not None:
             return match.group(1)
-    return None
-
-
-def _probe_marker_liveness(*, work_item: str) -> bool | None:
-    """Best-effort liveness probe for `work_item`; `None` means UNVERIFIED.
-
-    ABSENT BY DEFAULT, and that is the shipped production behavior rather
-    than a placeholder: no tracker is configured for this repo family, and
-    the release gate runs on hosted CI that cannot reach a loopback ledger.
-    Returning `None` keeps the check honest — it reports that liveness was
-    not established instead of asserting an item is open.
-
-    A consumer that configures a reachable tracker replaces this seam.
-    """
-    del work_item  # No tracker is configured; nothing to query.
     return None
 
 
@@ -142,7 +164,9 @@ def _count_lloc(*, source: str) -> int:
     return len(code_lines)
 
 
-def _release_tier_failures(*, offenders: list[tuple[Path, int]], root: Path) -> int:
+def _release_tier_failures(
+    *, offenders: list[tuple[Path, int]], root: Path, snapshot: dict[str, str] | None
+) -> int:
     """RELEASE tier: count soft-band files that must block the release.
 
     Rejects an UNOWNED file, and an owned one whose marker id is checkably
@@ -153,6 +177,15 @@ def _release_tier_failures(*, offenders: list[tuple[Path, int]], root: Path) -> 
     diagnostic names the owning item and states the refactor is OWED,
     because a marker that read as mere threshold noise would be an escape
     hatch rather than a narrow, visible concession.
+
+    `snapshot` is the shared resolver's id → status view of the repository's
+    own configured store, `None` when it did not answer. It is read once per
+    run rather than per marker: a per-marker probe would be one subprocess
+    per soft-band file, and — the load-bearing half — it could not tell "no
+    such id" from "the store did not answer", because both exit non-zero.
+    Reading the population once separates them structurally, which is what
+    lets an id MISSING from an answering store be convicted as nonexistent
+    rather than mistaken for a store that never replied.
     """
     emit = structlog.get_logger("no_lloc_soft_warnings")
     failing = 0
@@ -171,12 +204,13 @@ def _release_tier_failures(*, offenders: list[tuple[Path, int]], root: Path) -> 
                 failing=True,
             )
             continue
-        live = _probe_marker_liveness(work_item=owner)
+        live = resolve_liveness(work_item=owner, snapshot=snapshot)
         if live is None:
             emit.warning(
                 "file in 201-250 LLOC soft band accepted: REFACTOR IS OWED by the named "
                 "work-item; carrying this debt is permitted, not blessed. Work-item "
-                "liveness UNVERIFIED (no reachable tracker configured)",
+                "liveness UNVERIFIED (the repository's configured work-item store did "
+                "not answer)",
                 file=str(path),
                 lloc=lloc,
                 work_item=owner,
@@ -191,6 +225,7 @@ def _release_tier_failures(*, offenders: list[tuple[Path, int]], root: Path) -> 
                 file=str(path),
                 lloc=lloc,
                 work_item=owner,
+                resolved_status=resolved_status(work_item=owner, snapshot=snapshot),
                 fail_env_var=_FAIL_ENV_VAR,
                 failing=True,
             )
@@ -206,7 +241,14 @@ def _release_tier_failures(*, offenders: list[tuple[Path, int]], root: Path) -> 
     return failing
 
 
-def main() -> int:
+def main(*, ledger_reader: LedgerReader = bd_status_reader) -> int:
+    """Run the soft-band scan; `ledger_reader` is the injectable liveness seam.
+
+    The default reads the repository's own configured work-item store through
+    the shared resolver. A test passes a deterministic double instead, so the
+    fail-capability cases are proven without a reachable tracker and no unit
+    test's verdict depends on the host it runs on.
+    """
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,
@@ -248,7 +290,9 @@ def main() -> int:
                 failing=False,
             )
     else:
-        failing_count = _release_tier_failures(offenders=legacy_soft_offenders, root=root)
+        failing_count = _release_tier_failures(
+            offenders=legacy_soft_offenders, root=root, snapshot=ledger_reader(repo=root)
+        )
     for path, lloc in newly_covered_soft_offenders:
         log.warning(
             "file in 201-250 LLOC soft band — newly git-derived coverage; Phase-0 WARN "
