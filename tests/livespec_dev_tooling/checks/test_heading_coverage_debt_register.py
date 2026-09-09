@@ -419,3 +419,58 @@ def test_adoption_under_the_scope_lever_treats_an_absent_head_register_as_empty(
         f"the adoption commit must pass under the scope lever too; "
         f"got returncode={result.returncode} output={result.combined!r}"
     )
+
+
+def test_an_unreadable_registry_decides_no_direction_and_says_so(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a present-but-unparseable registry is its own outcome, not "no rows".
+
+    Before `livespec-dev-tooling-qndn.15` this tree reached the directions as an
+    EMPTY registry, which fires `stale_register_entry` for every register key —
+    a full slate of confident findings naming the wrong file and the wrong
+    cause, each of which an author would have "fixed" by deleting real debt.
+    """
+    _seed_repo(
+        tmp_path=tmp_path, registry=[_todo(heading="## A")], register=[_entry(heading="## A")]
+    )
+    _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries={"not": "an array"})
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 1, (
+        f"an unreadable registry must not pass as an empty one; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "rows-file-not-an-array" in result.combined
+    assert _REGISTRY_RELPATH in result.combined
+    assert (
+        "stale_register_entry" not in result.combined
+    ), f"no direction may be decided from an unreadable file; output={result.combined!r}"
+
+
+def test_an_unreadable_register_decides_no_direction_either(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The mirror: an unparseable REGISTER used to read as "no entries".
+
+    That fires `unregistered_todo` for every live `TODO` — the new-cop-out
+    message, on rows that are all correctly registered. Both files are read
+    through the same seam, so both get the same answer.
+    """
+    _seed_repo(
+        tmp_path=tmp_path, registry=[_todo(heading="## A")], register=[_entry(heading="## A")]
+    )
+    _write(tmp_path=tmp_path, relpath=_REGISTER_RELPATH, entries={"not": "an array"})
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 1, (
+        f"an unreadable register must not pass as an empty one; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "rows-file-not-an-array" in result.combined
+    assert _REGISTER_RELPATH in result.combined
+    assert (
+        "unregistered_todo" not in result.combined
+    ), f"no direction may be decided from an unreadable file; output={result.combined!r}"
