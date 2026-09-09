@@ -29,10 +29,20 @@ The trust root is swapped for an EPHEMERAL fixture key by passing
 `trust_root=` in-process. That parameter is a test seam, not a lever —
 there is no environment variable, config key or flag that reaches it, so
 nothing here widens what the shipped check trusts.
+
+IT ALSO PINS THE RETURN SHAPE (work-item livespec-dev-tooling-qndn.12).
+The exemption reaches IO — `gpg --import`, `git verify-commit`, three
+more git probes — so it is not total, and it answers on the `IOResult`
+railway. Nothing in this repo's aggregate would notice that sliding back:
+`checks/public_api_result_typed` is the check that reads the return
+annotation and it is a no-op here, so the assertions below apply that
+check's own terminal-name rule to the source directly, and the failure
+track is inhabited end to end rather than left as an uninhabited type.
 """
 
 from __future__ import annotations
 
+import ast
 import functools
 import importlib.util
 import os
@@ -44,6 +54,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from returns.io import IOFailure, IOResult
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.checks._red_green_replay_revert import (
     GITHUB_FORGE_TRUST_ROOT,
@@ -60,10 +72,21 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from types import ModuleType
 
+    # Typing-only, and deliberately so: a runtime import of the failure type
+    # would make this file's Red leg a COLLECTION error against the pre-railway
+    # module, which proves unimportability rather than the missing behavior.
+    from livespec_dev_tooling.checks._red_green_replay_revert import ForgeProbeUnavailable
+
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_RED_GREEN_REPLAY = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "red_green_replay.py"
+_CHECKS_DIR = _REPO_ROOT / "livespec_dev_tooling" / "checks"
+_RED_GREEN_REPLAY = _CHECKS_DIR / "red_green_replay.py"
+
+# The two names `checks/public_api_result_typed` accepts as railway-typed.
+# Restated here rather than imported so this file pins the PROPERTY that check
+# reads, independently of the check's own shape.
+_RAILWAY_RETURN_NAMES = frozenset({"Result", "IOResult"})
 
 # Vars git sets when invoking hooks; inherited by every child and would
 # redirect the fixture repo's git calls at the SURROUNDING repository.
@@ -98,7 +121,6 @@ _PYPROJECT = (
     'source_tree_prefixes = ["overseer/"]\n'
 )
 
-_BINARY_UNUSABLE = 127
 _A_PINNED_FINGERPRINT = "968479A1AFF927E37D1A566BB5690EEEBB952194"
 
 
@@ -117,6 +139,16 @@ class DeadlockRepo:
 
     path: Path
     reddening_sha: str
+
+
+def _terminal_return_name(*, rendered: str) -> str:
+    """`IOResult[bool, ForgeProbeUnavailable]` → `IOResult`.
+
+    Mirrors the reduction `public_api_result_typed` applies to a rendered
+    return annotation before comparing it: drop the subscript, then drop any
+    dotted qualifier.
+    """
+    return rendered.split("[", maxsplit=1)[0].rsplit(".", maxsplit=1)[-1]
 
 
 @pytest.fixture(autouse=True)
@@ -249,7 +281,7 @@ def _revert(
     return _head_sha(repo=deadlock.path)
 
 
-def _is_exempt(*, sha: str, key: ForgeKey) -> bool:
+def _exemption(*, sha: str, key: ForgeKey) -> IOResult[bool, ForgeProbeUnavailable]:
     """Ask the exemption about `sha` in the CURRENT cwd — the fixture repo."""
     return is_forge_authored_revert(
         sha=sha,
@@ -257,6 +289,32 @@ def _is_exempt(*, sha: str, key: ForgeKey) -> bool:
         base_ref="origin/master",
         trust_root=key.trust_root,
     )
+
+
+def _is_exempt(*, sha: str, key: ForgeKey) -> bool:
+    """The MEASURED verdict — unwrapped, so a probe that could not run is an error here.
+
+    Every caller below is asking about a repository where both binaries are
+    present, so the success track is the assertion these tests mean to make;
+    the failure track has its own test rather than being folded into `False`.
+    """
+    return unsafe_perform_io(_exemption(sha=sha, key=key).unwrap())
+
+
+def _bin_dir_with_git_only(*, tmp_path: Path) -> Path:
+    """A PATH entry carrying `git` and nothing else — the absent-`gpg` CI image.
+
+    The condition the range gate's remedy hint already names ("check that
+    `gpg` is on PATH in this environment"), built rather than described: `git`
+    keeps working, so the range validator's own probes still run and the ONLY
+    thing that cannot start is the exemption's signature check.
+    """
+    bin_dir = tmp_path / "bin-git-only"
+    bin_dir.mkdir()
+    git = shutil.which("git")
+    assert git is not None
+    (bin_dir / "git").symlink_to(git)
+    return bin_dir
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +364,12 @@ def test_only_a_validsig_naming_a_pinned_fingerprint_counts(*, line: str, expect
 
 
 def test_unimportable_trust_root_material_grants_no_exemption(*, tmp_path: Path) -> None:
-    """Unusable key material fails CLOSED — the gate keeps its ordinary verdict."""
+    """Unusable key material fails CLOSED — the gate keeps its ordinary verdict.
+
+    On the SUCCESS track, deliberately: gpg ran and refused the material, which
+    is a measurement. Only a gpg that could not be started at all is a
+    non-answer.
+    """
     key = ForgeKey(
         home=tmp_path,
         fingerprint="0" * 40,
@@ -314,17 +377,40 @@ def test_unimportable_trust_root_material_grants_no_exemption(*, tmp_path: Path)
             fingerprints=("0" * 40,), public_key_block="not an OpenPGP key block\n"
         ),
     )
-    assert not is_forge_authored_revert(
-        sha="HEAD",
-        product_paths=[_PRODUCT_PATH],
-        base_ref="origin/master",
-        trust_root=key.trust_root,
-    )
+    assert not _is_exempt(sha="HEAD", key=key)
 
 
-def test_unstartable_binary_reads_as_an_ordinary_nonzero_result() -> None:
-    """An absent `gpg` is the same answer as a bad signature: no exemption."""
-    assert _run(argv=["livespec-dev-tooling-no-such-binary"]).returncode == _BINARY_UNUSABLE
+def test_is_forge_authored_revert_declares_a_railway_return_annotation() -> None:
+    """The SOURCE annotation is what the shipped detector reads.
+
+    Asserted against the source rather than the runtime value because that is
+    the surface `public_api_result_typed` judges — an annotation reverted to a
+    bare `bool` while the body still happened to return a container would
+    satisfy a runtime check and fail the real one.
+    """
+    source = (_CHECKS_DIR / "_red_green_replay_revert.py").read_text(encoding="utf-8")
+    functions = {
+        node.name: node for node in ast.parse(source).body if isinstance(node, ast.FunctionDef)
+    }
+    annotation = functions["is_forge_authored_revert"].returns
+    assert annotation is not None
+    rendered = ast.unparse(annotation)
+    assert _terminal_return_name(rendered=rendered) in _RAILWAY_RETURN_NAMES, rendered
+
+
+def test_unstartable_binary_takes_the_failure_track() -> None:
+    """A binary that cannot be STARTED is no longer spelled as an exit code.
+
+    It used to arrive as a synthetic 127, indistinguishable from a probe that
+    ran and refused; the argv and the OS's own reason are what the range gate
+    can now report instead of guessing.
+    """
+    probed = _run(argv=["livespec-dev-tooling-no-such-binary"])
+
+    assert isinstance(probed, IOFailure)
+    unavailable = unsafe_perform_io(probed.failure())
+    assert unavailable.argv == "livespec-dev-tooling-no-such-binary"
+    assert unavailable.detail != ""
 
 
 # ---------------------------------------------------------------------------
@@ -431,11 +517,16 @@ def test_signed_commit_naming_no_reverted_commit_is_refused(
 
 
 def test_message_of_an_unreadable_commit_names_nothing(*, tmp_path: Path) -> None:
-    """A git that did not answer yields no candidates — never a fabricated one."""
+    """A git that RAN and could not read the object names no candidates.
+
+    On the success track: an object that is not there is an answer, and the
+    empty tuple is what that answer looks like. The failure track is reserved
+    for a git that never ran.
+    """
     repo = tmp_path / "empty"
     repo.mkdir()
     _git(cwd=repo.parent, args=["init", "-q", str(repo)])
-    assert _reverted_shas_from_message(sha="0" * 40) == ()
+    assert unsafe_perform_io(_reverted_shas_from_message(sha="0" * 40).unwrap()) == ()
 
 
 def test_a_root_commit_is_not_an_undo_of_anything(
@@ -446,10 +537,33 @@ def test_a_root_commit_is_not_an_undo_of_anything(
     monkeypatch.chdir(deadlock.path)
     root = _git(cwd=deadlock.path, args=["rev-list", "--max-parents=0", "HEAD"]).stdout.strip()
     reverted, base_ref, paths = deadlock.reddening_sha, "origin/master", [_PRODUCT_PATH]
-    assert not _undoes_ancestor(sha=root, reverted=reverted, base_ref=base_ref, product_paths=paths)
-    assert not _undoes_ancestor(
-        sha="0" * 40, reverted=reverted, base_ref=base_ref, product_paths=paths
-    )
+    for sha in (root, "0" * 40):
+        undone = _undoes_ancestor(
+            sha=sha, reverted=reverted, base_ref=base_ref, product_paths=paths
+        )
+        assert not unsafe_perform_io(undone.unwrap())
+
+
+def test_an_unstartable_gpg_answers_on_the_failure_track(
+    *, tmp_path: Path, forge_key: ForgeKey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same revert that IS exempt above answers "not measured" with no `gpg`.
+
+    That pairing is the whole point of the conversion: the commit has not
+    changed, so a `False` here would be a claim about the commit that nothing
+    established. The verdict the caller draws from it is still no-exemption —
+    see the range-gate leg below — but the gate can now name the invocation
+    instead of guessing at it.
+    """
+    deadlock = _deadlock_repo(tmp_path=tmp_path, forge_key=forge_key, monkeypatch=monkeypatch)
+    revert_sha = _revert(deadlock=deadlock, key=forge_key)
+    monkeypatch.setenv("PATH", str(_bin_dir_with_git_only(tmp_path=tmp_path)))
+
+    probed = _exemption(sha=revert_sha, key=forge_key)
+
+    assert isinstance(probed, IOFailure)
+    unavailable = unsafe_perform_io(probed.failure())
+    assert unavailable.argv.startswith("gpg ")
 
 
 # ---------------------------------------------------------------------------
@@ -512,3 +626,31 @@ def test_measured_2026_08_22_range_still_convicts_an_ordinary_untrailered_commit
     module = _load_range_validator(forge_key=forge_key, monkeypatch=monkeypatch)
     monkeypatch.chdir(deadlock.path)
     assert module._validate_range() == 1  # noqa: SLF001 — the module's own range entry point.
+
+
+def test_range_gate_convicts_and_names_an_exemption_it_could_not_probe(
+    *,
+    tmp_path: Path,
+    forge_key: ForgeKey,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The caller CONSUMES the failure track: same range, convicted, and said out loud.
+
+    Byte-for-byte the passing range above — a genuine forge-authored revert —
+    with `gpg` removed from PATH. The verdict is the strict one the exemption
+    has always given when it could not establish itself, which is why this
+    conversion cannot widen the gate. What is new is the diagnostic naming the
+    invocation that could not start, in place of a hint guessing at it.
+    """
+    deadlock = _deadlock_repo(tmp_path=tmp_path, forge_key=forge_key, monkeypatch=monkeypatch)
+    _revert(deadlock=deadlock, key=forge_key)
+    module = _load_range_validator(forge_key=forge_key, monkeypatch=monkeypatch)
+    monkeypatch.chdir(deadlock.path)
+    monkeypatch.setenv("PATH", str(_bin_dir_with_git_only(tmp_path=tmp_path)))
+
+    assert module._validate_range() == 1  # noqa: SLF001 — the module's own range entry point.
+
+    reported = capsys.readouterr().err
+    assert "red-green-replay-forge-exemption-unprobed" in reported
+    assert "red-green-replay-range-missing-trailers" in reported
