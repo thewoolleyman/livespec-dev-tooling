@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.69.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.1...v1.69.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **branch_protection_alignment:** fail when enforce_admins is not enabled ([21ac023](https://github.com/thewoolleyman/livespec-dev-tooling/commit/21ac02308f50ca8a7a7e73f0fb46a2abdf1227b7))
+
 ## [1.69.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.0...v1.69.1) (2026-09-09)
 
 
