@@ -22,6 +22,14 @@ access fault and re-run rather than reinstalling anything". Folding an unread
 file into `missing` or `body_mismatch` would produce a grammatical, specific,
 actionable sentence about a file nothing read.
 
+⛔ AND ONE OF THOSE REMEDIES IS ITSELF COMPOSED FROM A READ. The worktree-pack
+remedy names its first command by reading the root justfile, so it answers on
+the `IOResult` railway (livespec-dev-tooling-qndn.11) and `_pack_hint` below is
+where this module consumes it. The distinction that consumption preserves is
+the same one drawn above: the pack failure was OBSERVED and still narrates in
+full, while the route claim — the only part that rested on the read — degrades
+to the text that holds either way, naming the file that refused.
+
 Names stay `_`-prefixed and are re-exported through `__all__`: they were
 private in the parent, and making them public to satisfy the extraction would
 enrol three unconverted functions in the railway universe as brand-new
@@ -43,9 +51,12 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 from _primary_checkout_worktree_pack import (  # noqa: E402  — sibling private import
+    WORKTREE_PACK_UNWIRED_REMEDY,
     pack_failure_hint,
     pack_failure_path,
 )
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 # ABSOLUTE where the arm imports are bare, so there is exactly ONE
 # `CheckInputUnreadable` class object however this module is reached.
@@ -120,6 +131,17 @@ _UNREADABLE_INPUT_REMEDY = (
     "partial installs from the bytes it reads, and it read none here. Fix the "
     "access fault and re-run rather than reinstalling anything"
 )
+# What the pack remedy says INSTEAD of naming an install route it could not
+# establish. Only the route claim rests on a read; the text it prefixes is
+# correct in a wired checkout and in an unwired one, which is why the finding
+# below still carries a complete remedy. The path is placed at the END of its
+# sentence deliberately — a sentence continuing after it would read as part of
+# it, and the file this names is a `justfile`.
+_PACK_ROUTE_UNESTABLISHED = (
+    "which install route this checkout offers could NOT be established — a "
+    "file this remedy is composed from is there and refused to yield its "
+    "content ({detail}): {path}. So take the step that is correct either way: "
+)
 _GIT_PROBE_REMEDY = (
     "a git probe this check depends on did not answer; rerun the reported "
     "`argv` from the reported `cwd` to see git's own diagnostic. Every "
@@ -177,10 +199,37 @@ def _emit_failures(
             hook="",
             failure_mode=failure_mode,
             hooks_dir=str(hooks_dir),
-            hint=pack_failure_hint(failure_mode=failure_mode, repo_root=repo_root),
+            hint=_pack_hint(failure_mode=failure_mode, repo_root=repo_root),
             path=str(pack_failure_path(repo_root=repo_root, script_name=script_name)),
             line=0,
         )
+
+
+def _pack_hint(*, failure_mode: str, repo_root: Path) -> str:
+    """Consume the pack-remedy railway — an unread justfile never DROPS a finding.
+
+    ⛔ THE FINDING STANDS. Every pack failure narrated above was OBSERVED from
+    bytes on disk — a drifted body, an absent sibling, no pack at all — and
+    only the remedy's FIRST NAMED COMMAND rests on a read of the root justfile.
+    Letting that read escape to the parent would convert a reported violation
+    into a check that could not answer and drop the very finding this narration
+    exists to emit, so the failure is consumed HERE.
+
+    The degradation is STATED rather than hidden, which is the whole difference
+    from the bare-`str` composer this replaced: that one silently returned the
+    UNWIRED text, asserting a property of the checkout on the strength of a
+    file nobody read. This names the path that refused and then gives the same
+    text — correct in a wired checkout and in an unwired one — as the step to
+    take when the route itself could not be established.
+    """
+    composed = pack_failure_hint(failure_mode=failure_mode, repo_root=repo_root)
+    if isinstance(composed, IOFailure):
+        unreadable = unsafe_perform_io(composed.failure())
+        unestablished = _PACK_ROUTE_UNESTABLISHED.format(
+            detail=unreadable.detail, path=unreadable.path
+        )
+        return f"{unestablished}{WORKTREE_PACK_UNWIRED_REMEDY}"
+    return unsafe_perform_io(composed.unwrap())
 
 
 def _emit_foreign_wrapper_failures(
