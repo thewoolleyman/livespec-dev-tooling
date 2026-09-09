@@ -387,9 +387,14 @@ def test_a_complete_gate_over_the_pushed_tree_authorises_the_push(*, tmp_path: P
     assert verdict.state == GATE_PASSED
     assert verdict.token_written is True
     assert verdict.refuses_push is False
-    assert (f"{GATE_MIRROR_ROOT}/widget.git", f"HEAD:refs/gates/{_TREE}") == (
-        next(argv for argv in runner.argvs if argv[:2] == ("git", "push"))[2:4]
-    )
+    # The push carries the mirror URL and BOTH refspecs — the tree under test
+    # and the `.base` companion the pod fetches as its diff base — so the tail
+    # is read rather than a fixed slice, which `--atomic` would have shifted.
+    assert (
+        f"{GATE_MIRROR_ROOT}/widget.git",
+        f"HEAD:refs/gates/{_TREE}",
+        f"origin/master:refs/gates/{_TREE}.base",
+    ) == (next(argv for argv in runner.argvs if argv[:2] == ("git", "push"))[-3:])
     # Two polls: the run waited through a Job that had not been admitted yet
     # rather than reading a verdict off the first answer it got.
     assert len([argv for argv in runner.argvs if "get" in argv]) == 2

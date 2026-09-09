@@ -20,11 +20,20 @@ and the value the Job's `initContainer` re-derives after checkout and refuses to
 proceed without, so a verdict cannot be separated from the tree it was produced
 against.
 
-THE REF DELETION IS THE PART THAT FAILS SILENTLY. One gated push creates one
-ref and nothing in the protocol removes it, so this client is the FIRST
+A SECOND REF RIDES THE SAME PUSH, and it is not a second identity: the mirror
+is created EMPTY (`git init --bare`), so it holds only what a gate push puts
+there, while eight members of the aggregate judge the commit range
+`origin/master..HEAD` rather than a tree. `refs/gates/<tree>.base` carries this
+client's own `origin/master` and the pod's initContainer fetches it straight
+into `refs/remotes/origin/master`. The push is `--atomic` so a tree ref without
+its base cannot exist; the tree hash still names the tree, the served ref, this
+Job and the token.
+
+THE REF DELETION IS THE PART THAT FAILS SILENTLY. One gated push creates those
+two refs and nothing in the protocol removes them, so this client is the FIRST
 collector and `prune-gate-refs.sh` on the mirror host is the second — that sweep
 exists precisely because a client which dies between the push and the verdict
-leaves its ref behind. The delete therefore sits in a `finally`: it runs on the
+leaves its refs behind. The delete therefore sits in a `finally`: it runs on the
 success path, on a failed step, on a step that RAISED, and on the wait giving
 up. An orphan ref raises no error anywhere and is visible only as unbounded
 namespace growth weeks later.
@@ -59,7 +68,9 @@ if str(_VENDOR_DIR) not in sys.path:
 from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
+    "GATE_BASE_REF_SUFFIX",
     "GATE_NAMESPACE",
+    "GATE_RANGE_BASE_REF",
     "GateRunOutcome",
     "GateRunRequest",
     "run_gate",
@@ -68,6 +79,21 @@ __all__: list[str] = [
 # The namespace R4.S2 builds and the gate Job template already declares. Named
 # here rather than passed by every caller, and still overridable per request.
 GATE_NAMESPACE = "gates"
+
+# The local ref whose commit becomes the gate's diff base. The same literal the
+# checks themselves resolve — `red_green_replay`, `check_coverage_incremental`
+# and `plan_no_live_handoff_file` all name `origin/master` — so it is a constant
+# rather than a per-request knob: a gate that diffed against something else
+# would return a verdict about a range the repository does not gate on.
+GATE_RANGE_BASE_REF = "origin/master"
+
+# The suffix that names the base ref beside the tree ref. LOCKSTEP WITH
+# `ci-runner/k3s/phase2/gates/gate-job-template.yaml`, whose initContainer
+# fetches `refs/gates/<tree>.base` into `refs/remotes/origin/master`. Neither
+# file can see the other and a drifted suffix is a syntax error in neither: it
+# is a fetch that finds nothing, at gate time, on the cluster — so a test holds
+# this constant and that refspec together.
+GATE_BASE_REF_SUFFIX = ".base"
 
 _READ_TREE_STEP = "read-tree-hash"
 _PUSH_STEP = "push-gate-ref"
@@ -141,7 +167,19 @@ def run_gate(
     if isinstance(tree, Failure):
         return Failure(tree.failure())
     tree_hash = tree.unwrap()
-    push_argv = ["git", "push", request.mirror_url, f"HEAD:refs/gates/{tree_hash}"]
+    push_argv = [
+        "git",
+        "push",
+        # `--atomic` is what makes the two refs ONE FACT. The mirror is created
+        # empty and holds only what a gate push puts there, so the diff base is
+        # not something the pod can find on its own; a partial push would land
+        # the tree ref alone and the Job would then fail on a base that was
+        # never pushed rather than on the code under test.
+        "--atomic",
+        request.mirror_url,
+        f"HEAD:refs/gates/{tree_hash}",
+        f"{GATE_RANGE_BASE_REF}:refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+    ]
     pushed = require_success(
         step=_PUSH_STEP, argv=push_argv, outcome=runner(argv=push_argv, cwd=request.repo_root)
     )
@@ -187,8 +225,21 @@ def _head_tree_hash(
 def _delete_gate_ref(
     *, request: GateRunRequest, runner: GateCommandRunner, tree_hash: str
 ) -> StepOutcome:
-    """Collect the ref this run created — the first of the two collectors."""
-    argv = ["git", "push", "--delete", request.mirror_url, f"refs/gates/{tree_hash}"]
+    """Collect the refs this run created — the first of the two collectors.
+
+    BOTH refs, because the push created both. The `.base` companion is the same
+    kind of litter as the tree ref and accumulates at the same rate, so naming
+    only the tree ref would halve the collection while looking complete — and
+    the shortfall is invisible until the mirror's namespace is measured.
+    """
+    argv = [
+        "git",
+        "push",
+        "--delete",
+        request.mirror_url,
+        f"refs/gates/{tree_hash}",
+        f"refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+    ]
     return require_success(
         step=_DELETE_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
     )

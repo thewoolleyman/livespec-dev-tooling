@@ -174,10 +174,36 @@ def test_the_tree_under_test_is_pushed_to_the_mirror_at_a_ref_named_for_its_tree
     assert cluster.only(kind="push-ref").argv == (
         "git",
         "push",
+        "--atomic",
         _MIRROR,
         f"HEAD:refs/gates/{_TREE}",
+        f"origin/master:refs/gates/{_TREE}.base",
     )
     assert outcome.unwrap().tree_hash == _TREE
+
+
+def test_the_diff_base_rides_the_same_atomic_push_as_the_tree_under_test() -> None:
+    """A gate ref without its `.base` companion is a gate with NO DIFF BASE.
+
+    The mirror is created empty (`git init --bare`) and holds only what a gate
+    push puts there, so `origin/master` is not something the pod can find on its
+    own — and eight members of the aggregate judge `origin/master..HEAD` rather
+    than a tree. `--atomic` is what makes the two refs one fact: without it a
+    partial push lands the tree ref alone, the Job starts, and it fails on a base
+    that was never pushed rather than on the code under test.
+
+    Asserted as a whole argv above and as the INVARIANT here, because the two
+    say different things: that one is the command, this one is why it cannot be
+    two commands.
+    """
+    cluster = _StubCluster()
+    _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+    push = cluster.only(kind="push-ref")
+    assert "--atomic" in push.argv
+    assert push.argv[-2:] == (
+        f"HEAD:refs/gates/{_TREE}",
+        f"origin/master:refs/gates/{_TREE}.base",
+    )
 
 
 def test_the_rendered_job_is_submitted_to_the_cluster_on_stdin() -> None:
@@ -248,7 +274,12 @@ def test_a_non_zero_log_stream_exit_does_not_fail_the_run() -> None:
 
 
 def test_the_gate_ref_is_deleted_on_the_success_path() -> None:
-    """The client is the FIRST collector; the mirror's sweep is the second."""
+    """The client is the FIRST collector; the mirror's sweep is the second.
+
+    BOTH refs the push created are collected. The `.base` companion is the same
+    kind of litter as the tree ref and grows at the same rate, so a delete that
+    named only the tree ref would halve the collection while looking complete.
+    """
     cluster = _StubCluster()
     _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
     assert cluster.kinds[-1] == "delete-ref"
@@ -258,6 +289,7 @@ def test_the_gate_ref_is_deleted_on_the_success_path() -> None:
         "--delete",
         _MIRROR,
         f"refs/gates/{_TREE}",
+        f"refs/gates/{_TREE}.base",
     )
 
 
