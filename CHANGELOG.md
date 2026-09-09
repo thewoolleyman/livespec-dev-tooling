@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.73.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.72.0...v1.73.0) (2026-09-09)
+
+
+### Features
+
+* **fleet:** capture git tree symlink entries in TreeState ([f6673ba](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f6673ba8dcb76ea16da1b52172779ed37e527f93))
+* **fleet:** flag a .claude/CLAUDE.md that is not the ../AGENTS.md symlink ([36ac5ac](https://github.com/thewoolleyman/livespec-dev-tooling/commit/36ac5ace603a5c52739e64e08f9ff112cac00dde))
+
 ## [1.72.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.71.0...v1.72.0) (2026-09-09)
 
 
