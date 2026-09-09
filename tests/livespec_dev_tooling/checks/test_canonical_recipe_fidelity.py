@@ -24,6 +24,15 @@ Acceptance behaviors:
 - The prefix-collision guard: a lookup for `check-foo` does NOT match a
   `check-foo-bar:` header.
 
+Which headers count is decided by the single-sourced recognizer
+`livespec_dev_tooling.just_recipe_headers`, shared with the bump-pin
+append guard so the surface that appends a recipe and the surface that
+judges one cannot disagree. The two questions it answers are still
+distinct, and the suite pins both: a `@check-foo:` quiet-prefixed recipe
+IS the canonical recipe, while an `alias check-foo := ...` (which the
+append guard must treat as claiming the name) and a `check-foo := "x"`
+variable assignment each leave the canonical recipe MISSING here.
+
 The check is exercised IN-PROCESS via `main()` (`monkeypatch.chdir` +
 `monkeypatch.setattr(sys, "argv", ...)` + `capsys`) — the repo's
 preferred pattern over spawning a Python subprocess, which keeps the
@@ -475,6 +484,92 @@ def test_recipe_body_stops_at_next_recipe_header(
         f for f in findings if f.get("failure_mode") == "recipe_not_pinned_to_shared_module"
     ]
     assert len(repointed) == 1, f"expected one repointed finding; got {repointed!r}"
+
+
+def test_quiet_prefixed_recipe_invoking_shared_module_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`@check-alpha:` — just's quiet-prefix form — is a recipe, not an absence.
+
+    The pre-single-sourcing regex required the slug itself at column 0, so a
+    consumer that suppressed the echo on its canonical recipe was told the
+    recipe was missing entirely while `just` ran it happily.
+    """
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    quiet = "@check-alpha:\n    uv run python -m livespec_dev_tooling.checks.alpha\n"
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_recipes(recipes=[quiet]))
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "canonical.json"],
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0 for a quiet-prefixed canonical recipe that invokes the "
+        f"shared module; stderr={result.stderr!r}"
+    )
+
+
+def test_variable_assignment_is_reported_as_a_missing_recipe(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`check-alpha := "x"` is a variable, so the canonical recipe is MISSING.
+
+    The pre-single-sourcing regex false-matched the `:` of `:=` and read the
+    lines below as a recipe body, so the violation was reported as a REPOINTED
+    recipe. The honest finding is that no recipe exists at all — the same
+    reading that makes the bump-pin guard append one.
+    """
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(cwd=tmp_path, body='check-alpha := "x"\n\ndefault:\n    @just --list\n')
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "canonical.json"],
+    )
+    assert (
+        result.returncode == 1
+    ), f"expected exit 1 when only a variable carries the slug; stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    missing = [
+        f
+        for f in findings
+        if f.get("failure_mode") == "canonical_recipe_missing" and f.get("slug") == "check-alpha"
+    ]
+    assert len(missing) == 1, f"expected one canonical_recipe_missing finding; got {findings!r}"
+
+
+def test_alias_alone_is_reported_as_a_missing_recipe(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An `alias check-alpha := ...` takes the name but supplies no canonical body.
+
+    The two questions the shared recognizer answers are deliberately different:
+    the bump-pin guard must treat the alias as CLAIMING the name (appending a
+    recipe beside it is a `just` parse error), while this gate must still report
+    the canonical recipe as missing, because no body here invokes the pinned
+    shared module.
+    """
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    body = "check-other:\n    echo hi\n\nalias check-alpha := check-other\n"
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_recipes(recipes=[body]))
+    result = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        extra_argv=["--canonical-from", "canonical.json"],
+    )
+    assert (
+        result.returncode == 1
+    ), f"expected exit 1 when only an alias carries the slug; stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    missing = [
+        f
+        for f in findings
+        if f.get("failure_mode") == "canonical_recipe_missing" and f.get("slug") == "check-alpha"
+    ]
+    assert len(missing) == 1, f"expected one canonical_recipe_missing finding; got {findings!r}"
 
 
 def test_missing_justfile_fails_gracefully(
