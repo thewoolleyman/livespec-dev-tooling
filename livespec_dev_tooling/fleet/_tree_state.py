@@ -24,16 +24,25 @@ __all__: list[str] = [
 
 
 _GITLINK_MODE = "160000"
+# The blob mode git gives a symlink. It is captured because the tree is the
+# ONLY GitHub surface that distinguishes a symlink from a real file at the
+# same path: the contents API RESOLVES an in-repo symlink to its target's
+# bytes, so a `.claude/CLAUDE.md` symlinked to `../AGENTS.md` and a divergent
+# real file there read identically through it. What the tree does NOT carry is
+# the link TEXT — that lives in the blob — so a consumer reading these paths
+# learns that an entry is a symlink, never where it points.
+_SYMLINK_MODE = "120000"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TreeState:
-    """A member's recursive master tree: paths, gitlink entries, read status."""
+    """A member's recursive master tree: paths, gitlink/symlink entries, read status."""
 
     readable: bool
     truncated: bool = False
     paths: frozenset[str] = frozenset()
     gitlink_paths: tuple[str, ...] = ()
+    symlink_paths: tuple[str, ...] = ()
 
 
 def parse_tree_payload(*, payload: object) -> TreeState:
@@ -46,6 +55,7 @@ def parse_tree_payload(*, payload: object) -> TreeState:
         return TreeState(readable=False)
     paths: set[str] = set()
     gitlinks: list[str] = []
+    symlinks: list[str] = []
     for entry in cast("list[object]", entries):
         if not isinstance(entry, dict):
             continue
@@ -54,11 +64,15 @@ def parse_tree_payload(*, payload: object) -> TreeState:
         if not isinstance(path, str):
             continue
         paths.add(path)
-        if record.get("mode") == _GITLINK_MODE:
+        mode = record.get("mode")
+        if mode == _GITLINK_MODE:
             gitlinks.append(path)
+        elif mode == _SYMLINK_MODE:
+            symlinks.append(path)
     return TreeState(
         readable=True,
         truncated=bool(mapping.get("truncated")),
         paths=frozenset(paths),
         gitlink_paths=tuple(sorted(gitlinks)),
+        symlink_paths=tuple(sorted(symlinks)),
     )

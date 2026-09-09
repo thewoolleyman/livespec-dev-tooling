@@ -10,6 +10,8 @@ seam that happens to feed it.
 
 from __future__ import annotations
 
+import dataclasses
+
 from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload
 
 __all__: list[str] = []
@@ -59,3 +61,30 @@ def test_gitlink_entries_are_collected_sorted_and_still_counted_as_paths() -> No
     assert state.truncated
     assert state.gitlink_paths == ("vendor/a", "vendor/z")
     assert state.paths == frozenset({"vendor/a", "vendor/z", "README.md"})
+
+
+def test_symlink_entries_are_captured_apart_from_gitlinks_and_still_counted_as_paths() -> None:
+    """Mode 120000 lands in `symlink_paths` — not `gitlink_paths`, and still in `paths`.
+
+    The FIELD assertion comes first on purpose. Reading `state.symlink_paths`
+    before the field exists raises `AttributeError`, which proves only that a
+    name is missing; asserting the field set is a genuine assertion that fails
+    at Red and states the additive contract the capture has to keep — a
+    symlink is a THIRD kind of entry, distinct from a regular file and from a
+    gitlink, and it is not subtracted from either of the two existing views.
+    """
+    fields = {f.name for f in dataclasses.fields(TreeState)}
+    assert {"gitlink_paths", "symlink_paths"} <= fields
+    state = parse_tree_payload(
+        payload={
+            "tree": [
+                {"path": "CLAUDE.md", "mode": "120000"},
+                {"path": ".claude/CLAUDE.md", "mode": "120000"},
+                {"path": "vendor/a", "mode": "160000"},
+                {"path": "README.md", "mode": "100644"},
+            ]
+        }
+    )
+    assert state.symlink_paths == (".claude/CLAUDE.md", "CLAUDE.md")
+    assert state.gitlink_paths == ("vendor/a",)
+    assert state.paths == frozenset({".claude/CLAUDE.md", "CLAUDE.md", "vendor/a", "README.md"})
