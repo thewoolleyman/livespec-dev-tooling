@@ -104,7 +104,11 @@ check_requirements() {
 # not a `--depth 1` fetch, and prose about a flag must not read as the flag.
 check_fetch_brings_range_and_master() {
   local f="$1" hash="$2" missing=0
-  if grep -v '^[[:space:]]*#' "$f" | grep -qF -- '--depth'; then
+  # NOT `... | grep -q`: under `pipefail` a `-q` downstream exits on its FIRST
+  # match, the upstream grep takes SIGPIPE, and the pipeline reports 141 — so a
+  # real match reads as no match, but only when the upstream is still writing.
+  # That race passed here and failed inside the loaded commit aggregate.
+  if [ -n "$(grep -v '^[[:space:]]*#' "$f" | grep -F -- '--depth' || true)" ]; then
     echo "    shallow: the initContainer still fetches with --depth"; missing=1
   fi
   grep -qF "+refs/gates/${hash}:refs/gates/${hash}" "$f" \
@@ -259,10 +263,15 @@ echo "== K. mutants of I and J are CAUGHT by those same checks =="
 # is not a check. The first mutant restores the shallow single-ref fetch this
 # slice removed; the second deletes the bootstrap lines.
 shallow="${SCRATCH}/shallow-template.yaml"
-sed -e 's|^\(\s*\)if ! git fetch --quiet origin \\$|\1git fetch --quiet --depth 1 origin "refs/gates/@@TREE_HASH@@"; if false; then|' \
+sed -e 's|if ! git fetch --quiet origin \\|git fetch --quiet --depth 1 origin "refs/gates/@@TREE_HASH@@"; if false; then|' \
     "${TEMPLATE}" > "${shallow}"
 shallow_out="${SCRATCH}/shallow.yaml"
-if GATE_JOB_TEMPLATE="${shallow}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+# Case E's guard, for the same reason: a sed that stops matching would present
+# as the MUTANT PASSING, which reads as "case I is vacuous" and sends the
+# reader to the wrong file entirely.
+if [ -z "$(grep -F -- '--depth 1' "${shallow}" || true)" ]; then
+  fail "could not build the shallow mutant template"
+elif GATE_JOB_TEMPLATE="${shallow}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
      --tree-hash "${HASH_A}" > "${shallow_out}" 2>/dev/null; then
   if check_fetch_brings_range_and_master "${shallow_out}" "${HASH_A}" > "${SCRATCH}/shallow.report" 2>&1; then
     fail "a --depth 1 single-ref fetch PASSED the fetch check — case I is vacuous"
@@ -278,7 +287,9 @@ fi
 nobootstrap="${SCRATCH}/nobootstrap-template.yaml"
 sed -E '/^[[:space:]]*just install-(worktree-pack|commit-refuse-hooks)$/d' "${TEMPLATE}" > "${nobootstrap}"
 nobootstrap_out="${SCRATCH}/nobootstrap.yaml"
-if GATE_JOB_TEMPLATE="${nobootstrap}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+if [ -n "$(grep -E '^[[:space:]]*just install-worktree-pack$' "${nobootstrap}" || true)" ]; then
+  fail "could not build the no-bootstrap mutant template"
+elif GATE_JOB_TEMPLATE="${nobootstrap}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
      --tree-hash "${HASH_A}" > "${nobootstrap_out}" 2>/dev/null; then
   if check_bootstrap_precedes_check "${nobootstrap_out}" > "${SCRATCH}/nobootstrap.report" 2>&1; then
     fail "an un-bootstrapped gate container PASSED the ordering check — case J is vacuous"
