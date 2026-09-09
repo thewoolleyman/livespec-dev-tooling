@@ -1,0 +1,22 @@
+# gate-ref-prune.timer — run the gate-ref sweep hourly.
+#
+# THE INTERVAL IS NOT THE CUTOFF. ./prune-gate-refs.sh expires a ref one DAY
+# after it was pushed; this timer decides how long after that expiry the ref
+# actually goes. A daily timer would make the effective retention anywhere
+# between one and two days, which is not what the cutoff says. Hourly keeps
+# the observed retention within an hour of the stated one, and the cost is a
+# `for-each-ref` over a handful of refs per mirror.
+#
+# OnBootSec is late enough to stay out of the boot converge's way — that
+# converge runs its own sweep as its step 4, so the mirrors are already swept
+# by the time this first fires.
+[Unit]
+Description=Hourly sweep of expired refs/gates/* in the gate source mirrors
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

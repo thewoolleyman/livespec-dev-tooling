@@ -1,0 +1,29 @@
+# gate-ref-prune.service — sweep expired refs/gates/* from the gate source
+# mirrors (R4.S4, livespec-dev-tooling-2hno; plan livespec
+# k3s-on-gmktec-for-vps-usage, epic livespec-sab5gn).
+#
+# The mirrors accumulate one ref per gated tree. The gate client deletes its
+# own ref once it has a verdict; this is the collector for the refs it did not
+# — the ones whose client died between the push and the verdict, which is
+# precisely when nobody is left to clean up. See ./prune-gate-refs.sh.
+#
+# WHY A HOST TIMER AND NOT AN IN-CLUSTER CronJob, which is what a reader who
+# knows this tree will expect. The sweep must WRITE to the mirror, and the
+# mirror is owned by the account the SSH receive path lands as. A pod would
+# have to carry that account's numeric uid or gid in its manifest — a second
+# place to keep in step with ./converge-gates-mirror.sh's owner argument, and
+# one that fails as a permission error at the far end of a CronJob rather than
+# where it was set. On the host the script reads the directory's actual owner
+# and becomes it, so there is exactly one source of truth for who owns the
+# mirror. The sweep also has nothing to gain from the cluster: no API access,
+# no image, no scheduling.
+#
+# oneshot, not RemainAfterExit: it sweeps and exits, and an inactive-dead unit
+# after a clean exit is correct. `systemctl start gate-ref-prune.service` runs
+# one sweep by hand, idempotently, at any time.
+[Unit]
+Description=Prune expired refs/gates/* from the gate source mirrors
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ci-runner-k3s/gates/prune-gate-refs.sh

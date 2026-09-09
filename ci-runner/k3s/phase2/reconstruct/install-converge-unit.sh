@@ -16,6 +16,10 @@
 #   crates-proxy/   converge-crates-proxy.sh + the proxy manifest
 #   sccache/        converge-sccache-redis.sh + the redis manifest
 #   observability/  the Kueue-webhook probe's RBAC (from ci-runner/observability)
+#   gates/          the delegated-gate submitter's RBAC, the gate Job template
+#                   + its renderer (shipped, never applied), and the gate
+#                   SOURCE path: converge-gates-mirror.sh, git-daemon.yaml and
+#                   prune-gate-refs.sh
 #   render-sa-kubeconfig.sh   the probe-credential renderer
 #   (NOT patch-node-churn-capacity.sh: converge step 1b runs it from this same
 #   dir, but ../node-extended-resource/install-reapply-unit.sh copies it —
@@ -151,6 +155,15 @@ install -m 0644 "${GATES_SRC}/gates-rbac.yaml" "${LIB_DIR}/gates/gates-rbac.yaml
 # The gate client renders and submits; converge only puts them on the host.
 install -m 0644 "${GATES_SRC}/gate-job-template.yaml" "${LIB_DIR}/gates/gate-job-template.yaml"
 install -m 0755 "${GATES_SRC}/render-gate-job.sh" "${LIB_DIR}/gates/render-gate-job.sh"
+# The gate SOURCE path (R4.S4, 2hno): the converge that creates the bare
+# mirrors on the ci-cache tier and applies the read-only in-cluster git daemon
+# that serves them, the daemon manifest itself, and the refs/gates/* sweep the
+# converge runs at boot and the timer runs hourly. Unlike the template above,
+# git-daemon.yaml IS applied — by converge-gates-mirror.sh, not by
+# converge-ci-stack.sh directly.
+install -m 0755 "${GATES_SRC}/converge-gates-mirror.sh" "${LIB_DIR}/gates/converge-gates-mirror.sh"
+install -m 0644 "${GATES_SRC}/git-daemon.yaml" "${LIB_DIR}/gates/git-daemon.yaml"
+install -m 0755 "${GATES_SRC}/prune-gate-refs.sh" "${LIB_DIR}/gates/prune-gate-refs.sh"
 
 # ---------------------------------------------------------------------------
 if [ -n "${STAGE_TO}" ]; then
@@ -163,9 +176,24 @@ log "8. Install the systemd unit"
 install -m 0644 "${SCRIPT_DIR}/${SERVICE}" "${UNIT_DIR}/${SERVICE}"
 
 # ---------------------------------------------------------------------------
+log "8b. Install the gate-ref sweep's timer (R4.S4, 2hno)"
+# The mirrors accumulate one ref per gated tree and the gate client only
+# removes its own; ../gates/gate-ref-prune.service is the collector for the
+# rest. It is a HOST timer rather than an in-cluster CronJob because the sweep
+# writes to a host directory owned by the SSH receive account — that unit's
+# header carries the full reasoning. Installed here rather than by a fourth
+# installer because its ExecStart is a file THIS installer copies, so the two
+# have to move together.
+install -m 0644 "${GATES_SRC}/gate-ref-prune.service" "${UNIT_DIR}/gate-ref-prune.service"
+install -m 0644 "${GATES_SRC}/gate-ref-prune.timer" "${UNIT_DIR}/gate-ref-prune.timer"
+
 log "9. Enable on next boot (NOT --now: starting it applies the stack live)"
 systemctl daemon-reload
 systemctl enable "${SERVICE}"
+# The TIMER is enabled the same way and for the same reason: enabling arms it
+# for the next boot without running a sweep now. The boot converge runs one of
+# its own as its step 10c, so nothing is left unswept in the meantime.
+systemctl enable gate-ref-prune.timer
 
 # ---------------------------------------------------------------------------
 log "10. Verify the unit is enabled, and that the reapply unit it Wants= is installed"

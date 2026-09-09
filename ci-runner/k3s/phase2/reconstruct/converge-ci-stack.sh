@@ -647,6 +647,27 @@ kubectl apply -f "${GATES_DIR}/gates-rbac.yaml"
   --group root --mode 0600
 
 # ---------------------------------------------------------------------------
+log "10c. Converge the gate source path (bare mirrors on the ci-cache tier + the read-only git daemon)"
+# R4.S4 (livespec-dev-tooling-2hno). A gate Job fetches the exact tree under
+# test from git://git-gates.gates.svc.cluster.local:9418, so without this the
+# gate plane is complete right up to its first fetch and then fails closed —
+# which is what the 2026-09-08 end-to-end exercise saw, a Job admitted by Kueue
+# and scheduled onto gmktec dying at "unable to look up
+# git-gates.gates.svc.cluster.local (port 9418)".
+#
+# ORDERED AFTER step 5 because the daemon's objects live in the `gates`
+# Namespace that ../kueue/cluster-queue-gates.yaml creates, and kept beside
+# step 10b for the same reason that step is where it is: everything `gates` in
+# one place.
+#
+# WARN rather than fail, like the sccache converge above: a missing daemon
+# makes gate Jobs fail closed at their fetch, which refuses pushes rather than
+# passing them, so it must not take the rest of the boot converge down with it.
+if ! GATES_VALUES_DIR="${ARC_DIR}" "${GATES_DIR}/converge-gates-mirror.sh"; then
+  echo "WARN: converge-gates-mirror.sh failed (see above; an unmounted ci-cache tier refuses by design) — continuing; delegated gates fail closed at their fetch until it is re-run"
+fi
+
+# ---------------------------------------------------------------------------
 log "11. Verify (informational — non-fatal reads of the converged state)"
 kubectl -n kube-system get deployment local-path-provisioner
 kubectl -n "$CONTROLLER_NAMESPACE" get deployment -l app.kubernetes.io/name=gha-rs-controller
@@ -657,4 +678,4 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l "$NODE_LABEL_SELECTOR" \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + warm-cache CronJob + probe identity."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + warm-cache CronJob + probe identity + gate source mirrors and daemon."
