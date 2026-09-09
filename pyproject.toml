@@ -594,6 +594,35 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/test_tdd_commit.py",
 ]
 
+# The REPO-LOCAL (non-canonical) members of this repository's `just check`
+# aggregate that are deliberately NOT mirrored into .github/workflows/ci.yml,
+# each with the reason. Read by `check-ci-matrix-completeness`, whose limb (a)
+# was canonical-scoped until livespec-dev-tooling-8o8e.18: a slug with no
+# backing `livespec_dev_tooling/checks/<slug>.py` module is never discovered by
+# `canonical_check_slugs`, so it could sit in `just check` forever while no CI
+# job ran it — seventeen such gates across six fleet repos, none of which said
+# so anywhere a checker reads. That indistinguishability WAS the finding: no
+# one could tell a deliberate absence from an unreviewed one.
+#
+# ⛔ THIS IS NOT AN EXEMPTION LIST TO GROW BY REFLEX. Each entry asserts that CI
+# is the WRONG VENUE for that gate — not that wiring it is inconvenient — and a
+# stale entry (one naming a slug this aggregate no longer wires) is itself a
+# finding, so the list cannot rot silently into an exemption.
+#
+# ⚠️ ONE ENTRY IS PROVISIONAL AND SAYS SO. The maintainer ruling of 2026-09-09
+# on livespec-dev-tooling-8o8e.18 split the work BY OWNERSHIP: the measurement
+# harness lands here, and each repo's per-slug wire-vs-allowlist decision is
+# referred to that repo's own arming PR. Landing the harness with this repo's
+# own slugs undeclared would redden its CI on the very commit that adds the
+# requirement, so each is declared with what is true TODAY.
+repo_local_ci_skips = [
+    { slug = "check-ansible-lint", reason = "PROVISIONAL — declared, not adjudicated. Lints `ansible/`, the LEGACY-ONLY host-provisioning tree (livespec-sab5gn.4) that no CI job deploys from or imports. The recipe resolves ansible-lint 26.8.0 + ansible-core 2.21.4 through `uvx` against its own interpreter because ansible-core 2.21 requires Python >=3.12 while this repo's `requires-python` floor is >=3.10.16 (the justfile records that reasoning), so a CI leg would provision a second toolchain per run for a tree CI never executes. Enforced at pre-push today; the wire-vs-allowlist call is referred to this repo's own arming PR per the 2026-09-09 ruling on livespec-dev-tooling-8o8e.18." },
+    { slug = "check-fleet-conformance-admin", reason = "Wrong venue permanently: it reads secret names and branch protection across every fleet member under the OPERATOR's ADMIN-scoped `gh` credential. Under a per-PR CI token both rows are out-of-vantage and the check reports that as BLIND at error severity, exit 4 — never as a pass, and livespec-dev-tooling-29qo forbids any lever demoting it — so a CI leg would be red by construction. ci.yml already records the split: the App-token job runs `just check-fleet-conformance`, and this admin lane enforces at pre-push." },
+    { slug = "check-no-workflow-edits", reason = "Wrong venue twice over. It is the factory-branch boundary guard (fail a branch that changes .github/workflows/** without human authorization), which the justfile records as 'never mirrored into CI: the guard is a CI-venue no-op by design'. Its body is also dev-tooling/check-no-workflow-edits.sh, a GITIGNORED file the worktree pack installs, and no CI job runs `just install-worktree-pack` — so a matrix entry would report on a missing file rather than on a workflow edit." },
+    { slug = "check-shipped-path-release-guard", reason = "Wrong venue while this repository ships no plugin bytes: it carries no `.claude-plugin/` manifest, so its DERIVED shipped-path set is empty and the guard is correctly INERT here (the module's own docstring records this). A CI leg could therefore only ever pass — the `check-codex-skill-picker` shape, a green row that reads as coverage. It is armed where it bites: lefthook's commit-msg hook judges each pending commit, and `just check` runs the origin/master..HEAD range at pre-push." },
+    { slug = "check-uv-lock-version-sync", reason = "Wrong venue structurally: every CI job that could host it runs `uv sync --all-groups` during setup, and a sync reconciles uv.lock's self-entry to pyproject's `[project].version` BEFORE any later step runs — the exact repair the recipe's `--no-sync` exists to prevent. A CI leg would read a lock uv had just fixed and could only ever pass. Enforced at pre-push, where the module reads the COMMITTED bytes and the drift surfaces." },
+]
+
 # ---------------------------------------------------------------------------
 # Ruff — sole linter, formatter, import-sorter, complexity checker.
 # Rule set mirrors livespec/pyproject.toml [tool.ruff] per

@@ -17,6 +17,25 @@ meta-check, reading a repo's OWN committed files only, asserts both:
   its `run:` lines invoke as `just <canonical-slug>` (the matrix leg
   `just ${{ matrix.target }}` contributes via (i), not (ii)). A canonical
   aggregate slug absent from that union fails (a).
+- **(a-repo-local) CI runs the REPO-LOCAL members too, or the repo says
+  why not** (`livespec-dev-tooling-8o8e.18`). (a) above was canonical-scoped,
+  and a repo-local slug — one with no backing `checks/<slug>.py` module, so
+  `canonical_check_slugs` never discovers it — was therefore outside its
+  universe BY CONSTRUCTION. It could sit in a `just check` aggregate forever
+  with no CI job running it: pre-push caught a violation, and every path to
+  master that runs no local hook (a web edit, a bot commit, release
+  automation, a fan-out pin bump, `--no-verify`) did not. Seventeen such
+  gates across six fleet repos were measured in that state. The remedy is
+  NOT "wire all seventeen" — some absences are correct, the precedent being
+  livespec-overseer's `check-codex-skill-picker`, which can only ever SKIP
+  on a hosted runner, and a matrix entry that can only skip manufactures a
+  green row that reads as coverage. The defect was that NOTHING SAID WHICH
+  WAS WHICH. So a repo-local aggregate slug run by no CI job is a finding
+  UNLESS the repo declares it in `[tool.livespec_dev_tooling]
+  repo_local_ci_skips` with a reason (`config.RepoLocalCiSkip`), and a
+  declaration naming a slug the aggregate no longer wires is ITSELF a
+  finding — otherwise the list rots into an unexamined exemption, which is
+  the shape this limb exists to remove.
 - **(b) `ci-green` gates the whole aggregate.** A job named `ci-green`
   exists and its `needs:` list covers every GATING job — a job that runs
   any `just <target>` command (canonical OR not: `check-doctor-static`,
@@ -46,8 +65,13 @@ Exit codes: `0` — no findings, OR findings with the lever unset;
 `2` — usage error (argparse-driven); `4` — findings with the lever set.
 
 Output discipline: structlog JSON to stderr; no `print`, no
-`sys.stderr.write`. The regex parsers live in the private sibling
-`_ci_matrix_parse` (an LLOC-reduction split, like `_red_green_replay_modes`).
+`sys.stderr.write`. Two private siblings carry the PURE halves as
+LLOC-reduction splits (like `_red_green_replay_modes`): the regex parsers
+live in `_ci_matrix_parse`, and the finding model plus the three limb
+verdicts in `_ci_matrix_evaluate`. What stays here is the impure middle —
+resolving a repo's committed files into those inputs, applying the severity
+lever, and emitting every diagnostic — so the check reads as
+parse → evaluate → report with the IO confined to the ends.
 
 Self-bootstrapping: because this module lives under
 `livespec_dev_tooling/checks/`, its own slug
@@ -62,7 +86,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -79,12 +102,19 @@ from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E40
     TargetsArrayFailure,
     TargetsArrayUnterminated,
 )
+from livespec_dev_tooling.checks._ci_matrix_evaluate import (  # noqa: E402
+    Finding,
+    evaluate,
+    finding,
+)
 from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
-    CiJob,
     extract_check_recipe_body,
     extract_targets_array_tokens,
     load_canonical,
     parse_ci_jobs,
+)
+from livespec_dev_tooling.config import (  # noqa: E402  — vendor-path-aware.
+    load_repo_local_ci_skips,
 )
 
 __all__: list[str] = []
@@ -93,33 +123,9 @@ __all__: list[str] = []
 _JUSTFILE_NAME = "justfile"
 _TARGET_INVENTORY_NAME = "check-targets.txt"
 _CI_YML_PATH = Path(".github") / "workflows" / "ci.yml"
-_CI_GREEN_JOB = "ci-green"
 _FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST"
 _CHECK_ID = "ci_matrix_completeness"
 _EXIT_VIOLATIONS = 4
-
-_MSG_MISSING_SLUG = "canonical `just check` aggregate slug is wired locally but not run in CI"
-_MSG_CI_GREEN_MISSING = (
-    "no `ci-green` all-green gate job; branch protection cannot require one stable "
-    "context over the whole aggregate"
-)
-_MSG_NEEDS_INCOMPLETE = (
-    "gating job is absent from `ci-green.needs`; requiring only `ci-green` "
-    "would not gate merges on it"
-)
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Finding:
-    """One structured finding: a failure mode plus its diagnostic fields."""
-
-    failure_mode: str
-    message: str
-    fields: dict[str, object]
-
-
-def _finding(*, mode: str, message: str, **fields: object) -> _Finding:
-    return _Finding(failure_mode=mode, message=message, fields=dict(fields))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -157,73 +163,9 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("ci_matrix_completeness")
 
 
-def _evaluate(
-    *,
-    canonical: tuple[str, ...],
-    world_gates: frozenset[str],
-    justfile_targets: list[str],
-    jobs: list[CiJob],
-) -> list[_Finding]:
-    """Compute (a) missing-in-CI and (b) ci-green-needs findings.
-
-    Assertion (a) excludes WORLD-GATE canonical checks (`world_gates`):
-    they verify master/world state (not the PR change), enforce at
-    pre-push under the maintainer's admin-scoped `gh` token, and are
-    deliberately NOT required to run in per-PR CI (see
-    `canonical_checks.world_gate_check_slugs` and
-    `livespec/.ai/ci-gate-discipline.md`). They stay canonical and stay
-    wired in the `just check` aggregate — only the CI-mirror requirement
-    drops them. Assertion (b) is unaffected: it classifies JOBS, not
-    slugs.
-    """
-    canonical_set = set(canonical)
-    required = [
-        slug for slug in justfile_targets if slug in canonical_set and slug not in world_gates
-    ]
-    ci_covered: set[str] = set()
-    check_bearing: list[str] = []
-    ci_green: CiJob | None = None
-    for job in jobs:
-        if job.name == _CI_GREEN_JOB:
-            ci_green = job
-            continue
-        # (a) is canonical-scoped: only the CANONICAL slugs a job runs count
-        # toward CI coverage of the `just check` aggregate.
-        ci_covered |= job.contributed_check_slugs & canonical_set
-        # (b) is BROADER (o6b): every GATING job — canonical or not — must be
-        # fanned into `ci-green.needs`, else a red non-canonical gating job
-        # (e2e-cli / acceptance / doctor-static) could merge under a
-        # require-only-`ci-green` branch protection.
-        if job.gating:
-            check_bearing.append(job.name)
-    findings = [
-        _finding(mode="ci-matrix-missing-aggregate-slug", message=_MSG_MISSING_SLUG, slug=slug)
-        for slug in required
-        if slug not in ci_covered
-    ]
-    return findings + _ci_green_findings(ci_green=ci_green, check_bearing=check_bearing)
-
-
-def _ci_green_findings(*, ci_green: CiJob | None, check_bearing: list[str]) -> list[_Finding]:
-    """Findings for assertion (b): `ci-green` presence + `needs:` completeness."""
-    if ci_green is None:
-        return [
-            _finding(
-                mode="ci-green-job-missing",
-                message=_MSG_CI_GREEN_MISSING,
-                expected_job=_CI_GREEN_JOB,
-                check_bearing_jobs=sorted(check_bearing),
-            )
-        ]
-    return [
-        _finding(mode="ci-green-needs-incomplete", message=_MSG_NEEDS_INCOMPLETE, job=name)
-        for name in sorted(set(check_bearing) - ci_green.needs)
-    ]
-
-
 def _collect_findings(
     *, cwd: Path, canonical: tuple[str, ...], world_gates: frozenset[str]
-) -> list[_Finding]:
+) -> list[Finding]:
     """Resolve preconditions then evaluate; a precondition returns one finding."""
     justfile_path = cwd / _JUSTFILE_NAME
     if not justfile_path.is_file():
@@ -259,11 +201,12 @@ def _collect_findings(
             )
         ]
     jobs = parse_ci_jobs(source=ci_yml_path.read_text(encoding="utf-8"))
-    return _evaluate(
+    return evaluate(
         canonical=canonical,
         world_gates=world_gates,
         justfile_targets=justfile_targets,
         jobs=jobs,
+        repo_local_skips=load_repo_local_ci_skips(repo_root=cwd) or (),
     )
 
 
@@ -279,12 +222,12 @@ def _inventory_targets(*, cwd: Path) -> list[str] | None:
     return targets
 
 
-def _absence(*, mode: str, message: str, path: Path) -> _Finding:
+def _absence(*, mode: str, message: str, path: Path) -> Finding:
     """Build a graceful-absence precondition finding."""
-    return _finding(mode=mode, message=message, path=str(path))
+    return finding(mode=mode, message=message, path=str(path))
 
 
-def _targets_absence(*, failure: TargetsArrayFailure, path: Path) -> _Finding:
+def _targets_absence(*, failure: TargetsArrayFailure, path: Path) -> Finding:
     """Render the targets-array failure, which has TWO arms and used to have one.
 
     An UNTERMINATED array was reported as `targets_array_not_found` — the
@@ -304,20 +247,23 @@ def _targets_absence(*, failure: TargetsArrayFailure, path: Path) -> _Finding:
     )
 
 
-def _report(*, log: structlog.stdlib.BoundLogger, findings: list[_Finding]) -> int:
+def _report(*, log: structlog.stdlib.BoundLogger, findings: list[Finding]) -> int:
     """Emit findings under the severity lever; return the lever-scoped exit code."""
     if not findings:
         return 0
     fail = bool(os.environ.get(_FAIL_ENV_VAR))
-    for finding in findings:
+    # `item`, not `finding`: the loop used to own that name, but `finding` is now
+    # the imported factory from `_ci_matrix_evaluate` and shadowing it here would
+    # be a live F402 rather than a style nit.
+    for item in findings:
         emit = log.error if fail else log.warning
         emit(
-            finding.message,
+            item.message,
             check_id=_CHECK_ID,
-            failure_mode=finding.failure_mode,
+            failure_mode=item.failure_mode,
             fail_env_var=_FAIL_ENV_VAR,
             failing=fail,
-            **finding.fields,
+            **item.fields,
         )
     return _EXIT_VIOLATIONS if fail else 0
 
