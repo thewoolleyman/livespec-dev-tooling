@@ -1,0 +1,47 @@
+[Unit]
+Description=Self-hosted GitHub Actions runner for {{ gha_runner_repo }} (labels {{ gha_runner_labels }})
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/tree/master/ansible/roles/gha_runner
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+# A runner that cannot register or cannot reach GitHub restarts forever; bound
+# the loop so a misconfiguration is a failed unit an operator can see rather
+# than an endless restart storm.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{ gha_runner_user }}
+Group={{ gha_runner_group }}
+WorkingDirectory={{ gha_runner_dir }}
+Environment=HOME={{ gha_runner_home }}
+# THE CREDENTIAL ENVELOPE, and the reason this job cannot run on a
+# GitHub-hosted runner: the wrapper injects the livespec 1Password
+# Environment's operator secrets, so they are present in the job environment
+# without ever being copied into GitHub Actions secret storage.
+#
+# The wrapper scrubs the environment (`env -i`) and hard-codes PATH to the
+# system secure_path, so ExecStart is the LAUNCHER rather than the runner:
+# {{ gha_runner_run_dest }} re-establishes PATH from the installed host
+# values file and then execs the runner. Pointing ExecStart straight at run.sh
+# would silently give every job a PATH with no `fabro` on it.
+ExecStart={{ gha_runner_job_env_wrapper }} -- {{ gha_runner_run_dest }}
+Restart=always
+RestartSec=15
+# DEFAULT KillMode, stated because it is load-bearing here. The wrapper's
+# escalate/drop chain (sudo -> setpriv -> wrapper -> runner) means the unit's
+# MAINPID is not the runner, so a MAINPID-only stop would depend on every link
+# forwarding the signal. control-group sends SIGTERM to every process in the
+# cgroup, so the runner is signalled directly whatever the chain looks like.
+KillMode=control-group
+TimeoutStopSec={{ gha_runner_stop_timeout_sec }}
+# /usr and /boot read-only. Everything a job legitimately touches (docker,
+# /data/projects, $HOME, /tmp) stays writable.
+ProtectSystem=true
+# DELIBERATELY ABSENT: NoNewPrivileges. The 1Password wrapper self-escalates
+# via `sudo -n` to decrypt its systemd-creds token, which NoNewPrivileges
+# forbids. Setting it here would break the credential injection this unit
+# exists for.
+
+[Install]
+WantedBy=multi-user.target

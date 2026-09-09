@@ -1,0 +1,16 @@
+---
+- name: Restart the gha-runner service
+  # A restart mid-job CANCELS that job (TimeoutStopSec bounds the wait). It is
+  # a handler so the cost is paid only when the unit, the launcher or the host
+  # values actually changed, never on a no-op converge.
+  #
+  # The `when` is the check-mode guard the arming task carries too: under
+  # --check the notifying template wrote nothing, so a unit this host does not
+  # already have cannot be restarted, and failing here would blame the host
+  # for the dry run's own emptiness.
+  ansible.builtin.systemd_service:
+    name: "{{ gha_runner_service }}"
+    state: restarted
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or gha_runner_unit_state.stat.exists

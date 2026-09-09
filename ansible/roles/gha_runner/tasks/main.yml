@@ -1,0 +1,323 @@
+---
+# gha_runner — a systemd-managed self-hosted GitHub Actions runner on this
+# host, registered to ONE repository with the labels ONE workflow selects on,
+# run under a credential wrapper so the job environment carries secrets that
+# are never stored in GitHub Actions. Carrier G2 of livespec plan
+# ci-runner-pod-lifecycle-reliability (livespec-ifwnqj.2). Replaces the
+# never-merged fabro-hosts PR #16 shell installer (services/gha-runner/), whose
+# payload scripts this role carries unchanged under files/.
+#
+# WHY IT EXISTS. livespec-orchestrator-beads-fabro's
+# acceptance-live-golden-master.yml runs on `[self-hosted, livespec-orchestrator]`
+# and needs the pinned fabro binary, bd, dolt and the operator secrets the
+# 1Password wrapper injects. A repository with no runner carrying that label
+# queues the job forever — and an ARC runner reports an EMPTY labels array, so
+# the verifier below checks labels rather than merely "a runner is online".
+#
+# TWO CREDENTIALS, TWO APPS (HOST_VARS.md). The unit runs the runner under the
+# JOB wrapper; registration and verification mint through the REGISTRATION
+# wrapper, the one App that holds `administration: write` on the repository.
+#
+# REGISTER AT CONVERGE, NOT ON EVERY START. Re-registration is a re-run of this
+# role, never an ExecStartPre: a rate-limited credential must not take down a
+# runner that was otherwise able to work. Every run passes `config.sh --replace`,
+# so an existing registration converges in place rather than accumulating.
+#
+# THE HOST GUARD DOES NOT MIGRATE. install.sh compared `hostname -s` against a
+# values-file hostname; inventory targeting is that guard now.
+
+- name: Refuse an empty value in any host field this role renders
+  ansible.builtin.assert:
+    that:
+      - gha_runner_user | string | length > 0
+      - gha_runner_group | string | length > 0
+      - gha_runner_home | string | length > 0
+      - gha_runner_root | string | length > 0
+      - gha_runner_dir | string | length > 0
+      - gha_runner_work | string | length > 0
+      - gha_runner_repo | string | length > 0
+      - gha_runner_name | string | length > 0
+      - gha_runner_labels | string | length > 0
+      - gha_runner_job_path | string | length > 0
+      - gha_runner_dir is match(gha_runner_root ~ '/.+')
+      - gha_runner_work is match(gha_runner_root ~ '/.+')
+      - gha_runner_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - gha_runner_tarball_sha256 is match('^[0-9a-f]{64}$')
+    fail_msg: >-
+      Every host field of the gha-runner unit must carry a value, the runner
+      and work directories must sit under gha_runner_root, the release must be
+      an exact x.y.z and its sha256 64 lowercase hex digits; check this host's
+      host_vars against the role defaults.
+    success_msg: every host field carries a well-formed value
+
+- name: Look up the account the runner will run as
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ gha_runner_user }}"
+    fail_key: false
+  become: true
+
+- name: Require the runner account to exist
+  ansible.builtin.assert:
+    that:
+      - gha_runner_user in ansible_facts['getent_passwd']
+    fail_msg: >-
+      No account '{{ gha_runner_user }}' on {{ inventory_hostname }}. Create
+      it, or correct gha_runner_user in this host's host_vars.
+    success_msg: "account {{ gha_runner_user }} exists"
+
+- name: Read the runner account's groups
+  # The jobs this runner serves drive docker; without the docker group they
+  # fail at their first container, after registration has already succeeded.
+  ansible.builtin.command:
+    cmd: id -nG {{ gha_runner_user | quote }}
+  register: gha_runner_groups
+  changed_when: false
+  check_mode: false
+
+- name: Require the runner account to be in the docker group
+  ansible.builtin.assert:
+    that:
+      - "'docker' in (gha_runner_groups.stdout | split)"
+    fail_msg: >-
+      {{ gha_runner_user }} is not in the docker group on
+      {{ inventory_hostname }}; the jobs this runner serves drive docker.
+    success_msg: "{{ gha_runner_user }} is in the docker group"
+
+- name: Check the two credential wrappers and every directory on the job PATH
+  # Preconditions this role does not provision: the wrappers are owned by the
+  # 1password-env-wrapper repository, and the job PATH names the host's fabro,
+  # mise shims and bd/dolt locations. A missing entry must fail HERE, before
+  # anything is written, rather than as a job that cannot find `fabro`.
+  # `follow: true` because /bin and /sbin are symlinks on a merged-/usr host;
+  # without it stat reports them as links, not directories, and the assert
+  # below refuses a PATH that is perfectly valid.
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+  loop: "{{ [gha_runner_job_env_wrapper, gha_runner_reg_env_wrapper] + (gha_runner_job_path | split(':')) }}"
+  register: gha_runner_preconditions
+
+- name: Require both wrappers to be executable and every PATH directory to exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - >-
+        (item.item in [gha_runner_job_env_wrapper, gha_runner_reg_env_wrapper])
+        | ternary(item.stat.executable | default(false), item.stat.isdir | default(false))
+    fail_msg: >-
+      Precondition missing on {{ inventory_hostname }}: {{ item.item }}
+      (must be an executable wrapper, or an existing directory named on
+      gha_runner_job_path). Install it, or correct this host's host_vars.
+    success_msg: "{{ item.item }} present"
+  loop: "{{ gha_runner_preconditions.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Look for the runner unit already installed on this host
+  # Read BEFORE the unit is written, so it records what the host had rather
+  # than what this play is about to give it. The arming task and the restart
+  # handler both read it (check-mode guard).
+  ansible.builtin.stat:
+    path: "{{ gha_runner_unit_dir }}/{{ gha_runner_service }}"
+  become: true
+  register: gha_runner_unit_state
+
+- name: Create the libexec directory
+  ansible.builtin.file:
+    path: "{{ gha_runner_libexec_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the runner's host values
+  # Sourced by every payload script below; a change here changes the job PATH
+  # or the credential envelope, so it restarts the runner.
+  ansible.builtin.template:
+    src: gha-runner.env.j2
+    dest: "{{ gha_runner_env_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the gha-runner service
+
+- name: Install the launcher, the registrar, the token minter and the verifier
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - { src: gha-runner-run.sh, dest: "{{ gha_runner_run_dest }}" }
+    - { src: gha-runner-register.sh, dest: "{{ gha_runner_register_dest }}" }
+    - { src: gha-runner-github-token.sh, dest: "{{ gha_runner_token_dest }}" }
+    - { src: gha-runner-verify, dest: "{{ gha_runner_verify_dest }}" }
+  loop_control:
+    label: "{{ item.dest }}"
+  become: true
+  notify: Restart the gha-runner service
+
+- name: Render the gha-runner unit
+  ansible.builtin.template:
+    src: gha-runner.service.j2
+    dest: "{{ gha_runner_unit_dir }}/{{ gha_runner_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the gha-runner service
+
+- name: Create the runner tree owned by the runner account
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ gha_runner_user }}"
+    group: "{{ gha_runner_group }}"
+    mode: "0755"
+  loop:
+    - "{{ gha_runner_root }}"
+    - "{{ gha_runner_dir }}"
+    - "{{ gha_runner_work }}"
+  become: true
+
+- name: Read the version stamp of the release already unpacked, if any
+  ansible.builtin.slurp:
+    src: "{{ gha_runner_dir }}/.gha-runner-version"
+  register: gha_runner_stamp
+  become: true
+  failed_when: false
+
+- name: Decide whether the pinned release is already unpacked
+  ansible.builtin.set_fact:
+    gha_runner_release_present: >-
+      {{ (gha_runner_stamp.content is defined)
+         and ((gha_runner_stamp.content | b64decode | trim) == gha_runner_version) }}
+
+- name: Report the release drift a dry run cannot fetch
+  # Under --check the runner tree above was not created, so get_url below
+  # would fail on a missing destination — the role blaming the host for the
+  # dry run's own emptiness. Say what an apply would do instead.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: pinned runner release {{ gha_runner_version }} is not unpacked at
+      {{ gha_runner_dir }}; an apply fetches it (sha256-verified), unpacks it,
+      registers the runner and arms {{ gha_runner_service }}.
+  when: ansible_check_mode and not gha_runner_release_present
+
+- name: Fetch the pinned runner release, checksum-verified before anything is unpacked
+  # A checksum mismatch leaves no tarball behind and unpacks nothing. Owned by
+  # the runner account because config.sh refuses to run as root and the
+  # runner's files must belong to the account that runs it.
+  ansible.builtin.get_url:
+    url: "{{ gha_runner_tarball_url }}"
+    dest: "{{ gha_runner_dir }}/actions-runner-linux-x64-{{ gha_runner_version }}.tar.gz"
+    checksum: "sha256:{{ gha_runner_tarball_sha256 }}"
+    owner: "{{ gha_runner_user }}"
+    group: "{{ gha_runner_group }}"
+    mode: "0644"
+  become: true
+  when: not gha_runner_release_present and not ansible_check_mode
+
+- name: Unpack the pinned runner release
+  ansible.builtin.unarchive:
+    src: "{{ gha_runner_dir }}/actions-runner-linux-x64-{{ gha_runner_version }}.tar.gz"
+    dest: "{{ gha_runner_dir }}"
+    remote_src: true
+    owner: "{{ gha_runner_user }}"
+    group: "{{ gha_runner_group }}"
+  become: true
+  when: not gha_runner_release_present and not ansible_check_mode
+
+- name: Stamp the unpacked release with its version
+  # The verifier compares this against the pin on every run, so a runner that
+  # self-upgraded (config.sh runs with --disableupdate, so it should not) or
+  # a tree unpacked from the wrong tarball is a failed verify, not a surprise.
+  ansible.builtin.copy:
+    content: "{{ gha_runner_version }}\n"
+    dest: "{{ gha_runner_dir }}/.gha-runner-version"
+    owner: "{{ gha_runner_user }}"
+    group: "{{ gha_runner_group }}"
+    mode: "0644"
+  become: true
+  when: not gha_runner_release_present and not ansible_check_mode
+
+- name: Remove the tarball once unpacked
+  ansible.builtin.file:
+    path: "{{ gha_runner_dir }}/actions-runner-linux-x64-{{ gha_runner_version }}.tar.gz"
+    state: absent
+  become: true
+  when: not gha_runner_release_present and not ansible_check_mode
+
+- name: Register the runner with GitHub through the registration wrapper
+  # `config.sh --replace` converges an existing registration in place, so this
+  # is idempotent from GitHub's side; it is still a token mint and two API
+  # calls, so it runs only when the release was just unpacked or the runner is
+  # not configured. Runs AS THE RUNNER USER (config.sh rejects root) UNDER the
+  # registration wrapper, which projects the App credential by variable name.
+  #
+  # SKIPPED UNDER --check: it would mint a real token. The drift report still
+  # says whether .runner is absent, which is the drift that matters.
+  ansible.builtin.command:
+    argv:
+      - sudo
+      - -u
+      - "{{ gha_runner_user }}"
+      - -H
+      - "{{ gha_runner_reg_env_wrapper }}"
+      - "--"
+      - "{{ gha_runner_register_dest }}"
+      - "{{ gha_runner_env_dest }}"
+    creates: "{{ gha_runner_dir }}/.runner"
+  become: true
+  register: gha_runner_registration
+  changed_when: gha_runner_registration.rc == 0 and not gha_runner_registration.skipped | default(false)
+  when: not ansible_check_mode
+
+- name: Arm the gha-runner service
+  # THE `when` IS A CHECK-MODE GUARD, NOT A CONDITION ON THE APPLY: under
+  # --check the template above writes nothing, so on a host that does not
+  # already carry the unit this module would fail with "Could not find the
+  # requested service" — the role reporting a fault it created itself.
+  ansible.builtin.systemd_service:
+    name: "{{ gha_runner_service }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or gha_runner_unit_state.stat.exists
+
+- name: Apply any pending restart before verifying the runner
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify the runner is online in GitHub's view AND carries every selected label
+  # The most load-bearing task in the role: an `active` unit is not a runner
+  # that can take the job. The verifier lists the repository's runners through
+  # the registration wrapper and fails on a runner that is offline OR that
+  # does not carry every label the workflow selects on — the exact hang shape
+  # this role exists to prevent. Retried because GitHub takes a few seconds to
+  # show a freshly started runner online.
+  #
+  # SKIPPED UNDER --check: a post-install verification of a runner the check
+  # run has not armed proves nothing and would fail a drift report against a
+  # perfectly healthy host.
+  ansible.builtin.command:
+    argv:
+      - sudo
+      - -u
+      - "{{ gha_runner_user }}"
+      - -H
+      - "{{ gha_runner_reg_env_wrapper }}"
+      - "--"
+      - "{{ gha_runner_verify_dest }}"
+      - "{{ gha_runner_env_dest }}"
+  become: true
+  register: gha_runner_verified
+  changed_when: false
+  retries: "{{ gha_runner_verify_retries }}"
+  delay: "{{ gha_runner_verify_delay }}"
+  until: gha_runner_verified.rc == 0
+  when: not ansible_check_mode

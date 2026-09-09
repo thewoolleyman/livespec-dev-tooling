@@ -1,0 +1,53 @@
+---
+# gha_runner — the self-hosted GitHub Actions runner that serves a job which
+# cannot run on a GitHub-hosted runner because it needs a host-local runtime
+# and secrets a credential wrapper injects. Every value here is a fleet
+# default; the per-host values (which host, which repository, which labels)
+# are in HOST_VARS.md and this host's host_vars.
+
+gha_runner_service: gha-runner.service
+gha_runner_unit_dir: /etc/systemd/system
+gha_runner_libexec_dir: /usr/local/libexec
+gha_runner_env_dest: /usr/local/libexec/gha-runner.env
+gha_runner_run_dest: /usr/local/libexec/gha-runner-run.sh
+gha_runner_register_dest: /usr/local/libexec/gha-runner-register.sh
+gha_runner_token_dest: /usr/local/libexec/gha-runner-github-token.sh
+gha_runner_verify_dest: /usr/local/libexec/gha-runner-verify
+
+# PINNED runner release, with the sha256 GitHub publishes in the release body
+# for actions-runner-linux-x64-<version>.tar.gz. 2.336.0 is the SAME version
+# the fleet's ARC scale sets pin (ci-runner/k3s/phase2/arc/values-*.yaml:
+# ghcr.io/actions/actions-runner:2.336.0), so this tier and the ephemeral tier
+# run identical runner code. Nothing floats `latest`, and config.sh runs with
+# --disableupdate so the pin is not silently self-upgraded away. Bump BOTH
+# values together, from the release body — never the version alone.
+gha_runner_version: 2.336.0
+gha_runner_tarball_sha256: 04cf0be1aff4c3ec3554466c39124ca250e3effd8873bb7e8d68535aa9505d5d
+gha_runner_tarball_url: >-
+  https://github.com/actions/runner/releases/download/v{{ gha_runner_version }}/actions-runner-linux-x64-{{ gha_runner_version }}.tar.gz
+
+# The runner group GitHub files the runner under; Default unless the repository
+# has been given others.
+gha_runner_group_name: Default
+
+# Stop budget. A stop mid-job CANCELS that job; 300 s is long enough for the
+# runner to finish tearing down containers and report the cancellation, and
+# short enough that a wedged runner does not block a reboot.
+gha_runner_stop_timeout_sec: 300
+
+# THE TWO CREDENTIAL WRAPPERS, and they are two on purpose (HOST_VARS.md).
+# The job wrapper runs the runner so the job environment carries the operator
+# secrets; the registration wrapper is used ONLY at registration and
+# verification time, to mint a token from the one App that holds
+# `administration: write` on the target repository. The three variable NAMES
+# are values so switching Apps is one line here, not an edit to a script.
+gha_runner_job_env_wrapper: /usr/local/bin/with-livespec-env.sh
+gha_runner_reg_env_wrapper: /usr/local/bin/with-github-ci-runners-env.sh
+gha_runner_reg_app_id_var: GITHUB_APP_ID_CI_RUNNER
+gha_runner_reg_private_key_var: GITHUB_PRIVATE_KEY_CI_RUNNER
+gha_runner_reg_installation_id_var: GITHUB_APP_INSTALLATION_ID_CI_RUNNER
+
+# How long to give the runner to come online in GitHub's view after arming,
+# before the verifier is trusted to fail.
+gha_runner_verify_retries: 12
+gha_runner_verify_delay: 5
