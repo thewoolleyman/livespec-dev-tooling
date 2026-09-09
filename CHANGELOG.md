@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.67.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.1...v1.67.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **fleet:** carry unresolved reaches beside the consumption edges (livespec-dev-tooling-9s2j) ([7829cbc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7829cbc3832670539ee8f983cbfec070ab6b18fd))
+* **fleet:** convict cross-repo-public-api-declared on a BROKEN CONSUMER (livespec-dev-tooling-9s2j) ([0d7abd9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0d7abd93e67417cd31ad0bb7b790655e047a7f1d))
+* **fleet:** record a sibling's unresolved import as its own outcome (livespec-dev-tooling-9s2j) ([14024bf](https://github.com/thewoolleyman/livespec-dev-tooling/commit/14024bfa88c8afd68e67aa90f9eb584cf80c6092))
+
 ## [1.67.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.0...v1.67.1) (2026-09-08)
 
 
