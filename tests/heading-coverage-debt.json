@@ -425,33 +425,5 @@
     "heading": "## Scenario: with an empty heading-coverage debt register any TODO row fails the per-commit tier",
     "work_item": "livespec-dev-tooling-0bse.4",
     "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "spec.md",
-    "heading": "## Architecture",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "spec.md",
-    "heading": "## Definition of Done",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "spec.md",
-    "heading": "## Non-goals",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "spec.md",
-    "heading": "## Project intent",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
   }
 ]

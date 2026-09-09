@@ -3,33 +3,29 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "heading": "## Project intent",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_two_consumption_surfaces.test_both_published_surfaces_name_one_check_entrypoint_set",
+    "reason": "Consumer-tier: both published surfaces resolve to ONE `python -m livespec_dev_tooling.checks.<slug>` entrypoint set — the `run-check` composite Action's namespace template, the local `just check-<slug>` recipes, and the shipped canonical modules — which is what \"consumers MUST use both surfaces in concert\" means where a consumer can observe it (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-fx4fap)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "heading": "## Architecture",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_two_consumption_surfaces.test_a_shipped_check_exits_zero_on_pass_and_nonzero_with_structured_stderr_on_fail",
+    "reason": "Consumer-tier: drives a shipped check module over a clean fixture and over one carrying an injected violation, asserting the section's Python-package surface contract in both directions — exit 0 on pass, non-zero on fail with a structured stderr diagnostic naming the failure (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-fx4fap)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "heading": "## Definition of Done",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_definition_of_done_gates.test_every_mechanically_decidable_definition_of_done_gate_is_wired",
+    "reason": "Unit-tier: asserts the DoD's tree-decidable bullets against the aggregate the merge gate actually runs — every shipped canonical check is a `just check` target, the ruff lint/format, pyright and 100%-coverage gates the DoD names by tool are targets too, and every shipped check carries its 1:1 mirrored test (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-fx4fap)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "heading": "## Non-goals",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_non_goals.test_every_tree_decidable_v1_non_goal_holds",
+    "reason": "Consumer-tier: each v1 non-goal read as a consumer meets it — no publishing mechanism in the packaging config or the shipped CI surface, no livespec requirement on the installed distribution and no `livespec` import in any shipped module, neither livespec-private check hosted in the canonical set, and no `templates/library/` tree (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-fx4fap)."
   },
   {
     "spec_root": "SPECIFICATION",
