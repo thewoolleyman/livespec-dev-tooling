@@ -72,6 +72,21 @@ the spawns that invoke the CHECK for its exit code and stderr are
 targets. Because 84 spawns remain, this file KEEPS its
 `subprocess_spawn_allowlist` entry — removing it would redden
 `check-tests-no-subprocess-spawn`.
+
+All 42 check spawns now go through `_run_check`, which drives `main()`
+in-process (`monkeypatch.chdir` + a monkeypatched `sys.argv` + `capsys`).
+The assertion targets are unchanged — the int exit code and the structlog
+diagnostic text — so every arm of the decision tree above is still
+exercised by the same fixture that exercised it before.
+
+Coverage of `red_green_replay.py` is the reason this matters beyond
+speed. Measured from the retired spawn it depended on pytest-cov's
+pth-instrumented child: a focused `pytest --cov` of this file alone
+reported "No data was collected" and 0%. Measured in-process it is
+97% from this file, and 100% line+branch once the sibling
+`test_red_green_replay_git_failure_edges.py` supplies the two
+`_narrate_git_failure` arms (the module's lines 466 and 480), which
+only a monkeypatched `IOFailure` can reach.
 """
 
 from __future__ import annotations
@@ -82,6 +97,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -183,6 +199,65 @@ def _load_red_green_replay_module(*, name: str) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+_MODULE = _load_red_green_replay_module(name="red_green_replay_under_test")
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the retired subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    msg_path: Path | None = None,
+) -> _CheckRun:
+    """Invoke the hook's `main()` IN-PROCESS against the `tmp_path` fixture repo.
+
+    Replaces a `sys.executable` child that carried the check's path and, in
+    commit-msg mode, the message path as argv. `main()` root-anchors itself
+    from `Path.cwd()` and selects its mode from `sys.argv`, so the
+    monkeypatched cwd and argv stand in for the child's `cwd=` argument and
+    command line exactly. The assertion targets are unchanged — the int exit
+    code plus the structlog diagnostic text, now read off `capsys` instead of
+    `CompletedProcess`.
+
+    `msg_path=None` selects the no-argv RANGE mode (`_validate_range`) — the
+    `just check` / pre-push / CI invocation.
+
+    WHAT STAYS A SUBPROCESS, and why this helper does not touch it: `main()`
+    itself shells out to `git`, and on the Red/Green/suite-green legs to a
+    nested `pytest`. Those children belong to the CHECK, not to this test
+    file, and `red_green_replay.py` is out of scope for this slice.
+
+    The GIT_* scrub the retired `env=_scrubbed_env()` performed is done here
+    with `monkeypatch.delenv`, and it is load-bearing rather than hygienic:
+    an ambient `GIT_DIR` / `GIT_INDEX_FILE` — exactly what is exported while
+    this repository's OWN commit hook is running this suite — would redirect
+    the check's git children at the real repository instead of the fixture.
+    Iterating the FIXED tuple with `raising=False` keeps the loop body
+    executing regardless of what the launching shell exported, so this
+    helper's own coverage does not depend on the environment (the
+    determinism defect work-item livespec-dev-tooling-py9.3 fixed in
+    `_scrub_git_env`).
+    """
+    monkeypatch.chdir(tmp_path)
+    for name in _GIT_ENV_PASSTHROUGH_VARS:
+        monkeypatch.delenv(name, raising=False)
+    argv = [str(_RED_GREEN_REPLAY)]
+    if msg_path is not None:
+        argv.append(str(msg_path))
+    monkeypatch.setattr(sys, "argv", argv)
+    returncode = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
 
 
 def _fixture_impl_prefixes(
@@ -373,7 +448,9 @@ def test_derive_impl_prefixes_delegates_to_the_shared_config_derivation(
     assert seen[0] is config
 
 
-def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
+def test_chore_commit_subject_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `chore:` commit subject with no product impl `.py` staged exits 0.
 
     Fixture: a tmp_path COMMIT_EDITMSG file containing
@@ -387,13 +464,8 @@ def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: codify v034\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -403,7 +475,9 @@ def test_chore_commit_subject_exits_zero(*, tmp_path: Path) -> None:
     )
 
 
-def test_docs_commit_subject_exits_zero(*, tmp_path: Path) -> None:
+def test_docs_commit_subject_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `docs:` commit subject with no product impl `.py` staged exits 0.
 
     Fixture: a tmp_path COMMIT_EDITMSG file containing
@@ -415,13 +489,8 @@ def test_docs_commit_subject_exits_zero(*, tmp_path: Path) -> None:
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("docs: clarify proposal\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -439,6 +508,8 @@ def test_remaining_exempt_commit_subjects_exit_zero(
     *,
     type_token: str,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Each remaining historical exempt Conventional Commit type exits 0.
 
@@ -452,13 +523,8 @@ def test_remaining_exempt_commit_subjects_exit_zero(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text(f"{type_token}: minor change\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -468,7 +534,9 @@ def test_remaining_exempt_commit_subjects_exit_zero(
     )
 
 
-def test_feat_commit_subject_with_nothing_staged_exits_zero(*, tmp_path: Path) -> None:
+def test_feat_commit_subject_with_nothing_staged_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `feat:` commit subject with nothing staged at all exits 0.
 
     Fixture: a tmp_path COMMIT_EDITMSG file containing
@@ -482,13 +550,8 @@ def test_feat_commit_subject_with_nothing_staged_exits_zero(*, tmp_path: Path) -
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -498,7 +561,9 @@ def test_feat_commit_subject_with_nothing_staged_exits_zero(*, tmp_path: Path) -
     )
 
 
-def test_feat_in_git_repo_with_no_staged_files_exits_zero(*, tmp_path: Path) -> None:
+def test_feat_in_git_repo_with_no_staged_files_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A feat: subject in a git repo with NO staged files exits 0 (empty commit).
 
     An empty staging area means the commit changes no repo state,
@@ -516,13 +581,8 @@ def test_feat_in_git_repo_with_no_staged_files_exits_zero(*, tmp_path: Path) -> 
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -537,6 +597,8 @@ def test_feat_in_git_repo_with_no_staged_files_exits_zero(*, tmp_path: Path) -> 
 def test_feat_in_git_repo_with_staged_files_skips_no_staged_diagnostic(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject in a git repo WITH staged tests dispatches into the ritual.
 
@@ -568,13 +630,8 @@ def test_feat_in_git_repo_with_staged_files_skips_no_staged_diagnostic(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -590,6 +647,8 @@ def test_feat_in_git_repo_with_staged_files_skips_no_staged_diagnostic(
 def test_feat_with_tests_only_staged_emits_red_mode_candidate(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with tests-only staged is a Red-mode candidate.
 
@@ -625,13 +684,8 @@ def test_feat_with_tests_only_staged_emits_red_mode_candidate(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -647,6 +701,8 @@ def test_feat_with_tests_only_staged_emits_red_mode_candidate(
 def test_feat_with_impl_only_staged_skips_red_mode_candidate(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with impl-only staged is NOT a Red-mode candidate.
 
@@ -678,13 +734,8 @@ def test_feat_with_impl_only_staged_skips_red_mode_candidate(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -700,6 +751,8 @@ def test_feat_with_impl_only_staged_skips_red_mode_candidate(
 def test_feat_with_single_test_file_staged_emits_sha256_checksum(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with one staged test file surfaces a SHA-256 checksum.
 
@@ -734,13 +787,8 @@ def test_feat_with_single_test_file_staged_emits_sha256_checksum(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     expected_digest = hashlib.sha256(test_bytes).hexdigest()
@@ -764,6 +812,8 @@ def test_feat_with_single_test_file_staged_emits_sha256_checksum(
 def test_feat_with_multiple_test_files_staged_rejects_with_multi_test_file_diagnostic(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with multiple staged test files is not a valid Red moment.
 
@@ -802,13 +852,8 @@ def test_feat_with_multiple_test_files_staged_rejects_with_multi_test_file_diagn
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -826,6 +871,8 @@ def test_feat_with_multiple_test_files_staged_rejects_with_multi_test_file_diagn
 def test_feat_with_failing_test_staged_emits_red_pytest_result(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with a single failing staged test file pins a valid Red moment.
 
@@ -861,13 +908,8 @@ def test_feat_with_failing_test_staged_emits_red_pytest_result(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -891,6 +933,8 @@ def test_feat_with_failing_test_staged_emits_red_pytest_result(
 def test_feat_with_passing_test_staged_rejects_with_test_passed_at_red(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with a single passing staged test file is NOT a Red moment.
 
@@ -926,13 +970,8 @@ def test_feat_with_passing_test_staged_rejects_with_test_passed_at_red(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -951,6 +990,8 @@ def test_feat_with_passing_test_staged_rejects_with_test_passed_at_red(
 def test_feat_with_failing_test_writes_full_red_trailer_schema(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Red-moment confirmed → COMMIT_EDITMSG gains the v034 D2 trailer schema.
 
@@ -991,13 +1032,8 @@ def test_feat_with_failing_test_writes_full_red_trailer_schema(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -1025,6 +1061,8 @@ def test_feat_with_failing_test_writes_full_red_trailer_schema(
 def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candidate(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Green-mode-candidate detection: HEAD~0 has Red trailers + impl staged.
 
@@ -1106,13 +1144,8 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
     # green-mode-candidate diagnostic this test is about.
     msg_path.write_text(red_commit_msg, encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -1127,6 +1160,8 @@ def test_feat_with_impl_staged_and_head_has_red_trailers_emits_green_mode_candid
 def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_trailers(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Full Green-mode replay success: Green trailers written, hook returns 0.
 
@@ -1202,13 +1237,8 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
     # The `--amend --no-edit` message: the Red body, trailer block and all.
     msg_path.write_text(red_commit_msg, encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -1225,6 +1255,8 @@ def test_feat_green_amend_with_unchanged_test_and_passing_pytest_writes_green_tr
 def test_feat_green_amend_with_test_still_failing_rejects(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Green-mode replay rejection: pytest still fails at Green moment.
 
@@ -1299,13 +1331,8 @@ def test_feat_green_amend_with_test_still_failing_rejects(
     # The `--amend --no-edit` message: the Red body, trailer block and all.
     msg_path.write_text(red_commit_msg, encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -1332,6 +1359,8 @@ def test_conventional_commit_breaking_and_scope_variants_exit_zero(
     *,
     subject_token: str,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Conventional Commits `<type>[(<scope>)][!]:` variants resolve as exempt.
 
@@ -1348,13 +1377,8 @@ def test_conventional_commit_breaking_and_scope_variants_exit_zero(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text(f"{subject_token}\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -1629,6 +1653,8 @@ def test_red_green_replay_module_importable_without_running_main() -> None:
 def test_feat_with_neither_tests_nor_impl_staged_exits_zero(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with staged paths that are neither tests nor impl exits 0.
 
@@ -1661,13 +1687,8 @@ def test_feat_with_neither_tests_nor_impl_staged_exits_zero(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new template\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -1693,6 +1714,8 @@ def test_any_subject_staging_impl_without_red_takes_suite_green_leg(
     *,
     subject_token: str,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Product impl `.py` staged without Red trailers takes the green-verified leg, any prefix.
 
@@ -1732,13 +1755,8 @@ def test_any_subject_staging_impl_without_red_takes_suite_green_leg(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text(f"{subject_token}\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -1759,6 +1777,8 @@ def test_any_subject_staging_impl_without_red_takes_suite_green_leg(
 def test_impl_staged_without_red_and_failing_suite_rejects_suite_red(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The green-verified leg REJECTS when the full suite fails against the staged tree.
 
@@ -1791,13 +1811,8 @@ def test_impl_staged_without_red_and_failing_suite_rejects_suite_red(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: behavior-preserving cleanup (allegedly)\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -1816,6 +1831,8 @@ def test_impl_staged_without_red_and_failing_suite_rejects_suite_red(
 def test_impl_staged_without_red_and_no_collectable_tests_rejects_suite_red(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The green-verified leg REJECTS when the repo has no collectable tests at all.
 
@@ -1843,13 +1860,8 @@ def test_impl_staged_without_red_and_no_collectable_tests_rejects_suite_red(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: cleanup in an untested repo\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -1861,7 +1873,9 @@ def test_impl_staged_without_red_and_no_collectable_tests_rejects_suite_red(
     ), f"expected 'suite-red' check_id in stderr; got stderr={result.stderr!r}"
 
 
-def test_suite_green_trailer_schema_is_complete(*, tmp_path: Path) -> None:
+def test_suite_green_trailer_schema_is_complete(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The green-verified leg writes the full TDD-Suite-Green-* trailer schema.
 
     Mirrors the Red-trailer schema test: scope, output checksum
@@ -1893,13 +1907,8 @@ def test_suite_green_trailer_schema_is_complete(*, tmp_path: Path) -> None:
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("refactor: behavior-preserving cleanup\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -1923,6 +1932,8 @@ def test_suite_green_trailer_schema_is_complete(*, tmp_path: Path) -> None:
 def test_fabro_checkpoint_subject_with_non_product_staged_exits_zero(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A machine checkpoint subject staging non-product paths exits 0.
 
@@ -1950,13 +1961,8 @@ def test_fabro_checkpoint_subject_with_non_product_staged_exits_zero(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("fabro(run-7f3k): worker-node (ok)\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -1965,7 +1971,9 @@ def test_fabro_checkpoint_subject_with_non_product_staged_exits_zero(
     )
 
 
-def test_chore_with_passing_tests_only_staged_takes_suite_green_leg(*, tmp_path: Path) -> None:
+def test_chore_with_passing_tests_only_staged_takes_suite_green_leg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `chore:` subject staging tests-only `.py` that PASS takes the green-verified leg.
 
     A non-ritual prefix staging a passing test-only change (e.g.
@@ -1997,13 +2005,8 @@ def test_chore_with_passing_tests_only_staged_takes_suite_green_leg(*, tmp_path:
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: rename a test\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -2017,7 +2020,9 @@ def test_chore_with_passing_tests_only_staged_takes_suite_green_leg(*, tmp_path:
     )
 
 
-def test_chore_with_failing_test_staged_alone_authors_a_red(*, tmp_path: Path) -> None:
+def test_chore_with_failing_test_staged_alone_authors_a_red(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `chore:` subject staging a single FAILING test takes the Red leg (any prefix).
 
     ANY prefix may author a Red: a behavior-changing chore is
@@ -2046,13 +2051,8 @@ def test_chore_with_failing_test_staged_alone_authors_a_red(*, tmp_path: Path) -
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: tighten behavior via red-green\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -2065,7 +2065,9 @@ def test_chore_with_failing_test_staged_alone_authors_a_red(*, tmp_path: Path) -
     )
 
 
-def test_feat_staging_only_non_py_under_impl_prefix_exits_zero(*, tmp_path: Path) -> None:
+def test_feat_staging_only_non_py_under_impl_prefix_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A feat: subject staging only a non-`.py` file under an impl prefix exits 0.
 
     The content trigger is product impl `.py` — `_classify_staged`
@@ -2092,13 +2094,8 @@ def test_feat_staging_only_non_py_under_impl_prefix_exits_zero(*, tmp_path: Path
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: ship a data file\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -2110,6 +2107,8 @@ def test_feat_staging_only_non_py_under_impl_prefix_exits_zero(*, tmp_path: Path
 def test_feat_with_tests_and_impl_staged_together_takes_suite_green_leg(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with tests AND impl staged together (no prior Red) is green-verified.
 
@@ -2141,13 +2140,8 @@ def test_feat_with_tests_and_impl_staged_together_takes_suite_green_leg(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add mixed change\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -2167,6 +2161,8 @@ def test_feat_with_tests_and_impl_staged_together_takes_suite_green_leg(
 def test_feat_with_impl_only_staged_no_prior_red_takes_suite_green_leg(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A feat: subject with impl-only staged and no Red trailers takes the suite leg.
 
@@ -2198,13 +2194,8 @@ def test_feat_with_impl_only_staged_no_prior_red_takes_suite_green_leg(
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add impl-only change\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -2247,7 +2238,9 @@ def _assert_protocol_in_stderr(*, stderr: str, mode: str) -> None:
         )
 
 
-def test_suite_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+def test_suite_red_reject_prints_full_protocol(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`red-green-replay-suite-red` reject emits the full protocol."""
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
     (tmp_path / "livespec").mkdir()
@@ -2266,13 +2259,8 @@ def test_suite_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: cleanup that breaks the suite\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0
@@ -2280,7 +2268,9 @@ def test_suite_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
     _assert_protocol_in_stderr(stderr=result.stderr, mode="suite-red")
 
 
-def test_multi_test_file_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+def test_multi_test_file_reject_prints_full_protocol(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`red-green-replay-multi-test-file` reject emits the full protocol."""
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
     (tmp_path / "tests").mkdir()
@@ -2299,13 +2289,8 @@ def test_multi_test_file_reject_prints_full_protocol(*, tmp_path: Path) -> None:
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0
@@ -2313,7 +2298,9 @@ def test_multi_test_file_reject_prints_full_protocol(*, tmp_path: Path) -> None:
     _assert_protocol_in_stderr(stderr=result.stderr, mode="multi-test-file")
 
 
-def test_test_passed_at_red_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+def test_test_passed_at_red_reject_prints_full_protocol(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`red-green-replay-test-passed-at-red` reject emits the full protocol."""
     subprocess.run(["git", "init", "-q"], cwd=str(tmp_path), check=True, env=_scrubbed_env())
     (tmp_path / "tests").mkdir()
@@ -2329,13 +2316,8 @@ def test_test_passed_at_red_reject_prints_full_protocol(*, tmp_path: Path) -> No
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("feat: add new feature\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0
@@ -2411,7 +2393,9 @@ def _author_green_fixture(*, tmp_path: Path, test_bytes: bytes, recorded_checksu
     return msg_path
 
 
-def test_checksum_mismatch_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+def test_checksum_mismatch_reject_prints_full_protocol(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`red-green-replay-checksum-mismatch` reject emits the full protocol."""
     test_bytes = b"def test_x() -> None:\n    assert True\n"
     # Recorded checksum deliberately does NOT match the working-tree test.
@@ -2421,13 +2405,8 @@ def test_checksum_mismatch_reject_prints_full_protocol(*, tmp_path: Path) -> Non
         recorded_checksum="sha256:" + "0" * 64,
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0
@@ -2435,7 +2414,9 @@ def test_checksum_mismatch_reject_prints_full_protocol(*, tmp_path: Path) -> Non
     _assert_protocol_in_stderr(stderr=result.stderr, mode="checksum-mismatch")
 
 
-def test_test_still_failing_reject_prints_full_protocol(*, tmp_path: Path) -> None:
+def test_test_still_failing_reject_prints_full_protocol(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`red-green-replay-test-still-failing` reject emits the full protocol."""
     test_bytes = b"def test_x() -> None:\n    assert False, 'still-failing'\n"
     real_checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
@@ -2445,13 +2426,8 @@ def test_test_still_failing_reject_prints_full_protocol(*, tmp_path: Path) -> No
         recorded_checksum=real_checksum,
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0
@@ -2459,7 +2435,9 @@ def test_test_still_failing_reject_prints_full_protocol(*, tmp_path: Path) -> No
     _assert_protocol_in_stderr(stderr=result.stderr, mode="test-still-failing")
 
 
-def test_chore_green_amend_after_red_takes_green_leg(*, tmp_path: Path) -> None:
+def test_chore_green_amend_after_red_takes_green_leg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A non-feat:/fix: subject amending onto Red trailers takes the Green leg.
 
     Branch 4 of the decision tree is prefix-agnostic: ANY prefix may
@@ -2480,13 +2458,8 @@ def test_chore_green_amend_after_red_takes_green_leg(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -2532,7 +2505,12 @@ _HALF_PAIR_CHECK_ID = "red-green-replay-green-amend-dropped-red-trailers"
     ],
 )
 def test_green_amend_dropping_the_red_trailer_block_is_refused(
-    *, tmp_path: Path, spelling: str, amended_message: str
+    *,
+    tmp_path: Path,
+    spelling: str,
+    amended_message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Both destructive amend spellings are REFUSED, not certified as a pair.
 
@@ -2549,13 +2527,8 @@ def test_green_amend_dropping_the_red_trailer_block_is_refused(
     )
     msg_path.write_text(amended_message, encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode != 0, (
@@ -2580,6 +2553,8 @@ def test_green_amend_dropping_the_red_trailer_block_is_refused(
 def test_green_amend_carrying_the_red_block_writes_both_trailer_sets(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`--amend --no-edit` still passes, and the ONE commit carries BOTH sets.
 
@@ -2595,13 +2570,8 @@ def test_green_amend_carrying_the_red_block_writes_both_trailer_sets(
         recorded_checksum=real_checksum,
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -2669,18 +2639,15 @@ def _commit_all(*, tmp_path: Path, message: str) -> None:
     _range_git(tmp_path=tmp_path, args=["commit", "-qm", message])
 
 
-def _run_no_arg(*, tmp_path: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+def _run_no_arg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    return _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
 
-def test_no_arg_unresolvable_base_rejects_with_actionable_fetch_hint(*, tmp_path: Path) -> None:
+def test_no_arg_unresolvable_base_rejects_with_actionable_fetch_hint(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No argv + `origin/master` unresolvable → exit non-zero with a fetch hint.
 
     A shallow / single-ref CI checkout (actions/checkout default
@@ -2695,7 +2662,7 @@ def test_no_arg_unresolvable_base_rejects_with_actionable_fetch_hint(*, tmp_path
     (tmp_path / "base.txt").write_text("base\n", encoding="utf-8")
     _commit_all(tmp_path=tmp_path, message="chore: base")
 
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
 
     assert result.returncode != 0, (
         f"unresolvable origin/master must fail actionably, not pass silently; "
@@ -2710,21 +2677,25 @@ def test_no_arg_unresolvable_base_rejects_with_actionable_fetch_hint(*, tmp_path
     )
 
 
-def test_no_arg_empty_range_exits_zero(*, tmp_path: Path) -> None:
+def test_no_arg_empty_range_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No argv + HEAD == origin/master (empty range) → exit 0.
 
     On master itself (or any branch with no commits past the base)
     `origin/master..HEAD` is empty and the check trivially passes.
     """
     _init_range_repo(tmp_path=tmp_path)
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
     assert result.returncode == 0, (
         f"empty origin/master..HEAD range should exit 0; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
 
 
-def test_no_arg_range_chore_commit_touching_product_py_rejects(*, tmp_path: Path) -> None:
+def test_no_arg_range_chore_commit_touching_product_py_rejects(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No argv + a `chore:` range commit touching product impl `.py` with NO trailers → reject.
 
     The trailer-shape requirement is content-based: the prefix does
@@ -2742,7 +2713,7 @@ def test_no_arg_range_chore_commit_touching_product_py_rejects(*, tmp_path: Path
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
     _commit_all(tmp_path=tmp_path, message="chore: sneak in product code")
 
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
 
     assert result.returncode != 0, (
         f"range commit touching product .py without trailers must reject; "
@@ -2761,7 +2732,9 @@ def test_no_arg_range_chore_commit_touching_product_py_rejects(*, tmp_path: Path
     _assert_protocol_in_stderr(stderr=result.stderr, mode="range-missing-trailers")
 
 
-def test_no_arg_range_commit_with_suite_green_shape_exits_zero(*, tmp_path: Path) -> None:
+def test_no_arg_range_commit_with_suite_green_shape_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No argv + a range commit touching product `.py` with the suite-green shape → exit 0.
 
     The green-verified leg's `TDD-Suite-Green-*` trailer shape is a
@@ -2781,7 +2754,7 @@ def test_no_arg_range_commit_with_suite_green_shape_exits_zero(*, tmp_path: Path
     )
     _commit_all(tmp_path=tmp_path, message=message)
 
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
 
     assert result.returncode == 0, (
         f"suite-green-shaped product commit in range should exit 0; "
@@ -2789,7 +2762,9 @@ def test_no_arg_range_commit_with_suite_green_shape_exits_zero(*, tmp_path: Path
     )
 
 
-def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(*, tmp_path: Path) -> None:
+def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No argv + a range commit touching product `.py` WITH both trailer sets → exit 0."""
     _init_range_repo(tmp_path=tmp_path)
     (tmp_path / "livespec").mkdir()
@@ -2802,7 +2777,7 @@ def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(*, tmp_path: Pat
     )
     _commit_all(tmp_path=tmp_path, message=message)
 
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
 
     assert result.returncode == 0, (
         f"properly-trailered product commit in range should exit 0; "
@@ -2828,7 +2803,12 @@ def test_no_arg_range_commit_with_full_trailer_shape_exits_zero(*, tmp_path: Pat
     ],
 )
 def test_no_arg_range_convicts_a_half_pair_carrying_green_without_red(
-    *, tmp_path: Path, shape: str, trailers: str
+    *,
+    tmp_path: Path,
+    shape: str,
+    trailers: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A product commit carrying `TDD-Green-*` with NO `TDD-Red-*` is convicted.
 
@@ -2848,7 +2828,7 @@ def test_no_arg_range_convicts_a_half_pair_carrying_green_without_red(
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 1\n", encoding="utf-8")
     _commit_all(tmp_path=tmp_path, message=f"feat: half pair\n\n{trailers}")
 
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
 
     assert result.returncode != 0, (
         f"a {shape} commit touching product .py carries Green evidence for a "
@@ -2863,6 +2843,8 @@ def test_no_arg_range_convicts_a_half_pair_carrying_green_without_red(
 def test_no_arg_range_commit_touching_only_non_product_paths_exits_zero(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """No argv + range commits touching only non-product paths → exit 0 (any prefix)."""
     _init_range_repo(tmp_path=tmp_path)
@@ -2875,7 +2857,7 @@ def test_no_arg_range_commit_touching_only_non_product_paths_exits_zero(
     )
     _commit_all(tmp_path=tmp_path, message="chore: add a test fixture")
 
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
 
     assert result.returncode == 0, (
         f"range commits without product impl .py should exit 0 regardless of prefix; "
@@ -2933,7 +2915,9 @@ def _run_msg_hook(
     tmp_path: Path,
     subject: str,
     trailers: str = "",
-) -> tuple[subprocess.CompletedProcess[str], Path]:
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[_CheckRun, Path]:
     """Write a fresh COMMIT_EDITMSG carrying `subject` and run the commit-msg hook.
 
     The message file lives at `.git/COMMIT_EDITMSG` (the realistic
@@ -2948,13 +2932,8 @@ def _run_msg_hook(
     msg_path = tmp_path / ".git" / "COMMIT_EDITMSG"
     body = f"{subject}\n\n{trailers}" if trailers else f"{subject}\n"
     msg_path.write_text(body, encoding="utf-8")
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
     return result, msg_path
 
@@ -2962,6 +2941,8 @@ def _run_msg_hook(
 def test_new_product_commit_on_completed_pair_head_takes_suite_green_leg(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A fresh product commit atop a COMPLETED Red+Green HEAD is green-verified.
 
@@ -2978,7 +2959,12 @@ def test_new_product_commit_on_completed_pair_head_takes_suite_green_leg(
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 2\n", encoding="utf-8")
     _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
 
-    result, msg_path = _run_msg_hook(tmp_path=tmp_path, subject="chore: follow-up product change")
+    result, msg_path = _run_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        tmp_path=tmp_path,
+        subject="chore: follow-up product change",
+    )
 
     assert result.returncode == 0, (
         f"fresh product commit atop a completed pair must pass via the suite leg; "
@@ -2995,7 +2981,7 @@ def test_new_product_commit_on_completed_pair_head_takes_suite_green_leg(
     )
 
     _commit_all(tmp_path=tmp_path, message=final_msg)
-    range_result = _run_no_arg(tmp_path=tmp_path)
+    range_result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
     assert range_result.returncode == 0, (
         f"the suite-green-shaped follow-up commit must pass the range check; "
         f"got returncode={range_result.returncode} stderr={range_result.stderr!r}"
@@ -3005,6 +2991,8 @@ def test_new_product_commit_on_completed_pair_head_takes_suite_green_leg(
 def test_genuine_green_amend_on_red_only_head_still_takes_green_leg(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A genuine amend (HEAD carries Red WITHOUT Green) still takes the Green leg."""
     test_bytes = b"def test_x() -> None:\n    assert True\n"
@@ -3015,13 +3003,8 @@ def test_genuine_green_amend_on_red_only_head_still_takes_green_leg(
         recorded_checksum=real_checksum,
     )
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -3037,7 +3020,9 @@ def test_genuine_green_amend_on_red_only_head_still_takes_green_leg(
     ), f"a genuine amend must not take the suite-green leg; got final_msg={final_msg!r}"
 
 
-def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None:
+def test_red_green_cycles_route_correctly_in_sequence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Routing stays correct across pair → follow-up → follow-up → Red → Green.
 
     Pins the head-state machine end-to-end: a completed pair at HEAD
@@ -3049,7 +3034,9 @@ def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None
     _init_repo_with_completed_pair_head(tmp_path=tmp_path)
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 2\n", encoding="utf-8")
     _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
-    first, first_msg_path = _run_msg_hook(tmp_path=tmp_path, subject="chore: follow-up one")
+    first, first_msg_path = _run_msg_hook(
+        monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path, subject="chore: follow-up one"
+    )
     assert first.returncode == 0, (
         f"follow-up atop the pair must pass; rc={first.returncode} " f"stderr={first.stderr!r}"
     )
@@ -3061,7 +3048,9 @@ def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None
 
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 3\n", encoding="utf-8")
     _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
-    second, second_msg_path = _run_msg_hook(tmp_path=tmp_path, subject="refactor: follow-up two")
+    second, second_msg_path = _run_msg_hook(
+        monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path, subject="refactor: follow-up two"
+    )
     assert second.returncode == 0, (
         f"follow-up atop a suite-green commit must pass; rc={second.returncode} "
         f"stderr={second.stderr!r}"
@@ -3080,7 +3069,11 @@ def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None
     (tmp_path / "livespec" / "foo.py").write_text("VALUE: int = 4\n", encoding="utf-8")
     _range_git(tmp_path=tmp_path, args=["add", "livespec/foo.py"])
     third, third_msg_path = _run_msg_hook(
-        tmp_path=tmp_path, subject="fix: next behavior change", trailers=red_trailers
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        tmp_path=tmp_path,
+        subject="fix: next behavior change",
+        trailers=red_trailers,
     )
     assert third.returncode == 0, (
         f"the amend on a Red-only HEAD must pass via Branch 4; rc={third.returncode} "
@@ -3110,7 +3103,9 @@ def test_red_green_cycles_route_correctly_in_sequence(*, tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_chore_deleting_a_test_py_file_exits_zero_without_crash(*, tmp_path: Path) -> None:
+def test_chore_deleting_a_test_py_file_exits_zero_without_crash(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A commit that DELETES a test `.py` file passes the commit-msg hook.
 
     Regression for livespec-zs22.7.9.7: `_staged_files_list` used
@@ -3162,13 +3157,8 @@ def test_chore_deleting_a_test_py_file_exits_zero_without_crash(*, tmp_path: Pat
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: remove obsolete test\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -3181,7 +3171,9 @@ def test_chore_deleting_a_test_py_file_exits_zero_without_crash(*, tmp_path: Pat
     )
 
 
-def test_chore_deleting_an_impl_py_file_exits_zero(*, tmp_path: Path) -> None:
+def test_chore_deleting_an_impl_py_file_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A commit that DELETES an impl `.py` file passes the commit-msg hook.
 
     Companion to the test-file-deletion regression. A staged deletion
@@ -3232,13 +3224,8 @@ def test_chore_deleting_an_impl_py_file_exits_zero(*, tmp_path: Path) -> None:
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text("chore: remove obsolete impl module\n", encoding="utf-8")
 
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
 
     assert result.returncode == 0, (
@@ -3251,7 +3238,9 @@ def test_chore_deleting_an_impl_py_file_exits_zero(*, tmp_path: Path) -> None:
     )
 
 
-def test_no_arg_range_commit_deleting_product_py_exits_zero(*, tmp_path: Path) -> None:
+def test_no_arg_range_commit_deleting_product_py_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """No argv + a range commit that DELETES product impl `.py` → exit 0.
 
     The commit-range validator (`_commit_violates`) enumerated touched
@@ -3275,7 +3264,7 @@ def test_no_arg_range_commit_deleting_product_py_exits_zero(*, tmp_path: Path) -
     _range_git(tmp_path=tmp_path, args=["rm", "-q", "livespec/foo.py"])
     _range_git(tmp_path=tmp_path, args=["commit", "-qm", "chore: remove obsolete product module"])
 
-    result = _run_no_arg(tmp_path=tmp_path)
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
 
     assert result.returncode == 0, (
         f"a range commit that only DELETES product .py must pass the range check; "
@@ -3360,17 +3349,14 @@ def _run_commit_msg_hook(
     *,
     tmp_path: Path,
     subject: str,
-) -> tuple[subprocess.CompletedProcess[str], Path]:
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[_CheckRun, Path]:
     """Run the commit-msg path against `tmp_path`; return the result + message path."""
     msg_path = tmp_path / "COMMIT_EDITMSG"
     msg_path.write_text(subject, encoding="utf-8")
-    result = subprocess.run(
-        [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
     )
     return result, msg_path
 
@@ -3381,6 +3367,8 @@ _PASSING_TEST_BODY = "def test_behavior() -> None:\n    assert True\n"
 def test_fix_staging_shell_impl_beside_passing_test_takes_suite_green_leg(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A `fix:` whose implementation is `.sh` may ship WITH its test.
 
@@ -3405,6 +3393,8 @@ def test_fix_staging_shell_impl_beside_passing_test_takes_suite_green_leg(
     )
 
     result, msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
         tmp_path=tmp_path,
         subject="fix(worktree-pack): stop worktree_primary_path dying of SIGPIPE\n",
     )
@@ -3427,6 +3417,8 @@ def test_fix_staging_shell_impl_beside_passing_test_takes_suite_green_leg(
 def test_fix_staging_just_impl_beside_passing_test_takes_suite_green_leg(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The same acceptance holds for a `.just` implementation.
 
@@ -3444,6 +3436,8 @@ def test_fix_staging_just_impl_beside_passing_test_takes_suite_green_leg(
     )
 
     result, msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
         tmp_path=tmp_path,
         subject="fix(worktree-pack): quote the branch argument in worktree-create\n",
     )
@@ -3462,6 +3456,8 @@ def test_fix_staging_just_impl_beside_passing_test_takes_suite_green_leg(
 def test_fix_staging_documentation_beside_passing_test_still_rejects_at_red(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Discrimination leg: a `.md` file is not implementation.
 
@@ -3480,6 +3476,8 @@ def test_fix_staging_documentation_beside_passing_test_still_rejects_at_red(
     )
 
     result, _msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
         tmp_path=tmp_path,
         subject="fix(docs): describe the worktree flow\n",
     )
@@ -3496,6 +3494,8 @@ def test_fix_staging_documentation_beside_passing_test_still_rejects_at_red(
 def test_fix_staging_shell_fixture_under_tests_still_rejects_at_red(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A `.sh` under `tests/` is test material, not implementation.
 
@@ -3513,6 +3513,8 @@ def test_fix_staging_shell_fixture_under_tests_still_rejects_at_red(
     )
 
     result, _msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
         tmp_path=tmp_path,
         subject="fix(checks): scan shell fixtures\n",
     )
