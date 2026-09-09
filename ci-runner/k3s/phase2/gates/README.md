@@ -46,12 +46,26 @@ The driver host pushes over **Tailscale SSH**, which lands it on
 ```bash
 tree="$(git rev-parse 'HEAD^{tree}')"
 repo="$(basename "$(git rev-parse --show-toplevel)")"
-git push "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/${repo}.git" \
-    "HEAD:refs/gates/${tree}"
+git push --atomic "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/${repo}.git" \
+    "HEAD:refs/gates/${tree}" \
+    "origin/master:refs/gates/${tree}.base"
 # ... submit the gate Job, wait for the verdict, then:
 git push --delete "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/${repo}.git" \
-    "refs/gates/${tree}"
+    "refs/gates/${tree}" "refs/gates/${tree}.base"
 ```
+
+**Two refs per gate, pushed atomically.** The mirror is created EMPTY
+(`git init --bare`) and holds only what a gate push puts there, so the tree
+ref alone leaves a gate pod with no diff base — and eight members of
+`just check` judge the commit range `origin/master..HEAD` rather than a tree.
+The `.base` companion carries the client's own `origin/master` and the pod's
+`initContainer` fetches it straight into `refs/remotes/origin/master`. The push
+is `--atomic` so a gate ref without its companion cannot exist; the suffix is
+`livespec_dev_tooling.gate_remote_client.GATE_BASE_REF_SUFFIX`, and a test
+holds that constant and `gate-job-template.yaml`'s refspec in lockstep. Neither
+ref is shallow: `git push` sends full ancestry, and the pod's fetch no longer
+passes `--depth`. Both live under `refs/gates/`, so the sweep below collects
+them exactly as it always did.
 
 SSH, not the git daemon, is deliberately the only way in. The daemon runs
 without `--export-all`, serves `upload-pack` alone, forbids a per-repository
