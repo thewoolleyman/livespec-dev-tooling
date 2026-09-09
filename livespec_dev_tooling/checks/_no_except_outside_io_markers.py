@@ -17,10 +17,13 @@ import tokenize
 __all__: list[str] = [
     "BOUNDARY_FLAVOR",
     "CARDINALITY_REASON",
+    "FOREIGN_POSITION_REASON",
+    "SEPARATE_FLAVOR",
     "cardinality_offenses",
     "comment_lines",
     "sanctioned_marker_flavor",
     "statement_colons",
+    "wraps_only_the_foreign_call",
 ]
 
 # The closed set of BLE001 suppression reasons, quoted from
@@ -65,19 +68,24 @@ _FOREIGN_CODE_WORDING_SHAPE = re.compile(
 # directive text (kept from the containment-era implementation's rationale).
 _MARKER_COMMENT_PREFIX = "# " + "noqa: BLE001 "
 
-# Flavor labels, distinguished ONLY by accounting unit. `_SEPARATE_FLAVOR`
+# Flavor labels, distinguished ONLY by accounting unit. `SEPARATE_FLAVOR`
 # means sanctioned-but-not-against-the-artifact-slot. Since the retirement of
 # the loop-iteration wording it has exactly one member, foreign-code isolation;
 # the label is kept rather than collapsed into a foreign-code-specific name
 # because the distinction it draws is the ACCOUNTING UNIT, which is what every
 # caller cares about, and a future separately-accounted flavor would belong here.
 BOUNDARY_FLAVOR = "boundary"
-_SEPARATE_FLAVOR = "accounted-separately"
+SEPARATE_FLAVOR = "accounted-separately"
 
 CARDINALITY_REASON = (
     "second broad catch carrying a boundary marker in this process entry "
     "artifact is banned; at most one is permitted (foreign-code catches are "
     "accounted separately, per extension invocation surface)"
+)
+
+FOREIGN_POSITION_REASON = (
+    "broad catch carrying a foreign-code isolation marker must wrap ONLY the "
+    "foreign call; the guarded block must be exactly one call statement"
 )
 
 
@@ -150,7 +158,7 @@ def _marker_comment_flavor(*, text: str) -> str | None:
     if wording in _BOUNDARY_WORDINGS:
         return BOUNDARY_FLAVOR
     if _FOREIGN_CODE_WORDING_SHAPE.fullmatch(wording) is not None:
-        return _SEPARATE_FLAVOR
+        return SEPARATE_FLAVOR
     return None
 
 
@@ -174,6 +182,40 @@ def sanctioned_marker_flavor(
             if flavor is not None:
                 return flavor
     return None
+
+
+def wraps_only_the_foreign_call(*, guarded: list[ast.stmt]) -> bool:
+    """True when the guarded block is EXACTLY one call statement.
+
+    This is the foreign-code flavor's POSITION rule, and it is the second
+    half of its accounting unit rather than a separate concern: the spec
+    accounts that flavor per EXTENSION INVOCATION SURFACE, and a surface IS
+    one call into code the host does not own. A catch spanning more than
+    that call re-labels every first-party bug inside its span as "the
+    extension crashed", which is exactly the misattribution the clause
+    forbids, so the rule is DERIVED from the call itself — never granted to
+    a tree or to a `main()` boundary.
+
+    Only the guarded block is examined. A `try`'s `else` and `finally`
+    blocks run OUTSIDE the protected region, so code there is not wrapped
+    by the catch and cannot widen what it captures.
+
+    An `await` is unwrapped before the call test: `await extension()` is
+    still one invocation of foreign code, and reading the `Await` node as
+    "not a call" would reject every async extension surface — a rule that
+    flags the conforming form is worse than no rule.
+    """
+    if len(guarded) != 1:
+        return False
+    statement = guarded[0]
+    if not isinstance(
+        statement, ast.Expr | ast.Return | ast.Assign | ast.AnnAssign | ast.AugAssign
+    ):
+        return False
+    value = statement.value
+    if isinstance(value, ast.Await):
+        value = value.value
+    return isinstance(value, ast.Call)
 
 
 def cardinality_offenses(*, boundary_lines: list[int]) -> list[tuple[int, str]]:
