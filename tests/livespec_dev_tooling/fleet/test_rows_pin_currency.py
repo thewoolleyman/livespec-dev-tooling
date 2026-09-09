@@ -206,7 +206,14 @@ def test_pin_currency_rows_pass_when_records_are_current_or_latest_unreadable() 
     )
 
     assert assert_livespec_compat_pin_currency(ctx=ctx, member=_MEMBER) == RowPass()
+    # The `uses:` record's source repo is livespec-driver-codex, whose
+    # releases/latest is not canned here — so the note now NAMES the repo
+    # whose read did not answer rather than saying only "unreadable".
     assert assert_github_workflow_uses_pin_currency(ctx=ctx, member=_MEMBER) == RowPass(
-        note="pin records present; freshness unverified (latest release unreadable)"
+        note=(
+            "pin records present; freshness unverified (latest release unread for "
+            "livespec-driver-codex: the latest-release read did not answer; see this "
+            "run's read failures)"
+        )
     )
     assert assert_fabro_sandbox_image_pin_currency(ctx=ctx, member=_MEMBER) == RowPass()

@@ -36,16 +36,26 @@ the clause says so instead of claiming a window it could not apply.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import cast
 
-from livespec_dev_tooling.fleet._context import FleetContext
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._context import FleetContext  # noqa: E402
 
 __all__: list[str] = [
     "SETTLE_WINDOW",
     "LatestRelease",
+    "LatestReleaseUnreadable",
     "NeverFired",
+    "latest_release_unread_clause",
     "never_fired_class",
     "read_latest_release",
     "utc_now",
@@ -68,6 +78,22 @@ class LatestRelease:
 
     tag: str
     published_at: str | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class LatestReleaseUnreadable:
+    """This run did not obtain `repo`'s latest release, so freshness is unverified.
+
+    ONE inhabitant rather than three, for the same reason
+    `_bump_pr_list.BumpPrListUnreadable` has one: all three conditions call
+    for the SAME response — do not escalate, do not claim staleness, tell the
+    operator the read did not produce a release. `detail` distinguishes them
+    for the human without inventing a discriminated union no consumer
+    branches on.
+    """
+
+    repo: str
+    detail: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -95,25 +121,75 @@ def utc_now() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
-def read_latest_release(*, ctx: FleetContext, repo: str) -> LatestRelease | None:
-    """`repo`'s latest release, or None when the payload is unreadable or tagless.
+def read_latest_release(
+    *, ctx: FleetContext, repo: str
+) -> IOResult[LatestRelease, LatestReleaseUnreadable]:
+    """`repo`'s latest release, or the reason this run did not obtain one.
 
     ONE reader for both persisting-gap sites, replacing the two private
     tag-only readers that fetched this payload and kept one field each.
-    None keeps its established meaning at both call sites — freshness
-    unverified, never a violation.
+
+    The failure track is NOT an escalation. Per
+    `SPECIFICATION/contracts.md` section "Pin-currency severity policy", "a
+    can't-READ never escalates" (livespec-dev-tooling-6ge), and both call
+    sites still fold this onto the same non-escalating pass the `None`
+    produced. The `6ge` principle is about SEVERITY, not representation:
+    preserving it costs nothing here, and the `None` this replaces covered
+    THREE conditions that the note both sites rendered flattened into the
+    first of them.
+
+    - `api_object` yields None — `gh` never ran, exited non-zero, or
+      answered with unparseable bytes. It records the cause on
+      `ctx.read_failures` either way.
+    - the payload parses but is NOT an object. The `releases/latest` body
+      exists SOLELY to be one release, so a JSON array or scalar there is a
+      non-answer, not a release without fields.
+    - the release object carries no `tag_name` string. That IS a readable
+      payload — reporting it as unread told the operator to go looking for a
+      transport failure that never happened.
     """
     payload = ctx.api_object(path=f"repos/{ctx.owner}/{repo}/releases/latest")
+    if payload is None:
+        return IOFailure(
+            LatestReleaseUnreadable(
+                repo=repo,
+                detail="the latest-release read did not answer; see this run's read failures",
+            )
+        )
     if not isinstance(payload, dict):
-        return None
+        return IOFailure(
+            LatestReleaseUnreadable(
+                repo=repo,
+                detail=(
+                    "the releases/latest endpoint answered with a "
+                    f"{type(payload).__name__}, not a release object"
+                ),
+            )
+        )
     fields = cast("dict[str, object]", payload)
     tag = fields.get("tag_name")
     if not isinstance(tag, str):
-        return None
+        return IOFailure(
+            LatestReleaseUnreadable(
+                repo=repo, detail="the latest release carries no `tag_name` string"
+            )
+        )
     published_at = fields.get("published_at")
-    return LatestRelease(
-        tag=tag, published_at=published_at if isinstance(published_at, str) else None
+    return IOSuccess(
+        LatestRelease(tag=tag, published_at=published_at if isinstance(published_at, str) else None)
     )
+
+
+def latest_release_unread_clause(*, failure: LatestReleaseUnreadable) -> str:
+    """The clause BOTH persisting-gap sites render when freshness is unverified.
+
+    One renderer rather than two literals, for the same reason
+    `_bump_pr_list.bump_pr_class_undecidable_clause` is one: the two sites
+    are required to agree — `_rows_files`'s own comment already says "both
+    persisting-gap sites must move together or the promotion is
+    half-armed" — and a second copy of this sentence is how they drift.
+    """
+    return f"freshness unverified (latest release unread for {failure.repo}: {failure.detail})"
 
 
 def never_fired_class(*, published_at: str | None, now: datetime) -> NeverFired:

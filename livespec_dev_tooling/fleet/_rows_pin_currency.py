@@ -20,7 +20,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
-from returns.io import IOFailure, IOResult  # noqa: E402  — vendor-path-aware import.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.cross_repo.pin_autodiscovery import (  # noqa: E402
@@ -45,6 +45,8 @@ from livespec_dev_tooling.fleet._pin_walk_failure import (  # noqa: E402
 )
 from livespec_dev_tooling.fleet._settle_window import (  # noqa: E402
     LatestRelease,
+    LatestReleaseUnreadable,
+    latest_release_unread_clause,
     never_fired_class,
     read_latest_release,
     utc_now,
@@ -166,23 +168,26 @@ def _record_from_raw(*, raw: dict[str, str]) -> PinRecord:
 
 def _stale_pins(
     *, ctx: FleetContext, records: tuple[PinRecord, ...]
-) -> tuple[StalePin, ...] | None:
+) -> IOResult[tuple[StalePin, ...], LatestReleaseUnreadable]:
     stale: list[StalePin] = []
     # Memoized per SOURCE REPO, exactly as the tag-only read was: the
     # settle window reads `published_at` off the payload this cache
     # already holds, so arming the never-fired class adds no request.
-    latest_cache: dict[str, LatestRelease | None] = {}
+    # The whole READ is cached, failure track included, so a source repo
+    # that did not answer is not asked a second time.
+    latest_cache: dict[str, IOResult[LatestRelease, LatestReleaseUnreadable]] = {}
     for record in records:
         if record.source_repo not in latest_cache:
             latest_cache[record.source_repo] = read_latest_release(ctx=ctx, repo=record.source_repo)
-        release = latest_cache[record.source_repo]
-        if release is None:
-            return None
+        read = latest_cache[record.source_repo]
+        if isinstance(read, IOFailure):
+            return IOFailure(unsafe_perform_io(read.failure()))
+        release = unsafe_perform_io(read.unwrap())
         if not denotes_same_release(pinned_tag=record.current_value, release_tag=release.tag):
             stale.append(
                 StalePin(record=record, latest=release.tag, published_at=release.published_at)
             )
-    return tuple(stale)
+    return IOSuccess(tuple(stale))
 
 
 def _stale_pin_summary(*, pin: StalePin) -> str:
@@ -235,9 +240,11 @@ def _pin_currency_outcome(
     # iterating — but the sibling spellings of this mistake do NOT fail loudly
     # (see `required_role_keys_declared`), so the correct form is used rather
     # than the one that happens to be caught.
-    stale = _stale_pins(ctx=ctx, records=unsafe_perform_io(walked.unwrap()))
-    if stale is None:
-        return RowPass(note="pin records present; freshness unverified (latest release unreadable)")
+    read = _stale_pins(ctx=ctx, records=unsafe_perform_io(walked.unwrap()))
+    if isinstance(read, IOFailure):
+        clause = latest_release_unread_clause(failure=unsafe_perform_io(read.failure()))
+        return RowPass(note=f"pin records present; {clause}")
+    stale = unsafe_perform_io(read.unwrap())
     if not stale:
         return RowPass()
     return _staleness_class_outcome(ctx=ctx, member=member, spec=spec, stale=stale)
