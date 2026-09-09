@@ -201,7 +201,9 @@ def test_the_token_is_written_for_the_same_tree_that_named_the_mirror_ref() -> N
     """
     cluster = _StubCluster()
     _ = run_gated_push(request=_REQUEST, runner=cluster, sleeper=_no_sleep)
-    assert cluster.only(kind="push-ref").argv[-1] == f"HEAD:refs/gates/{_TREE}"
+    # `[-2]`, not `[-1]`: the tree refspec is followed by the `.base` companion
+    # that carries the gate's diff base into the pod.
+    assert cluster.only(kind="push-ref").argv[-2] == f"HEAD:refs/gates/{_TREE}"
     assert [call.argv for call in cluster.calls if call.kind == "read-tree"] == [
         _READ_TREE_ARGV,
         _READ_TREE_ARGV,
