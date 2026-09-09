@@ -143,11 +143,15 @@ _NEEDS_BULLET = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 # job carrying it runs its real steps on a `push` to master (where the setup
 # job exports `py_changed=true`) but SKIPS or reduces them on a doc-only
 # `pull_request` (where `py_changed=false`) — a PR gate weaker than the master
-# gate. The token `py_changed` is the discriminator: an `if:` conditioned only
-# on `github.event_name`/`github.head_ref` (release-gate-pre-tag,
-# PR-only-strictness jobs) is ADDITIONAL PR strictness, never a skip, and does
-# NOT match. Both the `== 'true'` and `!= 'true'` (paired "Skip" step) forms
-# carry the token, so either marks the owning job conditioned.
+# gate. The token `py_changed` discriminates THIS regex, and it is NOT the
+# whole rule: `_IF_EXPRESSION` below carries the clause's OTHER forbidden
+# direction, a condition on the triggering event or ref. An `if:` conditioned
+# only on `github.event_name`/`github.head_ref` carries no `py_changed` token
+# and so does not match HERE; whether it is ADDITIONAL PR strictness
+# (release-gate-pre-tag) or a forbidden skip is settled by that second
+# recogniser, not by this one's silence. Both the `== 'true'` and `!= 'true'`
+# (paired "Skip" step) forms carry the token, so either marks the owning job
+# conditioned.
 #
 # This rule ENCODES the livespec CI-as-a-merge-gate (branch protection)
 # invariant stated in `livespec/SPECIFICATION/non-functional-requirements.md`
@@ -156,6 +160,40 @@ _NEEDS_BULLET = re.compile(r"^\s*-\s*([\w-]+)\s*$")
 # `ci_gate_parity` and any future consumer derive it from ONE parser and
 # cannot drift about WHAT THE SPEC SAYS.
 _IF_CHANGESET_PY = re.compile(r"^\s*if:.*\bpy_changed\b")
+
+# The OTHER half of the same ratified clause: a job- OR step-level `if:` whose
+# expression is conditioned on the TRIGGERING EVENT or the ref. The clause
+# names both directions — "conditioned on the triggering event OR on a
+# changeset predicate in the forbidden direction" — and the check keyed only on
+# `py_changed` until `livespec-dev-tooling-d99z`, so an
+# `if: github.event_name != 'pull_request'` on a gating job passed a guard
+# whose own spec clause forbids it.
+#
+# The rule is deliberately MECHANICAL, not a direction analysis of arbitrary
+# GitHub expression syntax: an event/ref reference survives as a finding unless
+# it is one of the ENUMERATED stricter-only shapes below. Removing those shapes
+# from the expression and re-scanning the residue is what makes a CONJUNCTION
+# of them — livespec's live `release-gate-pre-tag`, `github.event_name ==
+# 'pull_request' && startsWith(github.head_ref, 'release-please--')`, a job
+# that DOES sit in `ci-green.needs` — read as stricter-only, while
+# `github.event_name != 'pull_request'` leaves `github.event_name` behind and
+# is flagged. A legitimately push-only job (every fleet member's
+# `export-telemetry`) belongs OUTSIDE `ci-green.needs`, so it is never gating
+# and never reaches this test.
+#
+# `github\.ref\b` cannot match inside `github.ref_name` (`_` is a word
+# character) or `github.head_ref` (different literal), so the three tokens stay
+# distinct and `head_ref` is reached only through the `startsWith` shape.
+#
+# Like `_IF_CHANGESET_PY` this rule ENCODES the livespec CI-as-a-merge-gate
+# (branch protection) invariant, so it lives in this shared home for the same
+# bounded-parser-duplication reason.
+_IF_EXPRESSION = re.compile(r"^\s*if:\s*(?P<expr>.*?)\s*$")
+_EVENT_OR_REF_REFERENCE = re.compile(r"\bgithub\.(?:event_name|ref_name|ref)\b")
+_STRICTER_ONLY_SHAPES = (
+    re.compile(r"github\.event_name\s*==\s*'pull_request'"),
+    re.compile(r"startsWith\(\s*github\.head_ref\s*,[^)]*\)"),
+)
 
 
 class _SlugOverride(TypedDict, total=False):
@@ -174,13 +212,17 @@ class CiJob:
     assertion (b): a `ci-green` gate must fan in every gating job, canonical
     or not (`livespec-dev-tooling-o6b`).
 
-    `changeset_py_conditioned` — whether any job- or step-level `if:` in the
-    job references a changeset `.py`-detection output (`py_changed`) — feeds
-    the `ci_gate_parity` check: a GATING job carrying it runs on a `push` to
-    master but is skipped/reduced on a doc-only `pull_request`, so the PR gate
-    is weaker than the master gate. Defaults `False`; only `_build_job`
-    constructs a `CiJob`, and it computes the flag, so the default keeps the
-    field non-breaking for any hermetic-fixture construction.
+    `changeset_py_conditioned` and `event_conditioned` are the two halves of
+    the `ci_gate_parity` signal, one per direction the ratified clause names.
+    The first is whether any job- or step-level `if:` references a changeset
+    `.py`-detection output (`py_changed`); the second is whether one conditions
+    on the triggering event or ref (`github.event_name` / `github.ref` /
+    `github.ref_name`) in a shape that is not enumerated stricter-only. A
+    GATING job carrying either runs on a `push` to master but is
+    skipped/reduced on a `pull_request`, so the PR gate is weaker than the
+    master gate. Both default `False`; only `_build_job` constructs a `CiJob`,
+    and it computes both flags, so the defaults keep the fields non-breaking
+    for any hermetic-fixture construction.
     """
 
     name: str
@@ -188,6 +230,7 @@ class CiJob:
     contributed_check_slugs: frozenset[str]
     gating: bool
     changeset_py_conditioned: bool = False
+    event_conditioned: bool = False
 
 
 def load_canonical(
@@ -343,6 +386,28 @@ def _changeset_py_conditioned(*, body_lines: list[str]) -> bool:
     return False
 
 
+def _event_conditioned(*, body_lines: list[str]) -> bool:
+    """Whether a non-comment job- or step-level `if:` conditions on the event or ref.
+
+    The `ci_gate_parity` signal for the event half of the clause. Each `if:`
+    expression has the ENUMERATED stricter-only shapes removed; whatever
+    event/ref reference survives that removal is a condition in the forbidden
+    direction. See `_IF_EXPRESSION` / `_STRICTER_ONLY_SHAPES`.
+    """
+    for raw in body_lines:
+        if raw.strip().startswith("#"):
+            continue
+        expression = _IF_EXPRESSION.match(raw)
+        if expression is None:
+            continue
+        residue = expression.group("expr")
+        for shape in _STRICTER_ONLY_SHAPES:
+            residue = shape.sub("", residue)
+        if _EVENT_OR_REF_REFERENCE.search(residue) is not None:
+            return True
+    return False
+
+
 def _parse_needs_value(*, value: str) -> set[str]:
     """Parse a scalar (`setup`) or flow-list (`[a, b]`) `needs:` value."""
     text = value.strip()
@@ -386,6 +451,7 @@ def _build_job(*, name: str, body_lines: list[str]) -> CiJob:
         contributed_check_slugs=frozenset(contributed),
         gating=gating,
         changeset_py_conditioned=_changeset_py_conditioned(body_lines=body_lines),
+        event_conditioned=_event_conditioned(body_lines=body_lines),
     )
 
 
