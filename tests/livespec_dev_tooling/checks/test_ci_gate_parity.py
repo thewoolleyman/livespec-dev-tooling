@@ -3,9 +3,10 @@
 The companion to `ci_matrix_completeness`: from a repo's OWN
 `.github/workflows/ci.yml`, it asserts the livespec invariant PR gate ≡
 master gate — no GATING job (one in the `ci-green` gate's `needs:`) may
-condition its real steps on a changeset `.py`-detection output (`py_changed`),
-which would run it on a `push` to master but skip/reduce it on a doc-only
-`pull_request`.
+condition its real steps on the TRIGGERING EVENT (`github.event_name` /
+`github.ref` / `github.ref_name`) or on a changeset `.py`-detection output
+(`py_changed`), either of which would run it on a `push` to master but
+skip/reduce it on a `pull_request`.
 
 The scan ALWAYS runs; the `LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST` lever
 only flips findings from WARNING (exit 0) to ERROR (exit 4). That var is
@@ -309,6 +310,195 @@ def test_no_ci_green_job_yields_no_findings(*, tmp_path: Path) -> None:
     ), f"expected exit 0 with no ci-green job; got {result.returncode}, stderr={result.stderr!r}"
     findings = _parse_findings(stderr=result.stderr)
     assert findings == [], f"no ci-green gate must produce no findings; got {findings!r}"
+
+
+def _event_skew(*, findings: list[dict[str, object]]) -> list[dict[str, object]]:
+    """The event/ref-conditioned gate-skew findings in a parsed finding stream."""
+    return [f for f in findings if f.get("failure_mode") == "ci-gate-event-conditioned-skip"]
+
+
+def test_gating_job_level_event_name_push_is_flagged(*, tmp_path: Path) -> None:
+    """A gating job whose JOB-LEVEL `if:` is `github.event_name == 'push'` → finding.
+
+    The forbidden direction the v217 clause names first: the job runs on a
+    `push` to master and is skipped entirely on a `pull_request`, so the PR
+    gate is strictly weaker than the master gate.
+    """
+    job_level = (
+        "  check-python:\n"
+        "    if: github.event_name == 'push'\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: run\n"
+        "        run: just check-alpha\n"
+    )
+    jobs = [job_level, _ci_green_job(needs="[check-python]")]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, env={"LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST": "1"})
+    assert result.returncode == 4, (
+        "a push-only job-level `if:` on a GATING job must fail with the lever set; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    skew = _event_skew(findings=_parse_findings(stderr=result.stderr))
+    assert len(skew) == 1, f"expected one event-skew finding; got {skew!r}"
+    assert skew[0].get("job") == "check-python"
+
+
+def test_gating_step_level_event_name_push_is_flagged(*, tmp_path: Path) -> None:
+    """The SAME `github.event_name == 'push'` condition on a real STEP → finding.
+
+    The clause covers a gating job conditioned "at the job level or in its real
+    steps": a job that always runs but whose real step is push-only runs a
+    SMALLER check set on a pull request.
+    """
+    step_level = (
+        "  check-python:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: run\n"
+        "        if: github.event_name == 'push'\n"
+        "        run: just check-alpha\n"
+    )
+    jobs = [step_level, _ci_green_job(needs="[check-python]")]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, env={"LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST": "1"})
+    assert result.returncode == 4, (
+        "a push-only STEP-level `if:` on a GATING job must fail with the lever set; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    skew = _event_skew(findings=_parse_findings(stderr=result.stderr))
+    assert {f.get("job") for f in skew} == {
+        "check-python"
+    }, f"expected the job flagged; got {skew!r}"
+
+
+def test_gating_ref_condition_is_flagged(*, tmp_path: Path) -> None:
+    """A gating job conditioned on `github.ref` (a branch predicate) → finding.
+
+    `github.ref` / `github.ref_name` express the same forbidden direction as
+    `github.event_name`: `refs/heads/master` is never a pull-request ref.
+    """
+    ref_gated = (
+        "  check-python:\n"
+        "    if: ${{ github.ref == 'refs/heads/master' }}\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: run\n"
+        "        run: just check-alpha\n"
+    )
+    jobs = [ref_gated, _ci_green_job(needs="[check-python]")]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, env={"LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST": "1"})
+    assert result.returncode == 4, (
+        "a `github.ref` branch predicate on a GATING job must fail with the lever "
+        f"set; got {result.returncode}, stderr={result.stderr!r}"
+    )
+    skew = _event_skew(findings=_parse_findings(stderr=result.stderr))
+    assert {f.get("job") for f in skew} == {
+        "check-python"
+    }, f"expected the job flagged; got {skew!r}"
+
+
+def test_gating_pull_request_only_job_is_not_flagged(*, tmp_path: Path) -> None:
+    """A gating job with `if: github.event_name == 'pull_request'` → NO finding.
+
+    One of the two ENUMERATED stricter-only shapes: it ADDS strictness on a PR
+    rather than removing it, which the clause explicitly exempts.
+    """
+    pr_only = (
+        "  check-python:\n"
+        "    if: github.event_name == 'pull_request'\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: run\n"
+        "        run: just check-alpha\n"
+    )
+    jobs = [pr_only, _ci_green_job(needs="[check-python]")]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, env={"LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST": "1"})
+    assert result.returncode == 0, (
+        "a pull-request-only `if:` ADDS strictness and must not be flagged; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert _event_skew(findings=_parse_findings(stderr=result.stderr)) == []
+
+
+def test_gating_release_gate_compound_pr_only_shape_is_not_flagged(*, tmp_path: Path) -> None:
+    """livespec's live `release-gate-pre-tag` shape — a CONJUNCTION of both enumerated shapes.
+
+    `github.event_name == 'pull_request' && startsWith(github.head_ref, ...)`
+    is a GATING job on livespec's origin/master (it joins `ci-green.needs`), so
+    a recogniser that flagged it would redden a correctly configured fleet
+    member. Both conjuncts are enumerated stricter-only shapes, so nothing
+    event/ref-referencing survives.
+    """
+    release_gate = (
+        "  release-gate-pre-tag:\n"
+        "    if: ${{ github.event_name == 'pull_request' && "
+        "startsWith(github.head_ref, 'release-please--') }}\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: run\n"
+        "        run: just check-mutation\n"
+    )
+    jobs = [release_gate, _ci_green_job(needs="[release-gate-pre-tag]")]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, env={"LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST": "1"})
+    assert result.returncode == 0, (
+        "the live release-gate-pre-tag conjunction is stricter-only and must not "
+        f"be flagged; got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert _event_skew(findings=_parse_findings(stderr=result.stderr)) == []
+
+
+def test_non_gating_push_only_job_is_not_flagged(*, tmp_path: Path) -> None:
+    """The live `export-telemetry` shape: push-only but ABSENT from ci-green.needs → NO finding.
+
+    A legitimately push-only job belongs OUTSIDE the gate, which is exactly
+    where every fleet member's `export-telemetry` already sits.
+    """
+    export_telemetry = (
+        "  export-telemetry:\n"
+        "    needs: [check-python]\n"
+        "    if: ${{ !cancelled() && github.event_name == 'push' }}\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: export\n"
+        "        run: bash .github/scripts/export-ci-telemetry.sh\n"
+    )
+    jobs = [
+        _clean_gating_job(key="check-python", slug="check-alpha"),
+        export_telemetry,
+        _ci_green_job(needs="[check-python]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, env={"LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST": "1"})
+    assert result.returncode == 0, (
+        "a push-only NON-gating job must not be flagged; "
+        f"got {result.returncode}, stderr={result.stderr!r}"
+    )
+    assert _event_skew(findings=_parse_findings(stderr=result.stderr)) == []
+
+
+def test_py_changed_shape_still_flagged_after_widening(*, tmp_path: Path) -> None:
+    """No regression: the retired `py_changed` changeset shape STILL flags, under its own mode.
+
+    Widening the recogniser to the event/ref half must not disturb the
+    changeset half already implemented, and the two halves keep distinct
+    failure modes so a diagnostic names which direction was found.
+    """
+    jobs = [
+        _setup_detector_job(),
+        _py_conditioned_matrix_job(key="check-python"),
+        _ci_green_job(needs="[check-python]"),
+    ]
+    _ = _write_ci_yml(cwd=tmp_path, jobs=jobs)
+    result = _run_check(cwd=tmp_path, env={"LIVESPEC_FAIL_IF_CI_GATE_PARITY_GAPS_EXIST": "1"})
+    assert result.returncode == 4, f"expected exit 4; got {result.returncode}, {result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    skew = [f for f in findings if f.get("failure_mode") == "ci-gate-py-conditioned-skip"]
+    assert {f.get("job") for f in skew} == {"check-python"}, f"py_changed regressed; got {skew!r}"
+    assert _event_skew(findings=findings) == [], "the py_changed shape carries no event/ref token"
 
 
 def test_help_flag_exits_zero(*, tmp_path: Path) -> None:

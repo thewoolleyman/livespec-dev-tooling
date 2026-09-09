@@ -21,22 +21,45 @@ false on a doc-only PR), and the python jobs gated their real steps on
 checks than master — the seam that let a workflow-only PR merge green and
 redden master on 2026-09-04.
 
+The clause names TWO forbidden directions, and this check enforces both. Per
+`livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a merge gate
+(branch protection)" (v217), the guard FAILS when a gating job — at the job
+level or in its real steps — is conditioned on the TRIGGERING EVENT **or** on a
+changeset predicate in the FORBIDDEN DIRECTION: so that it runs on a `push` to
+master but is skipped, or runs a smaller check set, on a `pull_request`. A job
+conditioned to run pull-request-ONLY adds strictness rather than removing it
+and is not flagged.
+
 What it flags, precisely:
 
 - **Gating job** = a job listed in the `ci-green` job's `needs:`. `ci-green`
   itself is not gating; a non-gating job (telemetry export, the `setup`
   detector) absent from `ci-green.needs` is exempt.
-- **Violation** = a gating job that carries a job- or step-level `if:` whose
-  expression references the changeset `.py`-detection token `py_changed` (see
-  `_ci_matrix_parse._IF_CHANGESET_PY`). That token is the DIRECTIONAL
-  discriminator "runs on push, skipped on doc-only PR".
+- **Violation (changeset half)** = a gating job carrying a job- or step-level
+  `if:` whose expression references the changeset `.py`-detection token
+  `py_changed` (see `_ci_matrix_parse._IF_CHANGESET_PY`) — the DIRECTIONAL
+  signal "runs on push, skipped on doc-only PR".
+- **Violation (event half)** = a gating job carrying a job- or step-level `if:`
+  that references `github.event_name`, `github.ref`, or `github.ref_name` in
+  any shape that is not ENUMERATED as stricter-only (see
+  `_ci_matrix_parse._STRICTER_ONLY_SHAPES`): `github.event_name ==
+  'pull_request'` and `startsWith(github.head_ref, …)`, including a conjunction
+  of the two. `if: github.event_name == 'push'`, `!= 'pull_request'`,
+  `== 'merge_group'`, and `github.ref == 'refs/heads/master'` are all findings.
+- ⛔ **Exact direction analysis of arbitrary expressions is NOT attempted, and
+  must not be added.** Any surviving event/ref reference on a gating job is a
+  finding, because a legitimately push-only job belongs OUTSIDE
+  `ci-green.needs` — which is where every fleet member's `export-telemetry`
+  already sits. Widening the enumeration is how a genuinely stricter-only shape
+  earns its exemption; inferring direction from an expression tree is not.
 - **NOT flagged** — additional PR strictness, which is one-directional-safe:
-  an `if:` on `github.event_name == 'pull_request'` /
-  `startsWith(github.head_ref, 'release-please--')` (e.g.
-  `release-gate-pre-tag`) carries no `py_changed` token; `runs-on` runner
-  routing on `vars.CI_RUNNER_LABELS` is not an `if:` gate at all; and a
-  non-gating job (absent from `ci-green.needs`) is out of scope even if it
-  event-conditions its steps.
+  `release-gate-pre-tag`'s `github.event_name == 'pull_request' &&
+  startsWith(github.head_ref, 'release-please--')` is a conjunction of both
+  enumerated shapes and it IS a gating job on livespec's master, so this
+  exemption is load-bearing rather than hypothetical; `runs-on` runner routing
+  on `vars.CI_RUNNER_LABELS` is not an `if:` gate at all; and a non-gating job
+  (absent from `ci-green.needs`) is out of scope even if it event-conditions
+  its steps.
 
 Warn-vs-fail severity lever (mirrors `ci_matrix_completeness` /
 `no_todo_registry`): the scan ALWAYS runs. When
@@ -57,10 +80,10 @@ parity could be violated → no findings (exit 0). An absent `ci-green` gate is
 here.
 
 Output discipline: structlog JSON to stderr; no `print`, no
-`sys.stderr.write`. The ci.yml parser (and the rule-encoding `py_changed`
-recogniser) live in the shared private sibling `_ci_matrix_parse`, imported by
-both this check and `ci_matrix_completeness`, so the two cannot drift about
-what the invariant means.
+`sys.stderr.write`. The ci.yml parser (and BOTH rule-encoding recognisers, the
+`py_changed` one and the event/ref one) live in the shared private sibling
+`_ci_matrix_parse`, imported by both this check and `ci_matrix_completeness`,
+so the two cannot drift about what the invariant means.
 """
 
 from __future__ import annotations
@@ -97,6 +120,15 @@ _MSG_GATE_SKEW = (
     "doc-only `pull_request`, so the PR gate is weaker than the master gate"
 )
 
+_MSG_EVENT_SKEW = (
+    "gating job conditions its steps on the triggering event or ref "
+    "(`github.event_name` / `github.ref` / `github.ref_name`) in a shape that is "
+    "not pull-request-only, so it can run on a `push` to master while being "
+    "skipped/reduced on a `pull_request` — the PR gate is then weaker than the "
+    "master gate. A legitimately push-only job belongs OUTSIDE `ci-green.needs` "
+    "(where `export-telemetry` already sits) rather than conditioned inside it"
+)
+
 
 @dataclass(frozen=True, kw_only=True)
 class _Finding:
@@ -116,9 +148,11 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="ci-gate-parity",
         description=(
             "Enforce PR gate ≡ master gate: no CI gating job (one in "
-            "`ci-green.needs`) may condition its real steps on a changeset "
-            "`.py`-detection output (`py_changed`), which would run it on a "
-            "push to master but skip it on a doc-only pull request. "
+            "`ci-green.needs`) may condition its real steps on the triggering "
+            "event or ref (`github.event_name` / `github.ref` / "
+            "`github.ref_name`, outside the pull-request-only shapes) or on a "
+            "changeset `.py`-detection output (`py_changed`) — either would run "
+            "it on a push to master but skip it on a pull request. "
             "Warn-default companion to check-ci-matrix-completeness."
         ),
     )
@@ -136,8 +170,27 @@ def _configure_logger() -> structlog.stdlib.BoundLogger:
     return structlog.get_logger("ci_gate_parity")
 
 
+def _job_findings(*, job: CiJob) -> list[_Finding]:
+    """The findings a single GATING job earns — one per forbidden direction it carries.
+
+    A job can carry BOTH halves of the clause, and each is reported under its
+    own failure mode so the diagnostic names which direction was found rather
+    than collapsing two different defects into one message.
+    """
+    findings: list[_Finding] = []
+    if job.changeset_py_conditioned:
+        findings.append(
+            _finding(mode="ci-gate-py-conditioned-skip", message=_MSG_GATE_SKEW, job=job.name)
+        )
+    if job.event_conditioned:
+        findings.append(
+            _finding(mode="ci-gate-event-conditioned-skip", message=_MSG_EVENT_SKEW, job=job.name)
+        )
+    return findings
+
+
 def _evaluate(*, jobs: list[CiJob]) -> list[_Finding]:
-    """Flag each GATING job (one in `ci-green.needs`) that `.py`-conditions its steps."""
+    """Flag each GATING job (one in `ci-green.needs`) conditioned in a forbidden direction."""
     ci_green: CiJob | None = None
     for job in jobs:
         if job.name == _CI_GREEN_JOB:
@@ -149,11 +202,7 @@ def _evaluate(*, jobs: list[CiJob]) -> list[_Finding]:
         # this check's to re-report.
         return []
     gating = ci_green.needs
-    return [
-        _finding(mode="ci-gate-py-conditioned-skip", message=_MSG_GATE_SKEW, job=job.name)
-        for job in jobs
-        if job.name in gating and job.changeset_py_conditioned
-    ]
+    return [finding for job in jobs if job.name in gating for finding in _job_findings(job=job)]
 
 
 def _collect_findings(*, cwd: Path) -> list[_Finding]:
