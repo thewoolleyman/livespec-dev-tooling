@@ -64,6 +64,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from returns.result import Failure, Success  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.canonical_checks import canonical_check_renames  # noqa: E402
@@ -153,9 +154,9 @@ def _reconcile(
 
     lines = justfile_text.splitlines(keepends=True)
     block = check_recipe_bounds(lines=lines)
-    if block is None:
+    if isinstance(block, Failure):
         return _ReconcileResult(text=justfile_text, missing=(), skipped_reason="no_check_header")
-    check_header, recipe_end = block
+    check_header, recipe_end = block.unwrap()
 
     bounds = targets_array_bounds(lines=lines, check_header=check_header, recipe_end=recipe_end)
     if isinstance(bounds, str):
@@ -251,8 +252,9 @@ def reconcile_sources(
 
     lines = justfile_text.splitlines(keepends=True)
     block = check_recipe_bounds(lines=lines)
-    if block is not None:
-        bounds = targets_array_bounds(lines=lines, check_header=block[0], recipe_end=block[1])
+    if isinstance(block, Success):
+        check_header, recipe_end = block.unwrap()
+        bounds = targets_array_bounds(lines=lines, check_header=check_header, recipe_end=recipe_end)
         if not isinstance(bounds, str):
             insert_missing_targets(
                 lines=lines,
