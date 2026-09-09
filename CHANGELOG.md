@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.67.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.2...v1.67.3) (2026-09-09)
+
+
+### Bug Fixes
+
+* **cross_repo:** lock the batched ci.yml reconcile to its gate, and correct the prose that misdated it ([4b3049d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b3049dda61cd92a787271018c1e08f8e91d8229))
+
 ## [1.67.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.1...v1.67.2) (2026-09-09)
 
 
