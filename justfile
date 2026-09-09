@@ -222,6 +222,7 @@ check:
         check-global-writes
         check-handoff-dispatch-routing
         check-heading-coverage
+        check-heading-coverage-debt-register
         check-hook-trees-not-io-exempt
         check-keyword-only-args
         check-local-memory-drift-audit
@@ -703,6 +704,24 @@ check-handoff-dispatch-routing:
 
 check-heading-coverage:
     uv run python -m livespec_dev_tooling.checks.heading_coverage
+
+# The shrink-only heading-coverage debt ratchet (plan
+# fleet-heading-coverage-convergence charter D3, ratified at v064). Always
+# invoked plainly; the module self-manages its ONE lever
+# (`LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF`), which the
+# authoring-time pre-commit subset sets to narrow the VERDICT to the rows a
+# commit authors. Unset here, so the aggregate, pre-push and CI judge the whole
+# register. Regenerate the register with `just
+# generate-heading-coverage-debt-register` — it is never authored by hand.
+check-heading-coverage-debt-register:
+    uv run python -m livespec_dev_tooling.checks.heading_coverage_debt_register
+
+# Regenerate `tests/heading-coverage-debt.json` from the live
+# `tests/heading-coverage.json`, stamping each row's first-seen date from git
+# history. The register is DERIVED, never authored: a hand-edited baseline is
+# an exemption list, and the ratchet it feeds would become a formality.
+generate-heading-coverage-debt-register:
+    uv run python -m livespec_dev_tooling.heading_coverage_debt
 
 check-keyword-only-args:
     uv run python -m livespec_dev_tooling.checks.keyword_only_args

@@ -12,3 +12,9 @@ Conventions:
 - `tests/heading-coverage.json` is the heading-coverage registry
   consumed by `check-heading-coverage` (canonical aggregate slug
   per epic li-univck Phase 1.4 self-host wiring).
+- `tests/heading-coverage-debt.json` is the shrink-only debt register
+  `check-heading-coverage-debt-register` ratchets against. It is DERIVED
+  from the registry above — regenerate it with `just
+  generate-heading-coverage-debt-register`, never hand-edit it. A
+  hand-added row is an exemption, which is the one thing the ratchet
+  exists to forbid.

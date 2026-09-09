@@ -33,6 +33,7 @@ EXPECTED_CANONICAL_SLUGS: tuple[str, ...] = (
     "check-global-writes",
     "check-handoff-dispatch-routing",
     "check-heading-coverage",
+    "check-heading-coverage-debt-register",
     "check-hook-trees-not-io-exempt",
     "check-keyword-only-args",
     "check-local-memory-drift-audit",
