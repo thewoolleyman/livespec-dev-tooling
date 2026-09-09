@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.83.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.1...v1.83.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **checks:** put the forge-authored-revert exemption on the IOResult railway ([0e04dbc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0e04dbc5e22b8b481b21b0d665f1180107abce6e))
+* **checks:** put the shell-quality recipe dump on the IOResult railway ([ef74830](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ef74830e93f4d5a5becfda285a0f36b30d86f5a0))
+* **checks:** put the worktree-pack remedy composer on the IOResult railway ([4d90925](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4d90925c97888fc16e135d1fdc993be889d5a2f7))
+
 ## [1.83.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.0...v1.83.1) (2026-09-09)
 
 
