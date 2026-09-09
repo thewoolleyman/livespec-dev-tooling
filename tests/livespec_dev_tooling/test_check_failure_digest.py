@@ -35,6 +35,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.check_failure_digest import (
     _fail_record,
@@ -84,6 +85,22 @@ def _emitted_pack_absent_output(*, repo_root: Path, capsys: pytest.CaptureFixtur
     return capsys.readouterr().err
 
 
+def _pack_absent_remedy(*, repo_root: Path) -> str:
+    """The composer's own `worktree_pack_absent` remedy, off its success track.
+
+    `pack_failure_hint` answers on the `IOResult` railway
+    (livespec-dev-tooling-qndn.11): it picks the FIRST command it names by
+    reading the root justfile, so a justfile that refuses to be read
+    establishes neither branch. The `tmp_path` fixtures below carry no justfile
+    at all, which is a definitive answer — the unwired branch — so this read
+    stays on the success track, and the assertions keep comparing against the
+    check's real remedy text rather than a copy of it that could drift.
+    """
+    return unsafe_perform_io(
+        pack_failure_hint(failure_mode=_PACK_ABSENT_MODE, repo_root=repo_root).unwrap()
+    )
+
+
 # ---------------------------------------------------------------------------
 # The acceptance criteria: mode + remedy, at the tail, after any output
 # ---------------------------------------------------------------------------
@@ -100,7 +117,7 @@ def test_worktree_pack_absent_names_its_mode_and_remedy_in_the_final_lines(
         failures=[("check-primary-checkout-commit-refuse-hook-installed", captured_output)]
     )
 
-    remedy = pack_failure_hint(failure_mode=_PACK_ABSENT_MODE, repo_root=tmp_path)
+    remedy = _pack_absent_remedy(repo_root=tmp_path)
     assert len(lines) >= 3, "a failed target must contribute a mode line, a path and a remedy"
     assert lines[-1] == f"      remedy: {remedy}"
     assert (
@@ -137,9 +154,7 @@ def test_the_digest_is_the_tail_of_what_the_aggregate_prints(
     assert exit_code == 1
     tail = capsys.readouterr().out.rstrip("\n").splitlines()[-3:]
     assert tail[0].endswith(f": {_PACK_ABSENT_MODE}")
-    assert tail[2] == (
-        f"      remedy: {pack_failure_hint(failure_mode=_PACK_ABSENT_MODE, repo_root=tmp_path)}"
-    )
+    assert tail[2] == f"      remedy: {_pack_absent_remedy(repo_root=tmp_path)}"
 
 
 def test_a_green_aggregate_prints_no_digest() -> None:

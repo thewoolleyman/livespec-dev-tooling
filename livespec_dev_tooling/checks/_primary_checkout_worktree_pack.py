@@ -19,7 +19,21 @@ whose fragments the root justfile never `import?`s is invisible to
 `just --list`. That is steps 1-2 of the originating incident's causal chain,
 and byte-comparison alone cannot see it.
 
-Output discipline: this module computes; the parent narrates.
+THE REMEDY COMPOSER READS THE CHECKOUT TOO, AND NOW SAYS SO
+(livespec-dev-tooling-qndn.11). `pack_failure_hint` picks the FIRST command it
+names by reading the root justfile, so a justfile that is THERE and refuses to
+be read establishes neither branch. That non-answer used to be spelled as the
+UNWIRED branch — the same value an ABSENT justfile yields — which left the
+remedy telling an operator "this repo is UNWIRED: add both `import?` lines and
+the `install-worktree-pack` recipe" on the strength of a file nobody had read.
+It is the failure track now, carrying the same `CheckInputUnreadable` every
+other read here uses. ABSENCE stays on the success track, because a checkout
+with no justfile ANSWERS the question — it cannot define the recipe.
+
+Output discipline: this module computes; the parent narrates. That holds for
+the composer's failure track as well: it is CONSUMED in
+`_primary_checkout_narration._pack_hint`, which keeps narrating the pack
+failure it observed and degrades only the route claim that rested on the read.
 """
 
 from __future__ import annotations
@@ -56,6 +70,7 @@ from livespec_dev_tooling.install_worktree_pack import (  # noqa: E402
 
 __all__: list[str] = [
     "WORKTREE_PACK_DIR_NAME",
+    "WORKTREE_PACK_UNWIRED_REMEDY",
     "inspect_worktree_pack",
     "pack_failure_hint",
     "pack_failure_path",
@@ -109,7 +124,14 @@ _WORKTREE_PACK_WIRED_REMEDY = (
     "local obligation row, but it runs the whole first-touch reconcile to get "
     "there — in a linked worktree the standalone recipe IS the entire remedy"
 )
-_WORKTREE_PACK_UNWIRED_REMEDY = (
+# PUBLIC because the CONSUMER needs it. When the composer cannot establish
+# which route this checkout offers, the narration still has to hand the
+# operator a remedy, and this is the one that is correct in a wired checkout
+# and in an unwired one. Exporting the text is what keeps that fallback a
+# reference to the single source rather than a second copy of it — a remedy
+# copied into the narration is the same drift seam this arm's own file list
+# was extracted from.
+WORKTREE_PACK_UNWIRED_REMEDY = (
     "run `just bootstrap` (the `worktree-pack` local obligation row installs "
     f"the single canonical {_WORKTREE_PACK_FILE_LIST} bodies byte-for-byte "
     "into `dev-tooling/`); a drifted or partially installed pack is a copy "
@@ -150,6 +172,12 @@ _WORKTREE_PACK_IMPORT_LINES: tuple[tuple[str, str], ...] = (
     ("branch-protection.just", "import? 'dev-tooling/branch-protection.just'"),
     ("worktree.just", "import? 'dev-tooling/worktree.just'"),
 )
+# The negative wiring verdict, NAMED: `flake8-boolean-trap` (FBT003) refuses a
+# bare boolean literal at a call site, and lifting one onto the railway is a
+# call — the spelling `_deny_hint._UNRESOLVED` already established for this.
+# ONE name, because the site below means exactly this by it: this checkout does
+# not define the standalone recipe.
+_UNWIRED: bool = False
 # The `install-worktree-pack` recipe DEFINITION, matched at the START of a line.
 # A bare substring test would read a justfile that only NAMES the recipe in
 # prose as wired — this repo's own justfile mentions it in three comments — and
@@ -426,7 +454,7 @@ def inspect_worktree_pack(
     )
 
 
-def _root_justfile_wires_pack_install(*, repo_root: Path) -> bool:
+def _root_justfile_wires_pack_install(*, repo_root: Path) -> IOResult[bool, CheckInputUnreadable]:
     """Whether `<repo_root>/justfile` DEFINES the `install-worktree-pack` recipe.
 
     The remedy composer's only input, and the same predicate — same file, same
@@ -435,28 +463,39 @@ def _root_justfile_wires_pack_install(*, repo_root: Path) -> bool:
     undecodable justfile answer the question it can answer instead of raising
     out of a narration path.
 
-    ⚠️ EVERY UNANSWERED STATE RESOLVES TO FALSE, and that direction is the
-    whole safety of the branch: `just bootstrap` reaches the installer in a
+    ⚠️ AN ABSENT JUSTFILE IS `False`, AND A JUSTFILE NOBODY COULD READ IS
+    NEITHER. Absence ANSWERS: a checkout carrying no justfile cannot define the
+    recipe, so it is definitively unwired and stays on the success track with
+    the other observed states. A read that did not happen establishes nothing,
+    and it used to resolve to that same `False` — which is how a route chosen
+    on evidence and a route chosen on a file nobody read became one value.
+
+    The DIRECTION of the old fallback was right and is preserved by the
+    consumer, not by this function: `just bootstrap` reaches the installer in a
     wired repo AND in an unwired one, while the standalone recipe reaches it
-    only in a wired one. A missing justfile, a read that did not happen, and a
-    justfile carrying no such recipe therefore all fall back to the text that
-    works everywhere. A remedy is narration — it must never turn a reportable
-    pack failure into a check that could not answer.
+    only in a wired one, so the unanswered case still ends at the text that
+    works everywhere. What changes is that the operator is told the route was
+    never established instead of being told this checkout is unwired. A remedy
+    is narration and must still never turn a reportable pack failure into a
+    check that could not answer — see `_primary_checkout_narration._pack_hint`,
+    which consumes this track for exactly that reason.
     """
     justfile_path = repo_root / _JUSTFILE_NAME
     if not justfile_path.is_file():
-        return False
+        return IOSuccess(_UNWIRED)
     read = _read_bytes(path=justfile_path)
     if isinstance(read, IOFailure):
-        return False
-    return any(
-        line.startswith(_INSTALL_PACK_RECIPE_LINE)
-        for line in unsafe_perform_io(read.unwrap()).splitlines()
+        return read
+    return IOSuccess(
+        any(
+            line.startswith(_INSTALL_PACK_RECIPE_LINE)
+            for line in unsafe_perform_io(read.unwrap()).splitlines()
+        )
     )
 
 
-def pack_failure_hint(*, failure_mode: str, repo_root: Path) -> str:
-    """Return the remedy string for one pack failure mode.
+def pack_failure_hint(*, failure_mode: str, repo_root: Path) -> IOResult[str, CheckInputUnreadable]:
+    """Return the remedy for one pack failure mode, or the read that did not answer.
 
     Routing exists because the modes are actionable in three different places
     — the config, the root justfile, and the pack itself — so one shared
@@ -466,11 +505,20 @@ def pack_failure_hint(*, failure_mode: str, repo_root: Path) -> str:
     remedy, but its FIRST named command depends on `repo_root`: the standalone
     `install-worktree-pack` recipe when this checkout defines it, `just
     bootstrap` when it does not. The other two modes are unaffected — neither
-    is fixed by installing the pack.
+    is fixed by installing the pack, and they short-circuit BEFORE the read, so
+    a routed mode is total and cannot be denied its remedy by an unreadable
+    justfile it never needed.
+
+    ⛔ WHICH IS WHY THIS IS NOT A TOTAL `str`. The pack modes' first named
+    command is chosen from the checkout, so the composition inherits that
+    read's failure track rather than absorbing it into a sentence that reads
+    as established. `IOResult[...]` is spelled out rather than hidden behind an
+    alias because `checks/public_api_result_typed` reads the terminal name off
+    the SOURCE annotation via `ast`, and an alias reads to it as a bare name.
     """
     routed = _PACK_REMEDIES.get(failure_mode)
     if routed is not None:
-        return routed
-    if _root_justfile_wires_pack_install(repo_root=repo_root):
-        return _WORKTREE_PACK_WIRED_REMEDY
-    return _WORKTREE_PACK_UNWIRED_REMEDY
+        return IOSuccess(routed)
+    return _root_justfile_wires_pack_install(repo_root=repo_root).map(
+        lambda wired: _WORKTREE_PACK_WIRED_REMEDY if wired else WORKTREE_PACK_UNWIRED_REMEDY
+    )
