@@ -51,6 +51,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.cross_repo.release_lane_issue import (  # noqa: E402
     ACTION_NOOP,
@@ -177,17 +179,24 @@ def _survey(
 
     A lane that cannot be measured contributes a NOTICE as well as the exit
     code, which is what keeps it out of the recovered state downstream.
+
+    `fetch_runs` rides `IOResult`, and the failure it names is LOGGED with its
+    detail — which of the three unmeasurable conditions fired — beside the
+    sentence naming all three. The NOTICE deliberately keeps that sentence
+    alone: it is issue-body text, and widening what a reader of the issue sees
+    is a separate decision from putting the fetch on the railway.
     """
     worst = _HEALTHY
     notices: list[str] = []
     for workflow in workflows:
-        runs = fetch_runs(slug=slug, workflow=workflow, token=token)
-        if runs is None:
-            log.error(_UNMEASURED, workflow=workflow, repository=slug)
+        fetched = fetch_runs(slug=slug, workflow=workflow, token=token)
+        if isinstance(fetched, IOFailure):
+            unmeasurable = unsafe_perform_io(fetched.failure())
+            log.error(_UNMEASURED, workflow=workflow, repository=slug, detail=unmeasurable.detail)
             notices.append(f"{workflow}: {_UNMEASURED}")
             worst = max(worst, _CANNOT_MEASURE)
             continue
-        state = lane_state(runs=runs)
+        state = lane_state(runs=unsafe_perform_io(fetched.unwrap()))
         text = notice_text(workflow=workflow, state=state)
         if not text:
             log.info("release lane healthy", workflow=workflow, repository=slug)

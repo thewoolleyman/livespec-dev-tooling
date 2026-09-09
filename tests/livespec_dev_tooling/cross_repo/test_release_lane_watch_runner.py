@@ -11,6 +11,18 @@ run history replayed through it is the same RECORDED `thewoolleyman/livespec`
 `release-tag.yml` window the sibling `test_release_lane_watch` module documents:
 the `v0.37.0` failure of 2026-08-20 over the `v0.30.3` green of 2026-08-12, and
 the `v0.37.1` green of 2026-08-21 that ended the block.
+
+⛔ WHY THE FAILURE-TRACK TESTS EACH NAME THE DETAIL. `fetch_runs` rides
+`IOResult[list[dict[str, str]], LaneUnmeasurable]`, and the `None` that track
+replaces covered THREE conditions — the forge did not answer a page readably,
+a page answered with something that is not a runs object, a page carried no
+`workflow_runs` list. Three tests that each assert only "this left the success
+track" would be assertion-identical over fixtures that differ in exactly the
+thing the conversion exists for, and would all pass against one collapsed
+failure value: the sentinel wearing a railway. The detail is the only
+observable that tells the three apart. The exit code stays three-valued and
+all three still fold onto `2`; what changes is that the operator now reads
+WHICH one happened instead of a sentence naming all three at once.
 """
 
 from __future__ import annotations
@@ -21,6 +33,8 @@ import urllib.error
 import urllib.request
 
 import pytest
+from returns.io import IOFailure, IOSuccess
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.cross_repo.release_lane_watch_runner import fetch_runs, main
 
@@ -167,13 +181,26 @@ def test_fetch_runs_queries_the_workflow_scoped_endpoint(monkeypatch: pytest.Mon
     forge = _RecordedForge(bodies=[_page(runs=_RECORDED_RED_TAIL)])
     monkeypatch.setattr("urllib.request.urlopen", forge)
 
-    runs = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
 
-    assert runs == _RECORDED_RED_TAIL
+    assert isinstance(fetched, IOSuccess)
+    assert unsafe_perform_io(fetched.unwrap()) == _RECORDED_RED_TAIL
     assert forge.requested == [
         f"https://api.github.com/repos/{_SLUG}/actions/workflows/{_WORKFLOW}"
         "/runs?per_page=100&page=1"
     ]
+
+
+def test_a_measured_lane_with_no_runs_at_all_stays_on_the_success_track(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An ANSWER is an answer however it reads: an empty history is measured, not unmeasurable."""
+    monkeypatch.setattr("urllib.request.urlopen", _RecordedForge(bodies=[_page(runs=[])]))
+
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+
+    assert isinstance(fetched, IOSuccess)
+    assert unsafe_perform_io(fetched.unwrap()) == []
 
 
 def test_fetch_runs_pages_until_a_short_page_then_stops(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -184,10 +211,10 @@ def test_fetch_runs_pages_until_a_short_page_then_stops(monkeypatch: pytest.Monk
     forge = _RecordedForge(bodies=[_page(runs=full + full[:40]), _page(runs=full[:3])])
     monkeypatch.setattr("urllib.request.urlopen", forge)
 
-    runs = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
 
-    assert runs is not None
-    assert len(runs) == 103
+    assert isinstance(fetched, IOSuccess)
+    assert len(unsafe_perform_io(fetched.unwrap())) == 103
     assert len(forge.requested) == 2
 
 
@@ -199,8 +226,78 @@ def test_fetch_runs_stops_at_the_page_ceiling(monkeypatch: pytest.MonkeyPatch) -
     forge = _RecordedForge(bodies=[_page(runs=full + full)] * 4)
     monkeypatch.setattr("urllib.request.urlopen", forge)
 
-    runs = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
 
-    assert runs is not None
-    assert len(runs) == 400
+    assert isinstance(fetched, IOSuccess)
+    assert len(unsafe_perform_io(fetched.unwrap())) == 400
     assert len(forge.requested) == 4
+
+
+def test_an_unreachable_forge_names_the_transport_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Condition one of three: the page did not answer at all, and the detail says so."""
+    monkeypatch.setattr("urllib.request.urlopen", _UnreachableForge())
+
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+
+    assert isinstance(fetched, IOFailure)
+    unmeasurable = unsafe_perform_io(fetched.failure())
+    assert unmeasurable.slug == _SLUG
+    assert unmeasurable.workflow == _WORKFLOW
+    assert "page 1" in unmeasurable.detail
+    assert "URLError" in unmeasurable.detail
+    assert "connection refused" in unmeasurable.detail
+
+
+def test_a_body_that_is_not_json_names_the_decode_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An HTML error page reaches the SAME clause as a dead socket, so the type disambiguates."""
+    monkeypatch.setattr("urllib.request.urlopen", _RecordedForge(bodies=[b"<html>502</html>"]))
+
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+
+    assert isinstance(fetched, IOFailure)
+    unmeasurable = unsafe_perform_io(fetched.failure())
+    assert "JSONDecodeError" in unmeasurable.detail
+    assert "URLError" not in unmeasurable.detail
+
+
+def test_a_json_body_that_is_not_an_object_names_what_it_was(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Condition two of three: the page parsed, and is not a runs object."""
+    monkeypatch.setattr("urllib.request.urlopen", _RecordedForge(bodies=[b"[]"]))
+
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+
+    assert isinstance(fetched, IOFailure)
+    assert "answered with a list, not a runs object" in unsafe_perform_io(fetched.failure()).detail
+
+
+def test_a_payload_without_workflow_runs_names_the_missing_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Condition three of three: a `Not Found` body is an object carrying no history."""
+    body = json.dumps({"message": "Not Found"}).encode("utf-8")
+    monkeypatch.setattr("urllib.request.urlopen", _RecordedForge(bodies=[body]))
+
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+
+    assert isinstance(fetched, IOFailure)
+    assert "carries no `workflow_runs` list" in unsafe_perform_io(fetched.failure()).detail
+
+
+def test_a_later_page_that_stops_answering_names_its_own_page_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The page number is evidence: a full first page then a dead second is not a dead lane."""
+    full = [
+        {"conclusion": "failure", "created_at": f"2026-08-20T11:{n:02d}:00Z"} for n in range(100)
+    ]
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        _RecordedForge(bodies=[_page(runs=full), b"<html>502</html>"]),
+    )
+
+    fetched = fetch_runs(slug=_SLUG, workflow=_WORKFLOW, token=_TOKEN)
+
+    assert isinstance(fetched, IOFailure)
+    assert "page 2" in unsafe_perform_io(fetched.failure()).detail

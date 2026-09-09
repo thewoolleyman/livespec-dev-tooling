@@ -36,6 +36,12 @@ GitHub Actions annotation is a presentation concern of the venue, not of this
 module (`print` is banned here by T20 and direct writes by
 `check-no-write-direct`; diagnostics flow through structlog to stderr, the same
 output discipline every module in this package holds).
+
+THE EXIT CODE IS THE VENUE'S CONTRACT; IT IS NOT THIS MODULE'S ERROR CHANNEL.
+Inside the module the CANNOT-MEASURE track is `IOResult`'s failure track, and
+`main` is the one place the three-way collapse onto `2` happens. That separation
+is what lets the operator read WHICH of the three conditions fired without
+widening the exit contract the reusable workflow renders annotations from.
 """
 
 from __future__ import annotations
@@ -46,6 +52,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -54,13 +61,15 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.cross_repo.release_lane_watch import (  # noqa: E402
     lane_state,
     notice_text,
 )
 
-__all__: list[str] = ["fetch_runs", "main"]
+__all__: list[str] = ["LaneUnmeasurable", "fetch_runs", "main"]
 
 # Deliberately far wider than any observed block. The real 123-cut outage reads
 # as 4 cuts at limit 20 and 84 at limit 100 -- a limit is a measurement boundary,
@@ -75,12 +84,51 @@ _FAILING = 1
 _CANNOT_MEASURE = 2
 
 
-def fetch_runs(*, slug: str, workflow: str, token: str) -> list[dict[str, str]] | None:
-    """Return the lane's decided runs, or None when the lane cannot be measured.
+@dataclass(frozen=True, kw_only=True)
+class LaneUnmeasurable:
+    """This run did not obtain `workflow`'s history from `slug`, and why not.
 
-    `None` is the CANNOT-MEASURE track and is never conflated with an empty
-    history: an unreachable, unauthorized, or unparsable forge must not read as a
-    lane with no failures in it.
+    ONE inhabitant rather than three, for the same reason
+    `_settle_window.LatestReleaseUnreadable` has one: all three conditions call
+    for the SAME response — do not report healthy, do not report a finding, exit
+    CANNOT MEASURE. `detail` distinguishes them for the human without inventing
+    a discriminated union no consumer branches on.
+
+    `detail` names the PAGE as well as the condition. A full first page followed
+    by a dead second is a different fact from a lane that never answered at all:
+    the first says the forge was reachable and the window is merely short, the
+    second says nothing was measured. Reading them as one sentence is exactly
+    the flattening this type replaces.
+    """
+
+    slug: str
+    workflow: str
+    detail: str
+
+
+def fetch_runs(
+    *, slug: str, workflow: str, token: str
+) -> IOResult[list[dict[str, str]], LaneUnmeasurable]:
+    """The lane's decided runs, or the reason this run could not measure the lane.
+
+    The failure track IS the CANNOT-MEASURE track, and it is never conflated
+    with an empty history: an unreachable, unauthorized, or unparsable forge
+    must not read as a lane with no failures in it. The converse holds too and
+    is the reason the success track keeps EVERY answer it managed to obtain —
+    an answer is an answer however it reads, so a lane the forge measured as
+    having no runs at all is `IOSuccess([])`, not a failure.
+
+    The three conditions the replaced `None` covered, now told apart:
+
+    - the page did not answer readably — a dead socket, a timeout, or bytes
+      that are not JSON. `detail` carries the exception TYPE, which is what
+      separates an outage (`URLError`) from an HTML error page served with a
+      200 (`JSONDecodeError`); both reach this one clause.
+    - the page parsed and is NOT an object. The runs endpoint exists SOLELY to
+      answer with one, so a JSON array or scalar there is a non-answer.
+    - the page is an object carrying no `workflow_runs` list. A `Not Found`
+      body parses cleanly and has no history in it — reporting that as an
+      empty lane would be the vacuous pass this watcher exists to remove.
     """
     collected: list[dict[str, str]] = []
     for page in range(1, _PAGES + 1):
@@ -94,18 +142,33 @@ def fetch_runs(*, slug: str, workflow: str, token: str) -> list[dict[str, str]] 
         try:
             with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:  # noqa: S310
                 parsed: object = json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-            return None
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as unanswered:
+            return _unmeasurable(
+                slug=slug,
+                workflow=workflow,
+                detail=(
+                    f"page {page} did not answer readably — "
+                    f"{type(unanswered).__name__}: {unanswered}"
+                ),
+            )
         # The two narrowings below are the typed parse boundary: `json.loads`
         # yields `Any`, and a forge that answered with something OTHER than an
         # object carrying a run list has not measured the lane — that is the
         # CANNOT-MEASURE track, never an empty history.
         if not isinstance(parsed, dict):
-            return None
+            return _unmeasurable(
+                slug=slug,
+                workflow=workflow,
+                detail=f"page {page} answered with a {type(parsed).__name__}, not a runs object",
+            )
         payload = cast("Mapping[str, object]", parsed)
         runs = payload.get("workflow_runs")
         if not isinstance(runs, list):
-            return None
+            return _unmeasurable(
+                slug=slug,
+                workflow=workflow,
+                detail=f"page {page} carries no `workflow_runs` list",
+            )
         page_runs = cast("list[Mapping[str, object]]", runs)
         collected.extend(
             {
@@ -116,7 +179,19 @@ def fetch_runs(*, slug: str, workflow: str, token: str) -> list[dict[str, str]] 
         )
         if len(page_runs) < _PER_PAGE:
             break
-    return collected
+    return IOSuccess(collected)
+
+
+def _unmeasurable(
+    *, slug: str, workflow: str, detail: str
+) -> IOResult[list[dict[str, str]], LaneUnmeasurable]:
+    """The failure track, built once so the three conditions cannot drift apart.
+
+    The lane identity is the same at all three sites and only `detail` differs;
+    repeating `slug=` and `workflow=` three times is how one of them ends up
+    naming a different lane than the request that failed.
+    """
+    return IOFailure(LaneUnmeasurable(slug=slug, workflow=workflow, detail=detail))
 
 
 def main() -> int:
@@ -143,14 +218,19 @@ def main() -> int:
         )
         return _CANNOT_MEASURE
 
-    runs = fetch_runs(slug=slug, workflow=workflow, token=token)
-    if runs is None:
+    fetched = fetch_runs(slug=slug, workflow=workflow, token=token)
+    if isinstance(fetched, IOFailure):
+        # The sentence is unchanged because it is what the operator greps for;
+        # `detail` is what tells them which of its three clauses actually fired.
+        unmeasurable = unsafe_perform_io(fetched.failure())
         log.error(
             "CANNOT MEASURE — forge unreachable, unauthorized, or unparsable",
             workflow=workflow,
             repository=slug,
+            detail=unmeasurable.detail,
         )
         return _CANNOT_MEASURE
+    runs = unsafe_perform_io(fetched.unwrap())
 
     state = lane_state(runs=runs)
     text = notice_text(workflow=workflow, state=state)
