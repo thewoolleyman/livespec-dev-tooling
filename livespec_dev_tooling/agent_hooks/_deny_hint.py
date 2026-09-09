@@ -51,14 +51,44 @@ a surprising mutation from a hook the agent did not ask to run, and
 an unbounded install on a path required to stay sub-second. The
 remedy is one line the agent runs deliberately, in the venue, where
 its output is visible.
+
+THE COMPOSITION IS NOT TOTAL, AND NOW SAYS SO (livespec-dev-tooling
+-qndn.10). The prescription is chosen by READING files in the venue, so
+a path that refuses to be read establishes NEITHER arm. That non-answer
+used to be spelled as the absent-runner arm — an empty body from
+`_read_text`, indistinguishable from the file simply not being there —
+which left the hint asserting "the runner is NOT installed in this
+working tree" on the strength of a justfile nobody could read. That is
+the same class of defect the venue-awareness above exists to fix, one
+level down: a claim about the venue that the venue never supported. It
+is now the FAILURE track. ABSENCE stays on the success track, because
+absence IS the answer the probe is looking for; only a path that is
+there and unreadable — a permission refusal, a directory where a file
+belongs — rides the rail.
 """
 
 from __future__ import annotations
 
 import re
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 
+# `returns` is VENDORED, not installed, so a bare import resolves only if some
+# EARLIER import in the same process already put `_vendor/` on `sys.path`. This
+# module is imported directly by its own tests as well as through the guard, so
+# it establishes the path itself rather than relying on whichever importer
+# happened to run first.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
 __all__: list[str] = [
+    "VenueUnreadable",
     "deny_hint",
 ]
 
@@ -72,6 +102,14 @@ _PACK_FRAGMENT_NAME = "worktree.just"
 _PACK_RUNNER_NAME = "gate-run.sh"
 _JUSTFILE_NAMES: tuple[str, ...] = ("justfile", "Justfile", ".justfile")
 _PRESCRIBED_RECIPES: tuple[str, ...] = ("gate-start", "gate-wait")
+
+# The negative verdict, NAMED: `flake8-boolean-trap` (FBT003) refuses a bare
+# boolean literal at a call site, and lifting one onto the railway is a call —
+# the spelling `_docs_only_change._ABSENT_REVISION_IS_NOT_DOCS_ONLY` already
+# established for this. It is ONE name rather than one per site because every
+# site below means the same thing by it: nothing established that the
+# prescribed recipes resolve here.
+_UNRESOLVED: bool = False
 
 # The rationale doc is checkout-local to the repo that SHIPS this hook, so
 # the citation names that repo and carries the address that resolves from
@@ -135,19 +173,64 @@ _HINT_TAIL = (
 )
 
 
-def _read_text(*, path: Path) -> str:
-    """Read `path` as text, degrading an unreadable path to an empty body.
+@dataclass(frozen=True, kw_only=True)
+class VenueUnreadable:
+    """A path the venue probe had to read, and could not.
+
+    Deliberately NOT inhabited by "the path is not there": absence is the
+    ANSWER the probe is looking for and travels the success track as the
+    empty body every caller already reads as "the recipes do not resolve".
+    What lands here is a path that exists and refuses to yield its content,
+    which establishes neither prescription arm.
+    """
+
+    path: str
+    detail: str
+
+    @property
+    def hint(self) -> str:
+        """The deny hint for a venue whose prescription could not be probed.
+
+        THE DENY STANDS. This is a hook whose only other verdict is the
+        fail-open ALLOW, so a failure that reached the boundary would let
+        through the bare backgrounded gate the hook exists to deny; the
+        agent gets a complete remedy on this track too. What changes is the
+        CLAIM: the two probed arms assert the runner is present or absent,
+        neither was established here, so this one names the path that could
+        not be read and prescribes the step that is correct either way —
+        installing the pack, which no-ops where it is already installed.
+        """
+        # The path is placed at the END of its sentence deliberately: a
+        # sentence CONTINUING after it would read as part of it, and the
+        # venue paths this hint names routinely end in `.just`.
+        prescription = (
+            "Whether the sanctioned detached runner resolves in this working tree could NOT be "
+            f"established — a path the venue probe had to read is there and refused to yield "
+            f"its content ({self.detail}): {self.path}. So take the step that is correct either "
+            "way — install the worktree-discipline pack HERE, which no-ops where it is already "
+            f"installed, with exactly: {_INSTALL_COMMAND} — then dispatch through the runner, "
+            f"which IS allowed here: {_DISPATCH_CLAUSE}"
+        )
+        return f"{_HINT_PREAMBLE}{prescription}{_HINT_TAIL}{_CITATION}"
+
+
+def _read_text(*, path: Path) -> IOResult[str, VenueUnreadable]:
+    """Read `path` as text; an ABSENT path answers, an unreadable one does not.
 
     A venue probe must never raise: the caller's only alternative is the
     hook's fail-open boundary, which would ALLOW the bare backgrounded
-    gate that hook exists to deny. An unreadable justfile or fragment
-    means "cannot establish that the recipes resolve", which is exactly
-    what an empty body yields downstream.
+    gate that hook exists to deny. So both non-answers are values — but
+    they are no longer the SAME value. A path that is not there is the
+    probe's ordinary finding and stays on the success track as the empty
+    body callers read as "the recipes do not resolve"; every other
+    `OSError` establishes nothing at all and rides the failure track.
     """
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
+        return IOSuccess(path.read_text(encoding="utf-8", errors="replace"))
+    except (FileNotFoundError, NotADirectoryError):
+        return IOSuccess("")
+    except OSError as exc:
+        return IOFailure(VenueUnreadable(path=str(path), detail=type(exc).__name__))
 
 
 def _repo_root(*, start: Path) -> Path | None:
@@ -163,32 +246,44 @@ def _repo_root(*, start: Path) -> Path | None:
     return None
 
 
-def _imports_pack_fragment(*, root: Path) -> bool:
+def _imports_pack_fragment(*, root: Path) -> IOResult[bool, VenueUnreadable]:
     """True when the root justfile imports the pack's `worktree.just`."""
     target = f"{_PACK_DIR_NAME}/{_PACK_FRAGMENT_NAME}"
     for name in _JUSTFILE_NAMES:
         body = _read_text(path=root / name)
-        for line in body.splitlines():
-            if line.lstrip().startswith("import") and target in line:
-                return True
-    return False
+        if not is_successful(body):
+            return IOFailure(unsafe_perform_io(body.failure()))
+        imported = any(
+            line.lstrip().startswith("import") and target in line
+            for line in unsafe_perform_io(body.unwrap()).splitlines()
+        )
+        if imported:
+            return IOSuccess(imported)
+    return IOSuccess(_UNRESOLVED)
 
 
-def _gate_recipes_resolve(*, root: Path | None) -> bool:
+def _gate_recipes_resolve(*, root: Path | None) -> IOResult[bool, VenueUnreadable]:
     """True when `just gate-start` / `gate-wait` actually resolve at `root`."""
     if root is None:
-        return False
+        return IOSuccess(_UNRESOLVED)
     pack_dir = root / _PACK_DIR_NAME
     fragment = _read_text(path=pack_dir / _PACK_FRAGMENT_NAME)
+    if not is_successful(fragment):
+        return IOFailure(unsafe_perform_io(fragment.failure()))
+    body = unsafe_perform_io(fragment.unwrap())
     declared = all(
-        re.search(rf"(?m)^{re.escape(name)}\b", fragment) is not None
-        for name in _PRESCRIBED_RECIPES
+        re.search(rf"(?m)^{re.escape(name)}\b", body) is not None for name in _PRESCRIBED_RECIPES
     )
     runner_installed = (pack_dir / _PACK_RUNNER_NAME).is_file()
-    return declared and runner_installed and _imports_pack_fragment(root=root)
+    # The justfile is read only where the fragment already answered YES, which
+    # keeps the short-circuit the plain-bool version had: a venue with no pack
+    # at all resolves to False without any justfile read to fail on.
+    if not (declared and runner_installed):
+        return IOSuccess(_UNRESOLVED)
+    return _imports_pack_fragment(root=root)
 
 
-def deny_hint(*, cwd: Path) -> str:
+def deny_hint(*, cwd: Path) -> IOResult[str, VenueUnreadable]:
     """Compose the deny hint against the venue the hook is firing in.
 
     Every command the hint names resolves in `cwd`, and the one path it
@@ -197,9 +292,14 @@ def deny_hint(*, cwd: Path) -> str:
     follow it. The prescription is venue-probed because a recipe either
     resolves here or does not; the citation is not, because a
     repo-qualified address is correct from every venue.
+
+    The probe can also fail to answer, and the return is a railway value
+    for exactly that third case — see this module's docstring. The failure
+    renders its own hint, so consuming the failure track is not a licence
+    to hand the denied agent nothing.
     """
-    root = _repo_root(start=cwd)
-    prescription = (
-        _RUNNER_PRESENT_CLAUSE if _gate_recipes_resolve(root=root) else _RUNNER_ABSENT_CLAUSE
+    return _gate_recipes_resolve(root=_repo_root(start=cwd)).map(
+        lambda resolves: f"{_HINT_PREAMBLE}"
+        f"{_RUNNER_PRESENT_CLAUSE if resolves else _RUNNER_ABSENT_CLAUSE}"
+        f"{_HINT_TAIL}{_CITATION}"
     )
-    return f"{_HINT_PREAMBLE}{prescription}{_HINT_TAIL}{_CITATION}"
