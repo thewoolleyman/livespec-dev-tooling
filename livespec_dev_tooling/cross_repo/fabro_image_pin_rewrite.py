@@ -25,10 +25,11 @@ it pushes carries its layer prefix in both the `-sha-<short>` and `-v<X.Y.Z>`
 forms — a BARE `vX.Y.Z` is never published. So rewriting an unprefixed pin to a
 bare release tag names an image that will never exist, and because the rewrite
 "succeeds" it surfaces as a clean-looking diff on a green auto-merge bump PR
-pointing at nothing. The refusal is carried in the TYPE (`str | None`,
-`tuple[str, int] | None`) so no caller can silently inherit the old fallback;
-`main()` turns it into a distinct `::error::` telling the operator to migrate
-the pin to a prefixed tag by hand.
+pointing at nothing. The refusal is carried in the TYPE
+(`Result[str, TagRewriteRefused]`, `Result[tuple[str, int], TagRewriteRefused]`)
+so no caller can silently inherit the old fallback; `main()` turns the refusal's
+`reason` into a distinct `::error::` telling the operator what that particular
+shape needs — migrating the pin to a prefixed tag by hand, in both cases.
 
 Output discipline mirrors the sibling `justfile_canonical_reconcile` entry
 point: the pure `rewrite_layered_docker_tag` / `rewrite_pin_in_text` core does
@@ -211,9 +212,13 @@ def main() -> int:
     TWO distinct failures return non-zero with DIFFERENT `::error::`
     annotations, because they need different operator actions:
 
-    - An unrewritable tag shape (`rewrite_pin_in_text` returned `None`) — the
-      pin carries no layer prefix, so no bump can be synthesized and a human
-      must migrate it to a prefixed tag before the fan-out can maintain it.
+    - An unrewritable tag shape (`rewrite_pin_in_text` returned a
+      `Failure(TagRewriteRefused)`) — the refusal's `reason` selects the advice,
+      because the two shapes fail differently: `no-version-anchor` carries no
+      `vX.Y.Z` at all, so there is no version to bump, while `already-bare`
+      carries a version but no `<layer>-` prefix, so the target layer cannot be
+      inferred. Both need a human to migrate the pin to a layer-prefixed tag
+      before the fan-out can maintain it.
     - A match count other than 1 — the pin the autodiscovery record named is
       gone, so the record itself went stale. This is the heredoc's original
       fail-fast, now behind a tested surface.
