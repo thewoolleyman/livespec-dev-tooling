@@ -114,6 +114,7 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
     head_red_awaiting_green,
 )
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
@@ -520,11 +521,16 @@ def main() -> int:
     # its `tuple[str, ...]` return has nowhere to carry an absent config.
     # Both arms are reachable only through this supervisor, so loading once
     # here renders the diagnostic and exits non-zero before either runs,
-    # without threading `None` through functions whose types say nothing
-    # about configuration. The ordinary path pays one extra `pyproject.toml`
-    # read; the msg-path arm already performed this load unconditionally via
-    # `_classify_staged`.
-    if load_config_or_report(repo_root=Path.cwd(), log=log, check_id="red_green_replay") is None:
+    # without threading an unparsed config through functions whose types say
+    # nothing about configuration. The ordinary path pays one extra
+    # `pyproject.toml` read; the msg-path arm already performed this load
+    # unconditionally via `_classify_staged`.
+    #
+    # The loaded `Config` is deliberately DISCARDED: this frame wants the
+    # parse to have SUCCEEDED, not the value, and the arms below re-read it
+    # where they need it. Only the failure track is consumed here.
+    preflight = load_config_or_report(repo_root=Path.cwd(), log=log, check_id="red_green_replay")
+    if not is_successful(preflight):
         return 1
     if len(sys.argv) <= 1:
         # No msg-path argv: the canonical-aggregate / `just check` /

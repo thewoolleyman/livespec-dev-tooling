@@ -107,6 +107,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
@@ -210,9 +211,10 @@ def main() -> int:
     )
     log = structlog.get_logger("commit_pairs_source_and_test")
     cwd = Path.cwd()
-    config = load_config_or_report(repo_root=cwd, log=log, check_id="commit_pairs_source_and_test")
-    if config is None:
+    loaded = load_config_or_report(repo_root=cwd, log=log, check_id="commit_pairs_source_and_test")
+    if not is_successful(loaded):
         return 1
+    config = unsafe_perform_io(loaded.unwrap())
 
     if _head_has_unpaired_red_trailers(cwd=cwd):
         log.info(

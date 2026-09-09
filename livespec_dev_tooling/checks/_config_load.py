@@ -40,12 +40,36 @@ the caller still exits non-zero, and the raised message still names the
 offending key and its blessed spellings; nothing a consumer's config is
 rejected for today becomes accepted.
 
-`None` rather than an exit code is the return, because the caller's
-non-zero is not always a literal `1` — `check_mutation` returns it up
-through a gate that already speaks in `int | None` — and because a
-sentinel exit code would have to be distinguishable from a legitimately
-loaded `Config`. The absence type says "there is no config to work with"
-and leaves the exit to the supervisor that owns it.
+A RAILWAY VALUE RATHER THAN AN EXIT CODE is the return, for the reason
+the `None` it replaces was chosen: the caller's non-zero is not always a
+literal `1` — `check_mutation` returns it up through a gate that already
+speaks in `int | None` — so the exit stays with the supervisor that owns
+it, and a sentinel exit code would have had to be distinguishable from a
+legitimately loaded `Config` anyway.
+
+WHAT CHANGED AT `livespec-dev-tooling-qndn.17` is the other half of that
+argument. `Config | None` spelled a FAILURE as an absence. The type said
+only that there might be no config; it did not say that reading one had
+been ATTEMPTED AND FAILED, so a caller was free to read `None` as
+"nothing to work with" and carry on, and nothing would have objected.
+Every one of the 33 supervisors happened to exit non-zero, which is what
+kept the collapse inert — but that is a property of 33 call sites all
+being written correctly, not a property the return type secured. A
+failure track cannot be carried on by accident.
+
+`IOResult` and not `Result`, because both entry points touch the world:
+one reads the consumer's `pyproject.toml`, the other shells out to git
+for the tracked-file universe. Claiming purity here would blur the
+distinction the sibling conversions in this tree sharpened.
+
+THE FAILURE TRACK CARRIES THE `ConfigParseError` THIS MODULE HAS ALREADY
+RENDERED, and it is EVIDENCE rather than a second report. It names the
+offending key and its blessed spellings, so a caller with a richer
+verdict surface than an exit code can use it, and a caller that only
+exits non-zero can leave it unread. ⛔ What a caller must NOT do is
+render it again: the single definition above would then have two call
+sites per failure, and the operator would read the same diagnostic
+twice.
 """
 
 from __future__ import annotations
@@ -58,6 +82,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
@@ -100,15 +125,16 @@ def _report_parse_failure(
 
 def load_config_or_report(
     *, repo_root: Path, log: structlog.stdlib.BoundLogger, check_id: str
-) -> Config | None:
-    """Load the consumer config, or render the parse failure and return `None`.
+) -> IOResult[Config, ConfigParseError]:
+    """Load the consumer config, or render the parse failure onto the failure track.
 
-    Returns the parsed `Config` on success. On `ConfigParseError` it emits
+    Returns `IOSuccess(config)` on success. On `ConfigParseError` it emits
     exactly ONE structured `log.exception` carrying `check_id`,
-    `status="fail"` and `error`, and returns `None` — the caller's cue to
-    exit non-zero. It NEVER re-raises and never propagates: a supervisor
-    that let the exception through would put the interpreter's traceback
-    back on stderr, which is the failure mode this helper exists to remove.
+    `status="fail"` and `error`, and returns `IOFailure(exc)` — the
+    caller's cue to exit non-zero, carrying the error it exits over. It
+    NEVER re-raises and never propagates: a supervisor that let the
+    exception through would put the interpreter's traceback back on
+    stderr, which is the failure mode this helper exists to remove.
 
     The catch is NARROW by design and stays narrow. `ConfigParseError` is
     the loader's declared IO-layer failure; widening this to `Exception`
@@ -117,15 +143,15 @@ def load_config_or_report(
     marked, sole boundary catch inside a declared supervisor entry file.
     """
     try:
-        return load_config(repo_root=repo_root)
+        return IOSuccess(load_config(repo_root=repo_root))
     except ConfigParseError as exc:
         _report_parse_failure(log=log, check_id=check_id, exc=exc)
-        return None
+        return IOFailure(exc)
 
 
 def resolve_check_context_or_report(
     *, log: structlog.stdlib.BoundLogger, check_id: str
-) -> tuple[Path, tuple[Path, ...], Config] | None:
+) -> IOResult[tuple[Path, tuple[Path, ...], Config], ConfigParseError]:
     """Resolve `(repo_root, universe, config)`, or render the parse failure.
 
     The entry point for the applies-to-all checks — the ones that open
@@ -158,5 +184,5 @@ def resolve_check_context_or_report(
         root, universe = resolve_check_universe()
     except ConfigParseError as exc:
         _report_parse_failure(log=log, check_id=check_id, exc=exc)
-        return None
-    return root, universe, load_config(repo_root=root)
+        return IOFailure(exc)
+    return IOSuccess((root, universe, load_config(repo_root=root)))

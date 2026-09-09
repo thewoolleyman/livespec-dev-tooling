@@ -54,6 +54,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 
@@ -126,11 +128,12 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("hook_trees_not_io_exempt")
-    config = load_config_or_report(
+    loaded = load_config_or_report(
         repo_root=Path.cwd(), log=log, check_id="hook_trees_not_io_exempt"
     )
-    if config is None:
+    if not is_successful(loaded):
         return 1
+    config = unsafe_perform_io(loaded.unwrap())
     # Every offender is reported, not just the first, so one fix-and-rerun
     # cycle sees the whole set.
     offenders = find_hook_tree_declarations(io_trees=config.io_trees)

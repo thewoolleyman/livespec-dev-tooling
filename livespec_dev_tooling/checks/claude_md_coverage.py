@@ -33,6 +33,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
@@ -76,9 +78,10 @@ def main() -> int:
     )
     log = structlog.get_logger("claude_md_coverage")
     cwd = Path.cwd()
-    config = load_config_or_report(repo_root=cwd, log=log, check_id="claude_md_coverage")
-    if config is None:
+    loaded = load_config_or_report(repo_root=cwd, log=log, check_id="claude_md_coverage")
+    if not is_successful(loaded):
         return 1
+    config = unsafe_perform_io(loaded.unwrap())
     offenders: list[Path] = []
     # Announced BESIDE the accessor, not through it. This check iterates
     # `target_dirs` in a bare `for` loop with no role gate, so a declared-absent
