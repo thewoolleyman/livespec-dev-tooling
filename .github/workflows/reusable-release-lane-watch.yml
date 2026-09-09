@@ -17,16 +17,20 @@
 # because most of the lane's life IS the failure. This job reports STATE
 # on a schedule instead — "currently failing, N cuts, since T".
 #
-# WHAT IT DOES NOT DO: it performs no mutation and no auto-anything. A red
-# scheduled job IS the report. The lane set is supplied by the CALLER and
-# is never hardcoded here: the fleet is non-uniform, and only two repos
-# ship a `release-tag.yml` at all.
+# WHAT IT DOES (Option B, livespec-n33rwg.5): it reconciles ONE durable
+# `release-lane-red` issue per repo — opening or updating it while any
+# watched lane is failing or unmeasurable, and closing it on recovery — so
+# the DURABLE issue is the report, read by needs-attention-internal Signal 9
+# Shape C, rather than a transient red run nobody reads. The lane set is
+# supplied by the CALLER and is never hardcoded here: the fleet is
+# non-uniform, and only two repos ship a `release-tag.yml` at all.
 #
 # EXIT CODES ARE THREE-VALUED ON PURPOSE, and both non-zero values red the
-# job: 1 means the lane is FAILING, 2 means it CANNOT BE MEASURED (the
-# forge was unreachable, unauthorized, or unparsable). A watcher that
-# cannot measure must never be mistaken for one reporting healthy, so the
-# annotations say which of the two happened.
+# job: 1 means at least one lane is FAILING, 2 means at least one CANNOT BE
+# MEASURED or the issue write did not land (the forge was unreachable,
+# unauthorized, or unparsable). The job status still reflects lane health
+# even though the durable signal is now the issue; a watcher that cannot
+# measure must never be mistaken for one reporting healthy.
 
 name: reusable-release-lane-watch
 
@@ -54,6 +58,7 @@ on:
 permissions:
   actions: read
   contents: read
+  issues: write
 
 jobs:
   watch:
@@ -70,31 +75,21 @@ jobs:
           path: .livespec-dev-tooling
           fetch-depth: 1
 
-      - name: Report each watched lane's state
+      - name: Reconcile the release-lane-red issue against the watched lanes
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
           WORKFLOWS: ${{ inputs.workflows }}
-          MIN_CONSECUTIVE: ${{ inputs.min_consecutive }}
         run: |
           set -uo pipefail
           export PYTHONPATH=.livespec-dev-tooling
-          # The runner emits structured diagnostics and a THREE-VALUED exit; the
-          # operator annotation is rendered here because it is a presentation
-          # concern and `print` is banned in the support tree. Both 1 and 2 red
-          # the job — but they say WHICH, because a watcher that cannot measure
-          # must never be mistaken for one reporting healthy.
-          worst=0
-          for workflow in ${WORKFLOWS}; do
-            python3 -m livespec_dev_tooling.cross_repo.release_lane_watch_runner \
-              "${workflow}" && continue
-            rc=$?
-            if [ "${rc}" = "2" ]; then
-              echo "::warning::${workflow} lane could not be measured — NOT a healthy verdict"
-              [ "${worst}" = "1" ] || worst=2
-            else
-              echo "::error::${workflow} lane is persistently failing"
-              worst=1
-            fi
-          done
-          exit "${worst}"
+          # Option B (livespec-n33rwg.5): release_lane_issue_runner surveys every
+          # watched lane, then opens / updates / closes the ONE per-repo durable
+          # release-lane-red issue and returns the sibling THREE-VALUED worst exit
+          # (0 healthy / 1 failing / 2 cannot-measure-or-write-did-not-land), so
+          # the job status still reflects lane health while the durable signal is
+          # the issue. `issues: write` above is what lets this run write it. The
+          # transient failure threshold stays the detector's default (2) inside
+          # notice_text; the min_consecutive input is retained for a future run
+          # that plumbs it through. WORKFLOWS is intentionally unquoted so each
+          # whitespace-separated lane name becomes a separate argv token.
+          python3 -m livespec_dev_tooling.cross_repo.release_lane_issue_runner ${WORKFLOWS}
