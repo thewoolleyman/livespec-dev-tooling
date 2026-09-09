@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.69.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.3...v1.69.4) (2026-09-09)
+
+
+### Bug Fixes
+
+* **reconstruct:** rebuild the ghcr registry mirror on every boot and stage it in the installed tree ([9e72501](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9e72501641cc6bcc781dd9d594bff48cf0a59df7))
+
 ## [1.69.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.2...v1.69.3) (2026-09-09)
 
 
