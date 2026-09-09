@@ -606,6 +606,7 @@ jobs:
           just check-heading-coverage || failed="$failed check-heading-coverage"
           just check-heading-coverage-debt-register || failed="$failed check-heading-coverage-debt-register"
           just check-hook-trees-not-io-exempt || failed="$failed check-hook-trees-not-io-exempt"
+          just check-marketplace-ref-release-only || failed="$failed check-marketplace-ref-release-only"
           just check-no-direct-destructive-cli || failed="$failed check-no-direct-destructive-cli"
           just check-no-direct-tool-invocation || failed="$failed check-no-direct-tool-invocation"
           just check-no-fmt-directives || failed="$failed check-no-fmt-directives"
