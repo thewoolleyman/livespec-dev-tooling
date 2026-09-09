@@ -31,6 +31,7 @@ from typing import NamedTuple
 
 import pytest
 
+from livespec_dev_tooling.checks._work_item_liveness import LedgerReader, resolve_liveness
 from tests.livespec_dev_tooling.checks.config_parse_rendering import (
     assert_main_renders_the_parse_failure,
 )
@@ -82,18 +83,40 @@ class _CheckRun(NamedTuple):
     stderr: str
 
 
+def _reader_for(*, snapshot: dict[str, str] | None) -> LedgerReader:
+    """A deterministic stand-in for the shared resolver's store snapshot.
+
+    `None` is the store that did not answer — the shipped default on a host
+    with no `bd` and no credential projection — and is never a spelling of
+    "the store is empty". Injecting it is what keeps every case below off the
+    live tracker: no test here opens a socket or spawns a process.
+    """
+
+    def _read(*, repo: Path) -> dict[str, str] | None:
+        del repo  # The double answers for whatever repo it is handed.
+        return snapshot
+
+    return _read
+
+
 def _run_check(
     *,
     cwd: Path,
     fail_var: str | None,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    snapshot: dict[str, str] | None = None,
 ) -> _CheckRun:
     """Invoke the check's `main()` in-process under `cwd`, toggling the fail-lever.
 
     `fail_var=None` removes the lever from the environment (the
     warn-only state); any string sets it to that value via
     `monkeypatch.setenv`.
+
+    `snapshot` is the work-item store the shared resolver sees, injected
+    through `main`'s `ledger_reader` seam. It defaults to `None` — the
+    store did not answer — which is the honest-degradation path every
+    non-liveness case below should exercise.
     """
     _git(cwd=cwd, args=["init", "-q"])
     _git(cwd=cwd, args=["add", "-A"])
@@ -102,7 +125,7 @@ def _run_check(
         monkeypatch.delenv(_FAIL_VAR, raising=False)
     else:
         monkeypatch.setenv(_FAIL_VAR, fail_var)
-    rc = _MODULE.main()
+    rc = _MODULE.main(ledger_reader=_reader_for(snapshot=snapshot))
     captured = capsys.readouterr()
     return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
@@ -310,16 +333,24 @@ def _write_owned_py_with_lloc(
     )
 
 
-def _set_probe(*, monkeypatch: pytest.MonkeyPatch, verdict: bool | None) -> None:
-    """Replace the liveness seam with a SYNTHETIC probe.
+def test_liveness_is_resolved_by_the_shared_resolver_not_a_local_seam() -> None:
+    """The hand-rolled `_probe_marker_liveness` seam is GONE, replaced by the shared one.
 
-    Swaps the module-level function wholesale, so no tracker, socket, or
-    `bd` invocation is reachable — the live ledger is never contacted.
+    `SPECIFICATION/spec.md` §"Non-goals" admits the work-item-liveness
+    lookup only as "one shared mechanism, not per-gate hand-rolls" — a gate
+    rolling its own is non-conforming there even when its behaviour is
+    otherwise correct. This asserted the SHAPE rather than a behaviour
+    because the shape is the requirement: the old seam returned `None`
+    unconditionally, so every behavioural test below passed identically
+    whether the resolver was wired in or not.
     """
-    monkeypatch.setattr(
-        _MODULE,
-        "_probe_marker_liveness",
-        lambda *, work_item: verdict,  # noqa: ARG005
+    assert not hasattr(_MODULE, "_probe_marker_liveness"), (
+        "the local liveness seam must be gone: the ratified exception requires one "
+        "shared resolver, and a per-gate hand-roll is what it exists to end"
+    )
+    assert _MODULE.resolve_liveness is resolve_liveness, (
+        "liveness must be answered by `checks/_work_item_liveness`, not by a "
+        "same-named local reimplementation"
     )
 
 
@@ -378,36 +409,110 @@ def test_release_tier_owned_warning_states_the_refactor_is_owed(
 def test_release_tier_fails_owned_file_whose_marker_id_is_not_live(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Where liveness IS checkable, a closed/nonexistent marker id fails."""
+    """Where liveness IS checkable, a CLOSED marker id fails and names its status.
+
+    THE FAIL CAPABILITY, and the direction the old seam could not reach: with
+    a reachable store answering `closed`, the release tier convicts. The
+    finding must carry the store's own word for the status, because the
+    ratified exception requires a surfaced stand-down to name "the id and its
+    resolved status" — `closed` and `nonexistent` are different facts and a
+    reader must be able to tell which one they are looking at.
+    """
     _write_owned_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
         n_statements=220,
     )
-    _set_probe(monkeypatch=monkeypatch, verdict=False)
-    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    result = _run_check(
+        cwd=tmp_path,
+        fail_var="true",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        snapshot={"livespec-915y.1": "closed"},
+    )
     assert result.returncode != 0, (
         f"a checkable-but-dead marker id must fail the release tier; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
     assert '"level": "error"' in combined
+    assert '"resolved_status": "closed"' in combined, (
+        f"the finding must name the id's RESOLVED STATUS, not merely that it is dead; "
+        f"stderr={result.stderr!r}"
+    )
 
 
-def test_release_tier_passes_owned_file_whose_marker_id_is_live(
+def test_release_tier_fails_owned_file_whose_marker_id_an_answering_store_lacks(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Where liveness IS checkable and the marker id is live, the file passes."""
+    """A store that ANSWERED and does not hold the id makes that id NONEXISTENT.
+
+    This is the can't-read-is-not-absent discriminator, and it is the reason
+    the resolver reads the whole population once instead of probing per
+    marker: a per-marker probe cannot tell "no such id" from "the store did
+    not answer", because both exit non-zero. A snapshot that arrives at all
+    establishes reachability, so an id missing FROM it is genuinely absent —
+    a mistyped or invented owner, convicted rather than excused.
+    """
     _write_owned_py_with_lloc(
         tmp_path=tmp_path,
         rel_path=".claude-plugin/scripts/livespec/medium.py",
         n_statements=220,
     )
-    _set_probe(monkeypatch=monkeypatch, verdict=True)
-    result = _run_check(cwd=tmp_path, fail_var="true", monkeypatch=monkeypatch, capsys=capsys)
+    result = _run_check(
+        cwd=tmp_path,
+        fail_var="true",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        snapshot={"livespec-some-other-item": "ready"},
+    )
+    assert result.returncode != 0, (
+        f"an id absent from a store that DID answer is nonexistent, not unverified; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert '"resolved_status": "nonexistent"' in combined, (
+        f"the finding must say the store answered and did not hold the id; "
+        f"stderr={result.stderr!r}"
+    )
+
+
+def test_release_tier_passes_owned_file_whose_marker_id_is_live(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Where liveness IS checkable and the marker id is live, the file passes QUIETLY.
+
+    The other direction of the discriminating control, and the one that
+    guards against the easy overshoot: a resolver that convicted every marker
+    would red a repo on files nobody did anything wrong with, and would be
+    reverted within the hour. `backlog` is deliberately the status under
+    test — it is a legitimately OPEN state, and a resolver flagging it would
+    fail the majority of real owners.
+    """
+    _write_owned_py_with_lloc(
+        tmp_path=tmp_path,
+        rel_path=".claude-plugin/scripts/livespec/medium.py",
+        n_statements=220,
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        fail_var="true",
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        snapshot={"livespec-915y.1": "backlog"},
+    )
     assert result.returncode == 0, (
         f"an owned live soft-band file must not block a release; "
         f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert '"level": "error"' not in combined, (
+        f"a stand-down on an OPEN id must stay quiet — no error-level finding; "
+        f"stderr={result.stderr!r}"
+    )
+    assert "liveness_unverified" not in combined, (
+        f"liveness WAS established here; reporting it as unverified would make a "
+        f"verified answer indistinguishable from an absent one; stderr={result.stderr!r}"
     )
 
 
