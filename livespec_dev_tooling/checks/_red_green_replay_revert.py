@@ -72,16 +72,37 @@ too much.
    must still verify. A commit that adds so much as one new product line
    fails the identity check even when everything else about it is genuine.
 
-FAIL-CLOSED BY CONSTRUCTION, AND DELIBERATELY WITHOUT AN ERROR TRACK. Every
-predicate here collapses its failure track onto `False` — no `gpg` on
-PATH, an unreadable object, a git that did not run, a signature by an
-unknown key. `False` means "no exemption", which restores the pre-existing
-verdict, so a collapse can only ever make the gate STRICTER. That is the
-opposite of the fail-WRONG collapse `_red_green_replay_trailers` converted
-to the `IOResult` railway (work-item livespec-dev-tooling-qndn), where an
-unread git answer chose the wrong LEG and stamped evidence nobody checked.
-Here there is no wrong answer to fall into: the conservative answer is the
-one the gate already gives.
+FAIL-CLOSED BY CONSTRUCTION — AND THE NON-ANSWER NO LONGER SPELLED LIKE AN
+ANSWER (work-item livespec-dev-tooling-qndn.12). Every predicate here still
+collapses onto `False` every probe that RAN and said no: a signature by an
+unknown key, a reverted commit that is not on `origin/master`, a byte that
+differs. `False` means "no exemption", which restores the pre-existing
+verdict, so those collapses can only ever make the gate STRICTER — and each
+of them is a MEASUREMENT.
+
+What used to ride that same `False` was the case where nothing was measured
+at all: no `gpg` on PATH, no `git` to exec. `_run` reported it as exit 127,
+an invented code standing in for a result there wasn't one of, and every
+caller then read it as the measured no. The VERDICT was right — a gate that
+cannot establish the exemption must convict — but nothing downstream could
+say WHY, which is why the range gate's remedy hint had to guess on the
+operator's behalf ("check that `gpg` is on PATH in this environment"). That
+non-answer is now the FAILURE track, carrying `ForgeProbeUnavailable` with
+the exact argv and the OS's own reason;
+`red_green_replay._commit_violates` consumes it by keeping the commit
+convicted and NAMING the binary it could not start.
+
+⛔ THE FAILURE TRACK IS NARROW AND STRUCTURAL, which is what keeps the
+conversion from widening the exemption by a single commit. It is inhabited
+ONLY by `subprocess.run` refusing to start the child. Every exit code a
+child does produce stays an answer on the success track — gpg rejecting the
+pinned material, `git verify-commit` refusing an unsigned commit,
+`git merge-base` reporting "not an ancestor" — because each of those is the
+probe working exactly as designed. This is still not the fail-WRONG collapse
+`_red_green_replay_trailers` converted (work-item livespec-dev-tooling-qndn),
+where an unread git answer chose the wrong LEG and stamped evidence nobody
+checked: here the conservative verdict was always the right one. What the
+railway buys is that it is now DISTINGUISHABLE from the measured one.
 """
 
 from __future__ import annotations
@@ -89,15 +110,51 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, TypeVar
+
+# `returns` is VENDORED rather than installed, so a bare import resolves only
+# where some EARLIER import in the same process already put `_vendor/` on
+# `sys.path`. This module is reached two ways — as a bare sibling from the
+# check's own process, and by dotted package path from its test — so it
+# establishes the path itself rather than inheriting whichever importer
+# happened to run first, exactly as the sibling `_red_green_replay_trailers`
+# does and for the reason recorded there.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Callable
+
+_Probed = TypeVar("_Probed")
 
 __all__: list[str] = [
+    "FORGE_EXEMPTION_UNPROBED",
     "GITHUB_FORGE_TRUST_ROOT",
     "RANGE_MISSING_TRAILERS_HINT",
+    "ForgeProbeUnavailable",
     "ForgeTrustRoot",
     "is_forge_authored_revert",
 ]
+
+# What the range gate says when the exemption could not be EVALUATED, beside
+# the `argv` and `detail` the failure carries. It lives here, with the hint
+# below, because this module owns the exemption's whole vocabulary — and
+# because the sentence it replaces was previously nowhere: the non-answer was
+# spelled `False` and the reject's hint had to guess at it.
+FORGE_EXEMPTION_UNPROBED: str = (
+    "the forge-authored-revert exemption could not be evaluated: the reported "
+    "argv would not start, so the commit keeps the verdict its own trailer "
+    "evidence earned — the exemption fails CLOSED"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -114,6 +171,27 @@ class ForgeTrustRoot:
 
     fingerprints: tuple[str, ...]
     public_key_block: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class ForgeProbeUnavailable:
+    """A binary this exemption's verification depends on could not be STARTED.
+
+    Deliberately NOT inhabited by anything the probe measured. A `gpg` that
+    rejects the pinned key material, a `git verify-commit` that refuses an
+    unsigned commit, a `git merge-base` that reports "not an ancestor" all RAN
+    and answered, and their answers travel the success track as `False`. What
+    lands here is the case where there was no answer to read at all.
+
+    `argv` is the exact command, so an operator can rerun it; `detail` is the
+    OS's own reason. Between them they say the thing the range gate's remedy
+    hint previously had to GUESS on the reader's behalf — the guess exists in
+    that hint because, until this railway, an absent binary and a refused
+    signature were the same value.
+    """
+
+    argv: str
+    detail: str
 
 
 # GitHub's web-flow commit-signing public keys, pinned as MATERIAL rather than
@@ -229,27 +307,35 @@ RANGE_MISSING_TRAILERS_HINT: str = (
 # see this module's docstring, property 2.
 _REVERTS_COMMIT_RE = re.compile(r"^This reverts commit ([0-9a-f]{7,40})\.?[ \t]*$", re.MULTILINE)
 _VALIDSIG_PREFIX = "[GNUPG:] VALIDSIG "
-# `subprocess.run` could not start the binary at all — gpg absent from a CI
-# image, say. Distinct from any exit code gpg or git actually produces, and
-# treated exactly like every other failure here: no exemption.
-_BINARY_UNUSABLE = 127
 # `git rev-list --parents -n 1 <sha>` prints the commit followed by its
 # parents, so a single-parent commit yields exactly two fields.
 _SINGLE_PARENT_FIELDS = 2
+# The negative verdict, NAMED, because `flake8-boolean-trap` (FBT003) refuses a
+# bare boolean literal at a call site and lifting one onto the railway IS a
+# call — the spelling `_deny_hint._UNRESOLVED` already established here. ONE
+# name rather than one per site, because every site means the same thing by it:
+# nothing established that this commit is a forge-authored revert, so the gate
+# keeps the verdict it already had.
+_NO_EXEMPTION: bool = False
 
 
 def _run(
     *, argv: list[str], env: dict[str, str] | None = None, input_text: str = ""
-) -> subprocess.CompletedProcess[str]:
-    """Run `argv`, reporting an unstartable binary as an ordinary non-zero result.
+) -> IOResult[subprocess.CompletedProcess[str], ForgeProbeUnavailable]:
+    """Run `argv`, or name the invocation that could not be STARTED at all.
 
     The catch is STRUCTURAL and narrow — `subprocess.run` itself refusing to
-    start the child. Every caller here already treats a non-zero exit as "no
-    exemption", so folding an unusable binary into that same shape adds no new
-    policy: an absent `gpg` and a bad signature are the same answer.
+    start the child, which is what an absent `gpg` on a CI image looks like.
+    That case, and only that case, is the failure track: every exit code a
+    child does produce is an ANSWER, and what a given non-zero MEANS is each
+    predicate's own policy, one layer up.
+
+    It used to be reported as exit 127 instead — an invented code standing in
+    for a result there wasn't one of, which every caller then read as the
+    measured refusal (work-item livespec-dev-tooling-qndn.12).
     """
     try:
-        return subprocess.run(
+        completed = subprocess.run(
             argv,
             capture_output=True,
             text=True,
@@ -258,9 +344,36 @@ def _run(
             input=input_text,
         )
     except OSError as unusable:
-        return subprocess.CompletedProcess(
-            args=argv, returncode=_BINARY_UNUSABLE, stdout="", stderr=str(unusable)
-        )
+        return IOFailure(ForgeProbeUnavailable(argv=" ".join(argv), detail=str(unusable)))
+    return IOSuccess(completed)
+
+
+def _exits_zero(*, argv: list[str]) -> IOResult[bool, ForgeProbeUnavailable]:
+    """Whether `argv` ran AND exited 0 — for the git probes that answer by exit code."""
+    return _run(argv=argv).map(lambda completed: completed.returncode == 0)
+
+
+def _and_then(
+    *,
+    probed: IOResult[_Probed, ForgeProbeUnavailable],
+    decide: Callable[[_Probed], IOResult[bool, ForgeProbeUnavailable]],
+) -> IOResult[bool, ForgeProbeUnavailable]:
+    """Ask `decide` what a probe's ANSWER means; forward a probe that had none.
+
+    THE ONE FORWARDING POINT in this module, which is why the predicates below
+    read as a chain rather than as a ladder of failure branches: a binary that
+    could not start is a fact about the environment, identical at every step,
+    and nothing downstream of it has anything to add. Writing it once also
+    means one covered branch rather than five that only a stub could reach.
+
+    It is `IOResult.bind` spelled out because pyright strict reports the
+    vendored `bind` as partially unknown and this repository's `check-types`
+    is armed. `.map` types cleanly and is used above wherever the follow-on
+    work is PURE; this exists for the steps whose follow-on work is more IO.
+    """
+    if not is_successful(probed):
+        return IOFailure(unsafe_perform_io(probed.failure()))
+    return decide(unsafe_perform_io(probed.unwrap()))
 
 
 def _validsig_names_trusted_key(*, line: str, fingerprints: tuple[str, ...]) -> bool:
@@ -278,44 +391,81 @@ def _validsig_names_trusted_key(*, line: str, fingerprints: tuple[str, ...]) -> 
     return any(field in fingerprints for field in line.removeprefix(_VALIDSIG_PREFIX).split())
 
 
-def _verifies_against_trust_root(*, sha: str, trust_root: ForgeTrustRoot) -> bool:
+def _verifies_against_trust_root(
+    *, sha: str, trust_root: ForgeTrustRoot
+) -> IOResult[bool, ForgeProbeUnavailable]:
     """Whether `sha`'s OpenPGP signature verifies against the pinned keys ALONE.
 
     The keyring is built fresh in a private temporary `GNUPGHOME` for each
     call and thrown away after. That is the point: the ambient `~/.gnupg` of
     whoever runs the gate — a developer laptop, a shared CI image — cannot add
     a signer the pin does not name, and cannot remove one it does.
+
+    A gpg that REFUSES the material answers `False`, because it ran and told
+    the gate something. A gpg that could not be started answers on the failure
+    track, which the composition below forwards without a branch of its own.
     """
     with tempfile.TemporaryDirectory(prefix="rgr-forge-trust-") as home:
         env = {**os.environ, "GNUPGHOME": home}
-        imported = _run(
-            argv=["gpg", "--batch", "--quiet", "--no-tty", "--import"],
-            env=env,
-            input_text=trust_root.public_key_block,
+        return _and_then(
+            probed=_run(
+                argv=["gpg", "--batch", "--quiet", "--no-tty", "--import"],
+                env=env,
+                input_text=trust_root.public_key_block,
+            ),
+            decide=lambda keyring: _signed_by_trusted_key(sha=sha, env=env, trust_root=trust_root)
+            if keyring.returncode == 0
+            else IOSuccess(_NO_EXEMPTION),
         )
-        if imported.returncode != 0:
-            return False
-        verified = _run(argv=["git", "verify-commit", "--raw", sha], env=env)
-        return any(
+
+
+def _signed_by_trusted_key(
+    *, sha: str, env: dict[str, str], trust_root: ForgeTrustRoot
+) -> IOResult[bool, ForgeProbeUnavailable]:
+    """Whether `git verify-commit`'s status output names one of the pinned fingerprints.
+
+    Called only from inside the ephemeral-keyring context above, whose
+    `GNUPGHOME` this `env` carries — the verification has to see the keyring
+    the import just populated, and nothing else.
+    """
+    return _run(argv=["git", "verify-commit", "--raw", sha], env=env).map(
+        lambda verified: any(
             _validsig_names_trusted_key(line=line, fingerprints=trust_root.fingerprints)
             for line in verified.stderr.splitlines()
         )
+    )
 
 
-def _reverted_shas_from_message(*, sha: str) -> tuple[str, ...]:
+def _reverted_shas_from_message(*, sha: str) -> IOResult[tuple[str, ...], ForgeProbeUnavailable]:
     """The commits `sha`'s message names as reverted, in order — empty when none.
 
     A tuple rather than an optional single value because `git revert A B`
     against one commit legitimately names several, and because an empty tuple
-    says "names none" without a sentinel string standing in for it.
+    says "names none" without a sentinel string standing in for it. A git that
+    RAN and could not read the object answers the empty tuple too — a message
+    nobody can read names nothing to look up — while a git that never ran at
+    all rides the failure track.
     """
-    body = _run(argv=["git", "log", "-1", "--format=%B", sha])
-    if body.returncode != 0:
-        return ()
-    return tuple(found.group(1) for found in _REVERTS_COMMIT_RE.finditer(body.stdout))
+    return _run(argv=["git", "log", "-1", "--format=%B", sha]).map(
+        lambda body: tuple(found.group(1) for found in _REVERTS_COMMIT_RE.finditer(body.stdout))
+        if body.returncode == 0
+        else ()
+    )
 
 
-def _undoes_ancestor(*, sha: str, reverted: str, base_ref: str, product_paths: list[str]) -> bool:
+def _has_single_parent(*, listed: subprocess.CompletedProcess[str]) -> bool:
+    """Whether `git rev-list --parents -n 1` reported exactly one parent.
+
+    A non-zero exit — an object that is not there — reports no parent at all,
+    which is the same answer for this gate: a commit with no single parent has
+    no pre-revert state to have restored.
+    """
+    return listed.returncode == 0 and len(listed.stdout.split()) == _SINGLE_PARENT_FIELDS
+
+
+def _undoes_ancestor(
+    *, sha: str, reverted: str, base_ref: str, product_paths: list[str]
+) -> IOResult[bool, ForgeProbeUnavailable]:
     """Whether `sha` restores `reverted`'s parent bytes at every product path it touches.
 
     Three conditions, all structural and all checked against git objects
@@ -330,20 +480,73 @@ def _undoes_ancestor(*, sha: str, reverted: str, base_ref: str, product_paths: l
       exits 0 only when every product impl `.py` path `sha` touches holds
       exactly what it held before `reverted` landed.
 
-    The third is what makes a hand-authored near-miss fail even if it somehow
-    cleared the other two: a revert that also slips in one new product line
-    differs from `<reverted>^` at that path and is refused. A conflict-resolved
-    revert (master moved on at the same paths) likewise differs, and is
-    likewise outside the exemption — fail-closed, deliberately, because a
-    hand-resolved conflict is new code that no commit has evidence for.
+    The last two live in `_restores_pre_revert_bytes`, still asked in that
+    order and still short-circuited: a named commit that is not on master
+    costs no diff at all.
     """
-    parents = _run(argv=["git", "rev-list", "--parents", "-n", "1", sha])
-    if parents.returncode != 0 or len(parents.stdout.split()) != _SINGLE_PARENT_FIELDS:
-        return False
-    if _run(argv=["git", "merge-base", "--is-ancestor", reverted, base_ref]).returncode != 0:
-        return False
-    restored = _run(argv=["git", "diff", "--quiet", f"{reverted}^", sha, "--", *product_paths])
-    return restored.returncode == 0
+    return _and_then(
+        probed=_run(argv=["git", "rev-list", "--parents", "-n", "1", sha]),
+        decide=lambda listed: _restores_pre_revert_bytes(
+            sha=sha, reverted=reverted, base_ref=base_ref, product_paths=product_paths
+        )
+        if _has_single_parent(listed=listed)
+        else IOSuccess(_NO_EXEMPTION),
+    )
+
+
+def _restores_pre_revert_bytes(
+    *, sha: str, reverted: str, base_ref: str, product_paths: list[str]
+) -> IOResult[bool, ForgeProbeUnavailable]:
+    """Whether `reverted` is on `base_ref` AND `sha` holds its parent's bytes at every path.
+
+    The byte-identity half is what makes a hand-authored near-miss fail even
+    if it somehow cleared everything else: a revert that also slips in one new
+    product line differs from `<reverted>^` at that path and is refused. A
+    conflict-resolved revert (master moved on at the same paths) likewise
+    differs, and is likewise outside the exemption — fail-closed, deliberately,
+    because a hand-resolved conflict is new code that no commit has evidence
+    for.
+    """
+    return _and_then(
+        probed=_exits_zero(argv=["git", "merge-base", "--is-ancestor", reverted, base_ref]),
+        decide=lambda on_base: _exits_zero(
+            argv=["git", "diff", "--quiet", f"{reverted}^", sha, "--", *product_paths]
+        )
+        if on_base
+        else IOSuccess(_NO_EXEMPTION),
+    )
+
+
+def _first_undone(
+    *, sha: str, named: tuple[str, ...], base_ref: str, product_paths: list[str]
+) -> IOResult[bool, ForgeProbeUnavailable]:
+    """The verdict of the first commit `named` that `sha` genuinely undoes.
+
+    Both terminal cases stop the walk. A candidate that answers YES IS the
+    exemption, and a probe that could not run leaves every remaining candidate
+    unmeasurable by the same missing binary. Falling off the end is the
+    ordinary "none of them" — this is the `any()` comprehension it replaces,
+    which had nowhere to put a failure track.
+    """
+    for reverted in named:
+        undone = _undoes_ancestor(
+            sha=sha, reverted=reverted, base_ref=base_ref, product_paths=product_paths
+        )
+        if not is_successful(undone) or unsafe_perform_io(undone.unwrap()):
+            return undone
+    return IOSuccess(_NO_EXEMPTION)
+
+
+def _undoes_any_named_ancestor(
+    *, sha: str, base_ref: str, product_paths: list[str]
+) -> IOResult[bool, ForgeProbeUnavailable]:
+    """Whether `sha` genuinely undoes any commit its own message names as reverted."""
+    return _and_then(
+        probed=_reverted_shas_from_message(sha=sha),
+        decide=lambda named: _first_undone(
+            sha=sha, named=named, base_ref=base_ref, product_paths=product_paths
+        ),
+    )
 
 
 def is_forge_authored_revert(
@@ -352,7 +555,7 @@ def is_forge_authored_revert(
     product_paths: list[str],
     base_ref: str,
     trust_root: ForgeTrustRoot = GITHUB_FORGE_TRUST_ROOT,
-) -> bool:
+) -> IOResult[bool, ForgeProbeUnavailable]:
     """Whether `sha` is a forge-signed revert restoring already-gated product bytes.
 
     The conjunction is the whole design — see this module's docstring. The
@@ -361,15 +564,24 @@ def is_forge_authored_revert(
     costs one `gpg --import` and one `git verify-commit` and never reaches the
     ancestry or content probes.
 
+    THE FAILURE TRACK IS NOT A SECOND VERDICT. `IOFailure` says only that a
+    binary the probe needs could not be started, so no exemption was
+    established — the same practical outcome the bare `False` used to carry,
+    now distinguishable from the measured refusal. The one caller,
+    `red_green_replay._commit_violates`, consumes it that way: the commit
+    stays convicted, and the gate reports which invocation it could not make.
+
     `trust_root` defaults to the pinned constant and is passed by exactly one
     caller — the range validator — which never overrides it. The parameter is
     a TEST SEAM, not a lever: it is reachable only in-process, so nothing an
     operator, an environment, or a config file can express changes which key
     the shipped check trusts.
     """
-    if not _verifies_against_trust_root(sha=sha, trust_root=trust_root):
-        return False
-    return any(
-        _undoes_ancestor(sha=sha, reverted=reverted, base_ref=base_ref, product_paths=product_paths)
-        for reverted in _reverted_shas_from_message(sha=sha)
+    return _and_then(
+        probed=_verifies_against_trust_root(sha=sha, trust_root=trust_root),
+        decide=lambda signed: _undoes_any_named_ancestor(
+            sha=sha, base_ref=base_ref, product_paths=product_paths
+        )
+        if signed
+        else IOSuccess(_NO_EXEMPTION),
     )

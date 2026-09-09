@@ -61,7 +61,11 @@ the two directives are mutually blocking by construction, which is
 exactly what happened in livespec-overseer on 2026-08-22 (work-item
 livespec-dev-tooling-j2qa). What it keys on, why an agent cannot forge
 it, and why it narrows rather than weakens the gate live in
-`_red_green_replay_revert`.
+`_red_green_replay_revert`. It answers on the `IOResult` railway, because
+a `gpg` or `git` that will not START establishes nothing either way;
+`_commit_violates` consumes that track by convicting the commit anyway —
+the verdict the exemption has always given when it cannot establish
+itself — and naming the invocation it could not make.
 
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics
@@ -100,6 +104,7 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_suite_green_mode,
 )
 from _red_green_replay_revert import (  # noqa: E402  — sibling private import
+    FORGE_EXEMPTION_UNPROBED,
     RANGE_MISSING_TRAILERS_HINT,
     is_forge_authored_revert,
 )
@@ -344,14 +349,32 @@ def _commit_violates(*, sha: str) -> bool:
     # convicts it.
     is_half_pair = _GREEN_TRAILER_KEY in message and _RED_TRAILER_KEY not in message
     lacks_evidence = is_half_pair or not (has_pair_shape or has_suite_shape)
+    if not lacks_evidence:
+        return False
     # The ONE way out that is not a lever: a revert authored by the forge's own
     # key, restoring bytes an earlier commit already earned evidence for. It is
     # asked LAST so it costs nothing on the ordinary path, and it can only ever
     # narrow this verdict — see `_red_green_replay_revert` for what it keys on
     # and why no agent can produce it (work-item livespec-dev-tooling-j2qa).
-    return lacks_evidence and not is_forge_authored_revert(
-        sha=sha, product_paths=product_paths, base_ref=_RANGE_BASE
-    )
+    exemption = is_forge_authored_revert(sha=sha, product_paths=product_paths, base_ref=_RANGE_BASE)
+    if isinstance(exemption, IOFailure):
+        # The exemption could not be EVALUATED — a binary it needs would not
+        # start. The verdict is the one it has always given when it cannot
+        # establish itself, so the commit stays convicted on its own missing
+        # evidence; what is new is that the gate NAMES the invocation instead
+        # of leaving the range hint to guess at it, which is the whole reason
+        # this non-answer stopped being spelled `False`
+        # (work-item livespec-dev-tooling-qndn.12).
+        unavailable = unsafe_perform_io(exemption.failure())
+        _configure_logger().warning(
+            FORGE_EXEMPTION_UNPROBED,
+            check_id="red-green-replay-forge-exemption-unprobed",
+            commit=sha,
+            argv=unavailable.argv,
+            detail=unavailable.detail,
+        )
+        return True
+    return not unsafe_perform_io(exemption.unwrap())
 
 
 def _validate_range() -> int:
