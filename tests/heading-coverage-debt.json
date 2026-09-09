@@ -1,55 +1,6 @@
 [
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## CI matrix shape",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## CLI shape",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## Dependencies",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## No network I/O",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## Runtime",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## Self-application",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "constraints.md",
-    "heading": "## Semver discipline",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## CLI surface",
     "work_item": "livespec-dev-tooling-xx57",

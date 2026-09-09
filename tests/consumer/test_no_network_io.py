@@ -3,27 +3,42 @@
 Covers the `SPECIFICATION/scenarios.md` scenario "a check attempts
 forbidden network I/O" — the `no-network-io` gate that asserts every
 check stays within the local-filesystem + project-local-subprocess
-envelope (per `SPECIFICATION/constraints.md` section "No network I/O").
+envelope — and the `SPECIFICATION/constraints.md` section "No network I/O"
+that scenario enforces.
 
 The scenario notes the gate is "sketch only — the gate may itself be
-tested by a sandboxed firewall fixture or by AST inspection." This test
-takes the AST-inspection path:
+tested by a sandboxed firewall fixture or by AST inspection." Both paths
+are taken here, because they answer different halves of the constraint:
 
-- The consumer-observable invariant: EVERY shipped check module under
-  `livespec_dev_tooling/checks/` is free of network-library imports, so a
-  consumer's `just check` is deterministic against the working tree alone
-  regardless of network availability.
-- The gate's detection logic: a fixture check module that imports a
-  forbidden network library IS detected by the same AST scan — proving
-  the gate would fail the build for a network-touching check.
+- The consumer-observable invariant, by AST: EVERY shipped check module
+  under `livespec_dev_tooling/checks/` is free of network-library imports,
+  so a consumer's `just check` is deterministic against the working tree
+  alone regardless of network availability.
+- The gate's detection logic, by AST: a fixture check module that imports a
+  forbidden network library IS detected by the same scan — proving the gate
+  would fail the build for a network-touching check.
+- The constraint's REASON, by execution: a shipped check is driven
+  end-to-end with every `socket` constructor replaced by a double that
+  refuses, and still exits `0`. An import scan can only say a module names
+  no network library; only running the check with the network stack
+  removed shows the EXECUTION PATH reaches no endpoint — through a
+  helper, through a lazily-imported module, or through anything the AST
+  never sees. That is the determinism guarantee the constraint exists for,
+  and the constraint's own second paragraph is what makes this a check-tier
+  probe rather than a repository-wide one: the ban is scoped to Python
+  check modules precisely because their determinism is load-bearing for
+  `just check`, while the workflow surface may reach the network freely.
 
-AST inspection (never executing the modules) keeps this deterministic
-and offline, consistent with the constraint it guards.
+The AST paths never execute the modules they read, consistent with the
+constraint they guard; the execution path runs one check whose whole world
+is the working directory.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib
+import socket
 from pathlib import Path
 
 import pytest
@@ -57,6 +72,47 @@ _FORBIDDEN_NETWORK_ROOTS: frozenset[str] = frozenset(
         "xmlrpc",
     }
 )
+
+# The shipped check driven with the network stack removed. It reads its whole
+# world from the working directory (a spec tree plus the coverage registry) and
+# needs no role-key configuration, so a two-file fixture is a complete input —
+# the same reason `test_two_consumption_surfaces` drives this module.
+_DRIVEN_CHECK = "livespec_dev_tooling.checks.heading_coverage"
+_FIXTURE_HEADING = "## Project intent"
+_FIXTURE_TEST_ID = "tests.fixture.test_intent.test_intent"
+
+# Every `socket` entry point a network reach would pass through, each replaced
+# by the refusing double below. Naming the constructors rather than one of them
+# is what closes the "it used a different door" gap.
+_SOCKET_CONSTRUCTORS = ("socket", "create_connection", "getaddrinfo", "socketpair")
+
+_NETWORK_REACHED = "a check reached the network stack"
+
+
+def _refuse_network(*_args: object, **_kwargs: object) -> None:
+    """Stand in for every `socket` entry point: reaching the network is a defect.
+
+    Raises rather than returning a dud object so a reach surfaces at the call
+    site with the reason attached, instead of failing later as an unrelated
+    `AttributeError` on whatever the caller expected back.
+    """
+    raise RuntimeError(_NETWORK_REACHED)
+
+
+def _write_fixture_tree(*, root: Path) -> None:
+    """A minimal consumer tree: one spec heading plus its coverage registry."""
+    spec_dir = root / "SPECIFICATION"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    _ = spec_dir.joinpath("spec.md").write_text(
+        f"# Fixture spec\n\n{_FIXTURE_HEADING}\n\nProse.\n", encoding="utf-8"
+    )
+    tests_dir = root / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    _ = tests_dir.joinpath("heading-coverage.json").write_text(
+        '[{"spec_root": "SPECIFICATION", "spec_file": "spec.md", '
+        f'"heading": "{_FIXTURE_HEADING}", "test": "{_FIXTURE_TEST_ID}"}}]',
+        encoding="utf-8",
+    )
 
 
 def _imported_roots(*, source: str) -> set[str]:
@@ -122,3 +178,35 @@ def test_gate_detects_a_network_touching_fixture_check(*, tmp_path: Path) -> Non
     assert "urllib" in found, (
         f"the no-network-io scan must catch a check importing `urllib`; " f"found={found}"
     )
+
+
+def test_a_shipped_check_passes_with_the_network_stack_disabled(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A shipped check reaches its verdict with every `socket` entry point refusing.
+
+    The constraint's stated purpose: "every check is deterministic against the
+    consuming repo's working tree alone, regardless of network availability".
+    A consumer running `just check` offline gets the same verdict, and this is
+    the leg of that claim the import scan cannot reach — a network call made
+    through a helper or a lazily-imported module names no forbidden root in the
+    check module's own AST.
+    """
+    module = importlib.import_module(_DRIVEN_CHECK)
+    _write_fixture_tree(root=tmp_path)
+    for constructor in _SOCKET_CONSTRUCTORS:
+        monkeypatch.setattr(socket, constructor, _refuse_network)
+    monkeypatch.chdir(tmp_path)
+
+    returncode = module.main()
+
+    captured = capsys.readouterr()
+    assert returncode == 0, (
+        f"a shipped check must reach its verdict with no network stack; "
+        f"returncode={returncode} stderr={captured.err!r}"
+    )
+    # The double is asserted LIVE at the end rather than trusted: a
+    # `monkeypatch.setattr` that silently bound nothing would make the run above
+    # an ordinary networked one reported as an offline pass.
+    with pytest.raises(RuntimeError, match=_NETWORK_REACHED):
+        _ = socket.socket()
