@@ -1,0 +1,91 @@
+---
+# k3s_config — this node's /etc/rancher/k3s/config.yaml, selected by its
+# cluster role, plus the server's packaged-manifest skip marker.
+#
+# Replaces ci-runner/k3s/phase2/k3s-config/install-k3s-config.sh.
+#
+# WHY TWO SOURCE FILES AND NOT ONE TEMPLATE WITH CONDITIONAL KEYS. config.yaml
+# carries three keys an agent does not merely ignore: `disable`, which names a
+# packaged component only a server deploys, so `--disable` is not in the agent's
+# flag set at all and k3s-agent exits `flag provided but not defined: -disable`;
+# `write-kubeconfig-mode`, the mode of an admin kubeconfig an agent never
+# writes; and `tls-san`, subject alternative names for an API server an agent
+# does not run. The two files state that boundary as data rather than as
+# conditionals inside one template, exactly as the shell did.
+#
+# TAKES EFFECT ON THE NEXT k3s START. Nothing here restarts k3s or k3s-agent: a
+# restart kills every running CI job on the pool.
+
+- name: Refuse a node whose cluster role is neither server nor agent
+  ansible.builtin.assert:
+    that:
+      - k3s_config_cluster_role in ['server', 'agent']
+    fail_msg: >-
+      cluster_role must be 'server' or 'agent', got '{{ k3s_config_cluster_role }}'
+    success_msg: "cluster role: {{ k3s_config_cluster_role }}"
+
+- name: Create the k3s configuration directory
+  # Explicit, because --check cannot see past a missing parent: with the
+  # directory absent the copy below reports a would-be change and then fails
+  # only on a real apply.
+  ansible.builtin.file:
+    path: "{{ k3s_config_dest | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install this node's k3s configuration
+  ansible.builtin.copy:
+    src: >-
+      {{ k3s_config_phase2_dir }}/k3s-config/{{
+        'config.yaml' if k3s_config_cluster_role == 'server' else 'config.agent.yaml'
+      }}
+    dest: "{{ k3s_config_dest }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  notify: Settle the agent k3s runtime
+
+- name: Create the packaged-manifest directory on the server
+  # 0700 as the shell installed it. This is under /var/lib/rancher/k3s/server/
+  # on disk, NOT the tmpfs datastore, so the marker below is reboot-durable.
+  ansible.builtin.file:
+    path: "{{ k3s_config_manifests_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+  when: k3s_config_cluster_role == 'server'
+
+- name: Write the bundled local-storage skip marker on the server
+  # The second of two enforcement points for one disable: `disable:
+  # [local-storage]` in the config file, and this marker, which is k3s's
+  # documented per-manifest opt-out and holds independently of how config-file
+  # and command-line --disable values are merged. Both are written so the
+  # fleet-owned provisioner can never be overwritten by the bundled copy.
+  #
+  # The timestamps are preserved so a re-run is a no-op: a bare `state: touch`
+  # reports changed on every pass and would make this role permanently dirty.
+  ansible.builtin.file:
+    path: "{{ k3s_config_skip_marker }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+  become: true
+  when: k3s_config_cluster_role == 'server'
+
+- name: Remove a server-only skip marker from an agent
+  # Left by an earlier run that installed the server config here. An agent
+  # deploys no packaged component, so there is nothing for it to disable.
+  ansible.builtin.file:
+    path: "{{ k3s_config_skip_marker }}"
+    state: absent
+  become: true
+  when: k3s_config_cluster_role == 'agent'

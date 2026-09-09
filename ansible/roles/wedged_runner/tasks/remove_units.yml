@@ -1,0 +1,63 @@
+---
+# The agent cleanup install-wedged-runner-scan.sh performs before it refuses.
+# The TIMER goes before the SERVICE it triggers, so nothing fires between them.
+
+- name: Check whether the server-only wedged-runner units are present
+  ansible.builtin.stat:
+    path: "{{ wedged_runner_unit_dir }}/{{ item }}"
+  register: wedged_runner_stale
+  become: true
+  loop:
+    - "{{ wedged_runner_timer }}"
+    - "{{ wedged_runner_service }}"
+
+- name: Disable and stop the server-only wedged-runner units
+  ansible.builtin.systemd_service:
+    name: "{{ item.item }}"
+    enabled: false
+    state: stopped
+  become: true
+  loop: "{{ wedged_runner_stale.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Remove the server-only wedged-runner unit files
+  ansible.builtin.file:
+    path: "{{ wedged_runner_unit_dir }}/{{ item.item }}"
+    state: absent
+  become: true
+  loop: "{{ wedged_runner_stale.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+  notify: Reload systemd for the wedged-runner units
+
+- name: Publish the removal before clearing the failed state
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the failed state of the removed units
+  # noqa: command-instead-of-module — the systemd module cannot address a
+  # unit whose FILE is gone but whose failed state the manager still holds:
+  # it reads LoadState=not-found and errors "Could not find the requested
+  # service". That state is exactly what this reads, so there is no module
+  # for it. check_mode: false so the clear below is not silently dropped
+  # from a dry run's plan.
+  ansible.builtin.command: systemctl is-failed {{ item }}
+  register: wedged_runner_failed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  loop:
+    - "{{ wedged_runner_timer }}"
+    - "{{ wedged_runner_service }}"
+
+- name: Clear the residual failed state
+  ansible.builtin.command: systemctl reset-failed {{ item.item }}
+  become: true
+  loop: "{{ wedged_runner_failed.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stdout | default('') == 'failed'
+  changed_when: true

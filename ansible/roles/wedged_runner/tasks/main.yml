@@ -1,0 +1,25 @@
+---
+# wedged_runner — the 5-minute sweep for runner pods looping on
+# "Registration ... was not found".
+#
+# Replaces
+# ci-runner/k3s/phase2/wedged-runner/install-wedged-runner-scan.sh, INCLUDING
+# its agent branch.
+#
+# SERVER-ONLY, AND THE AGENT PATH REMOVES RATHER THAN INSTALLS. The service is
+# ordered Requires=k3s.service while an agent runs k3s-agent.service, so the
+# unit cannot start there at all and the timer lands `failed (Result:
+# resources)`; it carries the admin KUBECONFIG only a server holds; and the scan
+# sweeps the ARC runner pods CLUSTER-WIDE, a pool-wide duty the server's own
+# timer already performs over every pod on every node, this one included.
+#
+# The scan SCRIPT is deliberately not removed on an agent: the server path of
+# this role owns that file.
+
+- name: Remove the server-only wedged-runner units from an agent
+  ansible.builtin.include_tasks: remove_units.yml
+  when: wedged_runner_cluster_role == 'agent'
+
+- name: Install the wedged-runner sweep on the server
+  ansible.builtin.include_tasks: install_units.yml
+  when: wedged_runner_cluster_role == 'server'

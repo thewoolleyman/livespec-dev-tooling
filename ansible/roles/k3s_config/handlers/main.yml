@@ -1,0 +1,62 @@
+---
+# The agent-side wait install-k3s-config.sh step 4 performs, and for the same
+# reason: replacing an agent's config while k3s-agent.service is restart-looping
+# leaves the later steps of a node run talking to a runtime that is not there
+# yet. On gmktec-xubuntu 2026-09-07 the container-hook step's first `ctr images
+# pull` hit `connect: connection refused` five seconds before the unit came up,
+# and the whole runbook had to be invoked a second time.
+#
+# NOTHING HERE RESTARTS ANYTHING. It is a wait, reached only when the config
+# actually changed on this pass.
+
+- name: Read the k3s agent unit's current state
+  # The systemd module with NO state, enabled or masked requested is a pure
+  # read: it returns the unit's `systemctl show` properties and changes nothing.
+  # failed_when: false because a node that has never run k3s-agent has no such
+  # unit, which is an answer rather than an error.
+  ansible.builtin.systemd_service:
+    name: k3s-agent.service
+  register: k3s_config_agent_state
+  changed_when: false
+  failed_when: false
+  become: true
+  listen: Settle the agent k3s runtime
+  when: k3s_config_cluster_role == 'agent'
+
+- name: Wait for k3s-agent.service to be active
+  # `activating` is the restart-loop state the measured failure sat in, so
+  # anything but `active` waits. An inactive or failed unit is an operator's
+  # problem and is NOT waited on — blocking a run for two minutes on it would
+  # report a host defect as a timeout here.
+  ansible.builtin.systemd_service:
+    name: k3s-agent.service
+  register: k3s_config_agent_active
+  until: k3s_config_agent_active.status.ActiveState | default('') == 'active'
+  retries: "{{ (k3s_config_wait_seconds | int / k3s_config_poll_seconds | int) | round | int }}"
+  delay: "{{ k3s_config_poll_seconds }}"
+  changed_when: false
+  failed_when: false
+  become: true
+  listen: Settle the agent k3s runtime
+  when:
+    - k3s_config_cluster_role == 'agent'
+    - not ansible_check_mode
+    - k3s_config_agent_state.status.ActiveState | default('') in ['active', 'activating']
+
+- name: Wait for k3s containerd to answer
+  # THE PROBE IS A CALL, NOT A STAT. containerd's socket file exists before
+  # anything is listening on it, so `[ -S ... ]` reports a runtime that is up
+  # when it is not; the failure is `connect: connection refused`. `ctr version`
+  # asks the daemon for its server version and fails while nothing is listening.
+  ansible.builtin.command: ctr --address {{ k3s_config_containerd_socket }} version
+  register: k3s_config_containerd_ready
+  until: k3s_config_containerd_ready.rc == 0
+  retries: "{{ (k3s_config_wait_seconds | int / k3s_config_poll_seconds | int) | round | int }}"
+  delay: "{{ k3s_config_poll_seconds }}"
+  changed_when: false
+  become: true
+  listen: Settle the agent k3s runtime
+  when:
+    - k3s_config_cluster_role == 'agent'
+    - not ansible_check_mode
+    - k3s_config_agent_state.status.ActiveState | default('') in ['active', 'activating']

@@ -1,0 +1,11 @@
+---
+datastore_tmpfs_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+datastore_tmpfs_unit_dir: /etc/systemd/system
+datastore_tmpfs_mount_unit: var-lib-rancher-k3s-server-db.mount
+datastore_tmpfs_dropin_dir: /etc/systemd/system/k3s.service.d
+datastore_tmpfs_dropin_name: 20-requires-datastore-mount.conf
+# A volatile datastore is safe ONLY if the cluster rebuilds itself on boot.
+# Both of these must be enabled before the datastore may become a tmpfs.
+datastore_tmpfs_required_units:
+  - inject-github-app-secret.service
+  - converge-ci-stack.service

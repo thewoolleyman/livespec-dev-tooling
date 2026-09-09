@@ -1,0 +1,32 @@
+---
+# cache_telemetry — the pool-provided cache-span emitter every job container
+# calls from the hook template's lifecycle hooks.
+#
+# Replaces ci-runner/k3s/phase2/cache-telemetry/install-cache-telemetry.sh.
+#
+# WHY THE POOL PROVIDES IT rather than the sandbox image baking it in: no routed
+# repository has to bump its `container:` pin to get the tier's telemetry. Same
+# placement and same reason as sccache_binary.
+#
+# The installed name drops the .sh suffix the source carries, exactly as the
+# shell installed it: the hook template invokes `ci-cache-span`.
+
+- name: Create the pool-provided binary directory
+  # Explicit, because --check cannot see past a missing parent: the copy below
+  # would report a would-be change and fail only on a real apply.
+  ansible.builtin.file:
+    path: "{{ cache_telemetry_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the cache-span emitter
+  ansible.builtin.copy:
+    src: "{{ cache_telemetry_phase2_dir }}/cache-telemetry/ci-cache-span.sh"
+    dest: "{{ cache_telemetry_dest }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true

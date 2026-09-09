@@ -1,0 +1,14 @@
+---
+node_extended_resource_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+node_extended_resource_cluster_role: "{{ cluster_role }}"
+node_extended_resource_lib_dir: /usr/local/lib/ci-runner-k3s
+node_extended_resource_unit_dir: /etc/systemd/system
+node_extended_resource_service: reapply-node-extended-resource.service
+node_extended_resource_timer: reapply-node-extended-resource.timer
+# The currently-intended ci-runner.io/churn-slot node capacity. It is a
+# MEASUREMENT, not a constant (ci-runner/k3s/phase2/kueue/DERIVATION.md), and it
+# lives in the node's phase0-bare-metal profile as ADMISSION_CAPACITY_C — 32 for
+# poweredge-xubuntu, the fleet's only server. The default below yields to an
+# `admission_capacity_c` host variable the moment the inventory carries one,
+# which is where that per-node fact belongs.
+node_extended_resource_capacity: "{{ admission_capacity_c | default(32) }}"

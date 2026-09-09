@@ -1,0 +1,34 @@
+---
+host_thermal_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+host_thermal_lib_dir: /usr/local/lib/ci-runner-k3s
+host_thermal_unit_dir: /etc/systemd/system
+host_thermal_service: apply-idrac-thermal.service
+# Dell's OpenManage repository, PINNED by version and SHA-256. Bump all four
+# values together from the index at
+# https://linux.dell.com/repo/community/openmanage/<release>/<codename>/dists/<codename>/main/binary-amd64/Packages
+#
+# WHY PINNED .deb DOWNLOADS AND NOT an apt repository line: Dell publishes the
+# repository per Ubuntu LTS codename and the runner host runs a newer release
+# than any it lists, so a codename-matched repository line does not exist.
+host_thermal_dell_repo: https://linux.dell.com/repo/community/openmanage/11000/jammy
+host_thermal_pin_version: 11.0.0.0
+host_thermal_packages:
+  - name: srvadmin-hapi
+    path: pool/main/s/srvadmin-hapi/srvadmin-hapi_11.0.0.0_amd64.deb
+    sha256: 13e74ab94519313b175b038d4f9c4cb9aebcb218b25b03664d5b1d8d51a2023d
+  - name: srvadmin-idracadm7
+    path: pool/main/s/srvadmin-idracadm8/srvadmin-idracadm7_11.0.0.0_all.deb
+    sha256: 9db342a4f338870330fff3a0d625da6452ad7847a74b87c8534eba84c5fa649b
+# The runtime library Dell's packages link but do not declare. Ensured on every
+# run rather than only alongside a download, so a host that got the Dell
+# packages without it — the first live install did — is repaired on a re-run.
+host_thermal_extra_packages:
+  - libargtable2-0
+host_thermal_stage_dir: /var/tmp/racadm-install
+# Where racadm ends up, in the order install-racadm.sh looks. The wrapper under
+# sbin is what a PATH lookup finds when the packages register one; the bin path
+# is the binary itself, which is what a host that got the packages without the
+# wrapper has.
+host_thermal_racadm_paths:
+  - /opt/dell/srvadmin/sbin/racadm
+  - /opt/dell/srvadmin/bin/idracadm7

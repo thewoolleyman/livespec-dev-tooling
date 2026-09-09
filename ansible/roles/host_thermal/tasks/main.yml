@@ -1,0 +1,169 @@
+---
+# host_thermal — the node's iDRAC cooling convergence: Dell's in-band racadm,
+# the apply script, and the boot unit that re-converges at every start.
+#
+# Replaces ci-runner/k3s/phase2/host-thermal/install-host-thermal.sh and its
+# install-racadm.sh.
+#
+# WHY IN-BAND racadm: the settings this owns are iDRAC-side, not host-side. The
+# thermal PROFILE has no IPMI raw command; it is set through the iDRAC attribute
+# store, which racadm reaches over the host's internal IPMI pass-through as root
+# with NO credentials and NO network path to the iDRAC. That is what makes the
+# setting reproducible from git on a rebuilt node without a secret.
+#
+# SERVER-ONLY because the cluster role is used as a proxy for PowerEdge
+# hardware, exactly as install-node.sh uses it. The play, not this role, decides
+# that.
+
+- name: Install the library Dell's packages link but do not declare
+  ansible.builtin.apt:
+    name: "{{ host_thermal_extra_packages }}"
+    state: present
+    install_recommends: false
+  become: true
+
+- name: Read the installed Dell package versions
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Decide whether the pinned Dell packages are already installed
+  # Idempotence, as the shell had it: a host already at the pinned version
+  # downloads nothing. Absent packages and wrong-version packages are the same
+  # answer here, so both are folded into one test.
+  ansible.builtin.set_fact:
+    host_thermal_pinned_installed: >-
+      {{ host_thermal_packages | map(attribute='name')
+         | reject('in', ansible_facts['packages'].keys() | list) | list | length == 0
+         and host_thermal_packages | map(attribute='name')
+             | select('in', ansible_facts['packages'].keys() | list)
+             | map('extract', ansible_facts['packages']) | map('first')
+             | map(attribute='version')
+             | reject('equalto', host_thermal_pin_version) | list | length == 0 }}
+
+- name: Install the pinned Dell OpenManage packages
+  when: not host_thermal_pinned_installed
+  become: true
+  block:
+    - name: Create the package staging directory
+      ansible.builtin.file:
+        path: "{{ host_thermal_stage_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Download the pinned Dell packages
+      # The checksum is Dell's own published one, from the same Packages index
+      # the pin comes from.
+      ansible.builtin.get_url:
+        url: "{{ host_thermal_dell_repo }}/{{ item.path }}"
+        checksum: "sha256:{{ item.sha256 }}"
+        dest: "{{ host_thermal_stage_dir }}/{{ item.path | basename }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop: "{{ host_thermal_packages }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Install the pinned Dell packages
+      # Skipped under --check on purpose: it installs the .deb files the task
+      # above has only PLANNED to fetch, so a check-mode run has nothing to
+      # install and would fail describing a host defect that does not exist.
+      ansible.builtin.apt:
+        deb: "{{ host_thermal_stage_dir }}/{{ item.path | basename }}"
+      loop: "{{ host_thermal_packages }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: not ansible_check_mode
+
+    - name: Remove the package staging directory
+      ansible.builtin.file:
+        path: "{{ host_thermal_stage_dir }}"
+        state: absent
+
+- name: Locate racadm
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: host_thermal_racadm
+  become: true
+  loop: "{{ host_thermal_racadm_paths }}"
+
+- name: Refuse a host where racadm is absent after the install
+  ansible.builtin.assert:
+    that:
+      - host_thermal_racadm.results | selectattr('stat.exists') | list | length > 0
+    fail_msg: >-
+      racadm is at none of {{ host_thermal_racadm_paths | join(', ') }} after the
+      package install; the iDRAC settings this role owns cannot be reached
+    success_msg: >-
+      racadm:
+      {{ host_thermal_racadm.results | selectattr('stat.exists') | map(attribute='item') | first }}
+
+- name: Verify racadm answers in-band
+  # The shell's step 5, and it is not ceremony: the first live install left the
+  # binary in place but unable to run, because Dell's packages LINK
+  # libargtable2 without declaring it. `getversion` is the cheapest call that
+  # proves the whole path — binary, shared libraries, and the host's internal
+  # IPMI pass-through to the iDRAC — actually works.
+  #
+  # A post-install verification of what the tasks above produced, so it stays
+  # skipped under --check.
+  ansible.builtin.command: >-
+    {{ host_thermal_racadm.results | selectattr('stat.exists') | map(attribute='item') | first }}
+    getversion
+  register: host_thermal_racadm_version
+  changed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ host_thermal_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the iDRAC thermal apply script
+  # A COPY under /usr/local/lib rather than a path into a checkout, the same
+  # pattern every other node-local unit uses, so the unit does not depend on a
+  # git checkout being present at boot.
+  ansible.builtin.copy:
+    src: "{{ host_thermal_phase2_dir }}/host-thermal/apply-idrac-thermal.sh"
+    dest: "{{ host_thermal_lib_dir }}/apply-idrac-thermal.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  notify: Converge the iDRAC cooling configuration
+
+- name: Check whether the iDRAC thermal unit is already installed
+  # Read BEFORE the task that writes it, so the enable below can be guarded
+  # rather than failing under --check on a unit systemd has not seen.
+  ansible.builtin.stat:
+    path: "{{ host_thermal_unit_dir }}/{{ host_thermal_service }}"
+  register: host_thermal_unit_present
+  become: true
+
+- name: Install the iDRAC thermal boot unit
+  ansible.builtin.copy:
+    src: "{{ host_thermal_phase2_dir }}/host-thermal/{{ host_thermal_service }}"
+    dest: "{{ host_thermal_unit_dir }}/{{ host_thermal_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the iDRAC thermal unit
+
+- name: Publish a changed unit before enabling it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the iDRAC thermal unit at boot
+  ansible.builtin.systemd_service:
+    name: "{{ host_thermal_service }}"
+    enabled: true
+  become: true
+  when: not ansible_check_mode or host_thermal_unit_present.stat.exists

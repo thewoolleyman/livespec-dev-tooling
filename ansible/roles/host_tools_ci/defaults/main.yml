@@ -1,0 +1,7 @@
+---
+host_tools_ci_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+host_tools_ci_bin_dir: /usr/local/bin
+# The operator-facing tools this tree puts on a pool node. One element today;
+# the list is the shape the next one lands in.
+host_tools_ci_tools:
+  - btop-loop

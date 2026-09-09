@@ -1,0 +1,94 @@
+---
+# sccache_binary — the pinned, checksum-verified sccache the pool provides to
+# every job container.
+#
+# Replaces ci-runner/k3s/phase2/sccache/install-sccache-binary.sh (that file's
+# binary half only; converge-sccache-redis.sh is cluster-declarative and stays
+# with the manifests).
+#
+# WHY THE POOL PROVIDES THE BINARY rather than the sandbox image baking it in:
+# no routed repository has to bump its `container:` pin to get the tier, and the
+# binary every consumer runs is one file on the host, bumped in one place.
+
+- name: Check whether sccache is already installed
+  ansible.builtin.stat:
+    path: "{{ sccache_binary_dest }}"
+  register: sccache_binary_present
+  become: true
+
+- name: Read the installed sccache version
+  # check_mode: false because a registered `command` is skipped under --check,
+  # which would leave the currency test below unable to tell an up-to-date host
+  # from a bare one and make every dry run propose a download. A read.
+  ansible.builtin.command: "{{ sccache_binary_dest }} --version"
+  register: sccache_binary_installed_version
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  when: sccache_binary_present.stat.exists
+
+- name: Decide whether the pinned version is already in place
+  ansible.builtin.set_fact:
+    sccache_binary_current: >-
+      {{ sccache_binary_present.stat.exists
+         and (sccache_binary_installed_version.stdout | default('')) is search('sccache ' ~ sccache_binary_version ~ '$') }}
+
+- name: Install the pinned sccache
+  when: not sccache_binary_current
+  become: true
+  block:
+    - name: Create the pool-provided binary directory
+      # Explicit, because --check cannot see past a missing parent.
+      ansible.builtin.file:
+        path: "{{ sccache_binary_bin_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create the download staging directory
+      ansible.builtin.file:
+        path: "{{ sccache_binary_stage_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Download the pinned sccache release
+      ansible.builtin.get_url:
+        url: "{{ sccache_binary_url }}"
+        checksum: "sha256:{{ sccache_binary_sha256 }}"
+        dest: "{{ sccache_binary_stage_dir }}/{{ sccache_binary_asset }}.tar.gz"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Unpack the release
+      # Skipped under --check on purpose: it exercises the archive the task
+      # above has only PLANNED to fetch, so a check-mode run has nothing to
+      # unpack and would fail describing a host defect that does not exist.
+      ansible.builtin.unarchive:
+        src: "{{ sccache_binary_stage_dir }}/{{ sccache_binary_asset }}.tar.gz"
+        dest: "{{ sccache_binary_stage_dir }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      when: not ansible_check_mode
+
+    - name: Install the sccache binary
+      # Also skipped under --check, for the same reason as the unpack.
+      ansible.builtin.copy:
+        src: "{{ sccache_binary_stage_dir }}/{{ sccache_binary_asset }}/sccache"
+        dest: "{{ sccache_binary_dest }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      when: not ansible_check_mode
+
+    - name: Remove the download staging directory
+      ansible.builtin.file:
+        path: "{{ sccache_binary_stage_dir }}"
+        state: absent

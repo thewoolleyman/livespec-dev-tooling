@@ -1,0 +1,47 @@
+---
+# Reached only when storage_layout_allow_live_migration authorises it and a
+# store genuinely has to move. The k3s unit is stopped for the copy and started
+# again afterwards, because rsyncing a running containerd's store is not a copy
+# of a consistent thing.
+
+- name: Read which k3s unit is active on this node
+  ansible.builtin.service_facts:
+
+- name: Select the active k3s unit
+  ansible.builtin.set_fact:
+    storage_layout_active_k3s_unit: >-
+      {{ storage_layout_k3s_units
+         | select('in', ansible_facts['services'] | dict2items
+                        | selectattr('value.state', 'equalto', 'running')
+                        | map(attribute='key') | list)
+         | first | default('') }}
+
+- name: Stop the active k3s unit for the copy
+  ansible.builtin.systemd_service:
+    name: "{{ storage_layout_active_k3s_unit }}"
+    state: stopped
+  become: true
+  when: storage_layout_active_k3s_unit | length > 0
+
+- name: Copy each store onto its tier
+  # rsync and never --delete: the copy KEEPS whatever the tier already carries
+  # and lets the root-filesystem store win any conflict. Nothing is destroyed,
+  # so a wrong verdict costs disk rather than data.
+  # noqa: command-instead-of-module — the synchronize module is
+  # ansible.posix.synchronize, which this tree does not carry, and which
+  # drives a controller-to-host transfer rather than the host-local copy
+  # this is. `copy` with remote_src would lose hardlinks, ACLs and xattrs,
+  # none of which a containerd store can do without.
+  ansible.builtin.command: rsync -aHAX {{ item.dir }}/ {{ item.src }}/
+  become: true
+  loop: "{{ storage_layout_pending_migrations }}"
+  loop_control:
+    label: "{{ item.dir }}"
+  changed_when: true
+
+- name: Start the k3s unit again
+  ansible.builtin.systemd_service:
+    name: "{{ storage_layout_active_k3s_unit }}"
+    state: started
+  become: true
+  when: storage_layout_active_k3s_unit | length > 0

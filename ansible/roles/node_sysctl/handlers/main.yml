@@ -1,0 +1,11 @@
+---
+- name: Apply the sysctl drop-ins
+  # `sysctl -p FILE` and not `sysctl --system`: the shell applied only the file
+  # it had just written, and --system would re-apply every drop-in on the host,
+  # which is a wider act than this role owns.
+  ansible.builtin.command: sysctl -p {{ item.dest }}
+  become: true
+  loop: "{{ node_sysctl_dropins }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  changed_when: true

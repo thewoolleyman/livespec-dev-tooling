@@ -1,0 +1,18 @@
+---
+- name: Reload systemd for the churn-slot units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+
+- name: Apply the churn-slot capacity now
+  # The shell installer runs the service once at install so a NEW capacity takes
+  # effect at deployment rather than up to five minutes later, at the timer's
+  # next tick. Here it is a HANDLER and not a task, so it fires only when the
+  # unit or the patch script actually changed: `state: started` on a oneshot
+  # runs it, and running it on every converge would report a change on every
+  # pass. Patching a node to a capacity it already carries is a cluster-side
+  # no-op, so a spurious run would be harmless but dishonest.
+  ansible.builtin.systemd_service:
+    name: "{{ node_extended_resource_service }}"
+    state: started
+  become: true

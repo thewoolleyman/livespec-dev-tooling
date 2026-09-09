@@ -1,0 +1,158 @@
+---
+# container_hook — the fleet-patched ARC Kubernetes container hook for the
+# pinned runner image, plus that image's pre-seeded externals.
+#
+# Replaces the INSTALL side of
+# ci-runner/k3s/phase2/container-hook/install-container-hook.sh. The bundle
+# BUILD (build-patched-hook.sh) is developer-host work and stays repo-side; this
+# role distributes the committed bundle.
+#
+# WHAT LANDS:
+#   /usr/local/lib/ci-runner-k3s/hooks/<version>/index.js         0644 root
+#   /usr/local/lib/ci-runner-k3s/hooks/<version>/index.js.sha256  0644 root
+#   /usr/local/lib/ci-runner-k3s/hooks/<version>/BUILD-INFO       0644 root
+#   <storage-root>/.externals/<version>/ and the `current` pointer
+# The runner pod runs as uid 1000 and reads the hook through a read-only
+# hostPath mount, so 0644 root-owned is exactly enough. Per-version directories
+# let a bump stage the new hook before any values file selects it.
+
+- name: Refuse a runner-version disagreement among the scale-set values files
+  # Every arc/values-*.yaml states the runner version THREE times — the image
+  # pin, the hostPath of the fleet-patched hook, and the
+  # ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION the hook reads — and it cannot be
+  # stated once, because the boot converge applies each file on its own with
+  # `helm upgrade -f <file>` and merges no shared base. A bump rewrites EVERY
+  # one of them in the same change; this is what notices when one is left
+  # behind, here where a person is watching rather than at the next boot.
+  #
+  # Controller-side over the committed files, so it is check-mode-safe and does
+  # not depend on the host.
+  ansible.builtin.assert:
+    that:
+      - container_hook_values_file is search('image:\s*' ~ (container_hook_runner_image | regex_escape))
+      - >-
+        container_hook_values_file
+        is search('path:\s*' ~ (container_hook_hooks_root | regex_escape)
+                  ~ '/' ~ (container_hook_runner_version | regex_escape) ~ '/index\.js')
+      - >-
+        container_hook_values_file
+        is search('ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION[\s\S]{0,120}?value:\s*"?'
+                  ~ (container_hook_runner_version | regex_escape))
+    fail_msg: >-
+      {{ item | basename }} does not agree that the pinned runner is
+      {{ container_hook_runner_version }} on all three of its image pin, its hook
+      hostPath and its ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION
+    success_msg: "{{ item | basename }} pins runner {{ container_hook_runner_version }}"
+  vars:
+    container_hook_values_file: "{{ lookup('ansible.builtin.file', item) }}"
+  loop: >-
+    {{ query('ansible.builtin.fileglob', container_hook_phase2_dir ~ '/arc/values-*.yaml')
+       | reject('search', 'values-EXAMPLE-repo\.yaml$') | sort }}
+  loop_control:
+    label: "{{ item | basename }}"
+
+- name: Create the per-version hook directory
+  # Explicit, because --check cannot see past a missing parent: a copy into an
+  # absent directory reports a would-be change and fails only on a real apply.
+  ansible.builtin.file:
+    path: "{{ container_hook_hooks_root }}/{{ container_hook_runner_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the fleet-patched container hook bundle
+  # The checksum is the bundle's OWN committed manifest, so a corrupt or
+  # substituted index.js is refused before it reaches the host rather than
+  # after. install-container-hook.sh verified the same digest before and after
+  # the copy; `copy` with a checksum collapses that into one guarantee.
+  ansible.builtin.copy:
+    src: "{{ container_hook_phase2_dir }}/container-hook/bundle/{{ container_hook_runner_version }}/{{ item }}"
+    dest: "{{ container_hook_hooks_root }}/{{ container_hook_runner_version }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+    checksum: >-
+      {{ (lookup('ansible.builtin.file',
+                 container_hook_phase2_dir ~ '/container-hook/bundle/'
+                 ~ container_hook_runner_version ~ '/index.js.sha256').split() | first)
+         if item == 'index.js' else omit }}
+  become: true
+  loop:
+    - index.js
+    - index.js.sha256
+    - BUILD-INFO
+
+- name: Check whether this runner version's externals are already seeded
+  # The marker extract-externals.sh writes at the end of a successful
+  # extraction. Reading it here keeps the role a no-op on a seeded node instead
+  # of driving a 16 KB script on every converge.
+  ansible.builtin.stat:
+    path: >-
+      {{ container_hook_storage_root }}/.externals/{{ container_hook_runner_version
+      }}/.externals-seeded-{{ container_hook_runner_version }}
+  register: container_hook_externals_seeded
+  become: true
+
+- name: Seed this runner image's externals
+  # THE ONE THING THAT STAYS A SCRIPT, and the reason is not laziness. The seed
+  # mounts the pinned runner image read-only through containerd
+  # (`ctr -n k8s.io images mount`, pulling it if absent), verifies the runner
+  # version and the upstream hook digest INSIDE the image, copies
+  # /home/runner/externals out, writes a per-file sha256 manifest, publishes the
+  # tree with one atomic rename and then the `current` symlink with another.
+  # Ansible has no module for any of that, and re-expressing it as a sequence of
+  # `command` tasks would be the same shell with worse error handling.
+  #
+  # It is idempotent on its own manifest, and the marker check above keeps it
+  # from running at all on a seeded node.
+  when: not container_hook_externals_seeded.stat.exists
+  become: true
+  block:
+    - name: Create the externals-extraction staging directory
+      ansible.builtin.file:
+        path: "{{ container_hook_stage_dir }}/container-hook"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Stage the extraction script and the siblings it sources
+      # extract-externals.sh sources runner-image.sh and k3s-runtime-ready.sh,
+      # so the set travels together; `script` would copy only one file.
+      ansible.builtin.copy:
+        src: "{{ container_hook_phase2_dir }}/{{ item }}"
+        dest: "{{ container_hook_stage_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ container_hook_stage_files }}"
+
+    - name: Read the upstream hook digest the bundle was patched from
+      # Passed to the extraction as --expect-hook-sha256 so the image's own
+      # /home/runner/k8s/index.js is cross-checked against the file this bundle
+      # patched. A mismatch means the image and the bundle are not a pair.
+      ansible.builtin.set_fact:
+        container_hook_upstream_sha: >-
+          {{ (lookup('ansible.builtin.file',
+                     container_hook_phase2_dir ~ '/container-hook/bundle/'
+                     ~ container_hook_runner_version ~ '/BUILD-INFO')
+              | regex_search('upstream_index_js_sha256=([0-9a-f]{64})', '\1') | first) }}
+
+    - name: Extract the runner image's externals
+      # Skipped under --check: it exercises the scripts the tasks above have
+      # only PLANNED to stage, and it mounts an image and writes the seed tree.
+      ansible.builtin.command:
+        cmd: >-
+          {{ container_hook_stage_dir }}/container-hook/extract-externals.sh
+          --image {{ container_hook_runner_image }}
+          --storage-root {{ container_hook_storage_root }}
+          --expect-hook-sha256 {{ container_hook_upstream_sha }}
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Remove the externals-extraction staging directory
+      ansible.builtin.file:
+        path: "{{ container_hook_stage_dir }}"
+        state: absent

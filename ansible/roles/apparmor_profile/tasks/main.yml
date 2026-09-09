@@ -1,0 +1,77 @@
+---
+# apparmor_profile — the ci-runner-workflow AppArmor profile that fixes the
+# stacked-label signal/ptrace denial for hook-generated workflow pods.
+#
+# Replaces the KERNEL HALF of
+# ci-runner/k3s/phase2/apparmor/install-apparmor-profile.sh. The other half —
+# converging the arc-hook-pod-template ConfigMap — is a CLUSTER object and stays
+# with the manifests; the server's boot converge owns it for the whole pool.
+# That split is the shell's own `--profile-only` boundary, and it holds here for
+# the same reason: the pool has ONE ConfigMap, written once, and every node's
+# kernel carries the profile it names.
+#
+# NODE-LOCAL: an AppArmor profile is kernel state on the machine that runs the
+# pod. Dropping the file in /etc/apparmor.d/ is what makes the load survive a
+# reboot, because the distribution's apparmor unit parses that directory at boot.
+
+- name: Locate apparmor_parser
+  # `stat` and not a `command -v` probe: the command module runs an executable
+  # directly with no shell, so `command -v` would look for a binary of that name
+  # and always fail. stat is also check-mode-safe by construction, which a
+  # registered command is not.
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: apparmor_profile_parser
+  become: true
+  loop: "{{ apparmor_profile_parser_paths }}"
+
+- name: Refuse a host with no apparmor_parser
+  # The parser writes kernel state, so a host without it cannot load the
+  # profile at all and there is nothing for this role to do but say so.
+  ansible.builtin.assert:
+    that:
+      - apparmor_profile_parser.results | selectattr('stat.exists') | list | length > 0
+    fail_msg: >-
+      apparmor_parser is at none of
+      {{ apparmor_profile_parser_paths | join(', ') }}; this host cannot load the profile
+    success_msg: >-
+      apparmor_parser:
+      {{ apparmor_profile_parser.results | selectattr('stat.exists') | map(attribute='item') | first }}
+
+- name: Install the ci-runner-workflow AppArmor profile
+  ansible.builtin.copy:
+    src: "{{ apparmor_profile_phase2_dir }}/apparmor/{{ apparmor_profile_name }}"
+    dest: "{{ apparmor_profile_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Load the AppArmor profile
+
+- name: Load a changed profile before verifying it
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the loaded AppArmor profiles
+  # A post-install verification of what the load above produced, so it stays
+  # skipped under --check.
+  #
+  # aa-status is read to EOF rather than piped into `grep -q`: grep exits at the
+  # first match and the producer takes SIGPIPE, so on a host carrying more
+  # profiles than one write() holds a correctly-enforced profile read as absent.
+  # Measured on poweredge-xubuntu 2026-09-06 at 201 loaded profiles.
+  ansible.builtin.command: aa-status
+  register: apparmor_profile_status
+  changed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Refuse a profile that is not loaded in enforce mode
+  # Fail loudly rather than leaving a half-installed node: a profile that parsed
+  # but did not reach enforce mode would let pods start with weaker confinement
+  # than this tree claims they have.
+  ansible.builtin.assert:
+    that:
+      - apparmor_profile_name in (apparmor_profile_status.stdout_lines | map('trim') | list)
+    fail_msg: "{{ apparmor_profile_name }} is not loaded in enforce mode after parsing"
+    success_msg: "{{ apparmor_profile_name }} is loaded in enforce mode"
+  when: not ansible_check_mode

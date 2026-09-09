@@ -1,0 +1,87 @@
+---
+# node_sysctl — the kernel budgets the CI runner pool needs on every node that
+# runs pods: the per-user inotify INSTANCE budget and the per-user kernel
+# keyring quota.
+#
+# Replaces ci-runner/k3s/phase2/node-inotify-budget/install-inotify-sysctl.sh
+# and node-keyring-budget/install-keyring-sysctl.sh. One role, because they are
+# one thing — two /etc/sysctl.d/ drop-ins applied the same way — and the shell
+# kept them apart only because each arrived on its own day.
+#
+# WHY A sysctl.d DROP-IN AND NOT A REAPPLY TIMER: systemd-sysctl.service applies
+# /etc/sysctl.d/*.conf at every boot, so the values survive a reboot, a k3s
+# restart and a k3s upgrade with no reconciliation loop.
+#
+# WHY copy AND NOT ansible.posix.sysctl: that module writes its own minimal
+# key=value line and would discard the shipped file's header, which is where
+# each value's derivation is recorded. The file IS the documentation here.
+
+- name: Refuse a drop-in whose shipped values disagree with this role
+  # Controller-side and check-mode-safe: it reads the committed file, never the
+  # host. This is the guard that lets the running-value verification below cite
+  # a concrete number without that number becoming a second source of truth.
+  ansible.builtin.assert:
+    that:
+      - >-
+        lookup('ansible.builtin.file', node_sysctl_phase2_dir ~ '/' ~ item.0.src)
+        is ansible.builtin.regex('^\s*' ~ (item.1.key | regex_escape) ~ '\s*=\s*' ~ item.1.value ~ '\s*$',
+                                 multiline=True)
+    fail_msg: >-
+      {{ item.0.src }} does not declare {{ item.1.key }} = {{ item.1.value }};
+      this role's expected value and the shipped drop-in have drifted apart
+    success_msg: "{{ item.0.src }} declares {{ item.1.key }} = {{ item.1.value }}"
+  loop: "{{ node_sysctl_dropins | subelements('keys') }}"
+  loop_control:
+    label: "{{ item.0.dest }}: {{ item.1.key }}"
+
+- name: Install the sysctl drop-ins
+  ansible.builtin.copy:
+    src: "{{ node_sysctl_phase2_dir }}/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ node_sysctl_dropins }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Apply the sysctl drop-ins
+
+- name: Remove the untracked predecessor drop-ins
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop: "{{ node_sysctl_legacy_dropins }}"
+  notify: Apply the sysctl drop-ins
+
+- name: Apply any pending sysctl change before verifying it
+  # Handlers otherwise run at the end of the play, which would put the
+  # verification below before the apply it is verifying.
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the running kernel value
+  # A post-install verification: it reads what the apply above produced, so
+  # under --check — where nothing was applied — it is deliberately skipped
+  # rather than made check-mode-safe.
+  ansible.builtin.command: sysctl -n {{ item.1.key }}
+  register: node_sysctl_running
+  changed_when: false
+  become: true
+  loop: "{{ node_sysctl_dropins | subelements('keys') }}"
+  loop_control:
+    label: "{{ item.1.key }}"
+  when: not ansible_check_mode
+
+- name: Refuse a running value that does not match the shipped intent
+  ansible.builtin.assert:
+    that:
+      - item.stdout | int == item.item.1.value | int
+    fail_msg: >-
+      {{ item.item.1.key }} is {{ item.stdout }} after apply,
+      expected {{ item.item.1.value }}
+    success_msg: "{{ item.item.1.key }} = {{ item.stdout }}"
+  loop: "{{ node_sysctl_running.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.1.key }}"
+  when: not ansible_check_mode

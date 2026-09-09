@@ -1,0 +1,72 @@
+---
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ runner_pod_lifecycle_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the runner-pod-lifecycle scan script
+  ansible.builtin.copy:
+    src: "{{ runner_pod_lifecycle_phase2_dir }}/runner-pod-lifecycle/scan-runner-pod-lifecycle.sh"
+    dest: "{{ runner_pod_lifecycle_lib_dir }}/scan-runner-pod-lifecycle.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the runner-pod-lifecycle timer is already installed
+  # Read BEFORE the tasks that write the units, so the arming below can be
+  # guarded rather than failing under --check on a unit systemd has not seen.
+  ansible.builtin.stat:
+    path: "{{ runner_pod_lifecycle_unit_dir }}/{{ runner_pod_lifecycle_timer }}"
+  register: runner_pod_lifecycle_timer_present
+  become: true
+
+- name: Install the runner-pod-lifecycle units
+  ansible.builtin.copy:
+    src: "{{ runner_pod_lifecycle_phase2_dir }}/runner-pod-lifecycle/{{ item }}"
+    dest: "{{ runner_pod_lifecycle_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop:
+    - "{{ runner_pod_lifecycle_service }}"
+    - "{{ runner_pod_lifecycle_timer }}"
+  notify: Reload systemd for the runner-pod-lifecycle units
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the runner-pod-lifecycle timer
+  ansible.builtin.systemd_service:
+    name: "{{ runner_pod_lifecycle_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or runner_pod_lifecycle_timer_present.stat.exists
+
+- name: Read the runner-pod-lifecycle timer's active state
+  # A post-install verification of what the arming above produced, so it stays
+  # skipped under --check.
+  ansible.builtin.systemd_service:
+    name: "{{ runner_pod_lifecycle_timer }}"
+  register: runner_pod_lifecycle_timer_state
+  changed_when: false
+  failed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Refuse a runner-pod-lifecycle timer that is not active
+  ansible.builtin.assert:
+    that:
+      - runner_pod_lifecycle_timer_state.status.ActiveState | default('absent') == 'active'
+    fail_msg: >-
+      {{ runner_pod_lifecycle_timer }} is
+      '{{ runner_pod_lifecycle_timer_state.status.ActiveState | default("absent") }}', expected 'active'
+    success_msg: "{{ runner_pod_lifecycle_timer }} is active"
+  when: not ansible_check_mode

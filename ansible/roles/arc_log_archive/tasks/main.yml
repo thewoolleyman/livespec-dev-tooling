@@ -1,0 +1,21 @@
+---
+# arc_log_archive — the 2-minute incremental pull of ARC controller and listener
+# pod logs into an on-host archive.
+#
+# Replaces ci-runner/k3s/phase2/arc-log-archive/install-arc-log-archive.sh,
+# INCLUDING its agent branch.
+#
+# SERVER-ONLY, AND THE AGENT PATH REMOVES RATHER THAN INSTALLS: the archive
+# reads the cluster with the admin kubeconfig only a server holds.
+#
+# Neither the archive script under the pool library directory nor the two data
+# directories are removed on an agent, for the reason the sibling roles state:
+# the server path of this role owns them.
+
+- name: Remove the server-only ARC log archive units from an agent
+  ansible.builtin.include_tasks: remove_units.yml
+  when: arc_log_archive_cluster_role == 'agent'
+
+- name: Install the ARC log archive on the server
+  ansible.builtin.include_tasks: install_units.yml
+  when: arc_log_archive_cluster_role == 'server'

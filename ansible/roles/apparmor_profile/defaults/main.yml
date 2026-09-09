@@ -1,0 +1,10 @@
+---
+apparmor_profile_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+apparmor_profile_name: ci-runner-workflow
+apparmor_profile_dest: /etc/apparmor.d/ci-runner-workflow
+# Where apparmor_parser lives on a Debian-family host. Both are the same
+# binary on Ubuntu (/sbin is a symlink into /usr/sbin); both are listed so the
+# check does not depend on which one a given release ships as the real path.
+apparmor_profile_parser_paths:
+  - /usr/sbin/apparmor_parser
+  - /sbin/apparmor_parser

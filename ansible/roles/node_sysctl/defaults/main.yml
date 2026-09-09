@@ -1,0 +1,24 @@
+---
+node_sysctl_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+# One record per shipped drop-in. `keys` states the values this role expects the
+# shipped file to declare; the first task below refuses to install a file that
+# disagrees, so the number verified against the running kernel cannot drift away
+# from the number the drop-in actually carries. The shipped file stays the
+# source of truth — its header carries each value's derivation.
+node_sysctl_dropins:
+  - src: node-inotify-budget/99-ci-runner-inotify.conf
+    dest: /etc/sysctl.d/99-ci-runner-inotify.conf
+    keys:
+      - key: fs.inotify.max_user_instances
+        value: 8192
+  - src: node-keyring-budget/60-k3s-container-keyring.conf
+    dest: /etc/sysctl.d/60-k3s-container-keyring.conf
+    keys:
+      - key: kernel.keys.maxkeys
+        value: 2000
+      - key: kernel.keys.maxbytes
+        value: 200000
+# The untracked drop-in the keyring file replaces (same values, an earlier
+# lane's name). Removed so two files cannot disagree later.
+node_sysctl_legacy_dropins:
+  - /etc/sysctl.d/60-ci-runner-keyring.conf

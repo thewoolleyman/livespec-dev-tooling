@@ -1,0 +1,84 @@
+---
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ arc_log_archive_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the ARC log archive script
+  ansible.builtin.copy:
+    src: "{{ arc_log_archive_phase2_dir }}/arc-log-archive/archive-arc-logs.sh"
+    dest: "{{ arc_log_archive_lib_dir }}/archive-arc-logs.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Create the archive and state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  become: true
+  loop:
+    - "{{ arc_log_archive_log_dir }}"
+    - "{{ arc_log_archive_state_dir }}"
+
+- name: Check whether the ARC log archive timer is already installed
+  # Read BEFORE the tasks that write the units, so the arming below can be
+  # guarded rather than failing under --check on a unit systemd has not seen.
+  ansible.builtin.stat:
+    path: "{{ arc_log_archive_unit_dir }}/{{ arc_log_archive_timer }}"
+  register: arc_log_archive_timer_present
+  become: true
+
+- name: Install the ARC log archive units
+  ansible.builtin.copy:
+    src: "{{ arc_log_archive_phase2_dir }}/arc-log-archive/{{ item }}"
+    dest: "{{ arc_log_archive_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop:
+    - "{{ arc_log_archive_service }}"
+    - "{{ arc_log_archive_timer }}"
+  notify: Reload systemd for the ARC log archive units
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the ARC log archive timer
+  ansible.builtin.systemd_service:
+    name: "{{ arc_log_archive_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or arc_log_archive_timer_present.stat.exists
+
+- name: Read the ARC log archive timer's active state
+  # A post-install verification of what the arming above produced, so it stays
+  # skipped under --check.
+  ansible.builtin.systemd_service:
+    name: "{{ arc_log_archive_timer }}"
+  register: arc_log_archive_timer_state
+  changed_when: false
+  failed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Refuse an ARC log archive timer that is not active
+  ansible.builtin.assert:
+    that:
+      - arc_log_archive_timer_state.status.ActiveState | default('absent') == 'active'
+    fail_msg: >-
+      {{ arc_log_archive_timer }} is
+      '{{ arc_log_archive_timer_state.status.ActiveState | default("absent") }}', expected 'active'
+    success_msg: "{{ arc_log_archive_timer }} is active"
+  when: not ansible_check_mode

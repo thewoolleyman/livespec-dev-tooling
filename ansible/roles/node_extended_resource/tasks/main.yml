@@ -1,0 +1,36 @@
+---
+# node_extended_resource — the ci-runner.io/churn-slot reapply insurance: the
+# patch script, a oneshot service carrying this node's capacity, and the
+# 5-minute timer that keeps reconciling it.
+#
+# Replaces
+# ci-runner/k3s/phase2/node-extended-resource/install-reapply-unit.sh, INCLUDING
+# its agent branch.
+#
+# WHY A TIMER AT ALL, when the sysctl budgets need none: an extended resource
+# set with `kubectl patch node --subresource=status` is NOT persisted by kubelet,
+# so it is lost on a kubelet restart. A kernel sysctl written under
+# /etc/sysctl.d/ has no such gap, which is why node_sysctl ships no timer.
+#
+# SERVER-ONLY, AND THE AGENT PATH REMOVES RATHER THAN INSTALLS. The service is
+# server-shaped three ways and an agent satisfies none of them: it is ordered
+# Requires=k3s.service while an agent runs k3s-agent.service; it carries
+# Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml, the admin file only a server
+# holds; and patch-node-churn-capacity.sh patches EVERY node labelled
+# k3s-role=arc-runner-host with ONE capacity, so applying it is a CLUSTER-WIDE
+# act the server's own timer already performs over a selector that already
+# includes the agent. Installing it on an agent is wrong in KIND, not merely
+# misconfigured.
+#
+# The patch SCRIPT is deliberately not removed on an agent: the server path of
+# this role owns that file, nothing on an agent executes it once the units are
+# gone, and deleting it would make the agent path a cleaner of state it does not
+# own.
+
+- name: Remove the server-only churn-slot units from an agent
+  ansible.builtin.include_tasks: remove_units.yml
+  when: node_extended_resource_cluster_role == 'agent'
+
+- name: Install the churn-slot reapply units on the server
+  ansible.builtin.include_tasks: install_units.yml
+  when: node_extended_resource_cluster_role == 'server'

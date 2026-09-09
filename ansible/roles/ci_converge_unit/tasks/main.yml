@@ -1,0 +1,139 @@
+---
+# ci_converge_unit — the self-contained artifact tree the boot converge applies,
+# and the unit that applies it on the next boot.
+#
+# Replaces ci-runner/k3s/phase2/reconstruct/install-converge-unit.sh.
+#
+# WHY THE WHOLE ARTIFACT SET AND NOT JUST THE ONE SCRIPT: converge-ci-stack.sh
+# is boot-critical and it APPLIES a tree of repository YAML and scripts. The
+# live host carries NO repository checkout, so a boot unit cannot read them from
+# a working tree. Copying the set into /usr/local/lib/ci-runner-k3s/ makes the
+# converge self-contained and boot-durable with no checkout present; the
+# repository stays the source of truth and this role is the refresh step.
+#
+# THIS ROLE DISTRIBUTES; IT DOES NOT APPLY. Everything under the tree is
+# Kubernetes-declarative — Kueue queues, ARC values, manifests, kustomizations —
+# and stays that way. The converge script's own cluster control flow is
+# deliberately untouched by this conversion.
+#
+# WHY ENABLED AND NOT STARTED: starting the service APPLIES the stack live. It
+# runs on the next boot, or when an operator starts it by hand.
+#
+# NOT copied here: patch-node-churn-capacity.sh. Converge step 1b runs it from
+# this same directory, but node_extended_resource owns that file — one owner per
+# file. Its absence is warned about at the end of this role, as the shell warned.
+
+- name: Resolve the glob-derived members of the installed tree
+  # The three sets the shell installer resolves with a shell glob. Resolving
+  # them here rather than listing them keeps a new per-repo queue or scale set
+  # travelling with no edit to this role. values-EXAMPLE-repo.yaml is excluded
+  # because it is an authoring template, never a live release.
+  ansible.builtin.set_fact:
+    ci_converge_unit_glob_files: >-
+      {{ (query('ansible.builtin.fileglob', ci_converge_unit_phase2_dir ~ '/arc/values-*.yaml')
+          | reject('search', 'values-EXAMPLE-repo\.yaml$')
+          | map('regex_replace', '^.*/', 'arc/') | list)
+         + (query('ansible.builtin.fileglob', ci_converge_unit_phase2_dir ~ '/kueue/core/*.yaml')
+            | map('regex_replace', '^.*/', 'kueue/core/') | list)
+         + (query('ansible.builtin.fileglob', ci_converge_unit_phase2_dir ~ '/kueue/cluster-queue-*.yaml')
+            | map('regex_replace', '^.*/', 'kueue/') | list) }}
+
+- name: Create the installed artifact tree
+  ansible.builtin.file:
+    path: "{{ (ci_converge_unit_lib_dir ~ '/' ~ item) | regex_replace('/$', '') }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ ci_converge_unit_directories }}"
+  loop_control:
+    label: "{{ item | default('(root)', true) }}"
+
+- name: Copy the named members of the installed tree
+  ansible.builtin.copy:
+    src: "{{ ci_converge_unit_phase2_dir }}/{{ item.src }}"
+    dest: "{{ ci_converge_unit_lib_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  become: true
+  loop: "{{ ci_converge_unit_files }}"
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Copy the glob-derived members of the installed tree
+  # All 0644: every one of them is a manifest or a values file the converge
+  # applies, never something it executes.
+  ansible.builtin.copy:
+    src: "{{ ci_converge_unit_phase2_dir }}/{{ item }}"
+    dest: "{{ ci_converge_unit_lib_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ ci_converge_unit_glob_files | sort }}"
+
+- name: Copy the Kueue webhook probe's RBAC manifest
+  # The ONE member of the installed set that comes from outside phase2/.
+  ansible.builtin.copy:
+    src: "{{ ci_converge_unit_observability_dir }}/kueue-webhook-probe-rbac.yaml"
+    dest: "{{ ci_converge_unit_lib_dir }}/observability/kueue-webhook-probe-rbac.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Check whether the converge unit is already installed
+  # Read BEFORE the task that writes it: under --check the unit file is only
+  # would-be written, and an unguarded enable would fail with "Could not find
+  # the requested service" and blame the host.
+  ansible.builtin.stat:
+    path: "{{ ci_converge_unit_unit_dir }}/{{ ci_converge_unit_service }}"
+  register: ci_converge_unit_present
+  become: true
+
+- name: Install the converge unit
+  ansible.builtin.copy:
+    src: "{{ ci_converge_unit_phase2_dir }}/reconstruct/{{ ci_converge_unit_service }}"
+    dest: "{{ ci_converge_unit_unit_dir }}/{{ ci_converge_unit_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the converge unit
+
+- name: Publish a changed unit before enabling it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the converge unit for the next boot
+  # `enabled: true` and NO `state:`. Starting it applies the whole cluster stack.
+  ansible.builtin.systemd_service:
+    name: "{{ ci_converge_unit_service }}"
+    enabled: true
+  become: true
+  when: not ansible_check_mode or ci_converge_unit_present.stat.exists
+
+- name: Read whether the churn-slot reapply unit is in place
+  ansible.builtin.service_facts:
+
+- name: Read whether the churn-slot patch script is in place
+  ansible.builtin.stat:
+    path: "{{ ci_converge_unit_lib_dir }}/{{ ci_converge_unit_reapply_script }}"
+  register: ci_converge_unit_reapply_script_present
+  become: true
+
+- name: Warn when converge step 1b cannot assert the churn-slot capacity
+  # A WARNING and not a failure, exactly as the shell had it: a converge without
+  # the reapply unit still builds the cluster stack, and says so itself at step
+  # 1b. node_extended_resource owns both of these.
+  ansible.builtin.debug:
+    msg: >-
+      WARN: {{ ci_converge_unit_reapply_service }} is
+      '{{ ansible_facts['services'][ci_converge_unit_reapply_service]['status'] | default('absent') }}'
+      or {{ ci_converge_unit_lib_dir }}/{{ ci_converge_unit_reapply_script }} is missing —
+      converge step 1b cannot assert the churn-slot capacity. Run the
+      node_extended_resource role on this host.
+  when: >-
+    ansible_facts['services'][ci_converge_unit_reapply_service]['status'] | default('absent') != 'enabled'
+    or not ci_converge_unit_reapply_script_present.stat.exists

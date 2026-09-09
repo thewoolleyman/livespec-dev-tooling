@@ -1,0 +1,7 @@
+---
+cache_telemetry_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+# The directory arc/hook-pod-template.yaml mounts READ-ONLY into every job
+# container at /opt/ci-runner/bin, and warm-cache-cronjob.yaml into the
+# populator. Shared with sccache_binary, which is why both roles create it.
+cache_telemetry_bin_dir: /usr/local/lib/ci-runner-k3s/bin
+cache_telemetry_dest: /usr/local/lib/ci-runner-k3s/bin/ci-cache-span

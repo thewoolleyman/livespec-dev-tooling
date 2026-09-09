@@ -1,0 +1,21 @@
+---
+wedged_runner_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+wedged_runner_cluster_role: "{{ cluster_role }}"
+wedged_runner_lib_dir: /usr/local/lib/ci-runner-k3s
+wedged_runner_unit_dir: /etc/systemd/system
+wedged_runner_service: scan-wedged-runners.service
+wedged_runner_timer: scan-wedged-runners.timer
+# 'clear' or 'report', and the choice is per host rather than a fleet constant.
+#
+#   report  the sweep prints findings and exits non-zero, so the unit lands
+#           `failed` and `systemctl is-failed` becomes the signal. Correct
+#           wherever something actually watches unit state.
+#   clear   the sweep additionally DELETES flagged pods.
+#
+# 'clear' is what poweredge-xubuntu carries, and install-node.sh's default:
+# nothing on that host routes systemd unit failures anywhere a human sees them,
+# so report-only there is not a weaker remedy but no remedy. The deletion is
+# guarded three ways in the scan itself — scale-set runner pods are ephemeral,
+# a flagged pod cannot hold work, and any pod with a live -workflow companion
+# is refused.
+wedged_runner_mode: clear

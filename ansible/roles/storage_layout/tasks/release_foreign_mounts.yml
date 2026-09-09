@@ -1,0 +1,43 @@
+---
+# A desktop node runs udisks, which automounts a freshly formatted volume at
+# /run/media/<user>/<label> the moment mkfs finishes — seen on gmktec-xubuntu
+# 2026-09-07. Mounting the same volume where it belongs would then either fail
+# or stack, so the foreign mountpoint goes first.
+#
+# NARROW ON PURPOSE. A tier already mounted where it belongs is skipped
+# entirely, whatever else its device carries: on a live node the workvols device
+# carries one kubelet per-pod bind for every running runner and the containerd
+# device carries its own bind target, so a rule that unmounted every non-managed
+# mountpoint of a tier device would tear a running pool apart. A foreign
+# mountpoint can only block us when the tier's own mountpoint is still free, and
+# that is the only case this acts on.
+
+- name: List every mountpoint of each tier device
+  # check_mode: false so a dry run reaches the same verdict as the run it
+  # describes; findmnt is a read.
+  ansible.builtin.command: findmnt -rn -o TARGET --source {{ item.devices | first }}
+  register: storage_layout_device_mounts
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  loop: "{{ storage_layout_tiers }}"
+  loop_control:
+    label: "{{ item.mount }}"
+
+- name: Collect the foreign mountpoints that block a tier
+  ansible.builtin.set_fact:
+    storage_layout_foreign_mounts: >-
+      {{ storage_layout_device_mounts.results
+         | rejectattr('item.mount', 'in', ansible_facts['mounts'] | map(attribute='mount') | list)
+         | map(attribute='stdout_lines') | flatten
+         | reject('in', storage_layout_fstab | map(attribute='path') | list)
+         | list }}
+
+- name: Unmount a tier volume from its foreign mountpoint
+  # noqa: command-instead-of-module — the mount module is ansible.posix.mount,
+  # and ansible.posix is not available to this tree.
+  ansible.builtin.command: umount {{ item }}
+  become: true
+  loop: "{{ storage_layout_foreign_mounts }}"
+  changed_when: true

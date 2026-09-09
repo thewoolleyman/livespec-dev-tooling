@@ -1,0 +1,106 @@
+---
+- name: Refuse a capacity that is not a non-negative integer
+  # Not defaulted in the shell either, and for the same reason: this unit makes
+  # an ALREADY-DECIDED number durable across restarts; it does not decide it.
+  ansible.builtin.assert:
+    that:
+      - node_extended_resource_capacity is match('^[0-9]+$')
+    fail_msg: >-
+      churn-slot capacity must be a non-negative integer,
+      got '{{ node_extended_resource_capacity }}'
+    success_msg: "churn-slot capacity: {{ node_extended_resource_capacity }}"
+
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ node_extended_resource_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the churn-slot patch script
+  # The unit's ExecStart path. Installing the unit without this file yields a
+  # timer that fires every five minutes and fails every time.
+  ansible.builtin.copy:
+    src: "{{ node_extended_resource_phase2_dir }}/node-extended-resource/patch-node-churn-capacity.sh"
+    dest: "{{ node_extended_resource_lib_dir }}/patch-node-churn-capacity.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  notify: Apply the churn-slot capacity now
+
+- name: Check whether the reapply service is already installed
+  # Read BEFORE the task that writes it. Under --check the unit file is only
+  # would-be written, so a systemd_service enable that ran anyway would fail
+  # with "Could not find the requested service" and blame the host.
+  ansible.builtin.stat:
+    path: "{{ node_extended_resource_unit_dir }}/{{ node_extended_resource_service }}"
+  register: node_extended_resource_service_present
+  become: true
+
+- name: Install the reapply service with this node's capacity substituted
+  # The shipped unit says CAPACITY_PLACEHOLDER so that an un-edited copy fails
+  # loudly instead of silently reapplying a wrong number. The substitution is
+  # done here from the committed file rather than by keeping a Jinja template
+  # beside this role, so the unit has exactly one source.
+  vars:
+    # Hoisted out of the copy below so the expression can be wrapped without any
+    # question of where a newline lands: everything here is one scalar, and the
+    # task body references a single name.
+    node_extended_resource_rendered_unit: >-
+      {{ lookup('ansible.builtin.file',
+      node_extended_resource_phase2_dir ~ '/node-extended-resource/'
+      ~ node_extended_resource_service)
+      | replace('CAPACITY_PLACEHOLDER', node_extended_resource_capacity | string) }}
+  ansible.builtin.copy:
+    # A YAML literal block, so the rendered unit ends in the newline the file
+    # lookup strips. Without it every run would rewrite the unit to remove its
+    # final newline and report a change that is not one.
+    content: |
+      {{ node_extended_resource_rendered_unit }}
+    dest: "{{ node_extended_resource_unit_dir }}/{{ node_extended_resource_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd for the churn-slot units
+    - Apply the churn-slot capacity now
+
+- name: Install the reapply timer
+  ansible.builtin.copy:
+    src: "{{ node_extended_resource_phase2_dir }}/node-extended-resource/{{ node_extended_resource_timer }}"
+    dest: "{{ node_extended_resource_unit_dir }}/{{ node_extended_resource_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the churn-slot units
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the reapply service at boot
+  # BOTH the service and the timer are enabled: the service is
+  # WantedBy=multi-user.target and Before=converge-ci-stack.service, so a boot
+  # applies the resource before the queues that are denominated in it; the timer
+  # keeps reconciling it every five minutes after that.
+  #
+  # Guarded rather than forced check_mode: false — forcing it would enable a
+  # live unit during a run that promised to change nothing.
+  ansible.builtin.systemd_service:
+    name: "{{ node_extended_resource_service }}"
+    enabled: true
+  become: true
+  when: not ansible_check_mode or node_extended_resource_service_present.stat.exists
+
+- name: Enable and start the reapply timer
+  ansible.builtin.systemd_service:
+    name: "{{ node_extended_resource_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or node_extended_resource_service_present.stat.exists

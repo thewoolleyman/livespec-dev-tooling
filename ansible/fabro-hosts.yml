@@ -18,11 +18,19 @@
   hosts: hp-xubuntu
   gather_facts: true
   roles:
-    - container_reclaim
-    - storage_reclaim
-    - disk_guard
-    - host_tools
-    - sccache_redis
+    - role: container_reclaim
+      tags: [container_reclaim]
+    # Declared for this host and never installed on it. Tagged so an operator
+    # can converge everything else without arming a timer that deletes build
+    # artifacts on a machine where it has never run.
+    - role: storage_reclaim
+      tags: [storage_reclaim]
+    - role: disk_guard
+      tags: [disk_guard]
+    - role: host_tools
+      tags: [host_tools]
+    - role: sccache_redis
+      tags: [sccache_redis]
   tasks:
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:
@@ -36,8 +44,10 @@
   hosts: vps
   gather_facts: true
   roles:
-    - container_reclaim
-    - storage_reclaim
+    - role: container_reclaim
+      tags: [container_reclaim]
+    - role: storage_reclaim
+      tags: [storage_reclaim]
   tasks:
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:
