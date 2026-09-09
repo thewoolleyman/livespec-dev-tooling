@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -31,7 +32,13 @@ from typing import NamedTuple
 
 import pytest
 
-from livespec_dev_tooling.checks._work_item_liveness import bd_status_reader
+from livespec_dev_tooling.checks._work_item_liveness import LedgerUnreachable, bd_status_reader
+
+_VENDOR_DIR = Path(__file__).resolve().parents[3] / "livespec_dev_tooling" / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -69,7 +76,7 @@ class _CheckRun(NamedTuple):
     stderr: str
 
 
-_Reader = Callable[..., "dict[str, str] | None"]
+_Reader = Callable[..., "IOResult[dict[str, str], LedgerUnreachable]"]
 
 
 def _tracker(*, snapshot: dict[str, str] | None) -> _Reader:
@@ -81,12 +88,26 @@ def _tracker(*, snapshot: dict[str, str] | None) -> _Reader:
     exactly those items, so an id absent from it is genuinely nonexistent.
 
     Injecting it here rather than reaching a real tenant is what keeps these
-    verdicts a function of the fixture instead of the host.
+    verdicts a function of the fixture instead of the host. The `None`
+    spelling survives at the FIXTURE level only; what the double hands the
+    check is the resolver's own `IOResult` failure track.
     """
+    answer: IOResult[dict[str, str], LedgerUnreachable] = (
+        IOFailure(
+            LedgerUnreachable(
+                repo=".",
+                argv="bd -C . list --status all --json",
+                reason="query-unrunnable",
+                detail="test double: no store configured",
+            )
+        )
+        if snapshot is None
+        else IOSuccess(snapshot)
+    )
 
-    def _read(*, repo: Path) -> dict[str, str] | None:
+    def _read(*, repo: Path) -> IOResult[dict[str, str], LedgerUnreachable]:
         del repo  # The double answers for whatever repo it is handed.
-        return snapshot
+        return answer
 
     return _read
 
