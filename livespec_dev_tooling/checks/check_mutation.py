@@ -139,6 +139,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402 — vendor-path-aware import after sys.path insert.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
@@ -211,9 +213,10 @@ def _resolve_staging_cwd(*, repo_root: Path) -> Path:
 
 def _pure_trees_gate_exit_code(*, repo_root: Path, log: structlog.stdlib.BoundLogger) -> int | None:
     """Return the early exit for a missing, empty, or misdeclared pure layer."""
-    config = load_config_or_report(repo_root=repo_root, log=log, check_id="check_mutation")
-    if config is None:
+    loaded = load_config_or_report(repo_root=repo_root, log=log, check_id="check_mutation")
+    if not is_successful(loaded):
         return 1
+    config = unsafe_perform_io(loaded.unwrap())
     gate_exit = role_absence_exit_code(
         config=config,
         role=config.pure_trees,

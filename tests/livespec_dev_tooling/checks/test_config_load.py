@@ -52,6 +52,19 @@ check's own `load_config` line would have rendered nothing while looking
 migrated. The per-check behavioural proofs live in each check's own mirror
 test file, because `check_coverage_incremental` gates every changed impl
 module at 100% against its PAIRED test alone.
+
+SLICE 3 (`livespec-dev-tooling-qndn.17`) puts both entry points on the
+`IOResult` railway, and the assertions below moved with them. The `None` these
+tests used to pin was a failure wearing an absence's spelling: a caller was
+free to read it as "nothing to work with" and carry on, and the type said
+nothing about the parse having failed. `IOFailure(exc)` cannot be carried on
+by accident, and it hands the caller the error the helper already rendered.
+
+Nothing in this repo's aggregate would notice a slide back to the bare shape —
+`checks/public_api_result_typed` is the check that reads the return annotation
+and it is a no-op here (`pure_trees` is `not_applicable`) — so
+`test_both_entry_points_are_railway_typed` applies that check's own
+terminal-name rule to these two annotations directly.
 """
 
 from __future__ import annotations
@@ -71,12 +84,15 @@ from livespec_dev_tooling.checks import (
     hook_trees_not_io_exempt,
     required_role_keys_declared,
 )
+from livespec_dev_tooling.config import ConfigParseError
 
 _VENDOR_DIR = Path(claude_md_coverage.__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -218,6 +234,16 @@ def _handles_config_parse_error(*, tree: ast.Module) -> bool:
     return catches or adopts_helper
 
 
+def _terminal_return_name(*, rendered: str) -> str:
+    """`IOResult[Config, ConfigParseError]` → `IOResult`.
+
+    Mirrors the reduction `public_api_result_typed` applies to a rendered
+    return annotation before comparing it: drop the subscript, then drop any
+    dotted qualifier.
+    """
+    return rendered.split("[", maxsplit=1)[0].rsplit(".", maxsplit=1)[-1]
+
+
 def _supervisor_logger(*, name: str) -> structlog.stdlib.BoundLogger:
     """Bind a JSON-to-stderr logger shaped exactly like a check supervisor's."""
     structlog.configure(
@@ -240,6 +266,30 @@ def test_shared_loader_lives_beside_the_other_check_helpers() -> None:
     assert "load_config_or_report" in module.__all__
 
 
+def test_both_entry_points_are_railway_typed() -> None:
+    """Both public returns spell `IOResult`, read as `public_api_result_typed` reads them.
+
+    The bare `Config | None` / `tuple[...] | None` shapes these two carried
+    before `livespec-dev-tooling-qndn.17` are exactly what a regression would
+    restore, and no check in this repo's aggregate would object: the one that
+    reads return annotations is gated behind `pure_trees`, which is declared
+    `not_applicable` here. So the rule is applied directly, with that check's
+    own terminal-name reduction — subscript dropped, then dotted qualifier —
+    rather than being trusted to fire somewhere else.
+    """
+    assert _HELPER_PATH.is_file(), _HELPER_MISSING
+    tree = ast.parse(_HELPER_PATH.read_text(encoding="utf-8"))
+
+    returns = {
+        node.name: ast.unparse(node.returns)
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.returns is not None
+    }
+
+    assert _terminal_return_name(rendered=returns["load_config_or_report"]) == "IOResult"
+    assert _terminal_return_name(rendered=returns["resolve_check_context_or_report"]) == "IOResult"
+
+
 def test_shared_loader_returns_the_config_when_the_consumer_block_parses(
     *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -250,32 +300,40 @@ def test_shared_loader_returns_the_config_when_the_consumer_block_parses(
         '[tool.livespec_dev_tooling]\nsource_trees = ["src"]\n', encoding="utf-8"
     )
 
-    config = module.load_config_or_report(
+    loaded = module.load_config_or_report(
         repo_root=tmp_path,
         log=_supervisor_logger(name="probe"),
         check_id="probe",
     )
 
     _ = capsys.readouterr()
-    assert config is not None
-    assert config.source_trees == (Path("src"),)
+    assert isinstance(loaded, IOSuccess), "a config that parses rides the success track"
+    assert unsafe_perform_io(loaded.unwrap()).source_trees == (Path("src"),)
 
 
-def test_shared_loader_renders_the_parse_failure_and_returns_none(
+def test_shared_loader_renders_the_parse_failure_and_fails_the_railway(
     *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A malformed block yields the structured event and `None` — never a raise."""
+    """A malformed block yields the structured event and `IOFailure` — never a raise.
+
+    The failure track carries the `ConfigParseError` the helper has ALREADY
+    rendered. It is evidence, not a second report: it names the offending key,
+    so a caller with a richer verdict surface than an exit code can use it, and
+    a caller that only exits non-zero can ignore it — what it cannot do is
+    mistake it for a config it may proceed without.
+    """
     assert _HELPER_PATH.is_file(), _HELPER_MISSING
     module = importlib.import_module(_HELPER_MODULE)
     _write_malformed_config(repo_root=tmp_path)
 
-    config = module.load_config_or_report(
+    loaded = module.load_config_or_report(
         repo_root=tmp_path,
         log=_supervisor_logger(name="probe"),
         check_id="probe",
     )
 
-    assert config is None, "the helper must never propagate `ConfigParseError`"
+    assert isinstance(loaded, IOFailure), "the helper must never propagate `ConfigParseError`"
+    assert isinstance(unsafe_perform_io(loaded.failure()), ConfigParseError)
     assert _rendered_the_diagnostic(captured=capsys.readouterr().err, check_id="probe")
 
 
@@ -368,8 +426,8 @@ def test_check_context_resolver_returns_the_universe_and_config_when_the_block_p
         )
 
     _ = capsys.readouterr()
-    assert resolved is not None
-    _root, universe, config = resolved
+    assert isinstance(resolved, IOSuccess), "a resolvable context rides the success track"
+    _root, universe, config = unsafe_perform_io(resolved.unwrap())
     assert Path("pkg/mod.py") in universe
     assert config.source_trees == (Path("pkg"),)
 
@@ -395,7 +453,8 @@ def test_check_context_resolver_renders_the_failure_raised_inside_the_universe_w
             log=_supervisor_logger(name="probe"), check_id="probe"
         )
 
-    assert resolved is None, "the helper must never propagate `ConfigParseError`"
+    assert isinstance(resolved, IOFailure), "the helper must never propagate `ConfigParseError`"
+    assert isinstance(unsafe_perform_io(resolved.failure()), ConfigParseError)
     assert _rendered_the_diagnostic(captured=capsys.readouterr().err, check_id="probe")
 
 

@@ -54,6 +54,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import (  # noqa: E402
     resolve_check_context_or_report,
@@ -116,7 +118,7 @@ def _scan_file(*, path: Path) -> list[tuple[int, str]]:
 def main() -> int:
     log = _configure_logger()
     resolved = resolve_check_context_or_report(log=log, check_id="no-fmt-directives")
-    if resolved is None:
+    if not is_successful(resolved):
         # A plain 1 rather than `_EXIT_VIOLATIONS`: an unparseable consumer
         # config is not a formatter-directive violation, and it is non-zero
         # unconditionally — the warn-vs-fail lever below scopes THIS check's
@@ -125,7 +127,7 @@ def main() -> int:
     # The config itself is unused here — this check's directive set is fixed,
     # not consumer-declared — but the universe walk it rides on parses the
     # consumer config, so the parse failure had to be caught at THIS frame.
-    root, universe, _config = resolved
+    root, universe, _config = unsafe_perform_io(resolved.unwrap())
     # Warn-vs-fail lever ONLY (never run-vs-skip): a repo arms
     # `LIVESPEC_FAIL_IF_FMT_DIRECTIVES_EXIST` in its CI once it is clean.
     # Unset/empty → WARN + exit 0 (Phase-0 propagation); set → ERROR + exit 1.

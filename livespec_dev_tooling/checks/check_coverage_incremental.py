@@ -80,6 +80,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._branch_diff import (  # noqa: E402
@@ -387,9 +388,10 @@ def main() -> int:
     log = _configure_logger()
     args = _build_parser().parse_args()
     cwd = Path.cwd()
-    config = load_config_or_report(repo_root=cwd, log=log, check_id="check_coverage_incremental")
-    if config is None:
+    loaded = load_config_or_report(repo_root=cwd, log=log, check_id="check_coverage_incremental")
+    if not is_successful(loaded):
         return 1
+    config = unsafe_perform_io(loaded.unwrap())
     impl_paths: list[Path] = list(args.paths)
     derived = not impl_paths
     if derived:

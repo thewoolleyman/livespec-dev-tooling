@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
+from returns.io import IOSuccess
 
 from livespec_dev_tooling import config as config_module
 from livespec_dev_tooling.checks import newtype_domain_primitives as _check
@@ -92,13 +93,19 @@ def test_newtype_domain_primitives_bug_guard_after_gate(
     # The patched seam is the shared supervisor helper the check now loads
     # through (`livespec-dev-tooling-efxa`), not the raw loader it imported
     # directly before. Same substitution, one name further along the chain.
+    # The double now answers on that helper's `IOResult` railway
+    # (`livespec-dev-tooling-qndn.17`), because a substitute that still
+    # handed back a bare `Config` would exercise a shape `main()` no longer
+    # consumes.
     monkeypatch.setattr(
         _check,
         "load_config_or_report",
-        lambda **_kwargs: replace(
-            config_module.Config(),
-            declared_keys=frozenset({"dataclasses_tree"}),
-            dataclasses_tree=None,
+        lambda **_kwargs: IOSuccess(
+            replace(
+                config_module.Config(),
+                declared_keys=frozenset({"dataclasses_tree"}),
+                dataclasses_tree=None,
+            )
         ),
     )
 
