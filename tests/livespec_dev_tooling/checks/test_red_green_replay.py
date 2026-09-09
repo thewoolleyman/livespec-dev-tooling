@@ -95,6 +95,7 @@ only a monkeypatched `IOFailure` can reach.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import os
 import subprocess
@@ -3570,4 +3571,122 @@ def test_main_renders_the_consumer_config_parse_failure(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
         capsys=capsys,
+    )
+
+
+# The pre-conversion `git` spawn count from the module docstring's inventory
+# table, measured on master 93668fb3. Slice 4 drove the check half to zero and
+# left this number alone.
+_INVENTORY_GIT_SPAWNS = 84
+
+
+class _SpawnCounts(NamedTuple):
+    """AST-measured `subprocess.run(` counts for this test module."""
+
+    git: int
+    check: int
+
+
+def _count_spawns(*, source: str) -> _SpawnCounts:
+    """Count `subprocess.run(` calls in `source`, bucketed git vs check.
+
+    A `git` spawn is one whose argv literal opens with the string `"git"`; a
+    `check` spawn is one naming `_RED_GREEN_REPLAY`, i.e. a spawn of the hook
+    under test.
+
+    Takes the source as an argument rather than reading `__file__` directly so
+    that the counter itself is testable against a synthetic snippet. That is
+    not a convenience: the guard below asserts a count of ZERO, and a counter
+    that could never recognize a check spawn would satisfy that assertion
+    vacuously forever. `test_the_spawn_counter_can_see_a_check_spawn` is what
+    makes the zero mean something.
+    """
+    tree = ast.parse(source)
+    git = 0
+    check = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)):
+            continue
+        if (func.value.id, func.attr) != ("subprocess", "run"):
+            continue
+        argv = node.args[0] if node.args else None
+        first = argv.elts[0] if isinstance(argv, ast.List) and argv.elts else None
+        if isinstance(first, ast.Constant) and first.value == "git":
+            git += 1
+        elif any(
+            isinstance(inner, ast.Name) and inner.id == "_RED_GREEN_REPLAY"
+            for inner in ast.walk(node)
+        ):
+            check += 1
+    return _SpawnCounts(git=git, check=check)
+
+
+def test_slice_4_converted_only_the_check_half() -> None:
+    """The `git` spawn count is UNCHANGED; only the check-spawn count fell.
+
+    Work-item livespec-dev-tooling-py9.4 requires this asserted by
+    MEASUREMENT rather than by inspection, and the reason is specific to this
+    file: its `git` spawns author real Red and Green commits and drive the
+    hook AS A PROCESS, which IS the behaviour under test. Converting one of
+    them would leave a suite that still passes while testing something the
+    hook never does — a silent loss, because every remaining assertion would
+    keep succeeding.
+
+    `check-tests-no-subprocess-spawn` cannot catch that: it is allowlist-based
+    and file-granular, so it sees "this file still spawns" and is satisfied by
+    ONE surviving spawn exactly as well as by 84.
+    """
+    counts = _count_spawns(source=Path(__file__).read_text(encoding="utf-8"))
+
+    assert counts.git == _INVENTORY_GIT_SPAWNS, (
+        f"the hook-as-process `git` spawns must survive slice 4 unchanged: "
+        f"expected {_INVENTORY_GIT_SPAWNS}, measured {counts.git}. A DROP means a "
+        f"real-commit fixture was converted in-process, deleting the behaviour "
+        f"under test; a RISE means a spawn was added without updating the "
+        f"inventory table in this module's docstring."
+    )
+    assert counts.check == 0, (
+        f"every spawn of the check under test must now run in-process via "
+        f"`_run_check`; measured {counts.check} surviving check spawn(s)"
+    )
+
+
+def test_the_spawn_counter_can_see_a_check_spawn() -> None:
+    """`_count_spawns` recognizes BOTH buckets, so the guard's zero is real.
+
+    The assertion above pins the surviving check-spawn count at zero. Read
+    alone that is indistinguishable from a counter that recognizes nothing —
+    a broken matcher and a fully-converted file produce the identical `0`.
+    This feeds the counter a snippet in the pre-conversion shape (one `git`
+    spawn, one spawn of the hook under test) and pins BOTH buckets, so the
+    zero above is evidence of conversion rather than of a dead matcher.
+
+    The third call is a spawn that is NEITHER — the counter must leave a
+    foreign `sys.executable` child out of both buckets rather than charging
+    it to one, or the pinned 84 would drift the first time an unrelated
+    spawn appeared in this file.
+    """
+    pre_conversion = (
+        "subprocess.run(\n"
+        '    ["git", "init", "-q"],\n'
+        "    cwd=str(tmp_path),\n"
+        ")\n"
+        "result = subprocess.run(\n"
+        "    [sys.executable, str(_RED_GREEN_REPLAY), str(msg_path)],\n"
+        "    cwd=str(tmp_path),\n"
+        ")\n"
+        "subprocess.run(\n"
+        '    [sys.executable, "-m", "pytest"],\n'
+        "    cwd=str(tmp_path),\n"
+        ")\n"
+    )
+
+    counts = _count_spawns(source=pre_conversion)
+
+    assert counts == _SpawnCounts(git=1, check=1), (
+        f"the counter must recognize both a `git` spawn and a spawn of the "
+        f"check under test; measured {counts}"
     )
