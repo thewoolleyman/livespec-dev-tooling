@@ -46,6 +46,33 @@ diff) and it is why the lever is named for `HEAD` rather than for the index.
 Charter D9 retires the lever once a repository's debt register reaches empty,
 at which point a `TODO` row fails the per-commit tier outright.
 
+## ON THE `IOResult` RAILWAY — `livespec-dev-tooling-qndn.15`
+
+`judged_reason_findings` is convicted TRANSITIVELY: it reads `cwd` through
+`baseline_fingerprints` → `heading_coverage_debt.head_rows`, whose whole
+answer used to be a `None` sentinel. Both now ride the railway, and the shape
+is the one `cross_member_consumption` took in `livespec-dev-tooling-qndn.14` —
+the FAILURE carries the usable answer.
+
+WHAT THE OLD `list[ReasonFinding]` COULD NOT SAY. Three different runs
+returned that one spelling: nothing was judged because the guard is unarmed;
+this exact set was judged because the tree AUTHORS it; and EVERYTHING is
+judged because the scope could not be computed at all. The third is a
+fail-closed fallback rather than a measurement, and it reached the caller
+wearing a measurement's clothes — the caller's only cue was a warning it was
+free not to read.
+
+So an armed run over an incomparable `HEAD` returns
+`IOFailure(UnnarrowedReasonJudgement)` CARRYING every finding. The verdict is
+byte-unchanged (the caller still judges them all, which is correct where no
+`HEAD` copy exists because every live row IS newly authored); what changed is
+that the caller can no longer receive the fallback in a narrowed judgement's
+spelling and forget the difference. A field can be left unread; a failure
+track cannot.
+
+`IOResult` and not `Result`: the scope is a statement about `HEAD`, read by
+shelling out to git.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in this tree. Diagnostics flow through
 structlog (JSON to stderr) under the PARENT's `heading_coverage` logger name,
@@ -58,6 +85,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # Carried rather than inherited from an importer: without it the vendored
@@ -69,12 +97,18 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._heading_coverage_reason_predicate import (  # noqa: E402
     ReasonFinding,
     reason_findings,
 )
-from livespec_dev_tooling.heading_coverage_debt import COVERAGE_PATH, head_rows  # noqa: E402
+from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
+    COVERAGE_PATH,
+    HeadCopyIncomparable,
+    head_rows,
+)
 
 # Names in `__all__` mark this private sibling's public surface to its sole
 # importer, `heading_coverage.py`, so pyright's per-file analysis does not flag
@@ -82,6 +116,7 @@ from livespec_dev_tooling.heading_coverage_debt import COVERAGE_PATH, head_rows 
 # the parent annotates its report signature with it.
 __all__: list[str] = [
     "ReasonFinding",
+    "UnnarrowedReasonJudgement",
     "baseline_fingerprints",
     "entry_fingerprint",
     "judged_reason_findings",
@@ -99,6 +134,26 @@ _MESSAGE = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class UnnarrowedReasonJudgement:
+    """The armed tier could not narrow, so it judges EVERY finding — fail-closed.
+
+    The failure track of `judged_reason_findings`, inhabited exactly when the
+    lever is set and `HEAD` carries no comparable registry copy. `findings`
+    holds every finding rather than none, because that IS the correct verdict
+    there: with no `HEAD` copy, every live row is newly authored, so the
+    fallback is right as well as safe, and discarding it would turn an
+    unreadable baseline into a clean run.
+
+    So the payload is deliberately identical to what the success track would
+    have carried on the same input — the caller's obligation is what moves, not
+    the data. `baseline_unreadable` says the same thing in the log, and a log
+    line is a thing a caller may not read.
+    """
+
+    findings: list[ReasonFinding]
+
+
 def entry_fingerprint(*, entry: dict[str, object]) -> str:
     """Canonical, key-order-independent rendering of one registry row.
 
@@ -109,22 +164,22 @@ def entry_fingerprint(*, entry: dict[str, object]) -> str:
     return json.dumps(entry, sort_keys=True)
 
 
-def baseline_fingerprints(*, cwd: Path) -> frozenset[str] | None:
-    """Fingerprints of the registry as of `HEAD`; `None` when NOT COMPARABLE.
+def baseline_fingerprints(*, cwd: Path) -> IOResult[frozenset[str], HeadCopyIncomparable]:
+    """Fingerprints of the registry as of `HEAD`; a FAILURE when NOT COMPARABLE.
 
     A finding whose fingerprint is absent from this set is one the tree AUTHORS
     — added or modified since `HEAD`. Removal needs no representation here: a
     row that no longer exists carries no finding.
 
-    `None` never means "the registry was empty at HEAD". It is `head_rows`'
-    fused answer for "no comparison is possible" (not a repository, no such
-    blob, unparseable, not an array), which the caller turns into a
-    whole-registry fallback.
+    The failure track never means "the registry was empty at HEAD". It is
+    `head_rows`' verdict that no comparison is possible (not a repository, no
+    such blob, unparseable, not an array), passed through unchanged so the one
+    caller that turns it into a whole-registry fallback still names WHICH
+    incomparability it hit.
     """
-    baseline = head_rows(cwd=cwd, path=COVERAGE_PATH)
-    if baseline is None:
-        return None
-    return frozenset(entry_fingerprint(entry=row) for row in baseline)
+    return head_rows(cwd=cwd, path=COVERAGE_PATH).map(
+        lambda rows: frozenset(entry_fingerprint(entry=row) for row in rows)
+    )
 
 
 def _fields(*, finding: ReasonFinding) -> dict[str, object]:
@@ -163,34 +218,47 @@ def report_reason_violations(*, findings: list[ReasonFinding]) -> None:
         log.error(_MESSAGE, **_fields(finding=finding), failing=True)
 
 
-def judged_reason_findings(*, entries: list[dict[str, object]], cwd: Path) -> list[ReasonFinding]:
+def judged_reason_findings(
+    *, entries: list[dict[str, object]], cwd: Path
+) -> IOResult[list[ReasonFinding], UnnarrowedReasonJudgement]:
     """The direction-5 findings this run JUDGES; the rest are reported as warnings.
 
     Unarmed, NOTHING is judged: every finding is reported at warning level
-    naming the lever that arms it. That is the per-commit tier the P2 burn-down
+    naming the lever that arms it, and that empty list is an ANSWER, so it
+    stays on the success track. That is the per-commit tier the P2 burn-down
     runs under, and it is why landing this direction reddens no repository on
     the commit that adopts it.
+
+    ⛔ AN `IOSuccess` NOW MEANS "the scope question was SETTLED, and this is
+    what it admits" — the lever is off so nothing is judged, or the lever is on
+    and the narrowing was computed. It never means "I judged everything because
+    I could not tell what changed": that is the failure track, carrying every
+    finding; see `UnnarrowedReasonJudgement` for why the payload is the same
+    either way.
     """
     log = structlog.get_logger("heading_coverage")
     findings = reason_findings(entries=entries)
     if not os.environ.get(_SCOPE_ENV_VAR):
         for finding in findings:
             _warn(finding=finding, out_of_staged_scope=False)
-        return []
+        return IOSuccess([])
     baseline = baseline_fingerprints(cwd=cwd)
-    if baseline is None:
+    if isinstance(baseline, IOFailure):
+        incomparable = unsafe_perform_io(baseline.failure())
         log.warning(
             "staged-diff scope requested but HEAD's heading-coverage registry is not "
             "comparable — the reason guard falls back to judging EVERY TODO reason",
-            revision=f"HEAD:{COVERAGE_PATH.as_posix()}",
+            revision=incomparable.revision,
+            head_copy=incomparable.reason,
             baseline_unreadable=True,
             failing=False,
         )
-        return findings
+        return IOFailure(UnnarrowedReasonJudgement(findings=findings))
+    fingerprints = unsafe_perform_io(baseline.unwrap())
     judged: list[ReasonFinding] = []
     for finding in findings:
-        if entry_fingerprint(entry=finding.entry) in baseline:
+        if entry_fingerprint(entry=finding.entry) in fingerprints:
             _warn(finding=finding, out_of_staged_scope=True)
             continue
         judged.append(finding)
-    return judged
+    return IOSuccess(judged)

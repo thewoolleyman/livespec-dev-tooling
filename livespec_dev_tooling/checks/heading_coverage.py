@@ -364,7 +364,19 @@ def main() -> int:
         )
     else:
         tier_violations = unsafe_perform_io(tier_scan.unwrap())
-    reason_violations = judged_reason_findings(entries=coverage_entries, cwd=cwd)
+    # BOTH TRACKS ARE JUDGED, and that is deliberate rather than an omission.
+    # The failure track means the armed guard could not narrow to what this
+    # tree authors, and it carries EVERY finding because that is the correct
+    # verdict where `HEAD` has no comparable registry: every live row is newly
+    # authored. Discarding it would turn an unreadable baseline into a clean
+    # run — the vacuous pass this conversion exists to remove. The guard
+    # already reported `baseline_unreadable` when it took that track.
+    reason_scan = judged_reason_findings(entries=coverage_entries, cwd=cwd)
+    reason_violations = (
+        unsafe_perform_io(reason_scan.failure()).findings
+        if isinstance(reason_scan, IOFailure)
+        else unsafe_perform_io(reason_scan.unwrap())
+    )
     uncovered = sorted(spec_set - registry_set)
     orphan = sorted(registry_set - spec_set)
     if (

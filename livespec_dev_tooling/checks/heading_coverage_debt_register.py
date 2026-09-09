@@ -54,6 +54,18 @@ that adopts the ratchet in every consumer, which is the arm-ahead-of-adoption
 trap this repository's `CLAUDE.md` records. The other three directions still
 run, and they are the ones that hold on a tree with no history at all.
 
+AN UNREADABLE FILE IS NOT AN EMPTY ONE, and telling them apart is what
+`livespec-dev-tooling-qndn.15` bought here. `load_rows` used to answer `[]` for
+a present file it could not turn into an array, so an unparseable registry
+reached this check as "no `TODO` rows" — which fires `stale_register_entry`
+for EVERY register key — and an unparseable register reached it as "no
+entries", which fires `unregistered_todo` for every live `TODO`. Both are full
+slates of confident findings that name the wrong file and the wrong cause. The
+railway makes that state its own outcome: `main()` reports it once and exits
+non-zero without deciding a single direction. An ABSENT file is untouched by
+this and still rides the success track as `[]`, which is what keeps adoption
+— no register yet — passing.
+
 STAGED-DIFF SCOPE (`LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF` set to
 a non-empty value) narrows the VERDICT to the keys a commit is AUTHORING:
 those whose registry row or register entry differs from `HEAD`. This is the
@@ -88,7 +100,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -96,6 +108,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._heading_coverage_age_bound import (  # noqa: E402
     judged_age_findings,
@@ -136,6 +150,18 @@ _MESSAGES = {
         "carries `spec_root`, `spec_file`, `heading`, `work_item` and `first_seen`"
     ),
 }
+
+# NOT a `_MESSAGES` entry, because it is not a finding: it says the ratchet
+# could not read a file it ratchets, so it has no register key to name. An
+# unreadable registry used to reach the directions below as "no rows" and an
+# unreadable register as "no entries" — each producing a full slate of
+# CONFIDENT findings about the other file, every one of them wrong about the
+# cause. Saying so once, and exiting, is the honest response.
+_UNREADABLE_MESSAGE = (
+    "a heading-coverage file this ratchet reads is present and unreadable — no direction "
+    "is decided for this run, because judging one file against an unreadable other would "
+    "report a fabricated finding for every key in it"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -196,10 +222,17 @@ def _changed_keys(
     can be placed.
     """
     head_registry = head_rows(cwd=cwd, path=COVERAGE_PATH)
-    if head_registry is None:
+    if isinstance(head_registry, IOFailure):
         return None
+    # An incomparable HEAD REGISTER is the adoption commit, and treating it as
+    # empty is what puts every current entry in scope — the fail-closed
+    # direction this docstring names, kept verbatim across the conversion.
+    head_register = head_rows(cwd=cwd, path=REGISTER_PATH)
+    register_before: list[dict[str, object]] = []
+    if not isinstance(head_register, IOFailure):
+        register_before = unsafe_perform_io(head_register.unwrap())
     before = _state(
-        registry_rows=head_registry, register_rows=head_rows(cwd=cwd, path=REGISTER_PATH) or []
+        registry_rows=unsafe_perform_io(head_registry.unwrap()), register_rows=register_before
     )
     after = _state(registry_rows=registry_rows, register_rows=register_rows)
     return frozenset(key for key in set(before) | set(after) if before.get(key) != after.get(key))
@@ -297,19 +330,33 @@ def main() -> int:
     )
     emit = structlog.get_logger("heading_coverage_debt_register")
     cwd = Path.cwd()
-    registry_rows = load_rows(path=cwd / COVERAGE_PATH)
-    register_rows = load_rows(path=cwd / REGISTER_PATH)
+    registry_scan = load_rows(path=cwd / COVERAGE_PATH)
+    register_scan = load_rows(path=cwd / REGISTER_PATH)
+    for scan in (registry_scan, register_scan):
+        if isinstance(scan, IOFailure):
+            # The record's fields ARE the diagnostic fields, so they are spread
+            # rather than restated: a field added to `RowsUnreadable` later
+            # cannot then be silently missing from the one report that carries it.
+            emit.error(
+                _UNREADABLE_MESSAGE, **asdict(unsafe_perform_io(scan.failure())), failing=True
+            )
+            return 1
+    # An ABSENT file stays on the success track as `[]`, so adoption — no
+    # register yet — still reaches the directions below exactly as before.
+    registry_rows = unsafe_perform_io(registry_scan.unwrap())
+    register_rows = unsafe_perform_io(register_scan.unwrap())
     findings = _ratchet_findings(registry_rows=registry_rows, register_rows=register_rows)
-    baseline_rows = head_rows(cwd=cwd, path=REGISTER_PATH)
-    if baseline_rows is None:
+    baseline_scan = head_rows(cwd=cwd, path=REGISTER_PATH)
+    if isinstance(baseline_scan, IOFailure):
         emit.warning(
             "HEAD carries no comparable heading-coverage debt register — the shrink-only "
             "direction is UNJUDGED for this run (adoption, or a tree with no history)",
-            revision=f"HEAD:{REGISTER_PATH.as_posix()}",
+            **asdict(unsafe_perform_io(baseline_scan.failure())),
             baseline_unreadable=True,
             failing=False,
         )
     else:
+        baseline_rows = unsafe_perform_io(baseline_scan.unwrap())
         findings += _growth_findings(register_rows=register_rows, baseline_rows=baseline_rows)
     if os.environ.get(_SCOPE_ENV_VAR):
         findings = _judged(
