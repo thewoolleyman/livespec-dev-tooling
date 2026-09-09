@@ -40,6 +40,38 @@ hook validates the COMMIT RANGE `origin/master..HEAD`: every
 non-merge commit touching product impl `.py` must carry EITHER the
 TDD-Red-*/TDD-Green-* pair shape OR the TDD-Suite-Green-* shape,
 regardless of prefix.
+
+PER-HELPER SPAWN INVENTORY — measured by AST on master 93668fb3,
+recorded BEFORE the slice-4 conversion (work-item
+livespec-dev-tooling-py9.4). The conversion is graded against this
+table, so no helper can be silently reclassified partway through.
+
+126 `subprocess.run(` calls: 84 real `git`, 42 the check under test.
+The six MODULE-LEVEL helpers, with the count each contributes:
+
+    helper                  calls  git  check  disposition
+    _stage_files                2    2      0  GIT   — stays
+    _author_green_fixture       6    6      0  GIT   — stays
+    _range_git                  1    1      0  GIT   — stays
+    _run_no_arg                 1    0      1  CHECK — target
+    _run_msg_hook               1    0      1  CHECK — target
+    _run_commit_msg_hook        1    0      1  CHECK — target
+    ------------------------------------------------------
+    helper subtotal            12    9      3
+
+The other 114 calls are inline in test bodies: 75 `git` (stay) and 39
+check (targets). Slice totals: 84 `git` STAY, 42 check CONVERT to 0.
+
+WHY THE `git` HALF STAYS, and it is not the usual "real index" reason.
+This is the test suite for the very hook that gates every commit in
+this repository. Its `git` spawns are not incidental setup: they
+author real Red and Green commits and drive the hook AS A PROCESS,
+which IS the behaviour under test. An in-process stand-in would yield
+a suite that passes while testing something the hook never does. Only
+the spawns that invoke the CHECK for its exit code and stderr are
+targets. Because 84 spawns remain, this file KEEPS its
+`subprocess_spawn_allowlist` entry — removing it would redden
+`check-tests-no-subprocess-spawn`.
 """
 
 from __future__ import annotations
