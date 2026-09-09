@@ -1,15 +1,37 @@
-"""Tests for the canonical shell-quality policy check."""
+"""Tests for the canonical shell-quality policy check.
+
+Covers the check module and both of its private halves — the recipe policy in
+`_shell_quality_recipes` and, since livespec-dev-tooling-qndn.13, the
+`just --dump` acquisition split out of it into `_shell_quality_dump`. The
+private halves are tested from here rather than from mirrored files of their
+own, matching how `_shell_quality_bashisms` and `_shell_quality_finding` are
+already covered: `tests/` mirrors the check SLUG, and these modules are that
+one check's interior.
+
+Those new tests also pin the acquisition's RETURN SHAPE. Obtaining the dump
+runs `just` in the repo under judgement, so it is not total, and it now
+answers on the `IOResult` railway. Nothing in this repo's aggregate would
+notice that sliding back: `checks/public_api_result_typed` is the check that
+reads the return annotation and it is a no-op here (`pure_trees` is
+`not_applicable`), so the assertions below apply that check's own
+terminal-name rule directly, and each of the three ways to lose the dump is
+inhabited rather than left uninhabited.
+"""
 
 from __future__ import annotations
 
+import ast
 import importlib
 import os
+import stat
 import subprocess
 from pathlib import Path
 
 import pytest
+from returns.pipeline import is_successful
 from returns.primitives.exceptions import UnwrapFailedError
 from returns.result import Failure
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.install_worktree_pack import CANONICAL_WORKTREE_JUST_BODY
 from livespec_dev_tooling.shellcheck import (
@@ -21,7 +43,20 @@ from livespec_dev_tooling.shellcheck import (
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "shell_quality.py"
+_CHECKS_DIR = _REPO_ROOT / "livespec_dev_tooling" / "checks"
+_CHECK_PATH = _CHECKS_DIR / "shell_quality.py"
+_DUMP_MODULE_PATH = _CHECKS_DIR / "_shell_quality_dump.py"
+_POLICY_MODULE_PATH = _CHECKS_DIR / "_shell_quality_recipes.py"
+
+# The two names `checks/public_api_result_typed` accepts as railway-typed.
+# Restated here rather than imported so this file pins the PROPERTY that check
+# reads, independently of the check's own shape.
+_RAILWAY_RETURN_NAMES = frozenset({"Result", "IOResult"})
+
+_CONFORMING_JUSTFILE = "build:\n    @true\n"
+# `just --dump` exits non-zero on this: `!!!` is not a recipe, an assignment or
+# a setting, so the parser refuses the whole file.
+_UNPARSEABLE_JUSTFILE = "build:\n    @true\n\n!!!\n"
 
 _LEGACY_INTERPOLATED_WORKTREE_JUST = """# Legacy bootstrapped worktree pack fixture.
 
@@ -88,6 +123,35 @@ def _write(*, root: Path, rel: str, body: str) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     _ = path.write_text(body, encoding="utf-8")
+
+
+def _terminal_return_name(*, rendered: str) -> str:
+    """`IOResult[JustDump | None, RecipeDumpUnavailable]` → `IOResult`.
+
+    Mirrors the reduction `public_api_result_typed` applies to a rendered
+    return annotation before comparing it: drop the subscript, then drop any
+    dotted qualifier.
+    """
+    return rendered.split("[", maxsplit=1)[0].rsplit(".", maxsplit=1)[-1]
+
+
+def _return_annotations(*, path: Path) -> dict[str, str]:
+    """Every top-level function in `path`, mapped to its rendered return."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {
+        node.name: ast.unparse(node.returns)
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.returns is not None
+    }
+
+
+def _stub_just_on_path(*, root: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> None:
+    """Put a `just` that prints `body` and exits 0 ahead of the real one."""
+    stub_bin = root / "stub-bin"
+    _write(root=stub_bin, rel="just", body=f"#!/usr/bin/env bash\nprintf '%s' {body!r}\n")
+    stub = stub_bin / "just"
+    stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{stub_bin}{os.pathsep}{os.environ['PATH']}")
 
 
 def _run_check(
@@ -653,9 +717,150 @@ def test_this_repos_own_justfile_carries_no_bash_only_syntax() -> None:
     from inside a test, and it is the one that gates every commit here.
     """
     module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_recipes")
-    findings = module.recipe_findings(repo_root=_REPO_ROOT)
+    dumped = module.recipe_findings(repo_root=_REPO_ROOT)
 
+    # The claim is about what the rule FOUND, so the dump it rests on has to
+    # have been obtained: an unread justfile would satisfy an emptiness
+    # assertion for the one reason this test is not allowed to accept.
+    assert is_successful(dumped), unsafe_perform_io(dumped.failure())
+    findings = unsafe_perform_io(dumped.unwrap())
     assert [f for f in findings if f.reason == "bash-only-syntax-under-default-sh"] == []
+
+
+def test_the_dump_acquisition_lives_in_its_own_module() -> None:
+    """Obtaining the dump is its own concern, not a section of the policy."""
+    assert _DUMP_MODULE_PATH.is_file(), (
+        "the `just --dump` acquisition half must live at "
+        f"{_DUMP_MODULE_PATH.name}, beside the policy half it was split from"
+    )
+    module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_dump")
+    policy = importlib.import_module("livespec_dev_tooling.checks._shell_quality_recipes")
+
+    assert "just_dump" in module.__all__
+    assert "RecipeDumpUnavailable" in module.__all__
+    assert not hasattr(
+        policy, "_just_dump"
+    ), "the policy half must no longer carry a dump reader of its own"
+
+
+def test_both_public_readers_announce_a_failure_track_in_their_return() -> None:
+    """`just_dump` and `recipe_findings` are railway-typed, read as the check reads it."""
+    assert (
+        _DUMP_MODULE_PATH.is_file()
+    ), f"{_DUMP_MODULE_PATH.name} must exist before its annotations can be read"
+    dump_returns = _return_annotations(path=_DUMP_MODULE_PATH)
+    policy_returns = _return_annotations(path=_POLICY_MODULE_PATH)
+
+    assert _terminal_return_name(rendered=dump_returns["just_dump"]) in _RAILWAY_RETURN_NAMES
+    assert (
+        _terminal_return_name(rendered=policy_returns["recipe_findings"]) in _RAILWAY_RETURN_NAMES
+    )
+
+
+def test_a_repo_with_no_justfile_answers_rather_than_failing(*, tmp_path: Path) -> None:
+    """Absence is the ANSWER: no justfile means no recipes, not an unread dump.
+
+    The half of the distinction that is easy to lose. Reading absence as a
+    failure would be the smaller diff and it would convict every justfile-free
+    consumer of a dump nobody could obtain.
+    """
+    module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_dump")
+
+    dumped = module.just_dump(repo_root=tmp_path)
+
+    assert is_successful(dumped)
+    assert unsafe_perform_io(dumped.unwrap()) is None
+
+
+def test_a_conforming_justfile_yields_the_parsed_payload(*, tmp_path: Path) -> None:
+    module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_dump")
+    _write(root=tmp_path, rel="justfile", body=_CONFORMING_JUSTFILE)
+
+    dumped = module.just_dump(repo_root=tmp_path)
+
+    assert is_successful(dumped)
+    assert "build" in unsafe_perform_io(dumped.unwrap())["recipes"]
+
+
+def test_just_absent_from_path_is_the_failure_track(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `just` on PATH used to `cast` a `None` binary into `subprocess.run`."""
+    module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_dump")
+    _write(root=tmp_path, rel="justfile", body=_CONFORMING_JUSTFILE)
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+
+    dumped = module.just_dump(repo_root=tmp_path)
+
+    assert not is_successful(dumped)
+    failure = unsafe_perform_io(dumped.failure())
+    assert failure.reason == "just-unavailable"
+    assert "mise install just" in failure.remedy
+
+
+def test_a_justfile_the_parser_rejects_is_the_failure_track(*, tmp_path: Path) -> None:
+    """A non-zero dump left `json.loads("")` raising out of the check."""
+    module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_dump")
+    _write(root=tmp_path, rel="justfile", body=_UNPARSEABLE_JUSTFILE)
+
+    dumped = module.just_dump(repo_root=tmp_path)
+
+    assert not is_successful(dumped)
+    failure = unsafe_perform_io(dumped.failure())
+    assert failure.reason == "just-dump-failed"
+    assert str(tmp_path) in failure.remedy
+
+
+def test_a_dump_that_exits_zero_without_a_json_object_is_the_failure_track(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Output this module cannot interpret is not an empty justfile.
+
+    The silent one: a payload that is not a JSON object used to be degraded to
+    `{}`, which the policy then reports as a repo whose every recipe conforms.
+    """
+    module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_dump")
+    _write(root=tmp_path, rel="justfile", body=_CONFORMING_JUSTFILE)
+    _stub_just_on_path(root=tmp_path, monkeypatch=monkeypatch, body="not json at all")
+
+    dumped = module.just_dump(repo_root=tmp_path)
+
+    assert not is_successful(dumped)
+    failure = unsafe_perform_io(dumped.failure())
+    assert failure.reason == "just-dump-unparseable"
+    assert "inspect the output" in failure.remedy
+
+
+def test_an_unobtained_recipe_dump_is_reported_rather_than_read_as_clean(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A justfile the check never read must not reach the verdict as a clean one.
+
+    The recipe half's counterpart to `shellcheck-unavailable`: the check's
+    verdict is a finding LIST, so the dump's failure track is rendered as a
+    finding here rather than propagating. Before the railway this repo's
+    recipe policy answered a rejected justfile by raising a `JSONDecodeError`
+    out of the check — and a payload it could not interpret by reporting zero
+    recipe findings, which is a pass over recipes nobody read.
+    """
+    _write(root=tmp_path, rel="justfile", body="build:\n    @true\n\n!!!\n")
+    _write(
+        root=tmp_path,
+        rel="scripts/run.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1, stderr
+    assert '"reason": "just-dump-failed"' in stderr
+    assert '"binary_name": "just"' in stderr
+    assert "re-run check-shell-quality" in stderr
 
 
 def test_missing_shellcheck_binary_hard_fails_with_actionable_remedy(

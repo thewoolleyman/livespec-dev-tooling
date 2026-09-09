@@ -12,7 +12,11 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402
 from returns.pipeline import is_successful  # noqa: E402
+from returns.unsafe import unsafe_perform_io  # noqa: E402
 
+from livespec_dev_tooling.checks._shell_quality_dump import (  # noqa: E402
+    RecipeDumpUnavailable,
+)
 from livespec_dev_tooling.checks._shell_quality_finding import Finding  # noqa: E402
 from livespec_dev_tooling.checks._shell_quality_recipes import recipe_findings  # noqa: E402
 from livespec_dev_tooling.config import assert_never  # noqa: E402
@@ -121,9 +125,42 @@ def _from_shellcheck(*, item: ShellFinding) -> Finding:
     )
 
 
+def _recipe_findings(*, repo_root: Path) -> list[Finding]:
+    """Consume the recipe policy's railway; a dump nobody got IS a finding.
+
+    Mirrors `_shellcheck_findings` above rather than inventing a second
+    posture: this check's verdict is a finding list, so the failure track is
+    RENDERED here instead of propagating. Reporting an unobtained dump as zero
+    recipe findings would report a justfile the check never read as a clean
+    one — the exact fail-open `_findings_for_run_failure` was written to close
+    on the ShellCheck side, arriving from the other finding source.
+    """
+    dumped = recipe_findings(repo_root=repo_root)
+    if not is_successful(dumped):
+        return [_finding_for_dump_unavailable(failure=unsafe_perform_io(dumped.failure()))]
+    return unsafe_perform_io(dumped.unwrap())
+
+
+def _finding_for_dump_unavailable(*, failure: RecipeDumpUnavailable) -> Finding:
+    """Render the unobtained dump, keeping ITS discriminator as the reason.
+
+    The three ways to lose the dump reach an operator as three distinct
+    reasons rather than one `recipe-dump-unavailable`, because installing
+    `just` and repairing a justfile the parser rejects are different repairs
+    and `remedy` names whichever one applies.
+    """
+    return Finding(
+        reason=failure.reason,
+        path=Path("justfile"),
+        line=1,
+        binary_name="just",
+        remedy=failure.remedy,
+    )
+
+
 def findings_for_repo(*, repo_root: Path) -> list[Finding]:
     findings = _shellcheck_findings(repo_root=repo_root)
-    findings.extend(recipe_findings(repo_root=repo_root))
+    findings.extend(_recipe_findings(repo_root=repo_root))
     return findings
 
 

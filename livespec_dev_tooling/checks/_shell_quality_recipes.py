@@ -1,10 +1,19 @@
 """The shell-quality check's justfile-recipe policy half.
 
 Split from `shell_quality` at the seam between its two independent finding
-sources: this module reads the `just --dump` JSON and decides which RECIPES
-violate policy, while the check module keeps the ShellCheck-derived findings
-and the reporting entry point. Neither half knows anything about the other;
-both speak the shared `Finding` record from `_shell_quality_finding`.
+sources: this module decides which RECIPES violate policy, while the check
+module keeps the ShellCheck-derived findings and the reporting entry point.
+Neither half knows anything about the other; both speak the shared `Finding`
+record from `_shell_quality_finding`.
+
+Split AGAIN, at the seam the paragraph above used to straddle: reading the
+`just --dump` JSON and deciding which recipes violate policy are two concerns
+and only the first touches the world, so `_shell_quality_dump` now owns
+obtaining the payload and this module owns judging it. That module's docstring
+carries why the acquisition rides `IOResult` rather than degrading a dump it
+could not obtain into an empty one (livespec-dev-tooling-qndn.13); the
+consequence HERE is that `recipe_findings` forwards that railway rather than
+answering with a bare list that spells "clean" and "never read" alike.
 
 The policy itself is unchanged by the split — a recipe is reported for just
 interpolation, for taking parameters without the per-recipe
@@ -21,19 +30,34 @@ let a recipe die silently on every invocation.
 
 from __future__ import annotations
 
-import json
 import re
-import shutil
-import subprocess
-from collections.abc import Mapping
+import sys
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import cast
 
-from livespec_dev_tooling.checks._shell_quality_bashisms import (
+# `returns` is VENDORED, not installed, so a bare import resolves only if some
+# EARLIER import in the same process already put `_vendor/` on `sys.path`. This
+# module is imported directly by its own tests as well as through the check, so
+# it establishes the path itself rather than relying on whichever importer
+# happened to run first.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOResult  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.checks._shell_quality_bashisms import (  # noqa: E402
     bash_only_constructs,
     shell_is_bash_compatible,
 )
-from livespec_dev_tooling.checks._shell_quality_finding import Finding
+from livespec_dev_tooling.checks._shell_quality_dump import (  # noqa: E402
+    JustDump,
+    JustRecipe,
+    JustSettings,
+    RecipeDumpUnavailable,
+    just_dump,
+)
+from livespec_dev_tooling.checks._shell_quality_finding import Finding  # noqa: E402
 
 __all__: list[str] = [
     "recipe_findings",
@@ -44,30 +68,6 @@ _INTERPOLATION_SENTINEL = "__JUST_INTERPOLATION__"
 # `set -e` is matched with boundaries so it cannot fire from inside an
 # ordinary hyphenated word; a bare "-e" substring previously could.
 _ERREXIT_RATIONALE_PATTERN = re.compile(r"errexit|(?<![\w-])set\s+-e(?![\w-])")
-
-
-class _JustShell(TypedDict, total=False):
-    arguments: list[str]
-    command: str
-
-
-class _JustSettings(TypedDict, total=False):
-    positional_arguments: bool
-    shell: _JustShell | None
-
-
-class _JustRecipe(TypedDict, total=False):
-    attributes: list[str]
-    body: list[list[object]]
-    doc: str | None
-    name: str
-    parameters: list[object]
-    shebang: bool
-
-
-class _JustDump(TypedDict, total=False):
-    recipes: dict[str, _JustRecipe]
-    settings: _JustSettings
 
 
 def _has_errexit(*, line: str) -> bool:
@@ -88,23 +88,24 @@ def _flatten_body_line(*, parts: object) -> tuple[str, bool]:
     return text.strip(), interpolated
 
 
-def _just_dump(*, repo_root: Path) -> _JustDump | None:
-    if not (repo_root / "justfile").is_file():
-        return None
-    just_binary = cast(str, shutil.which("just"))
-    completed = subprocess.run(
-        [just_binary, "--dump", "--dump-format", "json"],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
+def recipe_findings(*, repo_root: Path) -> IOResult[list[Finding], RecipeDumpUnavailable]:
+    """This justfile's recipe-policy findings, on the railway the dump earns.
+
+    The policy below is TOTAL over a payload it holds, so this function adds no
+    failure mode of its own — it FORWARDS `just_dump`'s. A second error type
+    for one condition would make the caller distinguish two things that are one
+    thing: the recipes were not read.
+
+    Spelled `IOResult[...]` rather than behind a module-level alias so the
+    terminal name `checks/public_api_result_typed` reads off the SOURCE
+    annotation is the railway's own.
+    """
+    return just_dump(repo_root=repo_root).map(
+        lambda payload: _findings_for_payload(payload=payload)
     )
-    parsed = json.loads(completed.stdout)
-    return cast(_JustDump, parsed if isinstance(parsed, Mapping) else {})
 
 
-def recipe_findings(*, repo_root: Path) -> list[Finding]:
-    payload = _just_dump(repo_root=repo_root)
+def _findings_for_payload(*, payload: JustDump | None) -> list[Finding]:
     if payload is None:
         return []
     findings: list[Finding] = []
@@ -119,7 +120,7 @@ def recipe_findings(*, repo_root: Path) -> list[Finding]:
     return findings
 
 
-def _declares_bash_compatible_shell(*, settings: _JustSettings) -> bool:
+def _declares_bash_compatible_shell(*, settings: JustSettings) -> bool:
     """Has this justfile opted OUT of `just`'s default `sh` for every recipe?
 
     `set shell` is file-scoped, so one declaration exempts the whole resolved
@@ -134,7 +135,7 @@ def _declares_bash_compatible_shell(*, settings: _JustSettings) -> bool:
     return shell_is_bash_compatible(command=shell.get("command", ""))
 
 
-def _findings_for_recipe(*, recipe: _JustRecipe, default_sh: bool) -> list[Finding]:
+def _findings_for_recipe(*, recipe: JustRecipe, default_sh: bool) -> list[Finding]:
     findings: list[Finding] = []
     name = recipe.get("name", "")
     body = recipe.get("body", [])
@@ -180,7 +181,7 @@ def _findings_for_recipe(*, recipe: _JustRecipe, default_sh: bool) -> list[Findi
 
 
 def _bash_only_syntax_findings(
-    *, recipe: _JustRecipe, lines: list[tuple[str, bool]], default_sh: bool
+    *, recipe: JustRecipe, lines: list[tuple[str, bool]], default_sh: bool
 ) -> list[Finding]:
     """Report Bash-only syntax in a body `just` will hand to the default `sh`.
 
@@ -216,13 +217,13 @@ def _bash_only_syntax_findings(
     ]
 
 
-def _missing_per_recipe_positional_arguments(*, recipe: _JustRecipe) -> bool:
+def _missing_per_recipe_positional_arguments(*, recipe: JustRecipe) -> bool:
     return bool(recipe.get("parameters", [])) and "positional-arguments" not in recipe.get(
         "attributes", []
     )
 
 
-def _missing_errexit_rationale(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
+def _missing_errexit_rationale(*, recipe: JustRecipe, lines: list[tuple[str, bool]]) -> bool:
     commands = [line for line, _ in lines if _executable_line(line=line)]
     set_lines = [line for line in commands if line.startswith("set ")]
     return bool(
@@ -233,7 +234,7 @@ def _missing_errexit_rationale(*, recipe: _JustRecipe, lines: list[tuple[str, bo
     )
 
 
-def _nonconforming_recipe(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
+def _nonconforming_recipe(*, recipe: JustRecipe, lines: list[tuple[str, bool]]) -> bool:
     if _documented_no_errexit_deviation(recipe=recipe, lines=lines):
         return False
     commands = [line for line, _ in lines if _executable_line(line=line)]
@@ -244,7 +245,7 @@ def _nonconforming_recipe(*, recipe: _JustRecipe, lines: list[tuple[str, bool]])
     )
 
 
-def _documented_no_errexit_deviation(*, recipe: _JustRecipe, lines: list[tuple[str, bool]]) -> bool:
+def _documented_no_errexit_deviation(*, recipe: JustRecipe, lines: list[tuple[str, bool]]) -> bool:
     commands = [line for line, _ in lines if _executable_line(line=line)]
     set_lines = [line for line in commands if line.startswith("set ")]
     return bool(
