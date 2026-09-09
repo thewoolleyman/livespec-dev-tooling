@@ -30,3 +30,4 @@ class Finding:
     remedy: str | None = None
     code: str | None = None
     severity: str | None = None
+    construct: str | None = None

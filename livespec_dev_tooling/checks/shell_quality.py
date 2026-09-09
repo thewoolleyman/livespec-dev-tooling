@@ -141,6 +141,7 @@ def _emit_findings(*, log: structlog.stdlib.BoundLogger, findings: Sequence[Find
             remedy=finding.remedy,
             code=finding.code,
             severity=finding.severity,
+            construct=finding.construct,
         )
 
 

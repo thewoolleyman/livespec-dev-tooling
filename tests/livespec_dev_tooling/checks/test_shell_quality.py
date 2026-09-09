@@ -39,6 +39,36 @@ worktree-reap *args:
 """
 
 
+_BASH_ONLY_CONSTRUCT_RECIPES = """c1:
+    ./x.sh "${@:2}"
+
+c2:
+    ./x.sh "[[ -n $v ]]"
+
+c3:
+    ./x.sh <<< "word"
+
+c4:
+    ./x.sh $'\\n'
+
+c5:
+    ./x.sh "${v//a/b}"
+
+c6:
+    ./x.sh "${v^^}"
+
+c7:
+    arr=(one two)
+
+c8:
+    function helper() { :; }
+"""
+
+_POSIX_CLEAN_PARAMETER_EXPANSIONS = """expansions:
+    ./x.sh "${HOME:-/tmp}" "${PATH#*:}" "${f%/*}" "${p##*/}" "${v:=y}" "${z:?e}" "${q:+s}"
+"""
+
+
 def _git(*, cwd: Path, args: list[str]) -> None:
     _ = subprocess.run(
         ["git", *args],
@@ -413,6 +443,219 @@ def test_empty_shell_corpus_is_a_clean_pass(
     rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert rc == 0, stderr
+
+
+def test_bash_array_slice_in_default_sh_recipe_body_fails(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The `livespec-f3tf` defect, reproduced as a fixture.
+
+    `reap-stale-worktrees` passed `"${@:2}"` — a Bash array slice — to a
+    logic-free pass-through recipe. The body is perfectly CONFORMING by every
+    shape rule: one command, no shebang, no forbidden metacharacter, and the
+    per-recipe `positional-arguments` attribute is present. Under `just`'s
+    default `sh` it is nevertheless a `Bad substitution` abort on every single
+    invocation, so the recipe never ran for the whole of its life while the
+    gate that inspected it stayed green.
+    """
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                "[positional-arguments]",
+                "reap-stale-worktrees *args:",
+                '    ./dev-tooling/worktree-lib.sh reap "${@:2}"',
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="dev-tooling/worktree-lib.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\"\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1, stderr
+    assert '"reason": "bash-only-syntax-under-default-sh"' in stderr
+    assert '"recipe": "reap-stale-worktrees"' in stderr
+    assert '"construct": "array-slice"' in stderr
+
+
+def test_every_bash_only_construct_is_reported_under_default_sh(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write(root=tmp_path, rel="justfile", body=_BASH_ONLY_CONSTRUCT_RECIPES)
+    _write(
+        root=tmp_path,
+        rel="scripts/clean.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1, stderr
+    for construct in (
+        "array-slice",
+        "double-bracket-test",
+        "here-string",
+        "ansi-c-quoting",
+        "pattern-substitution",
+        "case-conversion",
+        "array-assignment",
+        "function-keyword",
+    ):
+        assert f'"construct": "{construct}"' in stderr
+
+
+def test_posix_parameter_expansions_do_not_trip_the_bash_only_lexicon(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The near-neighbours that make this a discrimination rather than a grep.
+
+    `${v:-d}`, `${v:=d}`, `${v:?e}` and `${v:+s}` all put a `:` where the Bash
+    slice puts its offset, and `${p#*:}`, `${f%/*}` and `${p##*/}` all put a
+    `/` or a `:` inside the braces where pattern substitution puts its
+    separator. Every one of them is POSIX and runs correctly under dash, so a
+    substring test for `:` or `/` inside `${...}` would condemn a clean body.
+    """
+    _write(root=tmp_path, rel="justfile", body=_POSIX_CLEAN_PARAMETER_EXPANSIONS)
+    _write(
+        root=tmp_path,
+        rel="scripts/clean.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, stderr
+
+
+def test_shebang_recipe_may_use_bash_only_syntax(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A shebang body names its own interpreter, so the lexicon does not apply."""
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                "# Deliberately omit errexit so every probe can run before summary.",
+                "probe-all:",
+                "    #!/usr/bin/env bash",
+                "    set -uo pipefail",
+                "    names=(one two)",
+                '    [[ -n "${names[@]:1}" ]] && printf \'%s\\n\' "${names[0]^^}"',
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/clean.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' ok\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, stderr
+
+
+def test_declared_bash_compatible_set_shell_exempts_the_whole_justfile(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`set shell` is file-scoped, so a Bash declaration retires the lexicon."""
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                'set shell := ["bash", "-cu"]',
+                "",
+                "slice:",
+                '    ./scripts/run.sh "${@:2}"',
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/run.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\"\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 0, stderr
+
+
+def test_declared_posix_set_shell_keeps_the_lexicon_armed(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unrecognised or POSIX `set shell` is not an exemption.
+
+    The exemption is granted only for interpreters KNOWN to understand the
+    lexicon. Treating an unrecognised declaration as Bash-compatible would
+    trade a visible false finding for the silent recipe death this rule exists
+    to prevent, so the default runs the other way.
+    """
+    _write(
+        root=tmp_path,
+        rel="justfile",
+        body="\n".join(
+            [
+                'set shell := ["/bin/dash", "-c"]',
+                "",
+                "slice:",
+                '    ./scripts/run.sh "${@:2}"',
+                "",
+            ]
+        ),
+    )
+    _write(
+        root=tmp_path,
+        rel="scripts/run.sh",
+        body="#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$@\"\n",
+    )
+
+    rc, stderr = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert rc == 1, stderr
+    assert '"reason": "bash-only-syntax-under-default-sh"' in stderr
+    assert '"construct": "array-slice"' in stderr
+
+
+def test_this_repos_own_justfile_carries_no_bash_only_syntax() -> None:
+    """The measured containment claim, pinned as an assertion.
+
+    The work-item's sweep found zero findings across all eleven fleet justfiles,
+    so arming this rule reddens nothing. Only this repo's justfile is reachable
+    from inside a test, and it is the one that gates every commit here.
+    """
+    module = importlib.import_module("livespec_dev_tooling.checks._shell_quality_recipes")
+    findings = module.recipe_findings(repo_root=_REPO_ROOT)
+
+    assert [f for f in findings if f.reason == "bash-only-syntax-under-default-sh"] == []
 
 
 def test_missing_shellcheck_binary_hard_fails_with_actionable_remedy(
