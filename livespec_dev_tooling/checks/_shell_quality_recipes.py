@@ -11,6 +11,12 @@ interpolation, for taking parameters without the per-recipe
 `positional-arguments` attribute, for omitting errexit with no documented
 rationale, and for being a non-thin recipe (a shebang body, more than one
 command, or shell syntax that belongs in a script rather than a recipe).
+
+Those four rules all judge a recipe's SHAPE. The fifth,
+`bash-only-syntax-under-default-sh`, is the only one that asks whether the
+conforming line can RUN: see `_shell_quality_bashisms` for the lexicon it reads
+and for the shipped defect (`livespec-f3tf`) that proved the shape rules alone
+let a recipe die silently on every invocation.
 """
 
 from __future__ import annotations
@@ -23,6 +29,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypedDict, cast
 
+from livespec_dev_tooling.checks._shell_quality_bashisms import (
+    bash_only_constructs,
+    shell_is_bash_compatible,
+)
 from livespec_dev_tooling.checks._shell_quality_finding import Finding
 
 __all__: list[str] = [
@@ -36,8 +46,14 @@ _INTERPOLATION_SENTINEL = "__JUST_INTERPOLATION__"
 _ERREXIT_RATIONALE_PATTERN = re.compile(r"errexit|(?<![\w-])set\s+-e(?![\w-])")
 
 
+class _JustShell(TypedDict, total=False):
+    arguments: list[str]
+    command: str
+
+
 class _JustSettings(TypedDict, total=False):
     positional_arguments: bool
+    shell: _JustShell | None
 
 
 class _JustRecipe(TypedDict, total=False):
@@ -97,12 +113,28 @@ def recipe_findings(*, repo_root: Path) -> list[Finding]:
         findings.append(
             Finding(reason="global-positional-arguments", path=Path("justfile"), line=1)
         )
+    default_sh = not _declares_bash_compatible_shell(settings=settings)
     for recipe in payload.get("recipes", {}).values():
-        findings.extend(_findings_for_recipe(recipe=recipe))
+        findings.extend(_findings_for_recipe(recipe=recipe, default_sh=default_sh))
     return findings
 
 
-def _findings_for_recipe(*, recipe: _JustRecipe) -> list[Finding]:
+def _declares_bash_compatible_shell(*, settings: _JustSettings) -> bool:
+    """Has this justfile opted OUT of `just`'s default `sh` for every recipe?
+
+    `set shell` is file-scoped, so one declaration exempts the whole resolved
+    justfile from the Bash-only lexicon: those bodies are genuinely handed to
+    the interpreter named here rather than to dash. `just --dump` reports the
+    setting as `null` when it is absent, which is the case that matters — an
+    absent declaration is what makes the default `sh` load-bearing.
+    """
+    shell = settings.get("shell")
+    if shell is None:
+        return False
+    return shell_is_bash_compatible(command=shell.get("command", ""))
+
+
+def _findings_for_recipe(*, recipe: _JustRecipe, default_sh: bool) -> list[Finding]:
     findings: list[Finding] = []
     name = recipe.get("name", "")
     body = recipe.get("body", [])
@@ -143,7 +175,45 @@ def _findings_for_recipe(*, recipe: _JustRecipe) -> list[Finding]:
                 recipe=name,
             )
         )
+    findings.extend(_bash_only_syntax_findings(recipe=recipe, lines=lines, default_sh=default_sh))
     return findings
+
+
+def _bash_only_syntax_findings(
+    *, recipe: _JustRecipe, lines: list[tuple[str, bool]], default_sh: bool
+) -> list[Finding]:
+    """Report Bash-only syntax in a body `just` will hand to the default `sh`.
+
+    Two exemptions apply BEFORE the lexicon is consulted, and both are about
+    which interpreter actually receives the body:
+
+    - `default_sh` is false when the justfile declared a Bash-compatible
+      `set shell`, so nothing in the file runs under dash.
+    - A shebang recipe names its own interpreter on its first body line, so
+      Bash syntax there is legitimate. Reporting it would bury the real signal
+      under every deliberately-Bash recipe in the file — the exact failure a
+      naive grep over the justfile produces.
+
+    One finding per DISTINCT construct rather than per line: a recipe that
+    repeats `${@:2}` on three lines has one defect, and `dict.fromkeys` keeps
+    the report in lexicon order instead of set-iteration order.
+    """
+    if not default_sh or recipe.get("shebang", False):
+        return []
+    commands = [line for line, _ in lines if _executable_line(line=line)]
+    constructs = dict.fromkeys(
+        construct for line in commands for construct in bash_only_constructs(line=line)
+    )
+    return [
+        Finding(
+            reason="bash-only-syntax-under-default-sh",
+            path=Path("justfile"),
+            line=1,
+            recipe=recipe.get("name", ""),
+            construct=construct,
+        )
+        for construct in constructs
+    ]
 
 
 def _missing_per_recipe_positional_arguments(*, recipe: _JustRecipe) -> bool:
