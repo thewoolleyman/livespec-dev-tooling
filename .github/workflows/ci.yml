@@ -614,6 +614,7 @@ jobs:
           just check-no-todo-registry || failed="$failed check-no-todo-registry"
           just check-partition-completeness || failed="$failed check-partition-completeness"
           just check-plan-anchor-declared || failed="$failed check-plan-anchor-declared"
+          just check-plan-no-live-handoff-file || failed="$failed check-plan-no-live-handoff-file"
           just check-plan-no-tombstone || failed="$failed check-plan-no-tombstone"
           just check-plugin-resolution || failed="$failed check-plugin-resolution"
           just check-primary-checkout-commit-refuse-hook-installed || failed="$failed check-primary-checkout-commit-refuse-hook-installed"
