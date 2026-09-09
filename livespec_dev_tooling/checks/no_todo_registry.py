@@ -128,9 +128,12 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOResult  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
     LedgerReader,
+    LedgerUnreachable,
     bd_status_reader,
     resolve_liveness,
     resolved_status,
@@ -261,7 +264,7 @@ def _warn_every_todo(*, offenders: list[dict[str, object]]) -> None:
 
 
 def _release_tier_failures(
-    *, offenders: list[dict[str, object]], snapshot: dict[str, str] | None
+    *, offenders: list[dict[str, object]], snapshot: IOResult[dict[str, str], LedgerUnreachable]
 ) -> int:
     """RELEASE tier: count entries that must block the release.
 
@@ -271,10 +274,14 @@ def _release_tier_failures(
     is never indistinguishable from a verified one.
 
     `snapshot` is the shared resolver's id → status view of the repository's
-    own configured store, `None` when it did not answer. It is read once per
-    run rather than per entry, which is also what lets an id MISSING from an
-    answering store be convicted as nonexistent rather than mistaken for a
-    store that never replied.
+    own configured store, on the FAILURE track when it did not answer. It is
+    read once per run rather than per entry, which is also what lets an id
+    MISSING from an answering store be convicted as nonexistent rather than
+    mistaken for a store that never replied.
+
+    The unverified arm now tests the resolver's failure TRACK rather than a
+    `None` return, so the unmeasured case cannot be reached by forgetting an
+    arm: an `IOFailure` carries no boolean for the `elif` to misread.
     """
     emit = structlog.get_logger("no_todo_registry")
     failing = 0
@@ -291,7 +298,7 @@ def _release_tier_failures(
             continue
         work_item = cast("str", entry.get("work_item")).strip()
         live = resolve_liveness(work_item=work_item, snapshot=snapshot)
-        if live is None:
+        if isinstance(live, IOFailure):
             emit.warning(
                 "owned TODO entry accepted; work-item liveness UNVERIFIED "
                 "(the repository's configured work-item store did not answer)",
@@ -299,9 +306,10 @@ def _release_tier_failures(
                 spec_root=entry.get("spec_root"),
                 work_item=work_item,
                 liveness_unverified=True,
+                unreachable_reason=unsafe_perform_io(live.failure()).reason,
                 failing=False,
             )
-        elif not live:
+        elif not unsafe_perform_io(live.unwrap()):
             failing += 1
             emit.error(
                 'heading-coverage.json entry has `test: "TODO"` owned by a '

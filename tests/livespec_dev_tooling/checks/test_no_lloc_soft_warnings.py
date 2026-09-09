@@ -25,16 +25,27 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
 
 import pytest
 
-from livespec_dev_tooling.checks._work_item_liveness import LedgerReader, resolve_liveness
+from livespec_dev_tooling.checks._work_item_liveness import (
+    LedgerReader,
+    LedgerUnreachable,
+    resolve_liveness,
+)
 from tests.livespec_dev_tooling.checks.config_parse_rendering import (
     assert_main_renders_the_parse_failure,
 )
+
+_VENDOR_DIR = Path(__file__).resolve().parents[3] / "livespec_dev_tooling" / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = []
 
@@ -90,11 +101,27 @@ def _reader_for(*, snapshot: dict[str, str] | None) -> LedgerReader:
     with no `bd` and no credential projection — and is never a spelling of
     "the store is empty". Injecting it is what keeps every case below off the
     live tracker: no test here opens a socket or spawns a process.
-    """
 
-    def _read(*, repo: Path) -> dict[str, str] | None:
+    The `None` spelling survives at the FIXTURE level only, as the terse way
+    a case declares "no answer"; what the double hands the check is the
+    resolver's own `IOResult` failure track.
+    """
+    answer: IOResult[dict[str, str], LedgerUnreachable] = (
+        IOFailure(
+            LedgerUnreachable(
+                repo=".",
+                argv="bd -C . list --status all --json",
+                reason="query-unrunnable",
+                detail="test double: no store configured",
+            )
+        )
+        if snapshot is None
+        else IOSuccess(snapshot)
+    )
+
+    def _read(*, repo: Path) -> IOResult[dict[str, str], LedgerUnreachable]:
         del repo  # The double answers for whatever repo it is handed.
-        return snapshot
+        return answer
 
     return _read
 

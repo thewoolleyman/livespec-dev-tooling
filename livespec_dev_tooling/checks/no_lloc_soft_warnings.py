@@ -75,10 +75,13 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure, IOResult  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._config_load import resolve_check_context_or_report  # noqa: E402
 from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
     LedgerReader,
+    LedgerUnreachable,
     bd_status_reader,
     resolve_liveness,
     resolved_status,
@@ -165,7 +168,10 @@ def _count_lloc(*, source: str) -> int:
 
 
 def _release_tier_failures(
-    *, offenders: list[tuple[Path, int]], root: Path, snapshot: dict[str, str] | None
+    *,
+    offenders: list[tuple[Path, int]],
+    root: Path,
+    snapshot: IOResult[dict[str, str], LedgerUnreachable],
 ) -> int:
     """RELEASE tier: count soft-band files that must block the release.
 
@@ -179,8 +185,9 @@ def _release_tier_failures(
     hatch rather than a narrow, visible concession.
 
     `snapshot` is the shared resolver's id → status view of the repository's
-    own configured store, `None` when it did not answer. It is read once per
-    run rather than per marker: a per-marker probe would be one subprocess
+    own configured store, on the FAILURE track when it did not answer. It is
+    read once per run rather than per marker: a per-marker probe would be one
+    subprocess
     per soft-band file, and — the load-bearing half — it could not tell "no
     such id" from "the store did not answer", because both exit non-zero.
     Reading the population once separates them structurally, which is what
@@ -205,7 +212,7 @@ def _release_tier_failures(
             )
             continue
         live = resolve_liveness(work_item=owner, snapshot=snapshot)
-        if live is None:
+        if isinstance(live, IOFailure):
             emit.warning(
                 "file in 201-250 LLOC soft band accepted: REFACTOR IS OWED by the named "
                 "work-item; carrying this debt is permitted, not blessed. Work-item "
@@ -215,9 +222,10 @@ def _release_tier_failures(
                 lloc=lloc,
                 work_item=owner,
                 liveness_unverified=True,
+                unreachable_reason=unsafe_perform_io(live.failure()).reason,
                 failing=False,
             )
-        elif not live:
+        elif not unsafe_perform_io(live.unwrap()):
             failing += 1
             emit.error(
                 "file in 201-250 LLOC soft band whose owning work-item is closed or "

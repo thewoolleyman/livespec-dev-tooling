@@ -51,7 +51,14 @@ from livespec_dev_tooling.checks import (
     claude_md_coverage,
     public_api_result_typed,
 )
+from livespec_dev_tooling.checks._work_item_liveness import LedgerUnreachable
 from livespec_dev_tooling.config import Config, ConfigParseError, load_config
+
+_VENDOR_DIR = Path(__file__).resolve().parents[3] / "livespec_dev_tooling" / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 
 # The structured field every declared-absent announcement carries, naming the
 # variant the consumer declared.
@@ -93,9 +100,22 @@ def _unarmed_record(
     so what is asserted is what a consumer actually emits.
     """
 
-    def _read(*, repo: Path) -> dict[str, str] | None:
+    answer: IOResult[dict[str, str], LedgerUnreachable] = (
+        IOFailure(
+            LedgerUnreachable(
+                repo=".",
+                argv="bd -C . list --status all --json",
+                reason="query-unrunnable",
+                detail="test double: no store configured",
+            )
+        )
+        if snapshot is None
+        else IOSuccess(snapshot)
+    )
+
+    def _read(*, repo: Path) -> IOResult[dict[str, str], LedgerUnreachable]:
         del repo  # The double answers for whatever repo it is handed.
-        return snapshot
+        return answer
 
     assert hasattr(_role_key_gate, "bd_status_reader"), (
         "the `unarmed_until` arm must resolve its payload through the shared "

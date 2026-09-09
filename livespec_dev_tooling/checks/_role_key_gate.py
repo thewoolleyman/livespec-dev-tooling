@@ -10,6 +10,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
     NONEXISTENT,
@@ -141,10 +142,18 @@ def _announce_unarmed_until(
     returns 0 for every declared-absent variant, and ERROR naming the id and its
     status is the "red or warning per the consuming gate's own contract" the
     exception admits.
+
+    THE `unwrap()` BELOW CANNOT FAIL, and the guard above it is why: reaching
+    the `elif` means `status` is neither UNREACHABLE nor NONEXISTENT, which
+    means the store ANSWERED and holds the id — so `resolve_liveness` is on
+    its success track by construction. Should that invariant ever break, an
+    unwrap that raises is the right outcome: it is a bug in this function, and
+    bugs raise here rather than degrading into a verdict nobody measured.
     """
     repo = Path.cwd()
     snapshot = bd_status_reader(repo=repo)
     status = resolved_status(work_item=ledger_id, snapshot=snapshot)
+    live = resolve_liveness(work_item=ledger_id, snapshot=snapshot)
     fields: dict[str, object] = {
         "check_id": check_id,
         "role": key,
@@ -155,7 +164,7 @@ def _announce_unarmed_until(
     }
     if status in (UNREACHABLE, NONEXISTENT):
         log.warning(_UNARMED_UNTIL_UNVERIFIED_MESSAGE, **fields, liveness_unverified=True)
-    elif resolve_liveness(work_item=ledger_id, snapshot=snapshot) is False:
+    elif not unsafe_perform_io(live.unwrap()):
         log.error(_UNARMED_UNTIL_CLOSED_MESSAGE, **fields)
     else:
         log.warning(
