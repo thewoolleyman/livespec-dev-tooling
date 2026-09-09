@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.70.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.4...v1.70.0) (2026-09-09)
+
+
+### Features
+
+* **ansible:** gha_runner role — the self-hosted runner that serves livespec-orchestrator ([054e23e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/054e23ef62fe2e005f69f9222eab52e4db6a2760))
+
 ## [1.69.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.3...v1.69.4) (2026-09-09)
 
 
