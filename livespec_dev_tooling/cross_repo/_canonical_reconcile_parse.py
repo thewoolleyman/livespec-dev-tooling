@@ -23,9 +23,24 @@ incomplete one.
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Sequence
+from pathlib import Path
 
-from livespec_dev_tooling.just_recipe_headers import recipe_header_present
+# `returns` is VENDORED, not installed, so this module puts `_vendor/` on the
+# path ITSELF rather than relying on its parent having done so first: the
+# parent is a `python -m` ENTRY POINT whose import order a test importing this
+# module directly does not reproduce.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.checks._check_aggregate_failures import (  # noqa: E402
+    CheckRecipeAbsent,
+)
+from livespec_dev_tooling.just_recipe_headers import recipe_header_present  # noqa: E402
 
 __all__: list[str] = [
     "check_recipe_bounds",
@@ -106,8 +121,8 @@ def rewrite_renamed_references(
     return text
 
 
-def check_recipe_bounds(*, lines: list[str]) -> tuple[int, int] | None:
-    """Return (check_header_index, recipe_end_index) for the `check` recipe, or None.
+def check_recipe_bounds(*, lines: list[str]) -> Result[tuple[int, int], CheckRecipeAbsent]:
+    """Return (check_header_index, recipe_end_index) for the `check` recipe.
 
     Accepts the bare header (`check:`) AND a parameterized one
     (`check *skip_targets:`), because a consumer is free to declare arguments on
@@ -117,22 +132,31 @@ def check_recipe_bounds(*, lines: list[str]) -> tuple[int, int] | None:
     that was supposed to wire it.
 
     `recipe_end` is the index of the next column-0 recipe header after the
-    aggregate (or `len(lines)` when it is the file's last recipe). None means
-    the justfile carries no `check` aggregate recipe at all.
+    aggregate (or `len(lines)` when it is the file's last recipe).
+
+    A justfile carrying NO `check` aggregate recipe rides the FAILURE track as
+    `CheckRecipeAbsent` rather than answering `None`. Both callers report that
+    condition as their OWN inability -- the `no_check_header` skip reason,
+    rendered as "justfile has no bare check: recipe; skipping canonical check
+    wiring reconcile" -- which is the qndn triage's section 4d-BIS caller test
+    for CONVERT, and the ruling `_ci_matrix_parse.extract_check_recipe_body`
+    already earned. The failure TYPE is the shared one from
+    `checks/_check_aggregate_failures` so this reader and the check-side
+    readers cannot spell one condition two ways.
     """
     check_header = next(
         (i for i, line in enumerate(lines) if _CHECK_HEADER_RE.match(line.rstrip("\n"))),
         None,
     )
     if check_header is None:
-        return None
+        return Failure(CheckRecipeAbsent())
     recipe_end = len(lines)
     for i in range(check_header + 1, len(lines)):
         line = lines[i]
         if line and not line.startswith((" ", "\t")) and ":" in line:
             recipe_end = i
             break
-    return check_header, recipe_end
+    return Success((check_header, recipe_end))
 
 
 def targets_array_bounds(
