@@ -7,13 +7,43 @@ permitted only in `.claude-plugin/scripts/bin/*.py` (including
 `_bootstrap.py`). Anywhere else under
 `.claude-plugin/scripts/livespec/**`, both forms are banned —
 only the supervisor-at-the-edge surface terminates the process.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly as the
+child's `cwd=` argument did, and the assertion targets are unchanged —
+the int exit code plus the diagnostic text, now read off `capsys` instead
+of `CompletedProcess`.
+
+The `git` spawn in `_git` STAYS: this check resolves its file universe
+from the git index, so a real `git init` + `git add -A` is the behaviour
+the fixture exists to produce, and replacing it with an in-process call
+would be a test that no longer tests what it claims. Its hardcoded 3-key
+env keeps `COVERAGE_PROCESS_START` / `COV_CORE_*` out of that child,
+which is the standing requirement on an allowlisted spawn — so this file
+KEEPS its `subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the `sys.exit` and `raise SystemExit` rejections inside
+`livespec/`, the `bin/` acceptance, the Phase-0 WARN-only arm outside the
+configured source trees, the outside-plugin-scripts pass, the clean tree,
+and the empty tree. The two lines the child reached that an in-process
+call cannot are the module's vendored-path guard (`sys.path.insert`) and
+its `if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -29,6 +59,13 @@ _SUPERVISOR_DISCIPLINE = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "super
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env.
+
+    `git` is not a Python spawn, so `tests_no_subprocess_spawn` permits it;
+    the hardcoded env is a REPLACEMENT rather than a filtered copy of
+    `os.environ`, so `COVERAGE_PROCESS_START` / `COV_CORE_*` cannot reach
+    this child, and the developer's own git config cannot reach the fixture.
+    """
     _ = subprocess.run(
         ["git", *args],
         cwd=str(cwd),
@@ -39,19 +76,49 @@ def _git(*, cwd: Path, args: list[str]) -> None:
     )
 
 
-def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "supervisor_discipline_under_test",
+        str(_SUPERVISOR_DISCIPLINE),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Seed the git fixture, then invoke the check's `main()` in-process under `cwd`."""
     _git(cwd=cwd, args=["init", "-q"])
     _git(cwd=cwd, args=["add", "-A"])
-    return subprocess.run(
-        [sys.executable, str(_SUPERVISOR_DISCIPLINE)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
-def test_supervisor_discipline_rejects_sys_exit_in_livespec(*, tmp_path: Path) -> None:
+def test_supervisor_discipline_rejects_sys_exit_in_livespec(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `sys.exit(...)` call inside livespec/ fails the check.
 
     Fixture: `.claude-plugin/scripts/livespec/foo.py` calls
@@ -76,7 +143,7 @@ def test_supervisor_discipline_rejects_sys_exit_in_livespec(*, tmp_path: Path) -
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"supervisor_discipline should reject sys.exit() in livespec; "
@@ -95,7 +162,9 @@ def test_supervisor_discipline_rejects_sys_exit_in_livespec(*, tmp_path: Path) -
     )
 
 
-def test_supervisor_discipline_rejects_raise_systemexit_in_livespec(*, tmp_path: Path) -> None:
+def test_supervisor_discipline_rejects_raise_systemexit_in_livespec(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `raise SystemExit(...)` inside livespec/ fails the check.
 
     Fixture: livespec/foo.py raises SystemExit. The check
@@ -115,7 +184,7 @@ def test_supervisor_discipline_rejects_raise_systemexit_in_livespec(*, tmp_path:
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"supervisor_discipline should reject raise SystemExit in livespec; "
@@ -124,7 +193,9 @@ def test_supervisor_discipline_rejects_raise_systemexit_in_livespec(*, tmp_path:
     )
 
 
-def test_supervisor_discipline_accepts_sys_exit_inside_bin(*, tmp_path: Path) -> None:
+def test_supervisor_discipline_accepts_sys_exit_inside_bin(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `sys.exit(...)` call inside bin/ passes the check (exit 0).
 
     Pass-case: `.claude-plugin/scripts/bin/foo.py` is a
@@ -149,7 +220,7 @@ def test_supervisor_discipline_accepts_sys_exit_inside_bin(*, tmp_path: Path) ->
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"supervisor_discipline should accept SystemExit in bin/ with exit 0; "
@@ -159,8 +230,7 @@ def test_supervisor_discipline_accepts_sys_exit_inside_bin(*, tmp_path: Path) ->
 
 
 def test_supervisor_discipline_warns_for_git_covered_sys_exit_outside_source_tree(
-    *,
-    tmp_path: Path,
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A `sys.exit(...)` outside configured source trees is Phase-0 WARN-only."""
     (tmp_path / "pyproject.toml").write_text(
@@ -177,7 +247,7 @@ def test_supervisor_discipline_warns_for_git_covered_sys_exit_outside_source_tre
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -186,8 +256,7 @@ def test_supervisor_discipline_warns_for_git_covered_sys_exit_outside_source_tre
 
 
 def test_supervisor_discipline_ignores_raise_systemexit_outside_plugin_scripts(
-    *,
-    tmp_path: Path,
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Flat-package CLIs may still use `raise SystemExit(main())` at the edge."""
     support_dir = tmp_path / "support"
@@ -201,13 +270,15 @@ def test_supervisor_discipline_ignores_raise_systemexit_outside_plugin_scripts(
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0
     assert result.stdout + result.stderr == ""
 
 
-def test_supervisor_discipline_accepts_clean_livespec(*, tmp_path: Path) -> None:
+def test_supervisor_discipline_accepts_clean_livespec(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A livespec module with no sys.exit/SystemExit passes the check (exit 0).
 
     Pass-case: a livespec module that follows ROP discipline,
@@ -243,7 +314,7 @@ def test_supervisor_discipline_accepts_clean_livespec(*, tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"supervisor_discipline should accept clean livespec with exit 0; "
@@ -252,9 +323,11 @@ def test_supervisor_discipline_accepts_clean_livespec(*, tmp_path: Path) -> None
     )
 
 
-def test_supervisor_discipline_accepts_empty_tree(*, tmp_path: Path) -> None:
+def test_supervisor_discipline_accepts_empty_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo cwd without `.claude-plugin/scripts/livespec/` passes the check (exit 0)."""
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"supervisor_discipline should accept empty tree with exit 0; "

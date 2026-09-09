@@ -16,13 +16,45 @@ dispatches to):
   main() calls a private `_emit_findings_json` helper).
 - Every `.py` under `livespec/commands/**` (supervisor
   surface for each command).
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child, no `.coverage.*` race under
+the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly as the
+child's `cwd=` argument did, and the assertion targets are unchanged —
+the int exit code plus the diagnostic text, now read off `capsys` instead
+of `CompletedProcess`.
+
+The `git` spawn in `_git` STAYS: this check resolves its file universe
+from the git index, so a real `git init` + `git add -A` is the behaviour
+the fixture exists to produce, and replacing it with an in-process call
+would be a test that no longer tests what it claims. Its hardcoded 3-key
+env keeps `COVERAGE_PROCESS_START` / `COV_CORE_*` out of that child,
+which is the standing requirement on an allowlisted spawn — so this file
+KEEPS its `subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the `sys.stdout.write` rejection under `livespec/`, the
+`sys.stderr.write` rejection under `dev-tooling/`, both `.buffer.write`
+dodges (stderr under `dev-tooling/`, stdout under `livespec/`), the clean
+module with no banned call, all three file-scope exemptions
+(`bin/_bootstrap.py`, `doctor/run_static.py`, and a `commands/**` file),
+and the empty tree. The two lines the child reached that an in-process
+call cannot are the module's vendored-path guard (`sys.path.insert`) and
+its `if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -38,6 +70,13 @@ _NO_WRITE_DIRECT = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "no_write_di
 
 
 def _git(*, cwd: Path, args: list[str]) -> None:
+    """Run a `git` subcommand in `cwd` with a hermetic 3-key env.
+
+    `git` is not a Python spawn, so `tests_no_subprocess_spawn` permits it;
+    the hardcoded env is a REPLACEMENT rather than a filtered copy of
+    `os.environ`, so `COVERAGE_PROCESS_START` / `COV_CORE_*` cannot reach
+    this child, and the developer's own git config cannot reach the fixture.
+    """
     _ = subprocess.run(
         ["git", *args],
         cwd=str(cwd),
@@ -48,19 +87,49 @@ def _git(*, cwd: Path, args: list[str]) -> None:
     )
 
 
-def _run_check(*, cwd: Path) -> subprocess.CompletedProcess[str]:
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "no_write_direct_under_test",
+        str(_NO_WRITE_DIRECT),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Seed the git fixture, then invoke the check's `main()` in-process under `cwd`."""
     _git(cwd=cwd, args=["init", "-q"])
     _git(cwd=cwd, args=["add", "-A"])
-    return subprocess.run(
-        [sys.executable, str(_NO_WRITE_DIRECT)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    monkeypatch.chdir(cwd)
+    rc = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=rc, stdout=captured.out, stderr=captured.err)
 
 
-def test_no_write_direct_rejects_sys_stdout_write_in_livespec(*, tmp_path: Path) -> None:
+def test_no_write_direct_rejects_sys_stdout_write_in_livespec(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `sys.stdout.write(...)` call inside livespec/ fails the check.
 
     Fixture: `.claude-plugin/scripts/livespec/foo.py` calls
@@ -87,7 +156,7 @@ def test_no_write_direct_rejects_sys_stdout_write_in_livespec(*, tmp_path: Path)
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_write_direct should reject sys.stdout.write call; "
@@ -106,7 +175,9 @@ def test_no_write_direct_rejects_sys_stdout_write_in_livespec(*, tmp_path: Path)
     )
 
 
-def test_no_write_direct_rejects_sys_stderr_write_in_dev_tooling(*, tmp_path: Path) -> None:
+def test_no_write_direct_rejects_sys_stderr_write_in_dev_tooling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `sys.stderr.write(...)` call inside dev-tooling/ fails the check.
 
     Fixture: `dev-tooling/checks/foo.py` calls `sys.stderr.
@@ -130,7 +201,7 @@ def test_no_write_direct_rejects_sys_stderr_write_in_dev_tooling(*, tmp_path: Pa
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_write_direct should reject sys.stderr.write call in dev-tooling/; "
@@ -145,7 +216,9 @@ def test_no_write_direct_rejects_sys_stderr_write_in_dev_tooling(*, tmp_path: Pa
     )
 
 
-def test_no_write_direct_rejects_sys_stderr_buffer_write_in_dev_tooling(*, tmp_path: Path) -> None:
+def test_no_write_direct_rejects_sys_stderr_buffer_write_in_dev_tooling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `sys.stderr.buffer.write(...)` byte-stream call inside dev-tooling/ fails the check.
 
     Closes the `.buffer.write` dodge: rewriting `sys.stderr.write(...)`
@@ -171,7 +244,7 @@ def test_no_write_direct_rejects_sys_stderr_buffer_write_in_dev_tooling(*, tmp_p
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_write_direct should reject sys.stderr.buffer.write dodge in dev-tooling/; "
@@ -186,7 +259,9 @@ def test_no_write_direct_rejects_sys_stderr_buffer_write_in_dev_tooling(*, tmp_p
     )
 
 
-def test_no_write_direct_rejects_sys_stdout_buffer_write_in_livespec(*, tmp_path: Path) -> None:
+def test_no_write_direct_rejects_sys_stdout_buffer_write_in_livespec(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A `sys.stdout.buffer.write(...)` byte-stream call inside livespec/ fails the check.
 
     The stdout `.buffer.write` form is banned identically to the stderr
@@ -209,7 +284,7 @@ def test_no_write_direct_rejects_sys_stdout_buffer_write_in_livespec(*, tmp_path
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"no_write_direct should reject sys.stdout.buffer.write dodge in livespec/; "
@@ -224,7 +299,9 @@ def test_no_write_direct_rejects_sys_stdout_buffer_write_in_livespec(*, tmp_path
     )
 
 
-def test_no_write_direct_accepts_module_without_banned_calls(*, tmp_path: Path) -> None:
+def test_no_write_direct_accepts_module_without_banned_calls(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A module with no `sys.{stdout,stderr}.write` calls passes the check (exit 0).
 
     Pass-case: a livespec module that uses the structlog facade
@@ -245,7 +322,7 @@ def test_no_write_direct_accepts_module_without_banned_calls(*, tmp_path: Path) 
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_write_direct should accept clean module with exit 0; "
@@ -254,7 +331,9 @@ def test_no_write_direct_accepts_module_without_banned_calls(*, tmp_path: Path) 
     )
 
 
-def test_no_write_direct_accepts_bin_bootstrap_file_scope_exemption(*, tmp_path: Path) -> None:
+def test_no_write_direct_accepts_bin_bootstrap_file_scope_exemption(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`bin/_bootstrap.py` is exempted file-scope; `sys.stderr.write` permitted.
 
     Pass-case: `.claude-plugin/scripts/bin/_bootstrap.py`
@@ -278,7 +357,7 @@ def test_no_write_direct_accepts_bin_bootstrap_file_scope_exemption(*, tmp_path:
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_write_direct should exempt bin/_bootstrap.py with exit 0; "
@@ -287,7 +366,9 @@ def test_no_write_direct_accepts_bin_bootstrap_file_scope_exemption(*, tmp_path:
     )
 
 
-def test_no_write_direct_accepts_doctor_run_static_file_scope(*, tmp_path: Path) -> None:
+def test_no_write_direct_accepts_doctor_run_static_file_scope(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """`livespec/doctor/run_static.py` is file-scope exempt.
 
     Pass-case: `.claude-plugin/scripts/livespec/doctor/
@@ -317,7 +398,7 @@ def test_no_write_direct_accepts_doctor_run_static_file_scope(*, tmp_path: Path)
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_write_direct should exempt doctor/run_static.py file-scope with exit 0; "
@@ -326,7 +407,9 @@ def test_no_write_direct_accepts_doctor_run_static_file_scope(*, tmp_path: Path)
     )
 
 
-def test_no_write_direct_accepts_commands_file_scope(*, tmp_path: Path) -> None:
+def test_no_write_direct_accepts_commands_file_scope(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Files under `livespec/commands/**` are file-scope exempt.
 
     Pass-case: `.claude-plugin/scripts/livespec/commands/
@@ -356,7 +439,7 @@ def test_no_write_direct_accepts_commands_file_scope(*, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_write_direct should exempt commands/ file-scope with exit 0; "
@@ -365,13 +448,15 @@ def test_no_write_direct_accepts_commands_file_scope(*, tmp_path: Path) -> None:
     )
 
 
-def test_no_write_direct_accepts_empty_tree(*, tmp_path: Path) -> None:
+def test_no_write_direct_accepts_empty_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A repo cwd without any in-scope subtrees passes the check (exit 0).
 
     Closes the `if root.is_dir():` False arm for every covered
     subtree.
     """
-    result = _run_check(cwd=tmp_path)
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"no_write_direct should accept empty tree with exit 0; "

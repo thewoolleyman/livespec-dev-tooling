@@ -22,14 +22,41 @@ contracts this test pins are:
 
 Read through `pyproject.toml` (the consumer-facing pin source) and the
 `python -m` entrypoint — no internal package state.
+
+The check is invoked IN-PROCESS. `_run_no_inheritance` resolves it by
+module name (`importlib.import_module`), chdirs into the fixture with
+`monkeypatch.chdir`, calls `main()`, and reads the output off `capsys`.
+A consumer reaches the SAME `main()` whether it names the module via
+`python -m` or imports it, so the consumer-observable contract is
+unchanged. That matters most here, because the argv surface is the thing
+under test: the documented contract is that the check takes no required
+positional, and calling `main()` with no arguments is exactly that
+contract expressed in-process — a newly-required positional (the
+backwards-incompatible change that would ship as a MAJOR bump) breaks
+this call just as it would break the `python -m` invocation. The
+assertion target is untouched: the same int exit code, still `0` on a
+clean tree. Running in-process also removes the
+`COVERAGE_PROCESS_START`-instrumented child, so there is no `.coverage.*`
+write race under the parallel dispatcher, and the test is faster.
+
+The `git` spawn in `_git` STAYS, which is why this file keeps its
+`subprocess_spawn_allowlist` entry in `pyproject.toml`. The rerouted
+checks derive their file universe from the git index
+(`config.resolve_check_universe`), so the fixture must be a real git
+working tree — that spawn is the behaviour being produced, not an
+implementation detail to be replaced. Its hardcoded 3-key env (`HOME`,
+`GIT_CONFIG_GLOBAL`, `PATH`) keeps `COVERAGE_PROCESS_START` and
+`COV_CORE_*` out of that child, so the surviving spawn starts no
+coverage writer.
 """
 
 from __future__ import annotations
 
+import importlib
 import re
 import subprocess
-import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -39,6 +66,19 @@ pytestmark = pytest.mark.consumer
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
+
+# The shared check whose argv surface this file pins, named exactly as a
+# consumer names it in `python -m livespec_dev_tooling.checks.no_inheritance`.
+_CHECK_MODULE = "livespec_dev_tooling.checks.no_inheritance"
+
+
+class _CheckRun(NamedTuple):
+    """The three `CompletedProcess` fields the assertions read, in-process."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
 
 # A 3-part semver `MAJOR.MINOR.PATCH` of non-negative integers — the shape
 # `release-please` cuts and a consumer pins as `tag = "vX.Y.Z"`. The
@@ -92,7 +132,35 @@ def test_declared_version_is_a_wellformed_three_part_semver() -> None:
     assert int(match.group("patch")) >= 0
 
 
-def test_existing_check_argv_and_exit_code_contract_is_stable(*, tmp_path: Path) -> None:
+def _run_no_inheritance(
+    *,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> _CheckRun:
+    """Invoke the shared check under its documented no-argument contract.
+
+    A consumer names the check by MODULE NAME, so this resolves it by
+    module name too: `importlib.import_module` reaches the same
+    package-provided module `python -m
+    livespec_dev_tooling.checks.no_inheritance` would, and calls the same
+    `main()`. Calling `main()` with no arguments is the in-process
+    expression of the argv contract this test pins — a required
+    positional would make this call fail exactly as it would break the
+    `python -m` invocation.
+    """
+    module = importlib.import_module(_CHECK_MODULE)
+    monkeypatch.chdir(cwd)
+
+    returncode = module.main()
+
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
+
+
+def test_existing_check_argv_and_exit_code_contract_is_stable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A shared check honors its documented argv + exit-code contract.
 
     This is the consumer-observable CLI surface a MAJOR bump would change: the
@@ -107,13 +175,7 @@ def test_existing_check_argv_and_exit_code_contract_is_stable(*, tmp_path: Path)
     _git(cwd=tmp_path, args=["init", "-q"])
     _git(cwd=tmp_path, args=["add", "-A"])
 
-    result = subprocess.run(
-        [sys.executable, "-m", "livespec_dev_tooling.checks.no_inheritance"],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_no_inheritance(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"the documented argv contract (no required positional) must exit 0 on a "

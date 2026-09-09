@@ -19,14 +19,66 @@ the offending source path surfaced. Subsequent cycles will
 pin the carve-outs (refactor: prefix, ## Type: lines, config-
 only filenames, deletion-only) and the accept case (source +
 test co-staged).
+
+**The check runs IN-PROCESS.** Every one of the eight arms below used
+to spawn `[sys.executable, commit_pairs_source_and_test.py]`; each now
+calls the module's `main()` through the single `_run_check` helper. The
+motive is the child, not the call: a `sys.executable` child inherits
+`COVERAGE_PROCESS_START` and self-instruments under `pytest --cov`,
+dropping a `.coverage.<host>.<pid>` file that races the parallel
+dispatcher's combine step — and it pays a fresh interpreter start plus
+a re-import of structlog on all eight arms for nothing. `main()` reads
+its repo root from `Path.cwd()`, so `monkeypatch.chdir(cwd)` anchors
+the fixture exactly where the child's `cwd=` argument did, and its
+structlog logger binds `sys.stderr` at call time, so `capsys` reads the
+same finding stream the child wrote to its pipe. The assertion targets
+are untouched: the same int exit codes (0, 1, non-zero) and the same
+diagnostic substrings, now read off `_CheckRun` instead of
+`CompletedProcess`.
+
+Because the check resolves its universe from `git diff --cached`
+rather than from the process environment, the `_scrubbed_env()` copy
+that kept the lefthook `GIT_DIR` / `GIT_INDEX_FILE` family out of the
+child is now supplied by `monkeypatch.delenv` inside `_run_check`: the
+in-process `main()` reads the same variables from the same `os.environ`
+the child would have inherited, so the scrub has to move with the call
+or a `git commit` running this suite would point every fixture's staged
+read at the SURROUNDING repo.
+
+The `git` spawns in `_git` STAY. This gate's entire input is the git
+index, so `git init` / `git add` / `git commit` / `git rm` against a
+real repository is the behaviour the fixtures exist to produce, and an
+in-process substitute would be a test that no longer tests what it
+claims. Their hardcoded 3-key env is a REPLACEMENT for `os.environ`
+rather than a filtered copy, so `COVERAGE_PROCESS_START` / `COV_CORE_*`
+cannot reach those children — which is why this file KEEPS its
+`subprocess_spawn_allowlist` entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the bare rejection, the v034 amend-mode skip and its paired
+Red+Green resumption, the empty-repo `git log` fallback, the accept
+case, the path-scoped carrier exemption and its sibling non-vacuity
+guard, the docs-only AST carve-out with its real-change / deletion /
+staged-unparseable / HEAD-unparseable fail-closed arms, the non-Python
+and vendored-Python exclusions with the `_vendor`-substring guard, and
+the `source_trees` fallback for a declared-empty prefix set. The two
+lines the child reached that an in-process call cannot are the module's
+vendored-path `sys.path.insert` guard and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns
+in `[tool.coverage.report]`, so neither was ever measured here and no
+new exclusion is introduced. The dedicated import-path test below still
+loads the module by `importlib` in its own right, so the else-arm of
+the `__main__` guard keeps its existing coverage.
 """
 
 from __future__ import annotations
 
-import os
+import importlib.util
 import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -61,9 +113,52 @@ _GIT_ENV_PASSTHROUGH_VARS: tuple[str, ...] = (
 )
 
 
-def _scrubbed_env() -> dict[str, str]:
-    """Return a copy of `os.environ` with GIT_* hook vars removed."""
-    return {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "commit_pairs_source_and_test_under_test",
+        str(_COMMIT_PAIRS_SOURCE_AND_TEST),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_check(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _CheckRun:
+    """Invoke the commit-pairs check's `main()` in-process, anchored at `tmp_path`.
+
+    Replaces the retired `[sys.executable, <script>]` spawn. The GIT_* hook
+    vars the spawn dropped via `_scrubbed_env()` are deleted from the live
+    environment instead: `main()` now reads the SAME `os.environ` the child
+    used to inherit, so leaving `GIT_DIR` / `GIT_INDEX_FILE` in place would
+    redirect the check's internal `git diff --cached` at the surrounding
+    repository instead of the `tmp_path` mini-repo.
+    """
+    for var in _GIT_ENV_PASSTHROUGH_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(tmp_path)
+    returncode = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
 
 
 def _git(*, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -80,7 +175,9 @@ def _git(*, cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_commit_pairs_rejects_staged_source_without_staged_test(*, tmp_path: Path) -> None:
+def test_commit_pairs_rejects_staged_source_without_staged_test(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A staged `livespec/foo/bar.py` with no staged tests/ change fails the check.
 
     Fixture: a fresh git repo with one baseline commit (so HEAD
@@ -109,16 +206,7 @@ def test_commit_pairs_rejects_staged_source_without_staged_test(*, tmp_path: Pat
     )
     _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/foo/bar.py"])
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled
-    # script path); no untrusted shell input.
-    result = subprocess.run(
-        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"commit_pairs_source_and_test should reject staged source without staged test "
@@ -136,8 +224,7 @@ def test_commit_pairs_rejects_staged_source_without_staged_test(*, tmp_path: Pat
 
 
 def test_commit_pairs_skips_when_head_has_unpaired_red_trailers(
-    *,
-    tmp_path: Path,
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A staged source-only commit with HEAD carrying unpaired Red trailers passes the check.
 
@@ -187,15 +274,7 @@ def test_commit_pairs_skips_when_head_has_unpaired_red_trailers(
     )
     _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/foo/bar.py"])
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
-    result = subprocess.run(
-        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"commit_pairs should skip when HEAD has unpaired Red trailers; "
@@ -205,8 +284,7 @@ def test_commit_pairs_skips_when_head_has_unpaired_red_trailers(
 
 
 def test_commit_pairs_applies_when_head_has_paired_red_and_green_trailers(
-    *,
-    tmp_path: Path,
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A staged source-only commit with HEAD carrying Red+Green trailers fails the check.
 
@@ -247,15 +325,7 @@ def test_commit_pairs_applies_when_head_has_paired_red_and_green_trailers(
     )
     _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/foo/bar.py"])
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
-    result = subprocess.run(
-        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"commit_pairs should reject source-only when HEAD has paired Red+Green trailers; "
@@ -264,7 +334,9 @@ def test_commit_pairs_applies_when_head_has_paired_red_and_green_trailers(
     )
 
 
-def test_commit_pairs_skips_on_empty_repo_with_no_head() -> None:
+def test_commit_pairs_skips_on_empty_repo_with_no_head(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """On a fresh repo with zero commits, the head-message lookup falls back gracefully.
 
     Drives the `result.returncode != 0` early-return in
@@ -290,22 +362,20 @@ def test_commit_pairs_skips_on_empty_repo_with_no_head() -> None:
         (empty_repo / "README.md").write_text("seed\n", encoding="utf-8")
         _git(cwd=empty_repo, args=["add", "README.md"])
 
-        # S603: argv is a fixed list (sys.executable + repo-controlled
-        # script path); no untrusted shell input.
-        result = subprocess.run(
-            [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-            cwd=str(empty_repo),
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_scrubbed_env(),
-        )
+        result = _run_check(tmp_path=empty_repo, monkeypatch=monkeypatch, capsys=capsys)
 
-    assert result.returncode == 0, (
-        f"commit_pairs should accept empty repo with no source changes; "
-        f"got returncode={result.returncode} "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
+        # Asserted INSIDE the `with`: `_run_check` monkeypatches the process
+        # cwd into `empty_repo`, and that cwd is only restored at test
+        # teardown. The retired form was immune — the child's `cwd=` died with
+        # the child — but in-process, letting the block exit here would delete
+        # the directory the live process is sitting in, so anything calling
+        # `Path.cwd()` before teardown (a future helper, a pytest hook) would
+        # raise FileNotFoundError.
+        assert result.returncode == 0, (
+            f"commit_pairs should accept empty repo with no source changes; "
+            f"got returncode={result.returncode} "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
 
 
 def test_commit_pairs_module_importable_without_running_main() -> None:
@@ -348,7 +418,9 @@ def test_commit_pairs_module_importable_without_running_main() -> None:
     assert callable(module.main), "main should be importable without invocation"
 
 
-def test_commit_pairs_accepts_staged_source_with_staged_test(*, tmp_path: Path) -> None:
+def test_commit_pairs_accepts_staged_source_with_staged_test(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A staged source change paired with a staged tests/ change passes the check.
 
     Pass-case companion to the rejection test. Fixture: fresh git
@@ -391,15 +463,7 @@ def test_commit_pairs_accepts_staged_source_with_staged_test(*, tmp_path: Path) 
     _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/foo/bar.py"])
     _git(cwd=tmp_path, args=["add", "tests/livespec/foo/test_bar.py"])
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
-    result = subprocess.run(
-        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"commit_pairs_source_and_test should accept staged source + paired test "
@@ -437,7 +501,9 @@ def _init_carrier_repo(*, tmp_path: Path) -> None:
     (tmp_path / ".claude-plugin" / "hooks").mkdir(parents=True)
 
 
-def test_commit_pairs_exempts_the_declared_neutral_hook_body(*, tmp_path: Path) -> None:
+def test_commit_pairs_exempts_the_declared_neutral_hook_body(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The declared carrier body may be re-rendered with no paired test change.
 
     The neutral no-shadow-ledger body is a GENERATED carrier: it is
@@ -467,15 +533,7 @@ def test_commit_pairs_exempts_the_declared_neutral_hook_body(*, tmp_path: Path) 
     )
     _git(cwd=tmp_path, args=["add", ".claude-plugin/hooks/no_shadow_ledger.py"])
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
-    result = subprocess.run(
-        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"commit_pairs_source_and_test must exempt the declared "
@@ -485,7 +543,9 @@ def test_commit_pairs_exempts_the_declared_neutral_hook_body(*, tmp_path: Path) 
     )
 
 
-def test_commit_pairs_exemption_does_not_widen_to_the_carrier_sibling(*, tmp_path: Path) -> None:
+def test_commit_pairs_exemption_does_not_widen_to_the_carrier_sibling(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """The exemption is path-scoped, NOT prefix-wide — a sibling still fails.
 
     Non-vacuity guard for the test above. The carrier lives INSIDE a
@@ -505,15 +565,7 @@ def test_commit_pairs_exemption_does_not_widen_to_the_carrier_sibling(*, tmp_pat
     )
     _git(cwd=tmp_path, args=["add", ".claude-plugin/hooks/block_auto_memory.py"])
 
-    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
-    result = subprocess.run(
-        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 1, (
         f"a non-carrier sibling under the same source prefix must still be "
@@ -555,20 +607,9 @@ def _init_repo_with_committed_source(*, tmp_path: Path, body: str) -> Path:
     return source
 
 
-def _run_check(*, tmp_path: Path) -> subprocess.CompletedProcess[str]:
-    """Invoke the commit-pairs check as a CLI with `cwd=tmp_path`."""
-    # S603: argv is a fixed list (sys.executable + repo-controlled script path).
-    return subprocess.run(
-        [sys.executable, str(_COMMIT_PAIRS_SOURCE_AND_TEST)],
-        cwd=str(tmp_path),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(),
-    )
-
-
-def test_commit_pairs_carveout_allows_docs_only_source_change(*, tmp_path: Path) -> None:
+def test_commit_pairs_carveout_allows_docs_only_source_change(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A comments+docstring-only source edit with no staged test passes (5eow carve-out).
 
     Fixture: a source file committed to HEAD, then re-staged with ONLY its
@@ -601,7 +642,7 @@ def test_commit_pairs_carveout_allows_docs_only_source_change(*, tmp_path: Path)
     source.write_text(staged_body, encoding="utf-8")
     _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"docs-only source change (comments + docstrings only) should pass the "
@@ -610,7 +651,9 @@ def test_commit_pairs_carveout_allows_docs_only_source_change(*, tmp_path: Path)
     )
 
 
-def test_commit_pairs_carveout_rejects_real_source_change(*, tmp_path: Path) -> None:
+def test_commit_pairs_carveout_rejects_real_source_change(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A real (logical-code) source edit with no staged test is still rejected.
 
     The carve-out is content-keyed: a change touching anything beyond comments
@@ -623,7 +666,7 @@ def test_commit_pairs_carveout_rejects_real_source_change(*, tmp_path: Path) -> 
     source.write_text(_CARVEOUT_HEAD_SOURCE.replace("X = 1", "X = 2"), encoding="utf-8")
     _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"a real code change should re-arm the pairing requirement (exit non-zero); "
@@ -637,7 +680,9 @@ def test_commit_pairs_carveout_rejects_real_source_change(*, tmp_path: Path) -> 
     )
 
 
-def test_commit_pairs_carveout_fails_closed_on_staged_deletion(*, tmp_path: Path) -> None:
+def test_commit_pairs_carveout_fails_closed_on_staged_deletion(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A staged deletion of a source file falls back to the pairing requirement.
 
     A deletion has no staged (index, stage-0) blob, and `git` SAYS SO — so
@@ -651,7 +696,7 @@ def test_commit_pairs_carveout_fails_closed_on_staged_deletion(*, tmp_path: Path
     _init_repo_with_committed_source(tmp_path=tmp_path, body=_CARVEOUT_HEAD_SOURCE)
     _git(cwd=tmp_path, args=["rm", "-q", _CARVEOUT_SOURCE_REL])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"a staged deletion should fail closed to the pairing requirement (exit "
@@ -660,7 +705,9 @@ def test_commit_pairs_carveout_fails_closed_on_staged_deletion(*, tmp_path: Path
     )
 
 
-def test_commit_pairs_carveout_fails_closed_when_staged_unparseable(*, tmp_path: Path) -> None:
+def test_commit_pairs_carveout_fails_closed_when_staged_unparseable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A staged version that does not parse falls back to the pairing requirement.
 
     The fail-closed DIRECTION is unchanged, and the author is now told WHY.
@@ -674,7 +721,7 @@ def test_commit_pairs_carveout_fails_closed_when_staged_unparseable(*, tmp_path:
     source.write_text("def broken( this is not valid python\n", encoding="utf-8")
     _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"an unparseable staged version should fail closed (exit non-zero); "
@@ -687,7 +734,9 @@ def test_commit_pairs_carveout_fails_closed_when_staged_unparseable(*, tmp_path:
     )
 
 
-def test_commit_pairs_carveout_fails_closed_when_head_unparseable(*, tmp_path: Path) -> None:
+def test_commit_pairs_carveout_fails_closed_when_head_unparseable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A HEAD version that does not parse falls back to the pairing requirement.
 
     Mirror of the staged-unparseable case for the HEAD side: the shared rule
@@ -702,7 +751,7 @@ def test_commit_pairs_carveout_fails_closed_when_head_unparseable(*, tmp_path: P
     source.write_text(_CARVEOUT_HEAD_SOURCE, encoding="utf-8")
     _git(cwd=tmp_path, args=["add", _CARVEOUT_SOURCE_REL])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"an unparseable HEAD version should fail closed (exit non-zero); "
@@ -714,7 +763,9 @@ def test_commit_pairs_carveout_fails_closed_when_head_unparseable(*, tmp_path: P
     )
 
 
-def test_commit_pairs_ignores_non_python_source_tree_file(*, tmp_path: Path) -> None:
+def test_commit_pairs_ignores_non_python_source_tree_file(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A Markdown file under a source tree needs no paired test.
 
     The pairing contract is defined on Python: the mirror transform
@@ -731,7 +782,7 @@ def test_commit_pairs_ignores_non_python_source_tree_file(*, tmp_path: Path) -> 
     doc.write_text("# orientation\n\nProse only — no behavior to test.\n", encoding="utf-8")
     _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/foo/CLAUDE.md"])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"a non-Python file under a source tree should not require a paired test; "
@@ -740,7 +791,9 @@ def test_commit_pairs_ignores_non_python_source_tree_file(*, tmp_path: Path) -> 
     )
 
 
-def test_commit_pairs_ignores_vendored_python_under_a_source_tree(*, tmp_path: Path) -> None:
+def test_commit_pairs_ignores_vendored_python_under_a_source_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A vendored `.py` under a source tree needs no paired test.
 
     `_vendor` exclusion is the fleet-wide first-party rule, not a
@@ -767,7 +820,7 @@ def test_commit_pairs_ignores_vendored_python_under_a_source_tree(*, tmp_path: P
         args=["add", ".claude-plugin/scripts/livespec/_vendor/somelib/core.py"],
     )
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 0, (
         f"a vendored `.py` under a source tree should not require a paired test; "
@@ -777,7 +830,7 @@ def test_commit_pairs_ignores_vendored_python_under_a_source_tree(*, tmp_path: P
 
 
 def test_commit_pairs_vendor_exclusion_does_not_widen_to_authored_siblings(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The `_vendor` exclusion must not leak onto hand-authored source.
 
@@ -792,7 +845,7 @@ def test_commit_pairs_vendor_exclusion_does_not_widen_to_authored_siblings(
     authored.write_text("def authored_helper():\n    return 2\n", encoding="utf-8")
     _git(cwd=tmp_path, args=["add", ".claude-plugin/scripts/livespec/_vendor_update.py"])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode == 1, (
         f"authored source merely NAMED like the vendor tree must stay gated; "
@@ -815,7 +868,7 @@ source_tree_prefixes = { not_applicable = "consumer declares no prefixes; source
 
 
 def test_commit_pairs_falls_back_to_source_trees_when_prefixes_declared_empty(
-    *, tmp_path: Path
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An empty `source_tree_prefixes` must not empty the gate's whole universe.
 
@@ -852,7 +905,7 @@ def test_commit_pairs_falls_back_to_source_trees_when_prefixes_declared_empty(
     )
     _git(cwd=tmp_path, args=["add", "pkg/mod.py"])
 
-    result = _run_check(tmp_path=tmp_path)
+    result = _run_check(tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
         f"an empty `source_tree_prefixes` must fall back to `source_trees` rather than "

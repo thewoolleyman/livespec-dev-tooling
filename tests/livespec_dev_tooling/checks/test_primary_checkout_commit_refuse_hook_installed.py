@@ -33,15 +33,55 @@ The check inspects the common-dir hooks directory (via `git rev-parse
 --git-common-dir`), shared by every worktree, so it passes equally from
 the primary and from any secondary worktree once the canonical hooks are
 installed at the primary.
+
+The check is driven IN-PROCESS (`monkeypatch.chdir(...)` + `capsys` +
+`rc = main()`) rather than via a `sys.executable` subprocess: no
+`COVERAGE_PROCESS_START`-instrumented child of this test, no `.coverage.*`
+race under the parallel dispatcher, and materially faster. `main()` reads
+`Path.cwd()`, so the monkeypatched cwd anchors the fixture exactly as the
+child's `cwd=` argument did; the one call site that overrode `PATH` now
+uses `monkeypatch.setenv`, which the check's OWN `git rev-parse` children
+inherit unchanged. The assertion targets are unchanged — the int exit
+code (including the `4` this check reserves for `fail`) plus the
+structlog stderr text, now read off `capsys`.
+
+The `git` spawns STAY, and there are nine of them: `init`, `config`,
+`add`, `commit`, `branch`, `worktree add`, and the `core.bare` flip. Real
+git state — a real `.git`, a real common-dir, a real secondary worktree —
+is precisely what this check reads, so an in-process stand-in would be a
+test that no longer tests what it claims. This file therefore KEEPS its
+`subprocess_spawn_allowlist` entry.
+
+`_scrubbed_env` NOW ALSO DROPS `COVERAGE_PROCESS_START` and `COV_CORE_*`.
+It previously removed only the GIT_* passthrough family, so those two
+reached all nine `git` children; scrubbing them is the standing
+requirement on an allowlisted entry.
+
+Branch parity with the retired spawn: the same fixtures drive the same
+arms — the missing, non-executable and byte-different hook bodies
+(including the legacy body that would have satisfied the retired loose
+fingerprint), the vendored hook-source copies with the `templates/` and
+`.git/` carve-outs, the optional worktree pack's absent / partial /
+drifted states, the `livespec.sandboxExempt` marker, the empty-`PATH`
+arm, and the secondary-worktree and bare-repo cases. The two lines the
+child reached that an in-process call cannot are the module's
+vendored-path guard (`sys.path.insert`) and its
+`if __name__ == "__main__": raise SystemExit(main())` line; both are
+already excluded repo-wide by the PRE-EXISTING `exclude_also` patterns in
+`[tool.coverage.report]`, so neither was ever measured here and no new
+exclusion is introduced — and the guard's two arms are still driven
+directly by `test_module_re_import_with_vendor_in_sys_path`.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import stat
 import subprocess
-import sys
 from pathlib import Path
+from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -139,39 +179,95 @@ exit 0
 """
 
 
-def _scrubbed_env(*, path_override: str | None = None) -> dict[str, str]:
-    """Return a copy of `os.environ` with GIT_* vars removed.
+def _is_scrubbed(*, key: str) -> bool:
+    """True iff `key` must be kept out of a `git` child this test spawns.
 
-    When tests run as part of a git pre-commit hook (lefthook), git sets
-    GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE pointing at the surrounding
-    repo. Scrubbing the vars confines git to the tmp_path fixture's
-    `.git` directory.
+    Two families, for two different reasons. When tests run as part of a git
+    pre-commit hook (lefthook), git sets GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE
+    pointing at the surrounding repo; scrubbing those confines git to the
+    tmp_path fixture's `.git` directory. `COVERAGE_PROCESS_START` and
+    `COV_CORE_*` are separate: a child carrying them self-instruments via the
+    pth-installed startup hook and writes `.coverage.*` files that race the
+    parallel check dispatcher. That is the standing requirement on every entry
+    in `subprocess_spawn_allowlist`, which this file is on for its `git`
+    spawns.
     """
-    env = {k: v for k, v in os.environ.items() if k not in _GIT_ENV_PASSTHROUGH_VARS}
-    if path_override is not None:
-        env["PATH"] = path_override
-    return env
+    return (
+        key in _GIT_ENV_PASSTHROUGH_VARS
+        or key == "COVERAGE_PROCESS_START"
+        or key.startswith("COV_CORE_")
+    )
+
+
+def _scrubbed_env() -> dict[str, str]:
+    """Return a copy of `os.environ` with the GIT_* and coverage vars removed.
+
+    No `path_override` parameter: the one arm that overrides `PATH` drove the
+    RETIRED check subprocess, and in-process it is a `monkeypatch.setenv` in
+    `_run_check` instead. Carrying the parameter here would leave a branch no
+    caller can reach.
+    """
+    return {k: v for k, v in os.environ.items() if not _is_scrubbed(key=k)}
+
+
+def _load_check_module() -> ModuleType:
+    """Import the check module fresh from its file path.
+
+    Loaded by path (not `import livespec_dev_tooling.checks...`) so the test
+    exercises the on-disk module the Red-Green-Replay hook inspects, and so
+    `main()` can be invoked in-process under a monkeypatched cwd.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "primary_checkout_commit_refuse_hook_installed_under_test",
+        str(_CHECK),
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MODULE = _load_check_module()
+
+
+class _CheckRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 def _run_check(
     *,
     cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     path_override: str | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run the check script with cwd set to a path.
+) -> _CheckRun:
+    """Invoke the check's `main()` in-process with cwd set to a path.
 
-    Preserves the parent env (incl. COVERAGE_PROCESS_START) so
-    pytest-cov's subprocess auto-init works; overrides only PATH when
-    `path_override` is given.
+    The GIT_* passthrough family is removed from THIS process so the check's
+    own `git rev-parse` children stay confined to the fixture — that is what
+    the retired child's `env=_scrubbed_env()` mapping did, applied one frame
+    earlier. `path_override` becomes a `monkeypatch.setenv("PATH", ...)`,
+    which those children inherit unchanged.
+
+    The docstring here used to say the mapping "preserves the parent env
+    (incl. COVERAGE_PROCESS_START) so pytest-cov's subprocess auto-init
+    works". That is no longer true of this file and is corrected rather than
+    left to mislead the next reader: there is no Python child of this test to
+    auto-init, and `main()` is measured directly by the parent's coverage
+    session.
     """
-    return subprocess.run(
-        [sys.executable, str(_CHECK)],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_scrubbed_env(path_override=path_override),
-    )
+    for key in _GIT_ENV_PASSTHROUGH_VARS:
+        monkeypatch.delenv(key, raising=False)
+    if path_override is not None:
+        monkeypatch.setenv("PATH", path_override)
+    monkeypatch.chdir(cwd)
+    returncode = _MODULE.main()
+    captured = capsys.readouterr()
+    return _CheckRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
 
 
 def _git_init(*, cwd: Path) -> None:
@@ -247,21 +343,25 @@ def _install_canonical_hooks(*, repo_root: Path) -> None:
         )
 
 
-def test_passes_when_all_three_canonical_installed(*, tmp_path: Path) -> None:
+def test_passes_when_all_three_canonical_installed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(a) exit 0 when all three hooks carry the byte-identical canonical body."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     _git_init(cwd=project_root)
     _install_canonical_hooks(repo_root=project_root)
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_fails_when_legacy_loose_body_byte_differs(*, tmp_path: Path) -> None:
+def test_fails_when_legacy_loose_body_byte_differs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(b) exit 4 when hooks carry the legacy body that PASSED the old loose fingerprint.
 
     Load-bearing regression: the legacy `git rev-parse --show-toplevel`
@@ -280,7 +380,7 @@ def test_fails_when_legacy_loose_body_byte_differs(*, tmp_path: Path) -> None:
             executable=True,
         )
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -289,7 +389,9 @@ def test_fails_when_legacy_loose_body_byte_differs(*, tmp_path: Path) -> None:
     assert "pre-commit" in result.stderr
 
 
-def test_fails_when_canonical_plus_trailing_byte_differs(*, tmp_path: Path) -> None:
+def test_fails_when_canonical_plus_trailing_byte_differs(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(c) exit 4 when a hook is canonical + one extra trailing byte (pure byte-identity).
 
     The body carries every canonical substring (it is a superset of the
@@ -309,7 +411,7 @@ def test_fails_when_canonical_plus_trailing_byte_differs(*, tmp_path: Path) -> N
         executable=True,
     )
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -318,7 +420,9 @@ def test_fails_when_canonical_plus_trailing_byte_differs(*, tmp_path: Path) -> N
     assert "pre-push" in result.stderr
 
 
-def test_fails_when_commit_msg_missing(*, tmp_path: Path) -> None:
+def test_fails_when_commit_msg_missing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(d) exit 4 when commit-msg is missing but pre-commit and pre-push are canonical.
 
     The third hook (commit-msg) is now part of the required set; omitting
@@ -342,7 +446,7 @@ def test_fails_when_commit_msg_missing(*, tmp_path: Path) -> None:
     )
     # commit-msg deliberately not installed.
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -351,7 +455,9 @@ def test_fails_when_commit_msg_missing(*, tmp_path: Path) -> None:
     assert "missing" in result.stderr
 
 
-def test_fails_when_a_hook_not_executable(*, tmp_path: Path) -> None:
+def test_fails_when_a_hook_not_executable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(e) exit 4 when a hook has the canonical body but lacks the execute bit."""
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -365,7 +471,7 @@ def test_fails_when_a_hook_not_executable(*, tmp_path: Path) -> None:
         executable=False,
     )
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -374,7 +480,9 @@ def test_fails_when_a_hook_not_executable(*, tmp_path: Path) -> None:
     assert "not_executable" in result.stderr
 
 
-def test_fails_when_vendored_copy_present(*, tmp_path: Path) -> None:
+def test_fails_when_vendored_copy_present(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(f) exit 4 when a vendored hook-source copy exists outside the carve-outs.
 
     All three hooks are canonical, so the ONLY failure is the vendored
@@ -388,7 +496,7 @@ def test_fails_when_vendored_copy_present(*, tmp_path: Path) -> None:
     vendored = project_root / "git-hook-wrapper.sh"
     _ = vendored.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -397,7 +505,9 @@ def test_fails_when_vendored_copy_present(*, tmp_path: Path) -> None:
     assert "git-hook-wrapper.sh" in result.stderr
 
 
-def test_passes_when_copy_under_templates(*, tmp_path: Path) -> None:
+def test_passes_when_copy_under_templates(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(g) exit 0 when the only hook-source copy lives under templates/ (carve-out).
 
     The template-source copy under `templates/` is the zs22.7.9.3 domain
@@ -413,14 +523,16 @@ def test_passes_when_copy_under_templates(*, tmp_path: Path) -> None:
     carved = templates_dir / "livespec-commit-refuse-hook.sh"
     _ = carved.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_passes_with_secondary_worktrees(*, tmp_path: Path) -> None:
+def test_passes_with_secondary_worktrees(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(h) exit 0 when invoked from a secondary worktree (common-dir hooks resolve to primary).
 
     The check reads `<git-common-dir>/hooks/{pre-commit,pre-push,commit-msg}`,
@@ -463,26 +575,30 @@ def test_passes_with_secondary_worktrees(*, tmp_path: Path) -> None:
     _install_canonical_hooks(repo_root=project_root)
 
     # From the primary checkout: pass (relative common-dir resolution).
-    result_primary = _run_check(cwd=project_root)
+    result_primary = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result_primary.returncode == 0, result_primary.stderr
     # From the secondary worktree: also pass — the common-dir hooks
     # resolve to the primary's `.git/hooks/` (absolute common-dir).
-    result_secondary = _run_check(cwd=wt_path)
+    result_secondary = _run_check(cwd=wt_path, monkeypatch=monkeypatch, capsys=capsys)
     assert result_secondary.returncode == 0, result_secondary.stderr
 
 
-def test_skipped_when_not_a_git_repo(*, tmp_path: Path) -> None:
+def test_skipped_when_not_a_git_repo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(i) exit 0 (skipped) when cwd is not a git repository at all."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     # No `git init` — cwd is a bare directory (no surrounding repo).
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "not a git repository" in result.stderr
 
 
-def test_fails_when_core_bare_set(*, tmp_path: Path) -> None:
+def test_fails_when_core_bare_set(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(j) exit 4 (fail) when the repo has `core.bare = true` (legacy bare-flag regression)."""
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -495,7 +611,7 @@ def test_fails_when_core_bare_set(*, tmp_path: Path) -> None:
         env=env,
     )
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -504,7 +620,9 @@ def test_fails_when_core_bare_set(*, tmp_path: Path) -> None:
     assert "core.bare" in result.stderr
 
 
-def test_skipped_when_git_repo_but_not_a_work_tree(*, tmp_path: Path) -> None:
+def test_skipped_when_git_repo_but_not_a_work_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(k) exit 0 (skipped) when cwd is a git repo but NOT inside a work tree.
 
     A non-bare git repo whose cwd is inside the `.git` directory is a git
@@ -518,7 +636,7 @@ def test_skipped_when_git_repo_but_not_a_work_tree(*, tmp_path: Path) -> None:
     _git_init(cwd=project_root)
     git_dir = project_root / ".git"
 
-    result = _run_check(cwd=git_dir)
+    result = _run_check(cwd=git_dir, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -526,12 +644,14 @@ def test_skipped_when_git_repo_but_not_a_work_tree(*, tmp_path: Path) -> None:
     assert "not inside a git working tree" in result.stderr
 
 
-def test_skipped_when_git_unavailable(*, tmp_path: Path) -> None:
+def test_skipped_when_git_unavailable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(l) exit 0 (skipped) when `git` is not on PATH."""
     project_root = tmp_path / "project"
     project_root.mkdir()
     # Empty PATH → `shutil.which("git")` returns None.
-    result = _run_check(cwd=project_root, path_override="")
+    result = _run_check(cwd=project_root, path_override="", monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0
     assert "git not on PATH" in result.stderr
 
@@ -571,7 +691,9 @@ def test_module_re_import_with_vendor_in_sys_path() -> None:
     assert callable(module2.main)
 
 
-def test_passes_when_no_worktree_pack(*, tmp_path: Path) -> None:
+def test_passes_when_no_worktree_pack(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(m) exit 0 when the worktree pack is absent (it is OPTIONAL per repo).
 
     Canonical hooks are installed and `dev-tooling/` carries no pack
@@ -587,14 +709,16 @@ def test_passes_when_no_worktree_pack(*, tmp_path: Path) -> None:
     dev_tooling.mkdir()
     _ = (dev_tooling / "CLAUDE.md").write_text("# unrelated\n", encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_passes_when_worktree_pack_canonical(*, tmp_path: Path) -> None:
+def test_passes_when_worktree_pack_canonical(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(n) exit 0 when every pack file is present, byte-identical, AND imported.
 
     The `_write_pack_imports` call is load-bearing since the discoverability
@@ -608,14 +732,16 @@ def test_passes_when_worktree_pack_canonical(*, tmp_path: Path) -> None:
     _install_canonical_worktree_pack(repo_root=project_root)
     _write_pack_imports(repo_root=project_root)
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_fails_when_worktree_lib_drifts(*, tmp_path: Path) -> None:
+def test_fails_when_worktree_lib_drifts(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(o) exit 4 when a present pack script's bytes differ from canonical.
 
     All three hooks and `branch-protection.sh` are canonical, so the ONLY
@@ -631,7 +757,7 @@ def test_fails_when_worktree_lib_drifts(*, tmp_path: Path) -> None:
     drifted = project_root / "dev-tooling" / "worktree-lib.sh"
     _ = drifted.write_text(CANONICAL_WORKTREE_LIB_BODY + "# drift\n", encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -640,7 +766,9 @@ def test_fails_when_worktree_lib_drifts(*, tmp_path: Path) -> None:
     assert "worktree-lib.sh" in result.stderr
 
 
-def test_fails_when_worktree_pack_partially_installed(*, tmp_path: Path) -> None:
+def test_fails_when_worktree_pack_partially_installed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(p) exit 4 when one pack script is present (canonical) but its sibling is absent.
 
     A present-but-incomplete pack is a partial/drifted install: the missing
@@ -655,7 +783,7 @@ def test_fails_when_worktree_pack_partially_installed(*, tmp_path: Path) -> None
     # Only worktree-lib.sh present (canonical); branch-protection.sh absent.
     _ = (pack_dir / "worktree-lib.sh").write_text(CANONICAL_WORKTREE_LIB_BODY, encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -664,7 +792,9 @@ def test_fails_when_worktree_pack_partially_installed(*, tmp_path: Path) -> None
     assert "branch-protection.sh" in result.stderr
 
 
-def test_fails_when_worktree_just_drifts(*, tmp_path: Path) -> None:
+def test_fails_when_worktree_just_drifts(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(q) exit 4 when the `worktree.just` recipe fragment's bytes differ from canonical.
 
     All three hooks and both `.sh` scripts are canonical, so the ONLY failure
@@ -680,7 +810,7 @@ def test_fails_when_worktree_just_drifts(*, tmp_path: Path) -> None:
     drifted = project_root / "dev-tooling" / "worktree.just"
     _ = drifted.write_text(CANONICAL_WORKTREE_JUST_BODY + "# drift\n", encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -689,7 +819,9 @@ def test_fails_when_worktree_just_drifts(*, tmp_path: Path) -> None:
     assert "worktree.just" in result.stderr
 
 
-def test_fails_when_worktree_just_absent_with_scripts_present(*, tmp_path: Path) -> None:
+def test_fails_when_worktree_just_absent_with_scripts_present(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(r) exit 4 when both `.sh` scripts are canonical but `worktree.just` is absent.
 
     Once any pack file is present the whole pack is considered installed, so a
@@ -708,7 +840,7 @@ def test_fails_when_worktree_just_absent_with_scripts_present(*, tmp_path: Path)
         CANONICAL_BRANCH_PROTECTION_BODY, encoding="utf-8"
     )
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -717,7 +849,9 @@ def test_fails_when_worktree_just_absent_with_scripts_present(*, tmp_path: Path)
     assert "worktree.just" in result.stderr
 
 
-def test_fails_when_branch_protection_just_drifts(*, tmp_path: Path) -> None:
+def test_fails_when_branch_protection_just_drifts(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(s) exit 4 when the `branch-protection.just` recipe fragment's bytes drift.
 
     All three hooks, both `.sh` scripts, and `worktree.just` are canonical, so
@@ -734,7 +868,7 @@ def test_fails_when_branch_protection_just_drifts(*, tmp_path: Path) -> None:
     drifted = project_root / "dev-tooling" / "branch-protection.just"
     _ = drifted.write_text(CANONICAL_BRANCH_PROTECTION_JUST_BODY + "# drift\n", encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -743,7 +877,9 @@ def test_fails_when_branch_protection_just_drifts(*, tmp_path: Path) -> None:
     assert "branch-protection.just" in result.stderr
 
 
-def test_fails_when_branch_protection_just_absent_with_others_present(*, tmp_path: Path) -> None:
+def test_fails_when_branch_protection_just_absent_with_others_present(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(t) exit 4 when the other three pack files are canonical but `branch-protection.just` is absent.
 
     Once any pack file is present the whole pack is considered installed, so a
@@ -763,7 +899,7 @@ def test_fails_when_branch_protection_just_absent_with_others_present(*, tmp_pat
     )
     _ = (pack_dir / "worktree.just").write_text(CANONICAL_WORKTREE_JUST_BODY, encoding="utf-8")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -783,7 +919,9 @@ def test_fails_when_branch_protection_just_absent_with_others_present(*, tmp_pat
 # ---------------------------------------------------------------
 
 
-def test_fails_when_pack_required_by_default_and_absent(*, tmp_path: Path) -> None:
+def test_fails_when_pack_required_by_default_and_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(s) exit 4 when `.livespec.jsonc` omits the key and no pack is installed.
 
     ACCEPTANCE 1. An absent `worktree_discipline` key DEFAULTS to `required`,
@@ -796,7 +934,7 @@ def test_fails_when_pack_required_by_default_and_absent(*, tmp_path: Path) -> No
     _install_canonical_hooks(repo_root=project_root)
     _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -804,7 +942,9 @@ def test_fails_when_pack_required_by_default_and_absent(*, tmp_path: Path) -> No
     assert "worktree_pack_absent" in result.stderr
 
 
-def test_skips_when_pack_declared_optional_and_absent(*, tmp_path: Path) -> None:
+def test_skips_when_pack_declared_optional_and_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(t) exit 0 when the repo DECLARES `pack: "optional"` and installs none.
 
     ACCEPTANCE 2. The sanctioned, reviewable opt-out: a repo may decline the
@@ -819,14 +959,16 @@ def test_skips_when_pack_declared_optional_and_absent(*, tmp_path: Path) -> None
         body='{\n  // declared opt-out\n  "worktree_discipline": {"pack": "optional"}\n}\n',
     )
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_fails_when_worktree_discipline_block_malformed(*, tmp_path: Path) -> None:
+def test_fails_when_worktree_discipline_block_malformed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(u) exit 4 when `worktree_discipline` is present but garbled.
 
     ACCEPTANCE 3. Fail-closed, matching the `harnesses` precedent's malformed
@@ -843,7 +985,7 @@ def test_fails_when_worktree_discipline_block_malformed(*, tmp_path: Path) -> No
         body='{"worktree_discipline": "required"}\n',
     )
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -851,7 +993,9 @@ def test_fails_when_worktree_discipline_block_malformed(*, tmp_path: Path) -> No
     assert "worktree_discipline_malformed" in result.stderr
 
 
-def test_passes_when_key_absent_and_pack_present(*, tmp_path: Path) -> None:
+def test_passes_when_key_absent_and_pack_present(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(v) exit 0 when the key is absent but the pack IS installed and imported.
 
     ACCEPTANCE 4 — the arm where this design deliberately diverges from
@@ -868,14 +1012,16 @@ def test_passes_when_key_absent_and_pack_present(*, tmp_path: Path) -> None:
     _write_pack_imports(repo_root=project_root)
     _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_fails_when_pack_present_but_not_imported(*, tmp_path: Path) -> None:
+def test_fails_when_pack_present_but_not_imported(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(w) exit 4 when the pack is byte-perfect but an `import?` line is missing.
 
     ACCEPTANCE 7 — the discoverability arm, and the one that closes steps 1-2
@@ -891,7 +1037,7 @@ def test_fails_when_pack_present_but_not_imported(*, tmp_path: Path) -> None:
     _install_canonical_worktree_pack(repo_root=project_root)
     _write_pack_imports(repo_root=project_root, omit="worktree.just")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -900,7 +1046,9 @@ def test_fails_when_pack_present_but_not_imported(*, tmp_path: Path) -> None:
     assert "worktree.just" in result.stderr
 
 
-def test_skips_pack_arm_when_livespec_jsonc_absent(*, tmp_path: Path) -> None:
+def test_skips_pack_arm_when_livespec_jsonc_absent(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """(x) exit 0 when there is no `.livespec.jsonc` at all and no pack.
 
     ACCEPTANCE 8 — the STATED choice, not an inherited one. `.livespec.jsonc`
@@ -916,7 +1064,7 @@ def test_skips_pack_arm_when_livespec_jsonc_absent(*, tmp_path: Path) -> None:
     _git_init(cwd=project_root)
     _install_canonical_hooks(repo_root=project_root)
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -946,7 +1094,9 @@ def test_skips_pack_arm_when_livespec_jsonc_absent(*, tmp_path: Path) -> None:
 # ---------------------------------------------------------------
 
 
-def test_skips_pack_absent_arm_when_sandbox_exempt_declared(*, tmp_path: Path) -> None:
+def test_skips_pack_absent_arm_when_sandbox_exempt_declared(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Exit 0 when the pack is absent in a tree DECLARED `livespec.sandboxExempt`.
 
     ACCEPTANCE 10. This is the fresh-clone shape the Fabro sandbox runs the
@@ -962,14 +1112,16 @@ def test_skips_pack_absent_arm_when_sandbox_exempt_declared(*, tmp_path: Path) -
     _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
     _declare_sandbox_exempt(repo_root=project_root, value="true")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_fails_when_pack_absent_and_sandbox_exemption_not_declared(*, tmp_path: Path) -> None:
+def test_fails_when_pack_absent_and_sandbox_exemption_not_declared(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Exit 4 when the marker is present but is NOT `true`.
 
     ACCEPTANCE 11. The exemption is a DECLARATION, not the mere existence of a
@@ -984,7 +1136,7 @@ def test_fails_when_pack_absent_and_sandbox_exemption_not_declared(*, tmp_path: 
     _write_livespec_config(repo_root=project_root, body='{"template": "livespec"}\n')
     _declare_sandbox_exempt(repo_root=project_root, value="false")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
@@ -992,7 +1144,9 @@ def test_fails_when_pack_absent_and_sandbox_exemption_not_declared(*, tmp_path: 
     assert "worktree_pack_absent" in result.stderr
 
 
-def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(*, tmp_path: Path) -> None:
+def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Exit 4 on a DRIFTED pack even in a declared-exempt tree.
 
     ACCEPTANCE 12 — the injected defect the record names: skipping the whole
@@ -1010,7 +1164,7 @@ def test_fails_when_installed_pack_drifts_even_though_sandbox_exempt(*, tmp_path
     _ = drifted.write_text(CANONICAL_WORKTREE_LIB_BODY + "# drift\n", encoding="utf-8")
     _declare_sandbox_exempt(repo_root=project_root, value="true")
 
-    result = _run_check(cwd=project_root)
+    result = _run_check(cwd=project_root, monkeypatch=monkeypatch, capsys=capsys)
     assert result.returncode == 4, (
         f"expected exit 4; got {result.returncode}, "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"

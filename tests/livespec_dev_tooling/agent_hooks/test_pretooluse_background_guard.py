@@ -12,9 +12,9 @@ Covered behaviors:
   (`git log`, plain `ls`, separated compound commands);
 - the pure deny decision (`_should_deny`) over tool name /
   `run_in_background` / command-shape combinations;
-- the end-to-end hook protocol via in-process `main()` calls plus
-  one subprocess invocation of the script exactly as the Claude Code
-  hook runs it;
+- the end-to-end hook protocol via in-process `main()` calls,
+  including the deny→allow pair that reads the bytes the hook
+  actually emits;
 - per work-item livespec-dev-tooling-k169, the COMMAND-TOKEN POSITION
   of the classification: a gate word standing in an argument path or
   inside an `echo` string is not an invocation of that gate, while the
@@ -38,16 +38,55 @@ Covered behaviors:
 Private names are imported via from-imports (the package-private
 access model, mirroring `tests/livespec_dev_tooling/fleet/`);
 monkeypatch seams use the string-target form.
+
+**The guard script runs IN-PROCESS.** `test_script_denies_then_allows_
+end_to_end` used to spawn `[sys.executable, pretooluse_background_
+guard.py]` twice; both arms now call `main()` through `_run_script`.
+The motive is the child, not the call: a `sys.executable` child
+inherits `COVERAGE_PROCESS_START`, self-instruments under
+`pytest --cov`, and drops a `.coverage.<host>.<pid>` file that races
+the parallel dispatcher's combine step — while paying two fresh
+interpreter starts for a guard that does no I/O beyond stdin and
+stderr. The script reads its payload with one `sys.stdin.read()`, so
+`monkeypatch.setattr(sys, "stdin", io.StringIO(payload))` supplies
+EXACTLY the bytes the child got on its pipe, and `main()` returns the
+int that `raise SystemExit(main())` would have handed the shell — no
+`SystemExit` is raised and none is translated. The assertions are
+untouched: the same exit codes (2 for the deny, 0 for the allow) and
+the same `DENIED` / `gate-start` / `DIED_WITHOUT_VERDICT` substrings,
+read off `capsys` stderr instead of `CompletedProcess.stderr`.
+
+The `git` spawns in `_run_git` STAY: the venue-awareness tests below
+prove the deny hint against a REAL `git worktree add` of a real
+committed repository, which is the whole point of those arms — a
+simulated worktree would prove nothing about what resolves inside one.
+This slice FIXED their env, which previously passed no `env=` at all
+and so leaked `COVERAGE_PROCESS_START` / `COV_CORE_*` into every child:
+`_git_child_env` now filters both out of an `os.environ` copy. It is a
+filtered copy rather than the hardcoded 3-key replacement used in the
+sibling check suites because these fixtures run `git commit` and need
+the ambient `PATH` and config. This file KEEPS its
+`subprocess_spawn_allowlist` entry for those `git` children.
+
+Branch parity with the retired spawn: the same two payloads drive the
+same two arms — the backgrounded `mise exec -- git commit` deny with
+its routing hint, and the backgrounded `tail -f` allow. The only lines
+the child reached that an in-process call cannot are the module's
+`if __name__ == "__main__": raise SystemExit(main())`, already excluded
+repo-wide by the pre-existing `exclude_also` patterns in
+`[tool.coverage.report]`, so no new exclusion is introduced.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -75,7 +114,6 @@ __all__: list[str] = []
 
 _MODULE = "livespec_dev_tooling.agent_hooks.pretooluse_background_guard"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _REPO_ROOT / "livespec_dev_tooling" / "agent_hooks" / "pretooluse_background_guard.py"
 
 
 # ---------------------------------------------------------------------------
@@ -254,11 +292,38 @@ def test_main_fails_open_on_internal_crash(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 # ---------------------------------------------------------------------------
-# subprocess end-to-end — exactly as the Claude Code hook invokes it
+# end-to-end — the hook protocol exactly as Claude Code drives it
 # ---------------------------------------------------------------------------
 
 
-def test_script_denies_then_allows_end_to_end() -> None:
+class _HookRun(NamedTuple):
+    """In-process stand-in for the subprocess `CompletedProcess` shape."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_script(
+    *, payload: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> _HookRun:
+    """Drive the hook end to end: JSON payload on stdin, exit code + streams out.
+
+    The retired spawn handed `payload` to the child on its stdin pipe; the
+    script reads it with a single `sys.stdin.read()`, so a monkeypatched
+    `io.StringIO` delivers byte-for-byte what the child received. `main()`
+    returns the int the `raise SystemExit(main())` line would have carried to
+    the shell, so no `SystemExit` translation is involved on either path.
+    """
+    monkeypatch.setattr(sys, "stdin", io.StringIO(payload))
+    returncode = main()
+    captured = capsys.readouterr()
+    return _HookRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
+
+
+def test_script_denies_then_allows_end_to_end(
+    *, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     deny_payload = json.dumps(
         {
             "tool_name": "Bash",
@@ -268,13 +333,7 @@ def test_script_denies_then_allows_end_to_end() -> None:
             },
         },
     )
-    denied = subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=deny_payload,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    denied = _run_script(payload=deny_payload, monkeypatch=monkeypatch, capsys=capsys)
     assert denied.returncode == 2
     assert "DENIED" in denied.stderr
     # The deny must ROUTE the caller, not just refuse. It names the
@@ -289,13 +348,7 @@ def test_script_denies_then_allows_end_to_end() -> None:
             "tool_input": {"command": "tail -f build.log", "run_in_background": True},
         },
     )
-    allowed = subprocess.run(
-        [sys.executable, str(_SCRIPT)],
-        input=allow_payload,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    allowed = _run_script(payload=allow_payload, monkeypatch=monkeypatch, capsys=capsys)
     assert allowed.returncode == 0
 
 
@@ -357,8 +410,36 @@ _CITED_DOC = re.compile(r"(?<![\w/])([\w.][\w./-]*\.md)")
 _URL = re.compile(r"https?://\S+")
 
 
+def _git_child_env() -> dict[str, str]:
+    """A copy of `os.environ` with the coverage self-instrumentation keys removed.
+
+    A FILTERED copy rather than the hardcoded 3-key env used elsewhere in this
+    suite: these fixtures run `git commit`, which needs the real `PATH` and the
+    ambient config the `--local` identity is layered onto, so replacing the
+    environment wholesale would break the fixture rather than harden it.
+    Removing `COVERAGE_PROCESS_START` and every `COV_CORE_*` key is what an
+    allowlisted spawn owes — without it the `git` children inherit the parent's
+    `pytest --cov` instrumentation and drop `.coverage.<host>.<pid>` files that
+    race the parallel dispatcher's combine step. Mirrors `_child_env` in
+    `tests/livespec_dev_tooling/worktree_pack/test_gate_run.py`.
+    """
+    env = dict(os.environ)
+    _ = env.pop("COVERAGE_PROCESS_START", None)
+    for name in [key for key in env if key.startswith("COV_CORE_")]:
+        _ = env.pop(name, None)
+    return env
+
+
 def _run_git(*, args: list[str], cwd: Path) -> None:
-    _ = subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True, text=True)
+    """Run a real `git` subcommand in `cwd` under the scrubbed child env."""
+    _ = subprocess.run(
+        ["git", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_git_child_env(),
+    )
 
 
 def _make_consumer_repo(*, repo: Path) -> None:
