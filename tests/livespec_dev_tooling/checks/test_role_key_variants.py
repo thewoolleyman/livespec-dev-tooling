@@ -39,6 +39,7 @@ fixture value (three populated dirs) would produce no WARN and fail the test.
 
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -442,7 +443,52 @@ def test_unknown_variant_name_is_rejected_and_names_the_blessed_spellings(
         )
 
 
-def test_undeclared_baseline_announces_at_error_when_reached_off_the_gate(
+def test_the_role_accessors_are_pure_and_total_with_no_announcement_inside(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The accessors resolve a role and do NOTHING ELSE — no logging, no `bd`.
+
+    The declared-absent announcement used to live inside these two bodies, and
+    `unarmed_until` resolves its payload by spawning `bd`: that put a subprocess
+    behind a `tuple[Path, ...]` return, a public function reaching the world while
+    its type says it cannot.
+
+    The PARAMETER assertions are the load-bearing half. Silence alone proves little
+    — a populated role announces nothing either — whereas an accessor holding a
+    `log` or a `check_id` is an accessor that CAN announce, whatever this particular
+    call did. The shape is what keeps the seam separated; the silence only confirms
+    it on the one input where an announcement would otherwise fire.
+    """
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+    assert set(inspect.signature(_role_key_gate.resolve_role_trees).parameters) == {"role"}, (
+        "`resolve_role_trees` must take the role and nothing else; a `log` or a "
+        "`check_id` parameter is the announcement seam leaking back into the accessor"
+    )
+    assert set(inspect.signature(_role_key_gate.resolve_role_prefixes).parameters) == {"role"}, (
+        "`resolve_role_prefixes` must take the role and nothing else; a `log` or a "
+        "`check_id` parameter is the announcement seam leaking back into the accessor"
+    )
+    baseline = Config()
+
+    trees = _role_key_gate.resolve_role_trees(role=baseline.pure_trees)
+    prefixes = _role_key_gate.resolve_role_prefixes(role=baseline.source_tree_prefixes)
+
+    assert trees == (), trees
+    assert prefixes == (), prefixes
+    captured = capsys.readouterr()
+    assert (captured.out, captured.err) == ("", ""), (
+        f"a pure accessor announces nothing, even for an undeclared role; got "
+        f"{captured.out + captured.err!r}"
+    )
+
+
+def test_undeclared_baseline_announces_at_error_through_the_separated_seam(
     *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The defensive arm: a consumer reading a role off a bare `Config()` directly.
@@ -456,7 +502,16 @@ def test_undeclared_baseline_announces_at_error_when_reached_off_the_gate(
 
     ERROR, not WARN: an undeclared key is a configuration defect, never an
     opt-out, and it must not be able to read as one.
+
+    Driven through the announcement SEAM rather than through an accessor. The
+    announcement is the one part of a resolve step that reaches the world, so it
+    rides a function of its own and the accessors beside it stay total — see
+    `test_the_role_accessors_are_pure_and_total_with_no_announcement_inside`.
     """
+    assert hasattr(_role_key_gate, "announce_role_absence"), (
+        "the declared-absent announcement must ride a seam of its own — an accessor "
+        "that announces is an accessor that can spawn `bd` behind a plain-tuple return"
+    )
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,
@@ -466,11 +521,10 @@ def test_undeclared_baseline_announces_at_error_when_reached_off_the_gate(
     )
     log = structlog.get_logger("undeclared_baseline_probe")
 
-    trees = _role_key_gate.resolve_role_trees(
+    _role_key_gate.announce_role_absence(
         role=Config().pure_trees, key="pure_trees", log=log, check_id="probe"
     )
 
-    assert trees == ()
     records = _records(captured=capsys.readouterr().err)
     announcement = [r for r in records if r.get("role") == "pure_trees"]
     assert announcement, records

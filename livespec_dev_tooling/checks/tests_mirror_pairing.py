@@ -40,7 +40,10 @@ if str(_VENDOR_DIR) not in sys.path:
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
-from livespec_dev_tooling.checks._role_key_gate import resolve_role_prefixes  # noqa: E402
+from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
+    announce_role_absence,
+    resolve_role_prefixes,
+)
 from livespec_dev_tooling.config import MirrorPairing  # noqa: E402
 
 __all__: list[str] = []
@@ -109,17 +112,22 @@ def main() -> int:
     config = load_config_or_report(repo_root=cwd, log=log, check_id="tests_mirror_pairing")
     if config is None:
         return 1
-    # Resolved BEFORE the `or`, not inside the fallback arm. `source_tree_prefixes`
+    # Announced BEFORE the `or`, not inside the fallback arm. `source_tree_prefixes`
     # is part of this check's configuration surface whether or not the
     # `mirror_pairings` short-circuit consults it, and Phase 1's purpose is a
     # COMPLETE per-repo count of un-migrated role keys. Announcing only on the
     # fallback path would undercount exactly the repos that declare both.
-    declared_prefixes = resolve_role_prefixes(
+    #
+    # Announced BESIDE the accessor rather than through it: the announcement's
+    # `unarmed_until` arm spawns `bd`, so it rides `announce_role_absence` and
+    # `resolve_role_prefixes` stays a total, world-free accessor.
+    announce_role_absence(
         role=config.source_tree_prefixes,
         key="source_tree_prefixes",
         log=log,
         check_id="tests_mirror_pairing",
     )
+    declared_prefixes = resolve_role_prefixes(role=config.source_tree_prefixes)
     pairings = config.mirror_pairings or _derived_pairings_from_prefixes(
         source_tree_prefixes=declared_prefixes,
         tests_tree_prefix=config.tests_tree_prefix,
