@@ -81,7 +81,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -97,6 +96,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 from livespec_dev_tooling.canonical_checks import (  # noqa: E402
     canonical_check_slugs,
 )
+from livespec_dev_tooling.just_recipe_headers import recipe_body_offset  # noqa: E402
 
 __all__: list[str] = []
 
@@ -223,20 +223,25 @@ def _slug_to_module(*, slug: str) -> str:
 def _extract_recipe_body(*, justfile_text: str, slug: str) -> str | None:
     """Return the body text of the `check-<slug>:` recipe, or None when absent.
 
-    A just recipe header is a non-indented line beginning with the
-    recipe name, followed by optional parameters/dependencies, then a
-    `:`. The lookahead `(?=[ \\t:])` requires the character immediately
-    after the slug to be whitespace or the colon — never `-` — so a
-    lookup for `check-foo` does NOT match a `check-foo-bar:` header
-    (prefix-collision guard). The body extends from the header line to
-    the next recipe header (a non-indented line containing `:`) or to
-    EOF, matching `aggregate_completeness._extract_check_recipe_body`.
+    WHERE the header is — and whether one exists at all — is decided by the
+    single-sourced `just_recipe_headers.recipe_body_offset`, the same
+    recognizer the bump-pin append guard consults. That sharing is the point:
+    the guard must not append a recipe this gate would call present, and this
+    gate must not call present a recipe the guard would duplicate. It
+    recognizes every header form including the `@`-quiet prefix, applies the
+    prefix-collision guard (a `check-foo` lookup never matches
+    `check-foo-bar:`), and returns None for a name carried only by an alias or
+    a `check-foo := "x"` variable assignment — neither supplies a canonical
+    recipe body, so both are honestly reported as a missing recipe.
+
+    The body extends from the header line to the next recipe header (a
+    non-indented line containing `:`) or to EOF, matching
+    `aggregate_completeness._extract_check_recipe_body`.
     """
-    header = re.compile(rf"^{re.escape(slug)}(?=[ \t:])[^\n]*?:", re.MULTILINE)
-    header_match = header.search(justfile_text)
-    if header_match is None:
+    body_offset = recipe_body_offset(justfile_text=justfile_text, name=slug)
+    if body_offset is None:
         return None
-    after_header = justfile_text[header_match.end() :]
+    after_header = justfile_text[body_offset:]
     lines = after_header.splitlines()
     body_lines: list[str] = []
     # `lines[0]` is the remainder of the header line (dependencies /
