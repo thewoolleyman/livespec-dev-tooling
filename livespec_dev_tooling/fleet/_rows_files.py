@@ -31,6 +31,7 @@ from livespec_dev_tooling.fleet._context import (
 )
 from livespec_dev_tooling.fleet._settle_window import (
     LatestRelease,
+    latest_release_unread_clause,
     never_fired_class,
     read_latest_release,
     utc_now,
@@ -188,9 +189,11 @@ def _freshness_outcome(*, ctx: FleetContext, member: FleetMember, tag: str) -> R
     livespec-dev-tooling-6ge principle) — and no longer claims the
     never-fired class either: it says the class is undetermined.
     """
-    release = read_latest_release(ctx=ctx, repo=_DEV_TOOLING_REPO)
-    if release is None:
-        return RowPass(note="pin present; freshness unverified (latest release unreadable)")
+    read = read_latest_release(ctx=ctx, repo=_DEV_TOOLING_REPO)
+    if isinstance(read, IOFailure):
+        clause = latest_release_unread_clause(failure=unsafe_perform_io(read.failure()))
+        return RowPass(note=f"pin present; {clause}")
+    release = unsafe_perform_io(read.unwrap())
     if tag == release.tag:
         return RowPass()
     return _stale_dev_tooling_pin_outcome(ctx=ctx, member=member, tag=tag, release=release)
