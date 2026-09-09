@@ -53,6 +53,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks import plan_epic_parity  # noqa: E402
 from livespec_dev_tooling.checks._plan_ledger import (  # noqa: E402
@@ -92,6 +94,20 @@ _LIFECYCLE_REMEDIATION = (
     "read the delegated `plan_epic_parity` findings beside this one: an active "
     "`plan/<slug>/` must anchor an open epic and an archived record a closed "
     "one; reopen the epic or archive the record whole."
+)
+# Every input this family reads is on the `IOResult` railway
+# (`livespec-dev-tooling-qndn.4`), and a read that DID NOT HAPPEN gets its own
+# verdict rather than a silent pass: exiting 0 would report all eleven verdicts
+# as satisfied over a population the check never saw. That is this module's own
+# recorded incident (`livespec-dev-tooling-7b6l`) — an unread timeline arriving
+# as an empty comment list, and `plan_close_evidence` convicting real epics on
+# an absence nothing had established.
+_UNREADABLE_VERDICT = "input-unreadable"
+_UNREADABLE_REMEDIATION = (
+    "the armed family never obtained one of its inputs, so it holds no opinion "
+    "about any of its eleven verdicts: the named reason says which read failed "
+    "and the detail carries the evidence. Repair that read — for `bd-failed`, "
+    "project the tenant credential through the installed wrapper — and re-run."
 )
 
 
@@ -162,6 +178,25 @@ def _report(*, log: structlog.stdlib.BoundLogger, findings: list[Finding]) -> No
         )
 
 
+def _refuse(*, log: structlog.stdlib.BoundLogger, reason: str, detail: str) -> int:
+    """Report an input the armed family could not read, and refuse the run.
+
+    Reached from four call sites carrying two failure types
+    (`_plan_ledger.LedgerReadFailed` and `_plan_record_dirs.PlanTreeUnreadable`),
+    which is why it takes the two rendered strings rather than either type: the
+    operator reads the same shape whichever input went unread.
+    """
+    log.error(
+        "armed plan-record conformance family could not read one of its inputs",
+        check_ids=list(CHECK_IDS),
+        verdict=_UNREADABLE_VERDICT,
+        reason=reason,
+        detail=detail,
+        remediation=_UNREADABLE_REMEDIATION,
+    )
+    return 1
+
+
 def main(
     *,
     item_reader: ItemReader | None = None,
@@ -179,30 +214,62 @@ def main(
             check_ids=list(CHECK_IDS),
         )
         return 0
-    cwd = Path.cwd()
-    read_items: ItemReader = bd_items_reader if item_reader is None else item_reader
-    read_comments: CommentReader = bd_comments_reader if comment_reader is None else comment_reader
-    run_lifecycle: LifecycleRunner = (
-        plan_epic_parity.main if lifecycle_runner is None else lifecycle_runner
+    return _armed_run(
+        log=log,
+        read_items=bd_items_reader if item_reader is None else item_reader,
+        read_comments=bd_comments_reader if comment_reader is None else comment_reader,
+        run_lifecycle=plan_epic_parity.main if lifecycle_runner is None else lifecycle_runner,
+        cwd=Path.cwd(),
     )
-    records = read_items(repo=cwd)
-    same_tenant = tenant_id_re(tenant_prefix=store_prefix(cwd=cwd))
+
+
+def _armed_run(
+    *,
+    log: structlog.stdlib.BoundLogger,
+    read_items: ItemReader,
+    read_comments: CommentReader,
+    run_lifecycle: LifecycleRunner,
+    cwd: Path,
+) -> int:
+    """Grade the eleven verdicts under `cwd`, refusing on any input that did not answer.
+
+    Split out of `main` so the arming decision and the graded run are separate
+    bodies; the four read-failure arms below are what pushed one body past the
+    statement budget. No behavior moved with the split.
+    """
+    read = read_items(repo=cwd)
+    if isinstance(read, IOFailure):
+        unread = unsafe_perform_io(read.failure())
+        return _refuse(log=log, reason=unread.reason, detail=unread.detail)
+    records = unsafe_perform_io(read.unwrap())
+    prefix = store_prefix(cwd=cwd)
+    if isinstance(prefix, IOFailure):
+        unresolved = unsafe_perform_io(prefix.failure())
+        return _refuse(log=log, reason=unresolved.reason, detail=unresolved.detail)
+    same_tenant = tenant_id_re(tenant_prefix=unsafe_perform_io(prefix.unwrap()))
     epics = same_tenant_epics(records=records, tenant_re=same_tenant)
-    grouped = plan_epics_by_slug(epics=epics)
-    directories = plan_directories(plan_dir=cwd / PLAN_DIR_NAME, tenant_re=same_tenant)
+    walked = plan_directories(plan_dir=cwd / PLAN_DIR_NAME, tenant_re=same_tenant)
+    if isinstance(walked, IOFailure):
+        unwalkable = unsafe_perform_io(walked.failure())
+        return _refuse(log=log, reason=unwalkable.reason, detail=unwalkable.detail)
+    directories = unsafe_perform_io(walked.unwrap())
+    timeline = timeline_findings(
+        epics=epics,
+        live_slugs=frozenset(directory.slug for directory in directories if not directory.archived),
+        record_slugs=frozenset(directory.slug for directory in directories),
+        read_comments=read_comments,
+        repo=cwd,
+    )
+    if isinstance(timeline, IOFailure):
+        unread_timeline = unsafe_perform_io(timeline.failure())
+        return _refuse(log=log, reason=unread_timeline.reason, detail=unread_timeline.detail)
     findings = [
         *slug_findings(records=records, tenant_re=same_tenant),
-        *anchor_findings(directories=directories, grouped=grouped, records=records),
-        *_lifecycle_findings(log=log, run_lifecycle=run_lifecycle, read_items=read_items),
-        *timeline_findings(
-            epics=epics,
-            live_slugs=frozenset(
-                directory.slug for directory in directories if not directory.archived
-            ),
-            record_slugs=frozenset(directory.slug for directory in directories),
-            read_comments=read_comments,
-            repo=cwd,
+        *anchor_findings(
+            directories=directories, grouped=plan_epics_by_slug(epics=epics), records=records
         ),
+        *_lifecycle_findings(log=log, run_lifecycle=run_lifecycle, read_items=read_items),
+        *unsafe_perform_io(timeline.unwrap()),
     ]
     _report(log=log, findings=findings)
     return 1 if any(finding.verdict == ERROR_VERDICT for finding in findings) else 0

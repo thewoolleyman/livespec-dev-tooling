@@ -73,6 +73,8 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._plan_ledger import (  # noqa: E402
     ItemReader,
@@ -126,6 +128,17 @@ _EMPTY_LEDGER_REMEDIATION = (
     "only ever pass. Supply the tenant credential through the installed wrapper "
     "and re-run; a silent empty read is the fail-open this check exists to remove."
 )
+# The state the remediation above USED TO BE PRINTED FOR, and it is a different
+# one: a read that did not happen at all, rather than one that happened and
+# answered with nothing. The two exit alike, so the operator tells them apart
+# only by what is written here — see `_plan_ledger.LedgerReadFailed` for what
+# each `reason` asks the operator to do.
+_UNREAD_LEDGER_REMEDIATION = (
+    "the armed check never reached the ledger, so it holds no opinion about any "
+    "record: the named reason says which read failed and the detail carries the "
+    "evidence. Repair that read — for `bd-failed`, project the tenant credential "
+    "through the installed wrapper — and re-run."
+)
 
 
 def _is_armed() -> bool:
@@ -176,7 +189,19 @@ def main(*, item_reader: ItemReader | None = None) -> int:
         return 0
     cwd = Path.cwd()
     read_items: ItemReader = bd_items_reader if item_reader is None else item_reader
-    records = read_items(repo=cwd)
+    read = read_items(repo=cwd)
+    if isinstance(read, IOFailure):
+        unread = unsafe_perform_io(read.failure())
+        log.error(
+            "armed work-item status-vocabulary sweep could not read the ledger",
+            repo=str(cwd),
+            verdict="ledger-unreadable",
+            reason=unread.reason,
+            detail=unread.detail,
+            remediation=_UNREAD_LEDGER_REMEDIATION,
+        )
+        return 1
+    records = unsafe_perform_io(read.unwrap())
     if not records:
         log.error(
             "armed work-item status-vocabulary sweep read zero ledger records",
