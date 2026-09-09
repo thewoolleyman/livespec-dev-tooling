@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-37p0
-reason=Repoints reusable-release-lane-watch.yml at the package module livespec_dev_tooling.cross_repo.release_lane_watch_runner instead of a .github/scripts copy, so the runner is reachable by per-file coverage and directly tested. Same work-item and same already-approved workflow as the original slice; this narrows the diff rather than widening it.
+work_item=livespec-dev-tooling-0bse.1
+reason=Wires the new canonical check check-heading-coverage-debt-register into the check-metadata-batch CI job (one line, after check-heading-coverage), the only .github/workflows/ change needed to satisfy check-ci-matrix-completeness for the slug the two product commits add. The factory built and greened the feature (just check 76/76) but cannot push .github/workflows edits; maintainer authorized this workflow-only tail on 2026-09-09.
