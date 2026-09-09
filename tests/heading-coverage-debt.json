@@ -1,0 +1,457 @@
+[
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## CI matrix shape",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## CLI shape",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Dependencies",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## No network I/O",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Runtime",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Self-application",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "constraints.md",
+    "heading": "## Semver discipline",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## CLI surface",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Composite Actions wire contract",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Consumer compat block — pin-and-bump policy",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-06-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Consumer configuration schema",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Cross-repo coordination automation surface",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Exit-code table",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Reusable workflows wire contract",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Semver discipline",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-06-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Shared check inventory",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Versioning",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Adaptive JIT runner admission budget",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-08-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Boundary",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Code coverage thresholds",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Comment discipline",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Commit and merge discipline",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Enforcement-suite invocation",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Hooks and CI",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Keyword-only arguments",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Linter rule set",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Runner-pool build cache tiers",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Runner-pool cache telemetry",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Runner-pool node rebuild recipe",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Self-application",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Structural pattern matching",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Test-Driven Development discipline",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Testing approach",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Toolchain pins",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Typechecker rule set",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT circuit state survives restart without a reburst",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-08-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT fleet capacity borrows fairly without exceeding 482 runners",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-08-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT replacement is immediate but installation-budgeted",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-08-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT startup batch immediately admits all permitted demand within the half-budget point burst",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-08-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: JIT throttle opens one shared circuit",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-08-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a blessed declared-absent spelling parses to a distinct variant carrying its reason",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-07-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a cache fault degrades a job to cold and never fails it",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a canary job runs cold and is tagged",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a declared-absent variant with an empty payload is rejected at load",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-07-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fabro sandbox hits the shared compilation cache",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage TODO older than the age bound fails the release tier but passes the per-commit tier",
+    "work_item": "livespec-dev-tooling-0bse.3",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage TODO reason asserting non-testability is rejected while one acknowledging an owed test passes",
+    "work_item": "livespec-dev-tooling-0bse.2",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage TODO row already in the debt register passes the armed tier for an unrelated commit",
+    "work_item": "livespec-dev-tooling-0bse.1",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a heading-coverage debt register that grows beyond its baseline fails",
+    "work_item": "livespec-dev-tooling-0bse.1",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a job's compilation-cache writes are refused",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier",
+    "work_item": "livespec-dev-tooling-0bse.1",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-06"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a routed job reads the warm cache and cannot write it",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stale warm-cache generation fires the trigger",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-09-04"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an empty clean role key makes its consuming check stricter, not blinder",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-07-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unarmed-until payload naming a closed work item is a conformance failure",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-07-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unparseable pin file is a finding, never a passing row",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-07-31"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: resolving a heading-coverage TODO to a real test requires removing its debt-register entry",
+    "work_item": "livespec-dev-tooling-0bse.1",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the heading-coverage debt register regenerates from the live registry and matches byte-for-byte",
+    "work_item": "livespec-dev-tooling-0bse.1",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the legacy empty spelling on a union key is rejected at load",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-07-28"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: with an empty heading-coverage debt register any TODO row fails the per-commit tier",
+    "work_item": "livespec-dev-tooling-0bse.4",
+    "first_seen": "2026-09-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Architecture",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Definition of Done",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Non-goals",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "spec.md",
+    "heading": "## Project intent",
+    "work_item": "livespec-dev-tooling-xx57",
+    "first_seen": "2026-05-27"
+  }
+]
