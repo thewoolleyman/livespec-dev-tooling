@@ -17,7 +17,25 @@
 #   G. a --tree-hash that is not lowercase hex is refused, because the value goes
 #      into both an object name and a label;
 #   H. the cache environment matches ../arc/hook-pod-template.yaml, so the reuse
-#      requirement 5 asks for cannot silently drift into a re-invention.
+#      requirement 5 asks for cannot silently drift into a re-invention;
+#   I. the initContainer's fetch brings the RANGE and the BASE — the gate ref
+#      with full ancestry (never `--depth`) and the `.base` companion mapped to
+#      `refs/remotes/origin/master` — and asserts the merge-base the aggregate is
+#      about to take;
+#   J. the repository bootstrap (worktree pack, commit-refuse hooks) PRECEDES
+#      `just check` in the gate container, and the aggregate is still the last
+#      thing that runs;
+#   K. mutants of I and J are CAUGHT by those same checks, so neither is
+#      vacuously true — the same discipline case E applies to case D.
+#
+# WHY I AND J EXIST (livespec-dev-tooling-rwmo.1). The sandbox used to be a
+# `--depth 1` fetch of one ref into a bare `git init`, so eight members of
+# `just check` — the shipped-path release guard, both coverage-diff members,
+# the workflow-edit guard, red-green-replay's range arm, the commit-refuse-hook
+# and worktree-pack arms, and the live-handoff-file member — failed
+# STRUCTURALLY on absent history, an unresolvable `origin/master`, or an
+# un-bootstrapped checkout. A gate that cannot run a member is gating a subset,
+# and the failure looked like a red tree.
 #
 # HOW IT STAYS OFF THE CLUSTER AND OFF REAL REPOS. Every repository this suite
 # renders against is a fixture tree it creates under its own scratch directory,
@@ -68,7 +86,7 @@ mkdir -p "${SCRATCH}/repo-none"
 check_requirements() {
   local f="$1" missing=0
   grep -qE '^\s+image: ghcr\.io/' "$f"                          || { echo "    missing: 1 image"; missing=1; }
-  grep -qF 'args: ["just check"]' "$f"                          || { echo "    missing: 2 just check command"; missing=1; }
+  grep -qE '^\s*just check$' "$f"                               || { echo "    missing: 2 just check command"; missing=1; }
   grep -qE '^\s+cpu: "[0-9]+"' "$f"                             || { echo "    missing: 3 cpu request"; missing=1; }
   grep -qE '^\s+memory: "[0-9]+[GM]i"' "$f"                     || { echo "    missing: 3 memory request"; missing=1; }
   grep -qF 'name: LIVESPEC_TEST_PARALLELISM' "$f"               || { echo "    missing: 4 parallelism"; missing=1; }
@@ -78,6 +96,44 @@ check_requirements() {
   grep -qF 'gmktec-xubuntu' "$f"                                || { echo "    missing: 7 node affinity"; missing=1; }
   grep -qE '^\s+ttlSecondsAfterFinished: [0-9]+' "$f"           || { echo "    missing: 8 ttl"; missing=1; }
   return "${missing}"
+}
+
+# The fetch check, used by BOTH case I and case K. Returns 0 iff the rendered
+# manifest at $1 fetches the tree $2 with ancestry AND a resolvable diff base.
+# COMMENT LINES ARE STRIPPED FIRST: the template explains at length why it is
+# not a `--depth 1` fetch, and prose about a flag must not read as the flag.
+check_fetch_brings_range_and_master() {
+  local f="$1" hash="$2" missing=0
+  if grep -v '^[[:space:]]*#' "$f" | grep -qF -- '--depth'; then
+    echo "    shallow: the initContainer still fetches with --depth"; missing=1
+  fi
+  grep -qF "+refs/gates/${hash}:refs/gates/${hash}" "$f" \
+    || { echo "    missing: the gate refspec that brings ancestry"; missing=1; }
+  grep -qF "+refs/gates/${hash}.base:refs/remotes/origin/master" "$f" \
+    || { echo "    missing: the .base companion mapped to refs/remotes/origin/master"; missing=1; }
+  grep -qF 'git merge-base HEAD origin/master' "$f" \
+    || { echo "    missing: the merge-base assertion"; missing=1; }
+  return "${missing}"
+}
+
+# The ordering check, used by BOTH case J and case K. Returns 0 iff the rendered
+# manifest at $1 runs both bootstrap steps BEFORE `just check`. Every pattern is
+# anchored to a whole line so the template's prose about these same recipes —
+# which explains why the pack install is its own `just` invocation — cannot
+# satisfy it.
+check_bootstrap_precedes_check() {
+  local f="$1" pack hooks aggregate
+  pack="$(grep -nE '^\s*just install-worktree-pack$' "$f" | head -1 | cut -d: -f1)"
+  hooks="$(grep -nE '^\s*just install-commit-refuse-hooks$' "$f" | head -1 | cut -d: -f1)"
+  aggregate="$(grep -nE '^\s*just check$' "$f" | head -1 | cut -d: -f1)"
+  [ -n "${pack}" ]      || { echo "    missing: just install-worktree-pack"; return 1; }
+  [ -n "${hooks}" ]     || { echo "    missing: just install-commit-refuse-hooks"; return 1; }
+  [ -n "${aggregate}" ] || { echo "    missing: the just check aggregate"; return 1; }
+  if [ "${pack}" -ge "${aggregate}" ] || [ "${hooks}" -ge "${aggregate}" ]; then
+    echo "    out of order: the bootstrap does not precede just check"
+    return 1
+  fi
+  return 0
 }
 
 echo "== A. the image comes from the GATED repository's own workflow =="
@@ -183,6 +239,57 @@ for var in UV_CACHE_DIR SCCACHE_REDIS_ENDPOINT SCCACHE_REDIS_RW_MODE CI_CACHE_CA
   fi
 done
 [ "${drift}" -eq 0 ] && pass "all four cache variables match the hook pod template"
+
+echo "== I. the fetch brings the RANGE and a resolvable diff base =="
+if check_fetch_brings_range_and_master "${out_a}" "${HASH_A}"; then
+  pass "full-ancestry gate ref, .base -> refs/remotes/origin/master, merge-base asserted"
+else
+  fail "the rendered fetch cannot produce a diff base (listed above)"
+fi
+
+echo "== J. the repository bootstrap precedes the aggregate =="
+if check_bootstrap_precedes_check "${out_a}"; then
+  pass "worktree pack and commit-refuse hooks install before just check"
+else
+  fail "the rendered gate container does not bootstrap before just check (listed above)"
+fi
+
+echo "== K. mutants of I and J are CAUGHT by those same checks =="
+# Case E's discipline, applied to the two new checks: a check that cannot fail
+# is not a check. The first mutant restores the shallow single-ref fetch this
+# slice removed; the second deletes the bootstrap lines.
+shallow="${SCRATCH}/shallow-template.yaml"
+sed -e 's|^\(\s*\)if ! git fetch --quiet origin \\$|\1git fetch --quiet --depth 1 origin "refs/gates/@@TREE_HASH@@"; if false; then|' \
+    "${TEMPLATE}" > "${shallow}"
+shallow_out="${SCRATCH}/shallow.yaml"
+if GATE_JOB_TEMPLATE="${shallow}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" > "${shallow_out}" 2>/dev/null; then
+  if check_fetch_brings_range_and_master "${shallow_out}" "${HASH_A}" > "${SCRATCH}/shallow.report" 2>&1; then
+    fail "a --depth 1 single-ref fetch PASSED the fetch check — case I is vacuous"
+  elif grep -qF 'still fetches with --depth' "${SCRATCH}/shallow.report"; then
+    pass "the reinstated shallow fetch is caught and named"
+  else
+    fail "caught, but not as a shallow fetch: $(cat "${SCRATCH}/shallow.report")"
+  fi
+else
+  fail "renderer errored on the shallow mutant template instead of rendering it"
+fi
+
+nobootstrap="${SCRATCH}/nobootstrap-template.yaml"
+sed -E '/^[[:space:]]*just install-(worktree-pack|commit-refuse-hooks)$/d' "${TEMPLATE}" > "${nobootstrap}"
+nobootstrap_out="${SCRATCH}/nobootstrap.yaml"
+if GATE_JOB_TEMPLATE="${nobootstrap}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" > "${nobootstrap_out}" 2>/dev/null; then
+  if check_bootstrap_precedes_check "${nobootstrap_out}" > "${SCRATCH}/nobootstrap.report" 2>&1; then
+    fail "an un-bootstrapped gate container PASSED the ordering check — case J is vacuous"
+  elif grep -qF 'missing: just install-worktree-pack' "${SCRATCH}/nobootstrap.report"; then
+    pass "the deleted bootstrap step is caught and named"
+  else
+    fail "caught, but not as a missing bootstrap step: $(cat "${SCRATCH}/nobootstrap.report")"
+  fi
+else
+  fail "renderer errored on the no-bootstrap mutant template instead of rendering it"
+fi
 
 echo
 if [ "${failures}" -eq 0 ]; then

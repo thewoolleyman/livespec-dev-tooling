@@ -94,11 +94,42 @@ spec:
               git init --quiet /workspace
               cd /workspace
               git remote add origin "@@SOURCE_URL@@"
-              git fetch --quiet --depth 1 origin "refs/gates/@@TREE_HASH@@"
-              git checkout --quiet FETCH_HEAD
+              # NOT `--depth 1`. Eight members of `just check` judge a COMMIT
+              # RANGE — `origin/master..HEAD` — rather than a tree, and a single
+              # shallow commit gives them neither ancestry nor a base: they fail
+              # STRUCTURALLY (the shipped-path release guard reports
+              # `range_base_unresolvable`) instead of judging the tree under
+              # test, which is the same class of defect as gating a subset of
+              # the checks. So both refs are fetched in full.
+              #
+              # THE `.base` COMPANION REF carries the client's own
+              # `origin/master` and lands here as `refs/remotes/origin/master`,
+              # which is the name every one of those members resolves. It is
+              # written by the SAME `git push --atomic` that writes the gate ref
+              # (`livespec_dev_tooling.gate_remote_client`, whose
+              # `GATE_BASE_REF_SUFFIX` is this `.base`), so a gate ref without
+              # its companion cannot exist — and a fetch that cannot find one
+              # fails the Job here rather than letting the aggregate run against
+              # an unresolvable base.
+              if ! git fetch --quiet origin \
+                   "+refs/gates/@@TREE_HASH@@:refs/gates/@@TREE_HASH@@" \
+                   "+refs/gates/@@TREE_HASH@@.base:refs/remotes/origin/master"; then
+                echo "FATAL: cannot fetch refs/gates/@@TREE_HASH@@ and its .base companion from @@SOURCE_URL@@" >&2
+                exit 1
+              fi
+              git checkout --quiet --detach "refs/gates/@@TREE_HASH@@"
               actual="$(git rev-parse 'HEAD^{tree}')"
               if [ "${actual}" != "@@TREE_HASH@@" ]; then
                 echo "FATAL: fetched tree ${actual} is not the requested @@TREE_HASH@@" >&2
+                exit 1
+              fi
+              # Present is not the same as USABLE: two refs with no common
+              # ancestor would satisfy every check above and still leave every
+              # range member without a diff base. Assert the merge-base the
+              # aggregate is about to take, here, where the failure names its
+              # cause.
+              if ! git merge-base HEAD origin/master >/dev/null; then
+                echo "FATAL: git merge-base HEAD origin/master does not resolve in the fetched history" >&2
                 exit 1
               fi
           volumeMounts:
@@ -114,9 +145,35 @@ spec:
           image: @@IMAGE@@
           imagePullPolicy: IfNotPresent
           workingDir: /workspace
-          # Requirement 2: the gated repository's own aggregate, nothing else.
+          # Requirement 2: the gated repository's own aggregate, nothing else —
+          # preceded ONLY by the repository bootstrap two of its members read.
+          #
+          # `/workspace` is a `git init` + fetch, not a bootstrapped clone, so
+          # the worktree-discipline pack and the commit-refuse hooks are simply
+          # absent: `check-primary-checkout-commit-refuse-hook-installed` fails
+          # on the missing hooks and `check-no-workflow-edits` has no
+          # `dev-tooling/check-no-workflow-edits.sh` to run at all. Neither is a
+          # verdict about the tree under test.
+          #
+          # THE PACK INSTALL MUST BE ITS OWN `just` INVOCATION, and that is not
+          # a style choice: the root justfile reaches the pack through
+          # `import? 'dev-tooling/worktree.just'`, which `just` resolves when it
+          # PARSES the file. A `just install-worktree-pack check` would parse
+          # once, before the pack existed, and run the aggregate against a
+          # justfile that never imported it.
+          #
+          # The two narrow recipes rather than `just bootstrap`: bootstrap walks
+          # the whole local-obligation partition — mise trust/install, plugin
+          # registration, the beads-runtime probes — none of which a gate pod
+          # has or needs, and each of which is a way for a gate to fail for a
+          # reason that is not the tree.
           command: ["/bin/bash", "-lc"]
-          args: ["just check"]
+          args:
+            - |
+              set -euo pipefail
+              just install-worktree-pack
+              just install-commit-refuse-hooks
+              just check
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check
