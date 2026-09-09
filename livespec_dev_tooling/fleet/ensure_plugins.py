@@ -12,7 +12,18 @@ import sys
 from pathlib import Path
 from typing import Protocol, cast
 
-from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
+# `returns` is VENDORED, not installed; this module reads both artifact seams'
+# railway tracks directly, so it establishes the path itself rather than
+# relying on whichever sibling import happened to run first.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (  # noqa: E402
+    ArtifactOutcome,
     ArtifactReader,
     CacheDirRemover,
     artifact_record_findings,
@@ -20,7 +31,7 @@ from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
     plugin_artifact_findings,
     remove_plugin_cache_dir,
 )
-from livespec_dev_tooling.fleet._ensure_plugin_commands import (
+from livespec_dev_tooling.fleet._ensure_plugin_commands import (  # noqa: E402
     PluginCommandOutcome,
     PluginCommandResult,
     PluginCommandRunner,
@@ -30,7 +41,7 @@ from livespec_dev_tooling.fleet._ensure_plugin_commands import (
     run_from_settings,
     subprocess_runner,
 )
-from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
+from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
 
 __all__: list[str] = [
     "ArtifactReader",
@@ -141,6 +152,20 @@ def _project_records(
     )
 
 
+def _probe_findings(*, plugin: str, outcome: ArtifactOutcome) -> tuple[str, ...]:
+    """Findings from an artifact probe that ANSWERED, or its failure rendered as one.
+
+    A probe that could not decide is reported to the operator here rather than
+    dropped: `main` turns any non-empty finding set into exit 4, so the
+    unanswered case surfaces as loudly as a broken build while — because the
+    failure never reaches `_registry_repair_paths` as a path — authorizing no
+    deletion of its own.
+    """
+    if isinstance(outcome, IOFailure):
+        return (f"{plugin} {unsafe_perform_io(outcome.failure()).finding}",)
+    return unsafe_perform_io(outcome.unwrap())
+
+
 def registry_findings(
     *,
     settings_text: str,
@@ -173,10 +198,13 @@ def registry_findings(
             )
             continue
         findings.extend(
-            artifact_record_findings(
+            _probe_findings(
                 plugin=plugin,
-                records=records,
-                read_artifact=read_artifact,
+                outcome=artifact_record_findings(
+                    plugin=plugin,
+                    records=records,
+                    read_artifact=read_artifact,
+                ),
             )
         )
     return tuple(findings)
@@ -189,17 +217,23 @@ def _registry_repair_paths(
     registry_text: str | None,
     read_artifact: ArtifactReader,
 ) -> tuple[str, ...]:
-    """Failing install paths from enabled plugin records, deduplicated in registry order."""
+    """Failing install paths from enabled plugin records, deduplicated in registry order.
+
+    A plugin whose probe did not answer contributes NOTHING. That is the whole
+    reason the artifact seams carry a failure track: the paths returned here
+    are deleted, and an unanswered probe has not established that there is
+    anything to delete.
+    """
     parsed = json.loads(settings_text)
     enabled, _, _ = _split_enablement(raw=cast("dict[str, object]", parsed).get("enabledPlugins"))
     registry = json.loads(registry_text) if registry_text is not None else None
     paths: dict[str, None] = {}
     for plugin in enabled:
         records = _project_records(registry=registry, plugin=plugin, project_root=project_root)
-        for install_path in artifact_record_repair_paths(
-            records=records,
-            read_artifact=read_artifact,
-        ):
+        outcome = artifact_record_repair_paths(records=records, read_artifact=read_artifact)
+        if isinstance(outcome, IOFailure):
+            continue
+        for install_path in unsafe_perform_io(outcome.unwrap()):
             paths[install_path] = None
     return tuple(paths)
 
@@ -260,9 +294,9 @@ def ensure(
         registry_text=registry_text,
         read_artifact=read_artifact,
     ):
-        removal_findings = remove_cache_dir(install_path=install_path)
-        if removal_findings:
-            return removal_findings
+        removal = remove_cache_dir(install_path=install_path)
+        if isinstance(removal, IOFailure):
+            return (unsafe_perform_io(removal.failure()).finding,)
     command_findings = _run_commands(commands=commands, runner=runner)
     return command_findings or registry_findings(
         settings_text=settings_text,

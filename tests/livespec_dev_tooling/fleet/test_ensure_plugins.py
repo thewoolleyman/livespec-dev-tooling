@@ -8,7 +8,8 @@ from typing import Final
 
 import pytest
 from _gh_railway import lift_gh
-from returns.io import IOSuccess
+from returns.io import IOFailure, IOResult, IOSuccess
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -20,6 +21,13 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
 )
 from livespec_dev_tooling.fleet._contract_rows import OBLIGATION_ROWS, REPO_CLASSES
+from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
+    MANIFEST_UNDECODABLE,
+    MANIFEST_UNPARSEABLE,
+    ArtifactUnreadable,
+    artifact_record_findings,
+    artifact_record_repair_paths,
+)
 from livespec_dev_tooling.fleet._rows_claude_plugin import (
     CLAUDE_SETTINGS,
     assert_claude_plugin_currency,
@@ -31,11 +39,27 @@ from livespec_dev_tooling.fleet.ensure_plugins import (
     planned_commands,
     plugin_artifact_findings,
     registry_findings,
+    remove_plugin_cache_dir,
     run_from_settings,
     settings_findings,
 )
 
 __all__: list[str] = []
+
+# The two names `checks/public_api_result_typed` accepts as railway-typed, and
+# the terminal-name reduction it applies before comparing. Restated here rather
+# than imported so this file pins the PROPERTY the shipped detector reads,
+# independently of that module continuing to exist in its current shape.
+_RAILWAY_RETURN_NAMES = frozenset({"Result", "IOResult"})
+
+
+def _terminal_return_name(*, rendered: str) -> str:
+    """`IOResult[tuple[str, ...], ArtifactUnreadable]` → `IOResult`.
+
+    Mirrors `public_api_result_typed._annotation_head_name`: drop the
+    subscript, then drop any dotted qualifier.
+    """
+    return rendered.split("[", maxsplit=1)[0].rsplit(".", maxsplit=1)[-1]
 
 
 def _ran(*, returncode: int) -> PluginCommandOutcome:
@@ -434,12 +458,57 @@ def test_registry_findings_accept_plugin_json_in_install_path(*, tmp_path: Path)
     assert registry_findings(settings_text=_M3, project_root="/repo", registry_text=registry) == ()
 
 
+def _answered(*, outcome: IOResult[tuple[str, ...], ArtifactUnreadable]) -> tuple[str, ...]:
+    """The findings of an artifact probe that reached a verdict.
+
+    Asserting the SUCCESS track before reading it is what keeps every
+    behavioural assertion below honest: an `IOFailure` unwrapped blindly would
+    raise, but one silently treated as "no findings" is exactly the confusion
+    the conversion removes, so the track is checked rather than assumed.
+    """
+    assert not isinstance(outcome, IOFailure), f"expected an answered probe, got {outcome}"
+    return unsafe_perform_io(outcome.unwrap())
+
+
+def _unanswered(*, install_path: str) -> IOResult[tuple[str, ...], ArtifactUnreadable]:
+    """A probe that could not decide, as an injected reader would produce one."""
+    return IOFailure(
+        ArtifactUnreadable(
+            install_path=install_path, reason=MANIFEST_UNPARSEABLE, detail="canned non-answer"
+        )
+    )
+
+
+def test_every_artifact_public_answer_is_railway_typed() -> None:
+    """THE CONVERSION ITSELF: no public answer here may be a bare value.
+
+    `checks/public_api_result_typed` reads a function as on the railway when
+    its return annotation's terminal name is `Result` or `IOResult`. That check
+    is a NO-OP in this repository — `pure_trees` is declared `not_applicable` —
+    so nothing else here would notice a regression to the bare
+    `tuple[str, ...]` these four used to return, in which "the build is
+    usable", "the build is broken" and "I refused to delete it" were one type.
+    This is the arming that stands in for it until the scan universe is.
+    """
+    for func in (
+        plugin_artifact_findings,
+        remove_plugin_cache_dir,
+        artifact_record_findings,
+        artifact_record_repair_paths,
+    ):
+        rendered = str(func.__annotations__["return"])
+        assert _terminal_return_name(rendered=rendered) in _RAILWAY_RETURN_NAMES, (
+            f"{func.__name__} must return a Result/IOResult so its failure track is "
+            f"expressible; got the bare annotation {rendered!r}"
+        )
+
+
 def test_plugin_artifact_findings_keep_current_behavior_without_cache_manifest(
     *, tmp_path: Path
 ) -> None:
     plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
 
-    assert plugin_artifact_findings(install_path=str(plugin)) == ()
+    assert _answered(outcome=plugin_artifact_findings(install_path=str(plugin))) == ()
 
 
 def test_plugin_artifact_findings_accept_satisfied_cache_manifest(*, tmp_path: Path) -> None:
@@ -447,14 +516,14 @@ def test_plugin_artifact_findings_accept_satisfied_cache_manifest(*, tmp_path: P
     (plugin / "scripts" / "bin").mkdir(parents=True)
     _write_cache_manifest(plugin=plugin, required_paths=["scripts/bin"])
 
-    assert plugin_artifact_findings(install_path=str(plugin)) == ()
+    assert _answered(outcome=plugin_artifact_findings(install_path=str(plugin))) == ()
 
 
 def test_plugin_artifact_findings_report_missing_manifest_required_path(*, tmp_path: Path) -> None:
     plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
     _write_cache_manifest(plugin=plugin, required_paths=["scripts/bin"])
 
-    findings = plugin_artifact_findings(install_path=str(plugin))
+    findings = _answered(outcome=plugin_artifact_findings(install_path=str(plugin)))
 
     assert any("scripts/bin" in finding for finding in findings)
 
@@ -466,9 +535,86 @@ def test_plugin_artifact_findings_report_invalid_manifest_shape(*, tmp_path: Pat
         encoding="utf-8",
     )
 
-    findings = plugin_artifact_findings(install_path=str(plugin))
+    findings = _answered(outcome=plugin_artifact_findings(install_path=str(plugin)))
 
     assert len(findings) == 4
+
+
+def test_plugin_artifact_findings_report_an_undecodable_cache_manifest(*, tmp_path: Path) -> None:
+    """Bytes that are not UTF-8 leave the required-path set unknown, not empty."""
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
+    (plugin / "cache-manifest.json").write_bytes(b"\xff\xfe\x00 not utf-8")
+
+    outcome = plugin_artifact_findings(install_path=str(plugin))
+
+    assert isinstance(outcome, IOFailure)
+    assert unsafe_perform_io(outcome.failure()).reason == MANIFEST_UNDECODABLE
+
+
+def test_plugin_artifact_findings_report_an_unparseable_cache_manifest(*, tmp_path: Path) -> None:
+    """Text that is not JSON used to escape as a traceback out of the whole run."""
+    plugin = _plugin_dir(tmp_path=tmp_path, name="plugin")
+    (plugin / "cache-manifest.json").write_text("{ not json", encoding="utf-8")
+
+    outcome = plugin_artifact_findings(install_path=str(plugin))
+
+    assert isinstance(outcome, IOFailure)
+    unreadable = unsafe_perform_io(outcome.failure())
+    assert unreadable.reason == MANIFEST_UNPARSEABLE
+    assert str(plugin) in unreadable.finding
+
+
+def test_the_two_manifest_non_answers_stay_told_apart() -> None:
+    """Truncated bytes and non-JSON text call for the same repair, not the same word."""
+    assert MANIFEST_UNDECODABLE != MANIFEST_UNPARSEABLE
+
+
+def test_remove_plugin_cache_dir_reports_the_path_it_removed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A removal that HAPPENED carries its path, not the empty tuple a refusal did."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    doomed = _cache_plugin_dir(home=home, name="doomed")
+
+    outcome = remove_plugin_cache_dir(install_path=str(doomed))
+
+    assert not isinstance(outcome, IOFailure)
+    assert unsafe_perform_io(outcome.unwrap()) == str(doomed.resolve())
+    assert not doomed.exists()
+
+
+def test_remove_plugin_cache_dir_refuses_a_path_outside_the_cache(*, tmp_path: Path) -> None:
+    """The refusal is this seam's own error, not a finding about any plugin."""
+    outside = _plugin_dir(tmp_path=tmp_path, name="outside")
+
+    outcome = remove_plugin_cache_dir(install_path=str(outside))
+
+    assert isinstance(outcome, IOFailure)
+    assert "refusing to delete" in unsafe_perform_io(outcome.failure()).finding
+    assert outside.exists()
+
+
+def test_artifact_record_findings_forward_a_probe_that_did_not_answer() -> None:
+    """The reader's failure travels unchanged: this function adds no failure of its own."""
+    outcome = artifact_record_findings(
+        plugin="one@alpha",
+        records=({"installPath": "/cache/one"},),
+        read_artifact=_unanswered,
+    )
+
+    assert isinstance(outcome, IOFailure)
+    assert unsafe_perform_io(outcome.failure()).install_path == "/cache/one"
+
+
+def test_artifact_record_repair_paths_withhold_every_path_when_a_probe_did_not_answer() -> None:
+    """Whatever this returns gets DELETED, so an unanswered probe returns nothing at all."""
+    outcome = artifact_record_repair_paths(
+        records=({"installPath": "/cache/one"},),
+        read_artifact=_unanswered,
+    )
+
+    assert isinstance(outcome, IOFailure)
 
 
 def test_ensure_returns_no_findings_when_provisioning_succeeds(*, tmp_path: Path) -> None:
@@ -668,6 +814,68 @@ def test_ensure_refuses_to_delete_install_path_outside_cache(*, tmp_path: Path) 
     assert any("refusing to delete" in finding for finding in findings)
     assert ran == list(planned_commands(settings_text=_M3))
     assert outside.exists()
+
+
+def test_registry_findings_report_a_probe_that_did_not_answer(*, tmp_path: Path) -> None:
+    """An unanswered probe is REPORTED, never dropped into the empty finding set."""
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo", "installPath": "/cache/one"}],
+            "two@beta": [
+                {
+                    "projectPath": "/repo",
+                    "installPath": str(_plugin_dir(tmp_path=tmp_path, name="two")),
+                }
+            ],
+        }
+    )
+
+    findings = registry_findings(
+        settings_text=_M3,
+        project_root="/repo",
+        registry_text=registry,
+        read_artifact=_unanswered,
+    )
+
+    assert any(
+        "one@alpha" in finding and "could not be inspected" in finding for finding in findings
+    )
+
+
+def test_ensure_deletes_nothing_when_a_probe_did_not_answer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE POINT OF THE FAILURE TRACK: a probe with no verdict authorizes no delete.
+
+    The cache directory below is inside the cache root and would be removed on
+    the strength of any non-empty finding set, which is exactly what an
+    unanswered probe used to be indistinguishable from.
+    """
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    survivor = _cache_plugin_dir(home=home, name="survivor")
+    registry = _registry(
+        entries={
+            "one@alpha": [{"projectPath": "/repo", "installPath": str(survivor)}],
+            "two@beta": [{"projectPath": "/repo", "installPath": str(survivor)}],
+        }
+    )
+    ran: list[tuple[str, ...]] = []
+
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
+        ran.append(args)
+        return _ran(returncode=0)
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: registry,
+        read_artifact=_unanswered,
+    )
+
+    assert any("could not be inspected" in finding for finding in findings)
+    assert survivor.exists()
 
 
 def test_settings_findings_reject_non_object_document() -> None:
