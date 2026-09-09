@@ -106,6 +106,7 @@ ARC_DIR="${ARTIFACT_DIR}/arc"
 KUEUE_DIR="${ARTIFACT_DIR}/kueue"
 PROVISIONER_DIR="${ARTIFACT_DIR}/local-path-provisioner"
 WARM_CACHE_DIR="${ARTIFACT_DIR}/warm-cache"
+REGISTRY_MIRROR_DIR="${ARTIFACT_DIR}/warm-cache/registry-mirror"
 CRATES_PROXY_DIR="${ARTIFACT_DIR}/crates-proxy"
 SCCACHE_DIR="${ARTIFACT_DIR}/sccache"
 if [ -d "${ARTIFACT_DIR}/observability" ]; then
@@ -610,6 +611,20 @@ if ! "${SCCACHE_DIR}/converge-sccache-redis.sh"; then
 fi
 
 # ---------------------------------------------------------------------------
+log "8d. Converge the ghcr pull-through registry mirror (Namespace, config ConfigMap, Deployment, Service)"
+# The mirror's SERVING half lives in the tmpfs datastore and is gone on every
+# boot; only its blob store on the ci-cache tier and each node's
+# /etc/rancher/k3s/registries.yaml survive. Without this step every node keeps
+# routing ghcr.io at a mirror that no longer exists — fail-soft (one failed
+# dial per pull, then ghcr) and silent, which is exactly how the 2026-09-09
+# reboot lost it (livespec-dev-tooling-y1t5). Bounded wait inside; a WARN
+# here, never a failure: a mirror that is not Ready costs pulls the LAN cache,
+# not correctness, and must not take the warm uv cache below down with it.
+if ! "${REGISTRY_MIRROR_DIR}/converge-registry-mirror.sh"; then
+  echo "WARN: converge-registry-mirror.sh failed (see above) — continuing; every ghcr pull falls back to ghcr until it is re-run"
+fi
+
+# ---------------------------------------------------------------------------
 log "9. Converge the warm uv cache's cluster objects (Namespace, CronJob, ConfigMaps)"
 # No populate Job here: the on-disk lower survives a reboot and the CronJob
 # refreshes it on its schedule. install-warm-cache.sh is the attended path
@@ -678,4 +693,4 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l "$NODE_LABEL_SELECTOR" \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + warm-cache CronJob + probe identity + gate source mirrors and daemon."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon."
