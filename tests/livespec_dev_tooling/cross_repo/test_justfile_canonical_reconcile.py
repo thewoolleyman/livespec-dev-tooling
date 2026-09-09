@@ -10,7 +10,17 @@ the pre-extraction guard recognized a canonical slug's recipe ONLY in the BARE
 `check-<slug>:` header form, so when a consumer hand-defined the check in a
 PARAMETERIZED form (`check-red-green-replay *args:`, as both Driver repos do) it
 appended a SECOND `check-red-green-replay:` recipe — a `just`-parse-breaking
-redefinition. `_recipe_header_present` now recognizes every recipe-header form.
+redefinition. The append guard now consults the single-sourced recognizer
+`livespec_dev_tooling.just_recipe_headers`, which recognizes every recipe-header
+form INCLUDING the `@`-quiet prefix, treats `alias <slug> := ...` as claiming
+the name, and (unlike the regex it replaced) does NOT read a
+`<slug> := "x"` variable assignment as a recipe.
+
+The fixtures below carry no `#!/usr/bin/env bash` shebang even though a real
+consumer's `check:` recipe does. That is deliberate rather than an oversight:
+every assertion here is about the reconcile's TEXT PATTERNS, and actually
+spawning `just` to execute a fixture would violate
+`check-tests-no-subprocess-spawn`.
 
 Coverage target: 100% line + branch of `justfile_canonical_reconcile.py`.
 """
@@ -23,6 +33,7 @@ from pathlib import Path
 import pytest
 
 from livespec_dev_tooling.cross_repo import justfile_canonical_reconcile
+from livespec_dev_tooling.just_recipe_headers import recipe_header_count
 
 __all__: list[str] = []
 
@@ -144,14 +155,61 @@ check-plan-thread-anchor-declared:
 """
 
 
+# `@check-quiet:` — just's quiet-prefix recipe form. Unrecognized as a header,
+# the bump appends a bare `check-quiet:` beside it and `just` refuses the whole
+# file with "Recipe redefined": the 3vq bug class, surviving for this form.
+_JUSTFILE_QUIET_RECIPE_UNWIRED = """check:
+    targets=(
+        check-aggregate-completeness
+    )
+
+check-aggregate-completeness:
+    uv run python -m livespec_dev_tooling.checks.aggregate_completeness
+
+@check-quiet:
+    uv run python -m livespec_dev_tooling.checks.quiet
+"""
+
+# `alias check-aliased := check-other` — the NAME is taken even though no recipe
+# defines it. Appending one yields "Alias redefined as a recipe".
+_JUSTFILE_ALIASED_RECIPE_UNWIRED = """check:
+    targets=(
+        check-aggregate-completeness
+    )
+
+check-aggregate-completeness:
+    uv run python -m livespec_dev_tooling.checks.aggregate_completeness
+
+check-other:
+    uv run python -m livespec_dev_tooling.checks.other
+
+alias check-aliased := check-other
+"""
+
+# `check-var := "x"` is a VARIABLE ASSIGNMENT, not a recipe. Read as one (the
+# `:` of `:=` completed the old pattern), the slug gets wired with no recipe
+# behind it and `just check-var` dies on "unknown recipe".
+_JUSTFILE_VARIABLE_ASSIGNMENT = """check-var := "x"
+
+check:
+    targets=(
+        check-aggregate-completeness
+    )
+
+check-aggregate-completeness:
+    uv run python -m livespec_dev_tooling.checks.aggregate_completeness
+"""
+
+
 def _header_count(*, text: str, slug: str) -> int:
-    """Count column-0 `<slug>` recipe headers (any parameter form) in `text`.
+    """Count column-0 `<slug>` recipe headers (any form) in `text`.
 
     A duplicate redefinition — the `just`-parse-breaking bug — shows up as a
-    count > 1. The lookahead `(?=[ \\t:])` keeps `check-foo` from matching a
-    longer `check-foo-bar:` header.
+    count > 1. Delegates to the SHARED recognizer rather than restating its
+    regex: a helper carrying its own copy can drift away from the guard it is
+    meant to be auditing, and would then agree with a broken guard.
     """
-    return len(re.findall(rf"^{re.escape(slug)}(?=[ \t:])[^\n]*?:", text, re.MULTILINE))
+    return recipe_header_count(justfile_text=text, name=slug)
 
 
 def _target_present(*, text: str, slug: str) -> bool:
@@ -224,6 +282,60 @@ def test_prefix_collision_does_not_suppress_shorter_slug_recipe() -> None:
     assert "\ncheck-foo:\n    uv run python -m livespec_dev_tooling.checks.foo\n" in result
     # ...and the longer `check-foo-bar:` recipe is untouched (still exactly one).
     assert _header_count(text=result, slug="check-foo-bar") == 1
+
+
+def test_quiet_prefixed_recipe_unwired_is_wired_without_duplicate_recipe() -> None:
+    """`@check-quiet:` is an existing recipe, so the slug is wired but not re-defined.
+
+    The residual gap the shared recognizer closes: the quiet prefix sits where
+    the old pattern demanded the slug itself, so the bump appended a bare
+    duplicate and `just` rejected the consumer's whole justfile.
+    """
+    result = justfile_canonical_reconcile.reconcile_justfile_text(
+        justfile_text=_JUSTFILE_QUIET_RECIPE_UNWIRED,
+        canonical_slugs=["check-aggregate-completeness", "check-quiet"],
+    )
+    assert _target_present(text=result, slug="check-quiet")
+    assert (
+        _header_count(text=result, slug="check-quiet") == 1
+    ), "a duplicate check-quiet: recipe was appended beside the @-quiet one"
+    assert "@check-quiet:" in result, "the quiet-prefixed recipe must survive verbatim"
+
+
+def test_aliased_slug_is_wired_without_an_appended_recipe() -> None:
+    """An `alias check-aliased := ...` claims the name, so no recipe may be appended.
+
+    `just` rejects a recipe defined beside an alias of the same name with
+    "Alias redefined as a recipe" — a different message than the duplicate-recipe
+    one, but the same broken-justfile outcome for the consumer.
+    """
+    result = justfile_canonical_reconcile.reconcile_justfile_text(
+        justfile_text=_JUSTFILE_ALIASED_RECIPE_UNWIRED,
+        canonical_slugs=["check-aggregate-completeness", "check-aliased"],
+    )
+    assert _target_present(text=result, slug="check-aliased")
+    assert (
+        "\ncheck-aliased:\n" not in result
+    ), "a recipe was appended under a name an alias already claims"
+    assert "alias check-aliased := check-other" in result
+
+
+def test_variable_assignment_does_not_suppress_the_recipe_append() -> None:
+    """`check-var := "x"` is a variable, so the slug still needs its recipe appended.
+
+    The mirror-image residual gap: the old pattern's `:` matched the `:=` of the
+    assignment, so the bump wired the target and skipped the append, leaving the
+    consumer with a `just check-var` that dies on "unknown recipe".
+    """
+    result = justfile_canonical_reconcile.reconcile_justfile_text(
+        justfile_text=_JUSTFILE_VARIABLE_ASSIGNMENT,
+        canonical_slugs=["check-aggregate-completeness", "check-var"],
+    )
+    assert _target_present(text=result, slug="check-var")
+    assert (
+        "\ncheck-var:\n    uv run python -m livespec_dev_tooling.checks.var\n" in result
+    ), "the variable assignment was mistaken for the recipe, so none was appended"
+    assert 'check-var := "x"' in result, "the variable assignment itself must be untouched"
 
 
 def test_empty_targets_array_uses_default_indent() -> None:

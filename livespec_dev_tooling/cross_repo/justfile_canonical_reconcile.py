@@ -34,8 +34,10 @@ defined as the BARE header `check-<slug>:`. Both Driver repos
 (the aggregate calls it with no args; the pre-commit hook passes a message
 path). The bare-only guard missed that form, so it appended a SECOND
 `check-red-green-replay:` recipe; `just` then refused to parse the redefinition
-and every `just check-*` failed in the consumer's CI. `recipe_header_present`
-now recognizes any recipe-header form for the slug.
+and every `just check-*` failed in the consumer's CI. The guard now delegates to
+`livespec_dev_tooling.just_recipe_headers.recipe_header_present` — the ONE
+recognizer `checks/canonical_recipe_fidelity` also consults, so the surface that
+appends a recipe and the surface that judges one can no longer disagree.
 
 Output discipline mirrors the sibling `pin_autodiscovery` supervisor entry
 point: the pure `reconcile_justfile_text` / `_reconcile` core does no I/O, and
@@ -322,8 +324,12 @@ def _slugs_from_env() -> tuple[str, ...]:
     The payload is the `{"slugs": [...]}` JSON the workflow step captures from
     `python -m livespec_dev_tooling.canonical_checks --json`. A non-dict payload
     or a missing / non-list `slugs` field yields an empty tuple, and a non-`str`
-    list element is dropped — mirroring the pre-extraction embedded step's
-    defensive parse.
+    list element is dropped. That is a DEPARTURE from the pre-extraction
+    embedded step rather than a mirror of it: the old heredoc called `.get` on
+    whatever `json.loads` returned, so a non-dict payload raised
+    `AttributeError` and the step died with exit 1. Degrading to an empty slug
+    set exits 0 and reconciles nothing, which is the safer reading of a payload
+    that carries no slugs to reconcile.
     """
     parsed = json.loads(os.environ["CANONICAL_JSON"])
     mapping = cast("dict[str, object]", parsed) if isinstance(parsed, dict) else None
