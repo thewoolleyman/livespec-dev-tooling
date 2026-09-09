@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.83.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.4...v1.83.5) (2026-09-09)
+
+
+### Bug Fixes
+
+* **heading-coverage:** put the convert-bucket reads on the IOResult railway ([28f5ac8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/28f5ac8bdf4797c658046120a36057c75482f4cf))
+
 ## [1.83.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.3...v1.83.4) (2026-09-09)
 
 
