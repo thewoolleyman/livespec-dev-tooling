@@ -46,3 +46,27 @@ if git diff --cached --name-only | grep -qx 'tests/heading-coverage.json'; then
 else
     just check-no-todo-registry
 fi
+
+# The shrink-only debt ratchet (plan fleet-heading-coverage-convergence
+# charter D3, ratified at v064) is THE authoring-time tier: a `TODO` row
+# absent from tests/heading-coverage-debt.json is a new cop-out, and the
+# register may only shrink. It ALWAYS runs here — a repo-state check over
+# input surfaces a doc-only changeset can touch, exactly like the six above.
+#
+# LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF narrows its VERDICT to the
+# rows this commit AUTHORS whenever the changeset touches either file. The
+# reasoning is the scope lever's above, and the incident is the same one
+# (livespec-dev-tooling-3ztbdq): armed over a whole register, a gate on a
+# shared mandatory co-edit registry refuses commits for rows they never
+# touched, and the file becomes unwritable. An out-of-scope finding is still
+# REPORTED (warning, `out_of_staged_scope`); only the verdict narrows. A
+# changeset touching neither file gets the unscoped whole-register verdict,
+# which the frozen baseline already satisfies.
+if git diff --cached --name-only |
+    grep -qxE 'tests/heading-coverage(-debt)?\.json'; then
+    echo ":: staged changeset edits a heading-coverage file — scoping the debt ratchet to the rows this commit authors"
+    LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF=true \
+        just check-heading-coverage-debt-register
+else
+    just check-heading-coverage-debt-register
+fi
