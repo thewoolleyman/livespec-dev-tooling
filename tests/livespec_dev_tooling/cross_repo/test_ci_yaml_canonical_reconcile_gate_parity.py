@@ -11,7 +11,7 @@ feeds:
 - **Writer/gate parity.** The reconcile's whole reason to exist is that what it
   WRITES satisfies what `check-ci-matrix-completeness` DEMANDS. The main suite
   asserts the written text's shape; this asserts the property directly, by
-  running `ci_matrix_completeness._evaluate` over the reconciled text with the
+  running `_ci_matrix_evaluate.evaluate` over the reconciled text with the
   same wired set and requiring NO findings. Asserting the shape alone trusts
   the shared parser to be the whole story — and the one time this pair drifted,
   it drifted for a reason no shape assertion would have caught: the writer read
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import textwrap
 
-from livespec_dev_tooling.checks import ci_matrix_completeness
+from livespec_dev_tooling.checks._ci_matrix_evaluate import evaluate
 from livespec_dev_tooling.checks._ci_matrix_parse import parse_ci_jobs
 from livespec_dev_tooling.cross_repo.ci_yaml_canonical_reconcile import reconcile_ci_yaml_text
 
@@ -78,7 +78,7 @@ _CANONICAL = ("check-aggregate-completeness", "check-new-thing", "check-wrapper-
 
 
 def test_batched_reconcile_satisfies_the_gate_it_feeds() -> None:
-    """After reconciling, `_evaluate` reports NO findings over the SAME wired set.
+    """After reconciling, `evaluate` reports NO findings over the SAME wired set.
 
     The property the module exists to hold, asserted against the gate itself
     rather than against the written text's shape.
@@ -91,7 +91,7 @@ def test_batched_reconcile_satisfies_the_gate_it_feeds() -> None:
     )
     assert "check-new-thing" in reconciled, "precondition: the slug must have been mirrored"
 
-    findings = ci_matrix_completeness._evaluate(  # noqa: SLF001  — asserting writer/gate parity.
+    findings = evaluate(
         canonical=_CANONICAL,
         world_gates=frozenset(),
         justfile_targets=list(_CANONICAL),
@@ -106,7 +106,7 @@ def test_gate_convicts_the_same_fixture_before_the_reconcile() -> None:
     Without this control a writer that changed nothing would pass the parity
     test, because the finding it must clear would never have existed.
     """
-    findings = ci_matrix_completeness._evaluate(  # noqa: SLF001  — asserting writer/gate parity.
+    findings = evaluate(
         canonical=_CANONICAL,
         world_gates=frozenset(),
         justfile_targets=list(_CANONICAL),

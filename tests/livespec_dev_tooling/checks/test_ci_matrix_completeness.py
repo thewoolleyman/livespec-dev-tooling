@@ -477,6 +477,206 @@ def test_lever_set_flips_findings_to_error_and_exit_4(
     assert missing[0].get("failing") is True
 
 
+# --- limb (a), REPO-LOCAL extension (livespec-dev-tooling-8o8e.18) -----------
+#
+# Limb (a) was canonical-scoped, so a REPO-LOCAL slug — one with no backing
+# `checks/<slug>.py` module, hence never discovered by `canonical_check_slugs` —
+# was outside its universe BY CONSTRUCTION and could sit in `just check` forever
+# while no CI job ran it. The extension requires every repo-local aggregate
+# member to be CI-covered too, unless the repo DECLARES it skip-only in
+# `[tool.livespec_dev_tooling] repo_local_ci_skips` with a reason.
+#
+# The declaration is what separates the two populations the finding could not
+# tell apart: livespec-overseer's `check-codex-skill-picker` is deliberately out
+# of CI (it can only ever SKIP on a hosted runner, and a matrix entry that can
+# only skip manufactures a green row that reads as coverage), while sixteen
+# others were simply never wired — and nothing said which was which.
+
+
+def _write_repo_local_skips(*, cwd: Path, entries: list[tuple[str, str]]) -> Path:
+    """Write a `pyproject.toml` declaring `repo_local_ci_skips` in the consumer block."""
+    rows = "".join(f'    {{ slug = "{slug}", reason = "{reason}" }},\n' for slug, reason in entries)
+    path = cwd / "pyproject.toml"
+    _ = path.write_text(
+        "[tool.livespec_dev_tooling]\nrepo_local_ci_skips = [\n" + rows + "]\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_repo_local_aggregate_slug_absent_from_ci_reports_finding(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-canonical aggregate slug run by NO CI job → finding; warn-default → exit 0."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(
+        cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha", "check-local"])
+    )
+    # The matrix covers the whole CANONICAL aggregate, so limb (a)'s original
+    # arm is clean and only the repo-local arm can speak here.
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+            _ci_green_job(needs="[check]"),
+        ],
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert (
+        result.returncode == 0
+    ), f"expected exit 0 under warn-default; got {result.returncode}, stderr={result.stderr!r}"
+    findings = _parse_findings(stderr=result.stderr)
+    repo_local = [
+        f for f in findings if f.get("failure_mode") == "ci-matrix-missing-repo-local-slug"
+    ]
+    assert [f.get("slug") for f in repo_local] == ["check-local"], f"got {findings!r}"
+    assert repo_local[0].get("level") == "warning", f"got {repo_local[0]!r}"
+    assert repo_local[0].get("failing") is False
+
+
+def test_declared_repo_local_skip_produces_no_finding(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A declared skip-only repo-local slug is silent even though CI never runs it."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(
+        cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha", "check-local"])
+    )
+    _ = _write_repo_local_skips(
+        cwd=tmp_path, entries=[("check-local", "CI-venue no-op: can only ever skip on a runner")]
+    )
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+            _ci_green_job(needs="[check]"),
+        ],
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        # The lever is SET on purpose: a declared skip must be silent at the
+        # strictest severity, not merely demoted to a warning.
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert (
+        result.returncode == 0
+    ), f"a declared skip must not fail even with the lever set; stderr={result.stderr!r}"
+    assert _parse_findings(stderr=result.stderr) == []
+
+
+def test_repo_local_slug_run_by_a_ci_job_produces_no_finding(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repo-local slug a CI job actually runs needs no declaration at all."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(
+        cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha", "check-local"])
+    )
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+            _dedicated_job(key="local-job", slug="check-local", needs="setup"),
+            _ci_green_job(needs="[check, local-job]"),
+        ],
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert (
+        result.returncode == 0
+    ), f"a CI-covered repo-local slug must not be flagged; stderr={result.stderr!r}"
+    assert _parse_findings(stderr=result.stderr) == []
+
+
+def test_repo_local_gap_fails_under_the_severity_lever(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The repo-local arm rides the SAME lever: error level, exit 4 when it is set."""
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(
+        cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha", "check-local"])
+    )
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+            _ci_green_job(needs="[check]"),
+        ],
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "true"},
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert (
+        result.returncode == 4
+    ), f"expected exit 4 with lever set; got {result.returncode}, stderr={result.stderr!r}"
+    repo_local = [
+        f
+        for f in _parse_findings(stderr=result.stderr)
+        if f.get("failure_mode") == "ci-matrix-missing-repo-local-slug"
+    ]
+    assert len(repo_local) == 1, f"got {repo_local!r}"
+    assert repo_local[0].get("level") == "error"
+    assert repo_local[0].get("failing") is True
+
+
+def test_stale_repo_local_skip_declaration_is_reported(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A declared slug the aggregate no longer wires is REJECTED, not silently ignored.
+
+    Without this the allowlist rots invisibly: a slug removed from `just check`
+    leaves its excuse behind, and the next reader takes a stale declaration for
+    a live decision. The finding carries the declared reason so the operator can
+    tell which excuse died.
+    """
+    _ = _write_canonical_json(cwd=tmp_path, slugs=["check-alpha"])
+    _ = _write_justfile(cwd=tmp_path, body=_justfile_with_targets(targets=["check-alpha"]))
+    _ = _write_repo_local_skips(
+        cwd=tmp_path, entries=[("check-retired", "was a CI-venue no-op before it was deleted")]
+    )
+    _ = _write_ci_yml(
+        cwd=tmp_path,
+        jobs=[
+            _matrix_job(key="check", targets=["check-alpha"], needs="setup"),
+            _ci_green_job(needs="[check]"),
+        ],
+    )
+    result = _run_check(
+        cwd=tmp_path,
+        env={"LIVESPEC_FAIL_IF_CI_MATRIX_GAPS_EXIST": "1"},
+        extra_argv=["--canonical-from", "canonical.json"],
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert (
+        result.returncode == 4
+    ), f"a stale declaration must be rejected with the lever set; stderr={result.stderr!r}"
+    stale = [
+        f
+        for f in _parse_findings(stderr=result.stderr)
+        if f.get("failure_mode") == "ci-matrix-stale-repo-local-skip"
+    ]
+    assert [f.get("slug") for f in stale] == ["check-retired"], f"got {stale!r}"
+    assert stale[0].get("reason") == "was a CI-venue no-op before it was deleted"
+
+
 def test_non_canonical_slug_ignored_by_a_but_its_job_gating_for_b(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

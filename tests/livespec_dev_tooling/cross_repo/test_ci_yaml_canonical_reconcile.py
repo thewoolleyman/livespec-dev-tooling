@@ -14,7 +14,7 @@ WIRES, so a bump that legitimately adopted a new canonical slug into the
 justfile aggregate left CI's hand-maintained matrix short that entry — the bump
 PR was red by construction, on a check whose diagnosis was correct.
 
-The reconcile's slug arithmetic MIRRORS `ci_matrix_completeness._evaluate` (it
+The reconcile's slug arithmetic MIRRORS `_ci_matrix_evaluate.evaluate` (it
 shares that check's `_ci_matrix_parse` parsers, so the written matrix and the
 gate's expectation cannot drift): a slug is required when the justfile aggregate
 wires it AND it is canonical AND it is not a WORLD GATE, and it is already

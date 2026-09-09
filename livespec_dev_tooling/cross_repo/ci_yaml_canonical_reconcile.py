@@ -31,7 +31,7 @@ code, concluded the batched defect was still live, and the item was promoted to
 P0 on that reading. The code was already correct; only this text was not.
 
 Correct-by-construction with the gate it feeds: the slug arithmetic mirrors
-`ci_matrix_completeness._evaluate` and SHARES that check's `_ci_matrix_parse`
+`_ci_matrix_evaluate.evaluate` and SHARES that check's `_ci_matrix_parse`
 parsers, so what this module writes and what the check demands cannot drift. A
 slug is REQUIRED when the justfile aggregate wires it AND it is canonical AND it
 is not a WORLD GATE (`canonical_checks.world_gate_check_slugs` —
@@ -215,7 +215,7 @@ def _wired_targets(*, justfile_text: str, inventory_text: str | None) -> list[st
 def _ci_covered_slugs(*, ci_yaml_text: str, canonical_set: set[str]) -> set[str]:
     """Return the canonical slugs CI already runs, across every job but `ci-green`.
 
-    Mirrors `ci_matrix_completeness._evaluate`'s coverage union: a job contributes
+    Mirrors `_ci_matrix_evaluate.evaluate`'s coverage union: a job contributes
     the canonical slugs of its `strategy.matrix.target` list AND of its
     `just check-<slug>` run lines.
     """
