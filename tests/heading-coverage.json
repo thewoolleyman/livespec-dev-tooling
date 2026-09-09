@@ -111,57 +111,50 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## Runtime",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_runtime_floor.test_every_shipped_module_compiles_on_the_declared_python_floor",
+    "reason": "Consumer-tier: the declared floor and the actual one, which fail at different moments. `requires-python` (what a consumer's resolver reads), ruff's `target-version` and pyright's `pythonVersion` must name the same release, and every shipped first-party module is re-parsed with `ast.parse(feature_version=(3, 10))` so a module carrying post-floor grammar cannot be imported on the interpreter the distribution promises (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## Dependencies",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_zero_runtime_dependencies.test_the_library_declares_no_runtime_dependencies",
+    "reason": "Consumer-tier: `[project]` carries no `dependencies` key AND the installed distribution's Requires-Dist (a separate artifact, which a build-backend or dynamic-metadata dependency would reach without touching the config) is empty; the vendored `returns` / `structlog` imports every check makes resolve from `livespec_dev_tooling/_vendor/`, which is what makes the zero-dependency claim honest; and ruff, pyright and pytest carry exact `==` pins under `[dependency-groups].dev` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## No network I/O",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_no_network_io.test_a_shipped_check_passes_with_the_network_stack_disabled",
+    "reason": "Consumer-tier: drives a shipped check end-to-end with every `socket` entry point replaced by a refusing double and asserts it still exits 0, then asserts the double is live. This is the constraint's stated REASON — determinism against the working tree alone, regardless of network availability — and the leg the import scan in the same file cannot reach, since a reach made through a helper or a lazily-imported module names no forbidden root in the check's own AST (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## Semver discipline",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_semver_stable_surface.test_every_enumerated_semver_stable_surface_element_still_resolves",
+    "reason": "Consumer-tier: resolves each surface element `contracts.md` enumerates against the tree at the version the packaging config declares — both `python -m` invocation sets, every composite Action's `runs:` wire, every reusable workflow's `workflow_call:` trigger, and the importable detector API's non-empty registry and glob set. An element that no longer resolves IS a break that landed without the MAJOR bump the constraint requires, which is what covers the removals a diff-based bump classifier misses (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## CLI shape",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_cli_shape.test_no_shipped_check_takes_configuration_through_positional_argv",
+    "reason": "Consumer-tier: the contract at all three layers it can break — every canonical check's `main` is callable with no arguments, no check declares a positional argparse argument, and two fixture trees differing ONLY in their `[tool.livespec_dev_tooling]` blocks resolve to different configurations while argv is held identical and bare, which is what proves configuration comes from the working directory rather than argv (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## Self-application",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_self_application.test_the_configured_universe_contains_this_repositorys_own_shipped_modules",
+    "reason": "Unit-tier: wiring is not application. A repo can carry every canonical slug in its aggregate and every recipe pointed at the pinned shared module while its `[tool.livespec_dev_tooling]` block aims the scan where the shipped modules are not — every check then passes by inspecting nothing and raises no error. This resolves the configured universe the way the checks resolve it and asserts each shipped check module is inside it, both by containment under a declared source tree and through `iter_py_files`, the walker the shape checks actually use (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "constraints.md",
     "heading": "## CI matrix shape",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_ci_matrix_shape.test_the_gating_matrix_entry_set_is_identical_on_every_gated_event",
+    "reason": "Consumer-tier: the constraint's own reason is that a consumer's branch protection names individual matrix entries as required checks, so the entry set is asserted event-independent — the workflow triggers on `pull_request` and on `push` to master alike, the retired zero-`.py` subsetting mechanism and the trigger-level path filters that would subset the same way are absent, no job in `ci-green`'s `needs:` set carries a job-level `if:`, and every matrix target is a literal `check-<slug>` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hhp4og)."
   },
   {
     "spec_root": "SPECIFICATION",
