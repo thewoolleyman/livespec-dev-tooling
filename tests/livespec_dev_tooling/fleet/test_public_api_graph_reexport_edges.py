@@ -20,8 +20,22 @@ from livespec_dev_tooling.fleet._public_api_graph import (
     MemberSources,
     cross_member_consumption,
 )
+from livespec_dev_tooling.fleet._public_api_records import ConsumptionGraph
 
 __all__: list[str] = []
+
+
+def measured(*, members: dict[str, MemberSources]) -> ConsumptionGraph:
+    """The graph of a measurement whose sources all parse.
+
+    Every fixture here is valid Python, so the success track answers all of
+    them and the unwrap is the honest read: a fixture that later gained an
+    invalid source would fail loudly here rather than quietly measuring less
+    than the case it was written to make. The railway itself is pinned in
+    `test_public_api_consumption_railway.py`.
+    """
+    return cross_member_consumption(members=members).unwrap()
+
 
 _IMPL_SOURCE = """
 def probe(*, at: str) -> str:
@@ -56,7 +70,7 @@ def test_a_reexport_hop_landing_in_the_consuming_member_crosses_no_boundary() ->
     sibling for a file the consumer never opens, which is the 14-false-findings
     shape the pre-hop guard exists to prevent.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": _sources(
                 defining={"pkg/impl.py": _IMPL_SOURCE, "pkg/facade.py": _FACADE_SOURCE},
@@ -78,7 +92,7 @@ def test_the_same_reach_is_an_edge_when_the_consumer_ships_no_copy_of_the_impl()
     Without this, the assertion above would also pass against a graph that had
     simply stopped following re-exports at all.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": _sources(
                 defining={"pkg/impl.py": _IMPL_SOURCE, "pkg/facade.py": _FACADE_SOURCE},

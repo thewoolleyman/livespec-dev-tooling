@@ -86,6 +86,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
@@ -105,11 +106,11 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
 )
 from livespec_dev_tooling.fleet._member_sources import read_member_sources  # noqa: E402
 from livespec_dev_tooling.fleet._public_api_graph import (  # noqa: E402
-    ConsumptionEdge,
     FleetConsumption,
     MemberSources,
     cross_member_consumption,
 )
+from livespec_dev_tooling.fleet._public_api_records import ConsumptionEdge  # noqa: E402
 from livespec_dev_tooling.fleet._public_api_unresolved import (  # noqa: E402
     UnresolvedReach,
     broken_consumer_message,
@@ -161,6 +162,18 @@ def _build(*, ctx: FleetContext) -> FleetConsumption:
 
     The self member is read from disk when a local vantage is bound; every
     sibling is downloaded at its canonical ref. See `_local_root_for`.
+
+    THE MEASUREMENT'S FAILURE TRACK IS CONSUMED AND ITS GRAPH IS KEPT, and that
+    is deliberate rather than an omission. `cross_member_consumption` fails when
+    at least one member's source would not parse, carrying the graph it built
+    from the readable files. This row's whole job is to report a member's
+    declaration gap against what its siblings ACTUALLY import, so discarding
+    that measurement over one invalid file would blind the row about the other
+    eight members — the raise-through-a-nine-member-sweep shape
+    `livespec-dev-tooling-9sl0` removed, arriving by a different door. What the
+    partiality costs is already reported rather than absorbed here:
+    `_unparsed_note` names the judged member's unreadable files in the row's own
+    output, and `_undeclared` excludes them from its local-public set.
     """
     sources: dict[str, MemberSources] = {}
     configs: dict[str, Config] = {}
@@ -192,8 +205,10 @@ def _build(*, ctx: FleetContext) -> FleetConsumption:
             continue
         configs[member.repo] = config
         sources[member.repo] = unsafe_perform_io(read.unwrap())
+    measured = cross_member_consumption(members=sources)
+    graph = measured.failure().graph if isinstance(measured, Failure) else measured.unwrap()
     return FleetConsumption(
-        graph=cross_member_consumption(members=sources),
+        graph=graph,
         sources=sources,
         configs=configs,
         unavailable=unavailable,
