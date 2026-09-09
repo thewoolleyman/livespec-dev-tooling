@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.77.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.77.0...v1.77.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **fleet:** report a fleet member whose check aggregate omits the canonical meta-gates ([fb8d3b1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fb8d3b1a369fd120766dd13397fc8458d4992f44))
+
 ## [1.77.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.76.0...v1.77.0) (2026-09-09)
 
 
