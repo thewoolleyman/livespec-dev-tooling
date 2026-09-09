@@ -10,6 +10,14 @@ assert the run still exits 0, and the ERROR verdicts that it exits 1.
 Modules are imported INSIDE the test bodies (never at module scope) so an
 unimplemented tree fails on a genuine assertion — `assert path.is_file()` —
 rather than dying at collection with an import error.
+
+Every input the family reads is on the `IOResult` railway
+(`livespec-dev-tooling-qndn.4`), so the injected doubles hand back `IOSuccess`
+and each input owns a test proving a read that did NOT HAPPEN reaches the
+operator as a refusal rather than as eleven satisfied verdicts. That is this
+module's own recorded incident: `livespec-dev-tooling-7b6l` was an unread
+timeline arriving as an empty comment list, and `plan_close_evidence`
+convicting real epics on an absence nothing had established.
 """
 
 from __future__ import annotations
@@ -23,6 +31,8 @@ from types import ModuleType, SimpleNamespace
 from typing import NamedTuple, Protocol
 
 import pytest
+from returns.io import IOFailure, IOResult, IOSuccess
+from returns.unsafe import unsafe_perform_io
 
 __all__: list[str] = []
 
@@ -265,17 +275,24 @@ def _run(
     items: list[dict[str, object]] | None = None,
     comments: dict[str, list[dict[str, object]]] | None = None,
     lifecycle: object = _zero_lifecycle,
+    unread: object | None = None,
 ) -> _CheckRun:
-    """Invoke `main()` in-process under `cwd` with every ledger reader injected."""
+    """Invoke `main()` in-process under `cwd` with every ledger reader injected.
+
+    `unread` puts BOTH readers on the failure track carrying that value, which
+    is how the read-that-did-not-happen arms are driven.
+    """
     module = _load(name="plan_record_conformance")
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         assert repo == cwd
-        return list(items or [])
+        if unread is not None:
+            return IOFailure(unread)
+        return IOSuccess(list(items or []))
 
-    def _comments(*, repo: Path, item_id: str) -> list[dict[str, object]]:
+    def _comments(*, repo: Path, item_id: str) -> IOResult[list[dict[str, object]], object]:
         assert repo == cwd
-        return list((comments or {}).get(item_id, []))
+        return IOSuccess(list((comments or {}).get(item_id, [])))
 
     monkeypatch.chdir(cwd)
     returncode = module.main(
@@ -537,14 +554,14 @@ def test_plan_lifecycle_parity_delegates_to_the_real_plan_epic_parity_check(
     module = _load(name="plan_record_conformance")
     items = [_epic_record(status="closed", slug="live")]
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         _ = repo
-        return items
+        return IOSuccess(items)
 
-    def _comments(*, repo: Path, item_id: str) -> list[dict[str, object]]:
+    def _comments(*, repo: Path, item_id: str) -> IOResult[list[dict[str, object]], object]:
         _ = repo
         _ = item_id
-        return []
+        return IOSuccess([])
 
     monkeypatch.chdir(root)
     returncode = module.main(item_reader=_items, comment_reader=_comments)
@@ -758,15 +775,15 @@ def test_main_defaults_to_the_shared_ledger_readers(
     module = _load(name="plan_record_conformance")
     read_calls: list[str] = []
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         _ = repo
         read_calls.append("items")
-        return [_epic_record(slug="unanchored", next_action=_action())]
+        return IOSuccess([_epic_record(slug="unanchored", next_action=_action())])
 
-    def _comments(*, repo: Path, item_id: str) -> list[dict[str, object]]:
+    def _comments(*, repo: Path, item_id: str) -> IOResult[list[dict[str, object]], object]:
         _ = repo
         read_calls.append(item_id)
-        return []
+        return IOSuccess([])
 
     monkeypatch.setattr(module, "bd_items_reader", _items)
     monkeypatch.setattr(module, "bd_comments_reader", _comments)
@@ -793,8 +810,11 @@ def test_plan_directories_reads_both_trees_and_ignores_stray_files(
     empty = dirs.plan_directories(plan_dir=tmp_path / "absent", tenant_re=tenant)
     found = dirs.plan_directories(plan_dir=tmp_path / "plan", tenant_re=tenant)
 
-    assert empty == []
-    assert [(entry.relative, entry.archived, entry.anchor) for entry in found] == [
+    assert unsafe_perform_io(empty.unwrap()) == []
+    assert [
+        (entry.relative, entry.archived, entry.anchor)
+        for entry in unsafe_perform_io(found.unwrap())
+    ] == [
         ("plan/live", False, _EPIC),
         ("plan/archive/done", True, "unassigned"),
     ]
@@ -810,7 +830,38 @@ def test_no_archive_tree_is_not_a_failure(*, tmp_path: Path) -> None:
         plan_dir=tmp_path / "plan", tenant_re=ledger.tenant_id_re(tenant_prefix=_TENANT)
     )
 
-    assert [(entry.slug, entry.raw, entry.anchor) for entry in found] == [("live", None, None)]
+    assert [
+        (entry.slug, entry.raw, entry.anchor) for entry in unsafe_perform_io(found.unwrap())
+    ] == [("live", None, None)]
+
+
+def test_a_plan_tree_that_cannot_be_walked_is_not_an_empty_one(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreadable `plan/` tree fails the scan; an ABSENT one answers with nothing.
+
+    Both were the same empty list before, and `plan_anchor_present` grades what
+    it is handed — so a checkout the scan could not walk read as a conforming
+    repo that keeps no plan records.
+    """
+    dirs = _load(name="_plan_record_dirs")
+    ledger = _load(name="_plan_ledger")
+    tenant = ledger.tenant_id_re(tenant_prefix=_TENANT)
+    _plan_record(root=tmp_path, relative="plan/live")
+
+    # A permission bit cannot express "unreadable" to a root-run suite, so the
+    # OSError is raised at the seam that would raise it in the field.
+    def _locked(self: Path) -> object:
+        _ = self
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "iterdir", _locked)
+    unreadable = dirs.plan_directories(plan_dir=tmp_path / "plan", tenant_re=tenant)
+
+    assert isinstance(unreadable, IOFailure)
+    failed = unsafe_perform_io(unreadable.failure())
+    assert failed.reason == "plan-tree-unreadable"
+    assert "locked" in failed.detail
 
 
 def test_comment_readers_tolerate_every_absent_shape() -> None:
@@ -896,10 +947,10 @@ def test_timeline_findings_skip_a_record_without_an_id(*, tmp_path: Path) -> Non
     timeline = _load(name="_plan_record_timeline")
     seen: list[str] = []
 
-    def _comments(*, repo: Path, item_id: str) -> list[dict[str, object]]:
+    def _comments(*, repo: Path, item_id: str) -> IOResult[list[dict[str, object]], object]:
         _ = repo
         seen.append(item_id)
-        return []
+        return IOSuccess([])
 
     idless = timeline.timeline_findings(
         epics=[{"type": "epic", "status": "open"}],
@@ -916,9 +967,39 @@ def test_timeline_findings_skip_a_record_without_an_id(*, tmp_path: Path) -> Non
         repo=tmp_path,
     )
 
-    assert idless == []
-    assert identified == []
+    assert unsafe_perform_io(idless.unwrap()) == []
+    assert unsafe_perform_io(identified.unwrap()) == []
     assert seen == [_EPIC], "only the record carrying an id is read"
+
+
+def test_one_unread_timeline_fails_the_whole_family(*, tmp_path: Path) -> None:
+    """A timeline the reader never obtained takes the family to the failure track.
+
+    Continuing would emit the three verdicts for every OTHER epic and report
+    the set as complete, and `plan_close_evidence` would convict the skipped
+    epic on an absence it never established — `livespec-dev-tooling-7b6l`.
+    """
+    timeline = _load(name="_plan_record_timeline")
+    ledger = _load(name="_plan_ledger")
+    sentinel = ledger.LedgerReadFailed(reason="bd-failed", detail="exit 1: Error 1045")
+    read_ids: list[str] = []
+
+    def _comments(*, repo: Path, item_id: str) -> IOResult[list[dict[str, object]], object]:
+        _ = repo
+        read_ids.append(item_id)
+        return IOFailure(sentinel)
+
+    unread = timeline.timeline_findings(
+        epics=[_conforming_epic(), _epic_record(item_id=_OTHER_EPIC, slug="other")],
+        live_slugs=frozenset({"live"}),
+        record_slugs=frozenset({"live"}),
+        read_comments=_comments,
+        repo=tmp_path,
+    )
+
+    assert isinstance(unread, IOFailure)
+    assert unsafe_perform_io(unread.failure()) is sentinel
+    assert read_ids == [_EPIC], "the family stops at the first unread timeline"
 
 
 def test_finding_subject_helpers_tolerate_an_idless_record() -> None:
@@ -946,14 +1027,21 @@ def test_ledger_reader_passes_status_all_so_closed_epics_are_read(
 
     records = ledger.bd_items_reader(repo=tmp_path)
 
-    assert records == [{"id": "from-bd"}]
+    assert unsafe_perform_io(records.unwrap()) == [{"id": "from-bd"}]
     assert seen == [repr(("bd", "-C", str(tmp_path), "list", "--status", "all", "--json"))]
 
 
-def test_comment_reader_reads_a_show_payload_and_tolerates_failure(
+def test_comment_reader_separates_an_empty_timeline_from_an_unread_one(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The shared comment reader parses `bd show --json`, else answers with nothing."""
+    """A record that HAS no comments answers `[]`; a `bd` that failed does not answer.
+
+    The three success arms all mean "this record carries no timeline" — a
+    payload with no `comments` key, and a payload with no record at all, are
+    both answers now that `--include-comments` is passed unconditionally. The
+    non-zero exit is the one that changed track: `Error 1045` from an absent
+    tenant credential used to arrive spelled exactly like the first two.
+    """
     ledger = _load(name="_plan_ledger")
     payload = '{"data":[{"id":"e1","comments":[{"id":"c1","text":"hi"},7]}]}'
     monkeypatch.setattr(
@@ -961,7 +1049,7 @@ def test_comment_reader_reads_a_show_payload_and_tolerates_failure(
         "run",
         _fake_subprocess_run(result=SimpleNamespace(returncode=0, stdout=payload, stderr="")),
     )
-    assert ledger.bd_comments_reader(repo=tmp_path, item_id="e1") == [{"id": "c1", "text": "hi"}]
+    carried = ledger.bd_comments_reader(repo=tmp_path, item_id="e1")
 
     monkeypatch.setattr(
         ledger.subprocess,
@@ -970,21 +1058,30 @@ def test_comment_reader_reads_a_show_payload_and_tolerates_failure(
             result=SimpleNamespace(returncode=0, stdout='{"data":[{"id":"e1"}]}', stderr="")
         ),
     )
-    assert ledger.bd_comments_reader(repo=tmp_path, item_id="e1") == []
+    keyless = ledger.bd_comments_reader(repo=tmp_path, item_id="e1")
 
     monkeypatch.setattr(
         ledger.subprocess,
         "run",
         _fake_subprocess_run(result=SimpleNamespace(returncode=0, stdout="", stderr="")),
     )
-    assert ledger.bd_comments_reader(repo=tmp_path, item_id="e1") == []
+    recordless = ledger.bd_comments_reader(repo=tmp_path, item_id="e1")
 
     monkeypatch.setattr(
         ledger.subprocess,
         "run",
-        _fake_subprocess_run(result=SimpleNamespace(returncode=1, stdout="", stderr="boom")),
+        _fake_subprocess_run(
+            result=SimpleNamespace(returncode=1, stdout="", stderr="Error 1045 (28000)")
+        ),
     )
-    assert ledger.bd_comments_reader(repo=tmp_path, item_id="e1") == []
+    unread = ledger.bd_comments_reader(repo=tmp_path, item_id="e1")
+
+    assert unsafe_perform_io(carried.unwrap()) == [{"id": "c1", "text": "hi"}]
+    assert unsafe_perform_io(keyless.unwrap()) == []
+    assert unsafe_perform_io(recordless.unwrap()) == []
+    assert isinstance(unread, IOFailure)
+    assert unsafe_perform_io(unread.failure()).reason == "bd-failed"
+    assert "Error 1045" in unsafe_perform_io(unread.failure()).detail
 
 
 def test_comment_reader_asks_bd_for_the_comment_bodies(
@@ -1004,7 +1101,7 @@ def test_comment_reader_asks_bd_for_the_comment_bodies(
 
     read = ledger.bd_comments_reader(repo=tmp_path, item_id=_OTHER_EPIC)
 
-    assert [comment.get("text") for comment in read] == [_EVIDENCE]
+    assert [comment.get("text") for comment in unsafe_perform_io(read.unwrap())] == [_EVIDENCE]
 
 
 def test_comment_reader_resolves_bd_through_the_pinned_path_override(
@@ -1028,8 +1125,116 @@ def test_comment_reader_resolves_bd_through_the_pinned_path_override(
     monkeypatch.setenv("LIVESPEC_BD_PATH", str(tmp_path / "absent" / "bd"))
     fallen_back = ledger.bd_comments_reader(repo=tmp_path, item_id=_OTHER_EPIC)
 
-    assert [comment.get("text") for comment in overridden] == [_EVIDENCE]
-    assert [comment.get("text") for comment in fallen_back] == ["from PATH"]
+    assert [comment.get("text") for comment in unsafe_perform_io(overridden.unwrap())] == [
+        _EVIDENCE
+    ]
+    assert [comment.get("text") for comment in unsafe_perform_io(fallen_back.unwrap())] == [
+        "from PATH"
+    ]
+
+
+def test_armed_family_refuses_each_input_it_could_not_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A read that did not happen exits non-zero and names the reason, never a pass.
+
+    Exiting 0 here would report all eleven verdicts as satisfied over a
+    population the check never saw.
+    """
+    root = _armed_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _plan_record(root=root, relative="plan/live", anchor=f"{_EPIC}\n")
+    ledger = _load(name="_plan_ledger")
+
+    result = _run(
+        cwd=root,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        unread=ledger.LedgerReadFailed(reason="bd-failed", detail="exit 1: Error 1045"),
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "could not read one of its inputs" in combined
+    assert '"reason": "bd-failed"' in combined
+    assert '"verdict": "input-unreadable"' in combined
+
+
+def test_armed_family_refuses_an_unresolvable_tenant_prefix(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No `.livespec.jsonc` means no same-tenant matcher, so the family refuses."""
+    _arm(monkeypatch)
+    _plan_record(root=tmp_path, relative="plan/live")
+
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys, items=[])
+
+    assert result.returncode == 1
+    assert '"reason": "config-unreadable"' in (result.stdout + result.stderr)
+
+
+def test_armed_family_refuses_a_plan_tree_it_could_not_walk(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The checkout half refuses on the same terms as the ledger half."""
+    root = _armed_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _plan_record(root=root, relative="plan/live")
+
+    def _locked(self: Path) -> object:
+        _ = self
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "iterdir", _locked)
+    result = _run(cwd=root, monkeypatch=monkeypatch, capsys=capsys, items=[])
+
+    assert result.returncode == 1
+    assert '"reason": "plan-tree-unreadable"' in (result.stdout + result.stderr)
+
+
+def test_armed_family_refuses_an_unread_timeline(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unread epic timeline refuses the run instead of convicting the epic.
+
+    The DIRECT positive control for `livespec-dev-tooling-7b6l`: the epic below
+    is closed after the cutoff and carries no evidence in hand, so the old
+    shape emitted `plan_close_evidence` against it on a timeline nothing read.
+    """
+    root = _armed_repo(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _plan_record(root=root, relative="plan/archive/done", anchor=f"{_OTHER_EPIC}\n")
+    module = _load(name="plan_record_conformance")
+    ledger = _load(name="_plan_ledger")
+    sentinel = ledger.LedgerReadFailed(reason="bd-failed", detail="exit 1: Error 1045")
+
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
+        _ = repo
+        return IOSuccess(
+            [
+                _epic_record(
+                    item_id=_OTHER_EPIC,
+                    status="closed",
+                    slug="done",
+                    closed_at="2026-09-06T00:00:00Z",
+                )
+            ]
+        )
+
+    def _comments(*, repo: Path, item_id: str) -> IOResult[list[dict[str, object]], object]:
+        _ = repo
+        _ = item_id
+        return IOFailure(sentinel)
+
+    monkeypatch.chdir(root)
+    returncode = module.main(
+        item_reader=_items, comment_reader=_comments, lifecycle_runner=_zero_lifecycle
+    )
+    captured = capsys.readouterr()
+
+    combined = captured.out + captured.err
+    assert returncode == 1
+    assert (
+        '"check_id": "plan_close_evidence"' not in combined
+    ), "an unread timeline is not missing evidence"
+    assert '"verdict": "input-unreadable"' in combined
 
 
 def test_armed_run_over_a_tenant_carrying_evidence_reports_no_close_finding(

@@ -23,6 +23,7 @@ from types import ModuleType, SimpleNamespace
 from typing import NamedTuple, Protocol
 
 import pytest
+from returns.io import IOFailure, IOResult, IOSuccess
 
 __all__: list[str] = []
 
@@ -102,13 +103,16 @@ def _run(
     capsys: pytest.CaptureFixture[str],
     items: list[dict[str, object]],
     comments: dict[str, list[dict[str, object]]] | None = None,
+    unread: object | None = None,
 ) -> _CheckRun:
     """Invoke `main()` in-process under `cwd` with injected ledger readers."""
     timeline = comments or {}
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         assert repo == cwd
-        return items
+        if unread is not None:
+            return IOFailure(unread)
+        return IOSuccess(items)
 
     def _comments(*, repo: Path, item_id: str) -> list[dict[str, object]]:
         assert repo == cwd
@@ -380,9 +384,9 @@ def test_default_readers_are_used_when_none_are_injected(
     module = _load_check_module()
     _arm(monkeypatch)
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         _ = repo
-        return [_record(description="clean prose")]
+        return IOSuccess([_record(description="clean prose")])
 
     def _comments(*, repo: Path, item_id: str) -> list[dict[str, object]]:
         _ = repo
@@ -445,6 +449,34 @@ def test_comment_field_is_empty_when_absent_or_non_string() -> None:
     assert field(key="id", comment={"id": "c1"}) == "c1"
     assert field(key="id", comment={"id": 7}) == ""
     assert field(key="created_at", comment={}) == ""
+
+
+def test_an_unread_ledger_is_reported_as_unread_not_as_empty(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ledger the sweep never reached is a distinct state from one holding nothing.
+
+    Both exit 1, so the exit code alone never told them apart; the operator
+    reads the remediation, and "read zero ledger records" was being printed for
+    a read that never happened at all.
+    """
+    module = _load_check_module()
+    _arm(monkeypatch)
+    read_failed = module.bd_items_reader.__globals__["LedgerReadFailed"]
+
+    result = _run(
+        module=module,
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        items=[],
+        unread=read_failed(reason="bd-failed", detail="exit 1: Error 1045"),
+    )
+
+    assert result.returncode == 1
+    assert '"verdict": "ledger-unreadable"' in result.output
+    assert '"reason": "bd-failed"' in result.output
+    assert "read zero ledger records" not in result.output
 
 
 def test_module_importable_without_running_main() -> None:

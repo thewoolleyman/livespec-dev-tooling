@@ -23,21 +23,43 @@ Close evidence is owed from `CLOSE_EVIDENCE_CUTOFF_DAY` forward, for the same
 reason: an epic closed before the writing primitive existed owes evidence to a
 discipline that had no mechanism, and its only remaining route to green would be
 to fabricate the comment. See that constant for the pinned commit.
+
+ONE UNREAD TIMELINE FAILS THE WHOLE FAMILY — `livespec-dev-tooling-qndn.4`. The
+injected reader is on the `IOResult` railway, and its failure is returned rather
+than skipped past. Continuing would emit the three verdicts for every OTHER epic
+and report the set as complete, and `plan_close_evidence` — which fires on the
+ABSENCE of a comment — would convict the skipped epic on an absence it never
+established. That is `livespec-dev-tooling-7b6l` exactly.
 """
 
 from __future__ import annotations
 
+import sys
 from collections import Counter
 from pathlib import Path
 
-from livespec_dev_tooling.checks._plan_ledger import CommentReader, record_id
-from livespec_dev_tooling.checks._plan_record_comments import (
+# Carried rather than inherited from an importer: without it the vendored
+# `returns` resolves only because some module up the import chain happens to
+# carry the preamble, which is a property of the caller rather than of this file.
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.checks._plan_ledger import (  # noqa: E402
+    CommentReader,
+    LedgerReadFailed,
+    record_id,
+)
+from livespec_dev_tooling.checks._plan_record_comments import (  # noqa: E402
     comment_day,
     comment_text,
     is_completeness_review_evidence,
     newest_handoff_action,
 )
-from livespec_dev_tooling.checks._plan_record_model import (
+from livespec_dev_tooling.checks._plan_record_model import (  # noqa: E402
     ERROR_VERDICT,
     WARN_VERDICT,
     Finding,
@@ -45,7 +67,7 @@ from livespec_dev_tooling.checks._plan_record_model import (
     is_closed,
     plan_slug_of,
 )
-from livespec_dev_tooling.checks._plan_record_next_action import (
+from livespec_dev_tooling.checks._plan_record_next_action import (  # noqa: E402
     NextAction,
     matches,
     parse_next_action,
@@ -107,14 +129,23 @@ def timeline_findings(
     read_comments: CommentReader,
     repo: Path,
     threshold: int = DEFAULT_DAILY_COMMENT_THRESHOLD,
-) -> list[Finding]:
-    """Return every timeline-family verdict, reading each epic's comments once."""
+) -> IOResult[list[Finding], LedgerReadFailed]:
+    """Return every timeline-family verdict, reading each epic's comments once.
+
+    The FIRST timeline the reader could not obtain takes the whole family to
+    the failure track, stopping the sweep: a partial finding list is not a
+    smaller one, it is an incomplete one that the caller would report as
+    complete. See the module docstring for why that is not a hypothetical.
+    """
     findings: list[Finding] = []
     for epic in epics:
         epic_id = record_id(record=epic)
         if epic_id is None:
             continue
-        comments = read_comments(repo=repo, item_id=epic_id)
+        read = read_comments(repo=repo, item_id=epic_id)
+        if isinstance(read, IOFailure):
+            return IOFailure(unsafe_perform_io(read.failure()))
+        comments = unsafe_perform_io(read.unwrap())
         slug = plan_slug_of(record=epic)
         findings.extend(
             _close_evidence_findings(
@@ -129,7 +160,7 @@ def timeline_findings(
         findings.extend(
             _comment_rate_findings(epic_id=epic_id, comments=comments, threshold=threshold)
         )
-    return findings
+    return IOSuccess(findings)
 
 
 def _close_evidence_findings(

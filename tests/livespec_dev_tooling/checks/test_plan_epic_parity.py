@@ -4,16 +4,25 @@ Ratified Planning Lane v197 stores the plan anchor in ledger epic metadata and
 keeps handoff entries in the ledger timeline. Parity therefore compares live and
 archived plan directories with same-tenant ledger epics that name their
 `plan_slug`; it no longer reads `plan/*/handoff.md` or `plan/*/epic.md`.
+
+The ledger readers this check composes are on the `IOResult` railway
+(`livespec-dev-tooling-qndn.4`), so the injected doubles hand back `IOSuccess`
+and the read-failure arms are pinned separately: a `bd` that never answered
+must reach the operator as a REFUSAL naming the reason, not as parity over an
+empty ledger.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import NamedTuple, Protocol
 
 import pytest
+from returns.io import IOFailure, IOResult, IOSuccess
+from returns.unsafe import unsafe_perform_io
 
 __all__: list[str] = []
 
@@ -37,6 +46,10 @@ def _load_helper_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("plan_ledger_under_test", str(_HELPER_PATH))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # Registered BEFORE execution: a `@dataclass` in a file-loaded module resolves
+    # its own `__module__` through `sys.modules` while building the field list,
+    # and an unregistered name makes that lookup raise rather than miss.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -89,12 +102,15 @@ def _run(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     items: list[dict[str, object]] | None = None,
+    read_failure: object | None = None,
 ) -> _CheckRun:
     """Invoke `main()` in-process under `cwd` with an injected item reader."""
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         assert repo == cwd
-        return items or []
+        if read_failure is not None:
+            return IOFailure(read_failure)
+        return IOSuccess(items or [])
 
     monkeypatch.chdir(cwd)
     rc = _MODULE.main(item_reader=_items)
@@ -355,21 +371,104 @@ def test_ledger_helper_parses_records_and_dependency_shapes() -> None:
 def test_ledger_helper_item_reader_uses_export_then_bd(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The helper prefers local `.beads/issues.jsonl`, else parses `bd list --json`."""
+    """The helper prefers local `.beads/issues.jsonl`, else parses `bd list --json`.
+
+    A non-zero `bd` exit is the arm the conversion moved: it used to answer
+    with `[]`, which the parity check read as "the tenant holds no records"
+    and reported as parity over an empty ledger.
+    """
     assert _HELPER_PATH.is_file(), "ledger helper module should exist"
     helper = _load_helper_module()
     beads_dir = tmp_path / ".beads"
     _ = beads_dir.mkdir()
     _ = (beads_dir / "issues.jsonl").write_text('{"id":"from-export"}\n', encoding="utf-8")
-    assert helper.bd_items_reader(repo=tmp_path) == [{"id": "from-export"}]
+    exported = helper.bd_items_reader(repo=tmp_path)
     other_repo = tmp_path / "other"
     _ = other_repo.mkdir()
     fake = SimpleNamespace(returncode=0, stdout='{"data":[{"id":"from-bd"}]}', stderr="")
     monkeypatch.setattr(helper.subprocess, "run", _fake_subprocess_run(result=fake))
-    assert helper.bd_items_reader(repo=other_repo) == [{"id": "from-bd"}]
+    spawned = helper.bd_items_reader(repo=other_repo)
     failed = SimpleNamespace(returncode=1, stdout="", stderr="boom")
     monkeypatch.setattr(helper.subprocess, "run", _fake_subprocess_run(result=failed))
-    assert helper.bd_items_reader(repo=other_repo) == []
+    refused = helper.bd_items_reader(repo=other_repo)
+
+    assert unsafe_perform_io(exported.unwrap()) == [{"id": "from-export"}]
+    assert unsafe_perform_io(spawned.unwrap()) == [{"id": "from-bd"}]
+    assert isinstance(refused, IOFailure)
+    assert unsafe_perform_io(refused.failure()).reason == "bd-failed"
+    assert "boom" in unsafe_perform_io(refused.failure()).detail
+
+
+def test_armed_run_refuses_when_the_ledger_was_never_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A read that did not happen exits non-zero and names the reason, never parity."""
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _mkdir(root=tmp_path, relative="plan/live")
+    helper = _load_helper_module()
+
+    result = _run(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        read_failure=helper.LedgerReadFailed(reason="bd-failed", detail="exit 1: Error 1045"),
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "could not read the ledger" in combined
+    assert '"reason": "bd-failed"' in combined
+    assert "Error 1045" in combined
+
+
+def test_armed_run_refuses_when_the_descendant_scan_could_not_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The SECOND read is its own failure arm — the first one succeeding proves nothing.
+
+    `descendant_offenders` consults the reader again to enumerate replacement
+    descendants, and its empty list used to mean both "this archived anchor has
+    no incomplete descendant" and "nothing looked". The reader below answers the
+    parity read and then refuses, which is exactly the shape a credential
+    expiring mid-run produces.
+    """
+    _arm(monkeypatch)
+    _write_livespec_config(root=tmp_path)
+    _mkdir(root=tmp_path, relative="plan/archive/done")
+    reads: list[str] = []
+    epic = _epic(item_id="livespec-dev-tooling-e1", status="closed", slug="done")
+
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
+        _ = repo
+        reads.append("read")
+        if len(reads) == 1:
+            return IOSuccess([epic])
+        return IOFailure(_MODULE.LedgerReadFailed(reason="bd-failed", detail="exit 1: Error 1045"))
+
+    monkeypatch.chdir(tmp_path)
+    rc = _MODULE.main(item_reader=_items)
+    captured = capsys.readouterr()
+
+    combined = captured.out + captured.err
+    assert rc == 1
+    assert len(reads) == 2, "the descendant scan is a second read"
+    assert '"reason": "bd-failed"' in combined
+    assert "incomplete replacement descendant" not in combined
+
+
+def test_armed_run_refuses_when_the_tenant_config_is_unreadable(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No `.livespec.jsonc` means no tenant identity, so the run refuses rather than grades."""
+    _arm(monkeypatch)
+    _mkdir(root=tmp_path, relative="plan/live")
+
+    result = _run(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys, items=[])
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert '"reason": "config-unreadable"' in combined
 
 
 def test_bd_status_reader_ok(*, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

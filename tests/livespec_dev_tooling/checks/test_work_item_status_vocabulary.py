@@ -19,6 +19,7 @@ from types import ModuleType
 from typing import NamedTuple
 
 import pytest
+from returns.io import IOFailure, IOResult, IOSuccess
 
 __all__: list[str] = []
 
@@ -74,12 +75,15 @@ def _run(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     items: list[dict[str, object]],
+    unread: object | None = None,
 ) -> _CheckRun:
     """Invoke `main()` in-process under `cwd` with an injected item reader."""
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         assert repo == cwd
-        return items
+        if unread is not None:
+            return IOFailure(unread)
+        return IOSuccess(items)
 
     monkeypatch.chdir(cwd)
     rc = module.main(item_reader=_items)
@@ -316,9 +320,9 @@ def test_default_item_reader_is_used_when_none_is_injected(
     module = _load_check_module()
     _arm(monkeypatch)
 
-    def _items(*, repo: Path) -> list[dict[str, object]]:
+    def _items(*, repo: Path) -> IOResult[list[dict[str, object]], object]:
         _ = repo
-        return [_record()]
+        return IOSuccess([_record()])
 
     monkeypatch.setattr(module, "bd_items_reader", _items)
     monkeypatch.chdir(tmp_path)
@@ -328,6 +332,34 @@ def test_default_item_reader_is_used_when_none_is_injected(
 
     assert rc == 1
     assert '"verdict": "off-vocabulary-status"' in captured.out + captured.err
+
+
+def test_an_unread_ledger_is_reported_as_unread_not_as_empty(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ledger the sweep never reached is a distinct state from one holding nothing.
+
+    Both exit 1, so the exit code alone never told them apart; the operator
+    reads the remediation, and "read zero ledger records" was being printed for
+    a read that never happened at all.
+    """
+    module = _load_check_module()
+    _arm(monkeypatch)
+    read_failed = module.bd_items_reader.__globals__["LedgerReadFailed"]
+
+    result = _run(
+        module=module,
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        items=[],
+        unread=read_failed(reason="bd-unavailable", detail="bd: not found"),
+    )
+
+    assert result.returncode == 1
+    assert '"verdict": "ledger-unreadable"' in result.output
+    assert '"reason": "bd-unavailable"' in result.output
+    assert "read zero ledger records" not in result.output
 
 
 def test_module_importable_without_running_main() -> None:

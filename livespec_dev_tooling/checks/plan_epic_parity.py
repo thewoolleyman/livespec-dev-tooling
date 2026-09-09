@@ -30,9 +30,12 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
+from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.checks._plan_ledger import (  # noqa: E402
     ItemReader,
+    LedgerReadFailed,
     bd_items_reader,
     descendant_offenders,
     parse_status,
@@ -67,6 +70,17 @@ _MISSING_REMEDIATION = (
 _DESCENDANT_REMEDIATION = (
     "restore the plan to `plan/<slug>/` until every replacement descendant that "
     "depends on its anchor epic is closed with a completion-shaped resolution."
+)
+# What an armed run says when one of its reads DID NOT HAPPEN. Exiting 0 here
+# would report parity over a population the check never saw, and both `bd`
+# reads used to answer an unreachable tenant with an empty record list — the
+# shape an absent `BEADS_DOLT_PASSWORD` produces (`livespec-dev-tooling-qndn.4`).
+_UNREAD_REMEDIATION = (
+    "the armed check never reached one of its inputs, so it holds no opinion "
+    "about plan parity: the named reason says which read failed and the detail "
+    "carries the evidence. Repair that read — for `bd-failed`, project the "
+    "tenant credential through the installed wrapper; for `config-unreadable`, "
+    "run from a checkout carrying `.livespec.jsonc` — and re-run."
 )
 
 
@@ -174,6 +188,29 @@ def _missing_anchor_paths(
     return [path for path in paths if len(grouped.get(path.name, [])) != 1]
 
 
+def _refuse(*, log: structlog.stdlib.BoundLogger, unread: LedgerReadFailed) -> int:
+    """Report an input the armed run could not read, and refuse the run.
+
+    A read that did not happen is NOT a clean tenant: it is the absence of an
+    answer, and the exit code alone cannot say so — the operator reads the
+    reason and the detail.
+
+    All three arms that reach here are reads of the LEDGER this check grades
+    against, `config-unreadable` / `config-malformed` included: that read is
+    what says WHICH records are this tenant's, so losing it leaves no ledger to
+    read rather than a differently-broken input.
+    """
+    log.error(
+        "armed plan-epic parity check could not read the ledger it grades against",
+        verdict="ledger-unreadable",
+        reason=unread.reason,
+        detail=unread.detail,
+        disposition="re-scoped",
+        remediation=_UNREAD_REMEDIATION,
+    )
+    return 1
+
+
 def main(
     *,
     status_reader: StatusReader | None = None,
@@ -198,11 +235,26 @@ def main(
             credential=_CRED_ENV,
         )
         return 0
-    cwd = Path.cwd()
-    plan_dir = cwd / _PLAN_DIR_NAME
     read_items: ItemReader = bd_items_reader if item_reader is None else item_reader
-    records = read_items(repo=cwd)
-    same_tenant = tenant_id_re(tenant_prefix=store_prefix(cwd=cwd))
+    return _armed_run(log=log, read_items=read_items, cwd=Path.cwd())
+
+
+def _armed_run(*, log: structlog.stdlib.BoundLogger, read_items: ItemReader, cwd: Path) -> int:
+    """Grade plan parity under `cwd`, refusing on any input that did not answer.
+
+    Split out of `main` so the arming decision and the graded run are separate
+    bodies; the read-failure arms below are what pushed one body past the
+    statement budget. No behavior moved with the split.
+    """
+    plan_dir = cwd / _PLAN_DIR_NAME
+    read = read_items(repo=cwd)
+    if isinstance(read, IOFailure):
+        return _refuse(log=log, unread=unsafe_perform_io(read.failure()))
+    records = unsafe_perform_io(read.unwrap())
+    prefix = store_prefix(cwd=cwd)
+    if isinstance(prefix, IOFailure):
+        return _refuse(log=log, unread=unsafe_perform_io(prefix.failure()))
+    same_tenant = tenant_id_re(tenant_prefix=unsafe_perform_io(prefix.unwrap()))
     grouped = _plan_epics_by_slug(records=records, tenant_id_re=same_tenant)
     active_dirs = _direct_plan_dirs(plan_dir=plan_dir) if plan_dir.is_dir() else []
     archived_dirs = _direct_archive_dirs(plan_dir=plan_dir)
@@ -213,12 +265,18 @@ def main(
     missing_archived = _missing_anchor_paths(paths=archived_dirs, grouped=grouped)
     active_closed = [entry for entry in active_statuses if entry[2] in _CLOSED_STATUSES]
     archived_open = [entry for entry in archived_statuses if entry[2] not in _CLOSED_STATUSES]
-    incomplete_descendants = descendant_offenders(
+    # The SECOND read, and its own failure arm: the first one succeeding proves
+    # nothing about this one, which is exactly the shape a credential expiring
+    # mid-run produces.
+    scanned = descendant_offenders(
         statuses=archived_statuses,
         item_reader=read_items,
         tenant_id_re=same_tenant,
         repo=cwd,
     )
+    if isinstance(scanned, IOFailure):
+        return _refuse(log=log, unread=unsafe_perform_io(scanned.failure()))
+    incomplete_descendants = unsafe_perform_io(scanned.unwrap())
 
     for path in [*missing_active, *missing_archived]:
         log.error(
