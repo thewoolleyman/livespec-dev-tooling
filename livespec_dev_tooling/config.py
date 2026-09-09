@@ -100,6 +100,7 @@ __all__: list[str] = [
     "iter_py_files",
     "list_tracked_py",
     "load_config",
+    "load_delegated_gate",
     "load_destructive_cli_allowlist",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
@@ -1247,6 +1248,35 @@ def load_plan_lifecycle_anchor(*, repo_root: Path) -> bool | None:
     if table is None or "plan_lifecycle_anchor" not in table:
         return None
     return _as_bool(value=table["plan_lifecycle_anchor"], key="plan_lifecycle_anchor")
+
+
+def load_delegated_gate(*, repo_root: Path) -> bool | None:
+    """Return the `delegated_gate` opt-in, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `delegated_gate` — a single boolean that says whether THIS repo's
+    pre-push fall-through delegates its aggregate to the gate cluster
+    (`livespec_dev_tooling.gate_remote_delegate`) instead of running it
+    locally. Rollout is per repo, so the key is absent everywhere until a
+    repo opts in with `delegated_gate = true`, and an absent key keeps the
+    local aggregate that repo runs today.
+
+    Returns `None` when the whole block is absent OR the key is omitted, so
+    the caller reads "this repo has not opted in". Raises `ConfigParseError`
+    on a non-boolean value, consistent with the rest of the loader; the
+    delegated-gate reader turns that into the same "not opted in", because
+    its alternative branch is the full local aggregate.
+
+    Like `scenario_tiers`, `destructive_cli_allowlist`,
+    `mutation_staging_dir`, `plan_lifecycle_anchor`, and
+    `file_lloc_hard_gate`, this is intentionally NOT a `Config` role key: it
+    is a single-caller concern, so it is read directly off the table rather
+    than threaded through the typed layout dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "delegated_gate" not in table:
+        return None
+    return _as_bool(value=table["delegated_gate"], key="delegated_gate")
 
 
 def _parse_role_key_overrides(*, table: dict[str, Any]) -> dict[str, Any]:
