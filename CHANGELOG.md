@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.75.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.74.0...v1.75.0) (2026-09-09)
+
+
+### Features
+
+* **checks:** mechanize the foreign-code isolation catch position rule ([09563c0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/09563c051bc525a9e30afa2b6485340c2a11bd06))
+* **checks:** reject a heading-coverage TODO reason that asserts non-testability ([083dc44](https://github.com/thewoolleyman/livespec-dev-tooling/commit/083dc44fef8a2507c7bf1fca3f30396859621be1))
+
+
+### Bug Fixes
+
+* **checks:** make the unarmed_until expiry real by resolving its ledger id ([d2eee2a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d2eee2a189cc32c0997949e957bc7ee4dcd19a2f))
+* **checks:** resolve LLOC soft-band marker liveness through the shared resolver ([d54ab3a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d54ab3a7614a7eae3d23507aa747749b663c96ad))
+
 ## [1.74.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.73.0...v1.74.0) (2026-09-09)
 
 
