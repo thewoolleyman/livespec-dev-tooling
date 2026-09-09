@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.68.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.4...v1.68.0) (2026-09-09)
+
+
+### Features
+
+* **just:** single-source the just recipe-header recognizer ([4bded87](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4bded8704b5082301352e96424d0f6bd17512dcb))
+
+
+### Bug Fixes
+
+* **checks:** read canonical recipe bodies through the shared recognizer ([004b6bc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/004b6bc9610ac506387bd390bc6d19e87dee94b9))
+* **cross_repo:** consume the shared recipe recognizer in the bump-pin append guard ([8ce46f7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8ce46f7be56c50cb11ce76839742c26386a25d30))
+
 ## [1.67.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.67.3...v1.67.4) (2026-09-09)
 
 
