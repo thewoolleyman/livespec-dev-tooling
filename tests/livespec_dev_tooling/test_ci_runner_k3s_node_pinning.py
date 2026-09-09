@@ -54,6 +54,7 @@ _HOSTPATH_SINGLETONS = (
     _PHASE2 / "crates-proxy" / "crates-proxy.yaml",
     _PHASE2 / "warm-cache" / "pypi-proxy" / "pypi-proxy.yaml",
     _PHASE2 / "warm-cache" / "warm-cache-cronjob.yaml",
+    _PHASE2 / "warm-cache" / "registry-mirror" / "registry-mirror.yaml",
 )
 _HOOK_TEMPLATE = _PHASE2 / "arc" / "hook-pod-template.yaml"
 _EMITTER = _PHASE2 / "cache-telemetry" / "ci-cache-span.sh"
@@ -66,6 +67,10 @@ _CONVERGE_SCRIPTS = (
     (_PHASE2 / "sccache" / "converge-sccache-redis.sh", "kubectl apply -f"),
     (_PHASE2 / "crates-proxy" / "converge-crates-proxy.sh", "kubectl apply -f"),
     (_PHASE2 / "warm-cache" / "converge-warm-cache.sh", "kubectl apply -f"),
+    (
+        _PHASE2 / "warm-cache" / "registry-mirror" / "converge-registry-mirror.sh",
+        "kubectl apply -f",
+    ),
     (
         _PHASE2 / "arc" / "converge-hook-pod-template.sh",
         "kubectl create configmap arc-hook-pod-template",

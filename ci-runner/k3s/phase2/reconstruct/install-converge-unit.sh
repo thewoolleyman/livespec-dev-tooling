@@ -13,6 +13,7 @@
 #   local-path-provisioner/   the fleet-owned provisioner manifest
 #   warm-cache/     converge-warm-cache.sh + the CronJob + the populate script
 #                   + its verifier (two .py) + pypi-proxy/ (the manifest the converge applies)
+#                   + registry-mirror/ (the ghcr mirror's converge + manifest, step 8d)
 #   crates-proxy/   converge-crates-proxy.sh + the proxy manifest
 #   sccache/        converge-sccache-redis.sh + the redis manifest
 #   observability/  the Kueue-webhook probe's RBAC (from ci-runner/observability)
@@ -126,6 +127,13 @@ install -m 0644 "${WARM_CACHE_SRC}/verify-uv-cache.py" "${LIB_DIR}/warm-cache/ve
 install -m 0644 "${WARM_CACHE_SRC}/uv_cache_layout.py" "${LIB_DIR}/warm-cache/uv_cache_layout.py"
 install -d -m 0755 "${LIB_DIR}/warm-cache/pypi-proxy"
 install -m 0644 "${WARM_CACHE_SRC}/pypi-proxy/pypi-proxy.yaml" "${LIB_DIR}/warm-cache/pypi-proxy/pypi-proxy.yaml"
+# The ghcr pull-through mirror's converge and the manifest it applies (converge
+# step 8d, livespec-dev-tooling-y1t5). NOT install-registry-mirror.sh and NOT
+# registries.yaml.template: those render node-local machine state by hand, per
+# node, and are not something the boot converge applies.
+install -d -m 0755 "${LIB_DIR}/warm-cache/registry-mirror"
+install -m 0755 "${WARM_CACHE_SRC}/registry-mirror/converge-registry-mirror.sh" "${LIB_DIR}/warm-cache/registry-mirror/converge-registry-mirror.sh"
+install -m 0644 "${WARM_CACHE_SRC}/registry-mirror/registry-mirror.yaml" "${LIB_DIR}/warm-cache/registry-mirror/registry-mirror.yaml"
 
 # ---------------------------------------------------------------------------
 log "6b. Copy the crates-proxy converge and the manifest it applies"

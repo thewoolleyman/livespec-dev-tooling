@@ -8,17 +8,18 @@
 # these objects live in the k3s datastore, which is tmpfs and EMPTY on every
 # boot (../../datastore-tmpfs/), so a converge belongs on the boot path
 # (../../reconstruct/converge-ci-stack.sh) as well as in the operator's hand
-# after editing the manifest. The store under
-# /var/cache/ci-runner/registry-mirror survives a reboot untouched.
+# after editing the manifest. ONLY the blob store under
+# /var/cache/ci-runner/registry-mirror survives a reboot; the Deployment that
+# serves it does not, and is rebuilt by the boot converge.
 #
-# NOT YET WIRED INTO THE BOOT CONVERGE. `livespec-h96p` is repository work: the
-# mirror has never been applied to the cluster, so adding it to
-# ../../reconstruct/converge-ci-stack.sh — which runs unattended on every boot —
-# would put an unexercised Deployment on the boot path. Wiring it in is part of
-# the maintainer-gated apply step, together with
-# ../../reconstruct/install-converge-unit.sh so the boot copy under
-# /usr/local/lib/ci-runner-k3s/ matches. ../README.md "Sandbox image hygiene"
-# carries that sequence.
+# WIRED INTO THE BOOT CONVERGE as ../../reconstruct/converge-ci-stack.sh step
+# 8d, and copied onto the host by ../../reconstruct/install-converge-unit.sh
+# (livespec-dev-tooling-y1t5). It was first applied by hand for `livespec-h96p`
+# on 2026-09-09 02:21Z and was then LOST at that day's 05:08Z reboot, because
+# this wiring had been deferred until the Deployment was exercised: the node's
+# registries.yaml kept routing ghcr.io at a mirror that no longer existed,
+# fail-soft and silent. Re-run this script by hand after editing the manifest;
+# the boot path runs it unattended.
 #
 # THE ROLLOUT WAIT IS BOUNDED, and a mirror that is not Ready is not an outage:
 # containerd's default endpoint is always tried last, so every pull simply goes

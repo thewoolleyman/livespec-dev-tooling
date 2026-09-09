@@ -948,11 +948,34 @@ the case that needs the installer re-run.
 | `sandbox-image-prune/install-sandbox-image-prune.sh` | Installs the script to `/usr/local/lib/ci-runner-k3s/` and enables the TIMER (never the service). Also renders the repo-pins file above: it reads the scope repository OUT OF the prune script rather than repeating it, scans every YAML file in the repository tree (`.git` and `.venv` excluded) for a reference to it, and REFUSES to install if the scan finds none — zero means the scan looked at the wrong tree, and an empty pins file would disarm gate 4(c) silently. SERVER-only, as a hard refusal. `--dry-run` prints the plan, including the real extracted pins, and installs nothing. |
 | `sandbox-image-prune/prune-sandbox-images-exit-tests.sh` | The prune's exit tests, with `crictl` and `kubectl` faked and every `rmi` sent to a tripwire, so the decisions are proved without a containerd, a cluster, root, or a single image removed anywhere: the ARC runner image is never named; a CronJob-only tag survives while the older release beside it does not; a one-release family keeps its release where a global newest-N would starve it; v1.5.0 is pruned while v1.49.0 is kept; a record holding one kept tag is kept whole; the paired digest ref is shown going with the tag; a bare run removes nothing; `--apply` removes exactly the candidates; a failing and an empty cluster read each stop the run; and a candidate that becomes referenced mid-run is skipped. It also covers gate 4(c) by running the script out of a scratch directory laid out the way the installer lays out `/usr/local/lib/ci-runner-k3s` — the real resolution path, rather than a test-only override that would amount to a knob for aiming a fail-closed gate at a file of the caller's choosing: a release pinned ONLY by a committed manifest is kept, the same fixture with that pin absent from the repository lists it for removal (so the protection is shown to come from that source), and an absent or empty pins file each stop the run. |
 
-### Applying it — none of this is live yet
+### The measured after-state
 
-`livespec-h96p` is repository work. Nothing here has been converged, no
-node carries a `registries.yaml`, and no timer is installed. The apply is
-a separate maintainer-gated step, in this order:
+Both halves are live on `poweredge-xubuntu`. Read from the host, each
+number at the time it was taken, not inferred from the design:
+
+| Measure | Value |
+|---|---|
+| Prune, first `--apply` (2026-09-08 15:56Z, fired by the timer's missed boot tick at install time — `livespec-dev-tooling-1fss`) | 217 image records removed; `livespec-fabro-sandbox` records 194+ → 34 |
+| Prune, first post-reboot tick (2026-09-09 05:41:46Z, 30 min after the 05:11:35Z boot) | 8 records removed, 0 skipped as newly referenced; `Result=success`; 33 sandbox records resident afterwards |
+| Committed-manifest pin protection under a real `--apply` | `python-v1.40.1` and `python-rust-fuzz-v1.46.0` survived (each pinned only by a manifest in this repository) |
+| Mirror, node half | `/etc/rancher/k3s/registries.yaml` written 2026-09-08 19:21 PDT, `ghcr.io` → `http://127.0.0.1:5001`; read by k3s at the 2026-09-09 05:11:35Z boot |
+| Mirror, cluster half | Namespace, ConfigMap, Deployment and Service applied 2026-09-09 02:21Z; rollout succeeded within its bounded wait |
+| Mirror routing, proved from containerd rather than curl (2026-09-09 05:27:08Z) | `k3s crictl pull …livespec-fabro-sandbox:python-v1.64.2` produced `GET /v2/thewoolleyman/livespec-fabro-sandbox/manifests/sha256:…?ns=ghcr.io` 200 and `GET …/blobs/sha256:…?ns=ghcr.io` 200 in the mirror pod's log, user-agent `containerd/v2.3.2-k3s2`; real job pods' `HEAD` requests for `:python-v1.69.1` followed through 05:31Z |
+| Mirror across a reboot, BEFORE step 8d existed | Lost. The 05:08Z reboot rebuilt every other singleton and not this one (`livespec-dev-tooling-y1t5`); re-applied by hand at 05:26Z from a scratch copy |
+
+The byte-identical-layers finding stands after the apply: the mirror
+serves the two cases that finding leaves — a cattle rebuild and a
+genuinely new image — and does nothing for the common case, exactly as
+designed. No stall-time effect is claimed for either half, because none
+was ever the premise (see "The finding that removed this item's original
+premise").
+
+### Applying it — the order, and what is already done
+
+Steps 1–3 were performed on `poweredge-xubuntu` on 2026-09-08/09 (the
+after-state above). They remain the order for any new server node; a
+freshly provisioned node gets NONE of them from `install-node.sh` today
+(see "The half that is open").
 
 1. `KUBECONFIG=/etc/rancher/k3s/k3s.yaml registry-mirror/converge-registry-mirror.sh`,
    then confirm from the carrier node that
@@ -965,14 +988,24 @@ a separate maintainer-gated step, in this order:
    then run ONE report pass by hand —
    `sudo /usr/local/lib/ci-runner-k3s/prune-sandbox-images.sh` — and read
    the candidate list for that node before the timer's first `--apply`.
-4. If the mirror is to survive a reboot, add its converge to
-   `../reconstruct/converge-ci-stack.sh` and re-run
-   `../reconstruct/install-converge-unit.sh` so the boot copy under
-   `/usr/local/lib/ci-runner-k3s/` matches. It is deliberately NOT wired
-   in yet: an unexercised Deployment does not belong on the unattended
-   boot path.
+4. The mirror's cluster half is rebuilt on every boot by
+   `../reconstruct/converge-ci-stack.sh` step 8d, and
+   `../reconstruct/install-converge-unit.sh` copies `registry-mirror/`
+   into `/usr/local/lib/ci-runner-k3s/` so the boot copy carries it. Re-run
+   that installer after step 1 so the host's boot copy matches this tree;
+   the k3s datastore is tmpfs, so anything applied by hand and not on the
+   boot path is gone at the next reboot — which is how the mirror was lost
+   at the 2026-09-09 05:08Z reboot (`livespec-dev-tooling-y1t5`).
 
 ### The half that is open
+
+**A freshly provisioned node carries neither half.** `install-node.sh`
+has no step for `registry-mirror/install-registry-mirror.sh` or
+`sandbox-image-prune/install-sandbox-image-prune.sh`, so a cattle
+rebuild of the NODE (as opposed to the cluster, which step 8d covers)
+comes up with no `registries.yaml` and no prune timer until an operator
+runs steps 2 and 3 by hand. Found by the independent acceptance review
+of `livespec-h96p` on 2026-09-09; tracked on `livespec-dev-tooling-y1t5`.
 
 **An agent node's containerd is not pruned.** The prune's central gate is
 a cluster-wide PodSpec read, and only a server holds the admin
