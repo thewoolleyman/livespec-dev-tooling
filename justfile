@@ -703,6 +703,17 @@ check-global-writes:
 check-handoff-dispatch-routing:
     uv run python -m livespec_dev_tooling.checks.handoff_dispatch_routing
 
+# Always invoked plainly; the module self-manages its ONE lever
+# (`LIVESPEC_SCOPE_HEADING_COVERAGE_REASONS_TO_HEAD_DIFF`), which arms
+# direction 5 — the TODO-`reason` acknowledgment guard of plan
+# fleet-heading-coverage-convergence charter D4, ratified at v064 — for the rows
+# a commit AUTHORS. The authoring-time pre-commit subset sets it; unset here, so
+# the aggregate, pre-push and CI REPORT a non-acknowledging reason at warning
+# level without judging it. That is the per-commit tier the plan's P2 burn-down
+# runs under: at P1 landing all 373 fleet rows carry rejected reasons, and
+# judging them whole is the livespec-dev-tooling-3ztbdq shape that made
+# tests/heading-coverage.json unwritable. The other four directions are
+# unlevered and judge the whole tree here.
 check-heading-coverage:
     uv run python -m livespec_dev_tooling.checks.heading_coverage
 

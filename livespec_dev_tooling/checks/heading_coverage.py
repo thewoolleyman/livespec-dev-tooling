@@ -10,7 +10,7 @@ recurse into `proposed_changes/`, `history/`,
 `templates/<name>/history/`, or any other subdirectory; it does NOT
 include the skill-owned `README.md`.
 
-The check fails on four directions:
+The check fails on five directions:
 
 1. Uncovered heading — a `(spec_root, spec_file, heading)` triple
    appears in some spec file but no matching registry entry exists.
@@ -53,6 +53,54 @@ The check fails on four directions:
    and still exits non-zero. An ABSENT test file remains the ordinary
    violation: there is no test, so there is no marker, and that is a
    verdict the read produced.
+
+5. TODO `reason` that does not acknowledge an owed test — charter D4
+   of plan `fleet-heading-coverage-convergence`, ratified into this
+   repository's `SPECIFICATION/non-functional-requirements.md` at
+   v064: the `reason` MUST acknowledge that a real test at the
+   required tier is owed, and a `reason` asserting that the heading is
+   not testable, is enforced elsewhere, or is prose without behavior
+   MUST be rejected. There is no non-testable category. This
+   direction lives WHOLE in two private siblings —
+   `_heading_coverage_reason_predicate` (the ratified predicate and its
+   phrase tables) and `_heading_coverage_reason_guard` (which of its
+   findings a run JUDGES, and their diagnostics) — because it is
+   self-contained, and folding it back here would put this file over
+   the LLOC ceiling for no cohesion gain.
+
+   THIS DIRECTION IS TWO-TIERED, and the split is what makes it
+   landable ahead of the burn-down it exists to force. At P1 landing
+   the fleet's 373 `TODO` rows carry rejected reasons (plan research
+   `003`), so an unconditional verdict would red 11 repositories on
+   the commit that adopts it — the arm-ahead-of-adoption trap this
+   repository's `CLAUDE.md` records, and the
+   `livespec-dev-tooling-3ztbdq` shape that made
+   `tests/heading-coverage.json` unwritable when a gate judged a
+   shared co-edit registry whole.
+
+     - PER-COMMIT tier (`LIVESPEC_SCOPE_HEADING_COVERAGE_REASONS_TO_HEAD_DIFF`
+       unset or empty): every non-acknowledging reason is reported at
+       WARNING level naming the lever, and the direction contributes
+       no exit code. This is the tier the P2 burn-down runs under.
+     - ARMED tier (the lever set to a non-empty value; the
+       authoring-time pre-commit subset sets it whenever the staged
+       changeset touches the registry): the VERDICT is narrowed to the
+       rows this tree AUTHORS — those whose row differs from
+       `HEAD:tests/heading-coverage.json` — and a newly-authored
+       cop-out exits non-zero.
+
+   The narrowing is of the VERDICT, never of the REPORT: an
+   out-of-scope finding is still emitted, at warning level carrying
+   `out_of_staged_scope`, so an inherited cop-out never becomes
+   indistinguishable from an acknowledgment. An UNCOMPUTABLE baseline
+   fails closed onto every finding and says so (`baseline_unreadable`)
+   — "I could not tell what changed" must never be spelled the same
+   way as "nothing changed", and where `HEAD` carries no registry copy
+   at all every live row IS newly authored.
+
+   Charter D9 retires the lever once a repository's debt register
+   reaches empty, at which point a `TODO` row fails the per-commit
+   tier outright.
 
 ⛔ A MAPPED NODE ID IS NOT RESOLVED AGAINST THE TREE. A non-TODO
 entry naming a module or a test function that does not exist is NOT a
@@ -121,6 +169,16 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 # AST-marker logic) extracted to a private sibling module — the LLOC-reduction
 # split mirroring `_ci_matrix_parse`. The parent keeps the spec-heading walk,
 # the registry diff, and every structured diagnostic.
+# Direction-5 TODO-`reason` acknowledgment lives whole in two more private
+# siblings — the predicate and its phrase tables in
+# `_heading_coverage_reason_predicate`, the tier decision and diagnostics in
+# `_heading_coverage_reason_guard`. Only the guard's public surface is imported
+# here; the parent never reaches past it to the predicate.
+from livespec_dev_tooling.checks._heading_coverage_reason_guard import (  # noqa: E402
+    ReasonFinding,
+    judged_reason_findings,
+    report_reason_violations,
+)
 from livespec_dev_tooling.checks._heading_coverage_tier_resolution import (  # noqa: E402
     DEFAULT_SCENARIO_TIERS,
     scenario_tier_violations,
@@ -241,6 +299,7 @@ def _report(
     orphan: list[tuple[str, str, str]],
     todo_missing_reason: list[dict[str, object]],
     tier_violations: list[dict[str, object]],
+    reason_violations: list[ReasonFinding],
 ) -> int:
     """Emit every direction's structured diagnostic and return the failing exit code."""
     log = structlog.get_logger("heading_coverage")
@@ -268,6 +327,7 @@ def _report(
             heading=entry.get("heading"),
             test=entry.get("test"),
         )
+    report_reason_violations(findings=reason_violations)
     return 1
 
 
@@ -304,6 +364,7 @@ def main() -> int:
         )
     else:
         tier_violations = unsafe_perform_io(tier_scan.unwrap())
+    reason_violations = judged_reason_findings(entries=coverage_entries, cwd=cwd)
     uncovered = sorted(spec_set - registry_set)
     orphan = sorted(registry_set - spec_set)
     if (
@@ -311,6 +372,7 @@ def main() -> int:
         and not orphan
         and not todo_missing_reason
         and not tier_violations
+        and not reason_violations
         and not isinstance(tier_scan, IOFailure)
     ):
         return 0
@@ -319,6 +381,7 @@ def main() -> int:
         orphan=orphan,
         todo_missing_reason=todo_missing_reason,
         tier_violations=tier_violations,
+        reason_violations=reason_violations,
     )
 
 
