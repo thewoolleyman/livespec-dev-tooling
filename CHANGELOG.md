@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.69.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.2...v1.69.3) (2026-09-09)
+
+
+### Bug Fixes
+
+* **hooks:** resolve the stop guard's PR by the pushed branch (livespec-dev-tooling-i655) ([48e45a4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/48e45a44dff4dcefa69449e636636253bc040aba))
+
 ## [1.69.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.1...v1.69.2) (2026-09-09)
 
 
