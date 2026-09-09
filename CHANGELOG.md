@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.71.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.70.0...v1.71.0) (2026-09-09)
+
+
+### Features
+
+* **checks:** generate the shrink-only heading-coverage debt register ([dee74c9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dee74c982e945e04d67e67249af826403477e4b6))
+* **checks:** ratchet the heading-coverage debt register shrink-only ([708b576](https://github.com/thewoolleyman/livespec-dev-tooling/commit/708b576bd760c0280e53e538469565214e66291c))
+
 ## [1.70.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.69.4...v1.70.0) (2026-09-09)
 
 
