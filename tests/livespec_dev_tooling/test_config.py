@@ -994,6 +994,136 @@ def test_subprocess_spawn_allowlist_non_string_element_raises(*, tmp_path: Path)
         _ = load_subprocess_spawn_allowlist(repo_root=tmp_path)
 
 
+# --- repo_local_ci_skips -----------------------------------------------------
+#
+# The per-repo declaration behind `ci_matrix_completeness`'s repo-local limb
+# (livespec-dev-tooling-8o8e.18). A repo-local (non-canonical) slug exists in
+# exactly ONE repo's `just check` aggregate, so the declaration that excuses it
+# from the CI-mirror requirement lives in THAT repo's own
+# `[tool.livespec_dev_tooling]` block rather than in a fleet-wide registry —
+# which could not carry the staleness assertion without hard-failing every
+# sibling that does not wire the slug.
+#
+# Loaded through `getattr` for the same reason `_load_plan_lifecycle_anchor`
+# above is: the Red leg of the ritual must fail on a genuine assertion rather
+# than on an unresolvable top-level import.
+
+
+def _load_repo_local_ci_skips(*, repo_root: Path) -> tuple[object, ...] | None:
+    loader = getattr(config_module, "load_repo_local_ci_skips", None)
+    assert callable(loader), "config must expose `load_repo_local_ci_skips`"
+    value: object = loader(repo_root=repo_root)
+    if value is None:
+        return None
+    assert isinstance(value, tuple)
+    entries: tuple[object, ...] = value
+    return entries
+
+
+def _repo_local_ci_skip(*, slug: str, reason: str) -> object:
+    """Build the declared-skip record through the module, for the same Red reason."""
+    record = getattr(config_module, "RepoLocalCiSkip", None)
+    assert callable(record), "config must expose `RepoLocalCiSkip`"
+    return record(slug=slug, reason=reason)
+
+
+def test_repo_local_ci_skips_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `load_repo_local_ci_skips` returns `None`."""
+    assert _load_repo_local_ci_skips(repo_root=tmp_path) is None
+
+
+def test_repo_local_ci_skips_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A block present but omitting `repo_local_ci_skips` → `None` (caller defaults empty)."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nsource_trees = ["pkg"]\n',
+    )
+    assert _load_repo_local_ci_skips(repo_root=tmp_path) is None
+
+
+def test_repo_local_ci_skips_parsed_with_slug_and_reason(*, tmp_path: Path) -> None:
+    """Each `{slug, reason}` table parses into a `RepoLocalCiSkip` carrying both."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            "repo_local_ci_skips = [\n"
+            '    { slug = "check-alpha", reason = "CI-venue no-op by design" },\n'
+            '    { slug = "check-beta", reason = "needs an admin-scoped credential" },\n'
+            "]\n"
+        ),
+    )
+    assert _load_repo_local_ci_skips(repo_root=tmp_path) == (
+        _repo_local_ci_skip(slug="check-alpha", reason="CI-venue no-op by design"),
+        _repo_local_ci_skip(slug="check-beta", reason="needs an admin-scoped credential"),
+    )
+
+
+def test_repo_local_ci_skips_non_array_raises(*, tmp_path: Path) -> None:
+    """A scalar `repo_local_ci_skips` raises `ConfigParseError`."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nrepo_local_ci_skips = "check-alpha"\n',
+    )
+    with pytest.raises(ConfigParseError, match="`repo_local_ci_skips` must be an array"):
+        _ = _load_repo_local_ci_skips(repo_root=tmp_path)
+
+
+def test_repo_local_ci_skips_non_table_entry_raises(*, tmp_path: Path) -> None:
+    """A bare-string entry raises: the reason is part of the VALUE, not a comment."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nrepo_local_ci_skips = ["check-alpha"]\n',
+    )
+    with pytest.raises(ConfigParseError, match="each `repo_local_ci_skips` entry must be a table"):
+        _ = _load_repo_local_ci_skips(repo_root=tmp_path)
+
+
+def test_repo_local_ci_skips_non_string_slug_raises(*, tmp_path: Path) -> None:
+    """An entry whose `slug` is not a string raises."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'repo_local_ci_skips = [{ slug = 1, reason = "because" }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs a string `slug`"):
+        _ = _load_repo_local_ci_skips(repo_root=tmp_path)
+
+
+def test_repo_local_ci_skips_missing_reason_raises(*, tmp_path: Path) -> None:
+    """An entry with no `reason` raises — an unexplained exclusion is the defect."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\nrepo_local_ci_skips = [{ slug = "check-alpha" }]\n',
+    )
+    with pytest.raises(ConfigParseError, match="needs a non-empty `reason`"):
+        _ = _load_repo_local_ci_skips(repo_root=tmp_path)
+
+
+def test_repo_local_ci_skips_blank_reason_raises(*, tmp_path: Path) -> None:
+    """A whitespace-only `reason` raises: presence is checked after stripping."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'repo_local_ci_skips = [{ slug = "check-alpha", reason = "   " }]\n'
+        ),
+    )
+    with pytest.raises(ConfigParseError, match="needs a non-empty `reason`"):
+        _ = _load_repo_local_ci_skips(repo_root=tmp_path)
+
+
+def test_repo_local_ci_skips_empty_array_is_an_empty_tuple(*, tmp_path: Path) -> None:
+    """A declared-but-empty array parses to `()` — declared, and excusing nothing."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\nrepo_local_ci_skips = []\n",
+    )
+    assert _load_repo_local_ci_skips(repo_root=tmp_path) == ()
+
+
 # --- is_generated ------------------------------------------------------------
 #
 # Per the fleet-check-coverage OQ1 resolution, `@generated` counts only on a
