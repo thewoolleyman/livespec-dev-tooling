@@ -13,12 +13,31 @@ from __future__ import annotations
 from dataclasses import fields
 from pathlib import Path
 
+from returns.result import Failure
+
 from livespec_dev_tooling.fleet._public_api_graph import (
     MemberSources,
     cross_member_consumption,
 )
+from livespec_dev_tooling.fleet._public_api_records import ConsumptionGraph
 
 __all__: list[str] = []
+
+
+def measured(*, members: dict[str, MemberSources]) -> ConsumptionGraph:
+    """The graph the measurement carries, from whichever track it rides.
+
+    Every fixture in this file but one parses, so the success track answers
+    them. The unparsed fixture rides the FAILURE track, and the graph it
+    carries is the partial measurement — the sweep survives the invalid file
+    rather than being discarded with it. The cases below assert about the
+    GRAPH; the railway itself is pinned in
+    `test_public_api_consumption_railway.py`.
+    """
+    outcome = cross_member_consumption(members=members)
+    if isinstance(outcome, Failure):
+        return outcome.failure().graph
+    return outcome.unwrap()
 
 
 def sources(*, defining: dict[str, str], consuming: dict[str, str]) -> MemberSources:
@@ -53,7 +72,7 @@ def test_a_sibling_import_is_an_edge_and_a_same_member_import_is_not() -> None:
     mean something — a graph that emitted both would look identical on a
     one-member fixture.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "livespec-dev-tooling": sources(
                 defining={
@@ -93,7 +112,7 @@ def test_an_import_resolves_to_its_defining_module_never_to_a_homonym() -> None:
     the one with zero consumers.
     """
     body = "def fetch_manifest() -> int:\n    return 1\n"
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={
@@ -117,7 +136,7 @@ def test_a_cross_repo_test_tree_import_is_a_consumption_but_a_same_repo_one_is_n
     """v178 form 2. The consuming universe includes test trees; defining does not."""
     harness = "def assert_coverage(*, path: str) -> None:\n    return None\n"
     consumer = "from livespec_dev_tooling.testing.cli_e2e import assert_coverage\n"
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "livespec-dev-tooling": sources(
                 defining={"livespec_dev_tooling/testing/cli_e2e.py": harness},
@@ -136,7 +155,7 @@ def test_a_cross_repo_test_tree_import_is_a_consumption_but_a_same_repo_one_is_n
 
 
 def test_a_function_reached_through_a_module_alias_is_an_edge() -> None:
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={"pkg/mod.py": "def compute() -> int:\n    return 1\n"}, consuming={}
@@ -157,7 +176,7 @@ def test_a_name_that_is_not_a_top_level_function_is_not_an_edge() -> None:
     so the assertion discriminates: a graph that emitted nothing and a graph
     that emitted everything both fail it.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={
@@ -183,7 +202,7 @@ def test_an_underscore_prefixed_function_is_never_an_edge() -> None:
     `_decision` were reported as undeclared public surface across seven
     members.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={
@@ -214,7 +233,7 @@ def test_an_import_the_consuming_member_satisfies_itself_crosses_no_boundary() -
     body = "def main() -> int:\n    return 0\n"
     consumer = "import livespec_footgun_guard\n\nlivespec_footgun_guard.main()\n"
     shared = {"hooks/livespec_footgun_guard.py": body}
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining=shared, consuming=shared),
             "beta": sources(defining=shared, consuming=shared),
@@ -228,7 +247,7 @@ def test_the_same_import_is_an_edge_when_the_consumer_ships_no_copy() -> None:
     """The control for the rule above: without a local copy, nothing resolves locally."""
     body = "def main() -> int:\n    return 0\n"
     consumer = "import livespec_footgun_guard\n\nlivespec_footgun_guard.main()\n"
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining={"hooks/livespec_footgun_guard.py": body}, consuming={}),
             "codex": sources(defining={}, consuming={"tests/test_hook.py": consumer}),
@@ -245,7 +264,7 @@ def test_an_ambiguous_suffix_yields_every_candidate_and_says_it_is_ambiguous() -
     that failed a member on such an edge must be able to say which are which.
     """
     body = "def helper() -> int:\n    return 1\n"
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining={"pkg/util.py": body}, consuming={}),
             "beta": sources(defining={"pkg/util.py": body}, consuming={}),
@@ -264,7 +283,7 @@ def test_a_source_that_will_not_parse_is_named_rather_than_raised_or_dropped() -
     shrinks the graph. A shrunken graph that says nothing reads as "the fleet
     is clean" — the exact summary shape this epic exists to remove.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={
@@ -293,7 +312,7 @@ def test_a_source_that_will_not_parse_is_named_rather_than_raised_or_dropped() -
 def test_edges_are_ordered_so_a_rows_output_does_not_churn() -> None:
     body = "def helper() -> int:\n    return 1\n"
     consumer = "from pkg.zeta import helper\nfrom pkg.alpha import helper as other\n"
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "zulu": sources(defining={"pkg/zeta.py": body, "pkg/alpha.py": body}, consuming={}),
             "beta": sources(defining={}, consuming={"app.py": consumer}),
@@ -339,7 +358,7 @@ def test_a_reexported_function_is_an_edge_against_the_module_that_defines_it() -
     defined in the facade, so it was always seen, and a graph that still only
     reports that one has not been fixed.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "livespec-dev-tooling": sources(
                 defining={_DISCOVERY: _DISCOVERY_SOURCE, _FACADE: _FACADE_SOURCE},
@@ -368,7 +387,7 @@ def test_a_reexport_the_consuming_member_satisfies_itself_still_crosses_no_bound
     applied to the reach's FIRST resolution. A hop that re-resolves elsewhere
     must not smuggle the consumer's own copy back in as a cross-member edge.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "livespec-dev-tooling": sources(
                 defining={_DISCOVERY: _DISCOVERY_SOURCE, _FACADE: _FACADE_SOURCE},
@@ -392,7 +411,7 @@ def test_a_reexport_cycle_terminates_and_emits_nothing() -> None:
     """
     left = "from pkg.right import spin\n"
     right = "from pkg.left import spin\n"
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "zulu": sources(
                 defining={"pkg/left.py": left, "pkg/right.py": right},
@@ -423,7 +442,7 @@ def test_a_deleted_function_a_sibling_still_imports_is_a_record_not_an_absent_ed
     fact about the graph's shape rather than leaving to an attribute access:
     the collection has to exist for a row to be able to report it.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining={_MODULE: _DELETED}, consuming={_MODULE: _DELETED}),
             "beta": sources(defining={}, consuming={"app.py": _IMPORTS_COMPUTE}),
@@ -449,7 +468,7 @@ def test_the_same_fixture_yields_an_edge_and_no_record_while_the_function_is_pre
     Without it the assertion above would also pass against a graph that emitted
     a record for every reach it saw.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={_MODULE: _STILL_DEFINES}, consuming={_MODULE: _STILL_DEFINES}
@@ -469,7 +488,7 @@ def test_a_name_that_is_present_but_not_a_public_function_is_neither_edge_nor_re
     "no defining file" rather than on "no binding" would convict every
     cross-member class import as a broken consumer.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={
@@ -498,7 +517,7 @@ def test_a_module_that_resolves_nowhere_in_the_fleet_is_neither_edge_nor_record(
     read out of a gitignored virtualenv that had entered that member's
     first-party universe (`livespec-dev-tooling-xs58`).
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining={_MODULE: _STILL_DEFINES}, consuming={}),
             "beta": sources(
@@ -520,7 +539,7 @@ def test_a_stdlib_import_a_members_own_file_happens_to_answer_is_not_a_record() 
     Measured on the real fleet: `io`, `types` and `dataclasses` produced 40
     names across 5 members before the bare-suffix fence.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining={"pkg/io.py": _STILL_DEFINES}, consuming={}),
             "beta": sources(defining={}, consuming={"app.py": "from io import BytesIO\n"}),
@@ -540,7 +559,7 @@ def test_an_attribute_reach_for_a_missing_name_is_not_a_record() -> None:
     admitting them here would convert a silent drop into false ImportError
     claims about names no import statement ever mentions.
     """
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining={_MODULE: _DELETED}, consuming={}),
             "beta": sources(
@@ -561,7 +580,7 @@ def test_a_module_the_consuming_member_defines_itself_is_neither_edge_nor_record
     would reintroduce exactly that population, one deleted name at a time.
     """
     shared = {_MODULE: _DELETED}
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(defining=shared, consuming=shared),
             "beta": sources(defining=shared, consuming={**shared, "app.py": _IMPORTS_COMPUTE}),
@@ -581,7 +600,7 @@ def test_a_reexport_hop_landing_in_the_consuming_member_is_neither_edge_nor_reco
     may be emitted.
     """
     facade = "from pkg.mod import compute\n\n__all__: list[str] = ['compute']\n"
-    graph = cross_member_consumption(
+    graph = measured(
         members={
             "alpha": sources(
                 defining={_MODULE: _STILL_DEFINES, "pkg/facade.py": facade},

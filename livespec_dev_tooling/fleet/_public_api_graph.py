@@ -65,6 +65,21 @@ it vanish: an unparsed DEFINING file contributes no functions and an unparsed
 CONSUMING file contributes no imports, so either one shrinks the graph
 silently. They are returned beside the edges so the row can say so.
 
+AND THAT CENSUS IS WHY THE MEASUREMENT RIDES A RAILWAY —
+`livespec-dev-tooling-qndn.14`. livespec v186 counts a narrow handler that
+RECORDS a failure and continues as an in-band census rather than as a
+discharge, and names `_parsed` below as the case it refuses to relieve: the
+failure is real, it is expected, and a bare `ConsumptionGraph` return let it
+reach a caller in the same spelling as a complete answer. So a measurement over
+sources that ALL parsed is `Success(ConsumptionGraph)`, and one taken over
+fewer is `Failure(PartialConsumption)` — carrying the same graph, because the
+sweep must survive the invalid file, but no longer claiming to be whole. The
+census itself stays where its own argument put it, IN the graph: what moves is
+the caller's obligation to notice it. `Result` and not `IOResult`, and that is
+the deliberate half — this function is handed source TEXT and performs no I/O
+at all; `_member_sources.read_member_sources` is the seam that reads the disk
+and is honestly `IOResult` already.
+
 The analysis is STATIC and cannot see `getattr` / `importlib` / string
 dispatch — a blind spot v178 states rather than leaves to be discovered.
 """
@@ -72,11 +87,18 @@ dispatch — a blind spot v178 states rather than leaves to be discovered.
 from __future__ import annotations
 
 import ast
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from livespec_dev_tooling.checks._import_resolution import (
+_VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.checks._import_resolution import (  # noqa: E402
     attribute_reaches,
     module_aliases,
     module_name,
@@ -84,7 +106,13 @@ from livespec_dev_tooling.checks._import_resolution import (
     suffix_index,
     top_level_functions,
 )
-from livespec_dev_tooling.fleet._public_api_unresolved import (
+from livespec_dev_tooling.fleet._public_api_records import (  # noqa: E402
+    ConsumptionEdge,
+    ConsumptionGraph,
+    PartialConsumption,
+    UnparsedSource,
+)
+from livespec_dev_tooling.fleet._public_api_unresolved import (  # noqa: E402
     UnresolvedReach,
     bound_names,
     sorted_reaches,
@@ -97,11 +125,8 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.config import Config
 
 __all__: list[str] = [
-    "ConsumptionEdge",
-    "ConsumptionGraph",
     "FleetConsumption",
     "MemberSources",
-    "UnparsedSource",
     "cross_member_consumption",
 ]
 
@@ -119,48 +144,6 @@ class MemberSources:
 
     defining: Mapping[Path, str]
     consuming: Mapping[Path, str]
-
-
-@dataclass(frozen=True, kw_only=True)
-class ConsumptionEdge:
-    """One function defined in one member and reached from another.
-
-    `uniquely_resolved` is False when the import's dotted suffix matched more
-    than one defining file across the fleet. The edge is still emitted — doubt
-    resolves toward more enforcement — but a consumer of this graph must be
-    able to say "and this one is ambiguous" rather than assert it flatly.
-    """
-
-    defining_member: str
-    defining_file: Path
-    function: str
-    consuming_member: str
-    consuming_file: Path
-    uniquely_resolved: bool
-
-
-@dataclass(frozen=True, kw_only=True)
-class UnparsedSource:
-    """A source file the graph could not read, and therefore did not measure."""
-
-    member: str
-    file: Path
-    detail: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class ConsumptionGraph:
-    """Every cross-member consumption, plus what could not be measured.
-
-    `unresolved` rides BESIDE `edges` rather than inside them because it is a
-    different outcome: an edge says a member's function is consumed across a
-    boundary, while an `UnresolvedReach` says a sibling imports a name no file
-    it resolved to binds — a broken consumer rather than a declaration gap.
-    """
-
-    edges: tuple[ConsumptionEdge, ...]
-    unparsed: tuple[UnparsedSource, ...]
-    unresolved: tuple[UnresolvedReach, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -271,12 +254,19 @@ def _defining_index(
     return _DefiningFacts(index=index, functions=functions, reexports=reexports, bindings=bindings)
 
 
-def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> ConsumptionGraph:
+def cross_member_consumption(
+    *, members: Mapping[str, MemberSources]
+) -> Result[ConsumptionGraph, PartialConsumption]:
     """Every `(defining member, file, function)` reached from a DIFFERENT member.
 
     Same-member reaches are dropped rather than never computed: they are the
     half `checks/_public_api_consumption` already owns from inside the
     checkout, and recomputing them here would put one rule in two places.
+
+    `Success` is a measurement over sources that ALL parsed. `Failure` carries
+    a `PartialConsumption` holding the same graph, measured over the readable
+    files alone — the invalid file does not kill the sweep and does not vanish,
+    and the answer no longer reaches a caller wearing a whole one's spelling.
     """
     unparsed: list[UnparsedSource] = []
     facts = _defining_index(members=members, unparsed=unparsed)
@@ -294,9 +284,12 @@ def cross_member_consumption(*, members: Mapping[str, MemberSources]) -> Consump
                 _edges_for(member=member, rel=rel, reached=reached, facts=facts, into=reaches)
             )
     ordered = tuple(sorted(edges, key=_edge_order))
-    return ConsumptionGraph(
+    graph = ConsumptionGraph(
         edges=ordered, unparsed=tuple(unparsed), unresolved=sorted_reaches(records=reaches)
     )
+    if graph.unparsed:
+        return Failure(PartialConsumption(graph=graph))
+    return Success(graph)
 
 
 def _through_reexports(
