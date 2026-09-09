@@ -68,9 +68,11 @@ anywhere in the path:
   - An ARMED check (non-empty `pure_trees`) whose run enumerates zero
     mutants is an ERROR. Nothing legitimately produces zero mutants from
     a non-empty pure tree.
-  - `_is_crashed_run` separates mutmut's legitimate rc 1 (survivors
-    present, verdicts parseable) from a crash (rc 1 with no parseable
-    verdicts); the crash fails and surfaces mutmut's own stderr.
+  - `_crash_reason` separates mutmut's legitimate rc 1 (survivors present)
+    from a crash; the crash fails and surfaces mutmut's own stderr. z45
+    keyed that split on an empty tally ALONE — see the "rc-1 partial
+    tallies" section below for the completion-marker evidence that
+    superseded it, and why the tally could never have carried the split.
   - `_update_baseline` refuses a zero-mutant write outright, so no failed
     measurement can be promoted over the placeholder.
   - The mutant count and kill rate are logged before any verdict branch,
@@ -81,8 +83,42 @@ distinction above must not be generalized to every return code. Deciding
 crash-vs-survivors by the tally is correct for rc 1 and WRONG for anything
 higher, because mutmut persists verdicts as it goes — so a run killed
 part-way leaves a non-empty tally that is partial, skews high, and would be
-ratcheted in. `_is_crashed_run` therefore restores an unconditional hard
-fail for rc >= 2 alongside the rc-1 tally test.
+ratcheted in. `_crash_reason` therefore keeps an unconditional hard fail for
+rc >= 2 alongside the rc-1 tests.
+
+rc-1 partial tallies (work-item livespec-dev-tooling-y27): 6j6 left the SAME
+harm open at rc 1 itself. mutmut exits 1 both when mutants survive and when
+it dies of an unhandled internal exception — that is simply how Python exits
+on an uncaught exception — and a death AFTER enumeration leaves the
+already-persisted partial verdicts on disk, so the tally parses and the run
+is accepted. Being partial the tally skews HIGH (5 of 400, all killed,
+reading as a perfect 100%), so it is promoted over a healthy 85% ratchet,
+after which every subsequent legitimate full run fails against a rate no
+complete run can reach. Neither the exit code nor the tally tells the two
+apart.
+
+THE SIGNAL IS mutmut's END-OF-RUN COMPLETION MARKER — the
+`<N> mutations/second` line `mutmut run` prints on stdout as the last act of
+its mutation pass (mutmut 3.2.3 `mutmut/__main__.py`, `run`, after the loop
+and the final `print_stats`). `_crash_reason` requires it before accepting an
+rc-1 tally.
+
+Why it is sound: it is POSITIVE evidence of completion rather than a
+signature of failure. Every path that reaches the end of `run()` emits it
+unconditionally, and a process that died of an unhandled exception inside the
+mutation loop never executes that `print`. The alternative — scanning stderr
+for a traceback — is a NEGATIVE signal, so it fails OPEN on any death whose
+output the check does not recognize, which is the exact hole this closes;
+requiring the marker fails CLOSED, so an unrecognized death is rejected
+rather than ratcheted in. The requirement is scoped to rc 1, where the
+ambiguity lives: rc 0 cannot be an unhandled-exception death (Python exits
+non-zero on one), and rc >= 2 is already an unconditional hard fail.
+
+What is deliberately NOT the discriminator: the tally's SIZE. Refusing an
+unexplained shrink in `mutants_total` would fail an honest release, because
+legitimately deleting code shrinks the mutant population honestly. No lever,
+env var, or acknowledgement flag is introduced — the marker is evidence
+mutmut itself produces, not something a caller can assert.
 
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in dev-tooling/**. Diagnostics flow
@@ -116,8 +152,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = [
     "_baseline_is_placeholder",
+    "_crash_reason",
     "_derive_exit_code",
-    "_is_crashed_run",
     "_parse_mutmut_results",
     "_resolve_staging_cwd",
     "_update_baseline",
@@ -128,6 +164,12 @@ _RUN_ENV_VAR = "LIVESPEC_RUN_MUTATION"
 # Paths to mutate are configured in [tool.mutmut] in pyproject.toml;
 # mutmut reads them automatically when invoked without explicit path flags.
 _KILL_RATE_FLOOR: float = 80.0
+# `mutmut run`'s end-of-run completion marker (see the module docstring's
+# "rc-1 partial tallies" section): the tail of the `<N> mutations/second`
+# line it prints unconditionally once the mutation loop is done. Matching the
+# units alone keeps the marker stable across the varying rate that precedes
+# them.
+_COMPLETION_MARKER = "mutations/second"
 
 
 class _Baseline(TypedDict, total=False):
@@ -262,37 +304,51 @@ def _parse_mutmut_results(*, output: str) -> tuple[int, int]:
     return killed, total
 
 
-def _is_crashed_run(*, returncode: int, total: int) -> bool:
-    """Return True when mutmut's exit is a crash rather than a survivors-present run.
+def _crash_reason(*, returncode: int, total: int, run_output: str) -> str | None:
+    """Return WHY this mutmut exit is a crash, or None when it is a real measurement.
+
+    Reporting the reason rather than a bare bool is the point: a run rejected
+    for the wrong stated cause misinforms the next reader as surely as one
+    wrongly accepted, and the three rejections below are three different
+    faults with three different remedies.
 
     mutmut exits 1 in two entirely different situations: legitimately, when
-    mutants survived the suite; and on a hard crash before it enumerates
+    mutants survived the suite; and on a death, either before it enumerates
     anything (the observed case: a `FileNotFoundError` out of
-    `guess_paths_to_mutate()` when the staging cwd has no `pyproject.toml`).
-    Tolerating rc 1 unconditionally therefore absorbed every crash as a
-    normal result — mask 1 of work-item livespec-dev-tooling-z45.
+    `guess_paths_to_mutate()` when the staging cwd has no `pyproject.toml`)
+    or part-way through the mutation loop. Tolerating rc 1 unconditionally
+    absorbed every crash as a normal result — mask 1 of work-item
+    livespec-dev-tooling-z45.
 
-    The two are told apart by whether the run enumerated any mutant at all:
-    a survivors-present run parses to a non-zero `total`, whereas a crash
-    produces no parseable verdicts. A non-zero return code with an empty
-    tally is therefore a crash, and the caller surfaces mutmut's stderr
-    instead of reporting success.
+    rc 1 is the ONLY non-zero code mutmut itself returns for a legitimate
+    outcome, so it is the only one any evidence may excuse; every other
+    non-zero code is a crash whatever the tally says (work-item
+    livespec-dev-tooling-6j6). Judging rc >= 2 by the tally — as this helper
+    did when it replaced an unconditional `not in (0, 1)` hard fail — reopened
+    the hole from the other side: mutmut persists each verdict as it
+    completes, so a run that DIES part-way (rc 137 is a SIGKILL/OOM death,
+    process-level and independent of mutmut's own exit table) leaves real
+    verdicts on disk, and its partial tally reads as a normal survivors run.
 
-    That tally test applies to rc 1 ALONE, and the first disjunct below is
-    what confines it there (work-item livespec-dev-tooling-6j6). rc 1 is the
-    only non-zero code mutmut itself returns for a legitimate outcome, so it
-    is the only one a non-empty tally may excuse; every other non-zero code
-    is a crash whatever the tally says. Judging rc >= 2 by the tally too — as
-    this helper did when it replaced an unconditional `not in (0, 1)` hard
-    fail — reopened the hole from the other side: mutmut persists each verdict
-    as it completes, so a run that DIES part-way (rc 137 is a SIGKILL/OOM
-    death, process-level and independent of mutmut's own exit table) leaves
-    real verdicts on disk. Its partial tally then reads as a normal survivors
-    run, and being partial it skews HIGH — so it is promoted into the
-    committed ratchet, and every subsequent legitimate full run fails against
-    a rate no complete run can reach.
+    Within rc 1 the tally cannot be the discriminator either, because the
+    same persistence makes a mid-flight death parse (work-item
+    livespec-dev-tooling-y27). The evidence is `_COMPLETION_MARKER`: the
+    module docstring records what it is and why a positive completion signal
+    is the sound choice here.
     """
-    return returncode not in (0, 1) or (returncode != 0 and total == 0)
+    if returncode == 0:
+        return None
+    if returncode != 1:
+        return "non-zero exit that is not mutmut's survivors exit"
+    if total == 0:
+        return "mutmut's survivors exit with no parseable verdicts"
+    if _COMPLETION_MARKER not in run_output:
+        return (
+            f"mutmut's survivors exit without its end-of-run {_COMPLETION_MARKER!r} "
+            "marker — the run did not complete, so its partial tally is a "
+            "record of how far it got, not a mutation score"
+        )
+    return None
 
 
 def _derive_exit_code(*, killed: int, total: int, baseline: _Baseline) -> int:
@@ -400,11 +456,28 @@ def _measurement_is_unusable(
     livespec-dev-tooling-z45). Both branches surface mutmut's own stderr,
     which the previous rc-1 tolerance discarded; a caller that reaches past
     this guard is holding a tally of at least one real mutant.
+
+    The crash diagnostic reports `_crash_reason`'s verdict verbatim rather
+    than restating one cause for all of them. It formerly read "non-zero exit
+    with no parseable verdicts" on every path, which contradicted the tally
+    the preceding "mutation results" line had just printed whenever the run
+    died AFTER enumerating something — and z45's whole purpose was legible CI
+    output (work-item livespec-dev-tooling-y27). The marker search spans
+    stdout AND stderr: mutmut prints the completion line to stdout, and
+    accepting it from either stream keeps a merged-stream environment from
+    manufacturing a false crash.
     """
-    if _is_crashed_run(returncode=run_result.returncode, total=total):
+    crash_reason = _crash_reason(
+        returncode=run_result.returncode,
+        total=total,
+        run_output=run_result.stdout + run_result.stderr,
+    )
+    if crash_reason is not None:
         log.error(
-            "mutmut crashed — non-zero exit with no parseable verdicts, not a survivors run",
+            "mutmut did not complete — its tally is not a mutation score",
+            crash_reason=crash_reason,
             returncode=run_result.returncode,
+            total=total,
             run_stderr=run_result.stderr[:500],
             results_stderr=results_result.stderr[:500],
         )

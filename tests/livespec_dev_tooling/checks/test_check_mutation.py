@@ -47,6 +47,18 @@ tally on disk; the tests below pin that rc 1 is the only non-zero code the
 tally may excuse, and that a crashed run's partial measurement never reaches
 the ratchet.
 
+rc-1 partial tallies (work-item livespec-dev-tooling-y27): 6j6 left the SAME
+harm open at rc 1 itself, because rc 1 is genuinely ambiguous — a legitimate
+survivors run and a run that died of an unhandled exception AFTER enumerating
+some mutants both exit 1 with a parseable tally, and the exit code carries no
+discriminator. The check now requires POSITIVE evidence of completion at rc 1:
+mutmut's end-of-run `<N> mutations/second` marker. The three tests below pin
+the pair — a COMPLETE rc-1 survivors run still passes (the positive control,
+without which every genuine survivor would fail and the ratchet would be
+unusable), and a rc-1 run whose partial tally arrives WITHOUT the marker is
+rejected, naming the death as the reason and leaving the committed ratchet
+byte-identical.
+
 Tests invoke `check_mutation.main()` IN-PROCESS (`monkeypatch.chdir(...)`
 + `capsys` + `rc = main()`) with a fake mutmut package injected through
 PYTHONPATH, following the established dev-tooling test pattern: no
@@ -80,6 +92,7 @@ from __future__ import annotations
 
 import json
 import os
+from importlib import import_module
 from pathlib import Path
 from types import FunctionType
 from typing import NamedTuple
@@ -89,7 +102,6 @@ import structlog
 
 from livespec_dev_tooling.checks.check_mutation import (
     _derive_exit_code,
-    _is_crashed_run,
     _parse_mutmut_results,
     _pure_trees_gate_exit_code,
     _resolve_staging_cwd,
@@ -105,6 +117,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _RUN_VAR = "LIVESPEC_RUN_MUTATION"
 
 
+_COMPLETION_LINE = "24.76 mutations/second\n"
+
+
 def _make_fake_mutmut(
     *,
     tmp_path: Path,
@@ -112,17 +127,22 @@ def _make_fake_mutmut(
     total: int,
     run_rc: int = 0,
     run_stderr: str = "",
+    run_stdout: str = _COMPLETION_LINE,
 ) -> Path:
     """Write a fake mutmut package into tmp_path that emits mutmut-3.x results.
 
     The fake mirrors mutmut 3.2.3's actual surface:
 
-    - `run` writes `run_stderr` to its stderr (empty by default), exits with
-      `run_rc`, and writes a `MUTMUT_RAN_IN.txt` marker into its own cwd (the
-      staging-cwd test reads it to prove WHERE mutmut ran). `run_stderr` lets
-      a test reproduce a real mutmut CRASH — an rc-1 exit carrying a traceback
-      on stderr and enumerating no mutants — as opposed to mutmut's legitimate
-      rc-1 survivor exit.
+    - `run` writes `run_stdout` to its stdout and `run_stderr` to its stderr,
+      exits with `run_rc`, and writes a `MUTMUT_RAN_IN.txt` marker into its
+      own cwd (the staging-cwd test reads it to prove WHERE mutmut ran).
+      `run_stdout` defaults to mutmut's real end-of-run `<N> mutations/second`
+      line, which every COMPLETED `mutmut run` prints unconditionally; a test
+      reproducing a run that DIED mid-flight passes `run_stdout=""`, because a
+      process that never reached the end of `run()` never printed it.
+      `run_stderr` lets a test reproduce a real mutmut CRASH — an rc-1 exit
+      carrying a traceback on stderr — as opposed to mutmut's legitimate rc-1
+      survivor exit.
     - `results` (no flag) prints ONLY the surviving mutants, one
       `    <key>: survived` line each (mutmut 3.x suppresses killed verdicts
       unless `--all True` is passed).
@@ -156,6 +176,7 @@ cmd = sys.argv[1] if len(sys.argv) > 1 else ""
 if cmd == "run":
     with open("MUTMUT_RAN_IN.txt", "w", encoding="utf-8") as fh:
         fh.write(os.getcwd())
+    sys.stdout.write({run_stdout!r})
     sys.stderr.write({run_stderr!r})
     sys.exit({run_rc})
 elif cmd == "results":
@@ -537,7 +558,7 @@ def test_mutmut_run_failure_returns_1(
     green no matter what the return code did and hollowing out the very
     assertion its name makes (work-item livespec-dev-tooling-6j6).
     """
-    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=18, total=20, run_rc=2)
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=18, total=20, run_rc=2, run_stdout="")
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
     result = _run_check(
         tmp_path=tmp_path,
@@ -627,6 +648,7 @@ def test_crashed_mutmut_rc1_fails_and_surfaces_stderr(
         killed=0,
         total=0,
         run_rc=1,
+        run_stdout="",
         run_stderr="FileNotFoundError: [Errno 2] No such file or directory: 'pyproject.toml'\n",
     )
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 3, "mutants_total": 20}
@@ -670,7 +692,7 @@ def test_killed_mutmut_with_partial_verdicts_does_not_poison_the_ratchet(
     That is exactly the damage mask 3 of livespec-dev-tooling-z45 exists to
     prevent, reached through the return code instead of through `total == 0`.
     """
-    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=5, total=5, run_rc=137)
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=5, total=5, run_rc=137, run_stdout="")
     baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 60, "mutants_total": 400}
     result = _run_check(
         tmp_path=tmp_path,
@@ -710,22 +732,146 @@ def test_reports_mutant_count_and_kill_rate(
     assert '"kill_rate_percent": 85.0' in combined, f"the kill rate must be visible; {combined!r}"
 
 
-def test_is_crashed_run_separates_survivors_from_crash() -> None:
-    """rc 1 + zero verdicts is a crash; rc 1 + a real tally is a survivor run.
+def test_crash_reason_separates_a_survivors_run_from_a_died_run() -> None:
+    """rc 1 is a measurement ONLY with verdicts AND mutmut's completion marker.
 
-    rc 1 is the ONLY non-zero code mutmut itself returns that can mean
-    "survivors present", so it alone is judged by the tally. Every other
+    rc 1 is the only non-zero code mutmut itself returns that can mean
+    "survivors present", so it alone is a candidate measurement; every other
     non-zero code is a crash whatever the tally says (work-item
-    livespec-dev-tooling-6j6): rc 2 is a hard failure and rc 137 is a
-    SIGKILL/OOM death, and neither becomes a legitimate measurement just
-    because verdicts were persisted before the process died.
+    livespec-dev-tooling-6j6) — rc 2 is a hard failure and rc 137 is a
+    SIGKILL/OOM death, and neither becomes legitimate just because verdicts
+    were persisted before the process died.
+
+    Within rc 1 the tally CANNOT be the discriminator (work-item
+    livespec-dev-tooling-y27): a run that dies of an unhandled exception after
+    enumerating some mutants leaves a parseable partial tally behind. The
+    discriminator is instead POSITIVE evidence that `mutmut run` reached its
+    end — the `<N> mutations/second` line it prints unconditionally on the way
+    out. rc 1 WITH that marker is a survivors run; rc 1 without it died.
+
+    `_crash_reason` is reached through `getattr` rather than a module-level
+    import so this test fails on a genuine ASSERTION at Red rather than dying
+    at collection.
     """
-    assert _is_crashed_run(returncode=1, total=0) is True
-    assert _is_crashed_run(returncode=1, total=20) is False
-    assert _is_crashed_run(returncode=0, total=0) is False
-    assert _is_crashed_run(returncode=0, total=20) is False
-    assert _is_crashed_run(returncode=2, total=20) is True
-    assert _is_crashed_run(returncode=137, total=20) is True
+    module = import_module("livespec_dev_tooling.checks.check_mutation")
+    assert hasattr(module, "_crash_reason"), (
+        "check_mutation must expose `_crash_reason`, which reports WHY a run is "
+        "a crash rather than merely that it is one"
+    )
+    crash_reason = getattr(module, "_crash_reason")  # noqa: B009 — keeps Red off collection
+
+    complete = "24.76 mutations/second\n"
+    died = "Generating mutants\n    done in 812ms\n"
+
+    assert crash_reason(returncode=1, total=20, run_output=complete) is None
+    assert crash_reason(returncode=0, total=0, run_output=complete) is None
+    assert crash_reason(returncode=0, total=20, run_output=complete) is None
+
+    partial = crash_reason(returncode=1, total=5, run_output=died)
+    assert partial is not None, "rc 1 without the completion marker must be a crash"
+    assert "mutations/second" in partial, f"the reason must name the missing marker; {partial!r}"
+
+    assert crash_reason(returncode=1, total=0, run_output=complete) is not None
+    assert crash_reason(returncode=2, total=20, run_output=complete) is not None
+    assert crash_reason(returncode=137, total=20, run_output=complete) is not None
+
+
+# --- rc-1 partial tallies (work-item livespec-dev-tooling-y27) ---
+
+
+def test_rc1_complete_survivors_run_still_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """POSITIVE CONTROL: a COMPLETE rc-1 run with survivors is accepted as before.
+
+    rc 1 is mutmut's legitimate "mutants survived" exit, and it is the common
+    case on any repo whose kill rate is under 100%. Requiring completion
+    evidence at rc 1 must not regress it: if this run failed, EVERY genuine
+    survivor would fail the gate and the ratchet would be unusable — a
+    strictly worse outcome than the hole work-item livespec-dev-tooling-y27
+    closes. 340 of 400 killed is exactly the 85.0% the baseline records, so
+    the run clears both the floor and the ratchet without improving it.
+    """
+    fake = _make_fake_mutmut(tmp_path=tmp_path, killed=340, total=400, run_rc=1)
+    baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 60, "mutants_total": 400}
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    assert result.returncode == 0, (
+        f"a COMPLETE rc-1 survivors run must still pass; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    written = json.loads((tmp_path / ".mutmut-baseline.json").read_text(encoding="utf-8"))
+    assert written["kill_rate_percent"] == pytest.approx(85.0)
+    assert written["mutants_total"] == 400
+
+
+def test_rc1_partial_tally_is_rejected_and_leaves_the_ratchet_byte_identical(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """NEGATIVE CONTROL: an rc-1 run that DIED mid-flight never reaches the ratchet.
+
+    Work-item livespec-dev-tooling-y27, the residual after 6j6. mutmut exits 1
+    both when mutants survive and when it dies of an unhandled internal
+    exception — that is simply how Python exits on an uncaught exception — and
+    a death AFTER enumeration leaves the already-persisted partial verdicts on
+    disk, so the tally parses. `_is_crashed_run` excused rc 1 whenever the
+    tally was non-empty, so the crashed run passed AND, being partial, skewed
+    high enough (5 of 400, all killed, a perfect 100%) to be promoted over a
+    healthy 85%/400 ratchet. Every subsequent legitimate full run then failed
+    against a rate no complete run can reach, with no obvious cause.
+
+    The ratchet is compared BYTE for byte, not field by field: the property
+    this work-item exists to protect is that a rejected run does not write the
+    committed baseline at all, and an exit-code assertion alone leaves that
+    unproven.
+    """
+    fake = _make_fake_mutmut(
+        tmp_path=tmp_path,
+        killed=5,
+        total=5,
+        run_rc=1,
+        run_stdout="Generating mutants\n    done in 812ms\n",
+        run_stderr=(
+            "Traceback (most recent call last):\n"
+            '  File "mutmut/__main__.py", line 1301, in run\n'
+            "    print_stats(source_file_mutation_data_by_path)\n"
+            "KeyError: 'x_add__mutmut_1'\n"
+        ),
+    )
+    baseline_path = tmp_path / ".mutmut-baseline.json"
+    baseline = {"kill_rate_percent": 85.0, "mutants_surviving": 60, "mutants_total": 400}
+    # `_run_check` seeds the file with exactly these bytes; capturing them here
+    # makes the post-run comparison a true byte-for-byte identity check.
+    before = json.dumps(baseline).encode("utf-8")
+    result = _run_check(
+        tmp_path=tmp_path,
+        fake_mutmut_dir=fake,
+        baseline=baseline,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert result.returncode == 1, (
+        f"an rc-1 run that died mid-flight must FAIL even though its partial "
+        f"tally parses; got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "did not complete" in combined, (
+        f"the finding must say the run DIED rather than report a mutation "
+        f"score; stderr={result.stderr!r}"
+    )
+    assert (
+        "mutations/second" in combined
+    ), f"the finding must name the missing completion marker; stderr={result.stderr!r}"
+    assert baseline_path.read_bytes() == before, (
+        f"a rejected run must leave the committed ratchet BYTE-IDENTICAL; it is "
+        f"now {baseline_path.read_bytes()!r}"
+    )
 
 
 def test_derive_exit_code_fails_on_zero_total() -> None:
