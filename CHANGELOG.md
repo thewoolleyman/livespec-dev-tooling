@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.82.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.82.0...v1.82.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **cross-repo:** an absent check aggregate was a tuple-shaped absence ([b577e75](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b577e7535cecc6a8c5477706bac44da7b43ae755))
+* **fleet:** put the latest-release read on the IOResult railway ([d21f503](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d21f503ec5486175a1de7cef4700ca51ec3cd650))
+
 ## [1.82.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.81.0...v1.82.0) (2026-09-09)
 
 
