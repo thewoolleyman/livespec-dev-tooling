@@ -71,6 +71,27 @@ fabro_server_instances:
     # Live on the host since 2026-08-23.
     otel_dropin: present
 
+# --- gha_runner ---
+gha_runner_user: ubuntu
+gha_runner_group: ubuntu
+gha_runner_home: /home/ubuntu
+# A DEDICATED tree — not the operator's home root and not the existing
+# /home/ubuntu/gate-runner (livespec-dev-tooling's separate ephemeral gate
+# tier), so the two runners' _work and _diag never collide.
+gha_runner_root: /home/ubuntu/gha-runner
+gha_runner_dir: /home/ubuntu/gha-runner/actions-runner
+gha_runner_work: /home/ubuntu/gha-runner/_work
+# What this runner serves: the labels livespec-orchestrator-beads-fabro's
+# acceptance-live-golden-master.yml selects on. `self-hosted` is applied by
+# the runner itself and listed so this states the whole selector.
+gha_runner_repo: thewoolleyman/livespec-orchestrator-beads-fabro
+gha_runner_name: vps-livespec-orchestrator
+gha_runner_labels: self-hosted,livespec-orchestrator
+# PATH for the runner process and every job step: the job wrapper scrubs the
+# environment and hard-codes the system secure_path, which does NOT carry
+# this host's `fabro`, so the launcher re-exports this. Measured 2026-09-08.
+gha_runner_job_path: /home/ubuntu/.local/share/mise/shims:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # --- honeycomb_mcp ---
 honeycomb_mcp_checkout: /data/projects/vps-info
 

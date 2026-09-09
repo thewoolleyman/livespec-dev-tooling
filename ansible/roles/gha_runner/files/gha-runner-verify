@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# gha-runner-verify -- prove this host's runner is actually able to take the job
+# it exists for. Named without an extension, like the sibling
+# fabro-server-verify-web, because it is an operator-run readiness gate.
+#
+#   gha-runner-verify [--local-only] [<hosts/NAME.env>]
+#
+# TWO LEGS, and the remote one is the point:
+#
+#   LOCAL   the unit is enabled and active, the release on disk is the pinned
+#           version, and the runner is configured.
+#   REMOTE  GITHUB reports a runner of this name, ONLINE, carrying every label
+#           the workflow selects on.
+#
+# The local leg alone is exactly the probe this repo warns about (AGENTS.md,
+# "Probes that lie"): a unit can sit `active` for hours with a runner GitHub
+# believes is offline -- deregistered out from under it, or long-polling against
+# a repository it is no longer registered to -- and `systemctl status` says
+# nothing. Only GitHub's own view answers "will a queued job land here?", so the
+# remote leg is the default and FAILS CLOSED. --local-only is for a host with no
+# credential available; it is a weaker statement and says so.
+#
+# The remote leg needs an App installation token, so run it under the
+# registration wrapper the host values name:
+#
+#   /usr/local/bin/with-github-ci-runners-env.sh -- /usr/local/libexec/gha-runner-verify
+set -euo pipefail
+
+LOCAL_ONLY=0
+if [[ "${1:-}" == "--local-only" ]]; then LOCAL_ONLY=1; shift; fi
+HOST_ENV="${1:-/usr/local/libexec/gha-runner.env}"
+MINTER="${GHA_RUNNER_MINTER:-/usr/local/libexec/gha-runner-github-token.sh}"
+UNIT="gha-runner.service"
+
+[[ -r "${HOST_ENV}" ]] || { echo "ERROR: cannot read host values: ${HOST_ENV}" >&2; exit 2; }
+# shellcheck source=/dev/null
+source "${HOST_ENV}"
+: "${GHA_RUNNER_DIR:?${HOST_ENV} must set GHA_RUNNER_DIR}"
+: "${GHA_RUNNER_NAME:?${HOST_ENV} must set GHA_RUNNER_NAME}"
+: "${GHA_RUNNER_LABELS:?${HOST_ENV} must set GHA_RUNNER_LABELS}"
+: "${GHA_RUNNER_REPO:?${HOST_ENV} must set GHA_RUNNER_REPO}"
+: "${GHA_RUNNER_VERSION:?${HOST_ENV} must set GHA_RUNNER_VERSION}"
+GITHUB_API="${GITHUB_API_URL:-https://api.github.com}"
+
+fail() { echo "ERROR: $*" >&2; exit 6; }
+
+# --- LOCAL ------------------------------------------------------------------
+systemctl is-enabled --quiet "${UNIT}" || fail "${UNIT} is not enabled"
+systemctl is-active  --quiet "${UNIT}" || {
+    systemctl status --no-pager "${UNIT}" >&2 || true
+    fail "${UNIT} is not active"; }
+echo "[ok] ${UNIT} is enabled and active"
+
+[[ -f "${GHA_RUNNER_DIR}/.runner" ]] || fail "${GHA_RUNNER_DIR}/.runner is absent -- the runner is not configured"
+echo "[ok] ${GHA_RUNNER_DIR} is configured"
+
+# The release on disk must be the version the host values pin. The gha_runner role
+# writes this stamp beside the release after a checksum-verified unpack, so a
+# mismatch means the tree was replaced by something the installer did not put
+# there -- including a self-update that --disableupdate should have prevented.
+stamp="${GHA_RUNNER_DIR}/.gha-runner-version"
+[[ -f "${stamp}" ]] || fail "${stamp} is absent -- the release was not unpacked by the gha_runner role"
+on_disk="$(cat "${stamp}")"
+[[ "${on_disk}" == "${GHA_RUNNER_VERSION}" ]] \
+    || fail "release on disk is ${on_disk}, but ${HOST_ENV} pins ${GHA_RUNNER_VERSION}"
+echo "[ok] runner release on disk is the pinned ${GHA_RUNNER_VERSION}"
+
+if [[ ${LOCAL_ONLY} -eq 1 ]]; then
+    echo "[warn] --local-only: GitHub's view was NOT checked. This does not prove a"
+    echo "[warn]               queued job can land here; re-run under the registration"
+    echo "[warn]               wrapper to check it."
+    exit 0
+fi
+
+# --- REMOTE -----------------------------------------------------------------
+[[ -x "${MINTER}" ]] || fail "token minter missing: ${MINTER}"
+token="$("${MINTER}" --installation "${HOST_ENV}")"
+[[ -n "${token}" ]] || fail "minter returned an empty installation token"
+
+runners="$(curl -sS \
+    -H "Authorization: token ${token}" \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "${GITHUB_API}/repos/${GHA_RUNNER_REPO}/actions/runners?per_page=100")"
+printf '%s' "${runners}" | jq -e '.runners' >/dev/null 2>&1 \
+    || fail "could not list runners on ${GHA_RUNNER_REPO}: $(printf '%s' "${runners}" | jq -r '.message // "unknown error"')"
+
+mine="$(printf '%s' "${runners}" | jq -c --arg n "${GHA_RUNNER_NAME}" '.runners[] | select(.name == $n)')"
+[[ -n "${mine}" ]] || fail "GitHub reports no runner named '${GHA_RUNNER_NAME}' on ${GHA_RUNNER_REPO}"
+
+status="$(printf '%s' "${mine}" | jq -r '.status')"
+[[ "${status}" == "online" ]] || fail "GitHub reports '${GHA_RUNNER_NAME}' as ${status}, not online"
+echo "[ok] GitHub reports ${GHA_RUNNER_NAME} online on ${GHA_RUNNER_REPO}"
+
+# EVERY label the workflow selects on must be present. A runner that is online
+# but missing one label is invisible to the job and looks perfectly healthy.
+missing=()
+IFS=',' read -r -a wanted <<< "${GHA_RUNNER_LABELS}"
+for label in "${wanted[@]}"; do
+    label="${label//[[:space:]]/}"
+    [[ -n "${label}" ]] || continue
+    printf '%s' "${mine}" | jq -e --arg l "${label}" '[.labels[].name] | index($l)' >/dev/null \
+        || missing+=("${label}")
+done
+[[ ${#missing[@]} -eq 0 ]] \
+    || fail "'${GHA_RUNNER_NAME}' is online but does not carry: ${missing[*]} -- a job selecting them will queue forever"
+echo "[ok] ${GHA_RUNNER_NAME} carries every selected label: ${GHA_RUNNER_LABELS}"
+
+echo "[+] gha-runner is ready on ${GHA_RUNNER_CANONICAL_HOST:-this host} for ${GHA_RUNNER_REPO}"

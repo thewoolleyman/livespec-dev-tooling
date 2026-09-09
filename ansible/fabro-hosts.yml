@@ -48,6 +48,12 @@
       tags: [container_reclaim]
     - role: storage_reclaim
       tags: [storage_reclaim]
+    # The self-hosted Actions runner that serves
+    # livespec-orchestrator-beads-fabro's live golden-master tier: only this
+    # host carries the orchestrator runtime and the operator wrapper the job
+    # needs (livespec-ifwnqj.2).
+    - role: gha_runner
+      tags: [gha_runner]
   tasks:
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:
