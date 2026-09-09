@@ -21,6 +21,7 @@
 #
 # Usage:
 #   render-gate-job.sh --repo-root PATH --tree-hash SHA [--repo NAME]
+#                      [--gated-repository OWNER/REPO]
 #                      [--source-url URL] [--cpu N] [--memory SIZE]
 #                      [--parallelism N] [--ttl-seconds N] [--job-name NAME]
 #
@@ -28,24 +29,34 @@
 # in-cluster read-only mirror R4.S4 builds. The resource defaults are the terms
 # ../kueue/cluster-queue-gates.yaml quotas: 5 cpu / 6Gi, three concurrent gates
 # under its 15 cpu / 24Gi.
+#
+# --gated-repository is the github.com <owner>/<repo> the gate is judging, and
+# it is NOT the same thing as --repo (R4.S7 slice B, livespec-dev-tooling-rwmo.2).
+# --repo names the mirror and labels the Job; this names the FORGE REPOSITORY
+# `check-branch-protection-alignment` and `check-master-ci-green` must read. They
+# cannot derive it themselves inside the pod: the gate clone's only remote is the
+# git daemon URL above, which is not github.com and carries no owner segment at
+# all. It IS derivable HERE, on the dispatching host, where --repo-root is a real
+# github clone — so this script derives it and the pod is simply told.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
 
-repo_root=""; tree_hash=""; repo=""; source_url=""
+repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; job_name=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --repo-root)    repo_root="$2"; shift 2 ;;
-    --tree-hash)    tree_hash="$2"; shift 2 ;;
-    --repo)         repo="$2"; shift 2 ;;
-    --source-url)   source_url="$2"; shift 2 ;;
-    --cpu)          cpu="$2"; shift 2 ;;
-    --memory)       memory="$2"; shift 2 ;;
-    --parallelism)  parallelism="$2"; shift 2 ;;
-    --ttl-seconds)  ttl_seconds="$2"; shift 2 ;;
-    --job-name)     job_name="$2"; shift 2 ;;
+    --repo-root)         repo_root="$2"; shift 2 ;;
+    --tree-hash)         tree_hash="$2"; shift 2 ;;
+    --repo)              repo="$2"; shift 2 ;;
+    --gated-repository)  gated_repository="$2"; shift 2 ;;
+    --source-url)        source_url="$2"; shift 2 ;;
+    --cpu)               cpu="$2"; shift 2 ;;
+    --memory)            memory="$2"; shift 2 ;;
+    --parallelism)       parallelism="$2"; shift 2 ;;
+    --ttl-seconds)       ttl_seconds="$2"; shift 2 ;;
+    --job-name)          job_name="$2"; shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -64,6 +75,40 @@ esac
 [ -n "${repo}" ] || repo="$(basename "${repo_root}")"
 [ -n "${source_url}" ] || source_url="git://git-gates.gates.svc.cluster.local/${repo}.git"
 [ -n "${job_name}" ] || job_name="gate-${repo}-${tree_hash:0:12}"
+
+# --- the gated repository's github.com identity (R4.S7 slice B) ---------------
+# Derived from the gated clone's OWN origin, matched against the same two
+# canonical forms `_branch_protection_api.py` accepts, so the renderer and the
+# check cannot disagree about what a github.com remote looks like.
+#
+# UNDERIVABLE IS NOT FATAL. A repo with no origin, or one hosted elsewhere,
+# renders an EMPTY value, which the checks read as "no repository was named" —
+# exactly as if the variable were unset. That is the same disposition this
+# template already takes for the GH_TOKEN Secret: the pod still starts and the
+# two credential-reading targets fail naming what is missing, which tells an
+# operator more than a render that refused. Refusing here would also make the
+# renderer unusable for the fixture trees its own exit-test suite builds.
+if [ -z "${gated_repository}" ] && command -v git > /dev/null 2>&1; then
+  origin_url="$(git -C "${repo_root}" remote get-url origin 2> /dev/null || true)"
+  # Shell patterns rather than a sed expression: the URL forms differ only in
+  # the separator after the host (`/` for https, `:` for scp-style), and the
+  # `.git`/trailing-slash suffixes strip cleanly with parameter expansion. An
+  # ERE would need non-greedy matching, which POSIX ERE does not have.
+  case "${origin_url}" in
+    https://github.com/* | http://github.com/* | git@github.com:*)
+      owner_repo="${origin_url#*github.com}"
+      owner_repo="${owner_repo#[:/]}"
+      owner_repo="${owner_repo%/}"
+      owner_repo="${owner_repo%.git}"
+      # Exactly two non-empty segments. A third would make the value a path to
+      # something that is not a repository, which the checks refuse anyway.
+      case "${owner_repo}" in
+        */*/*) : ;;
+        ?*/?*) gated_repository="${owner_repo}" ;;
+      esac
+      ;;
+  esac
+fi
 
 # --- requirement 1: the image comes from the gated repo's own workflow --------
 workflow="${repo_root}/.github/workflows/ci.yml"
@@ -97,15 +142,16 @@ substitute() {
   value="$(sed_escape "$2")"
   rendered="$(printf '%s\n' "${rendered}" | sed -e "s|@@${token}@@|${value}|g")"
 }
-substitute JOB_NAME    "${job_name}"
-substitute REPO        "${repo}"
-substitute TREE_HASH   "${tree_hash}"
-substitute IMAGE       "${image}"
-substitute SOURCE_URL  "${source_url}"
-substitute CPU         "${cpu}"
-substitute MEMORY      "${memory}"
-substitute PARALLELISM "${parallelism}"
-substitute TTL_SECONDS "${ttl_seconds}"
+substitute JOB_NAME          "${job_name}"
+substitute REPO              "${repo}"
+substitute GATED_REPOSITORY  "${gated_repository}"
+substitute TREE_HASH         "${tree_hash}"
+substitute IMAGE             "${image}"
+substitute SOURCE_URL        "${source_url}"
+substitute CPU               "${cpu}"
+substitute MEMORY            "${memory}"
+substitute PARALLELISM       "${parallelism}"
+substitute TTL_SECONDS       "${ttl_seconds}"
 
 # A token added to the template without a matching substitution above is caught
 # HERE, at render time, rather than by the API server or — worse — by a gate that

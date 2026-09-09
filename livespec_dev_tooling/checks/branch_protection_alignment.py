@@ -288,8 +288,9 @@ def _unreadable_protection_exit_code(
             "refusing to report a pass this run did not verify",
             hint=(
                 "provision the gate executor with a credential able to read "
-                "branch protection, and a clone from which this check can "
-                "resolve the gated repository, or remove this target from the "
+                "branch protection, and set LIVESPEC_GATE_REPOSITORY to the "
+                "gated repository's github.com <owner>/<repo> (the gate pod's "
+                "own clone cannot name it), or remove this target from the "
                 "gate recipe"
             ),
         )
@@ -321,7 +322,7 @@ def main() -> int:
         log.error("ci.yml matrix.target is empty or unparseable", path=str(_CI_YML_PATH))
         return 1
     job_names = parse_top_level_jobs(source=ci_source)
-    fetched = _fetch_required_contexts(log=log)
+    fetched = _fetch_required_contexts(log=log, env=os.environ)
     if fetched is None:
         return _unreadable_protection_exit_code(log=log, env=os.environ)
     if isinstance(fetched, _ProtectionAbsent):

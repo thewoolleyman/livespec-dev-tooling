@@ -108,6 +108,7 @@ import structlog  # noqa: E402
 
 from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
     credential_skip_is_failure,
+    gate_repository,
 )
 
 __all__: list[str] = []
@@ -136,11 +137,10 @@ _MASTER_REF = "master"
 _REQUIRED_CHECK_NAME = "ci-green"
 # `{owner}`/`{repo}` are `gh api` placeholders, expanded by `gh` from the
 # current directory's repository, so the endpoint stays correct in every
-# governed sibling repo without a hardcoded owner/repo.
-_CHECK_RUNS_ENDPOINT = (
-    f"repos/{{owner}}/{{repo}}/commits/{_MASTER_REF}"
-    f"/check-runs?check_name={_REQUIRED_CHECK_NAME}"
-)
+# governed sibling repo without a hardcoded owner/repo. A DELEGATED GATE is the
+# one host where that expansion has nothing to expand FROM — see
+# `_check_runs_endpoint`.
+_GH_REPOSITORY_PLACEHOLDERS = "{owner}/{repo}"
 # GitHub's commit-scoped endpoints answer with this EXACT message body when
 # the ref does not resolve to a commit. It is the definitive "this repo has
 # no such branch" disambiguator, in the same spirit as
@@ -155,6 +155,28 @@ _PENDING_STATUSES: frozenset[str] = frozenset(
 _RED_CONCLUSIONS: frozenset[str] = frozenset(
     {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
 )
+
+
+def _check_runs_endpoint(*, env: Mapping[str, str]) -> str:
+    """The address of master's head-commit `ci-green` check run, for this host.
+
+    Ordinarily the repository is left to `gh`, which expands the placeholders
+    from the current directory's remote — one endpoint that is correct in every
+    governed sibling repo without a hardcoded owner/repo.
+
+    A DELEGATED GATE is the one host where that cannot work (R4.S7 slice B,
+    livespec-dev-tooling-rwmo.2). Its clone is fetched from an in-cluster git
+    daemon, so the remote `gh` would expand from is a `git://` URL with no owner
+    segment at all: the placeholders survive into the request and the API
+    answers 404 for a repository nobody named. That is the shape this fix exists
+    to prevent, and it is a nasty one — an unexpanded placeholder is not an
+    error `gh` reports back, so the regression would look like a working check
+    pointed at nothing. A gate that declared WHAT it is gating supplies the pair
+    itself; off a gate the declaration is inert, so nothing changes for anyone
+    else.
+    """
+    repository = gate_repository(env=env) or _GH_REPOSITORY_PLACEHOLDERS
+    return f"repos/{repository}/commits/{_MASTER_REF}/check-runs?check_name={_REQUIRED_CHECK_NAME}"
 
 
 def _gh_has_stored_credential() -> bool:
@@ -288,7 +310,7 @@ def _fetch_master_ci_green_check(
         )
         return "skip"
     completed = subprocess.run(
-        ["gh", "api", _CHECK_RUNS_ENDPOINT],
+        ["gh", "api", _check_runs_endpoint(env=os.environ)],
         capture_output=True,
         text=True,
         check=False,

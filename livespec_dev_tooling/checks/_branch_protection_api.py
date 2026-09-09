@@ -22,10 +22,13 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
 import structlog
+
+from livespec_dev_tooling.checks._gate_context import gate_repository
 
 __all__: list[str] = [
     "_AdminEnforcement",
@@ -108,15 +111,29 @@ class _AdminEnforcement:
     enabled: bool
 
 
-def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger) -> str | None:
-    """Resolve the GitHub owner/repo identifier from `git remote get-url origin`.
+def _resolve_owner_repo(*, log: structlog.stdlib.BoundLogger, env: Mapping[str, str]) -> str | None:
+    """Resolve the GitHub owner/repo identifier this run is judging.
 
-    Returns None and logs a warning when git is unavailable, the
-    remote is not set, or the URL does not match the canonical
-    github.com pattern — so the calling check exits 0 cleanly
-    rather than failing in unusual local configurations (no remote,
-    fork remote, gitlab, etc.).
+    A DELEGATED GATE'S OWN DECLARATION WINS, and is consulted first (R4.S7
+    slice B, livespec-dev-tooling-rwmo.2). A gate pod clones from the
+    in-cluster git daemon, so the remote below is a `git://` URL with no owner
+    segment: asking it would spend a subprocess to learn nothing. Precedence is
+    the substantive half — a gate that NAMED the repository it is judging is
+    not second-guessed by whatever its transport clone happens to say. Off a
+    gate the declaration is inert (`_gate_context.gate_repository`), so this is
+    unreachable on a contributor's machine.
+
+    Otherwise the identity comes from `git remote get-url origin`. Returns None
+    and logs a warning when git is unavailable, the remote is not set, or the
+    URL does not match the canonical github.com pattern — so the calling check
+    exits 0 cleanly rather than failing in unusual local configurations (no
+    remote, fork remote, gitlab, etc.). Inside a gate that same None is a
+    FAILURE at the caller: there, a repository nobody named is a verification
+    that cannot be performed, not one that can be skipped.
     """
+    declared = gate_repository(env=env)
+    if declared is not None:
+        return declared
     completed = subprocess.run(
         ["git", "remote", "get-url", "origin"],
         capture_output=True,
@@ -217,7 +234,7 @@ def _resolve_default_branch(*, log: structlog.stdlib.BoundLogger, owner_repo: st
 
 
 def _fetch_required_contexts(
-    *, log: structlog.stdlib.BoundLogger
+    *, log: structlog.stdlib.BoundLogger, env: Mapping[str, str]
 ) -> _RequiredContexts | _ProtectionAbsent | None:
     """Fetch the default branch protection's required_status_checks object.
 
@@ -230,8 +247,9 @@ def _fetch_required_contexts(
       (the canonical "Branch not protected" 404). Fail-trigger.
     - `None` — graceful skip: `gh` is unavailable, the call failed for
       a reason OTHER than definitive-absence (e.g. a permission/
-      visibility 404 under a token without admin scope), the remote is
-      not github.com, or the success payload had an unexpected shape.
+      visibility 404 under a token without admin scope), no repository
+      could be named (see `_resolve_owner_repo`), or the success
+      payload had an unexpected shape.
       The caller exits 0 so local pre-commit and Actions-token CI runs
       are not blocked, since "can't read" is indistinguishable from
       "absent" without admin read access.
@@ -242,7 +260,7 @@ def _fetch_required_contexts(
             hint="install gh CLI or run in CI with GH_TOKEN set",
         )
         return None
-    owner_repo = _resolve_owner_repo(log=log)
+    owner_repo = _resolve_owner_repo(log=log, env=env)
     if owner_repo is None:
         return None
     branch = _resolve_default_branch(log=log, owner_repo=owner_repo)

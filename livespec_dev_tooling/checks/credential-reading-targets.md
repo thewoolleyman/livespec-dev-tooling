@@ -95,12 +95,31 @@ section H prescribes projecting "the least-privilege, read-scoped ones as
 Secrets", which does not cover that scope — so this is a real cost to be decided
 deliberately, not a detail.
 
-A token alone is also **not sufficient**. Both checks resolve the repository from
-their clone's `origin` remote — `branch_protection_alignment` matches it against
-a github.com-only pattern and skip-passes on anything else — while `research/003`
+A token alone is also **not sufficient**, and that second half is now
+provisioned too (R4.S7 slice B, `livespec-dev-tooling-rwmo.2`). Both checks
+resolved the repository from their clone's `origin` remote —
+`branch_protection_alignment` matched it against a github.com-only pattern and
+skip-passed on anything else, `master_ci_green` handed `gh` the `{owner}` /
+`{repo}` placeholders it expands from that same remote — while `research/003`
 section E has the gate pod fetch from an in-cluster git daemon whose URL is not
-github.com. A pod given the token and nothing else still cannot resolve the repo
-it is gating. Whether that is fixed by giving the pod clone a github.com-shaped
-`origin` or by changing how those checks name the repository is an
-implementation choice; what must not happen is shipping the token and calling the
-provisioning done.
+github.com and carries no owner segment at all. A pod given the token and
+nothing else still could not resolve the repo it was gating.
+
+The fix is a **declared input, not a rewritten `origin`**:
+`LIVESPEC_GATE_REPOSITORY`, set beside `LIVESPEC_GATE_CONTEXT` by the same Job
+template and read only where that one is set
+(`_gate_context.gate_repository`). `origin` was not repointed because it is
+load-bearing for something else — the initContainer fetches the gate ref's
+`.base` companion into `refs/remotes/origin/master`, the name eight
+range-judging aggregate members resolve, so repointing it would either break
+that fetch or demand a second remote the github.com-only pattern still would
+not read. `gates/render-gate-job.sh` derives the `<owner>/<repo>` from the
+gated clone's own origin on the DISPATCHING host, where that clone is a real
+github.com checkout and can answer.
+
+Gating the read on `LIVESPEC_GATE_CONTEXT` is what makes the variable safe to
+ship to every consumer: off a gate it is inert, so nothing in a contributor's
+shell can silently point `check-master-ci-green` at a repository they are not on
+and have it report that repository's master as this one's. An empty or malformed
+value reads as "no repository named", which inside a gate fails those two targets
+the same way a missing token does — never a pass.

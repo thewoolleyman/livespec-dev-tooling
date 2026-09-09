@@ -1,4 +1,4 @@
-"""Whether this run is a DELEGATED GATE, and what a credential-less check owes when it is.
+"""Whether this run is a DELEGATED GATE, what it is gating, and what a blind check owes.
 
 R4.S6 (`livespec-dev-tooling-ul61`), plan livespec `k3s-on-gmktec-for-vps-usage`
 (epic `livespec-sab5gn`), design in that plan's `research/003` section H, which
@@ -28,19 +28,31 @@ rule like this fire where it was not meant to, and a false FAIL on a
 contributor's machine would be paid for by every push. A caller that wants the
 strict disposition says so.
 
-SCOPE. This module decides a DISPOSITION and nothing else. It reads no
-credential, probes no service, and names no check. Which targets consult it is
-each target's own business; `credential-reading-targets.md` in this directory
-enumerates the ones that do and what each degrades to without a credential.
+THE SECOND THING A GATE DECLARES (R4.S7 slice B, `livespec-dev-tooling-rwmo.2`,
+same plan, `research/003` sections E and H). A token alone does not let the two
+`gh api` checks run: both name their repository from the CLONE, and a gate pod's
+clone is fetched from an in-cluster git daemon whose URL is not github.com and
+carries no owner segment at all. So a gate declares WHAT IT IS GATING alongside
+the fact THAT it is a gate — see `gate_repository` for why that is a declaration
+rather than a rewritten `origin`.
+
+SCOPE. This module reads what the RUNNER OF THE GATE declared and nothing else.
+It reads no credential, probes no service, contacts no forge, and names no
+check. Which targets consult it is each target's own business;
+`credential-reading-targets.md` in this directory enumerates the ones that do
+and what each degrades to without a credential.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 __all__: list[str] = [
     "GATE_CONTEXT_ENV",
+    "GATE_REPOSITORY_ENV",
     "credential_skip_is_failure",
+    "gate_repository",
     "in_gate_context",
 ]
 
@@ -60,6 +72,58 @@ def in_gate_context(*, env: Mapping[str, str]) -> bool:
     repository's severity-lever idiom (see `no_todo_registry`).
     """
     return bool(env.get(GATE_CONTEXT_ENV, ""))
+
+
+# Set beside `GATE_CONTEXT_ENV` by the same gate Job template, and read ONLY
+# where that one is set (see `gate_repository`).
+GATE_REPOSITORY_ENV = "LIVESPEC_GATE_REPOSITORY"
+# `<owner>/<repo>` and nothing else. The value is pasted straight into a
+# `gh api repos/...` path, so its shape is checked before use: a bare repository
+# name, a clone URL, or a path carrying a third segment are each a form a
+# hand-set variable plausibly holds, and each would otherwise become a request
+# for something that is not a repository. Both segments use GitHub's own
+# vocabulary — alphanumerics with `-`, `_` and `.`.
+_OWNER_REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+
+
+def gate_repository(*, env: Mapping[str, str]) -> str | None:
+    """The `<owner>/<repo>` this gate is judging, or None when it named none.
+
+    THE PROBLEM. `branch_protection_alignment` and `master_ci_green` both name
+    their repository from the clone they are run in — the first parses
+    `git remote get-url origin` against a github.com-only pattern, the second
+    hands `gh` the `{owner}`/`{repo}` placeholders it expands from that same
+    remote. A gate pod's origin is `git://git-gates.gates.svc.cluster.local/
+    <repo>.git`, which is neither github.com nor owner-qualified, so with a
+    perfectly good token in hand both checks fail to identify what they are
+    gating.
+
+    WHY A DECLARATION RATHER THAN A REWRITTEN ORIGIN. `origin` in a gate pod is
+    load-bearing for something else: the initContainer fetches the gate ref AND
+    its `.base` companion into `refs/remotes/origin/master`, the name eight
+    range-judging members of the aggregate resolve. Repointing it at github.com
+    would either break that fetch or demand a second remote the github.com-only
+    pattern still would not read.
+
+    WHY IT IS INERT OUTSIDE A GATE. Read unconditionally, an environment
+    variable naming a repository would let anything in a contributor's shell
+    silently point `check-master-ci-green` at a repository they are not on — and
+    have it report THAT repository's master as this one's. Honouring it only
+    where the gate context is declared keeps the blast radius inside the pod
+    that set both, and makes the variable unforgeable as a lever: on any host
+    that is not a gate it does nothing at all.
+
+    A value that is not an owner/repo pair reads as ABSENT rather than raising.
+    Inside a gate that is a FAILURE at the caller (a check that cannot name its
+    repository must not report a pass), which is a better answer than a request
+    nobody can read.
+    """
+    if not in_gate_context(env=env):
+        return None
+    declared = env.get(GATE_REPOSITORY_ENV, "").strip()
+    if _OWNER_REPO_PATTERN.match(declared) is None:
+        return None
+    return declared
 
 
 def credential_skip_is_failure(*, env: Mapping[str, str]) -> bool:
