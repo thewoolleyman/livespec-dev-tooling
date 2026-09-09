@@ -56,6 +56,11 @@ from livespec_dev_tooling.config import Config, ConfigParseError, load_config
 # The structured field every declared-absent announcement carries, naming the
 # variant the consumer declared.
 _SPELLING_FIELD = "role_key_spelling"
+# The payload every `unarmed_until` case below declares. Two fleet repos really
+# do cite this id on `pure_trees`, which is what made the variant worth
+# distinguishing — but every status it resolves to here is SYNTHETIC, supplied by
+# an injected store rather than read from the live tenant.
+_LEDGER_ID = "livespec-mutreal.1"
 
 __all__: list[str] = []
 
@@ -67,6 +72,51 @@ def _write_config(*, tmp_path: Path, body: str) -> None:
         f"[tool.livespec_dev_tooling]\n{body}",
         encoding="utf-8",
     )
+
+
+def _unarmed_record(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    snapshot: dict[str, str] | None,
+) -> dict[str, object]:
+    """Drive a real check over an `unarmed_until` declaration and return its announcement.
+
+    `snapshot` is the work-item store the shared resolver sees, injected by
+    replacing `_role_key_gate`'s module-global reader — the seam the gate looks
+    up at CALL time. Nothing here contacts a tracker, opens a socket, or spawns
+    a process, and the fixture is SYNTHETIC in both directions: the control's
+    validity must not depend on some production repository staying broken.
+
+    The check is driven end-to-end rather than the announcer called directly,
+    so what is asserted is what a consumer actually emits.
+    """
+
+    def _read(*, repo: Path) -> dict[str, str] | None:
+        del repo  # The double answers for whatever repo it is handed.
+        return snapshot
+
+    assert hasattr(_role_key_gate, "bd_status_reader"), (
+        "the `unarmed_until` arm must resolve its payload through the shared "
+        "`checks/_work_item_liveness` resolver — a gate holding no resolver seam has "
+        "no expiry at all, only the promise of one"
+    )
+    monkeypatch.setattr(_role_key_gate, "bd_status_reader", _read)
+    _write_config(tmp_path=tmp_path, body=f'pure_trees = {{ unarmed_until = "{_LEDGER_ID}" }}\n')
+    monkeypatch.chdir(tmp_path)
+
+    code = public_api_result_typed.main()
+
+    captured = capsys.readouterr()
+    assert code == 0, (
+        f"an `unarmed_until` declaration must parse and pass; "
+        f"got exit={code} output={captured.out + captured.err!r}"
+    )
+    records = _records(captured=captured.out + captured.err)
+    unarmed = [r for r in records if r.get(_SPELLING_FIELD) == "unarmed_until"]
+    assert unarmed, f"the `unarmed_until` variant must be reported by name; got {records!r}"
+    return unarmed[0]
 
 
 def _records(*, captured: str) -> list[dict[str, object]]:
@@ -171,26 +221,142 @@ def test_unarmed_until_variant_is_warn_and_names_its_ledger_id(
     that genuinely has no pure tree. A distinct severity is what makes the
     deliberately-off case visible rather than merged into not-applicable.
     """
-    _write_config(tmp_path=tmp_path, body='pure_trees = { unarmed_until = "livespec-mutreal.1" }\n')
-    monkeypatch.chdir(tmp_path)
-
-    code = public_api_result_typed.main()
-
-    captured = capsys.readouterr()
-    assert code == 0, (
-        f"an `unarmed_until` declaration must parse and pass; "
-        f"got exit={code} output={captured.out + captured.err!r}"
+    record = _unarmed_record(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, snapshot=None
     )
-    records = _records(captured=captured.out + captured.err)
-    unarmed = [r for r in records if r.get(_SPELLING_FIELD) == "unarmed_until"]
-    assert unarmed, f"the `unarmed_until` variant must be reported by name; got {records!r}"
     assert (
-        unarmed[0].get("level") == "warning"
-    ), f"`unarmed_until` is a deferral and must be WARN, not info; got {unarmed[0]!r}"
-    assert unarmed[0].get("ledger_id") == "livespec-mutreal.1", (
-        f"the ledger id must be surfaced so the deferral can be time-bounded; "
-        f"got {unarmed[0]!r}"
+        record.get("level") == "warning"
+    ), f"`unarmed_until` is a deferral and must be WARN, not info; got {record!r}"
+    assert record.get("ledger_id") == "livespec-mutreal.1", (
+        f"the ledger id must be surfaced so the deferral can be time-bounded; " f"got {record!r}"
     )
+
+
+def test_unarmed_until_naming_a_closed_work_item_is_reported_as_a_conformance_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """THE FAIL CAPABILITY the promised expiry never had: a CLOSED payload is convicted.
+
+    `SPECIFICATION/scenarios.md` §"Scenario: an unarmed-until payload naming a
+    closed work item is a conformance failure" ratifies both the verdict and
+    its wording — the report MUST identify the consumer, the key and the item,
+    and MUST state that the declaration claims pending work that is already
+    complete. Until the shared resolver was adopted here nothing in this
+    library resolved the id against any tracker, so this branch was
+    unreachable and a declaration could name work finished years ago while the
+    key stayed switched off, silently, forever.
+    """
+    record = _unarmed_record(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        snapshot={_LEDGER_ID: "closed"},
+    )
+    assert record.get("level") == "error", (
+        f"a stand-down on a CLOSED id must SURFACE; a warning here is the vacuous "
+        f"gate this adoption exists to close; got {record!r}"
+    )
+    assert record.get("role") == "pure_trees", f"the failure must identify the KEY; {record!r}"
+    assert (
+        record.get("ledger_id") == _LEDGER_ID
+    ), f"the failure must identify the ITEM; got {record!r}"
+    assert record.get("consumer"), f"the failure must identify the CONSUMER; got {record!r}"
+    assert (
+        record.get("resolved_status") == "closed"
+    ), f"the failure must name the item's RESOLVED STATUS; got {record!r}"
+    assert "already complete" in str(record.get("event")), (
+        f"the ratified wording is normative: the failure MUST state that the "
+        f"declaration claims pending work that is already complete; got {record!r}"
+    )
+
+
+def test_unarmed_until_naming_an_open_work_item_stays_quiet(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The other direction: a payload naming genuinely pending work reads as it always did.
+
+    `backlog` is deliberately the status under test. It is a legitimately OPEN
+    state, and a resolver that flagged it would convict the majority of real
+    declarations — the overshoot that gets a gate reverted within the hour
+    rather than fixed.
+    """
+    record = _unarmed_record(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        snapshot={_LEDGER_ID: "backlog"},
+    )
+    assert record.get("level") == "warning", (
+        f"an OPEN payload must stay quiet — the stand-down is honest and must not "
+        f"read as a defect; got {record!r}"
+    )
+    assert (
+        record.get("liveness_unverified") is None
+    ), f"liveness WAS established here and must not report itself unverified; {record!r}"
+    assert (
+        record.get("resolved_status") == "backlog"
+    ), f"backlog is an open state and must resolve as itself; got {record!r}"
+
+
+def test_unarmed_until_skips_with_a_stated_reason_when_the_store_did_not_answer(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """THE BRANCH THAT EXECUTES EVERYWHERE AND THAT NOBODY TESTS: no answer at all.
+
+    Hosted CI and every sandbox reach no loopback ledger, so this is the
+    path almost every run takes. The ratified exception admits exactly one
+    way to proceed without an answer — a SKIP CARRYING ITS REASON — and
+    forbids both the silent pass and the hard failure of an offline build.
+    The `liveness_unverified` marker is what keeps an unverified answer from
+    rendering like a verified one.
+    """
+    record = _unarmed_record(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, snapshot=None
+    )
+    assert (
+        record.get("liveness_unverified") is True
+    ), f"an unanswered store must SAY SO rather than pass silently; got {record!r}"
+    assert (
+        record.get("resolved_status") == "unreachable"
+    ), f"the stated reason must name WHY the id could not be resolved; got {record!r}"
+    assert record.get("level") == "warning", (
+        f"an offline build must not be hard-failed for a condition its author "
+        f"cannot fix; got {record!r}"
+    )
+
+
+def test_unarmed_until_naming_another_trackers_item_is_unverified_not_convicted(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A cross-tracker citation is LEGITIMATE, so local absence must not convict it.
+
+    `SPECIFICATION/contracts.md` §"Role keys" requires a verifier of this
+    property to resolve identifiers ACROSS trackers, "since a consumer MAY
+    legitimately cite a work item held in another repository's tracker; a
+    verifier that resolves only within the declaring repo would reject valid
+    declarations". Measured across the fleet on 2026-07-28, THREE of the four
+    live payloads do exactly that — so reading absence-from-the-local-tenant
+    as death would put three conformant repos in false breach on the day it
+    shipped. This is the ONE place this gate reads the shared resolver more
+    narrowly than `checks/no_todo_registry` does, and the asymmetry is the
+    ratified clause rather than caution.
+    """
+    record = _unarmed_record(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        snapshot={"livespec-dev-tooling-someone-else": "ready"},
+    )
+    assert record.get("level") == "warning", (
+        f"an id this repo's own store does not hold may live in another tracker; "
+        f"convicting it would red a conformant repo; got {record!r}"
+    )
+    assert (
+        record.get("liveness_unverified") is True
+    ), f"the honest answer is UNVERIFIED, and it must say so; got {record!r}"
+    assert (
+        record.get("resolved_status") == "nonexistent"
+    ), f"the diagnostic must name what the local store answered; got {record!r}"
 
 
 def test_scalar_key_accepts_a_blessed_variant(*, tmp_path: Path) -> None:

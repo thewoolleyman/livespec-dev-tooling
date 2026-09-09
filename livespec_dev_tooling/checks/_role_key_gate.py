@@ -11,6 +11,13 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
+    NONEXISTENT,
+    UNREACHABLE,
+    bd_status_reader,
+    resolve_liveness,
+    resolved_status,
+)
 from livespec_dev_tooling.config import (  # noqa: E402
     Config,
     ConventionNotAdopted,
@@ -63,6 +70,99 @@ _UNDECLARED_ROLE_KEY_MESSAGE = " ".join(
     )
 )
 
+# The ratified wording, not a paraphrase. `SPECIFICATION/scenarios.md` §"Scenario:
+# an unarmed-until payload naming a closed work item is a conformance failure"
+# requires the report to identify the consumer, the key and the item, AND to state
+# that the declaration claims pending work that is already complete. The last
+# clause is the one a reader acts on, so it is spelled out rather than implied by
+# the status field alone.
+_UNARMED_UNTIL_CLOSED_MESSAGE = " ".join(
+    (
+        "role key declared UNARMED pending named work whose work-item is CLOSED —",
+        "the declaration claims pending work that is already complete, so the key is",
+        "switched off with nothing left to wait for; re-arm it, or re-point the",
+        "payload at the work that is genuinely still open",
+    )
+)
+# The honest-degradation SKIP. `SPECIFICATION/spec.md` §"Non-goals" admits exactly
+# one way to proceed without an answer, and it is a skip CARRYING ITS REASON —
+# never a silent pass, never a hard-failed offline build. `liveness_unverified`
+# is what keeps this from rendering like the verified-open case below.
+_UNARMED_UNTIL_UNVERIFIED_MESSAGE = " ".join(
+    (
+        "role key declared UNARMED pending named work — the concept applies here.",
+        "Work-item liveness UNVERIFIED: this repository's configured work-item store",
+        "did not resolve the id, so whether the deferral is still owed is UNKNOWN",
+        "rather than confirmed",
+    )
+)
+
+
+def _announce_unarmed_until(
+    *,
+    ledger_id: str,
+    key: str,
+    log: structlog.stdlib.BoundLogger,
+    check_id: str,
+) -> None:
+    """Announce one `unarmed_until` declaration at the severity its payload EARNS.
+
+    This is the arm that used to make the docstring's promise false. The variant
+    was called "the one variant with an expiry", but nothing in this library
+    resolved the id against any tracker, so a declaration could name work that
+    closed years ago and the key stayed switched off, silently, forever. The
+    expiry now exists.
+
+    Resolution goes through `checks/_work_item_liveness`, the ONE shared mechanism
+    `SPECIFICATION/spec.md` §"Non-goals" requires for the work-item-liveness
+    exception — a gate hand-rolling its own lookup is non-conforming there even
+    when its behaviour is otherwise correct. `bd_status_reader` is read off this
+    MODULE at call time so a test can substitute a deterministic double; no unit
+    test needs a reachable tracker, and no test's verdict depends on the host it
+    runs on.
+
+    Three outcomes, deliberately distinguishable, because verified-live,
+    verified-dead and UNVERIFIED are three different facts and a skip that renders
+    like a pass is the defect this closes.
+
+    AN ID THIS REPO'S OWN STORE DOES NOT HOLD IS UNVERIFIED, NOT DEAD, and the
+    asymmetry is ratified rather than cautious: `SPECIFICATION/contracts.md`
+    §"Role keys" requires a verifier of this property to resolve identifiers
+    ACROSS trackers, "since a consumer MAY legitimately cite a work item held in
+    another repository's tracker; a verifier that resolves only within the
+    declaring repo would reject valid declarations". Measured across the fleet on
+    2026-07-28, THREE of the four live payloads cite an id in a tenant the
+    declaring repo does not own, so convicting on absence-from-the-local-tenant
+    would put three conformant repos in false breach. This is the one place this
+    gate reads the shared resolver more narrowly than `checks/no_todo_registry`
+    does, and the narrowing is that clause.
+
+    The verdict is ANNOUNCED, not enforced by exit code: `role_absence_exit_code`
+    returns 0 for every declared-absent variant, and ERROR naming the id and its
+    status is the "red or warning per the consuming gate's own contract" the
+    exception admits.
+    """
+    repo = Path.cwd()
+    snapshot = bd_status_reader(repo=repo)
+    status = resolved_status(work_item=ledger_id, snapshot=snapshot)
+    fields: dict[str, object] = {
+        "check_id": check_id,
+        "role": key,
+        "role_key_spelling": "unarmed_until",
+        "ledger_id": ledger_id,
+        "consumer": repo.as_posix(),
+        "resolved_status": status,
+    }
+    if status in (UNREACHABLE, NONEXISTENT):
+        log.warning(_UNARMED_UNTIL_UNVERIFIED_MESSAGE, **fields, liveness_unverified=True)
+    elif resolve_liveness(work_item=ledger_id, snapshot=snapshot) is False:
+        log.error(_UNARMED_UNTIL_CLOSED_MESSAGE, **fields)
+    else:
+        log.warning(
+            "role key declared UNARMED pending named work — the concept applies here",
+            **fields,
+        )
+
 
 def _announce_absence(
     *,
@@ -80,10 +180,12 @@ def _announce_absence(
 
     The severities are deliberately NOT uniform. `legacy-ambiguous-empty` is a WARN
     because Phase 1's entire purpose is to make a previously INVISIBLE state
-    countable before Phase 2 migrates anyone. `unarmed_until` is a WARN because it
-    is the one variant with an expiry — the concept applies here and is switched
-    off pending named work, which is exactly the state that should stay visible.
-    The other three are settled declarations and log at INFO.
+    countable before Phase 2 migrates anyone. `unarmed_until` is the one variant
+    with an expiry — the concept applies here and is switched off pending named
+    work, which is exactly the state that should stay visible — so it is the one
+    variant whose severity is not fixed here at all: `_announce_unarmed_until`
+    resolves its payload and picks WARN or ERROR from what the store answers. The
+    other three are settled declarations and log at INFO.
     """
     match absence:
         case Undeclared(key=undeclared_key):
@@ -95,13 +197,7 @@ def _announce_absence(
                 blessed_spellings=list(_BLESSED),
             )
         case UnarmedUntil(ledger_id=ledger_id):
-            log.warning(
-                "role key declared UNARMED pending named work — the concept applies here",
-                check_id=check_id,
-                role=key,
-                role_key_spelling="unarmed_until",
-                ledger_id=ledger_id,
-            )
+            _announce_unarmed_until(ledger_id=ledger_id, key=key, log=log, check_id=check_id)
         case NotApplicable(reason=reason):
             log.info(
                 "role key declared NOT APPLICABLE — the concept does not exist for this repo",
