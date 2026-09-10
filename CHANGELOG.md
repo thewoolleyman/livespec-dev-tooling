@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.85.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.2...v1.85.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **fabro-sandbox:** require explicit Git author ([483ae52](https://github.com/thewoolleyman/livespec-dev-tooling/commit/483ae527f3dbab0d56787963559ecf3a2d87a7e5))
+
 ## [1.85.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.1...v1.85.2) (2026-09-10)
 
 
