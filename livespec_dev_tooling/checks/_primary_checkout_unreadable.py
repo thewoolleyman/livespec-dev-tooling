@@ -33,7 +33,7 @@ __all__: list[str] = [
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CheckInputUnreadable:
     """A file the check needed to read DID NOT ANSWER.
 
