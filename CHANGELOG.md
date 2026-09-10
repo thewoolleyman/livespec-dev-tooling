@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.84.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.84.0...v1.84.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **gates:** de-flake the delegated pre-push gate (warm pyright; decouple master-ci-green smoke from live master state) ([b682f02](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b682f02237c34d908862c5486ce65e1e867ce2df))
+
 ## [1.84.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.8...v1.84.0) (2026-09-10)
 
 
