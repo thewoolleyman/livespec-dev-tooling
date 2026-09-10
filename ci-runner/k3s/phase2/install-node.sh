@@ -300,7 +300,7 @@ STEP_LABEL[churn-slot]="4/10 churn-slot extended resource (capacity ${CAPACITY})
 STEP_LABEL[wedged-runner]="5/10 wedged-runner scan (${WEDGE_MODE})"
 STEP_LABEL[runner-pod-lifecycle]="5b/10 runner-pod lifecycle scan (report-only; no mode — see its installer's header)"
 STEP_LABEL[arc-log-archive]="6/10 ARC log archive"
-STEP_LABEL[secret-reinjection]="7/10 boot-time GitHub App secret reinjection unit (enable only)"
+STEP_LABEL[secret-reinjection]="7/10 boot-time secret reinjection units — GitHub App + gate forge credential (enable only)"
 STEP_LABEL[sccache]="7b/10 pool-provided sccache binary (node-local; mounted read-only into every job)"
 STEP_LABEL[container-hook]="7c/10 fleet-patched ARC container hook + externals extraction from the pinned runner image"
 STEP_LABEL[reconstruct]="8/10 reconstruct-on-boot converge unit + artifacts (enable only)"
@@ -332,7 +332,7 @@ STEP_AGENT_LABEL[k3s-config]="1/10 k3s config (server or agent) — installs k3s
 STEP_AGENT_LABEL[apparmor]="3/10 AppArmor profile only (--profile-only; the hook ConfigMap is a cluster object the server converges)"
 
 STEP_SKIP[host-thermal]="iDRAC state reached through Dell's racadm packages — PowerEdge hardware, and the pool's PowerEdge is its server. This is the one skip that uses the role as a PROXY for the hardware; if a PowerEdge ever joins as an agent this becomes its own profile key, not a role test."
-STEP_SKIP[secret-reinjection]="writes the GitHub App Secret into the cluster at boot — one cluster-scoped object, applied with the admin kubeconfig an agent does not hold, owned by the node that holds the datastore."
+STEP_SKIP[secret-reinjection]="writes the GitHub App Secret and the gate forge-credential Secret into the cluster at boot — cluster-scoped objects, applied with the admin kubeconfig an agent does not hold, owned by the node that holds the datastore."
 STEP_SKIP[reconstruct]="rebuilds the CLUSTER from git at boot — the fleet-owned provisioner, Kueue and every ClusterQueue, the ARC controller and every scale set. Cluster-scoped, admin-kubeconfig-only, and the server's job; this is the step whose absence omits Kueue and ARC from an agent's plan."
 STEP_SKIP[datastore-tmpfs]="mounts the k3s SERVER datastore on tmpfs; an agent node has no datastore to mount."
 STEP_SKIP[wedged-runner]="sweeps the ARC runner pods CLUSTER-WIDE from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service, so it cannot start at all) with the admin kubeconfig an agent does not hold. The SERVER's own scan-wedged-runners.timer already performs that sweep every five minutes over every pod on every node, this one included (livespec-dev-tooling-qcq0)."
