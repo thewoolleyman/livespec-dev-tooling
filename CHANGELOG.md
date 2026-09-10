@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.85.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.1...v1.85.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **ci-runner-k3s:** make the agent-rejoin watchdog detect the real wedge ([e7060e4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e7060e4737aba8b92b9ed921d22bdc545a0ccd3d))
+
 ## [1.85.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.0...v1.85.1) (2026-09-10)
 
 
