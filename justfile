@@ -337,6 +337,28 @@ check-format:
 check-types:
     uv run pyright
 
+# `warm-typecheck` — populate pyright's bundled node runtime + typeshed
+# ONCE, serially, so a later PARALLEL `just check` never cold-downloads it
+# concurrently. The `pyright==<pin>` PyPI wrapper fetches the node-based
+# pyright (typeshed bundled inside) on its first invocation; `just check`
+# runs its targets through `parallel_check_dispatcher`, so on a COLD cache
+# two targets can race that first fetch and leave it half-written, which
+# surfaces as pyright's "Stub file not found for 'typing'". Invoking pyright
+# once up front makes that fetch happen serially and completely.
+#
+# This exists for the delegated pre-push GATE POD, whose cache is cold every
+# run: it copied UV_CACHE_DIR=/__w/_warm/uv from the ARC runner template but
+# has no volume seeded there (only an emptyDir workspace), and the sandbox
+# image deliberately pre-warms no uv packages. So the gate container script
+# runs `just warm-typecheck` before `just hook_gate=1 check` — see
+# ci-runner/k3s/phase2/gates/gate-job-template.yaml. On a warm dev/CI cache
+# it is a fast no-op. Like `check-static`, it is a helper recipe: NOT a
+# tracked check-target, NOT a canonical slug, NOT in the CI matrix.
+# (plan livespec `k3s-on-gmktec-for-vps-usage`, epic livespec-sab5gn,
+# slice F livespec-dev-tooling-rwmo.6.)
+warm-typecheck:
+    uv run pyright --version
+
 # `check-static` — fastest-first fail-fast helper for fast agent/dev
 # feedback (work-item livespec-dev-tooling-7us.8). Runs ONLY the cheap
 # static checks — `ruff format --check .`, `ruff check .`, `pyright`
