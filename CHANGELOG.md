@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.84.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.84.1...v1.84.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **checks:** make CheckInputUnreadable keyword-only ([951aec8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/951aec8720d8e0d23325256cab437d03a4d179e8))
+
 ## [1.84.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.84.0...v1.84.1) (2026-09-10)
 
 
