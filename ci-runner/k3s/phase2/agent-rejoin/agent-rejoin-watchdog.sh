@@ -64,16 +64,26 @@ if ! systemctl is-active --quiet "${AGENT_UNIT}"; then
   exit 0
 fi
 
-# The control-plane address the agent was told to join, read from its own config
-# rather than hardcoded, so a re-homed cluster needs no edit here. `server:
-# https://host:port` -> host and port; the port defaults to k3s's 6443.
-server_line="$(awk -F'server:[[:space:]]*' '/^[[:space:]]*server:/ {print $2; exit}' "${CONFIG}" 2>/dev/null | tr -d '"'\''[:space:]')"
-if [ -z "${server_line}" ]; then
-  # No server line means this is not a joined agent (or the config moved); there
-  # is nothing to rejoin to, so there is nothing to do.
+# The control-plane address the agent was told to join, read from whichever
+# place k3s actually took it rather than hardcoded, so a re-homed cluster needs
+# no edit here. k3s accepts it EITHER as a `server:` key in the config OR as a
+# `--server <url>` flag on the agent command line — and gmktec's config.yaml
+# carries NO server: key, the URL living in the k3s-agent unit's ExecStart
+# (measured 2026-09-10; a config-only parse silently found nothing and the
+# watchdog never acted). So try the config first, then the unit. The k3s systemd
+# unit renders each ExecStart arg quoted on its own line, so the value is the
+# token on the line after a lone `--server`.
+server_url="$(awk -F'server:[[:space:]]*' '/^[[:space:]]*server:/ {print $2; exit}' "${CONFIG}" 2>/dev/null | tr -d "\"'[:space:]")"
+if [ -z "${server_url}" ]; then
+  server_url="$(systemctl cat "${AGENT_UNIT}" 2>/dev/null \
+      | awk '/--server/ {getline v; gsub(/[[:space:]'"'"'\\]/,"",v); print v; exit}')"
+fi
+if [ -z "${server_url}" ]; then
+  # Neither source names a server: not a joined agent (or the layout moved);
+  # there is nothing to rejoin to, so there is nothing to do.
   exit 0
 fi
-host_port="${server_line#*://}"
+host_port="${server_url#*://}"
 server_host="${host_port%%:*}"
 server_port="${host_port##*:}"
 [ "${server_port}" = "${host_port}" ] && server_port=6443
@@ -88,10 +98,17 @@ fi
 
 # GATE 3 — the wedge signature, counted over the window. grep -c exits non-zero
 # on zero matches; `set -uo` (no -e) lets the count land as 0 and the script go
-# on. The needle is exactly what k3s logs when the Node object is gone.
+# on. The needle is QUOTE-AGNOSTIC on purpose: when the Node object is gone k3s
+# logs the error through klog as `... node \"<name>\" not found` and
+# `... nodes \"<name>\" not found` — the inner quotes arrive BACKSLASH-ESCAPED in
+# the journal message (kubelet_node_status, nodelease and eviction_manager all
+# emit it, measured on gmktec-xubuntu 2026-09-10). So the match is the node name
+# followed by any non-space run (the `\"` or `"`) and ` not found`, rather than a
+# fixed-quote literal that the escaping would silently defeat. `--since` and this
+# `date` are both LOCAL time, so the window is computed in the journal's own zone.
 since="$(date '+%Y-%m-%d %H:%M:%S' -d "-${WINDOW_SEC} seconds" 2>/dev/null)"
 hits="$(journalctl -u "${AGENT_UNIT}" --since "${since}" --no-pager 2>/dev/null \
-        | grep -c -F "node \"${NODE_NAME}\" not found")"
+        | grep -c -E "${NODE_NAME}[^ ]* not found")"
 hits="${hits:-0}"
 if [ "${hits}" -lt "${MIN_HITS}" ]; then
   exit 0
