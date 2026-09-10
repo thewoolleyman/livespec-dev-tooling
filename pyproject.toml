@@ -374,6 +374,8 @@ supervisor_entry_files = [
     "livespec_dev_tooling/cross_repo/pin_autodiscovery.py",
     "livespec_dev_tooling/cross_repo/bump_pr_supersession.py",
     "livespec_dev_tooling/fleet/merged_branch_sweep.py",
+    "livespec_dev_tooling/fleet/git_identity_audit.py",
+    "livespec_dev_tooling/fleet/_git_identity_host_probe.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",
     "livespec_dev_tooling/red_leg_scope.py",
     # --- Class B: the nine remaining `main() -> int` supervisors, declared

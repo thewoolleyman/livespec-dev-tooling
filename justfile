@@ -328,6 +328,14 @@ ansible-drift *args:
 ansible-apply *args:
     uvx --from ansible-core==2.21.4 ansible-playbook -i ansible/inventory/legacy.yml "$@"
 
+# Operator-invoked, future-state-only Git author identity audit. The output
+# path MUST be below this checkout's ignored tmp/ tree. This is deliberately
+# absent from `just check` and CI: it reaches all four legacy hosts and verifies
+# caller-supplied Fabro canary evidence against the named commit.
+[positional-arguments]
+git-identity-audit output fabro_evidence:
+    uv run python -m livespec_dev_tooling.fleet.git_identity_audit "$output" "$fabro_evidence"
+
 check-lint:
     uv run ruff check .
 
