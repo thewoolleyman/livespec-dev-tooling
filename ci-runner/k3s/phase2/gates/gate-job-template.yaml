@@ -145,8 +145,17 @@ spec:
           image: @@IMAGE@@
           imagePullPolicy: IfNotPresent
           workingDir: /workspace
-          # Requirement 2: the gated repository's own aggregate, nothing else —
-          # preceded ONLY by the repository bootstrap two of its members read.
+          # Requirement 2: the gated repository's own PRE-PUSH aggregate,
+          # nothing else — preceded ONLY by the repository bootstrap two of its
+          # members read. The command is `just hook_gate=1 check`, NOT bare
+          # `just check`: a delegated gate is a surrogate for the LOCAL pre-push,
+          # which runs `just hook_gate=1 check` (scripts/just/check-pre-push.sh),
+          # and `hook_gate` adds the `hook_gate_skips` set to the skip list —
+          # today just `check-fleet-conformance-admin`, which needs a user-class
+          # admin credential no pre-push host (or gate pod) holds and which
+          # credential-reading-targets.md records as never running in the gate.
+          # Bare `just check` here ran it and failed the gate on a target the
+          # pre-push it stands in for never runs.
           #
           # `/workspace` is a `git init` + fetch, not a bootstrapped clone, so
           # the worktree-discipline pack and the commit-refuse hooks are simply
@@ -173,7 +182,7 @@ spec:
               set -euo pipefail
               just install-worktree-pack
               just install-commit-refuse-hooks
-              just check
+              just hook_gate=1 check
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check

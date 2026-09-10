@@ -115,17 +115,22 @@ def test_the_template_and_the_client_spell_the_base_ref_suffix_identically() -> 
 
 
 def test_the_repository_bootstrap_precedes_the_aggregate_in_the_gate_container() -> None:
-    """Both installs, then `just check` — in that order and nothing else.
+    """Both installs, then `just hook_gate=1 check` — in that order and nothing else.
 
     Asserted as the WHOLE list rather than as three memberships, so it also
     pins that the aggregate is the last thing the container runs and that it is
-    the unsubsetted `just check` requirement 2 asks for.
+    the PRE-PUSH aggregate the gate stands in for: `just hook_gate=1 check`, the
+    command `check-pre-push.sh` runs. `hook_gate` adds `hook_gate_skips` (today
+    just `check-fleet-conformance-admin`, which needs a user-class admin
+    credential no pre-push host or gate pod holds) to the skip set; bare
+    `just check` ran it and failed the gate on a target the local pre-push never
+    runs.
     """
     steps = [line.strip() for line in _gate_container_script() if line.strip().startswith("just ")]
     assert steps == [
         "just install-worktree-pack",
         "just install-commit-refuse-hooks",
-        "just check",
+        "just hook_gate=1 check",
     ]
 
 
