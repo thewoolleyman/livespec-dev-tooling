@@ -35,18 +35,19 @@ written back; the populator builds only the default branch.
 
 Regenerable data with a hot working set that every job reads concurrently:
 the right medium is RAM, not the array the start-burst knee lives on. The
-ceiling (16 GiB, `allkeys-lru`) is derived against the concurrency cap so
-cache memory and job memory never compete: 188 GiB allocatable, minus a
+ceiling (16 GiB, `allkeys-lru`) was originally derived against the concurrency
+cap so cache memory and job memory never compete: 188 GiB allocatable, minus a
 4 GiB envelope for each of the 32 churn slots (128 GiB), minus ~8 GiB for
 k3s/containerd/host services, minus ~20 GiB of page cache the warm trees and
 the crates proxy's store want to stay resident in — leaves ~32 GiB, of which
 redis takes half. The console's four-profile dependency graph measured far
 below the ceiling on first populate (see the plan store, research/006); the
 headroom is for PR-lockfile variants (which a job compiles and does NOT
-write) and a second Rust repository. The cap was derived at C=32; C is 64
-since 2026-09-06, and the ceiling now stands on measured headroom (~143 GiB
-free at C=64 with every cache resident) rather than on the envelope sum —
-see the manifest header.
+write) and a second Rust repository. C briefly rose from 32 to 64 on
+2026-09-06, then returned to 32 after CPU saturation made the larger value
+counterproductive. The PowerEdge now exposes 377 GiB after its 2026-09-10
+memory upgrade. The Redis ceiling remains 16 GiB because demand did not change;
+the added capacity is headroom, not a reason to enlarge a regenerable cache.
 
 ## Persistence: a snapshot on the `ci-cache` tier, since 2026-09-06
 
