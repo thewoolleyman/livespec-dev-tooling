@@ -139,23 +139,19 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling.checks._config_load import load_config_or_report  # noqa: E402
 from livespec_dev_tooling.checks._declared_absence_returns import (  # noqa: E402
-    declared_absence_names,
     rejected_declarations,
 )
-from livespec_dev_tooling.checks._no_expected_failure_mode import (  # noqa: E402
-    functions_without_expected_failure_mode,
-)
 from livespec_dev_tooling.checks._public_api_consumption import (  # noqa: E402
-    declared_public_names,
-    repo_local_public_names,
     stale_declarations,
+)
+from livespec_dev_tooling.checks._public_api_exempt_universe import (  # noqa: E402
+    resolve_public_and_exempt_names,
 )
 from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
     ensure_declared_paths_contain_python,
     role_absence_exit_code,
 )
 from livespec_dev_tooling.checks._single_meaning_variants import (  # noqa: E402
-    declared_variant_names,
     rejected_variant_declarations,
 )
 from livespec_dev_tooling.config import (  # noqa: E402
@@ -423,34 +419,20 @@ def _scan(
     outside the pure layer, so deriving consumption from the scanned trees
     alone would miss most of it — and missing consumption is the RELAXING
     direction.
+
+    ⛔ THE TWO UNIVERSES ARE ASSEMBLED IN `_public_api_exempt_universe`, NOT
+    HERE, and that indirection is bought rather than incidental. A SECOND
+    caller exists — the armed re-derivation that walks
+    `resolve_check_universe()` instead of `pure_trees` — and it used to
+    assemble them by COPYING these lines. When v183's `declared_variant_names`
+    joined the exempt set the copy did not follow, and the re-derivation
+    reported this repo at 18 offenders instead of 3. What stays HERE is the
+    SCAN universe, which is exactly what makes that caller a different
+    measurement rather than a duplicate of this check.
     """
-    public = repo_local_public_names(sources=sources) | declared_public_names(
-        declared=config.cross_repo_public_api, sources=sources
-    )
-    # v179 member 1, recomputed here on EVERY run rather than declared. Its
-    # universe is the same git-derived set as the consumption graph's, because
-    # clause (d)'s fixpoint walks the whole call graph — a callee outside the
-    # analysed set is doubt, and doubt disqualifies.
-    total = functions_without_expected_failure_mode(sources=sources, io_trees=config.io_trees)
-    # v179 MEMBER 2, DECLARED rather than computed, unioned with member 1's computed
-    # set. The two are DISJOINT BY CONSTRUCTION — member 1's clause (e) refuses
-    # every `X | None`, and that is the only shape bound 1 admits — so the union
-    # adds exactly the declared absences, cannot let a declaration mask a member-1
-    # result, and cannot let a member-1 result launder an invalid declaration. An
-    # entry that FAILS bound 1 or bound 3 contributes nothing here; it fails the
-    # check outright in `main()`.
-    total |= declared_absence_names(declared=config.total_absence_returns, sources=sources)
-    # livespec v183's SANCTIONED ALTERNATIVE SPELLING at a rendering boundary,
-    # DECLARED per variant in `single_meaning_variants` and gated by
-    # `checks/_declarable_unions`. It joins the same exempt set, but it is NOT a
-    # third member of v179: nothing is exempted from the railway here — a
-    # declared union already HAS the property the rule secures, and condition 1
-    # TIGHTENS the obligation at the leaf rather than relaxing it. A function
-    # returning a declared union that calls a primitive DIRECTLY is subtracted
-    # inside `declared_variant_names` and stays convicted.
-    total |= declared_variant_names(
-        declared=config.single_meaning_variants, sources=sources, io_trees=config.io_trees
-    )
+    universes = resolve_public_and_exempt_names(config=config, sources=sources)
+    public = universes.public
+    total = universes.exempt
     offenders: list[tuple[Path, int, str]] = []
     for tree_rel in pure_trees:
         for py_file in iter_py_files(root=cwd / tree_rel):
