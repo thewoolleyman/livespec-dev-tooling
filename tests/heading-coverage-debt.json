@@ -1,69 +1,6 @@
 [
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Adaptive JIT runner admission budget",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-08-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Commit and merge discipline",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Enforcement-suite invocation",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Hooks and CI",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Runner-pool build cache tiers",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Runner-pool cache telemetry",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Runner-pool node rebuild recipe",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Self-application",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Toolchain pins",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: JIT circuit state survives restart without a reburst",
     "work_item": "livespec-dev-tooling-xx57",

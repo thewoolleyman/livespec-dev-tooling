@@ -213,41 +213,36 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Toolchain pins",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_toolchain_pins.test_no_python_pin_hides_in_the_binary_pin_file",
+    "reason": "Unit-tier: the section's file/pin PARTITION and the exactness the \"MUST match livespec's pins exactly\" clause depends on. Asserts uv/just/lefthook are `.mise.toml` `[tools]` entries, that no Python interpreter or `[dependency-groups].dev` package is ALSO pinned there (two pins for one tool, with an activated mise shim shadowing the uv-resolved `.venv`, resolves without error), and — in the sibling assertions — that every binary pin names a concrete version and every dev-group entry is an `==`: a set-valued pin has no version for drift to surface against, so the match clause becomes unfalsifiable rather than satisfied (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Enforcement-suite invocation",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_enforcement_suite_invocation.test_no_run_block_body_invokes_a_dev_tool_directly",
+    "reason": "Unit-tier: the section's own ban applied to the region the gate it names cannot read. `no_direct_tool_invocation` judges the `run:` capture, which for the block-scalar form is the literal `|` — so every line of a `run: |` body, which is where this repository's CI puts its commands, is accepted in silence. This scans lefthook.yml and every workflow's full `run:` text, block bodies included, and a sibling asserts each literal `just <target>` those files name resolves to a recipe the justfile defines (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Hooks and CI",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_hooks_and_ci_wiring.test_each_hook_stage_runs_the_members_the_section_names_in_that_order",
+    "reason": "Unit-tier: the mirrored ORDER, read off the `NN-` naming that produces it, plus the one ordering clause that is load-bearing on its own — \"No hook command that reads the pack MAY precede it\", asserted as `00-install-worktree-pack` at position 0 of every hook that carries it and as its delegation to `just install-worktree-pack`. Order is the property no check can defend from inside a member, and a pack-reading member that runs first makes the operator pay the whole gate runtime before anything discovers the pack is absent or stale (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Commit and merge discipline",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_commit_and_merge_discipline.test_the_master_guard_refuses_on_master_and_permits_a_feature_branch",
+    "reason": "Unit-tier with a `git` DOUBLE: `00-no-commit-on-master` is inline shell with no module and no aggregate member, so nothing had ever executed it — a body that stopped refusing still parses, still runs, and exits 0, which reads exactly like a commit correctly allowed. Executed here in both directions. Siblings assert the merge-strategy half (every automated `gh pr merge` requests `--rebase`; a `--squash` lands the branch and collapses the per-commit prefixes `release-please` computes the bump from) and that the release tool is configured to recognise those prefixes (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Self-application",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_self_application_safety_net.test_the_push_gate_runs_the_full_aggregate_and_delegates_to_no_subset",
+    "reason": "Unit-tier: the clause the constraints.md sibling and the Definition-of-Done sibling leave uncovered — \"as part of the standard local + CI safety net\", which names a PATH rather than a target list. Asserts the push gate invokes the full `just check` and routes to no reduced aggregate (this repository shipped that branch; its own script records it reddening master on 2026-09-04, and it failed by PASSING), that no workflow gates on the reduced aggregate, and that the hook path's one enumerated omission contains no slug this library ships (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
@@ -495,33 +490,29 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Adaptive JIT runner admission budget",
-    "test": "TODO",
-    "reason": "Implementation follows in livespec-s43svm.5; a controller integration-tier proof is required for this NFR.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_jit_admission_budget.test_every_repository_ceiling_is_the_bounded_multiple_of_its_fair_share",
+    "reason": "Unit-tier over the committed manifests: the three STATIC terms of the section's `min()` live in three different hand-maintained files, and the relations between them are what the section states rather than what any one file says. Asserts each scale set's `maxRunners` is the bounded multiple of its ClusterQueue `nominalQuota` in both directions (too high materializes the backlog as pending admission objects the clause says must wait at the forge; collapsed to the quota, the borrowing clause becomes unreachable), and siblings assert the fair shares sum to the node profile's `ADMISSION_CAPACITY_C` and that no committed path reaches the 482 physical cap or derives its doubling (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool build cache tiers",
-    "test": "TODO",
-    "reason": "Seeded by plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip) at revise time 2026-09-04. Replace TODO with the isolation-suite / cache-telemetry test IDs when the first child (warm-cargo-registry, cache-pod-spans, cache-negative-tests) lands.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_runner_pool_cache_tiers.test_the_two_budgets_are_stated_once_and_injected_from_that_one_place",
+    "reason": "Unit-tier over the committed cache tree: the section's single-sourcing clause — the byte and file budgets \"stated in exactly one committed place that governs BOTH the populator's refusal and the node's lifecycle sweep's judgement\". Asserts the one ConfigMap states both axes, that the populator receives them from it and restates neither (a second copy drifts, and the two readers then disagree silently about the same generation), that the sweep judges against that same place, and — in siblings — that an absent budget fails closed, that the over-budget arm sets the new generation aside without touching the live symlink, and that every populator build carries the nice/ionice and admitted-job guardrails (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool cache telemetry",
-    "test": "TODO",
-    "reason": "Seeded by plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip) at revise time 2026-09-04. Replace TODO with the isolation-suite / cache-telemetry test IDs when the first child (warm-cargo-registry, cache-pod-spans, cache-negative-tests) lands.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_runner_pool_cache_telemetry.test_every_per_job_cache_outcome_is_attributed_to_its_own_tier",
+    "reason": "Unit-tier over the committed emitters: \"one attribute per cacheable operation [...] never as a single aggregate that hides which tier missed\", asserted as the per-tier span carrying its tier identity next to its hit and every cache attribute sitting in the `build.cache.*` scheme namespace. Siblings assert the fleet scheme attributes ride the common set, that the cold canary is deterministic, applies only when the operator switch is unset and is tagged distinctly from it (a random draw yields the right cold FRACTION and destroys the reproducibility the standing query rests on), and that the dead-man trigger counts the one gauge the host emitter always emits (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool node rebuild recipe",
-    "test": "TODO",
-    "reason": "Seeded by livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn) at revise time 2026-09-06. Replace TODO with the test id that asserts the bare-metal stage exists under ci-runner/k3s/phase0-bare-metal/, is named first in the documented rebuild sequence, and reads every node value from a profile, when the phase0 child lands.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_runner_pool_node_rebuild.test_no_stage_of_the_procedure_embeds_a_value_that_belongs_to_one_node",
+    "reason": "Unit-tier over the committed recipe: \"the procedure MUST NOT embed a value that belongs to one node\", asserted as the negative — no node-identifying value of any committed profile appears in any stage's executable text. A hardcoded device or address does not break the node it was copied from; it breaks the SECOND node by doing the first node's thing to it, on the one day the recipe is exercised. Siblings assert both profiles declare one key vocabulary, that the consent gate refuses NAMING the volume it refused, and that the documented sequence's step 1 is the bare-metal stage (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-6zgtmv)."
   },
   {
     "spec_root": "SPECIFICATION",
