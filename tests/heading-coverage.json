@@ -150,73 +150,64 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Boundary",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_specification_boundary.test_every_boundary_route_lands_in_the_file_the_boundary_names",
+    "reason": "Unit-tier: the section is a ROUTING TABLE, and a misroute is otherwise silent — nothing in the toolchain objects to a section written into the wrong spec file, and for one class the silence is total: `heading_coverage` SKIPS `## Scenario:` headings in every file EXCEPT `scenarios.md`, so a scenario parked elsewhere is exempt from the registry and reads exactly like a scenario nobody wrote. Each bullet is asserted in the direction it constrains — the named content is in the file the bullet names, the content the boundary routes AWAY is absent from this file, acceptance scenarios live only where the gate reads them, and a heading this file shares with a sibling (today `## Self-application`) must CITE that sibling rather than restate it, since two definitions of one rule drift. Companion assertions at `tests.spec.test_specification_boundary` cover the scenario-placement and cross-reference halves (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Test-Driven Development discipline",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_tdd_discipline_enforcement.test_the_red_green_gate_is_wired_at_commit_msg_and_receives_the_message_file",
+    "reason": "Unit-tier: the STAGE each named gate is wired at — the part of the section no check can defend, because a check cannot observe whether it was invoked. `red_green_replay` must be a commit-msg command (the `TDD-Red-*`/`TDD-Green-*` trailers it reads live in the message, which does not exist at pre-commit) and must receive lefthook's `{1}` message-file argument: without it the gate silently falls back to its `origin/master..HEAD` range mode, which passes on a branch whose landed commits already carry trailers, so it stays green while judging nothing. The companion `test_the_source_and_test_pairing_gate_is_wired_at_pre_commit` asserts the pairing bullet's other named surface, whose hook invocation is its ONLY deciding one — inside `just check` `commit_pairs_source_and_test` passes VACUOUSLY on an empty staged diff (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Testing approach",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_testing_approach_registry.test_every_mapped_registry_test_resolves_to_a_test_that_exists",
+    "reason": "Unit-tier: the H3 \"Scenario-tier coverage\" rules applied to this repository's own registry, in the three directions no shipped check covers here. RESOLVABILITY is the mapped one: a node id must name a test that exists, which `heading_coverage` deliberately does not check (that direction was armed ahead of adoption, reddened three consumer repos and was reverted, livespec-dev-tooling-jel7) — adopting it repo-locally is the adoption-then-arming order, and it stops an id left behind by a rename from reading as coverage. Companions assert GRANULARITY (one row per scenario; the check diffs triples as a SET, so a duplicate row is invisible to it while giving the heading two answers) and that every declared `scenario_tiers` prefix names a real directory, since a typo'd prefix does not fail — it silently stops matching (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Linter rule set",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_linter_rule_set.test_every_category_the_section_enumerates_is_selected",
+    "reason": "Unit-tier: the enumerated ruff categories are READ FROM THE SECTION and diffed against `[tool.ruff.lint].select`, so the test cannot drift from the list it enforces; an unselected category produces no findings and a lint run missing a whole category is indistinguishable from a clean one. The direction is containment, not equality, because the tree deliberately wires a 28th category (`BLE`, with its reason recorded at the array) that the section does not enumerate. Companions assert the section's own arithmetic (each bullet's parenthesised count against the list it labels), that `ISC001` is the ONLY ignored rule, and — exactly, since the section is exact — the four pylint thresholds, the `ban-relative-imports` mode and the six banned APIs (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Typechecker rule set",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_typechecker_rule_set.test_pyright_runs_strict_with_every_named_diagnostic_explicitly_configured",
+    "reason": "Unit-tier: strict mode plus the seven strict-plus diagnostics, read FROM the section's bullet list. Each is a line that can be deleted with nothing failing — the diagnostic falls back to its strict default (off, or a hint) and the class of defect it was elevated to catch starts shipping — so the assertion is that all seven are EXPLICITLY configured, six at `error`, and the seventh never weaker than `warning`. `reportImplicitStringConcatenation` sits at `warning` on livespec's documented li-xxjopf precedent, which the test pins as the ONE argued relaxation rather than blessing a second; the section's literal `= error` for it, and its `include` clause's `tests/` half (unmet: 1936 strict errors there today), are reported as spec-amendment findings on the PR instead of being encoded as though the spec said something weaker (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Code coverage thresholds",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_coverage_thresholds.test_the_exclusion_list_is_exactly_the_one_the_section_enumerates",
+    "reason": "Unit-tier: `exclude_also` asserted as SET EQUALITY against the list read from the section's own enumerating sentence — the direction the section demands (\"No other exclusions are permitted without a propose-change cycle\") and the one knob that makes the 100% floor cheaper to satisfy WITHOUT writing a test: an excluded line leaves both the numerator and the denominator, so an added pattern raises the reported percentage while lowering the tested fraction and the gate reports green either way. The companion `test_the_coverage_floor_is_the_full_line_and_branch_gate` asserts the floor itself and that `branch` measurement is actually on, without which every untaken `else` counts as covered (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Comment discipline",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_comment_discipline.test_no_exclusion_disarms_the_ban_over_a_governed_file",
+    "reason": "Unit-tier: the section's mechanical half — the `ERA` ban on commented-out code and LLM scaffolding — asserted as ARMED rather than merely selected, over the actual `.py` files of the package and `tests/`. Selection is not arming, and this repository has already paid the difference: `pyproject.toml` records that excluding one hook file from ruff WHOLESALE via `extend-exclude` \"took the `BLE001` backstop down with it\", with nothing failing and ruff reporting a clean tree over a smaller tree than intended. So no `extend-exclude` glob may swallow a governed file and no `per-file-ignores` entry may list `ERA`/`ERA001` over one; the companion asserts the rule is selected at all. The line-number-anchor half is the shipped `comment_line_anchors` check, covered by its own paired unit suite (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Keyword-only arguments",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_keyword_only_discipline.test_every_dataclass_under_the_package_is_keyword_only",
+    "reason": "Unit-tier: the section's DATACLASS clause, which no shipped check enforces — `keyword_only_args` covers the `def`-level `*` separator and its own docstring defers `dataclass(frozen=True, kw_only=True, slots=True)` verification to \"subsequent cycles\" that have not run, so reading the two def-level gates as covering the section leaves this clause covered by a check that declines the claim. Asserted directly over the package's AST: a positionally-constructible record silently permutes its call sites when a field is inserted or reordered, and where the fields share a type the permutation still type-checks. It convicted one real offender on authoring (`checks/_primary_checkout_unreadable.CheckInputUnreadable`, two `str` fields), fixed in the same commit (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Structural pattern matching",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_structural_pattern_matching.test_every_match_asserts_exhaustiveness_over_its_own_subject",
+    "reason": "Unit-tier: the `<subject>` half of `case _: assert_never(<subject>)`, which the shipped `assert_never_exhaustiveness` check explicitly does not verify (\"Subsequent cycles can tighten to verify the call's argument equals the match subject\"). The argument is the whole mechanism: pyright narrows the SUBJECT to `Never` once every variant is handled, so a call pointed at any other expression computes that narrowing for a value nobody asked about — the arm still looks right, the shipped check still passes, and the exhaustiveness check silently stops checking. Nothing notices at runtime either, because `[tool.coverage.report].exclude_also` carries `case _:` and the arm is never measured (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-hj42cw)."
   },
   {
     "spec_root": "SPECIFICATION",
