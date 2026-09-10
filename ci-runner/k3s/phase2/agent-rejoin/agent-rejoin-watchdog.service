@@ -1,0 +1,24 @@
+# agent-rejoin-watchdog.service — restart a wedged k3s AGENT so it re-registers
+# after the control-plane datastore was wiped (agent-rejoin-watchdog.sh).
+#
+# WHY THIS EXISTS: poweredge's k3s datastore is a tmpfs, empty at every boot, so
+# a poweredge reboot drops this agent's Node object. k3s-agent then stays UP and
+# loops `node "<hostname>" not found` forever — `Restart=always` cannot catch a
+# live hang, only an exit. This is the liveness half: a timer fires it every
+# ~60s and it restarts the agent ONLY when the wedge is unambiguous (see the
+# script's four gates). Proven on gmktec-xubuntu 2026-09-10; livespec plan
+# k3s-on-gmktec-for-vps-usage.
+#
+# AGENT-ONLY. The unit is ordered After=k3s-agent.service — NOT k3s.service,
+# which an agent does not run — and install-agent-rejoin-watchdog.sh refuses to
+# install it on a server (the self-authoritative server never wedges). It needs
+# no KUBECONFIG: the watchdog reads the journal, a TCP port and systemctl, never
+# the API server.
+[Unit]
+Description=Restart a wedged k3s agent so it re-registers with the cluster
+After=k3s-agent.service
+Wants=k3s-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ci-runner-k3s/agent-rejoin-watchdog.sh

@@ -257,6 +257,10 @@ esac
 #
 # STEP_SKIP[id] set  => the AGENT role skips that step, and the reason is
 #                       logged in its place. An unset entry runs on both roles.
+# STEP_SERVER_SKIP   => the mirror image: the SERVER role skips that step and
+#                       logs the reason. The single entry is the agent-only
+#                       rejoin watchdog, which the self-authoritative server
+#                       never needs. A step is in at most one of the two maps.
 # STEP_AGENT_LABEL   => the step runs on both roles but does something smaller
 #                       on an agent, and says so.
 # STEP_AGENT_NOTE    => the step runs on an agent and carries a caveat the
@@ -268,6 +272,7 @@ esac
 # ---------------------------------------------------------------------------
 STEP_IDS=(
   k3s-config
+  agent-rejoin
   kernel-budgets
   storage-layout
   host-thermal
@@ -289,8 +294,10 @@ declare -A STEP_LABEL=()
 declare -A STEP_AGENT_LABEL=()
 declare -A STEP_AGENT_NOTE=()
 declare -A STEP_SKIP=()
+declare -A STEP_SERVER_SKIP=()
 
 STEP_LABEL[k3s-config]="1/10 k3s config (server or agent) — installs k3s-config/config.yaml + the local-storage skip marker"
+STEP_LABEL[agent-rejoin]="1b/10 agent-rejoin liveness watchdog (agent only) — restarts a wedged k3s-agent so it re-registers after a control-plane datastore wipe"
 STEP_LABEL[kernel-budgets]="2/10 inotify instance budget + keyring quota"
 STEP_LABEL[storage-layout]="2b/10 storage layout (mount the LABEL-ed tiers + the five fstab lines + k3s drop-in; no-op when the tiers are live)"
 STEP_LABEL[host-thermal]="2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)"
@@ -340,6 +347,16 @@ STEP_SKIP[runner-pod-lifecycle]="reads PVCs, scheduler events, scale-set listene
 STEP_SKIP[arc-log-archive]="archives the ARC CONTROLLER and LISTENER pods' logs with the admin kubeconfig an agent does not hold — pods that run on the SERVER for the whole pool, so there is nothing here to archive. Unlike the two scans this unit is ordered After=network-online.target, so on an agent it would install cleanly and then fail silently every two minutes; the SERVER's own archive-arc-logs.timer already covers every node (livespec-dev-tooling-qcq0)."
 STEP_SKIP[churn-slot]="patches node STATUS through the API from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service) with the admin kubeconfig an agent does not hold — and patch-node-churn-capacity.sh patches EVERY node labeled k3s-role=arc-runner-host with ONE capacity, which makes applying it a cluster-wide act rather than a node-local one. Node-status patches are therefore applied from the SERVER's reapply timer, whose selector already includes this node; a per-node capacity read from each node's own profile is R4/R5 scope (livespec-dev-tooling-xa6o)."
 
+# The one SERVER skip, the mirror of the agent skips above: the rejoin watchdog
+# restarts a wedged k3s-AGENT so it re-registers after the control-plane
+# datastore (a tmpfs, empty at every boot) drops its Node object. The SERVER
+# holds that datastore and never loses its OWN registration; it runs k3s.service
+# not k3s-agent.service, so the watchdog's first gate is never true there; and it
+# would gain only a timer firing into a condition that cannot arise. So it is
+# server-skipped, and install-agent-rejoin-watchdog.sh refuses on a server too —
+# the same two-belt guard the four server-only steps use in the other direction.
+STEP_SERVER_SKIP[agent-rejoin]="the rejoin watchdog restarts a wedged k3s-AGENT so it re-registers after a control-plane datastore wipe. This node is the self-authoritative SERVER: it holds the datastore, never loses its own registration, and runs k3s.service not k3s-agent.service, so the watchdog's alive-but-wedged condition cannot arise here. The watchdog belongs on the AGENTS this server serves."
+
 # ---------------------------------------------------------------------------
 # The units a SKIPPED step would have installed, and which an earlier run of
 # this runbook — one made before that step learned to skip — therefore left on
@@ -370,7 +387,21 @@ step_label() {  # step_label ID
 }
 
 step_skipped() {  # step_skipped ID -> true when THIS role skips it
-  [ "$ROLE" = agent ] && [ -n "${STEP_SKIP[$1]:-}" ]
+  if [ "$ROLE" = agent ]; then
+    [ -n "${STEP_SKIP[$1]:-}" ]
+  else
+    [ -n "${STEP_SERVER_SKIP[$1]:-}" ]
+  fi
+}
+
+# The skip REASON for whichever role skips this step, so print_plan reads one
+# map without knowing which side owns the entry.
+step_skip_reason() {  # step_skip_reason ID
+  if [ "$ROLE" = agent ]; then
+    printf '%s' "${STEP_SKIP[$1]:-}"
+  else
+    printf '%s' "${STEP_SERVER_SKIP[$1]:-}"
+  fi
 }
 
 print_plan() {
@@ -385,7 +416,7 @@ print_plan() {
   for id in "${STEP_IDS[@]}"; do
     if step_skipped "$id"; then
       printf 'SKIP [%s] %s\n' "$ROLE" "${STEP_LABEL[$id]}"
-      printf '     reason: %s\n' "${STEP_SKIP[$id]}"
+      printf '     reason: %s\n' "$(step_skip_reason "$id")"
       continue
     fi
     printf 'RUN  [%s] %s\n' "$ROLE" "$(step_label "$id")"
@@ -430,6 +461,13 @@ run_step() {  # run_step ID
     # (livespec-dev-tooling-4qp4).
     k3s-config)
       "${SCRIPT_DIR}/k3s-config/install-k3s-config.sh" --role "${ROLE}" ;;
+    # Agent-only (server-skipped above), and passed this run's ROLE for the same
+    # two-belt reason the server-only installers are: the installer refuses on a
+    # server (removing any copy it finds), so if a future edit ever drops the
+    # STEP_SERVER_SKIP entry, this step fails loudly at the installer's own
+    # refusal rather than arming an agent watchdog on a server.
+    agent-rejoin)
+      "${SCRIPT_DIR}/agent-rejoin/install-agent-rejoin-watchdog.sh" --role "${ROLE}" ;;
     kernel-budgets)
       "${SCRIPT_DIR}/node-inotify-budget/install-inotify-sysctl.sh"
       "${SCRIPT_DIR}/node-keyring-budget/install-keyring-sysctl.sh" ;;

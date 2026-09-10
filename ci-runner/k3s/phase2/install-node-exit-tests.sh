@@ -6,8 +6,11 @@
 # node-local ones, and that `--dry-run` executes none of them.
 #
 #   A. a server profile's --dry-run plan is the HISTORICAL ordered step list
-#      (the sixteen installer invocations the numbering 1..10 with its
-#      sub-letters names), every one of them RUN, every line tagged [server];
+#      (the installer invocations the numbering 1..10 with its sub-letters
+#      names), every one RUN and tagged [server] EXCEPT the one agent-only
+#      step — 1b agent-rejoin, the k3s-agent wedge watchdog — which the
+#      self-authoritative server SKIPs with a reason, the mirror of the agent
+#      skips below;
 #   B. an agent profile's --dry-run plan OMITS the reconstruct converge — the
 #      only step that applies Kueue ClusterQueues and ARC scale sets — plus
 #      the secret reinjection unit, the tmpfs datastore, the iDRAC thermal step,
@@ -177,6 +180,7 @@ sed -e 's/^NODE_NAME=.*/NODE_NAME=agent-fixture/' \
 # ---------------------------------------------------------------------------
 read -r -d '' EXPECTED_SERVER_PLAN <<'EOF'
 RUN  [server] 1/10 k3s config (server or agent) — installs k3s-config/config.yaml + the local-storage skip marker
+SKIP [server] 1b/10 agent-rejoin liveness watchdog (agent only) — restarts a wedged k3s-agent so it re-registers after a control-plane datastore wipe
 RUN  [server] 2/10 inotify instance budget + keyring quota
 RUN  [server] 2b/10 storage layout (mount the LABEL-ed tiers + the five fstab lines + k3s drop-in; no-op when the tiers are live)
 RUN  [server] 2c/10 iDRAC cooling configuration (racadm + fan loop automatic, third-party response off, Minimum Power profile)
@@ -232,6 +236,17 @@ esac
 case "$SERVER_STEP1" in
   *config.agent.yaml*) no "the server step-1 line must not name the agent file" ;;
   *) ok "the server step-1 line does not name the agent file" ;;
+esac
+
+# The one step a SERVER skips: the agent-only rejoin watchdog. Its reason must
+# say WHY a server never wedges, the mirror of the agent skips' reasons, so the
+# operator reads it from the plan rather than the source.
+SERVER_REJOIN_REASON="$(printf '%s\n' "$REPLY_OUT" | grep -A1 -F 'SKIP [server] 1b/10 agent-rejoin' | tail -n 1)"
+case "$SERVER_REJOIN_REASON" in
+  "     reason: "*"never loses its own registration"*)
+    ok "the server's agent-rejoin skip reason says why a server never wedges" ;;
+  *)
+    no "the server's agent-rejoin skip reason says why a server never wedges (got: ${SERVER_REJOIN_REASON})" ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -327,6 +342,7 @@ fi
 
 for fragment in \
   "1/10 k3s config (server or agent) — installs k3s-config/config.agent.yaml" \
+  "1b/10 agent-rejoin liveness watchdog (agent only)" \
   "2/10 inotify instance budget + keyring quota" \
   "2b/10 storage layout" \
   "2d/10 operator host tools" \
@@ -382,10 +398,12 @@ case "$SERVER_STEP1" in
 esac
 
 # The agent's steps stay in the server's relative order — the plan is a filter
-# of the runbook, never a re-ordering of it. The two steps whose label differs
-# by role (step 1's file, step 3's --profile-only) are normalized back to the
-# server's wording first, since this comparison is about ORDER alone.
-SERVER_ORDER="$(printf '%s\n' "$SERVER_PLAN" | sed -E 's/^RUN  \[server\] //')"
+# of the runbook, never a re-ordering of it. This comparison is about ORDER
+# alone, so both the RUN/SKIP verb and the [role] tag are stripped from each
+# side (a step the server SKIPs the agent RUNs, and vice-versa — 1b agent-rejoin
+# is the one that flips), and the two steps whose LABEL differs by role (step
+# 1's file, step 3's --profile-only) are normalized back to the server wording.
+SERVER_ORDER="$(printf '%s\n' "$SERVER_PLAN" | sed -E 's/^(RUN|SKIP)  ?\[server\] //')"
 AGENT_ORDER="$(printf '%s\n' "$AGENT_PLAN" \
   | sed -E 's/^(RUN|SKIP)  ?\[agent\] //' \
   | sed -E 's/^(3\/10) AppArmor profile only.*/\1 AppArmor profile + hook ConfigMap/' \
