@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from _gh_railway import lift_gh
+from test_fleet_conformance import make_absent_git_reader
 
 from livespec_dev_tooling.fleet import fleet_conformance
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner, ReadFailure
@@ -173,6 +174,7 @@ def test_the_overall_verdict_reports_the_two_kinds_apart(
     monkeypatch.setattr(
         fleet_conformance, "default_gh_runner", _refusing_runner(stderr=_RATE_LIMITED_STDERR)
     )
+    monkeypatch.setattr(fleet_conformance, "default_git_reader", make_absent_git_reader())
     monkeypatch.setattr(fleet_conformance, "local_vantage", lambda **_kwargs: (None, None))
     log = RecordingLog()
     monkeypatch.setattr(fleet_conformance.structlog, "get_logger", lambda _name: log)
@@ -203,6 +205,7 @@ def test_the_manifest_precondition_failure_names_the_cause(
         return GhResult(returncode=1, stdout="", stderr=_RATE_LIMITED_STDERR)
 
     monkeypatch.setattr(fleet_conformance, "default_gh_runner", lift_gh(_all_refused))
+    monkeypatch.setattr(fleet_conformance, "default_git_reader", make_absent_git_reader())
     monkeypatch.setattr(fleet_conformance, "local_vantage", lambda **_kwargs: (None, None))
     log = RecordingLog()
     monkeypatch.setattr(fleet_conformance.structlog, "get_logger", lambda _name: log)

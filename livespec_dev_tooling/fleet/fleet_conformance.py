@@ -91,6 +91,25 @@ class actually wants. Without it a throttled read and a genuine
 credential gap render identically, which is how this check's own defect
 was filed as an installation defect (`livespec-dev-tooling-mmqe`).
 
+THE MANIFEST READ DOES NOT GO THROUGH THE REST API, and that is a
+correctness property of this lane rather than an optimization. The
+manifest is the ROOT FACT: an unread manifest is a precondition failure
+(exit 1), not one row's skip, so a transient refusal of that single read
+reds master — and a red master trips the Dispatcher's admission gate and
+every sandbox's `check-master-ci-green`, stalling the factory outright.
+That happened three times in one afternoon on 2026-09-06
+(`livespec-dev-tooling-7yeveq`): HTTP 403 `API rate limit exceeded for
+installation ID 131208965`, with the installation's PRIMARY core budget
+measured at 11,074/12,500 remaining — a SECONDARY limit rendered with the
+primary limit's message, which the job's own remaining-count preflight
+(`.github/actions/github-rate-budget-token`) reported healthy 72 s
+before. A remaining-count floor CANNOT see a secondary limit by
+construction, so no preflight threshold fixes this. `_manifest_git` reads
+the file over the GIT transport instead — a different quota entirely —
+and falls back to the contents API only when git cannot answer. The
+gate is not weakened: an unread manifest still fails loud on BOTH routes,
+and both causes are reported.
+
 Exit codes:
 
 - `0` — lever unset (logged skip), or every applicable row passed /
@@ -135,6 +154,7 @@ from livespec_dev_tooling.fleet._lanes import (
     run_member_rows,
 )
 from livespec_dev_tooling.fleet._local_vantage import local_vantage
+from livespec_dev_tooling.fleet._manifest_git import GitReader, default_git_reader, manifest_text
 from livespec_dev_tooling.fleet._member_ci_exit import RunTallies, member_ci_exit_code
 from livespec_dev_tooling.fleet._read_cause import cause_fields
 from livespec_dev_tooling.fleet._rows_github import SIBLING_TOPIC
@@ -219,7 +239,9 @@ def central_run_vantages(*, token: str) -> frozenset[str]:
     return frozenset({CENTRAL_VANTAGE})
 
 
-def fetch_manifest(*, ctx: FleetContext) -> Result[Manifest, ManifestUnavailable]:
+def fetch_manifest(
+    *, ctx: FleetContext, read_git: GitReader | None = None
+) -> Result[Manifest, ManifestUnavailable]:
     """The fleet manifest from livespec master, or WHICH STAGE could not produce it.
 
     `Result` rather than `IOResult` deliberately: every byte this function
@@ -235,8 +257,19 @@ def fetch_manifest(*, ctx: FleetContext) -> Result[Manifest, ManifestUnavailable
     reading a failure in ANOTHER repo needs, and every call site already logs
     `ctx.read_failures` as `causes` — but it is no longer the only place the
     distinction exists, which is what made it invisible to control flow.
+
+    `read_git` is the GIT-TRANSPORT seam, and it is what takes the manifest —
+    the ROOT FACT, whose loss is a precondition failure rather than one row's
+    skip — off the REST budget that reddened master three times on
+    2026-09-06 (`livespec-dev-tooling-7yeveq`). Passing it routes the read
+    through `_manifest_git.manifest_text`, which asks git first and keeps the
+    contents API only as a fallback. It defaults to None — the fail-safe
+    spelling — so the operator-invoked lanes (`fleet_conformance_admin`,
+    `wire_fleet_member`) that were never on the master-CI critical path keep
+    the REST read they already had, and no construction site acquires a
+    subprocess it did not ask for.
     """
-    text = ctx.file_text(repo=MANIFEST_REPO, path=MANIFEST_PATH)
+    text = manifest_text(ctx=ctx, read_git=read_git, repo=MANIFEST_REPO, path=MANIFEST_PATH)
     if text is None:
         return Failure(ManifestUnavailable(reason="unreadable"))
     parsed = parse_manifest(source=text)
@@ -372,7 +405,14 @@ def _resolve_root_facts(
     """
     if not _credential_usable(ctx=ctx, log=log):
         return None
-    fetched = fetch_manifest(ctx=ctx)
+    # The GIT seam is injected HERE and only here: this is the lane whose red
+    # stalls the whole factory, so this is the read that must not depend on the
+    # REST budget. Referenced as a module global rather than threaded through
+    # `main()` so a test can replace it the way `default_gh_downloader` is
+    # replaced — a seam reachable only as a call-site literal is one no test
+    # can hold still, and a `main()` test that left it live would reach the
+    # real network SILENTLY.
+    fetched = fetch_manifest(ctx=ctx, read_git=default_git_reader)
     if isinstance(fetched, Failure):
         log.error(
             "fleet manifest unavailable",
