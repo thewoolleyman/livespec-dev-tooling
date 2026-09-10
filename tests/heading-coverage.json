@@ -426,64 +426,64 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: JIT fleet capacity borrows fairly without exceeding 482 runners",
-    "test": "TODO",
-    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
+    "test": "tests.consumer.test_jit_fleet_capacity_scenarios.test_the_fair_shares_denominate_one_borrowable_pool_no_doubling_of_which_reaches_the_cap",
+    "reason": "Consumer-tier: the committed pool gitops the ARC controller runs under, asserted where each clause has a decidable consequence in it — every cohort member quotas exactly the one `ci-runner.io/churn-slot` resource under the one committed `churn-slot-flavor` (without which \"fair share of remaining HOST-WIDE capacity\" is apportioned over pools that cannot see each other and nothing is borrowable), no member states `borrowingLimit` or `lendingLimit` (the two committed knobs that forbid the borrowing the section permits), no member weighs itself above another, the shares sum to exactly the capacity the node profile declares, no repository's ceiling exceeds the whole pool, and even a path counting the registered capacity twice stays under the 482 cap the section says may never imply 964. The `min()`'s per-repository terms and the literal-964 scan are the unit-tier sibling `tests.spec.test_jit_admission_budget`'s; nothing is imported across the tier boundary (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: JIT circuit state survives restart without a reburst",
-    "test": "TODO",
-    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
+    "test": "tests.consumer.test_jit_fleet_capacity_scenarios.test_the_bound_a_restart_must_recover_is_durable_reapplied_first_and_cannot_loop",
+    "reason": "Consumer-tier: the circuit itself is ARC's and its source is not in this repository (`ci-runner/k3s/phase2/README.md` §\"What does NOT move to Kueue/ARC\"); what IS here is the BOUND every admission passes through, the node's registered churn-slot capacity, which a kubelet restart drops silently because a node-status patch is not a device-plugin registration. Asserted: the reapply unit is pulled in at boot and ordered BEFORE the converge that applies the queues denominated in it, its timer carries a wall-clock trigger beside the boot and activation ones (`OnUnitActiveSec` re-arms only from a SUCCESSFUL activation, so a dependency-failed boot leaves it with no next elapse — measured 2026-09-04) plus `Persistent=true`, it is a `oneshot` stating no restart policy so the recovery path cannot become the infinite restart loop the scenario forbids, and the capacity restored is READ BACK off the installed unit and the node profile rather than re-derived, so recovery cannot restore a larger bound — a reburst (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a routed job reads the warm cache and cannot write it",
-    "test": "TODO",
-    "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
+    "test": "tests.consumer.test_runner_pool_cache_isolation_scenarios.test_the_isolation_suite_convicts_a_seeded_inode_shared_outside_the_job_volume",
+    "reason": "Consumer-tier: the pool's own isolation suite `ci-runner/k3s/phase2/isolation/cache-negative-tests.sh` — the artifact a routed job actually runs — DRIVEN over three synthetic warm-seed fixtures through its committed `CACHE_NEG_*` seams, each differing from its control in one property. A seeded file carrying a link OUTSIDE the seed (the shape the hardlink seed had until 2026-09-06) must be convicted by name; a file linked only to another INSIDE the seed — what a healthy uv cache looks like after `cp -a` — must NOT be, so the case fires on the shared-inode property the scenario names rather than on link count; and an unseeded volume must be a precondition FAILURE, never a vacuous pass, which is the suite's own stated rule (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a job's compilation-cache writes are refused",
-    "test": "TODO",
-    "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
+    "test": "tests.consumer.test_runner_pool_cache_isolation_scenarios.test_a_job_carries_no_writer_credential_and_only_one_acl_identity_may_write",
+    "reason": "Consumer-tier: the refusal must be the BACKEND's, so both halves are held. DRIVEN over the committed isolation suite: its `no-writer-credential` case passes on a clean job environment and FAILS naming `SCCACHE_REDIS_WRITER_PASSWORD` when one is injected (the file's pass/fail pair, which is what proves the suite discriminates at all), and its `redis-set-refused` case reports a PRECONDITION failure against an unreachable backend rather than reading silence as a refusal. READ beside it: the ACL `ci-runner/k3s/phase2/sccache/converge-sccache-redis.sh` renders gives the unauthenticated `default` user — the identity every job pod connects as — `-@all` and no `+@write`, exactly one identity carries `+@write`, and the hook pod template hands a job `SCCACHE_REDIS_RW_MODE=READ_ONLY` and no credential of any kind (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a cache fault degrades a job to cold and never fails it",
-    "test": "TODO",
-    "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
+    "test": "tests.consumer.test_runner_pool_cache_telemetry_scenarios.test_a_cold_tier_carries_a_reason_and_no_path_through_the_emitter_can_fail_a_job",
+    "reason": "Consumer-tier: the pool's emitter `ci-runner/k3s/phase2/cache-telemetry/ci-cache-span.sh` DRIVEN against a loopback receiver that captures the OTLP payload, replaying the same TSV columns the hook pod template's `rec` writes. Both arms: a faulted uv row must emit a `cache.warm-copy` span with `build.cache.hit` false and a NON-EMPTY `build.cache.error` (empty, it is indistinguishable from a healthy tier with nothing to copy), and a healthy row must emit hit true with an empty error, so the assertion is about the emitter rather than a constant. \"Never fails it\": the emitter run against an endpoint nothing listens on emits nothing and still exits 0, and the template's postStart takes no `set -e`, ends in an unconditional `exit 0`, and records no `rec uv` with an empty reason — the uv tier's source IS the warm-cache tree, so a cold uv row is always a fault (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a canary job runs cold and is tagged",
-    "test": "TODO",
-    "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
+    "test": "tests.consumer.test_runner_pool_cache_telemetry_scenarios.test_a_canary_reports_every_tier_cold_under_one_tag_and_stays_query_comparable",
+    "reason": "Consumer-tier: the emitter DRIVEN twice against a loopback receiver from two state directories differing only in the kill switch postStart decided, with the tier list taken from the template's OWN switched-off branch so a tier added to the pool and forgotten there cannot pass. Asserted: every skipped tier still REPORTS (a cold canary is a measured baseline, not a job with missing rows), every span — the job summary included, since that is where the canary's timings are — carries `build.cache.kill_switch` equal to `canary`, no tier reports a hit, and the canary's spans carry the SAME attribute keys as a normal job's, which is the \"queryable against non-canary jobs\" clause made decidable: a schema that forked on the tag would turn the cold baseline into a dataset nobody joins (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a stale warm-cache generation fires the trigger",
-    "test": "TODO",
-    "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
+    "test": "tests.consumer.test_runner_pool_cache_telemetry_scenarios.test_the_stale_generation_trigger_is_a_value_trigger_at_twice_the_populator_schedule",
+    "reason": "Consumer-tier: the three committed files that must agree for the trigger to fire at all, each disagreement silent in its own way — the threshold in `ci-runner/observability/triggers/ci-cache-warm-generation-stale.json` is derived from and compared against the populator CronJob's own `schedule` (twice the interval, the scenario's bound, hand-maintained in two files and two formats); it is a VALUE trigger (`MAX` over the age gauge, `>` threshold) rather than a dead-man count; its column and tier filter are a gauge `ci-runner/observability/ci-cache-gauges.sh` actually emits, since a trigger on a column nobody writes has no datapoints, never fires, and is indistinguishable from a warm cache; and what it carries names the POPULATOR — the CronJob and its namespace — as the scenario's runbook requires (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a fabro sandbox hits the shared compilation cache",
-    "test": "TODO",
-    "reason": "Implementation follows in plan ci-runner-cache-tiers (epic livespec-dev-tooling-efqeip); an integration-tier proof on the pool (isolation suite or cache-telemetry query) is required for this scenario.",
+    "test": "tests.consumer.test_fabro_sandbox_compilation_cache_scenario.test_a_sandbox_reaches_the_shared_cache_over_the_bridge_and_says_so_in_its_span",
+    "reason": "Consumer-tier: the two moving parts committed here are DRIVEN, both arms each. The sandbox's `rustc-wrapper` (`docker/fabro-sandbox/agent/sccache-or-rustc.sh`) run over fake compilers: a cache that answers the probe must leave the CALLER's request going through sccache and remember the verdict, and a cache that does not must leave the caller compiling plainly with its own exit code intact — the failure this closes was a wrapper that flipped to `unusable` under load while every span it emitted still looked well-formed. And the baked emitter `livespec_dev_tooling.otel_cargo_phase` driven through its injected seams: a phase whose crates the populator already built emits a `build.cargo-*` span with `build.cache.sccache.hit_ratio` above zero against the `redis` backend, labelled `build.env=factory`, posted over the docker bridge; a phase with no cache emits the same eight keys with the cache off and a zero ratio, which is what makes the positive ratio evidence of a hit. The factory receiver's allowlist lives in livespec-orchestrator-beads-fabro and is deliberately not asserted here (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
@@ -518,8 +518,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
-    "test": "TODO",
-    "reason": "Seeded by livespec plan k3s-on-gmktec-for-vps-usage (epic livespec-sab5gn) at revise time 2026-09-06. A scenario describes end-to-end behavior, so its test MUST resolve to the integration tier or above: the mapped test is the integration-tier rehearsal of the rebuild procedure against a node profile; replace TODO with that test id when it lands.",
+    "test": "tests.consumer.test_pool_node_rebuild_scenario.test_the_rebuild_plan_is_the_committed_one_and_it_is_the_profile_s_not_the_script_s",
+    "reason": "Consumer-tier: stage 1 of the rebuild procedure DRIVEN in `--dry-run` over a scratch PATH whose read-only probes are faked and whose every mutating command is a tripwire, asserted empty. \"No step performed by hand\" becomes an EQUALITY: the plan the recipe and the node's profile produce is compared command-for-command against the plan committed beside that profile, which an ordered-subset check cannot do; and the second node's profile must yield a DIFFERENT plan through the same script — no whole-device erase and no controller virtual disk, the free-space plan's defining property — so the plan is the PROFILE's rather than the script's. Two siblings in the same file carry the scenario's other decidable clauses: `test_re_running_against_a_populated_node_refuses_every_destructive_step_by_name` (against a device already carrying a partition table the step refuses NAMING the target, consent naming a different target does not grant it, consent naming exactly it does, and a PRESERVED partition is refused by name even with consent) and `test_every_node_the_pool_addresses_by_name_has_its_own_committed_profile` (the documented sequence starts at `phase0-bare-metal/`, and every node a committed manifest addresses by hostname has its own profile). The rehearsal RECORD is deliberately not asserted: non-functional-requirements §\"Runner-pool node rebuild recipe\" puts it in the plan store or on the owning ledger item, outside this tree (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7l6fen).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {

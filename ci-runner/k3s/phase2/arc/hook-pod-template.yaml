@@ -404,8 +404,22 @@ spec:
                   fi
                   rm -f "$tmp"
                 fi
-                uv_hit=false; [ -d /__w/_warm/uv ] && uv_hit=true
-                rec uv "$uv_hit" "$uv_gen" "$(ms)" 0 reflink-seed ""
+                # A COLD uv tier here is a cache FAULT, and it says so. The
+                # seed is the provisioner's, made while the volume was
+                # provisioned; its absence means the node's warm tree was
+                # absent or unreadable, or `cp -a --reflink=always` refused to
+                # fall back to a byte copy. The job runs anyway (uv resolves
+                # cold) — that is the fail-soft contract — but a cold tier
+                # reported with an EMPTY error is indistinguishable from a
+                # healthy one that simply had nothing to copy, which is the
+                # one thing SPECIFICATION/scenarios.md §"a cache fault
+                # degrades a job to cold and never fails it" forbids: the span
+                # must carry hit=false AND a non-empty build.cache.error. The
+                # pod cannot see the node's warm root, so the error names what
+                # it CAN observe.
+                uv_hit=false; uv_err=seed-absent
+                [ -d /__w/_warm/uv ] && { uv_hit=true; uv_err=""; }
+                rec uv "$uv_hit" "$uv_gen" "$(ms)" 0 reflink-seed "$uv_err"
                 rec registry "$registry_hit" "" "$(ms)" 0 served ""
                 # The warmed target/ tier (the console's ASAN fuzz tree today):
                 # seeded by the provisioner like uv; the consuming job moves it
