@@ -89,7 +89,7 @@ mkdir -p "${SCRATCH}/repo-none"
 check_requirements() {
   local f="$1" missing=0
   grep -qE '^\s+image: ghcr\.io/' "$f"                          || { echo "    missing: 1 image"; missing=1; }
-  grep -qE '^\s*just check$' "$f"                               || { echo "    missing: 2 just check command"; missing=1; }
+  grep -qE '^\s*just hook_gate=1 check$' "$f"                   || { echo "    missing: 2 just hook_gate=1 check command"; missing=1; }
   grep -qE '^\s+cpu: "[0-9]+"' "$f"                             || { echo "    missing: 3 cpu request"; missing=1; }
   grep -qE '^\s+memory: "[0-9]+[GM]i"' "$f"                     || { echo "    missing: 3 memory request"; missing=1; }
   grep -qF 'name: LIVESPEC_TEST_PARALLELISM' "$f"               || { echo "    missing: 4 parallelism"; missing=1; }
@@ -132,7 +132,7 @@ check_bootstrap_precedes_check() {
   local f="$1" pack hooks aggregate
   pack="$(grep -nE '^\s*just install-worktree-pack$' "$f" | head -1 | cut -d: -f1)"
   hooks="$(grep -nE '^\s*just install-commit-refuse-hooks$' "$f" | head -1 | cut -d: -f1)"
-  aggregate="$(grep -nE '^\s*just check$' "$f" | head -1 | cut -d: -f1)"
+  aggregate="$(grep -nE '^\s*just hook_gate=1 check$' "$f" | head -1 | cut -d: -f1)"
   [ -n "${pack}" ]      || { echo "    missing: just install-worktree-pack"; return 1; }
   [ -n "${hooks}" ]     || { echo "    missing: just install-commit-refuse-hooks"; return 1; }
   [ -n "${aggregate}" ] || { echo "    missing: the just check aggregate"; return 1; }

@@ -111,6 +111,14 @@ def _run_check(
     `gh` subprocesses the check itself spawns inherit identically.
     """
     monkeypatch.chdir(cwd)
+    # Neutralise the ambient LIVESPEC_GATE_CONTEXT so these cases assert the
+    # NON-gate (graceful-skip) behaviour deterministically. A delegated gate pod
+    # sets LIVESPEC_GATE_CONTEXT=1 container-wide, which the in-process check
+    # reads from os.environ and takes the fail-closed branch for — failing these
+    # tests inside the very gate that runs `just check`. A case that means to
+    # assert gate-context behaviour re-sets it via `env_extra` (setenv wins over
+    # this delenv, since it runs after).
+    monkeypatch.delenv("LIVESPEC_GATE_CONTEXT", raising=False)
     for name, value in (env_extra or {}).items():
         monkeypatch.setenv(name, value)
     if env_path is not None:
