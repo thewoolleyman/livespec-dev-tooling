@@ -58,6 +58,12 @@ from livespec_dev_tooling.fleet._contract_rows import (
     CENTRAL_VANTAGE,
     REPO_CLASSES,
 )
+from livespec_dev_tooling.fleet._invocation_failure import (
+    BINARY_ABSENT,
+    InvocationNotPerformed,
+)
+from livespec_dev_tooling.fleet._local_context import CommandOutcome
+from livespec_dev_tooling.fleet._manifest_git import GitReader
 from livespec_dev_tooling.fleet._snapshot import DownloadOutcome, DownloadResult
 from livespec_dev_tooling.fleet.fleet_conformance import (
     central_run_vantages,
@@ -235,6 +241,34 @@ def make_downloader() -> GhDownloader:
         return IOSuccess(DownloadOutcome(returncode=0, stderr=""))
 
     return download
+
+
+def make_absent_git_reader() -> GitReader:
+    """A git seam that answers "git never ran", keeping `main()` off the network.
+
+    The THIRD I/O seam a `main()` test has to hold still, for exactly the
+    reason the downloader is the second: `_resolve_root_facts` injects
+    `default_git_reader` so the manifest read leaves the REST budget
+    (`livespec-dev-tooling-7yeveq`), and a test that left it live would run a
+    real `git clone` against `github.com/acme/livespec` — silently, since the
+    read then falls back to the canned contents fixture and the test still
+    passes, just slower and with a network dependency no assertion names.
+
+    It refuses rather than serving the manifest, so every existing `main()`
+    test keeps deciding on its CANNED gh table exactly as before: the git
+    route fails, the contents API answers, and a recovered read records no
+    cause. The git route itself is exercised in `test_manifest_git.py`.
+    """
+
+    def read(*, args: list[str], cwd: Path | None = None) -> CommandOutcome:
+        del cwd
+        return IOFailure(
+            InvocationNotPerformed(
+                argv=tuple(args), kind=BINARY_ABSENT, detail="hermetic suite: no git"
+            )
+        )
+
+    return read
 
 
 def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
@@ -806,6 +840,7 @@ def _patch_runner(
     # so SILENTLY, since a failed download is a legitimate named skip rather than
     # an error the test could notice.
     monkeypatch.setattr(fleet_conformance, "default_gh_downloader", make_downloader())
+    monkeypatch.setattr(fleet_conformance, "default_git_reader", make_absent_git_reader())
     # Keep `main()` tests on the canned remote fixtures. If a test patches
     # `resolve_repo_name` to a fixture member while leaving local_vantage live,
     # the public-api row can scan this real checkout as though it were that
@@ -998,6 +1033,7 @@ def test_main_defers_the_adopter_leg_out_of_vantage_without_reading_adopters(
     monkeypatch.setattr(sys, "argv", ["fleet-conformance", "--owner", "acme"])
     monkeypatch.setattr(fleet_conformance, "default_gh_runner", recording)
     monkeypatch.setattr(fleet_conformance, "default_gh_downloader", make_downloader())
+    monkeypatch.setattr(fleet_conformance, "default_git_reader", make_absent_git_reader())
 
     assert fleet_conformance.main() == 0
     assert not [call for call in calls if any("adopted" in arg for arg in call)]
@@ -1187,6 +1223,7 @@ def test_main_transient_credential_rejection_recovers(*, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(fleet_conformance, "default_gh_runner", flaky)
     monkeypatch.setattr(fleet_conformance, "default_gh_downloader", make_downloader())
+    monkeypatch.setattr(fleet_conformance, "default_git_reader", make_absent_git_reader())
     monkeypatch.setattr(fleet_conformance, "preflight_credential", _no_sleep_preflight)
 
     assert fleet_conformance.main() == 0

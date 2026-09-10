@@ -4,10 +4,23 @@ A central-vantage row that must find an IMPORT cannot know which files to read
 without reading them, and `FleetContext.file_text` is ONE
 `gh api .../contents/<path>` call per file. Measured over the fleet's ~635
 first-party `.py` (`livespec-dev-tooling-k76y`): the per-file route costs ~653
-reads per run against a 5000/hr App installation pool SHARED by all nine repos'
-automation, or ~5877 across a nine-PR release fan-out — 1.2x the entire hourly
-budget. `repos/{owner}/{repo}/tarball/{ref}` answers with the whole tree in ONE
+reads per run against the App installation pool SHARED by all nine repos'
+automation, or ~5877 across a nine-PR release fan-out.
+`repos/{owner}/{repo}/tarball/{ref}` answers with the whole tree in ONE
 request: 9 reads per run, 81 across a fan-out.
+
+⚠️ THE POOL SIZE RECORDED HERE WAS WRONG, and the correction is kept rather
+than silently applied. This paragraph read "a 5000/hr App installation pool"
+and called the fan-out "1.2x the entire hourly budget". The installation's
+core limit was MEASURED at 12,500/hr on 2026-09-07
+(`livespec-dev-tooling-7yeveq`), against which ~5877 is 0.47x, not 1.2x. The
+optimization stands on its own arithmetic — 9 reads beat 653 — but a capacity
+decision taken against the old figure would have been wrong with it. HOW to
+re-measure, because the obvious way answers a different question: mint an App
+INSTALLATION token and read `/rate_limit` through THAT. A plain `gh api
+/rate_limit` from an operator session reports the SESSION token's own 5000/hr
+pool and is not evidence about the installation at all — both are called
+"core", which is exactly why the wrong number was believable.
 
 The module is imported BY `_context` and imports nothing from it — the same
 arrangement `_read_failure` and `_tree_state` have. That is why the downloader
