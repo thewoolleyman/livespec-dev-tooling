@@ -218,12 +218,17 @@ Measured 2026-08-15 on `poweredge-xubuntu` (per the ledger record on
 - **Ports**: `6443/10250/10251/10252/10257/10259/8472/2379/2380` (the
   full k3s server + agent + embedded-etcd port set) were all UNBOUND —
   no conflict with the podman pool or anything else on the host.
+
 - **Existing load**: the podman pool was running ~479-482 concurrent
   `runner@` units (near its documented cap) at inventory time, which
   the inventory judged ample headroom for a lightweight single-node k3s
   control plane (a few hundred MB to low GB for `k3s server` +
   `containerd` + the ARC controller + Kueue's controller-manager — a
   small fraction of the measured 90 GiB available).
+
+This is intentionally the dated phase-1 baseline, not the current host
+inventory. The PowerEdge exposes 377 GiB after the 2026-09-10 memory upgrade;
+the current socket-level record lives in `poweredge-xubuntu-info/MEMORY.md`.
 
 This envelope is why phase 1 provisions k3s ALONGSIDE the pool rather
 than requiring any capacity trade-off: the host has room for both

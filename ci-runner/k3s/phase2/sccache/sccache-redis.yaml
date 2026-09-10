@@ -29,19 +29,19 @@
 # sound (the spec permits it for the compilation cache).
 #
 # MEMORY CEILING — sized against the concurrency cap (the spec's rule that
-# cache memory and job memory must not compete): allocatable RAM 188 GiB; the
-# original derivation (plan research/006) took the churn-slot cap C=32 at a
-# 4 GiB per-job envelope (128 GiB for jobs), ~8 GiB for k3s + containerd +
+# cache memory and job memory must not compete): the original derivation
+# (plan research/006) used the then-188 GiB allocatable RAM and churn-slot cap
+# C=32 at a 4 GiB per-job envelope (128 GiB for jobs), ~8 GiB for k3s +
+# containerd +
 # host services, ~20 GiB of page cache for the warm trees and the crates
 # proxy's store, and gave redis 16 GiB (`maxmemory 16gb`, allkeys-lru), limit
-# 18 GiB for redis's own overhead. C is 64 since 2026-09-06 (PR #1751), so
-# that arithmetic no longer closes on paper (a 256 GiB envelope); it closes
-# in practice because jobs do not all peak together — the cap is
-# throughput-derived (.ai/ci-node-capacity-reads.md) and the node measured
-# ~143 GiB free at C=64 with every cache resident (livespec-dev-tooling-
-# efqeip.3). The 16 GiB ceiling therefore stands on measured headroom, not
-# on the envelope sum; re-derive against observed job RSS if it is ever
-# raised, and raise `--maxmemory` and the limit together. The console's
+# 18 GiB for redis's own overhead. C briefly rose to 64 on 2026-09-06
+# (PR #1751), then returned to 32 when the larger value saturated CPU and
+# reduced throughput. The PowerEdge exposes 377 GiB after the 2026-09-10
+# memory upgrade, but the 16 GiB ceiling remains unchanged because cache
+# demand did not change; the added capacity is headroom. Re-derive against
+# observed demand if the ceiling is ever raised, and raise `--maxmemory` and
+# the limit together. The console's
 # full dependency graph across four profiles measured well under the
 # ceiling; the headroom is for PR-lockfile variants and a second Rust
 # repository.
