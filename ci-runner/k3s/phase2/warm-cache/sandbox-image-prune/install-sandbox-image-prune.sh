@@ -33,14 +33,45 @@
 # directories are excluded because they are not this repository manifests: the
 # `.git` object store, and a `.venv` package install.
 #
-# WHY THE TIMER IS STARTED HERE AND THE SERVICE IS NOT. The unit itself is a
-# bounded pass that removes only what ./prune-sandbox-images.sh's gates leave
-# as surplus, and the timer's first tick is 30 minutes after boot — so there is
-# no boot-window hazard of the kind that makes ../../storage-sweep/'s installer
-# refuse to start its unit. What this installer still does NOT do is run the
-# prune itself: the first live pass is an attended step, and it should be run
-# once WITHOUT `--apply` first so an operator sees the candidate list for this
-# node before anything is removed. The final message says so.
+# INSTALLING THIS RUNS THE PRUNE — ON MOST HOSTS, IMMEDIATELY. Step 3 below is
+# `systemctl enable --now` on the timer, and ./prune-sandbox-images.timer
+# carries BOTH `OnBootSec=30min` and `Persistent=true`. OnBootSec is measured
+# from BOOT, not from enablement, and `Persistent=true` tells systemd to fire a
+# tick it considers MISSED. So on any host whose uptime already exceeds 30
+# minutes that tick is in the past the instant the timer is enabled, and systemd
+# activates prune-sandbox-images.service AT ONCE — whose ExecStart passes
+# `--apply`. There is no 30-minute grace period on such a host: enabling the
+# timer IS starting the service. The timer comment's "keeps the prune away from
+# the boot storm" describes the boot path only, and delivers no delay here.
+#
+# MEASURED, not inferred. On poweredge-xubuntu, up 2 d 13 h, on 2026-09-08, one
+# hand run of this installer with no other argument enabled the timer at
+# 08:56:05 and the service reported `removed 217 record(s), 0 skipped as newly
+# referenced` at 08:56:45; the resident sandbox set went from 194+ to 34. The
+# gates held — every removal was surplus by policy and all three
+# repository-pinned images survived — but they held BY CONSTRUCTION, not because
+# anybody read a candidate list for that node first.
+#
+# THIS HEADER USED TO CLAIM THE OPPOSITE, and the claim was false as shipped. It
+# said the installer "does NOT do ... run the prune itself", that the first live
+# pass was an attended step to be run once without `--apply`, and it drew a
+# distinction between starting the TIMER and starting the SERVICE that a
+# long-running host does not honour. There is no guarantee here that an install
+# takes no destructive action, and nothing below should be read as one. The
+# behaviour is deliberately UNCHANGED: the maintainer ruled on 2026-09-10
+# (`livespec-dev-tooling-1fss`) that the units and the install steps stand as
+# they are and that only this documentation was wrong.
+#
+# READING THE CANDIDATE LIST FIRST IS NOT A ONE-COMMAND STEP, and this is why
+# the old instruction could not have worked even if an operator followed it.
+# ./prune-sandbox-images.sh refuses to start without the repo-pins data file
+# that step 1 writes beside the INSTALLED copy, so the report pass cannot be
+# taken out of this source tree before an install; and taken after step 3, on a
+# long-running host, it reports on a node this installer has already pruned. An
+# operator who wants the list first has to either install on a host booted less
+# than 30 minutes ago, or do steps 1 and 2 by hand and read
+# `sudo /usr/local/lib/ci-runner-k3s/prune-sandbox-images.sh` before enabling
+# the timer.
 #
 # SERVER ONLY, and this is a hard refusal rather than a skip. The prune's
 # central gate is a cluster-wide read of every workload's PodSpec — that is how
@@ -207,7 +238,7 @@ printf 'role:    %s\n' "$ROLE"
 printf 'script:  %s -> %s/%s\n' "$PRUNE" "$LIB_DIR" "$PRUNE"
 printf 'pins:    %s reference(s) to %s found in the YAML of %s -> %s/%s\n' "$PIN_COUNT" "$REPOSITORY" "$REPO_ROOT" "$LIB_DIR" "$PINS"
 while IFS= read -r pin; do printf '           %s\n' "$pin"; done < "$PINS_FILE"
-printf 'units:   %s (enabled + started), %s (installed, never started here)\n' "$TIMER" "$SERVICE"
+printf 'units:   %s (enabled + started), %s (installed; the timer activates it AT ONCE, with --apply, on a host up >30 min — see the header)\n' "$TIMER" "$SERVICE"
 
 if [ "$ROLE" = agent ]; then
   die "this prune is SERVER-only. Its central gate is a cluster-wide PodSpec read, and an agent holds no admin kubeconfig; pruning on node evidence alone would delete images that only a between-runs CronJob or Job needs. Nothing was installed. See this script's header for what bounding an agent's containerd would take."
@@ -241,7 +272,7 @@ run install -m 0644 "${SCRIPT_DIR}/${SERVICE}" "${UNIT_DIR}/${SERVICE}"
 run install -m 0644 "${SCRIPT_DIR}/${TIMER}" "${UNIT_DIR}/${TIMER}"
 run systemctl daemon-reload
 
-log "3. Enable and start the TIMER (never the service — see the header)"
+log "3. Enable and start the TIMER (which activates the service AT ONCE on a host up >30 min — see the header)"
 run systemctl enable --now "${TIMER}"
 
 log "4. Verify the timer is enabled"
@@ -257,7 +288,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-log "DONE. ${TIMER} enabled; the first tick is 30 minutes after boot, then every 6 h."
-log "BEFORE trusting it, run one REPORT pass by hand and read the candidate list:"
-log "  sudo ${LIB_DIR}/${PRUNE}"
-log "It removes nothing without --apply, which only the unit passes."
+log "DONE. ${TIMER} enabled; on each later boot its first tick is at 30 min, then every 6 h."
+log "THIS HOST HAS ALREADY BEEN PRUNED if it had been up more than 30 minutes: the timer is"
+log "Persistent with OnBootSec=30min, so enabling it fired the missed tick, with --apply, now."
+log "Read what it did:"
+log "  sudo journalctl -u ${SERVICE} --since '-10 min' --no-pager"
+log "A bare 'sudo ${LIB_DIR}/${PRUNE}' is the REPORT pass; it removes nothing"
+log "without --apply, which only the unit passes."
