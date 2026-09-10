@@ -9,27 +9,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
-    "heading": "## Boundary",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Code coverage thresholds",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Comment discipline",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
     "heading": "## Commit and merge discipline",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-05-27"
@@ -45,20 +24,6 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Hooks and CI",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Keyword-only arguments",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Linter rule set",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-05-27"
   },
@@ -93,35 +58,7 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
-    "heading": "## Structural pattern matching",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Test-Driven Development discipline",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Testing approach",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
     "heading": "## Toolchain pins",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-05-27"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Typechecker rule set",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-05-27"
   },
