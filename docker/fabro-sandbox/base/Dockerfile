@@ -150,11 +150,34 @@ RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
 # their trust steps at their own pace (keep `mise install`).
 ENV MISE_TRUSTED_CONFIG_PATHS=/__w:/workspace
 
-# Neutral committer identity for in-sandbox commits (matches the host
-# checkout identity so RGR trailer authorship is consistent).
-RUN git config --system user.name "E2E Test" \
-    && git config --system user.email "e2e-test@example.com" \
-    && git config --system init.defaultBranch master
+# A reusable sandbox has no author fallback: each workflow must inject and
+# validate its operator identity explicitly. `user.useConfigOnly` also keeps
+# Git from inventing an address from the container hostname when injection is
+# absent. The build-time probe exercises both sides against the image's real
+# Git/config stack: no identity fails actionably, while an explicitly injected
+# canonical fleet operator is recorded byte-for-byte.
+RUN git config --system user.useConfigOnly true \
+    && git config --system init.defaultBranch master \
+    && identity_probe="$(mktemp -d)" \
+    && trap 'rm -rf "$identity_probe"' EXIT \
+    && cd "$identity_probe" \
+    && git init \
+    && touch payload \
+    && git add payload \
+    && if missing_output="$(git commit -m "identity-negative-control" 2>&1)"; then \
+        echo "Git commit unexpectedly accepted a missing sandbox author" >&2; \
+        exit 1; \
+    fi \
+    && printf '%s\n' "$missing_output" | grep -F "Author identity unknown" >/dev/null \
+    && git config --local user.name "Chad Woolley" \
+    && git config --local user.email "thewoolleyman@gmail.com" \
+    && resolved_author="$(git var GIT_AUTHOR_IDENT)" \
+    && case "$resolved_author" in \
+        "Chad Woolley <thewoolleyman@gmail.com> "*) ;; \
+        *) echo "Injected sandbox author did not resolve canonically: $resolved_author" >&2; exit 1 ;; \
+    esac \
+    && git commit -m "identity-positive-control" >/dev/null \
+    && [ "$(git log -1 --format="%an <%ae>")" = "Chad Woolley <thewoolleyman@gmail.com>" ]
 
 # Bake the sandbox prepare-step timing wrapper onto PATH. It is
 # stdlib-only so it resolves via the base image's python3 BEFORE the
