@@ -1,0 +1,10 @@
+---
+# Reload systemd after either unit file changes. The enable/start task below
+# ALSO passes daemon_reload: true so that a FIRST apply reloads before it tries
+# to arm the not-yet-known timer (handlers run at end of play, too late for
+# that). This handler covers the steady-state case: a unit-file edit on an
+# already-armed host, where re-running enable/start would otherwise not reload.
+- name: Reload systemd daemon
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true

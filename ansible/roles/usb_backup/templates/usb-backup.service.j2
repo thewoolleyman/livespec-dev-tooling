@@ -1,0 +1,16 @@
+# Managed by Ansible (role: usb_backup). Local edits are overwritten.
+[Unit]
+Description=poweredge 12-hourly backup to the local USB volume
+# Fail fast rather than run into an unmounted destination: the runner refuses
+# to write unless {{ usb_backup_dest }} is a mountpoint, but this makes the
+# ordering explicit for a boot-time catch-up run.
+RequiresMountsFor={{ usb_backup_dest }}
+
+[Service]
+Type=oneshot
+# Runs as root: the rootfs pass reads /etc/shadow, /root, the ssh host keys and
+# the k3s server credentials/tls/token, and preserves ownership on restore.
+ExecStart={{ usb_backup_bin }}
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec={{ usb_backup_timeout_start_sec }}

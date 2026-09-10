@@ -1,0 +1,12 @@
+---
+# poweredge-xubuntu's committed 12-hourly local USB backup.
+#
+# Scoped to poweredge alone: it is the machine with the POWEREDGE-BACKUP USB
+# volume fstab-mounted at /mnt/usb-backup. The other ci_pool node
+# (gmktec-xubuntu) has no USB drive, so this play does not target the group.
+- name: Poweredge USB backup
+  hosts: poweredge-xubuntu
+  gather_facts: true
+  roles:
+    - role: usb_backup
+      tags: [usb_backup]
