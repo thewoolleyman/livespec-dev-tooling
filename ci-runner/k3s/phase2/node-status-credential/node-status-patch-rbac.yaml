@@ -1,0 +1,134 @@
+# node-status-patch-rbac.yaml — the CLUSTER-SIDE half of an AGENT node's
+# churn-slot credential: a per-node ServiceAccount whose ONLY power is to read
+# and patch the status subresource of ONE named node.
+#
+# THIS FILE IS A TEMPLATE AND IS NEVER APPLIED AS IT STANDS. Every occurrence of
+# `NODE_NAME_PLACEHOLDER` is substituted with the node's NODE_NAME by
+# ./provision-node-status-credential.sh, which reads it from that node's
+# phase0-bare-metal profile. An un-substituted copy would bind a ClusterRole to
+# the literal string `NODE_NAME_PLACEHOLDER`, which matches no node — so it
+# fails CLOSED, granting nothing, rather than fails open. That is the same
+# deliberate-placeholder discipline
+# ../node-extended-resource/reapply-node-extended-resource.service uses for its
+# capacity, and it is why the placeholder is not defaulted.
+#
+# WHY IT EXISTS. The churn-slot reapply timer patches a node's `status.capacity`
+# through the API. On the k3s SERVER that works because the unit carries
+# `Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml`, the admin file a server
+# writes at install time. An AGENT has no such file — k3s does not write one
+# there on an agent — so a node-local timer on an agent has no credential at
+# all, which is what the 2026-09-06 rebuild dry-run on gmktec-xubuntu found
+# (livespec-dev-tooling-xa6o). Handing the agent a COPY of the server's admin
+# file would "work" and would be the wrong fix: that file is cluster-admin, and
+# it would put unrestricted control of the whole cluster on the pool's
+# least-trusted machine — the one that runs other people's CI jobs.
+#
+# THE RULE BELOW IS THE WHOLE GRANT, AND IT IS DELIBERATELY NARROWER THAN THE
+# SCRIPT THAT WOULD USE IT. Exactly one rule, `get` and `patch` on
+# `nodes/status`, restricted by `resourceNames` to this one node:
+#
+#   * NOT `nodes` — the parent resource carries `spec`, and `patch` on it is
+#     enough to remove the node's own `node-role/ci=pending:NoSchedule` taint,
+#     which is the one thing keeping CI work off gmktec today
+#     (livespec-dev-tooling-xa6o, measured 2026-09-08). The status subresource
+#     cannot reach `spec`, so this grant cannot untaint the node it names.
+#   * NOT `delete`, and no wildcard verb. A credential that lives on a CI
+#     machine must not be able to evict the node from the cluster.
+#   * NOT `list` or `watch`. Neither is restrictable by `resourceNames` at all —
+#     Kubernetes RBAC applies `resourceNames` only to requests that name a
+#     single object — so granting either would silently widen this from "one
+#     node" to "every node in the cluster". This is the load-bearing reason
+#     ../node-extended-resource/patch-node-churn-capacity.sh CANNOT be the
+#     consumer of this credential unchanged: it resolves its targets with
+#     `kubectl get nodes -l k3s-role=arc-runner-host`, a LIST, and that is the
+#     same cluster-wide shape that is already advertising the server's capacity
+#     on gmktec. A node-local consumer must address its own node BY NAME. That
+#     consumer is not written here — see ./README.md §"What is deliberately not
+#     here".
+#   * `get` is included alongside `patch` because a reconciler that cannot read
+#     the value it is reconciling can only ever write blindly, and reading one
+#     named node's status is strictly narrower than the patch it accompanies.
+#
+# ./provision-node-status-credential-exit-tests.sh §B asserts that rule set
+# EXACTLY, from this file's own rendered bytes — a widened verb, an added
+# resource, or a dropped `resourceNames` fails the suite rather than reaching a
+# cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-runner-node-status
+  labels:
+    app.kubernetes.io/part-of: ci-runner
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: node-status-patcher-NODE_NAME_PLACEHOLDER
+  namespace: ci-runner-node-status
+  labels:
+    app.kubernetes.io/part-of: ci-runner
+    ci-runner.io/node: NODE_NAME_PLACEHOLDER
+---
+# The NON-EXPIRING token for that ServiceAccount, and why it is a Secret rather
+# than `kubectl create token`. Since Kubernetes 1.24 a ServiceAccount has no
+# auto-created token Secret, and `kubectl create token` mints a BOUND token with
+# a bounded lifetime — a credential a systemd timer would find expired at some
+# unattended hour, with no renewal path on a node that has no other cluster
+# credential to renew it with. A `kubernetes.io/service-account-token` Secret is
+# the supported way to ask the token controller for a durable one. It is safe
+# HERE precisely because the grant above is one verb pair on one subresource of
+# one node: the blanket warning against long-lived SA tokens is about tokens
+# that carry broad power.
+#
+# It carries NO `data:` field. The token controller populates `token` and
+# `ca.crt`; this tree carries no secret and never will
+# (../../secret-reinjection/seed-k3s-agent-join-token.sh's own discipline).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: node-status-patcher-NODE_NAME_PLACEHOLDER
+  namespace: ci-runner-node-status
+  annotations:
+    kubernetes.io/service-account.name: node-status-patcher-NODE_NAME_PLACEHOLDER
+  labels:
+    app.kubernetes.io/part-of: ci-runner
+    ci-runner.io/node: NODE_NAME_PLACEHOLDER
+type: kubernetes.io/service-account-token
+---
+# A ClusterRole and not a Role, and that is not a widening: `nodes` is a
+# CLUSTER-SCOPED resource, so a namespaced Role cannot name it at all. The
+# narrowing is done by `resourceNames`, which is what makes this
+# per-node-bound rather than cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ci-runner-node-status-patcher-NODE_NAME_PLACEHOLDER
+  labels:
+    app.kubernetes.io/part-of: ci-runner
+    ci-runner.io/node: NODE_NAME_PLACEHOLDER
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - nodes/status
+    resourceNames:
+      - NODE_NAME_PLACEHOLDER
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ci-runner-node-status-patcher-NODE_NAME_PLACEHOLDER
+  labels:
+    app.kubernetes.io/part-of: ci-runner
+    ci-runner.io/node: NODE_NAME_PLACEHOLDER
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ci-runner-node-status-patcher-NODE_NAME_PLACEHOLDER
+subjects:
+  - kind: ServiceAccount
+    name: node-status-patcher-NODE_NAME_PLACEHOLDER
+    namespace: ci-runner-node-status
