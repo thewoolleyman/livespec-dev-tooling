@@ -3,6 +3,11 @@
 The invoking repo's `.claude/settings.json` is the single source of truth: this
 module reads its project-scoped marketplaces and enabled plugins at runtime and
 executes the matching Claude CLI registration commands.
+
+`ensure_codex_plugins` is the Codex twin, reading a DIFFERENT committed file for
+a measured reason its docstring records. The half the two share — the two keys
+and the three vacuity levels — lives in `_plugin_settings`, so the mirror is
+structural rather than a copied body.
 """
 
 from __future__ import annotations
@@ -20,7 +25,6 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
-from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (  # noqa: E402
@@ -36,13 +40,16 @@ from livespec_dev_tooling.fleet._ensure_plugin_commands import (  # noqa: E402
     PluginCommandOutcome,
     PluginCommandResult,
     PluginCommandRunner,
-    enabled_plugin_names,
     planned_commands,
     plugin_command_answer,
     run_from_settings,
     subprocess_runner,
 )
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed  # noqa: E402
+from livespec_dev_tooling.fleet._plugin_settings import (  # noqa: E402
+    split_enablement,
+    vacuity_findings,
+)
 
 __all__: list[str] = [
     "ArtifactReader",
@@ -69,71 +76,17 @@ class RegistryReader(Protocol):
     def __call__(self) -> str | None: ...
 
 
-def _marketplace_of(*, plugin: str) -> str:
-    """The marketplace half of a `<plugin>@<marketplace>` key."""
-    _, _, marketplace = plugin.partition("@")
-    return marketplace or plugin
-
-
-def _split_enablement(*, raw: object) -> tuple[tuple[str, ...], tuple[str, ...], str | None]:
-    """(enabled, explicitly-disabled, shape-finding) from an enabledPlugins value.
-
-    The legacy LIST spelling delegates to `enabled_plugin_names` and reads its
-    failure TRACK, so an unreadable list can no longer arrive here as an empty
-    name set. The mapping spelling is parsed here rather than delegated because
-    this caller needs the split the seam deliberately does not make: an
-    explicitly-`false` plugin is a DISABLE the vacuity findings below report on,
-    and the seam answers only with what is enabled.
-    """
-    if raw is None:
-        return ((), (), None)
-    if isinstance(raw, list):
-        names = enabled_plugin_names(raw=cast("list[object]", raw))
-        if isinstance(names, Failure):
-            return ((), (), names.failure().finding)
-        return (names.unwrap(), (), None)
-    if not isinstance(raw, dict):
-        return ((), (), "enabledPlugins must be a JSON object")
-    on: list[str] = []
-    off: list[str] = []
-    for key, value in cast("dict[str, object]", raw).items():
-        if not isinstance(value, bool):
-            return ((), (), f"enabledPlugins values must be JSON booleans; {key!r} is not")
-        (on if value else off).append(key)
-    return (tuple(on), tuple(off), None)
-
-
 def settings_findings(*, settings_text: str) -> tuple[str, ...]:
     """Findings for the committed settings file alone. Empty means well-formed.
 
     Rejects all three vacuity levels: an empty enablement set, an all-false one
     (a `false` value is an explicit disable, not an enablement), and a partially
-    stripped one where a declared marketplace has no enabled plugin left.
+    stripped one where a declared marketplace has no enabled plugin left. The
+    reading itself lives in `_plugin_settings` because the Codex twin
+    (`ensure_codex_plugins`) rejects the SAME three levels over the SAME two
+    keys; only the file the finding names differs.
     """
-    parsed = json.loads(settings_text)
-    if not isinstance(parsed, dict):
-        return (".claude/settings.json must contain a JSON object",)
-    settings = cast("dict[str, object]", parsed)
-    marketplaces = settings.get("extraKnownMarketplaces")
-    if marketplaces is not None and not isinstance(marketplaces, dict):
-        return ("extraKnownMarketplaces must be a JSON object",)
-    enabled, disabled, shape = _split_enablement(raw=settings.get("enabledPlugins"))
-    if shape is not None:
-        return (shape,)
-    declared = tuple(cast("dict[str, object]", marketplaces or {}))
-    if declared and not enabled:
-        return ("no plugin is enabled; enabledPlugins is empty, absent, or all-false",)
-    covered = {_marketplace_of(plugin=name) for name in enabled}
-    off_markets = {_marketplace_of(plugin=name) for name in disabled}
-    findings: list[str] = []
-    for market in declared:
-        if market in covered:
-            continue
-        if market in off_markets:
-            findings.append(f"marketplace {market!r} has only explicitly disabled plugins")
-        else:
-            findings.append(f"marketplace {market!r} declared but nothing enabled from it")
-    return tuple(findings)
+    return vacuity_findings(settings_text=settings_text, settings_label=".claude/settings.json")
 
 
 def _records_for(*, registry: object, plugin: str) -> tuple[object, ...]:
@@ -192,7 +145,7 @@ def registry_findings(
     parsed = json.loads(settings_text)
     if not isinstance(parsed, dict):
         return (".claude/settings.json must contain a JSON object",)
-    enabled, _, shape = _split_enablement(
+    enabled, _, shape = split_enablement(
         raw=cast("dict[str, object]", parsed).get("enabledPlugins")
     )
     if shape is not None:
@@ -234,7 +187,7 @@ def _registry_repair_paths(
     anything to delete.
     """
     parsed = json.loads(settings_text)
-    enabled, _, _ = _split_enablement(raw=cast("dict[str, object]", parsed).get("enabledPlugins"))
+    enabled, _, _ = split_enablement(raw=cast("dict[str, object]", parsed).get("enabledPlugins"))
     registry = json.loads(registry_text) if registry_text is not None else None
     paths: dict[str, None] = {}
     for plugin in enabled:
