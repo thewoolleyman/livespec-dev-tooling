@@ -46,9 +46,11 @@
 #        (b) when the repo has a ledger (`.beads/config.yaml` present), the
 #            named work item MUST carry the label `approval:workflow-edit`,
 #            read via `bd show <id> --json` (`LIVESPEC_BD_PATH` if set and
-#            executable, else `bd` on PATH). A HUMAN sets that label from
-#            their own terminal; the fleet footgun hook denies it to
-#            agents. An unreachable ledger FAILS CLOSED.
+#            executable, else `bd` on PATH). The label is an ADVISORY
+#            human-authorization marker: NO hook prevents an agent from
+#            setting it, so an agent MAY set it ONLY on the maintainer's
+#            explicit per-case authorization, and doing so SHOULD notify
+#            the maintainer. An unreachable ledger FAILS CLOSED.
 #        (c) a repo with NO ledger accepts the valid declaration alone, and
 #            says so.
 #   5. No environment variable of any kind changes any of the above.
@@ -214,9 +216,10 @@ print_human_procedure() {
         echo "$guard: the two-step human-authorization path:"
         echo "  1. add or update $declaration in THIS branch (tracked), with exactly one"
         echo "     work_item=<ledger-id> line and exactly one reason=<reviewable reason> line;"
-        echo "  2. have a HUMAN set the approval label on that work item from their own terminal:"
+        echo "  2. set the approval label on that work item, on the maintainer's per-case authorization:"
         echo "       bd label add <ledger-id> $approval_label"
-        echo "     (agents cannot set it; the fleet footgun hook denies them that command)."
+        echo "     (advisory: no hook enforces this. An agent MAY set it only on the maintainer's"
+        echo "      explicit per-case authorization, and setting it should notify the maintainer)."
         echo "  No environment variable or flag bypasses this guard."
     } >&2
 }
