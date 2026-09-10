@@ -1,0 +1,104 @@
+---
+# usb_backup — a committed 12-hourly local USB backup for poweredge-xubuntu.
+#
+# The existing backup roles (restic_backup -> S3, arq_* -> Mac) are VPS-only.
+# poweredge had no scheduled backup at all; this role adds one to the ext4 USB
+# volume (label POWEREDGE-BACKUP) fstab-mounted at {{ usb_backup_dest }}.
+#
+# SCOPE: root. The units land in {{ usb_backup_unit_dir }} and the runner reads
+# the whole rootfs (/etc/shadow, /root, ssh host keys, the k3s server
+# credentials/tls/token) and preserves ownership.
+#
+# THIS ROLE INSTALLS BUT DOES NOT RUN A BACKUP. It arms the timer; the first
+# real run happens on the next 06:00/18:00 boundary (or when an operator runs
+# `sudo {{ usb_backup_bin }}` by hand). Running a multi-hour rootfs rsync at
+# apply time would be a surprise the operator did not ask for.
+
+- name: Install the usb_backup packages
+  # sqlite3 for the k3s datastore snapshot, rsync for the file passes. `package`
+  # rather than `apt`: portable, and the fleet's roles use it. It carries no
+  # `apt-get update`, so on a host with a stale cache AND a missing package the
+  # install fails with "no package matching" and the operator refreshes the
+  # cache once; on a converged host it is a no-op.
+  ansible.builtin.package:
+    name: "{{ usb_backup_packages }}"
+    state: present
+  become: true
+
+- name: Assert the USB backup volume is mounted
+  # The runner refuses to write unless the destination is a mountpoint, at
+  # 06:00, in a journal nobody reads. Fail here instead — at apply time, naming
+  # the mount — so a converge over a host whose USB drive fell out of fstab (or
+  # is unplugged) does not quietly arm a backup that can never write.
+  ansible.builtin.command:
+    cmd: mountpoint -q {{ usb_backup_dest }}
+  register: usb_backup_mountpoint
+  changed_when: false
+  failed_when: usb_backup_mountpoint.rc != 0
+  become: true
+
+- name: Install the USB backup runner
+  # Stays a static shell file (like restic_backup's runner): it is a RUNTIME
+  # tool an operator runs by hand long after any playbook has exited, and it
+  # owns the operative DEST/DATASTORE constants. `validate: bash -n` runs the
+  # syntax check on the temp file, so a broken runner never reaches
+  # {{ usb_backup_bin }}.
+  ansible.builtin.copy:
+    src: usb-backup.sh
+    dest: "{{ usb_backup_bin }}"
+    owner: root
+    group: root
+    mode: "0750"
+    validate: bash -n %s
+  become: true
+
+- name: Check whether the USB backup timer unit is already installed
+  # Read BEFORE the units are written. Under `--check` the templates below write
+  # nothing, so arming a not-yet-existing timer would fail with systemd's "Could
+  # not find the requested service" — a fault the role invented rather than
+  # found.
+  ansible.builtin.stat:
+    path: "{{ usb_backup_unit_dir }}/usb-backup.timer"
+  become: true
+  register: usb_backup_timer_unit
+
+- name: Install the USB backup service unit
+  ansible.builtin.template:
+    src: usb-backup.service.j2
+    dest: "{{ usb_backup_unit_dir }}/usb-backup.service"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd daemon
+
+- name: Install the USB backup timer unit
+  ansible.builtin.template:
+    src: usb-backup.timer.j2
+    dest: "{{ usb_backup_unit_dir }}/usb-backup.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd daemon
+
+- name: Enable and start the USB backup timer
+  # Only the TIMER. The service is a oneshot with no [Install] section, triggered
+  # by the timer alone; starting the service here would launch a multi-hour
+  # backup at apply time.
+  #
+  # daemon_reload: true handles the FIRST apply — handlers run at end of play,
+  # too late for systemd to know these units exist when this task arms the
+  # timer. The Reload-systemd-daemon handler covers the steady-state unit-file
+  # edit instead.
+  ansible.builtin.systemd_service:
+    name: usb-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  # NOT check_mode: false — that would arm a live timer during a run that
+  # promised to change nothing. Where the timer already exists this runs
+  # normally under `--check` and reports genuine enable/start drift; where it
+  # does not, it is skipped and the would-be unit-file add says so instead.
+  when: not ansible_check_mode or usb_backup_timer_unit.stat.exists

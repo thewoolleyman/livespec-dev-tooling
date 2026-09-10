@@ -1,0 +1,41 @@
+---
+# usb_backup — a committed 12-hourly local USB backup for poweredge-xubuntu.
+#
+# The runner itself (files/usb-backup.sh) is a STATIC file, not a template, so
+# it carries its own copies of the destination and datastore paths as readonly
+# constants. Two of the variables below (usb_backup_dest and
+# usb_backup_datastore_path) therefore MUST be kept in step with those
+# constants by hand: ansible consumes usb_backup_dest for the mountpoint
+# assertion, and usb_backup_datastore_path is recorded here so the coupling is
+# documented in one obvious place. Nothing mechanical checks the two against
+# each other — if you move the mount or the k3s datastore, edit BOTH.
+
+usb_backup_packages:
+  - sqlite3
+  - rsync
+
+# sbin, not bin: the runner reads the whole rootfs (/etc/shadow, /root, the ssh
+# host keys, /etc/credstore, the k3s server credentials/tls/token under
+# /var/lib/rancher/k3s/server) and preserves ownership, so it is root-only by
+# design.
+usb_backup_bin: /usr/local/sbin/usb-backup
+usb_backup_unit_dir: /etc/systemd/system
+
+# The ext4 USB volume (Toshiba 931G, label POWEREDGE-BACKUP), fstab-mounted at
+# /mnt/usb-backup with nofail. MUST match DEST in files/usb-backup.sh.
+usb_backup_dest: /mnt/usb-backup
+
+# The k3s embedded-SQLite datastore. It lives on a tmpfs mount, so rsync's
+# --one-file-system skips it; the runner takes a separate online-consistent
+# snapshot with `sqlite3 .backup` instead. MUST match DATASTORE in
+# files/usb-backup.sh.
+usb_backup_datastore_path: /var/lib/rancher/k3s/server/db/state.db
+
+# Every 12 hours, at 06:00 and 18:00 local time. Local (America/Los_Angeles)
+# rather than UTC so the two runs land at predictable wall-clock hours on the
+# machine an operator actually looks at.
+usb_backup_on_calendar: "*-*-* 06,18:00:00 America/Los_Angeles"
+usb_backup_randomized_delay_sec: 300
+# A full rsync of the rootfs to a USB spinning/flash volume can take a while;
+# the default 90s start timeout would kill it mid-copy.
+usb_backup_timeout_start_sec: 4h

@@ -1,0 +1,13 @@
+# Managed by Ansible (role: usb_backup). Local edits are overwritten.
+[Unit]
+Description=Every-12h poweredge backup to the local USB volume
+
+[Timer]
+OnCalendar={{ usb_backup_on_calendar }}
+# Catch up a run the machine slept/was-off through, rather than skipping it.
+Persistent=true
+RandomizedDelaySec={{ usb_backup_randomized_delay_sec }}
+Unit=usb-backup.service
+
+[Install]
+WantedBy=timers.target
