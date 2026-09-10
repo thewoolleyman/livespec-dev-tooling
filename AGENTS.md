@@ -607,6 +607,29 @@ gate's remedy hint, or `_red_green_replay_revert.py`; it also carries the
 reciprocal paragraph that still has to land in the livespec repo's own copy
 of that directive.
 
+## Stop the line for breakages
+
+**Stop the line for breakages.** When shared factory or fleet tooling is
+BROKEN — a bad model/adapter config, a stale-but-fixable plugin build a session
+dispatches through, a mint/credential outage, a gate wedged by a defect — HALT,
+fix the root cause or notify its owner and WAIT for the fix, and resume only on
+the NORMAL path once the fix rolls out through the ordinary channel (release →
+`ensure-plugins` → reload → normal dispatch). Never pin a build, re-route, or
+otherwise route around a breakage to keep your own work moving: a broken-window
+workaround normalizes the outage, hides it from a real fix, and validates only
+your private path, not the one every other session and fleet member uses. A
+transient (a rate-limit window that resets, an intermittent ENOSPC) is waited
+out and retried on the normal path; a permanent tool limitation is designed
+within — neither is a bypass. The two shapes already recorded in this repo's
+guidance are the positive cases, not exceptions: the detached gate runner in
+`.ai/gate-runtime-vs-harness-patience.md` designs WITHIN the harness's tool-call
+ceiling — a permanent limitation — without weakening a single verdict, and the
+fix order in `.ai/factory-span-receiver.md` (update the plugin in the
+dispatching project, restart its loop, THEN dispatch) IS the normal-path resume,
+never a pinned build. Fleet source: the livespec `agent-disciplines.md`
+discipline §"A factory or tooling BREAKAGE stops the line" (maintainer ruling
+2026-09-10).
+
 ## CI runner routing
 
 This repo's gating CI reads the `CI_RUNNER_LABELS` repository variable
