@@ -49,6 +49,42 @@ In livespec-family repositories that enforce red-green-replay, `feat:` and
 commit hook rejects the prefix, the commit did not happen; choose the correct
 prefix and rerun `git commit` rather than amending a nonexistent commit.
 
+## `ls` Is Aliased To lsd — Never Capture A Path From It
+
+HOST-WIDE, not role-scoped: on this machine `ls` is an alias for
+`lsd --inode --long --all`, and lsd decorates its output EVEN FOR `ls -d`. So
+`GR=$(ls -d <path>)` captures a decorated line such as
+`31197817 .rwxrwxr-x … /dispatcher.py`, not a path, and the NEXT command fails
+with `No such file or directory` (or `python3: can't open file ...`) naming a
+path built out of that decoration.
+
+**The symptom is a FALSE ABSENCE.** The failure presents as the path being
+missing, not as a quoting or capture bug — which is why it gets written up as a
+finding about the system instead of a defect in the command. A surprising "No
+such file or directory" from anything that resolved its path through a listing
+is RE-CHECKED with `find` before it is treated as a finding, reported as a
+blocker, or recorded as evidence.
+
+Rules:
+
+- Never capture a path from `ls` in a command substitution. Not `$(ls -d …)`,
+  not `$(ls -1dt …)`, not `$(ls -td … | head -1)`.
+- Resolve paths with `find`, e.g.
+  `find <dir> -maxdepth 1 -name '<pat>' -printf '%T@ %p\n' | sort -rn | head -1`,
+  or use a literal path. `/bin/ls` bypasses the alias but is not the habit to
+  build; prefer `find -printf`.
+- Non-interactive `bash -c` / script contexts do not expand the interactive
+  alias, so the same line can work there and fail when a session runs it
+  directly. A green script is not evidence the form is safe.
+
+Measured 2026-07-28, 2026-08-21, and 2026-09-08 — three different agent roles
+across 42 days, each rediscovering it from scratch. The supervisor-role record
+of the first instance, with its role-specific context (a build path captured
+once and reused after the release moved, and a 20s watcher), stays where it is:
+see correction C6 in `.ai/supervisor-protocol.md`. This section is the
+host-wide subset, kept here because the trap hits ANY role on this host and
+`.ai/supervisor-protocol.md` is loaded only by supervisor handoffs.
+
 ## bd Resolves The Tenant From The Working Directory
 
 `bd` auto-discovers its tenant from the nearest `.beads/` config, so the SAME
