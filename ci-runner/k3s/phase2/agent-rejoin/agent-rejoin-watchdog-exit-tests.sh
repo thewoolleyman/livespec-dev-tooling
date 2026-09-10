@@ -21,7 +21,14 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="${HERE}/agent-rejoin-watchdog.sh"
 NODE_NAME="testnode"
-NEEDLE="node \"${NODE_NAME}\" not found"
+# The wedge lines EXACTLY as k3s writes them to the journal: klog renders the
+# structured err with the inner node-name quotes BACKSLASH-ESCAPED. Measured on
+# gmktec-xubuntu 2026-09-10 — a fixture with bare quotes passed while the shipped
+# needle silently matched nothing on the real host, so the fixture now carries
+# the escaped form (and both the singular `node` and plural `nodes` variants k3s
+# emits) to guard the quote-agnostic match against that exact regression.
+NEEDLE='err="failed to get node info: node \"testnode\" not found"'
+NEEDLE_PLURAL='err="nodes \"testnode\" not found"'
 
 pass=0; fail=0
 ok() { printf '  PASS  %s\n' "$1"; pass=$((pass + 1)); }
@@ -50,6 +57,9 @@ printf '%s\n' \
   'if [ "${1:-}" = restart ]; then' \
   '  printf "systemctl restart %s\n" "${2:-}" >> "$TRIPWIRE"; exit 0' \
   'fi' \
+  'if [ "${1:-}" = cat ] && [ -n "${STUB_UNIT_SERVER:-}" ]; then' \
+  '  printf -- "--server\n%s\n" "$STUB_UNIT_SERVER"; exit 0' \
+  'fi' \
   'exit 0' \
   > "${FAKEBIN}/systemctl"
 chmod +x "${FAKEBIN}/systemctl"
@@ -75,11 +85,15 @@ printf 'server: https://192.168.1.200:6443\n' > "$CONFIG"
 NODE_PASSWORD="${TMPROOT}/node-password"
 STAMP="${TMPROOT}/stamp"
 
-# journal_with N -> N copies of the wedge signature (plus benign noise).
+# journal_with N -> N wedge lines (alternating the singular and plural klog
+# forms) plus a benign line, exactly as journalctl would render them.
 journal_with() {
-  local n="$1" out="" i
-  for ((i = 0; i < n; i++)); do out+="Sep 10 boot k3s[1]: ${NEEDLE}"$'\n'; done
-  out+="Sep 10 boot k3s[1]: some other line"$'\n'
+  local n="$1" out="" i line
+  for ((i = 0; i < n; i++)); do
+    if (( i % 2 == 0 )); then line="$NEEDLE"; else line="$NEEDLE_PLURAL"; fi
+    out+="Sep 10 10:48:43 gmktec k3s[185746]: E0910 10:48:43 ${line}"$'\n'
+  done
+  out+="Sep 10 10:48:43 gmktec k3s[185746]: I0910 registered node testnode"$'\n'
   printf '%s' "$out"
 }
 
@@ -142,14 +156,30 @@ restarted && no "a restart 30s ago (< 300s cooldown) should NOT restart again" |
 STUB_JOURNAL="$(journal_with 6)" run_watchdog
 restarted && ok "past the cooldown -> restarts again" || no "past the cooldown it should restart again"
 
-# A config with no server line is not a joined agent -> nothing to do.
+# A config with no server line AND no --server in the unit is not a joined agent
+# -> nothing to rejoin to.
 rm -f "$STAMP"
 printf 'token-file: /x\n' > "${TMPROOT}/noserver.yaml"
 : > "$TRIPWIRE"
 PATH="${FAKEBIN}:${PATH}" REJOIN_NODE_NAME="$NODE_NAME" REJOIN_K3S_CONFIG="${TMPROOT}/noserver.yaml" \
   REJOIN_NODE_PASSWORD="$NODE_PASSWORD" REJOIN_STAMP="$STAMP" \
-  "$SCRIPT" >/dev/null 2>&1
-restarted && no "a config with no server line should NOT restart" || ok "no server line in config -> no restart"
+  "$SCRIPT" >/dev/null 2>&1 || true
+restarted && no "a config with no server line and no unit --server should NOT restart" || ok "no server anywhere -> no restart"
+
+# The gmktec case: config carries NO server: key; the server URL lives in the
+# k3s-agent unit's ExecStart --server flag. The watchdog must resolve it there
+# and heal. (This is the exact real-host layout that made a config-only parse
+# silently no-op on 2026-09-10.)
+rm -f "$STAMP"
+: > "$TRIPWIRE"
+export STUB_AGENT_ACTIVE=1 STUB_SERVER_REACHABLE=1 STUB_UNIT_SERVER="https://192.168.1.200:6443"
+STUB_JOURNAL="$(journal_with 6)" \
+  PATH="${FAKEBIN}:${PATH}" REJOIN_NODE_NAME="$NODE_NAME" REJOIN_K3S_CONFIG="${TMPROOT}/noserver.yaml" \
+  REJOIN_NODE_PASSWORD="$NODE_PASSWORD" REJOIN_STAMP="$STAMP" \
+  REJOIN_WINDOW_SEC=180 REJOIN_MIN_HITS=5 REJOIN_RATE_LIMIT_SEC=300 \
+  "$SCRIPT" >/dev/null 2>&1 || true
+unset STUB_UNIT_SERVER
+restarted && ok "server from the unit's --server flag (no config server:) -> restarts" || no "the unit-provided server should have let it restart"
 
 printf '\n== summary: %d passed, %d failed ==\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
