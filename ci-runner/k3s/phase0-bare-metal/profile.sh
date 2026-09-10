@@ -113,6 +113,17 @@ PROFILE_REQUIRED_KEYS=(
 #   NODE_TAINTS           space-separated `key=value:Effect` taints the node
 #                         registers with. Empty for a node that takes general
 #                         work.
+#   CHURN_KUBECONFIG_FILE the path on the node holding the kubeconfig a
+#                         NODE-LOCAL churn-slot reapply timer authenticates to
+#                         the API with. A PATH, never the credential: this tree
+#                         carries no secret. Empty for a node that runs no such
+#                         timer — which is every node today, and is what the
+#                         SERVER means permanently: a server patches node status
+#                         through its own admin file
+#                         (/etc/rancher/k3s/k3s.yaml), which an AGENT does not
+#                         have. See
+#                         ../../phase2/node-status-credential/README.md for the
+#                         credential this path receives and who mints it.
 # `-g` on purpose: a stage that sources this file from inside a function (the
 # exit tests read a profile that way) would otherwise get a table scoped to
 # that function.
@@ -121,6 +132,7 @@ declare -gA PROFILE_KEY_DEFAULTS=(
   [PRESERVED_PARTITIONS]=""
   [CLUSTER_TOKEN_FILE]=""
   [NODE_TAINTS]=""
+  [CHURN_KUBECONFIG_FILE]=""
 )
 
 # An ext4 label holds 16 bytes, an XFS label 12, a FAT label 11 and a swap
@@ -201,6 +213,7 @@ profile_load() {
     PRESERVED_PARTITIONS
     CLUSTER_TOKEN_FILE
     NODE_TAINTS
+    CHURN_KUBECONFIG_FILE
   )
   if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
     may_be_empty+=(CONTROLLER_CLI CONTROLLER_ID VD_ENCLOSURE VD_SLOTS VD_RAID_LEVEL VD_STRIP_KIB VD_CACHE_POLICY)
