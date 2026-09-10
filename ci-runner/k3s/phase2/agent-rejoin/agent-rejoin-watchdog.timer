@@ -1,0 +1,21 @@
+# agent-rejoin-watchdog.timer — run the agent-rejoin liveness check every ~60s.
+#
+# The check is one `systemctl is-active`, one TCP connect and one bounded
+# journal read (see agent-rejoin-watchdog.sh), so the cost is negligible and the
+# interval is chosen for recovery latency, not load. Sixty seconds bounds how
+# long this agent stays stranded after a control-plane reboot: the wedge is
+# detectable as soon as the agent has logged the signature enough times, and a
+# one-minute cadence puts worst-case time-to-rejoin at a couple of minutes,
+# unattended, against the "stays wedged until an operator runs systemctl restart"
+# it replaces. OnBootSec gives k3s-agent and the network a moment to come up
+# first so the first tick does not fire into a still-starting agent.
+[Unit]
+Description=Periodic k3s-agent wedge check (every ~60s)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
