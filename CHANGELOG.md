@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.85.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.0...v1.85.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **checks:** compare BYTES in no_shadow_ledger_body_identical ([aaf09fa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aaf09fadf578929ab960618b673aaff8fa617572))
+
 ## [1.85.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.84.2...v1.85.0) (2026-09-10)
 
 
