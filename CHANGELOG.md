@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.84.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.8...v1.84.0) (2026-09-10)
+
+
+### Features
+
+* **checks:** extract the public/exempt universe assembly behind one helper ([861ea13](https://github.com/thewoolleyman/livespec-dev-tooling/commit/861ea1358d7b837d5f678ba809f322a112bc58df))
+* **fleet:** add the shared Codex derive-from-settings plugin provisioner ([f04b620](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f04b620ef2b6a044bc30d71163aa4db1dc1754b3))
+
+
+### Bug Fixes
+
+* **gates:** delegated gate runs hook_gate=1 check and isolates LIVESPEC_GATE_CONTEXT in tests ([f4d2d0c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f4d2d0c078a716c74bc45a5b2b582348a85ef99a))
+
 ## [1.83.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.7...v1.83.8) (2026-09-10)
 
 
