@@ -19,8 +19,21 @@
 // `dry-python/returns` is vendored under `_vendor/`". This repo — the
 // enforcement suite itself — carried no copy, so it could not compose on
 // the railway even in principle. Version 0.25.0 matches the copy
-// `livespec` vendors, keeping one railway version across the fleet.
-// Landed as step 1 of livespec-dev-tooling-8o8e.
+// `livespec` vendors — a PAIRWISE match between two repos, and the
+// whole of what this entry claims. It asserts nothing fleet-wide,
+// because nothing fleet-wide is true: measured 2026-08-03 the fleet
+// carried three distinct `returns` provenances — `0.25.0` here and in
+// `livespec`, `0.26.0` in `livespec-orchestrator-git-jsonl`, and the
+// commit-pin copy-of-a-copy
+// `e2cdeea:.claude-plugin/scripts/_vendor/returns` in
+// `livespec-orchestrator-beads-fabro`, whose upstream version no
+// manifest records. Nothing computes a cross-repo `upstream_ref`
+// comparison — `check-vendor-manifest` validates each entry's SHAPE
+// only — so an annotation here cannot know a fleet-wide property and
+// must not claim one.
+// Landed as step 1 of livespec-dev-tooling-8o8e; the false fleet-wide
+// clause was removed, and the measurement above recorded in its place,
+// by livespec-dev-tooling-yteb.
 {
   "libraries": [
     {
