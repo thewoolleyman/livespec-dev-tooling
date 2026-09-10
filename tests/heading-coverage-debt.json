@@ -16,34 +16,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: JIT replacement is immediate but installation-budgeted",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-08-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: JIT startup batch immediately admits all permitted demand within the half-budget point burst",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-08-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: JIT throttle opens one shared circuit",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-08-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a blessed declared-absent spelling parses to a distinct variant carrying its reason",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-07-28"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a cache fault degrades a job to cold and never fails it",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-09-04"
@@ -54,13 +26,6 @@
     "heading": "## Scenario: a canary job runs cold and is tagged",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-09-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a declared-absent variant with an empty payload is rejected at load",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-07-28"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -135,27 +100,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: an empty clean role key makes its consuming check stricter, not blinder",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-07-28"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unarmed-until payload naming a closed work item is a conformance failure",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-07-28"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an unparseable pin file is a finding, never a passing row",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-07-31"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: resolving a heading-coverage TODO to a real test requires removing its debt-register entry",
     "work_item": "livespec-dev-tooling-0bse.1",
     "first_seen": "2026-09-09"
@@ -166,13 +110,6 @@
     "heading": "## Scenario: the heading-coverage debt register regenerates from the live registry and matches byte-for-byte",
     "work_item": "livespec-dev-tooling-0bse.1",
     "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the legacy empty spelling on a union key is rejected at load",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-07-28"
   },
   {
     "spec_root": "SPECIFICATION",
