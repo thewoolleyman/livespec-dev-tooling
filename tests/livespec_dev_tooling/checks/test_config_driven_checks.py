@@ -532,26 +532,36 @@ def test_io_exempt_source_tree_still_passes_when_tree_contains_python(
 def test_scalar_role_paths_must_exist_when_declared_non_empty(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Non-walking scalar role keys fail when their declared path is missing."""
+    """Non-walking scalar role keys fail when their declared path is missing.
+
+    The expected code is per-slug rather than shared, because the two checks'
+    ratified fail exits differ: `contracts.md` gives
+    `no_shadow_ledger_body_identical` exit `4` on fail, which the check itself
+    only started honouring with `livespec-dev-tooling-okz`. The property under
+    test is unchanged — a declared-non-empty scalar path that does not exist is
+    a REJECTION naming the key, never a pass.
+    """
     cases = (
         (
             "newtype_domain_primitives",
             'dataclasses_tree = "missing_dataclasses"\n',
             "declared dataclasses_tree is not a directory",
+            1,
         ),
         (
             "no_shadow_ledger_body_identical",
             'neutral_hook_body_path = "missing-hook.sh"\n',
             "declared neutral_hook_body_path is not a file",
+            4,
         ),
     )
-    for index, (slug, declaration, message) in enumerate(cases):
+    for index, (slug, declaration, message, expected_returncode) in enumerate(cases):
         case_root = tmp_path / f"case_{index}"
         case_root.mkdir()
         _write_block(repo_root=case_root, body=declaration)
         result = _run_check(slug=slug, cwd=case_root, monkeypatch=monkeypatch, capsys=capsys)
         assert (
-            result.returncode == 1
+            result.returncode == expected_returncode
         ), f"{slug} must reject a missing declared path; stderr={result.stderr!r}"
         assert message in result.stderr
 

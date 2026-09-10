@@ -41,6 +41,25 @@ Exit codes:
   `just install-no-shadow-ledger` (the from-package installer that is the
   single source of the body).
 
+⛔ THE COMPARISON IS ON BYTES, and for a long time it was not. This module
+compared `path.read_text(encoding="utf-8")` against the canonical string —
+TEXT identity after UTF-8 decode and universal-newline translation, not the
+BYTE identity its own name, the exit-code table above, and
+`SPECIFICATION/contracts.md` §"`no_shadow_ledger_body_identical` check"
+(algorithm step 3, "if its BYTES differ") all mandate. A CRLF-lined Driver
+copy therefore decoded back to exactly `CANONICAL_NO_SHADOW_LEDGER_BODY` and
+this check — the Verifier slot whose whole contract is byte-identity —
+returned `0` on a copy whose every line ending had drifted. The decode was
+also the only reason a copy whose bytes are not valid UTF-8 raised
+`UnicodeDecodeError` out of `main()` instead of reporting the `body_mismatch`
+that was always available: the canonical body is UTF-8 by construction, so
+bytes that do not decode CANNOT equal it, and comparing bytes reaches that
+answer without a `try`. Measured, not reasoned
+(livespec-dev-tooling-okz). The identical defect on the identical seam was
+found and fixed first in concern #1's `_primary_checkout_hook_files`; this is
+the same fix, and the reason it had to be made twice is that copying a
+pattern copies its defects.
+
 Output discipline: structlog JSON to stderr; no `print`, no
 `sys.stdout.write` / `sys.stderr.write`.
 """
@@ -74,7 +93,20 @@ __all__: list[str] = []
 
 
 _CHECK_ID = "no_shadow_ledger_body_identical"
-_FAIL_EXIT = 1
+# `4`, per contracts.md §"`no_shadow_ledger_body_identical` check": "exit `4`
+# with structured stderr findings on fail". The constant read `1` while the
+# docstring above and the ratified contract both said `4`, which collapsed a
+# genuine finding onto the SAME code the undeclared-key gate returns — a
+# caller could not tell "this Driver's hook body drifted" from "this consumer
+# never declared the key". Conforming the constant to the spec is the whole of
+# the change; the gate's own `1` is untouched.
+_FAIL_EXIT = 4
+
+# Encoded ONCE at import rather than per call. The canonical body is the
+# SINGLE source of truth and it is a `str`; the bytes the installer actually
+# writes are its UTF-8 encoding, so this is the exact sequence a conforming
+# copy must hold.
+_CANONICAL_NO_SHADOW_LEDGER_BODY_BYTES = CANONICAL_NO_SHADOW_LEDGER_BODY.encode("utf-8")
 
 _MISSING_FAILURE_MODE = "missing"
 _BODY_MISMATCH_FAILURE_MODE = "body_mismatch"
@@ -127,7 +159,7 @@ def main() -> int:
             hint=_REMEDY,
         )
         return _FAIL_EXIT
-    if path.read_text(encoding="utf-8") != CANONICAL_NO_SHADOW_LEDGER_BODY:
+    if path.read_bytes() != _CANONICAL_NO_SHADOW_LEDGER_BODY_BYTES:
         log.error(
             "no_shadow_ledger_body_identical: hook body drifted from canonical",
             check_id=_CHECK_ID,
