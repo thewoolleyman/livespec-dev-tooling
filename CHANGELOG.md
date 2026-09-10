@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.85.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.84.2...v1.85.0) (2026-09-10)
+
+
+### Features
+
+* **gates:** reconstruct gate-forge-credential on boot from the host credstore ([833086d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/833086dcc55f5aea1f4a487c73c65da4243f802f))
+
 ## [1.84.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.84.1...v1.84.2) (2026-09-10)
 
 
