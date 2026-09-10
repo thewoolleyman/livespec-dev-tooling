@@ -6,7 +6,16 @@ its own directory — both are keys of the `warm-cache-populate` ConfigMap,
 mounted together at /scripts). Encodes the bucket table in README.md
 "Verifier": archive-v0, wheels-v5, sdists-v9, git-v0, simple-v18, plus the
 build-dependency closure that is the one legitimate class outside every
-lock. stdlib only.
+lock.
+
+STDLIB PLUS `returns`, WHICH IS NOT OPTIONAL HERE. Every public function of
+this module that can fail rides the Result/IOResult railway that livespec's
+`SPECIFICATION/non-functional-requirements.md` section "ROP composition" binds
+ALL first-party Python to (maintainer ruling 2026-09-10,
+livespec-dev-tooling-qndn.1: the remedy for these two files is CONVERSION, not
+an exemption from the check universe). `warm-cache-populate.sh` installs the
+version this fleet vendors and puts it on PYTHONPATH before invoking the
+verifier — see that script's header, "THE VERIFIER'S RAILWAY".
 """
 
 from __future__ import annotations
@@ -20,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import tomllib
+from returns.io import impure_safe
 
 __all__ = [
     "BUCKETS",
@@ -64,7 +74,14 @@ class LockUnion:
         return any(sha.startswith(prefix) for sha in self.git_shas)
 
 
+@impure_safe(exceptions=(OSError, tomllib.TOMLDecodeError))
 def load_locks(*, paths: Iterable[str]) -> LockUnion:
+    """The union of `paths`, as `IOResult[LockUnion, OSError | TOMLDecodeError]`.
+
+    An unreadable or malformed lockfile is an EXPECTED failure of this
+    verifier's input rather than a bug: the populator hands it whatever the
+    routed repositories' default branches happen to carry that tick.
+    """
     union = LockUnion()
     for path in paths:
         with Path(path).open("rb") as fh:
@@ -82,8 +99,15 @@ def load_locks(*, paths: Iterable[str]) -> LockUnion:
     return union
 
 
-def du(*, path: Path) -> tuple[int, int]:
-    """(bytes, regular files) under `path`, symlinks counted by their own size."""
+def _measure(*, path: Path) -> tuple[int, int]:
+    """(bytes, regular files) under `path`, symlinks counted by their own size.
+
+    The RAISING leaf behind `du`. `Classifier.add` calls it directly, inside
+    `scan_cache`'s own railway boundary, so an unreadable entry lands on ONE
+    track for the whole walk instead of forcing every `add` — and with it every
+    `scan_*` — to thread a container it has nothing of its own to put in it.
+    Raise at the leaf, lift once at the boundary.
+    """
     if path.is_symlink() or path.is_file():
         return path.lstat().st_size, 1
     total, files = 0, 0
@@ -96,6 +120,14 @@ def du(*, path: Path) -> tuple[int, int]:
             total += child.lstat().st_size
             files += 1
     return total, files
+
+
+@impure_safe(exceptions=(OSError,))
+def du(*, path: Path) -> tuple[int, int]:
+    """`_measure`, as `IOResult[tuple[int, int], OSError]` — the module's public
+    measurement, for callers outside `scan_cache`'s boundary (the CLI half's
+    generation total)."""
+    return _measure(path=path)
 
 
 def dist_info_of(*, archive_dir: Path) -> tuple[str, str] | None:
@@ -130,7 +162,7 @@ class Classifier:
 
     def add(self, *, bucket: str, rel: str, nv: tuple[str | None, str | None], path: Path) -> None:
         name, version = nv
-        size_bytes, files = du(path=path)
+        size_bytes, files = _measure(path=path)
         entry = Entry(
             bucket=bucket, rel=rel, name=name, version=version, size_bytes=size_bytes, files=files
         )
@@ -275,7 +307,18 @@ SCANNERS: dict[str, Callable[..., None]] = {
 }
 
 
+@impure_safe(exceptions=(OSError,))
 def scan_cache(*, cache: Path, c: Classifier) -> None:
+    """Classify every entry of `cache` into `c`, as `IOResult[None, OSError]`.
+
+    THE RAILWAY BOUNDARY FOR THE WHOLE WALK: every `iterdir`, `lstat` and
+    `rglob` the scanners and `_measure` perform below is lifted here. A
+    generation that vanishes or turns unreadable mid-scan — the populator
+    builds one while the provisioner reflink-copies another — then reaches
+    `main()` as a failure track rather than as a traceback, which matters
+    because an uncaught exception exits 1 and the populator reads exit 1 as
+    the "unreferenced entries" VERDICT (README.md "Verifier").
+    """
     for top in sorted(cache.iterdir()):
         if top.name in TOP_FILES or top.name == "interpreter-v4":
             continue
@@ -288,7 +331,10 @@ def scan_cache(*, cache: Path, c: Classifier) -> None:
             SCANNERS[top.name](top=top, c=c)
 
 
+@impure_safe(exceptions=(OSError,))
 def archive_index_of(*, cache: Path) -> dict[str, list[Path]]:
+    """`archive-v0` entries grouped by normalized name, as
+    `IOResult[dict[str, list[Path]], OSError]`."""
     index: dict[str, list[Path]] = {}
     arch = cache / "archive-v0"
     if arch.is_dir():

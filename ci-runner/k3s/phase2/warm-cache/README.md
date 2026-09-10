@@ -24,7 +24,7 @@ volume is created:
 | Path | Role |
 |---|---|
 | `warm-cache-populate.sh` | The populator. Clones or fast-forwards every routed repository's default branch, hashes its `uv.lock`, and — when any lock changed, the published generation no longer verifies, or it is older than 24 h — builds a NEW generation from an EMPTY directory: per repository it rewrites the file-host prefix in its own clone's lock to the PyPI files proxy and runs `uv sync --frozen --all-groups --no-install-project --no-install-workspace` with that generation as `UV_CACHE_DIR`; runs the verifier; checks the budget; writes the generation's manifest; publishes with one atomic symlink rename; prunes to the newest two. A run with nothing changed verifies the live generation and records `rebuilt=0`. Every run writes `last-run.json` for the host sweep. For every repository with a `Cargo.lock` it also runs `cargo fetch --locked` through the crates proxy (`../crates-proxy/`) and builds the default branch with sccache as the compilation cache's one writer (`../sccache/`) when the branch or toolchain changed. Its header carries the whole control flow and the exit codes. |
-| `verify-uv-cache.py`, `uv_cache_layout.py` | The verifier (stdlib Python, both files shipped in the populator's ConfigMap and mounted together at `/scripts`): maps every entry of a uv 0.9.x cache back to a `(name, version)` and fails on any entry no routed lock references. The layout module holds the bucket table and the scanners; the CLI holds the lock union, the build-dependency closure and the report — split at the repo's per-file LLOC ceiling. "Verifier" below. |
+| `verify-uv-cache.py`, `uv_cache_layout.py` | The verifier (stdlib plus `returns`, both files shipped in the populator's ConfigMap and mounted together at `/scripts`): maps every entry of a uv 0.9.x cache back to a `(name, version)` and fails on any entry no routed lock references. The layout module holds the bucket table and the scanners; the CLI holds the lock union, the build-dependency closure and the report — split at the repo's per-file LLOC ceiling. "Verifier" below. |
 | `warm-cache-cronjob.yaml` | Namespace `ci-warm-cache`, the `warm-cache-budget` ConfigMap (the two budget numbers and their derivation), and the `warm-cache-populate` CronJob (every 30 min, `concurrencyPolicy: Forbid`), running the populator in the same fabro sandbox image the fleet's CI jobs execute in (the `python-rust` layer, so `cargo` is present), with the warm root mounted read-WRITE — the only mount of that path in the cluster — and the proxy's store mounted read-only for the hit-ratio count. |
 | `pypi-proxy/` | The PyPI FILES proxy every rebuild fetches through: one nginx `proxy_cache` in front of `files.pythonhosted.org` on the `ci-cache` tier, read only by the populator. "The PyPI files proxy" below and its own README. |
 | `converge-warm-cache.sh` | The idempotent converge of every cluster object here: the proxy (with a bounded rollout wait), the budget ConfigMap + CronJob, the `warm-cache-repos` ConfigMap derived from `../arc/values-*.yaml`, and the script ConfigMap from the populator AND the verifier. Run by the boot converge and by `install-warm-cache.sh`. |
@@ -206,6 +206,29 @@ The verifier's own totals count every path (a hardlinked inode twice, a
 pointer symlink once); the budget and the metrics use `du -sb` and
 `find -type f`, which count an inode once and no symlinks — the smaller
 numbers, and the ones `ci-cache-gauges.sh` reports.
+
+**The verifier is no longer stdlib-only, and exit 2 now means more than
+usage.** Both files ride the Result/IOResult railway livespec's
+`SPECIFICATION/non-functional-requirements.md` §"ROP composition" binds all
+first-party Python to; the maintainer ruled on 2026-09-10
+(`livespec-dev-tooling-qndn.1`) that the remedy for these two is that
+conversion and NOT an exemption from the enforcement suite's check universe.
+So `returns` must be importable node-side, and `warm-cache-populate.sh`
+installs it — pinned to the version this fleet vendors, into
+`$WARM_ROOT/py-deps`, once per node, reached through `PYTHONPATH` on the two
+verifier invocations only and deliberately never exported (a `PYTHONPATH`
+visible to `uv sync`'s PEP 517 build backends would leak into every source
+build). An install that fails is a PREFLIGHT failure — exit 2, nothing built —
+because running without the verifier would mean publishing unverified. See
+that script's header, "THE VERIFIER'S RAILWAY".
+
+The conversion moved every IO failure onto exit 2, the code the populator
+already treats as "did not run to a verdict". Before it, an unreadable lock or
+a generation that vanished mid-scan raised, and CPython exits 1 on an uncaught
+exception — the same code as the real "unreferenced entries" verdict, so a
+crash was logged as one. The verdict paths are unchanged and were diffed
+byte-for-byte against the pre-conversion script on the referenced, the
+unreferenced and the `--json` cases.
 
 ## From-empty build cost
 

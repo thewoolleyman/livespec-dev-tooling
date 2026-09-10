@@ -79,6 +79,34 @@
 # lockfiles, and both DESTROY a generation reached through a copy or a link
 # (README.md "Verifier").
 #
+# THE VERIFIER'S RAILWAY (livespec-dev-tooling-qndn.1). Both verifier files now
+# ride the Result/IOResult railway livespec's
+# SPECIFICATION/non-functional-requirements.md section "ROP composition" binds
+# all first-party Python to, so `returns` must be importable BEFORE either is
+# invoked -- they are no longer stdlib-only. The maintainer ruled on 2026-09-10
+# that the remedy for those two files is that conversion and NOT an exemption
+# from the enforcement suite's check universe, which makes reaching the
+# dependency node-side this script's job.
+#
+# It is INSTALLED rather than shipped, and set PER INVOCATION rather than
+# exported. The `warm-cache-populate` ConfigMap carries three FLAT keys and
+# cannot carry a package tree; the pod runs the fleet's SHARED sandbox image,
+# which this repo does not own and must not have to re-roll for one pure-Python
+# library. So the install lands in $PY_DEPS_DIR on the warm root, where it
+# survives between ticks and costs one download per node, and reaches only the
+# two verifier invocations, through the `verifier` wrapper below. It is
+# deliberately NOT exported: `uv sync` builds PyPI source distributions in this
+# container, and a PYTHONPATH visible to those build backends would leak this
+# install into every one of them.
+#
+# PINNED to the version this fleet vendors under
+# livespec_dev_tooling/_vendor/returns (.vendor.jsonc), so the node runs the
+# same railway the checks are written against. `returns` is pure Python but
+# imports typing_extensions, which is why this is a resolver install and not a
+# copied directory. A failed install is a PREFLIGHT failure (exit 2, nothing
+# built): the verifier gates every publish, so proceeding without it would mean
+# publishing unverified, which the paragraph above forbids.
+#
 # NOTHING IS PUBLISHED OVER BUDGET. The generation's bytes (du -sb) and
 # regular-file count must each be at or under WARM_BUDGET_BYTES /
 # WARM_BUDGET_FILES (the `warm-cache-budget` ConfigMap; fixed numbers derived
@@ -202,6 +230,10 @@ WARM_ROOT="${WARM_ROOT:-/warm}"
 REPOS_FILE="${REPOS_FILE:-/config/repos.txt}"
 KEEP_GENERATIONS="${KEEP_GENERATIONS:-2}"
 VERIFIER="${VERIFIER:-/scripts/verify-uv-cache.py}"
+# The verifier's railway dependency (header, "THE VERIFIER'S RAILWAY"): where
+# it is installed, and the version pin it is installed at.
+PY_DEPS_DIR="${PY_DEPS_DIR:-${WARM_ROOT}/py-deps}"
+RETURNS_SPEC="${RETURNS_SPEC:-returns==0.25.0}"
 # The host-served PyPI files proxy (./pypi-proxy/), probed at /health; an
 # unreachable proxy means a direct build and proxy_unavailable=1, never a
 # failed run.
@@ -240,6 +272,12 @@ SCRATCH="${SCRATCH:-$(mktemp -d)}"
 PYPI_FILES_PREFIX="https://files.pythonhosted.org/packages/"
 
 log() { printf '[warm-cache-populate %s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+# verifier ARG... — the verifier, with its railway dependency on the path and
+# NOWHERE else (header, "THE VERIFIER'S RAILWAY"). Every invocation of
+# ${VERIFIER} in this script goes through here; a bare `python3 ${VERIFIER}`
+# would fail at its `from returns.io import ...`.
+verifier() { PYTHONPATH="${PY_DEPS_DIR}" python3 "${VERIFIER}" "$@"; }
 
 # admitted_jobs — the pool's admitted-job count: Kueue ClusterQueue
 # status.admittedWorkloads summed across every queue, read through the API
@@ -328,6 +366,18 @@ command -v python3 >/dev/null || { log "FATAL: python3 not on PATH"; exit 2; }
 python3 -c 'import tomllib' 2>/dev/null || { log "FATAL: python3 is older than 3.11 (no tomllib); the verifier cannot run"; exit 2; }
 [ -r "${VERIFIER}" ] || { log "FATAL: verifier ${VERIFIER} not readable (converge-warm-cache.sh ships it in the script ConfigMap)"; exit 2; }
 [ -r "$(dirname "${VERIFIER}")/uv_cache_layout.py" ] || { log "FATAL: uv_cache_layout.py not beside ${VERIFIER} (the verifier imports it; converge-warm-cache.sh ships both)"; exit 2; }
+# The verifier's railway dependency (header, "THE VERIFIER'S RAILWAY"). The
+# probe is the acceptance test, not the install's exit code: it is re-run after
+# a successful install, so a resolver that "succeeded" into an unimportable
+# tree still fails preflight rather than surfacing at publish time.
+if ! PYTHONPATH="${PY_DEPS_DIR}" python3 -c 'import returns.io' 2>/dev/null; then
+  log "installing ${RETURNS_SPEC} into ${PY_DEPS_DIR} (the verifier rides the Result/IOResult railway)"
+  rm -rf "${PY_DEPS_DIR}"
+  uv pip install --quiet --target "${PY_DEPS_DIR}" "${RETURNS_SPEC}" \
+    || { log "FATAL: cannot install ${RETURNS_SPEC} into ${PY_DEPS_DIR}; the verifier cannot run, and nothing may be published unverified"; exit 2; }
+fi
+PYTHONPATH="${PY_DEPS_DIR}" python3 -c 'import returns.io' 2>/dev/null \
+  || { log "FATAL: returns is not importable from ${PY_DEPS_DIR} after installing ${RETURNS_SPEC}; the verifier cannot run"; exit 2; }
 [ -f "${REPOS_FILE}" ] || { log "FATAL: repos file ${REPOS_FILE} not found"; exit 2; }
 [ -d "${WARM_ROOT}" ] || { log "FATAL: WARM_ROOT ${WARM_ROOT} is not a directory"; exit 2; }
 for v in WARM_BUDGET_BYTES WARM_BUDGET_FILES WARM_FORCE_REBUILD_SECONDS KEEP_GENERATIONS; do
@@ -499,7 +549,7 @@ if [ -z "${rebuild_reason}" ]; then
   # layout), else it is rebuilt now rather than served broken for a day.
   lock_files=()
   for name in "${uv_repos[@]}"; do lock_files+=("${SRC_DIR}/${name}/uv.lock"); done
-  if python3 "${VERIFIER}" --cache "${current_gen}" "${lock_files[@]}" > "${SCRATCH}/verify-current.txt" 2>&1; then
+  if verifier --cache "${current_gen}" "${lock_files[@]}" > "${SCRATCH}/verify-current.txt" 2>&1; then
     log "every routed uv.lock unchanged and generation $(basename "${current_gen}") verifies; no rebuild (rebuilt=0)"
   else
     rebuild_reason="published generation $(basename "${current_gen}") no longer verifies against the current locks"
@@ -586,7 +636,7 @@ else
   lock_files=()
   for name in "${uv_repos[@]}"; do lock_files+=("${SRC_DIR}/${name}/uv.lock"); done
   log "verifying ${generation} against ${#lock_files[@]} lock(s)"
-  python3 "${VERIFIER}" --cache "${new_gen}" --json "${lock_files[@]}" > "${SCRATCH}/verify.json" 2> "${SCRATCH}/verify.err"
+  verifier --cache "${new_gen}" --json "${lock_files[@]}" > "${SCRATCH}/verify.json" 2> "${SCRATCH}/verify.err"
   verify_exit=$?
   if [ "${verify_exit}" -eq 0 ] || [ "${verify_exit}" -eq 1 ]; then
     python3 - "${SCRATCH}/verify.json" <<'PY' | sed 's/^/   /'
