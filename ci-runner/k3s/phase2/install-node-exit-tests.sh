@@ -186,7 +186,7 @@ RUN  [server] 4/10 churn-slot extended resource (capacity 32) + reapply timer
 RUN  [server] 5/10 wedged-runner scan (clear)
 RUN  [server] 5b/10 runner-pod lifecycle scan (report-only; no mode — see its installer's header)
 RUN  [server] 6/10 ARC log archive
-RUN  [server] 7/10 boot-time GitHub App secret reinjection unit (enable only)
+RUN  [server] 7/10 boot-time secret reinjection units — GitHub App + gate forge credential (enable only)
 RUN  [server] 7b/10 pool-provided sccache binary (node-local; mounted read-only into every job)
 RUN  [server] 7c/10 fleet-patched ARC container hook + externals extraction from the pinned runner image
 RUN  [server] 8/10 reconstruct-on-boot converge unit + artifacts (enable only)
@@ -258,7 +258,7 @@ for fragment in \
   "5/10 wedged-runner scan" \
   "5b/10 runner-pod lifecycle scan" \
   "6/10 ARC log archive" \
-  "7/10 boot-time GitHub App secret reinjection unit" \
+  "7/10 boot-time secret reinjection units" \
   "8/10 reconstruct-on-boot converge unit" \
   "9/10 tmpfs datastore mount"
 do
