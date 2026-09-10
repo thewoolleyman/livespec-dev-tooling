@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.83.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.7...v1.83.8) (2026-09-10)
+
+
+### Bug Fixes
+
+* **ci-runner:** put the warm-cache scripts on the Result/IOResult railway ([bd839a4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bd839a4ecd0b659abfa5ea56fbd2d3419bc4b114))
+
 ## [1.83.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.6...v1.83.7) (2026-09-10)
 
 
