@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.83.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.6...v1.83.7) (2026-09-10)
+
+
+### Bug Fixes
+
+* **fleet:** take the manifest read off the REST rate-limit path ([f3a022d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f3a022d059b0052a2b65dbdf0a71fad5093fb421))
+
 ## [1.83.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.83.5...v1.83.6) (2026-09-09)
 
 
