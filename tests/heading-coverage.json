@@ -31,81 +31,71 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## CLI surface",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_operational_cli_surface.test_each_operational_cli_module_is_invocable_and_carries_its_canonical_body",
+    "reason": "Consumer-tier: the section's SECOND paragraph — the three operational CLI modules (`install_commit_refuse_hooks`, `install_worktree_pack`, `install_no_shadow_ledger`) held to the same semver-stable `python -m` invocation contract as the checks: each ships inside the packaged directory, exposes a zero-argument `main`, carries the `__main__` guard without which `python -m` runs nothing, and is the SINGLE source of the canonical body it writes — exercised end to end on the neutral-hook installer, which writes bytes byte-identical to its carried constant, is idempotent, and no-ops rather than hard-erroring on a declared-absent role key. The first paragraph's argv / `--help` / no-network clauses are covered at `tests.consumer.test_cli_shape` and `tests.consumer.test_no_network_io` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Exit-code table",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_exit_code_table.test_no_shipped_module_returns_an_exit_code_the_table_does_not_document",
+    "reason": "Consumer-tier: the table is read FROM the spec and diffed against the integer constants every shipped check's and workflow check's `main()` returns, so an undocumented code — or a deleted table row leaving a module returning it — convicts; the reserved-range rule is asserted on the same set (a code above the table's highest row must also be named in its own module docstring). A companion test drives a shipped check over a clean and a violating consumer fixture, asserting exit `0` on the clean tree and a documented non-zero code with the structured stderr finding on the other (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Shared check inventory",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_shared_check_inventory_partition.test_the_shipped_partition_matches_the_codified_inventory",
+    "reason": "Unit-tier: the partition asserted as the mechanical property the section says it is — no module under the two deliberately-placed sibling directories (`workflow_checks/`, `charters/`) reaches the filesystem-derived canonical set, the two declared workflow-check members ship where that placement puts them, `lint`/`format`/`complexity` ship no slug module, and the hand-maintained `baseline` profile stays a subset of the canonical set carrying its two Conformance-Pattern Verifiers. The livespec-private half is covered at `tests.consumer.test_non_goals` (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Consumer configuration schema",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_consumer_configuration_schema.test_the_role_key_schema_is_read_from_one_location_and_records_declaration_presence",
+    "reason": "Consumer-tier: the schema exercised through the loader a consumer's checks read it with, against fixture trees — the `[tool.livespec_dev_tooling]` block governs alone (a decoy `.livespec.jsonc` layout never reaches the loader), and declaration-presence is recorded distinctly from value across a fixture pair whose parsed values agree. Companion tests assert this consumer declares every member of `REQUIRED_ROLE_KEYS` and that a bare `[]` on a UNION key is rejected at load with a diagnostic naming the key and every legal spelling, while staying legitimate on a CLEAN key (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Composite Actions wire contract",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_composite_actions_wire_contract.test_every_shipped_composite_action_declares_its_documented_wire",
+    "reason": "Consumer-tier: the three shipped Actions held to the wire a consumer passes them by name — every documented input declared, every REQUIRED one still required, and every optional one carrying the exact documented default (a default is the value an omitting caller receives and never sees, so `500`/`1`/`30`/`3900` drift silently fleet-wide) — plus the declared `token` output and `run-check`'s step list still naming the `python -m livespec_dev_tooling.checks.<slug>` invocation form (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Reusable workflows wire contract",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_reusable_workflows_wire_contract.test_the_check_matrix_workflow_declares_its_input_and_runs_it_per_slug",
+    "reason": "Consumer-tier: the named minimum-set member `reusable-check-matrix.yml` held to the wire its callers depend on — the `checks` input still REQUIRED and typed `string` (the caller passes a JSON-array string), the strategy still matrixing over `fromJSON(inputs.checks)`, and each matrix entry still running the `run-check` composite Action, without which the input is accepted and silently ignored. A companion test asserts every shipped `reusable-*.yml` still declares the `workflow_call` trigger that makes the path a consumer's `uses:` names callable at all (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Consumer compat block — pin-and-bump policy",
-    "test": "TODO",
-    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (compat-block schema + bump-pin policy relocated from livespec core at v103/v104). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_consumer_compat_block.test_this_consumers_compat_block_declares_both_required_fields_and_carries_no_more",
+    "reason": "Consumer-tier: this library's own `compat` block — the section binds it as a consumer — asserted as filed under the consumer's own library name with both REQUIRED fields and an EXACT field set, since 'the block contains only non-sensitive version metadata' and `.livespec.jsonc` MUST NOT carry secrets. A companion test asserts `pinned` names a concrete release tag rather than HEAD or a moving alias ('every consumer pins') and that the shipped pin-autodiscovery walk discovers it byte-for-byte, which is the join between the declared schema and the automation that rewrites it (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Cross-repo coordination automation surface",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.consumer.test_coordination_automation_surface.test_the_reusable_workflow_inventory_declares_the_wire_its_callers_pass",
+    "reason": "Consumer-tier: the four-member reusable workflow inventory held to its declared wire — required inputs still required, the `release_url` required/optional asymmetry between the dispatcher and the bump-pin handler, the two threshold defaults (`1`, `24`), and the App-token secrets each shim threads by `secrets: inherit`. Companion tests assert the surface fires only the two declared `repository_dispatch` event types (an undeclared type fires into silence, since GitHub matches no workflow and does not error) and that §\"Self-hosting\"'s three consumer shims ship and DELEGATE rather than inline the coordination logic (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Semver discipline",
-    "test": "TODO",
-    "reason": "Added by the absorb-compat-schema-and-semver-discipline revise (canonical surface enumeration relocated from constraints.md per livespec/SPECIFICATION/contracts.md §\"Shared code sync — livespec-dev-tooling\"). Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism. Owner: livespec-dev-tooling-3ztbdq, and it STAYS there by that item's 2026-09-06 disposition rather than awaiting a re-assignment: no other work item covers this heading, and stamping an unverified id would manufacture exactly the closed-or-nonexistent ownership the release tier exists to catch. What unblocks this entry is the work its reason names above.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_semver_bump_rules.test_the_recognized_configuration_key_set_matches_its_semver_stable_declaration",
+    "reason": "Unit-tier: the BUMP RULES asserted as applicable rather than the enumeration as resolvable (that is `tests.consumer.test_semver_stable_surface`, the constraints.md invariant). The MAJOR rule names 'removing or incompatibly reinterpreting a recognized `[tool.livespec_dev_tooling]` key', so the loader's recognized key set and the specification's role-key inventory are diffed in both directions with the spec's own carve-outs (`REQUIRED_ROLE_KEYS` normative; `repo` documented as NOT loader-implemented). A companion test asserts both enumerated invocation sets are declared to the release gate, since an undeclared one passes a PATCH release over a MAJOR slug removal (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Versioning",
-    "test": "TODO",
-    "reason": "Seeded by epic li-univck Phase 1.4 (work-item li-ldtv03) when the canonical-aggregate self-host wired check-heading-coverage. Replace TODO with the real test ID via a governed propose-change/revise loop's resulting_files[] mechanism.",
-    "work_item": "livespec-dev-tooling-xx57"
+    "test": "tests.spec.test_versioning_lockstep.test_the_version_records_stay_in_lockstep",
+    "reason": "Unit-tier: the lockstep asserted across the records that carry it — the `pyproject.toml` version equals the `.release-please-manifest.json` entry outright, and `v<version>` is among the tags wherever the checkout carries any (a tagless clone is a can't-read, not a violation). A companion test asserts `release-please` is the only tool positioned to write them: a second writer must first NAME the manifest, and no shipped module or justfile recipe does (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-jj7cx2)."
   },
   {
     "spec_root": "SPECIFICATION",
