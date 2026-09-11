@@ -2,13 +2,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a fabro sandbox hits the shared compilation cache",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a heading-coverage TODO older than the age bound fails the release tier but passes the per-commit tier",
     "work_item": "livespec-dev-tooling-0bse.3",
     "first_seen": "2026-09-09"
@@ -40,13 +33,6 @@
     "heading": "## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier",
     "work_item": "livespec-dev-tooling-0bse.1",
     "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-06"
   },
   {
     "spec_root": "SPECIFICATION",
