@@ -18,7 +18,12 @@ from livespec_dev_tooling.fleet._git_identity_host_git import (
 )
 
 __all__: list[str] = []
-AUTHOR_KEYS = (b"GIT_AUTHOR_NAME", b"GIT_AUTHOR_EMAIL")
+AUTHOR_KEYS = (
+    b"GIT_AUTHOR_NAME",
+    b"GIT_AUTHOR_EMAIL",
+    b"LIVESPEC_GIT_AUTHOR_NAME",
+    b"LIVESPEC_GIT_AUTHOR_EMAIL",
+)
 LONG_LIVED = (
     "tmux",
     "codex",
@@ -81,7 +86,7 @@ def process_environment(  # pragma: no cover - follow-up Red cycle
             continue
         values = cast("dict[str, object]", untyped_values)
         for key, value in values.items():
-            expected = config.expected_name if key == "GIT_AUTHOR_NAME" else config.expected_email
+            expected = config.expected_name if key.endswith("_NAME") else config.expected_email
             if value != expected:
                 violations.append({"pid": entry["pid"], "variable": key})
     return {
@@ -99,9 +104,19 @@ def tmux_environment(  # pragma: no cover - follow-up Red cycle
 ) -> JsonObject:
     answer = runner(args=("sudo", "-u", config.user, "tmux", "show-environment", "-g"))
     if answer.returncode != 0 and "no server running" in answer.stderr.lower():
-        return {"servers": 0, "blind": 0, "violations": []}
+        return {
+            "scope": "default-user-socket-supplemental",
+            "servers": 0,
+            "blind": 0,
+            "violations": [],
+        }
     if answer.returncode != 0:
-        return {"servers": 0, "blind": 1, "violations": [{"reason": "tmux unreadable"}]}
+        return {
+            "scope": "default-user-socket-supplemental",
+            "servers": 0,
+            "blind": 1,
+            "violations": [{"reason": "tmux unreadable"}],
+        }
     values: dict[str, str] = {}
     for line in answer.stdout.splitlines():
         key, separator, value = line.partition("=")
@@ -112,7 +127,13 @@ def tmux_environment(  # pragma: no cover - follow-up Red cycle
         expected = config.expected_name if key == "GIT_AUTHOR_NAME" else config.expected_email
         if value != expected:
             violations.append({"variable": key})
-    return {"servers": 1, "blind": 0, "author_environment": values, "violations": violations}
+    return {
+        "scope": "default-user-socket-supplemental",
+        "servers": 1,
+        "blind": 0,
+        "author_environment": values,
+        "violations": violations,
+    }
 
 
 def build_report(  # pragma: no cover - follow-up Red cycle
