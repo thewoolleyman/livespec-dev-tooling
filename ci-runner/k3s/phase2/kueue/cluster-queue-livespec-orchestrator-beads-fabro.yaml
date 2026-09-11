@@ -19,19 +19,22 @@
 #                         33893048859 dispatched exactly 21 jobs; not a
 #                         podman-era inheritance)
 #   fleet weight sum W = 516 (the 495 of nine repositories plus this 21)
-#   host churn-slot capacity C = 32 (as registered on the node; stepped back 2026-09-06 after the one-hour soak at 64)
-#   exact share = C * w / W = 1.3023  ->  largest-remainder apportionment = 1
+#   pool churn-slot capacity C = 44 (per-node: poweredge 32 + gmktec 12; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
+#   exact share = C * w / W = 1.7907  ->  floor 1, +1 leftover unit
+#                                     (1st-largest remainder) = 2
 #
-# Adding this repository moved exactly ONE other quota:
-# `livespec-driver-codex` 5 -> 4 (it lost the leftover unit it held at nine
-# repositories). The ten quotas still sum to exactly C = 32 with no forced
-# `max(1, ...)` excess.
+# This repo held the leftover unit that codex lost when it joined as the tenth
+# repository at C = 32 (`livespec-driver-codex` 5 -> 4). At the R5 two-node
+# re-derivation (C = 44, 2026-09-11) its exact share 1.7907 earns a floor of 1
+# PLUS the LARGEST leftover remainder in the whole cohort, so its quota rises
+# 1 -> 2; the ten quotas sum to exactly C = 44 with no forced `max(1, ...)`
+# excess.
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 1 when its peers are idle. The per-repo
+# so this repo can burst well above 2 when its peers are idle. The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-orchestrator-beads-fabro.yaml's
-# maxRunners (42). The two are different terms of the same min() and are
+# maxRunners (6). The two are different terms of the same min() and are
 # correctly UNEQUAL; see DERIVATION.md "The four terms and where each one lives".
 #
 # API version confirmed live against the pinned Kueue v0.19.1 install on
@@ -57,8 +60,8 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              # C = 32 (2026-09-06, maintainer decision, livespec plan poweredge-raid-array-maintenance / epic livespec-g52yrb): stepped back from the 2026-09-06 restore to 64 after the tiered-host soak showed CPU saturated at 35-46 running jobs (91-98 % busy, Slow SQL, p95 job duration 1.9x the C = 32 baseline); the ten-repository C = 32 table of 2026-09-04 re-instated, W = 516; see DERIVATION.md "The step back to C = 32 on the tiered host (2026-09-06)".
-              nominalQuota: 1
+              # C = 44 (2026-09-11, plan k3s-on-gmktec-for-vps-usage / epic livespec-sab5gn R5, resolving livespec-dev-tooling-xa6o): churn-slot capacity is now PER-NODE and the Kueue cohort quota is cluster-wide, so the ten nominalQuotas sum to the TWO-NODE total poweredge 32 + gmktec 12 = 44; W = 516; poweredge stays at its 2026-09-06 soak-measured 32, gmktec is the derived first value 12 (plan research/001 §3.5); see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)".
+              nominalQuota: 2
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

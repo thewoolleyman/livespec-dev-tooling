@@ -11,22 +11,22 @@
 # nominalQuota derivation for THIS repo:
 #   demand weight w = 64 (podman-era ci-runner-supervisor apportionment)
 #   fleet weight sum W = 516 (482 podman-era + livespec-driver-pi's 13 + livespec-orchestrator-beads-fabro's 21)
-#   host churn-slot capacity C = 32 (as registered on the node; stepped back 2026-09-06 after the one-hour soak at 64)
-#   exact share = C * w / W = 3.9690  ->  floor 3, +1 leftover unit
-#                                     (2nd-largest remainder) = 4
+#   pool churn-slot capacity C = 44 (per-node: poweredge 32 + gmktec 12; churn-slot capacity is per-node while the Kueue cohort quota is cluster-wide, so it sums to both nodes -- see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)")
+#   exact share = C * w / W = 5.4574  ->  floor 5, no leftover = 5
 #
-# The ten repositories' nominalQuota values sum to exactly 32 = C = 32
-# (increase-ci-runners raise, 2026-08-30; livespec epic livespec-zec4mz). At
-# C = 64 every repository's exact share exceeds 1, so the apportionment sums
-# to exactly C with NO `max(1, ...)` excess — the one-slot over-reservation
-# that existed at C = 16 is gone. Cohort borrowing is bounded by the summed
-# nominal quota, so a sum below it wastes capacity; keep the nine values
-# summing to exactly C. See DERIVATION.md "The derivation at C = 64
-# (2026-08-30)".
+# The ten repositories' nominalQuota values sum to exactly 44 = C = 44 (plan
+# k3s-on-gmktec-for-vps-usage / epic livespec-sab5gn R5, 2026-09-11). C is now
+# the TWO-NODE total — poweredge 32 + gmktec 12 — because churn-slot capacity is
+# per-node while the Kueue cohort quota is cluster-wide, so the ten values sum to
+# the pool's whole capacity across both nodes. Every repository's exact share
+# exceeds 1, so the apportionment carries NO `max(1, ...)` excess. Cohort
+# borrowing is bounded by the summed nominal quota, so a sum below it wastes
+# capacity; keep the ten values summing to exactly C. See DERIVATION.md "The
+# derivation at C = 44 -- the two-node pool (2026-09-11)".
 #
 # nominalQuota is this repo's GUARANTEED FLOOR, not its ceiling. Unused quota
 # anywhere in the `fleet-ci-runner-pool` cohort is borrowable automatically,
-# so this repo can burst well above 8 when its peers are idle. The per-repo
+# so this repo can burst well above 10 when its peers are idle. The per-repo
 # ceiling is a SEPARATE number — ../arc/values-livespec-runtime.yaml's maxRunners, which
 # models the formula's "doubled repository logical ceiling" term. The two are
 # different terms of the same min() and are correctly UNEQUAL; see
@@ -55,8 +55,8 @@ spec:
         - name: churn-slot-flavor
           resources:
             - name: "ci-runner.io/churn-slot"
-              # C = 32 (2026-09-06, maintainer decision, livespec plan poweredge-raid-array-maintenance / epic livespec-g52yrb): stepped back from the 2026-09-06 restore to 64 after the tiered-host soak showed CPU saturated at 35-46 running jobs (91-98 % busy, Slow SQL, p95 job duration 1.9x the C = 32 baseline); the ten-repository C = 32 table of 2026-09-04 re-instated, W = 516; see DERIVATION.md "The step back to C = 32 on the tiered host (2026-09-06)".
-              nominalQuota: 4
+              # C = 44 (2026-09-11, plan k3s-on-gmktec-for-vps-usage / epic livespec-sab5gn R5, resolving livespec-dev-tooling-xa6o): churn-slot capacity is now PER-NODE and the Kueue cohort quota is cluster-wide, so the ten nominalQuotas sum to the TWO-NODE total poweredge 32 + gmktec 12 = 44; W = 516; poweredge stays at its 2026-09-06 soak-measured 32, gmktec is the derived first value 12 (plan research/001 §3.5); see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)".
+              nominalQuota: 5
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

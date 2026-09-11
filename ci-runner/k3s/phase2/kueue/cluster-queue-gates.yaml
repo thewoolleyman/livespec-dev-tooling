@@ -61,12 +61,15 @@ spec:
     # ../../phase0-bare-metal/profiles/gmktec-xubuntu.env (NODE_NAME), and it
     # selects that node alone.
     kubernetes.io/hostname: gmktec-xubuntu
-# NOT TOLERATED HERE, deliberately: gmktec-xubuntu still carries
-# `node-role/ci=pending:NoSchedule` (its profile's NODE_TAINTS), so nothing
-# this file admits can actually be SCHEDULED yet. Kueue admission and the
-# Kubernetes scheduler are separate gates (DERIVATION.md "The physical cap is
-# the scheduler, not Kueue"); opening the node is a later item of the same
-# plan, and the taint is not this file's to tolerate away.
+# NO TOLERATION NEEDED HERE ANY MORE: R5 (livespec-dev-tooling-xa6o) removed
+# gmktec-xubuntu's `node-role/ci=pending:NoSchedule` taint when it opened the
+# node for general CI churn, so nothing here needs to tolerate a taint that no
+# longer exists. This queue is unaffected by that opening either way: it is
+# quota'd on `cpu`/`memory`, not on `ci-runner.io/churn-slot`, so Kueue admission
+# here is independent of the churn-slot capacity R5 set (Kueue admission and the
+# Kubernetes scheduler are separate gates — DERIVATION.md "The physical cap is
+# the scheduler, not Kueue"). The `nodeLabels` hostname selector above still
+# pins every gate to this node alone.
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue

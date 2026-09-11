@@ -46,9 +46,7 @@ _PHASE2 = _REPO_ROOT / "ci-runner" / "k3s" / "phase2"
 _ARC_DIR = _PHASE2 / "arc"
 _KUEUE_DIR = _PHASE2 / "kueue"
 _KUEUE_MANAGER_CONFIG = _KUEUE_DIR / "core" / "manager-config-patch.yaml"
-_SERVER_PROFILE = (
-    _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles" / "poweredge-xubuntu.env"
-)
+_PROFILES_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles"
 
 # The one cohort every routed scale set's pods are admitted within.
 _COHORT = "fleet-ci-runner-pool"
@@ -154,14 +152,26 @@ def _installation_secrets() -> dict[str, str]:
 
 
 def _registered_capacity() -> int:
-    """The pool node's `ci-runner.io/churn-slot` capacity, from its own profile."""
-    declared = _ADMISSION_CAPACITY.search(_SERVER_PROFILE.read_text(encoding="utf-8"))
-    assert declared is not None, (
-        f"the node's admission capacity C must be a value of its committed profile — the "
-        f"section's remaining-physical-capacity term lives there; "
-        f"profile={_SERVER_PROFILE.relative_to(_REPO_ROOT)}"
-    )
-    return int(declared.group("capacity"))
+    """The pool's total `ci-runner.io/churn-slot` capacity, summed across node profiles.
+
+    Churn-slot capacity is PER-NODE since the two-node opening (DERIVATION.md
+    "The derivation at C = 44 — the two-node pool (2026-09-11)"); the section's
+    remaining-physical-capacity term is the whole pool, so it is the sum of every
+    node's own `ADMISSION_CAPACITY_C`.
+    """
+    total = 0
+    seen = False
+    for profile in sorted(_PROFILES_DIR.glob("*.env")):
+        declared = _ADMISSION_CAPACITY.search(profile.read_text(encoding="utf-8"))
+        assert declared is not None, (
+            f"every pool node's admission capacity C must be a value of its committed "
+            f"profile — the section's remaining-physical-capacity term lives there; "
+            f"profile={profile.relative_to(_REPO_ROOT)}"
+        )
+        total += int(declared.group("capacity"))
+        seen = True
+    assert seen, "at least one pool node profile must declare an ADMISSION_CAPACITY_C"
+    return total
 
 
 def _active_config_lines() -> list[str]:

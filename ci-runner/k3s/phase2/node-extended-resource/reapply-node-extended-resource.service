@@ -1,4 +1,4 @@
-# reapply-node-extended-resource.service — periodically re-apply the
+# reapply-node-extended-resource.service — periodically re-apply THIS node's
 # ci-runner.io/churn-slot node-status patch (patch-node-churn-capacity.sh).
 #
 # WHY THIS EXISTS: a `kubectl patch node --subresource=status` extended
@@ -9,39 +9,43 @@
 # timer-driven reconciliation is the pragmatic, homelab-scale answer
 # (matching this repo's own precedent for idempotent periodic
 # reconciliation — see ../../observability/ci-runner-heartbeat.timer)
-# rather than building a real device plugin for a single-node cluster.
-# See ../VALIDATION_CHECKLIST.md item 3 for confirming this actually
-# survives a real kubelet restart on the live host, and README.md
-# "Known caveat" for the tradeoff this accepts.
+# rather than building a real device plugin. See ../VALIDATION_CHECKLIST.md
+# item 3 for confirming this actually survives a real kubelet restart on the
+# live host, and README.md "Known caveat" for the tradeoff this accepts.
 #
 # BOOT-ORDERED AS WELL AS TIMED (2026-09-02): on a tmpfs-datastore boot the
 # node object itself is NEW, so the resource is absent until this runs; the
-# first real reboot showed the timer's OnBootSec=1min firing 27 s after
-# converge had started applying queues that request the resource. Harmless
-# then (nothing was admitted yet), but the resource is what every queue's
-# quota is denominated in, so the unit is now also pulled in at boot and
-# ordered Before= the converge. The timer keeps reconciling every 5 min.
+# unit is pulled in at boot and ordered Before= the converge, and the timer
+# keeps reconciling every 5 min.
 #
-# CAPACITY VALUE: the argument below MUST be kept in lockstep with
-# whatever capacity was last intentionally set (see
-# patch-node-churn-capacity.sh's own header for the phase-2-provisional
-# vs. post-cutover-482 distinction) — this unit does not decide that
-# number, it only makes an ALREADY-DECIDED number durable across
-# restarts.
+# PER-NODE AND ROLE-SHAPED (2026-09-11, livespec-dev-tooling-xa6o, R5). Two
+# things in this file are SUBSTITUTED by ../node-extended-resource/install-reapply-unit.sh
+# from the node's own profile, and an un-substituted copy fails loudly rather
+# than running the wrong thing:
+#   * K3S_UNIT_PLACEHOLDER — the k3s unit this node runs: `k3s.service` on a
+#     server, `k3s-agent.service` on an agent. The old copy hard-coded
+#     `k3s.service`, which is exactly why installing it on an agent died at
+#     `systemctl start` with "Unit k3s.service not found".
+#   * PROFILE_PATH_PLACEHOLDER — the installed copy of this node's profile
+#     (install-reapply-unit.sh copies it beside the patch script). The patch
+#     script reads NODE_NAME, ADMISSION_CAPACITY_C and — for an agent — the
+#     node-status kubeconfig path FROM it, so this unit carries NO capacity
+#     number and NO KUBECONFIG of its own to drift: the patch script derives the
+#     credential from the profile's role (the server's admin kubeconfig, or the
+#     agent's scoped node-status kubeconfig).
 [Unit]
-Description=Reapply the ci-runner.io/churn-slot node extended-resource patch
-After=k3s.service
-Requires=k3s.service
+Description=Reapply this node's ci-runner.io/churn-slot node extended-resource patch
+After=K3S_UNIT_PLACEHOLDER
+Requires=K3S_UNIT_PLACEHOLDER
 Before=converge-ci-stack.service
 
 [Service]
 Type=oneshot
-Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-# CAPACITY_PLACEHOLDER: replace with the currently-intended capacity
-# (see this file's own header comment) before installing this unit —
-# deliberately not defaulted, so an un-edited copy fails loudly instead
-# of silently reapplying the wrong number.
-ExecStart=/usr/local/lib/ci-runner-k3s/patch-node-churn-capacity.sh CAPACITY_PLACEHOLDER
+# PROFILE_PATH_PLACEHOLDER: the installed copy of this node's profile — replace
+# with the real path before installing (install-reapply-unit.sh does the
+# substitution). Deliberately not defaulted, so an un-edited copy fails loudly
+# instead of patching the wrong node or number.
+ExecStart=/usr/local/lib/ci-runner-k3s/patch-node-churn-capacity.sh PROFILE_PATH_PLACEHOLDER
 
 [Install]
 WantedBy=multi-user.target

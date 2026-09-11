@@ -10,12 +10,12 @@
 # fails CLOSED, granting nothing, rather than fails open. That is the same
 # deliberate-placeholder discipline
 # ../node-extended-resource/reapply-node-extended-resource.service uses for its
-# capacity, and it is why the placeholder is not defaulted.
+# profile path and k3s unit, and it is why the placeholder is not defaulted.
 #
 # WHY IT EXISTS. The churn-slot reapply timer patches a node's `status.capacity`
-# through the API. On the k3s SERVER that works because the unit carries
-# `Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml`, the admin file a server
-# writes at install time. An AGENT has no such file — k3s does not write one
+# through the API. On the k3s SERVER that works because the patch script derives
+# the admin kubeconfig `/etc/rancher/k3s/k3s.yaml`, the file a server writes at
+# install time. An AGENT has no such file — k3s does not write one
 # there on an agent — so a node-local timer on an agent has no credential at
 # all, which is what the 2026-09-06 rebuild dry-run on gmktec-xubuntu found
 # (livespec-dev-tooling-xa6o). Handing the agent a COPY of the server's admin
@@ -38,13 +38,13 @@
 #     Kubernetes RBAC applies `resourceNames` only to requests that name a
 #     single object — so granting either would silently widen this from "one
 #     node" to "every node in the cluster". This is the load-bearing reason
-#     ../node-extended-resource/patch-node-churn-capacity.sh CANNOT be the
-#     consumer of this credential unchanged: it resolves its targets with
-#     `kubectl get nodes -l k3s-role=arc-runner-host`, a LIST, and that is the
-#     same cluster-wide shape that is already advertising the server's capacity
-#     on gmktec. A node-local consumer must address its own node BY NAME. That
-#     consumer is not written here — see ./README.md §"What is deliberately not
-#     here".
+#     ../node-extended-resource/patch-node-churn-capacity.sh could not be the
+#     consumer of this credential UNCHANGED: it USED to resolve its targets with
+#     `kubectl get nodes -l k3s-role=arc-runner-host`, a LIST, the cluster-wide
+#     shape that once advertised the server's capacity on gmktec. R5
+#     (livespec-dev-tooling-xa6o) changed it to patch the single node its profile
+#     NAMES, BY NAME, which is what resourceNames authorizes, so it IS the
+#     consumer now — see ./README.md §"The consumer, wired by R5".
 #   * `get` is included alongside `patch` because a reconciler that cannot read
 #     the value it is reconciling can only ever write blindly, and reading one
 #     named node's status is strictly narrower than the patch it accompanies.

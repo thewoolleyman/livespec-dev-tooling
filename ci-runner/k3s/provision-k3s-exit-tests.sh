@@ -25,10 +25,10 @@
 #      `phase0-bare-metal/profiles/gmktec-xubuntu.env`, yields that node's join
 #      through this same script: the plan names the node and the role it read,
 #      and the install line carries the pin, the first node's API address, the
-#      token file, `--node-ip 192.168.1.156` (the bare address, not the profile's
-#      netplan CIDR) and the `NoSchedule` taint that keeps the node closed. B
-#      proves the agent BRANCH with a fixture; only E proves the second NODE's
-#      committed data.
+#      token file and `--node-ip 192.168.1.156` (the bare address, not the
+#      profile's netplan CIDR), and — since R5 opened the node — NO `--node-taint`
+#      at all, the once-present `NoSchedule` taint gone. B proves the agent
+#      BRANCH with a fixture; only E proves the second NODE's committed data.
 #
 # HOW IT STAYS OFF THE HOST. Every case runs `provision-k3s.sh --dry-run`,
 # which by construction executes no step. On top of that each case prepends a
@@ -400,15 +400,16 @@ for header in 'node:     gmktec-xubuntu' 'role:     agent' \
 done
 
 # The install line itself — the pin, the server it joins, the token FILE, the
-# node IP taken from the profile's netplan CIDR, the NoSchedule taint that keeps
-# this node closed until the plan's capacity item opens it, and the runner-role
-# label the phase2 node pins resolve against.
+# node IP taken from the profile's netplan CIDR, and the runner-role label the
+# phase2 node pins resolve against. There is NO --node-taint any more: R5
+# (livespec-dev-tooling-xa6o) emptied this profile's NODE_TAINTS when it opened
+# the node for general CI churn, so the once-present
+# `node-role/ci=pending:NoSchedule` is gone — asserted as an absence just below.
 for fragment in \
   "INSTALL_K3S_VERSION='v1.36.2+k3s1'" \
   "agent --server https://192.168.1.200:6443" \
   "--token-file ${GMKTEC_TOKEN}" \
   "--node-ip 192.168.1.156" \
-  "--node-taint node-role/ci=pending:NoSchedule" \
   "--node-label k3s-role=arc-runner-host"
 do
   if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- "$fragment"; then
@@ -417,6 +418,14 @@ do
     no "E4  the gmktec agent install line carries: ${fragment} (got: ${GMKTEC_COMMAND})"
   fi
 done
+
+# R5 opened this node, so its NODE_TAINTS is empty and the install line carries
+# no --node-taint at all — the taint that kept it closed is gone.
+if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- '--node-taint'; then
+  no "E4b  the opened gmktec profile emits NO --node-taint (got: ${GMKTEC_COMMAND})"
+else
+  ok "E4b  the opened gmktec profile emits NO --node-taint"
+fi
 
 # `--node-ip` is the bare address, never the /24 the profile states: the CIDR is
 # what netplan wants and what k3s would reject.

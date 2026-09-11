@@ -849,10 +849,13 @@ gmktec_declared() {  # gmktec_declared -> `KEY value` lines for the keys G1 chec
     source "${HERE}/profile.sh"
     profile_load "$GMKTEC"
     local key record
+    # NODE_TAINTS is checked separately below (G1b): R5 emptied it, and an empty
+    # value would need a trailing-space heredoc line to match here, so it is
+    # asserted as an emptiness rather than through this `KEY value` list.
     for key in CONTROLLER_KIND DISK_PLAN TARGET_DEVICE PRESERVED_PARTITIONS \
                ESP_DEVICE ESP_FSTYPE VOLUME_GROUPS NODE_NETWORK_INTERFACE \
                NODE_ADDRESS CLUSTER_ROLE \
-               CLUSTER_JOIN_ADDRESS CLUSTER_TOKEN_FILE NODE_TAINTS \
+               CLUSTER_JOIN_ADDRESS CLUSTER_TOKEN_FILE \
                BOOT_ENTRY_LABEL OPERATOR_ACCOUNT \
                ADMISSION_CAPACITY_C; do
       printf '%s %s\n' "$key" "${CFG[$key]}"
@@ -879,10 +882,9 @@ NODE_ADDRESS 192.168.1.156/24
 CLUSTER_ROLE agent
 CLUSTER_JOIN_ADDRESS https://192.168.1.200:6443
 CLUSTER_TOKEN_FILE /etc/rancher/k3s/agent-join-token
-NODE_TAINTS node-role/ci=pending:NoSchedule
 BOOT_ENTRY_LABEL Ubuntu
 OPERATOR_ACCOUNT cwoolley
-ADMISSION_CAPACITY_C 0
+ADMISSION_CAPACITY_C 12
 tier ci-cache nvmea
 tier ci-containerd nvmea
 tier ci-workvols nvmea
@@ -891,6 +893,26 @@ if [ -z "$missing" ]; then
   ok "G1  the committed profile declares the second node's measured facts"
 else
   no "G1  the committed profile no longer declares:${missing}"
+fi
+
+# G1b: R5 (livespec-dev-tooling-xa6o) opened this node for general CI churn, so
+# its NODE_TAINTS is now EMPTY — the `node-role/ci=pending:NoSchedule` that kept
+# it closed is gone, in lockstep with ADMISSION_CAPACITY_C rising 0 -> 12 above.
+# Read back through the SAME parser, and asserted as an emptiness rather than a
+# `KEY value` line so no trailing-whitespace heredoc is needed.
+gmktec_taints() {  # gmktec_taints -> the committed profile's NODE_TAINTS value
+  (
+    die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
+    # shellcheck source=ci-runner/k3s/phase0-bare-metal/profile.sh
+    source "${HERE}/profile.sh"
+    profile_load "$GMKTEC"
+    printf '%s' "${CFG[NODE_TAINTS]}"
+  )
+}
+if [ -z "$(gmktec_taints)" ]; then
+  ok "G1b the opened profile declares an empty NODE_TAINTS"
+else
+  no "G1b the opened profile declares an empty NODE_TAINTS (got: $(gmktec_taints))"
 fi
 
 run_layout "$GMKTEC_BIN" --dry-run "$GMKTEC"

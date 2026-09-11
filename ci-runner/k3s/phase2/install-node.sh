@@ -265,10 +265,12 @@ esac
 #                       on an agent, and says so.
 # STEP_AGENT_NOTE    => the step runs on an agent and carries a caveat the
 #                       operator has to see (a prerequisite this runbook
-#                       cannot satisfy from here). No step carries one today:
-#                       the churn-slot caveat that used to be the only entry
-#                       became a SKIP reason in livespec-dev-tooling-ukbp, the
-#                       step having turned out to be server-only in kind.
+#                       cannot satisfy from here). churn-slot carries one since
+#                       R5 (livespec-dev-tooling-xa6o): its agent reapply timer
+#                       needs the node-status kubeconfig seeded first, which is an
+#                       attended secret step this runbook does not do. (It was a
+#                       SKIP reason between livespec-dev-tooling-ukbp and R5, when
+#                       the step was still server-only in kind.)
 # ---------------------------------------------------------------------------
 STEP_IDS=(
   k3s-config
@@ -338,6 +340,15 @@ STEP_AGENT_LABEL[k3s-config]="1/10 k3s config (server or agent) — installs k3s
 # object.
 STEP_AGENT_LABEL[apparmor]="3/10 AppArmor profile only (--profile-only; the hook ConfigMap is a cluster object the server converges)"
 
+# The churn-slot reapply timer installs on an agent (R5), but its FIRST fire
+# needs the node-status kubeconfig this node's profile names (CHURN_KUBECONFIG_FILE)
+# to already be on disk — a scoped credential minted cluster-side and delivered by
+# the attended ../secret-reinjection/seed-node-status-kubeconfig.sh, the same
+# 1Password path the join token takes. install-reapply-unit.sh installs and
+# enables the timer regardless and skips only the immediate verify when the file
+# is absent; the timer reconciles once the credential lands.
+STEP_AGENT_NOTE[churn-slot]="the agent reapply timer authenticates with the node-status kubeconfig at this profile's CHURN_KUBECONFIG_FILE — mint it cluster-side with ../node-status-credential/provision-node-status-credential.sh and seed it here with ../secret-reinjection/seed-node-status-kubeconfig.sh (attended, 1Password) before the timer's first fire; the units install now and the timer heals once it lands."
+
 STEP_SKIP[host-thermal]="iDRAC state reached through Dell's racadm packages — PowerEdge hardware, and the pool's PowerEdge is its server. This is the one skip that uses the role as a PROXY for the hardware; if a PowerEdge ever joins as an agent this becomes its own profile key, not a role test."
 STEP_SKIP[secret-reinjection]="writes the GitHub App Secret and the gate forge-credential Secret into the cluster at boot — cluster-scoped objects, applied with the admin kubeconfig an agent does not hold, owned by the node that holds the datastore."
 STEP_SKIP[reconstruct]="rebuilds the CLUSTER from git at boot — the fleet-owned provisioner, Kueue and every ClusterQueue, the ARC controller and every scale set. Cluster-scoped, admin-kubeconfig-only, and the server's job; this is the step whose absence omits Kueue and ARC from an agent's plan."
@@ -345,7 +356,13 @@ STEP_SKIP[datastore-tmpfs]="mounts the k3s SERVER datastore on tmpfs; an agent n
 STEP_SKIP[wedged-runner]="sweeps the ARC runner pods CLUSTER-WIDE from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service, so it cannot start at all) with the admin kubeconfig an agent does not hold. The SERVER's own scan-wedged-runners.timer already performs that sweep every five minutes over every pod on every node, this one included (livespec-dev-tooling-qcq0)."
 STEP_SKIP[runner-pod-lifecycle]="reads PVCs, scheduler events, scale-set listeners and node capacity CLUSTER-WIDE from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service) with the admin kubeconfig an agent does not hold. The SERVER's own scan-runner-pod-lifecycle.timer already performs that diagnosis every five minutes for the whole pool, this node included (livespec-dev-tooling-qcq0)."
 STEP_SKIP[arc-log-archive]="archives the ARC CONTROLLER and LISTENER pods' logs with the admin kubeconfig an agent does not hold — pods that run on the SERVER for the whole pool, so there is nothing here to archive. Unlike the two scans this unit is ordered After=network-online.target, so on an agent it would install cleanly and then fail silently every two minutes; the SERVER's own archive-arc-logs.timer already covers every node (livespec-dev-tooling-qcq0)."
-STEP_SKIP[churn-slot]="patches node STATUS through the API from a unit ordered Requires=k3s.service (an agent runs k3s-agent.service) with the admin kubeconfig an agent does not hold — and patch-node-churn-capacity.sh patches EVERY node labeled k3s-role=arc-runner-host with ONE capacity, which makes applying it a cluster-wide act rather than a node-local one. Node-status patches are therefore applied from the SERVER's reapply timer, whose selector already includes this node; a per-node capacity read from each node's own profile is R4/R5 scope (livespec-dev-tooling-xa6o)."
+# churn-slot is NOT skipped on an agent since R5 (livespec-dev-tooling-xa6o):
+# patch-node-churn-capacity.sh is now PER-NODE (patches the single node its
+# profile NAMES, not a cluster-wide LIST), the reapply unit is ordered against
+# each role's own k3s unit, and an agent authenticates with the scoped
+# node-status kubeconfig rather than the admin file. So both roles install their
+# own node-local reapply timer — see STEP_AGENT_NOTE[churn-slot] for the one
+# prerequisite an agent's timer has that this runbook cannot satisfy from here.
 
 # The one SERVER skip, the mirror of the agent skips above: the rejoin watchdog
 # restarts a wedged k3s-AGENT so it re-registers after the control-plane
@@ -363,17 +380,17 @@ STEP_SERVER_SKIP[agent-rejoin]="the rejoin watchdog restarts a wedged k3s-AGENT 
 # the node. The TIMER is listed before the service it triggers, so nothing can
 # fire between the two removals.
 #
-# Only the four unit-installing steps whose installers have been established as
-# server-only carry an entry (livespec-dev-tooling-ukbp for step 4,
-# livespec-dev-tooling-qcq0 for 5, 5b and 6). The other four agent skips are
+# Only the THREE unit-installing steps whose installers have been established as
+# server-only carry an entry (livespec-dev-tooling-qcq0 for 5, 5b and 6). Step 4
+# (churn-slot) USED to be a fourth (livespec-dev-tooling-ukbp), but R5 made its
+# reapply unit per-node and role-shaped, so it now installs on an agent rather
+# than being a stale server-only unit to clean up. The other four agent skips are
 # deliberately absent: 2c installs no unit on this path, and 7, 8 and 9 belong
 # to installers that do not yet know about roles at all — declaring their units
 # server-only HERE would assert something no installer has been changed to
-# state, and this table is not the place to decide it. On gmktec-xubuntu those
-# three never ran on an agent anyway: the runbook aborted at step 4 of 10.
+# state, and this table is not the place to decide it.
 # ---------------------------------------------------------------------------
 declare -A STEP_STALE_UNITS=()
-STEP_STALE_UNITS[churn-slot]="reapply-node-extended-resource.timer reapply-node-extended-resource.service"
 STEP_STALE_UNITS[wedged-runner]="scan-wedged-runners.timer scan-wedged-runners.service"
 STEP_STALE_UNITS[runner-pod-lifecycle]="scan-runner-pod-lifecycle.timer scan-runner-pod-lifecycle.service"
 STEP_STALE_UNITS[arc-log-archive]="archive-arc-logs.timer archive-arc-logs.service"
@@ -483,17 +500,22 @@ run_step() {  # run_step ID
       else
         "${SCRIPT_DIR}/apparmor/install-apparmor-profile.sh"
       fi ;;
-    # The four server-only unit installers are passed this run's ROLE even
-    # though only a server reaches these lines: each refuses on an agent (and
-    # removes any copy it finds), so if a future edit ever drops one of the
-    # skips above, that step fails loudly at the installer's own refusal rather
-    # than halfway through installing a unit that cannot run. That is the
-    # failure gmktec paid for twice: step 4 and then step 5b each aborted the
-    # whole runbook at their own verify, and step 5 did something worse — it
-    # installed a timer that landed `failed` and reported DONE over it
-    # (livespec-dev-tooling-ukbp, livespec-dev-tooling-qcq0).
+    # The THREE server-only unit installers (wedged-runner, runner-pod-lifecycle,
+    # arc-log-archive) are passed this run's ROLE even though only a server
+    # reaches their lines: each refuses on an agent (and removes any copy it
+    # finds), so if a future edit ever drops one of the skips above, that step
+    # fails loudly at the installer's own refusal rather than halfway through
+    # installing a unit that cannot run. That is the failure gmktec paid for:
+    # step 5b aborted the whole runbook at its verify, and step 5 did something
+    # worse — it installed a timer that landed `failed` and reported DONE over it
+    # (livespec-dev-tooling-qcq0).
+    #
+    # churn-slot is NOT one of them any more (R5): it installs a PER-NODE reapply
+    # unit on BOTH roles, so it is passed this node's PROFILE — from which
+    # install-reapply-unit.sh reads the role, node name, capacity and, for an
+    # agent, the node-status kubeconfig path — exactly as storage-sweep is.
     churn-slot)
-      "${SCRIPT_DIR}/node-extended-resource/install-reapply-unit.sh" --role "${ROLE}" "${CAPACITY}" ;;
+      "${SCRIPT_DIR}/node-extended-resource/install-reapply-unit.sh" "${PROFILE_PATH}" ;;
     wedged-runner)
       "${SCRIPT_DIR}/wedged-runner/install-wedged-runner-scan.sh" --role "${ROLE}" "${WEDGE_MODE}" ;;
     runner-pod-lifecycle)
