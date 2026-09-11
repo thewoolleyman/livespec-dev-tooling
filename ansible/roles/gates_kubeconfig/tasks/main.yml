@@ -82,6 +82,23 @@
     mode: "0755"
   become: true
 
+- name: Install the refresh tool's ssh-identity env-file
+  # The runtime refresh tool runs as root at gate time, and root has no tailnet
+  # identity, so it drops the ssh FETCH to gates_kubeconfig_ssh_user via sudo -u.
+  # That name is a pool fact, delivered here rather than baked into the shipped
+  # script. Not no_log and mode 0644 on purpose: it carries a username, never a
+  # secret — the credential itself is the 0600 file below.
+  ansible.builtin.copy:
+    content: |
+      # Written by the gates_kubeconfig Ansible role. Read by
+      # refresh-gates-kubeconfig at runtime. Carries no secret.
+      GATES_SSH_USER={{ gates_kubeconfig_ssh_user }}
+    dest: "{{ gates_kubeconfig_ssh_env }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
 - name: Install the gates kubeconfig
   # no_log because the content is a bearer token. It must never reach a diff,
   # a log line, or a terminal.

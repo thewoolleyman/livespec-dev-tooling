@@ -9,3 +9,12 @@ gates_kubeconfig_dest: /etc/ci-runner/gates.kubeconfig
 # The control-plane node that renders the credential on every boot.
 gates_kubeconfig_remote_host: poweredge-xubuntu
 gates_kubeconfig_remote_path: /etc/ci-runner/gates.kubeconfig
+# The LOCAL login user whose tailnet ssh key reaches the control-plane node. The
+# runtime refresh tool runs as root under the gate's boot re-injection, and root
+# on this host has no tailnet identity, so it drops the FETCH to this user via
+# `sudo -u` (the WRITE stays root). This is a pool fact, delivered to the tool in
+# an env-file rather than baked into it; `ubuntu` is the fleet's usual account.
+gates_kubeconfig_ssh_user: ubuntu
+# Where the tool reads gates_kubeconfig_ssh_user from at runtime. Must match the
+# GATES_SSH_ENV default the shipped refresh-gates-kubeconfig reads.
+gates_kubeconfig_ssh_env: /etc/ci-runner/gates-refresh.env
