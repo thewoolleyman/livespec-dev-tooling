@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,7 @@ HOST_ROOTS = {
     "vps": ("/data/projects", "/home/ubuntu/workspace", "/home/ubuntu/.worktrees"),
     **{host: ("/home/cwoolley/workspace",) for host in HOSTS if host != "vps"},
 }
+SSH_ARGS = ("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -97,7 +99,7 @@ def probe_args(*, host: str) -> tuple[str, ...]:
     )
     if host == "vps":
         return suffix
-    return ("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", f"{user}@{host}", *suffix)
+    return (*SSH_ARGS, f"{user}@{host}", "--", shlex.join(suffix))
 
 
 def worktree_passes(*, worktree: dict[str, object]) -> bool:

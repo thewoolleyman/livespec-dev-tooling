@@ -55,7 +55,7 @@ class ScriptedRunner:
         self.calls.append((args, stdin is not None))
         if args[0] == "git":
             return CommandResult(returncode=0, stdout=self.author, stderr="")
-        host = next(name for name in _HOSTS if name in args)
+        host = next(name for name in _HOSTS if any(name in argument for argument in args))
         return CommandResult(
             returncode=0,
             stdout=json.dumps(self.reports[host]),

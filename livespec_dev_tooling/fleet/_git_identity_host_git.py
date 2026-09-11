@@ -154,12 +154,13 @@ def repositories(  # pragma: no cover - follow-up Red cycle
     excluded: list[JsonObject] = []
     blind: list[str] = []
     for candidate in sorted(set(candidates)):
+        inside = runner(args=("git", "rev-parse", "--is-inside-work-tree"), cwd=candidate)
         common = runner(
             args=("git", "rev-parse", "--path-format=absolute", "--git-common-dir"),
             cwd=candidate,
         )
         origin_answer = runner(args=("git", "remote", "get-url", "origin"), cwd=candidate)
-        if common.returncode != 0 or origin_answer.returncode != 0:
+        if inside.returncode != 0 or common.returncode != 0 or origin_answer.returncode != 0:
             blind.append(f"repository-metadata:{candidate}")
             continue
         origin = origin_answer.stdout.strip()
@@ -175,6 +176,9 @@ def repositories(  # pragma: no cover - follow-up Red cycle
             blind.append(error)
         records: list[JsonObject] = []
         for path in paths:
+            if not path.is_dir():
+                blind.append(f"worktree-missing:{path}")
+                continue
             record, errors = worktree_record(config=config, runner=runner, path=path)
             records.append(record)
             blind.extend(errors)
