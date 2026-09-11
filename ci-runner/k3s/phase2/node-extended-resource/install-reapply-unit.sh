@@ -177,7 +177,11 @@ fi
 if [ "$VERIFY_START" -eq 1 ]; then
   run systemctl start "${SERVICE}"
   run systemctl --no-pager status "${TIMER}" || true
-  run kubectl get node "${NODE_NAME}" \
+  # `get --subresource=status`, never a bare `get node`: on an agent the only
+  # credential is the scoped node-status one (get/patch on nodes/status only), so
+  # a bare read of the parent `nodes` resource would 403. Same reason as the patch
+  # script's own reads.
+  run kubectl get --subresource=status node "${NODE_NAME}" \
     -o jsonpath='{.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}'
 fi
 

@@ -108,7 +108,7 @@ IFS= read -r -d '' EXPECTED_SERVER_COMMANDS <<'EOF'
 + systemctl enable --now reapply-node-extended-resource.timer
 + systemctl start reapply-node-extended-resource.service
 + systemctl --no-pager status reapply-node-extended-resource.timer
-+ kubectl get node poweredge-xubuntu -o jsonpath={.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}
++ kubectl get --subresource=status node poweredge-xubuntu -o jsonpath={.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}
 EOF
 
 printf '== A. server profile: the per-node install sequence, ordered against k3s.service ==\n'
@@ -144,7 +144,7 @@ IFS= read -r -d '' EXPECTED_AGENT_COMMANDS <<'EOF'
 + systemctl enable --now reapply-node-extended-resource.timer
 + systemctl start reapply-node-extended-resource.service
 + systemctl --no-pager status reapply-node-extended-resource.timer
-+ kubectl get node gmktec-xubuntu -o jsonpath={.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}
++ kubectl get --subresource=status node gmktec-xubuntu -o jsonpath={.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}
 EOF
 
 printf '\n== B. agent profile: the same shape, ordered against k3s-agent.service ==\n'
@@ -163,6 +163,20 @@ if printf '%s\n' "$AGENT_OUT" | grep -qi 'refus'; then
 else
   ok "the agent plan refuses nothing"
 fi
+
+# The kubectl read-back is a `get --subresource=status node`, never a bare
+# `get node`: the scoped agent node-status credential grants get/patch on
+# nodes/status ONLY, so a bare read of the parent `nodes` resource would 403 on
+# an agent. A bare `get node` anywhere in EITHER role's sequence is a regression
+# of the fix that made the agent timer operable at all.
+for role_out in "$SERVER_OUT" "$AGENT_OUT"; do
+  if command_lines "$role_out" | grep -qE '^\+ kubectl get node '; then
+    no "no bare 'kubectl get node' (must be 'get --subresource=status node')"
+    command_lines "$role_out" | grep -E '^\+ kubectl get node ' || true
+  else
+    ok "the kubectl read-back uses --subresource=status, not a bare 'get node'"
+  fi
+done
 
 # ---------------------------------------------------------------------------
 # C. --dry-run executed nothing.

@@ -61,10 +61,13 @@ spec:
     # ../../phase0-bare-metal/profiles/gmktec-xubuntu.env (NODE_NAME), and it
     # selects that node alone.
     kubernetes.io/hostname: gmktec-xubuntu
-# NO TOLERATION NEEDED HERE ANY MORE: R5 (livespec-dev-tooling-xa6o) removed
-# gmktec-xubuntu's `node-role/ci=pending:NoSchedule` taint when it opened the
-# node for general CI churn, so nothing here needs to tolerate a taint that no
-# longer exists. This queue is unaffected by that opening either way: it is
+# NO TOLERATION NEEDED HERE ANY MORE: R5 (livespec-dev-tooling-xa6o) opens
+# gmktec-xubuntu for general CI churn — it empties the profile's NODE_TAINTS and
+# the maintainer removes the live `node-role/ci=pending:NoSchedule` with a
+# one-time `kubectl taint nodes gmktec-xubuntu node-role/ci-` at converge (k3s
+# applies --node-taint at registration only, so an already-joined node needs the
+# explicit removal — see ../kueue/DERIVATION.md "The derivation at C = 44"). Once
+# opened, nothing here needs to tolerate a taint that no longer exists. This queue is unaffected by that opening either way: it is
 # quota'd on `cpu`/`memory`, not on `ci-runner.io/churn-slot`, so Kueue admission
 # here is independent of the churn-slot capacity R5 set (Kueue admission and the
 # Kubernetes scheduler are separate gates — DERIVATION.md "The physical cap is

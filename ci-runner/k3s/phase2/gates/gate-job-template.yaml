@@ -50,11 +50,13 @@ spec:
         livespec.gate/repo: @@REPO@@
     spec:
       restartPolicy: Never
-      # Requirement 7, half one. R3 taints gmktec `node-role/ci=pending:NoSchedule`
-      # and R5 untaints it. Without this toleration the Job lands on poweredge —
-      # the node whose relief is the entire point of this slice. The taint keeps
-      # CI RUNNER pods off gmktec until R5 derives its capacity; a gate is
-      # deliberately the first workload allowed there.
+      # Requirement 7, half one. R3 tainted gmktec `node-role/ci=pending:NoSchedule`
+      # to keep CI RUNNER pods off it until R5 derived its capacity; a gate was
+      # deliberately the first workload allowed there, which is why this toleration
+      # exists. R5 (livespec-dev-tooling-xa6o) has since opened the node and removed
+      # that taint, so the toleration is now a harmless no-op (it tolerates a taint
+      # no longer present) rather than the load-bearing thing that lands the Job on
+      # gmktec — the hostname nodeSelector below is what pins it there.
       tolerations:
         - key: node-role/ci
           operator: Equal

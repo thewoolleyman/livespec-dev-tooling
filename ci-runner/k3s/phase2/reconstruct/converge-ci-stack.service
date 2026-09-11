@@ -1,5 +1,5 @@
 # converge-ci-stack.service — boot-ordered reconstruct of the CI CLUSTER
-# stack on the single-node k3s host. Runs converge-ci-stack.sh once per boot,
+# stack on the k3s server host. Runs converge-ci-stack.sh once per boot,
 # AFTER k3s is up, AFTER the churn-slot extended resource has been reapplied
 # and AFTER the GitHub App secret has been re-injected, to idempotently
 # assert that resource and converge the fleet-owned local-path provisioner,
