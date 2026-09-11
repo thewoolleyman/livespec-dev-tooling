@@ -404,8 +404,19 @@ spec:
                   fi
                   rm -f "$tmp"
                 fi
-                uv_hit=false; [ -d /__w/_warm/uv ] && uv_hit=true
-                rec uv "$uv_hit" "$uv_gen" "$(ms)" 0 reflink-seed ""
+                # A cache FAULT — the node's warm-cache tree absent or
+                # unreadable, no published generation, or a provisioner seed
+                # that failed — reaches this pod as an ABSENT seed and nothing
+                # else, because the provisioner leaves NO cache rather than
+                # half of one. The job still runs (this script always exits 0),
+                # so the tier's own error text is the only place that
+                # degradation is visible: a cold row with an empty error reads
+                # as an ordinary miss, and the fault becomes a slow job nobody
+                # can explain. `off:<switch>` above is the DELIBERATE kind of
+                # cold and stays distinct from this one.
+                uv_hit=false; uv_err=warm-seed-absent
+                [ -d /__w/_warm/uv ] && { uv_hit=true; uv_err=; }
+                rec uv "$uv_hit" "$uv_gen" "$(ms)" 0 reflink-seed "$uv_err"
                 rec registry "$registry_hit" "" "$(ms)" 0 served ""
                 # The warmed target/ tier (the console's ASAN fuzz tree today):
                 # seeded by the provisioner like uv; the consuming job moves it
