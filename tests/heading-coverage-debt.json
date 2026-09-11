@@ -16,41 +16,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a heading-coverage TODO row already in the debt register passes the armed tier for an unrelated commit",
-    "work_item": "livespec-dev-tooling-0bse.1",
-    "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a heading-coverage debt register that grows beyond its baseline fails",
-    "work_item": "livespec-dev-tooling-0bse.1",
-    "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier",
-    "work_item": "livespec-dev-tooling-0bse.1",
-    "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: resolving a heading-coverage TODO to a real test requires removing its debt-register entry",
-    "work_item": "livespec-dev-tooling-0bse.1",
-    "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the heading-coverage debt register regenerates from the live registry and matches byte-for-byte",
-    "work_item": "livespec-dev-tooling-0bse.1",
-    "first_seen": "2026-09-09"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: with an empty heading-coverage debt register any TODO row fails the per-commit tier",
     "work_item": "livespec-dev-tooling-0bse.4",
     "first_seen": "2026-09-09"
