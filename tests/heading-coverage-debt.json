@@ -2,20 +2,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a cache fault degrades a job to cold and never fails it",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a canary job runs cold and is tagged",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a fabro sandbox hits the shared compilation cache",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-09-04"
@@ -61,13 +47,6 @@
     "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-09-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a stale warm-cache generation fires the trigger",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
   },
   {
     "spec_root": "SPECIFICATION",
