@@ -35,6 +35,20 @@ calls. Driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` + `capsys` +
 `rc = main()`) exactly as `test_heading_coverage.py` and
 `test_heading_coverage_debt_register.py` are, so no
 `COVERAGE_PROCESS_START`-instrumented child races the parallel dispatcher.
+
+## WHY THIS MODULE CARRIES `pytestmark = pytest.mark.integration`
+
+Every test here drives the shipped check's `main()` end to end against a real
+git repository — nothing is doubled — so the file is integration-tier in
+NATURE, and the `scenarios.md` heading this mechanism answers now maps to a node
+in it rather than carrying a `TODO` row in the debt register. `heading_coverage`
+direction 4 refuses a `scenarios.md` heading mapped to a unit-tier test, and it
+decides the tier one of two ways: an allowlisted node-id prefix (`tests.consumer`
+and friends), or a STATIC `pytest.mark.integration` on the resolved test. This
+file cannot take the first route — `tests_mirror_pairing` requires a check's
+tests to mirror the module they exercise, which puts them here — so it takes the
+second. The marker is a tier LABEL the AST resolver reads, never a selector: no
+recipe or workflow passes `-m`, so nothing is filtered in or out by it.
 """
 
 from __future__ import annotations
@@ -50,6 +64,8 @@ from typing import NamedTuple
 import pytest
 
 __all__: list[str] = []
+
+pytestmark = pytest.mark.integration
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
