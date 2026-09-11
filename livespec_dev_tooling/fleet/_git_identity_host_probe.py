@@ -113,9 +113,10 @@ def tmux_environment(  # pragma: no cover - follow-up Red cycle
     if answer.returncode != 0:
         return {
             "scope": "default-user-socket-supplemental",
+            "status": "unavailable",
             "servers": 0,
-            "blind": 1,
-            "violations": [{"reason": "tmux unreadable"}],
+            "blind": 0,
+            "violations": [],
         }
     values: dict[str, str] = {}
     for line in answer.stdout.splitlines():
