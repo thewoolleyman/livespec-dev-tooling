@@ -852,8 +852,20 @@ addopts = [
 # (node-id prefix `tests.consumer`, also declared in
 # `[tool.livespec_dev_tooling].scenario_tiers`) — the integration-tier
 # coverage for `SPECIFICATION/scenarios.md` acceptance scenarios.
+#
+# The `integration` marker is the OTHER way a `scenarios.md` heading's mapped
+# test resolves at the required tier: `heading_coverage` direction 4 accepts a
+# node id outside the `scenario_tiers` prefixes when the resolved test carries
+# a static `pytest.mark.integration` (function-, class-, or module-level), per
+# `_heading_coverage_tier_resolution`. It tags a test that drives a shipped
+# check END-TO-END — real `main()`, real git repository fixture — while living
+# in the mirror tree beside the module it exercises, which is where the
+# `tests_mirror_pairing` discipline requires a check's own tests to live.
+# NEITHER marker is used to select or deselect: no recipe or workflow passes
+# `-m`, so both are tier LABELS the AST resolver reads, never a test filter.
 markers = [
     "consumer: consumer-tier check-runner test exercising a shipped check against a fixture project (scenarios.md coverage)",
+    "integration: integration-tier test driving a shipped check's `main()` end-to-end against a real git repository fixture (scenarios.md coverage)",
 ]
 
 # ---------------------------------------------------------------------------

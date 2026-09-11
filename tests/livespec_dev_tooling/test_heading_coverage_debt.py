@@ -16,6 +16,17 @@ Driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` + direct calls) exactly as
 `tests/livespec_dev_tooling/checks/test_no_todo_registry_staged_scope.py` is,
 so no `COVERAGE_PROCESS_START`-instrumented child races the parallel
 dispatcher.
+
+The two `main()` tests at the foot of this file carry an explicit
+`pytest.mark.integration` — the `scenarios.md` heading "the heading-coverage
+debt register regenerates from the live registry and matches byte-for-byte"
+maps to the first of them, and `heading_coverage` direction 4 resolves a
+scenario's tier either from an allowlisted node-id prefix or from that static
+marker. The marker is FUNCTION-level rather than module-level on purpose: this
+file is genuinely mixed-tier, and the vocabulary tests above it
+(`register_key`, `todo_rows`, `render_register`) are pure unit-tier, so a
+module-level `pytestmark` would mislabel them. The marker selects nothing —
+no recipe or workflow passes `-m`.
 """
 
 from __future__ import annotations
@@ -394,6 +405,7 @@ def test_render_register_is_stable_and_newline_terminated() -> None:
     assert rendered == '[\n  {\n    "heading": "## Héading"\n  }\n]\n'
 
 
+@pytest.mark.integration
 def test_main_writes_the_register_and_regenerating_it_changes_nothing(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -413,6 +425,7 @@ def test_main_writes_the_register_and_regenerating_it_changes_nothing(
     assert register.read_bytes() == first
 
 
+@pytest.mark.integration
 def test_main_refuses_to_overwrite_the_register_from_an_unreadable_registry(
     *,
     tmp_path: Path,

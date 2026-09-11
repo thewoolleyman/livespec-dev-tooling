@@ -16,12 +16,27 @@ The four ratified cases (`SPECIFICATION/scenarios.md`):
 
 Plus the authoring-time scope lever, which must spare an INHERITED finding
 (charter D2b: a commit is judged on what it authors) while still refusing a
-newly-authored one, and must fall back to judging everything — loudly — when
-it cannot tell what changed.
+newly-authored one, must leave an inherited row that is CORRECTLY REGISTERED
+with no finding at all, and must fall back to judging everything — loudly —
+when it cannot tell what changed.
 
 Driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` + `capsys` + `rc = main()`)
 exactly as `test_no_todo_registry_staged_scope.py` is, so no
 `COVERAGE_PROCESS_START`-instrumented child races the parallel dispatcher.
+
+## WHY THIS MODULE CARRIES `pytestmark = pytest.mark.integration`
+
+Every test here drives the shipped check's `main()` end to end against a real
+git repository — nothing is doubled — so the file is integration-tier in
+NATURE, and four `scenarios.md` headings now map to nodes in it rather than
+carrying a `TODO` row in the debt register. `heading_coverage` direction 4
+refuses a `scenarios.md` heading mapped to a unit-tier test, and it decides the
+tier one of two ways: an allowlisted node-id prefix (`tests.consumer` and
+friends), or a STATIC `pytest.mark.integration` on the resolved test. This file
+cannot take the first route — `tests_mirror_pairing` requires a check's tests
+to mirror the module they exercise, which puts them here — so it takes the
+second. The marker is a tier LABEL the AST resolver reads, never a selector: no
+recipe or workflow passes `-m`, so nothing is filtered in or out by it.
 """
 
 from __future__ import annotations
@@ -37,6 +52,8 @@ from typing import NamedTuple
 import pytest
 
 __all__: list[str] = []
+
+pytestmark = pytest.mark.integration
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -348,10 +365,60 @@ def test_the_scope_lever_spares_an_inherited_finding_and_still_reports_it(
     ), f"an out-of-scope finding must not be error-level; output={result.combined!r}"
 
 
+def test_an_inherited_registered_todo_does_not_fail_an_unrelated_commit(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a registered row the contributor did not author passes the armed tier.
+
+    The row is in BOTH files at `HEAD` — registry `TODO` and register entry —
+    and the staged change touches an unrelated file, which is the ordinary shape
+    of every commit in a repository carrying debt. A correctly registered row is
+    not merely spared the verdict here: it draws no ratchet finding at all, so
+    an author reading the output sees nothing about a row they never touched.
+
+    Paired with `test_the_scope_lever_still_refuses_a_newly_authored_unregistered_todo`
+    below — same lever, opposite verdicts — so a narrowing that simply stopped
+    judging could not satisfy both.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## Inherited")],
+        register=[_entry(heading="## Inherited")],
+    )
+    unrelated = tmp_path / "docs" / "unrelated.md"
+    unrelated.parent.mkdir(parents=True, exist_ok=True)
+    _ = unrelated.write_text(
+        "an edit that touches neither heading-coverage file\n", encoding="utf-8"
+    )
+    _git(cwd=tmp_path, args=["add", "docs/unrelated.md"])
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"an inherited, correctly registered TODO must not fail an unrelated commit; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    # Asserted on the finding CODES rather than on the heading text, because the
+    # release-tier age direction names the heading too once `first_seen` ages
+    # past the bound — an assertion on the heading would rot into a host-date
+    # dependency the way this suite's other date-sensitive arms have.
+    for code in ("unregistered_todo", "stale_register_entry", "register_grew"):
+        assert code not in result.combined, (
+            f"a correctly registered row must draw no {code} finding; "
+            f"output={result.combined!r}"
+        )
+
+
 def test_the_scope_lever_still_refuses_a_newly_authored_unregistered_todo(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The narrowing keeps the ratchet's whole point: a NEW cop-out is refused."""
+    """SCENARIO: a newly-authored `TODO` outside the register fails the armed tier.
+
+    The narrowing keeps the ratchet's whole point: a NEW cop-out is refused, and
+    the refusal NAMES the row as one — `unregistered_todo` carries the "new
+    cop-out outside the frozen baseline" message, so the author is told what to
+    do rather than merely told no.
+    """
     _seed_repo(
         tmp_path=tmp_path,
         registry=[_todo(heading="## A")],
@@ -362,6 +429,10 @@ def test_the_scope_lever_still_refuses_a_newly_authored_unregistered_todo(
     assert result.returncode != 0, (
         f"a newly-authored unregistered TODO must still be refused under the scope "
         f"lever; got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "unregistered_todo" in result.combined, (
+        f"the refusal must name the row as a new cop-out outside the baseline; "
+        f"output={result.combined!r}"
     )
     assert "## New" in result.combined
 
