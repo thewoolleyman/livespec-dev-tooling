@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.86.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.3...v1.86.0) (2026-09-11)
+
+
+### Features
+
+* **fleet:** audit Git author identity exposure ([9ca5e5f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9ca5e5f70743dc5f5143753f88c7a06de38becca))
+
+
+### Bug Fixes
+
+* **fleet:** classify nonauthoritative audit gaps ([9e8ff55](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9e8ff55228f8afc4096d0552d6f398fd7d80a14a))
+* **fleet:** close Git identity audit false passes ([d8ce15a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d8ce15a753b5c9c10b5b1a1d3902dd4d7425c782))
+* **fleet:** forward Git identity audit arguments ([2d55a30](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2d55a30d3ebfc93d4fb0cb56ffe1d6147f30eb99))
+* **fleet:** harden identity probe transport ([00c3c86](https://github.com/thewoolleyman/livespec-dev-tooling/commit/00c3c867f9bcbc19934844209e7eac20627ce5f3))
+
 ## [1.85.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.2...v1.85.3) (2026-09-10)
 
 
