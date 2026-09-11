@@ -426,16 +426,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: JIT fleet capacity borrows fairly without exceeding 482 runners",
-    "test": "TODO",
-    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
+    "test": "tests.consumer.test_jit_fleet_capacity_scenarios.test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_cap",
+    "reason": "Consumer-tier: the two halves of the clause, read off the committed pool gitops the fleet controller runs under. BORROWS FAIRLY — no `fleet-ci-runner-pool` member may state a `borrowingLimit` (Kueue's default lends the cohort's whole unused nominal quota, and `0` pins every repository to its guaranteed floor while the pool idles), and each routed scale set's `maxRunners` must sit strictly ABOVE its own fair share and no higher than the cohort's total borrowable — at or under the share the repository can never spend what a peer lends it, above the cohort total the surplus is the pending-object backlog the Given says must wait at the forge. WITHOUT EXCEEDING 482 — the bound is the cohort's summed fair shares, and the ENFORCER is the node's finite `ci-runner.io/churn-slot`, not Kueue: VALIDATION_CHECKLIST.md item 7 measured Kueue marking six workloads Admitted while four pods ran, so a scale set that does not request AND limit exactly one slot is outside the only authoritative gate. Control arms feed both readers a synthetic counter-example (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7qkfv2).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: JIT circuit state survives restart without a reburst",
-    "test": "TODO",
-    "reason": "Implementation follows in livespec-s43svm.5; an integration-tier controller proof is required for this scenario.",
+    "test": "tests.consumer.test_jit_fleet_capacity_scenarios.test_a_restarted_jit_supervisor_recovers_shared_state_without_a_reburst",
+    "reason": "Consumer-tier: what a restart can and cannot do TO THE POOL, which is the half of the scenario that lands in this repository — the circuit's own bookkeeping is ARC's controller's and a confirmed gap, per ci-runner/k3s/phase2/README.md §\"What does NOT move to Kueue/ARC\". RECOVER BEFORE ADMITTING — the k3s datastore is tmpfs, so the node's churn-slot capacity and the App installation secret are restored by two systemd units that must be ordered strictly before `converge-ci-stack.service` (the unit that applies the queues, the controller and every scale set), asserted in BOTH directions because systemd takes either edge alone and the converge otherwise runs against state it never recovered. NO NEW STARTUP BURST — every routed scale set must declare `minRunners: 0`, since a non-zero baseline is minted the moment the listener starts, ahead of any recovered state and again on every restart. NO INFINITE RESTART LOOP — the minted ephemeral runner's JIT config is single-use so `Restart=no` is load-bearing, and the long-lived supervisor's `RestartSec` must be non-zero (systemd's default is 100 ms). Control arms feed all three readers a synthetic counter-example (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-7qkfv2).",
     "work_item": "livespec-dev-tooling-xx57"
   },
   {

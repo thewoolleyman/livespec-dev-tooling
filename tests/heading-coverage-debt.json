@@ -2,20 +2,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: JIT circuit state survives restart without a reburst",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-08-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: JIT fleet capacity borrows fairly without exceeding 482 runners",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-08-14"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a cache fault degrades a job to cold and never fails it",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-09-04"
