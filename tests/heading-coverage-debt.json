@@ -51,13 +51,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a job's compilation-cache writes are refused",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier",
     "work_item": "livespec-dev-tooling-0bse.1",
     "first_seen": "2026-09-09"
@@ -68,13 +61,6 @@
     "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
     "work_item": "livespec-dev-tooling-xx57",
     "first_seen": "2026-09-06"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a routed job reads the warm cache and cannot write it",
-    "work_item": "livespec-dev-tooling-xx57",
-    "first_seen": "2026-09-04"
   },
   {
     "spec_root": "SPECIFICATION",
