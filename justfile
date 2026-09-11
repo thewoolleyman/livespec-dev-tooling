@@ -334,7 +334,7 @@ ansible-apply *args:
 # caller-supplied Fabro canary evidence against the named commit.
 [positional-arguments]
 git-identity-audit output fabro_evidence:
-    uv run python -m livespec_dev_tooling.fleet.git_identity_audit "$output" "$fabro_evidence"
+    uv run python -m livespec_dev_tooling.fleet.git_identity_audit "$1" "$2"
 
 check-lint:
     uv run ruff check .
