@@ -154,14 +154,20 @@ def repositories(  # pragma: no cover - follow-up Red cycle
     excluded: list[JsonObject] = []
     blind: list[str] = []
     for candidate in sorted(set(candidates)):
-        inside = runner(args=("git", "rev-parse", "--is-inside-work-tree"), cwd=candidate)
         common = runner(
             args=("git", "rev-parse", "--path-format=absolute", "--git-common-dir"),
             cwd=candidate,
         )
         origin_answer = runner(args=("git", "remote", "get-url", "origin"), cwd=candidate)
-        if inside.returncode != 0 or common.returncode != 0 or origin_answer.returncode != 0:
+        if (
+            runner(args=("git", "rev-parse", "--is-inside-work-tree"), cwd=candidate).returncode
+            != 0
+            or common.returncode != 0
+        ):
             blind.append(f"repository-metadata:{candidate}")
+            continue
+        if origin_answer.returncode != 0:
+            excluded.append({"path": str(candidate), "origin": None, "reason": "no-origin"})
             continue
         origin = origin_answer.stdout.strip()
         identity = github_identity(origin=origin)
