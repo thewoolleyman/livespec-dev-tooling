@@ -554,17 +554,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a heading-coverage TODO reason asserting non-testability is rejected while one acknowledging an owed test passes",
-    "test": "TODO",
-    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.2 (reason guard) through this repo's factory. TODO acknowledges the owed integration-tier test.",
-    "work_item": "livespec-dev-tooling-0bse.2"
+    "test": "tests.livespec_dev_tooling.checks.test_heading_coverage_reason_guard.test_a_newly_authored_cop_out_reason_is_rejected",
+    "reason": "Integration-tier: drives the shipped `heading_coverage` check's `main()` against a real git repository whose staged change authors a `TODO` row whose `reason` is a cop-out, asserting the run fails and names the defect family it found. Parametrized over all three ratified cop-out families the scenario's `Given` enumerates — non-testability, enforced-elsewhere, prose-without-behavior — plus the reason that asserts nothing and acknowledges nothing either. Control arm `test_a_reason_acknowledging_an_owed_integration_tier_test_passes` is the scenario's `But` clause: the same tree with a reason acknowledging an owed integration-tier test and a live owning `work_item` passes, so a guard that simply stopped judging satisfies neither (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-fwmekq)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a heading-coverage TODO older than the age bound fails the release tier but passes the per-commit tier",
-    "test": "TODO",
-    "reason": "Owed integration-tier test for the heading-coverage convergence mechanism (plan fleet-heading-coverage-convergence, charter D3/D4/D5). A scenario describes consumer-observable behavior, so its test MUST resolve to the integration tier or above; the real check-runner test lands via mechanism child livespec-dev-tooling-0bse.3 (age bound) through this repo's factory. TODO acknowledges the owed integration-tier test.",
-    "work_item": "livespec-dev-tooling-0bse.3"
+    "test": "tests.livespec_dev_tooling.checks.test_heading_coverage_age_bound.test_a_row_older_than_the_bound_fails_the_release_tier",
+    "reason": "Integration-tier: drives the shipped debt check's `main()` against a real git repository whose register carries a row first seen one day past the 30-day default bound, with the release lever `LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST` set, asserting the run fails naming `todo_past_age_bound`, the row, and both the measured age and the bound. Control arm `test_the_same_aged_row_passes_the_per_commit_tier` is the scenario's `And when` clause: the SAME unchanged row with the lever removed passes and is still reported at non-error level, which is what release-tier-only means operationally (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-fwmekq)."
   },
   {
     "spec_root": "SPECIFICATION",
