@@ -66,6 +66,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from livespec_dev_tooling import otel_cargo_phase
 from livespec_dev_tooling.otel_cargo_phase import main
 
 if TYPE_CHECKING:
@@ -279,6 +280,18 @@ def _emit_span(*, root: Path, endpoint: str, stats: str | None, warm_registry: b
     with pytest.MonkeyPatch.context() as patched:
         patched.setattr(os, "environ", environment)
         patched.chdir(root)
+        if stats is None:
+            # The absent arm means "no compilation cache at all": the emitter must
+            # resolve NO sccache binary. PATH alone cannot guarantee that -- the
+            # emitter also falls back to the absolute pool mount
+            # (`_POOL_SCCACHE_BIN`), and `shutil.which` checks an absolute
+            # candidate regardless of PATH -- so a real `/usr/bin/sccache` or a
+            # pool sccache on the host is discovered and reports enabled=True (the
+            # CI-only failure a dev host without either binary hid). Pin the
+            # discovery seam to its own not-found sentinel so absence is
+            # deterministic on every host, and the emitter still takes its real
+            # degradation path (enabled=false, phase emitted not dropped).
+            patched.setattr(otel_cargo_phase, "_sccache_binary", lambda **_: "")
         assert main() == 0, "the emitter must report a clean emission for a well-formed phase"
     assert len(_RECEIVED) == before + 1, (
         f"exactly one span must reach the receiver per measured cargo phase; "
