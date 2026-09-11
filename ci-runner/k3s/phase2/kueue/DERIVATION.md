@@ -780,6 +780,35 @@ every matched node with one uniform capacity; it now patches a SINGLE NAMED node
 directory's README), and it stops the server's timer from stamping gmktec with
 32.
 
+**The convergence order (the maintainer runs this off the R5 PR).** The three
+parts land in one PR but they must be APPLIED in an order, because the wrong one
+leaves gmktec either over-admitting or fighting itself:
+
+1. **Re-install the SERVER's reapply unit** from its profile
+   (`install-reapply-unit.sh ci-runner/k3s/phase0-bare-metal/profiles/poweredge-xubuntu.env`)
+   so the server's timer switches from the old cluster-wide LIST patch to the
+   per-node by-name patch and STOPS stamping gmktec with 32. Until this runs, the
+   server keeps re-writing gmktec's capacity every five minutes.
+2. **Mint and seed gmktec's node-status credential**
+   (`node-status-credential/provision-node-status-credential.sh` on the server,
+   then `secret-reinjection/seed-node-status-kubeconfig.sh` onto gmktec) so the
+   agent timer has a credential before its first fire.
+3. **Install and verify the agent's reapply timer**
+   (`install-reapply-unit.sh ci-runner/k3s/phase0-bare-metal/profiles/gmktec-xubuntu.env`
+   ON gmktec) and confirm gmktec's `status.allocatable.ci-runner.io/churn-slot`
+   reads **12**.
+4. **THEN untaint gmktec.** Opening the node for scheduling is the LAST step, once
+   it actually advertises 12.
+
+**The empty `NODE_TAINTS` is not self-applying on the already-joined node.** k3s
+applies `--node-taint` at node REGISTRATION only, so emptying `NODE_TAINTS` in the
+profile removes the taint only for a FRESH join. `gmktec-xubuntu` is already
+joined and already carries `node-role/ci=pending:NoSchedule`, so step 4 above is a
+one-time `kubectl taint nodes gmktec-xubuntu node-role/ci-` at converge; the
+profile change alone does not remove it from the live node. (The docs that say the
+taint is "removed" mean removed from the profile — the live removal is this
+explicit converge step.)
+
 ## Bounding maxRunners to the quota (2026-09-06)
 
 Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,

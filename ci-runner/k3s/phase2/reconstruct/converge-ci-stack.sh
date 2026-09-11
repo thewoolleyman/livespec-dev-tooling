@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # converge-ci-stack.sh — idempotently converge the ENTIRE CI CLUSTER stack
-# on the single-node k3s host from this repository, with zero manual
+# on the k3s server host from this repository, with zero manual
 # kubectl/helm steps. One run takes an EMPTY k3s datastore (the GitHub App
 # installation secret assumed already present — see the fail-closed pre-gate
 # below) to: the fleet-owned local-path provisioner Running, Kueue installed

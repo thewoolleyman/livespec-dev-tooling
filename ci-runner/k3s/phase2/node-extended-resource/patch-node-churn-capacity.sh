@@ -105,10 +105,17 @@ log "1. Wait (bounded) for node ${NODE_NAME} to register in the API, then patch 
 # to appear before patching. The FATAL is kept as the post-timeout last resort,
 # so a genuinely missing node still fails loudly rather than silently patching
 # nothing.
+# EVERY read here is a `get --subresource=status node`, NOT a bare `get node`.
+# The scoped agent credential (../node-status-credential/node-status-patch-rbac.yaml)
+# grants get/patch on `nodes/status` ONLY — deliberately, so it cannot reach
+# `spec` to untaint the node. A bare `kubectl get node` is a read of the parent
+# `nodes` resource and would 403 on an agent, timing this loop out and never
+# reaching the patch below. The status-subresource GET returns the whole Node
+# object, so the readiness check and the verify jsonpath both still resolve.
 NODE_WAIT_TIMEOUT="${NODE_WAIT_TIMEOUT:-120}"
 deadline=$(( $(date +%s) + NODE_WAIT_TIMEOUT ))
 while :; do
-  kubectl get node "$NODE_NAME" >/dev/null 2>&1 && break
+  kubectl get --subresource=status node "$NODE_NAME" >/dev/null 2>&1 && break
   [ "$(date +%s)" -ge "$deadline" ] && die "node ${NODE_NAME} did not register in the API within ${NODE_WAIT_TIMEOUT}s"
   echo "waiting for node ${NODE_NAME} to register..."
   sleep 3
@@ -121,7 +128,7 @@ kubectl patch node "$NODE_NAME" --subresource=status --type=merge -p \
 
 # ---------------------------------------------------------------------------
 log "3. Verify"
-kubectl get node "$NODE_NAME" \
+kubectl get --subresource=status node "$NODE_NAME" \
   -o jsonpath='{.metadata.name}{"\t"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}'
 
 log "DONE. ci-runner.io/churn-slot capacity=${CAPACITY} on ${NODE_NAME} (this node only)."

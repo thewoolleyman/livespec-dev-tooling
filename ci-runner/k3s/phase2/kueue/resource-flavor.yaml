@@ -19,4 +19,4 @@ metadata:
   name: churn-slot-flavor
 spec:
   nodeLabels:
-    k3s-role: arc-runner-host  # matches provision-k3s.sh's --node-label; single-node today
+    k3s-role: arc-runner-host  # matches provision-k3s.sh's --node-label; both pool nodes (poweredge + gmktec since R5) carry it
