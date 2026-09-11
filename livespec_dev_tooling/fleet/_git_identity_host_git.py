@@ -3,7 +3,6 @@
 import os
 import re
 import subprocess
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -18,7 +17,7 @@ class Runner(Protocol):  # pragma: no cover - follow-up Red cycle
         *,
         args: tuple[str, ...],
         cwd: Path | None = None,
-        env: Mapping[str, str] | None = None,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]: ...
 
 
@@ -36,7 +35,7 @@ def default_runner(  # pragma: no cover - follow-up Red cycle
     *,
     args: tuple[str, ...],
     cwd: Path | None = None,
-    env: Mapping[str, str] | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=True, check=False)
 
@@ -97,8 +96,6 @@ def worktree_record(  # pragma: no cover - follow-up Red cycle
     *, config: ProbeConfig, runner: Runner, path: Path
 ) -> tuple[JsonObject, list[str]]:
     queries = {
-        "effective_names": ("config", "--get-all", "user.name"),
-        "effective_emails": ("config", "--get-all", "user.email"),
         "local_names": ("config", "--local", "--get-all", "user.name"),
         "local_emails": ("config", "--local", "--get-all", "user.email"),
         "extension": ("config", "--local", "--type=bool", "--get", "extensions.worktreeConfig"),
@@ -118,21 +115,24 @@ def worktree_record(  # pragma: no cover - follow-up Red cycle
             )
             if error is not None:
                 errors.append(error)
+    author_vars = {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE"}
+    clean_env = {key: value for key, value in os.environ.items() if key not in author_vars}
+    effective = runner(args=("git", "var", "GIT_AUTHOR_IDENT"), cwd=path, env=clean_env)
+    identity = _parse_author_ident(value=effective.stdout) if effective.returncode == 0 else None
+    if identity is None:
+        errors.append(f"git-author-ident:{path}")
     names = (*values["local_names"], *values["worktree_names"])
     emails = (*values["local_emails"], *values["worktree_emails"])
     passed = (
         not errors
-        and values["effective_names"] == [config.expected_name]
-        and values["effective_emails"] == [config.expected_email]
+        and identity == (config.expected_name, config.expected_email)
         and all(item == config.expected_name for item in names)
         and all(item == config.expected_email for item in emails)
     )
-    complete_name = len(values["effective_names"]) == 1
-    complete_email = len(values["effective_emails"]) == 1
     record: JsonObject = {
         "path": str(path),
-        "effective_name": values["effective_names"][0] if complete_name else None,
-        "effective_email": values["effective_emails"][0] if complete_email else None,
+        "effective_name": identity[0] if identity is not None else None,
+        "effective_email": identity[1] if identity is not None else None,
         "local_names": values["local_names"],
         "local_emails": values["local_emails"],
         "worktree_names": values["worktree_names"],
@@ -140,6 +140,11 @@ def worktree_record(  # pragma: no cover - follow-up Red cycle
         "passed": passed,
     }
     return record, ([f"git-config:{path}"] if errors else [])
+
+
+def _parse_author_ident(*, value: str) -> tuple[str, str] | None:
+    matched = re.fullmatch(r"(.+) <([^<>]+)> \d+ [+-]\d{4}\n?", value)
+    return (matched.group(1), matched.group(2)) if matched else None
 
 
 def repositories(  # pragma: no cover - follow-up Red cycle

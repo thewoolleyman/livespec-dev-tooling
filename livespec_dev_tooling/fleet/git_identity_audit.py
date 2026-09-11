@@ -7,6 +7,7 @@ import os
 import sys
 from argparse import ArgumentParser
 from contextlib import suppress
+from hashlib import sha256
 from pathlib import Path
 from typing import cast
 
@@ -32,10 +33,13 @@ from livespec_dev_tooling.fleet._git_identity_audit_model import (  # noqa: E402
     CommandOutcome,
     IdentityAuditCommandResult,
     IdentityAuditCommandRunner,
-    base_report,
     host_findings,
     inventory_hosts,
     probe_args,
+)
+from livespec_dev_tooling.fleet._git_identity_audit_report import (  # noqa: E402
+    base_report,
+    observed_dispositions,
     valid_evidence,
 )
 
@@ -178,6 +182,7 @@ def run_audit(
     )
     if incomplete:  # pragma: no cover - second-cycle edge coverage
         findings.append("audit scope is incomplete or vacuous")
+    dispositions = observed_dispositions(host_reports=host_reports, findings=findings)
     summary = {
         "blind": blind,
         "failures": len(findings),
@@ -191,6 +196,8 @@ def run_audit(
         {
             "overall": "pass" if not findings and blind == 0 else "fail",
             "hosts": host_reports,
+            "audit_source": {"sha256": sha256(probe_source.encode()).hexdigest()},
+            "dispositions": dispositions,
             "fabro_evidence": fabro,
             "summary": summary,
         }

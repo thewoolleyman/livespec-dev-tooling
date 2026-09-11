@@ -14,17 +14,24 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.io import IOResult  # noqa: E402
 
+from livespec_dev_tooling.fleet import _git_identity_audit_report as audit_report  # noqa: E402
+from livespec_dev_tooling.fleet._git_identity_audit_report import (  # noqa: E402
+    CANONICAL_EMAIL,
+    CANONICAL_NAME,
+    OWNER,
+)
 from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     InvocationNotPerformed,
 )
 
 __all__: list[str] = []
 
-CANONICAL_NAME = "Chad Woolley"
-CANONICAL_EMAIL = "thewoolleyman@gmail.com"
-OWNER = "thewoolleyman"
 HOSTS = ("gmktec-xubuntu", "hp-xubuntu", "poweredge-xubuntu", "vps")
 HOST_USERS = {"vps": "ubuntu", **{host: "cwoolley" for host in HOSTS if host != "vps"}}
+HOST_ROOTS = {
+    "vps": ("/data/projects", "/home/ubuntu/workspace", "/home/ubuntu/.worktrees"),
+    **{host: ("/home/cwoolley/workspace",) for host in HOSTS if host != "vps"},
+}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -58,8 +65,16 @@ def inventory_hosts(*, source: str) -> tuple[str, ...]:
     return tuple(sorted(hosts))
 
 
-def host_roots(*, user: str) -> tuple[str, ...]:
-    return ("/data/projects", f"/home/{user}/.worktrees", f"/home/{user}/workspace")
+def valid_evidence(*, evidence: dict[str, object] | None) -> bool:
+    return audit_report.valid_evidence(evidence=evidence)
+
+
+def base_report(*, inventory_path: Path, findings: list[str]) -> dict[str, object]:
+    return audit_report.base_report(inventory_path=inventory_path, findings=findings)
+
+
+def host_roots(*, host: str) -> tuple[str, ...]:
+    return HOST_ROOTS[host]
 
 
 def probe_args(*, host: str) -> tuple[str, ...]:
@@ -78,7 +93,7 @@ def probe_args(*, host: str) -> tuple[str, ...]:
         OWNER,
         CANONICAL_NAME,
         CANONICAL_EMAIL,
-        json.dumps(host_roots(user=user)),
+        json.dumps(host_roots(host=host)),
     )
     if host == "vps":
         return suffix
@@ -123,6 +138,24 @@ def environment_findings(
         return cast("int", audited), cast("int", blind) + 1
     if violations:
         findings.append(f"{host}: {label} author environment contains violations")
+    if label == "process":
+        total, unreadable = record.get("total"), record.get("unreadable")
+        unreadable_rows = cast("list[object]", unreadable) if isinstance(unreadable, list) else []
+        complete = (
+            isinstance(total, int)
+            and isinstance(unreadable, list)
+            and total == cast("int", audited) + len(unreadable_rows)
+            and cast("int", blind) == len(unreadable_rows)
+        )
+        if not complete:
+            findings.append(f"{host}: process environment completeness counts are inconsistent")
+            blind = max(cast("int", blind), len(unreadable_rows) if unreadable_rows else 1)
+        if unreadable_rows:
+            findings.append(f"{host}: process environment has unreadable processes")
+            blind = max(cast("int", blind), len(unreadable_rows))
+    elif record.get("scope") != "default-user-socket-supplemental":
+        findings.append(f"{host}: tmux environment scope is malformed")
+        blind = max(cast("int", blind), 1)
     if blind:
         findings.append(f"{host}: {label} environment has {blind} blind observations")
     return cast("int", audited), cast("int", blind)
@@ -152,12 +185,26 @@ def canaries_pass(*, canaries: object) -> bool:
 
 def repository_findings(
     *, host: str, repositories: object, roots: object, findings: list[str]
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     if (  # pragma: no cover - second-cycle edge coverage
         not isinstance(repositories, list) or not isinstance(roots, list) or not roots
     ):
         findings.append(f"{host}: owned clone/root scope is incomplete")
-        return 0, 0
+        return 0, 0, 1
+    root_rows = cast("list[object]", roots)
+    observed_roots: dict[str, object] = {}
+    for item in root_rows:
+        row = cast("dict[str, object]", item) if isinstance(item, dict) else {}
+        path = row.get("path")
+        if isinstance(path, str):
+            observed_roots[path] = row.get("state")
+    expected_roots = set(host_roots(host=host))
+    root_blind = 0
+    if set(observed_roots) != expected_roots or any(
+        observed_roots.get(path) != "present" for path in expected_roots
+    ):
+        findings.append(f"{host}: required repository root scope is absent or incomplete")
+        root_blind = 1
     worktrees = 0
     repository_rows = cast("list[object]", repositories)
     for repository in repository_rows:
@@ -168,13 +215,13 @@ def repository_findings(
             continue
         worktree_rows = cast("list[object]", rows)
         worktrees += len(worktree_rows)
-        if any(
+        if not worktree_rows or any(
             not isinstance(row, dict)
             or not worktree_passes(worktree=cast("dict[str, object]", row))
             for row in worktree_rows
         ):
             findings.append(f"{host}: worktree identity or override is noncanonical")
-    return len(repository_rows), worktrees
+    return len(repository_rows), worktrees, root_blind
 
 
 def host_findings(*, host: str, report: dict[str, object]) -> tuple[list[str], int, int, int, int]:
@@ -191,7 +238,7 @@ def host_findings(*, host: str, report: dict[str, object]) -> tuple[list[str], i
     }
     if report.get("global_config") != expected_global:
         findings.append(f"{host}: global_config is not canonical and fail-closed")
-    repositories, worktrees = repository_findings(
+    repositories, worktrees, root_blind = repository_findings(
         host=host,
         repositories=report.get("owned_repositories"),
         roots=report.get("roots"),
@@ -221,45 +268,10 @@ def host_findings(*, host: str, report: dict[str, object]) -> tuple[list[str], i
     )
     if host_blind:  # pragma: no cover - second-cycle edge coverage
         findings.append(f"{host}: probe reported blind observations")
-    return findings, host_blind + process_blind + tmux_blind, repositories, worktrees, process_count
-
-
-def valid_evidence(*, evidence: dict[str, object] | None) -> bool:
-    if (  # pragma: no cover - second-cycle edge coverage
-        evidence is None or evidence.get("schema_version") != 1
-    ):
-        return False
-    required = (
-        "run_id",
-        "repository",
-        "commit",
-        "orchestrator_version",
-        "sandbox_image_version",
-        "negative_ci_run_id",
-    )
     return (
-        all(isinstance(evidence.get(key), str) and evidence[key] for key in required)
-        and isinstance(evidence.get("sandbox_image_digests"), list)
-        and bool(evidence["sandbox_image_digests"])
-        and evidence.get("missing_identity_rejected") is True
-        and evidence.get("canonical_identity_accepted") is True
+        findings,
+        host_blind + root_blind + process_blind + tmux_blind,
+        repositories,
+        worktrees,
+        process_count,
     )
-
-
-def base_report(*, inventory_path: Path, findings: list[str]) -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "overall": "fail",
-        "expected_identity": {"name": CANONICAL_NAME, "email": CANONICAL_EMAIL},
-        "scope": {
-            "history_scanned": False,
-            "hosts": list(HOSTS),
-            "inventory": str(inventory_path),
-            "owned_github_origin": OWNER,
-        },
-        "dispositions": {
-            "poweredge-xubuntu-info": "owned; audited",
-            "mi-homelab/homelab": "not owned by thewoolleyman; excluded and unmodified",
-        },
-        "findings": findings,
-    }

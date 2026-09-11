@@ -7,6 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from livespec_dev_tooling.fleet._git_identity_audit_model import host_findings, host_roots
+from livespec_dev_tooling.fleet._git_identity_audit_report import (
+    observed_dispositions,
+    valid_evidence,
+)
+from livespec_dev_tooling.fleet._git_identity_host_probe import author_values
 from livespec_dev_tooling.fleet.git_identity_audit import (
     CANONICAL_EMAIL,
     CANONICAL_NAME,
@@ -58,9 +64,11 @@ class ScriptedRunner:
 
 
 def _host_report(host: str) -> dict[str, object]:
+    repository_name = "poweredge-xubuntu-info" if host == "poweredge-xubuntu" else "livespec"
     repo = {
-        "common_dir": f"/srv/{host}/livespec/.git",
-        "origin": "git@github.com:thewoolleyman/livespec.git",
+        "repo": repository_name,
+        "common_dir": f"/srv/{host}/{repository_name}/.git",
+        "origin": f"git@github.com:thewoolleyman/{repository_name}.git",
         "worktrees": [
             {
                 "path": f"/srv/{host}/livespec",
@@ -83,15 +91,27 @@ def _host_report(host: str) -> dict[str, object]:
             "use_config_only": True,
             "passed": True,
         },
-        "roots": [{"path": f"/srv/{host}", "state": "present"}],
+        "roots": [{"path": path, "state": "present"} for path in host_roots(host=host)],
         "owned_repositories": [repo],
-        "excluded_repositories": [],
+        "excluded_repositories": (
+            [
+                {
+                    "path": "/home/cwoolley/workspace/homelab",
+                    "origin": "git@github.com:mi-homelab/homelab.git",
+                }
+            ]
+            if host == "poweredge-xubuntu"
+            else []
+        ),
         "process_author_environment": {
+            "total": 2,
             "audited": 2,
+            "unreadable": [],
             "violations": [],
             "blind": 0,
         },
         "tmux_author_environment": {
+            "scope": "default-user-socket-supplemental",
             "servers": 1,
             "violations": [],
             "blind": 0,
@@ -119,8 +139,8 @@ def _evidence(root: Path) -> dict[str, object]:
         "orchestrator_version": "0.148.2",
         "sandbox_image_version": "1.85.3",
         "sandbox_image_digests": [
-            "sha256:83e0bec5d3ed33",
-            "sha256:9331287c2c7a7c",
+            "sha256:83e0bec519eb412d82a1136627193564e356bfa8091f2b9171597141c9d3ed33",
+            "sha256:9331287cce9edfb82e143e87072e12774ef7c5f635a6d7d0aa6dd4b8732c7a7c",
         ],
         "negative_ci_run_id": "34518565990",
         "missing_identity_rejected": True,
@@ -321,3 +341,59 @@ def test_just_recipe_is_operator_only_and_not_in_aggregate() -> None:
     assert "git-identity-audit" in justfile
     assert "git-identity-audit" not in inventory
     assert "git-identity-audit" not in ci
+
+
+def test_process_parser_includes_namespaced_author_selectors() -> None:
+    assert author_values(
+        raw=(
+            b"LIVESPEC_GIT_AUTHOR_NAME=Chad Woolley\0"
+            b"LIVESPEC_GIT_AUTHOR_EMAIL=chad@thewoolleyman.com\0"
+        )
+    ) == {
+        "LIVESPEC_GIT_AUTHOR_NAME": CANONICAL_NAME,
+        "LIVESPEC_GIT_AUTHOR_EMAIL": "chad@thewoolleyman.com",
+    }
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        None,
+        {"schema_version": 2},
+        {"schema_version": 1, "sandbox_image_digests": "not-a-list"},
+        {"schema_version": 1, "sandbox_image_digests": [7]},
+    ],
+)
+def test_fabro_evidence_rejects_malformed_envelopes(evidence: object) -> None:
+    assert valid_evidence(evidence=evidence) is False  # type: ignore[arg-type]
+
+
+def test_unobserved_dispositions_are_failures_not_claims() -> None:
+    findings: list[str] = []
+    dispositions = observed_dispositions(
+        host_reports=[
+            {"owned_repositories": "malformed", "excluded_repositories": [{"origin": None}]},
+            {"owned_repositories": [{}], "excluded_repositories": "malformed"},
+        ],
+        findings=findings,
+    )
+
+    assert len(findings) == 2
+    assert all("not observed" in value for value in dispositions.values())
+
+
+def test_malformed_root_and_tmux_scope_are_blind() -> None:
+    report = _host_report("vps")
+    report["roots"] = [{"path": 7, "state": "present"}]
+    report["tmux_author_environment"] = {
+        "scope": "all-tmux-servers",
+        "servers": 0,
+        "violations": [],
+        "blind": 0,
+    }
+
+    findings, blind, *_counts = host_findings(host="vps", report=report)
+
+    assert blind == 2
+    assert any("root" in finding for finding in findings)
+    assert any("tmux" in finding for finding in findings)
