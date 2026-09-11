@@ -194,7 +194,7 @@ done
 kubectl get nodes -o wide
 
 # ---------------------------------------------------------------------------
-log "1b. Assert the node carries ci-runner.io/churn-slot at the installed reapply unit's capacity (self-healing)"
+log "1b. Assert THIS server's own node carries ci-runner.io/churn-slot at its profile's capacity (self-healing)"
 # WHY: every ClusterQueue applied in step 5 is denominated in this extended
 # resource, and the resource is NOT kubelet-owned — it is a node-status patch
 # that only ../node-extended-resource/ puts back (the reapply unit, ordered
@@ -204,35 +204,31 @@ log "1b. Assert the node carries ci-runner.io/churn-slot at the installed reappl
 # operator then hand-started k3s and this converge, but not the reapply unit,
 # and the timer's OnUnitActiveSec re-arms only from a SUCCESSFUL activation,
 # so it had no next elapse either. The node carried NO churn-slot capacity
-# while the nine queues advertised a quota sum of 32: every runner pod Kueue
-# admitted would have been unschedulable, silently — no capacity signal and
-# no sweep class said so — until a hand `systemctl start
+# while the queues advertised their quota sum: every runner pod Kueue admitted
+# would have been unschedulable, silently, until a hand `systemctl start
 # reapply-node-extended-resource.service` at 07:52Z (item livespec-kgl3).
 #
-# THE ASSERTION: every node the reapply targets (NODE_LABEL_SELECTOR — the
-# label patch-node-churn-capacity.sh patches and kueue/resource-flavor.yaml
-# selects) must report status.allocatable ci-runner.io/churn-slot equal to
-# CAPACITY, where CAPACITY is the argument the INSTALLED reapply unit carries
-# in its ExecStart — the one already-decided number on this host
-# (install-reapply-unit.sh substitutes it in), read back through `systemctl
-# show` so this converge decides no number of its own and no second copy
-# exists to drift. CONVERGE_CHURN_CAPACITY overrides it for a run outside the
+# THE ASSERTION IS SCOPED TO THIS SERVER'S OWN NODE (R5, livespec-dev-tooling-xa6o).
+# Churn-slot capacity is PER-NODE now: each node advertises its own capacity from
+# its own profile, and each node's reapply timer maintains ITS OWN. So this
+# converge — which runs on the SERVER — asserts and self-heals only the SERVER's
+# node, and MUST NOT touch the agent's capacity (doing so would re-stamp the
+# agent with the server's number and fight the agent's own timer). The node NAME
+# and expected capacity come from the profile the INSTALLED reapply unit names in
+# its ExecStart (`argv[]=<script> <profile> ;`), read back through `systemctl
+# show`, so this converge decides no number of its own and no second copy exists
+# to drift. CONVERGE_CHURN_PROFILE overrides the profile for a run outside the
 # installed layout.
 #
-# THE SELF-HEAL: re-run patch-node-churn-capacity.sh CAPACITY (idempotent —
-# it is the reapply unit's own ExecStart target) and re-read. A node that is
-# STILL wrong afterwards is reported as a WARN and the converge CONTINUES —
-# the rule step 7b already applies, and it binds harder here: failing at 1b
-# would skip the provisioner, Kueue, the queues, ARC and everything after
-# them, so when the timer's OnCalendar fallback or an operator DID restore
-# the capacity there would be no cluster stack for it to serve; continuing
-# leaves a fully built stack that admits and schedules the instant the
-# capacity lands. ../runner-pod-lifecycle/ reports the condition as
+# THE SELF-HEAL: re-run patch-node-churn-capacity.sh <profile> (idempotent — it
+# is the reapply unit's own ExecStart target, and it patches only the profile's
+# named node) and re-read. A node still wrong afterwards is a WARN and the
+# converge CONTINUES — failing at 1b would skip the provisioner, Kueue, the
+# queues, ARC and everything after them, so when the timer's OnCalendar fallback
+# or an operator DID restore the capacity there would be no cluster stack for it
+# to serve; continuing leaves a fully built stack that admits and schedules the
+# instant the capacity lands. ../runner-pod-lifecycle/ reports the condition as
 # capacity-absent every five minutes either way.
-#
-# The `churn-slot capacity: N/N node(s) at C (M self-healed)` line printed at
-# the end is this step's boot-proof evidence.
-NODE_LABEL_SELECTOR="k3s-role=arc-runner-host"   # matches patch-node-churn-capacity.sh and kueue/resource-flavor.yaml
 REAPPLY_UNIT="reapply-node-extended-resource.service"
 # The patch script sits beside this converge in the installed layout
 # (install-reapply-unit.sh copies it into the same /usr/local/lib/ci-runner-k3s)
@@ -242,64 +238,52 @@ if [ -x "${SCRIPT_DIR}/patch-node-churn-capacity.sh" ]; then
 else
   PATCH_CAPACITY="${ARTIFACT_DIR}/node-extended-resource/patch-node-churn-capacity.sh"
 fi
-# CAPACITY: the env override, else the installed unit's ExecStart argument
-# (`systemctl show` renders it as `argv[]=<script> <CAPACITY> ;`).
-capacity="${CONVERGE_CHURN_CAPACITY:-}"
-if [ -z "$capacity" ] && command -v systemctl >/dev/null; then
-  capacity="$(systemctl show "$REAPPLY_UNIT" -p ExecStart --value 2>/dev/null \
+# PROFILE: the env override, else the installed unit's ExecStart argument (the
+# node's profile path — `systemctl show` renders ExecStart as
+# `argv[]=<script> <profile> ;`, so the last field is the profile).
+churn_profile="${CONVERGE_CHURN_PROFILE:-}"
+if [ -z "$churn_profile" ] && command -v systemctl >/dev/null; then
+  churn_profile="$(systemctl show "$REAPPLY_UNIT" -p ExecStart --value 2>/dev/null \
     | sed -n 's/.*argv\[\]=\([^;]*\) ;.*/\1/p' | tail -n1 | awk '{print $NF}')"
 fi
-# One line per targeted node: `<node>|<allocatable churn-slot, or empty>`.
-churn_allocatable() {
-  kubectl get nodes -l "$NODE_LABEL_SELECTOR" \
-    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}' 2>/dev/null
+# A scalar profile value, last occurrence wins, whitespace stripped.
+churn_profile_value() {  # churn_profile_value KEY
+  sed -n "s/^$1=//p" "$churn_profile" | tail -n1 | tr -d '[:space:]'
 }
-# Prints one indented line per node (ok / MISSING / MISMATCH) followed by a
-# final `WRONG:<n>` line counting the nodes that are not at CAPACITY.
-check_capacity() {
-  local wrong=0 node have
-  while IFS='|' read -r node have; do
-    [ -n "$node" ] || continue
-    if [ -z "$have" ]; then
-      printf '  %-32s MISSING (expected %s)\n' "$node" "$capacity"; wrong=$((wrong+1))
-    elif [ "$have" != "$capacity" ]; then
-      printf '  %-32s MISMATCH %s (expected %s)\n' "$node" "$have" "$capacity"; wrong=$((wrong+1))
-    else
-      printf '  %-32s ok (%s)\n' "$node" "$have"
-    fi
-  done < <(churn_allocatable)
-  printf 'WRONG:%s\n' "$wrong"
-}
-if ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
-  echo "WARN: cannot learn the intended ci-runner.io/churn-slot capacity -- ${REAPPLY_UNIT} is not installed with a numeric ExecStart argument and CONVERGE_CHURN_CAPACITY is unset; skipping the assertion. The queues applied in step 5 are denominated in this resource; install the unit with node-extended-resource/install-reapply-unit.sh CAPACITY (../runner-pod-lifecycle/ reports capacity-absent every 5 min until the resource is present)"
+if [ -z "$churn_profile" ] || [ ! -f "$churn_profile" ]; then
+  echo "WARN: cannot learn this server's ci-runner.io/churn-slot profile -- ${REAPPLY_UNIT} names no readable profile in its ExecStart and CONVERGE_CHURN_PROFILE is unset; skipping the assertion. The queues applied in step 5 are denominated in this resource; install the unit with node-extended-resource/install-reapply-unit.sh <profile> (../runner-pod-lifecycle/ reports capacity-absent every 5 min until the resource is present)"
 else
-  report="$(check_capacity)"
-  node_count="$(printf '%s\n' "$report" | grep -cE '^  ' || true)"
-  wrong="$(printf '%s\n' "$report" | sed -n 's/^WRONG://p')"
-  healed=0
-  if [ "$node_count" -eq 0 ]; then
-    echo "WARN: no node matches ${NODE_LABEL_SELECTOR} -- nothing carries ci-runner.io/churn-slot and the ResourceFlavor selects no node; check the k3s --node-label (../../provision-k3s.sh)"
-  elif [ "$wrong" -gt 0 ]; then
-    # Log what was wrong before healing it, so the journal says WHAT, not
-    # only that something was healed.
-    printf '%s\n' "$report" | grep -v '^WRONG:' || true
-    if [ -x "$PATCH_CAPACITY" ]; then
-      echo "  self-heal: re-running ${PATCH_CAPACITY} ${capacity} (the ${REAPPLY_UNIT} ExecStart)"
-      "$PATCH_CAPACITY" "$capacity" || echo "  self-heal: patch exited $? -- re-checking anyway"
-      healed=1
-      report="$(check_capacity)"
-      wrong="$(printf '%s\n' "$report" | sed -n 's/^WRONG://p')"
-    else
-      echo "  self-heal: ${PATCH_CAPACITY} not found or not executable -- cannot re-apply; install it with node-extended-resource/install-reapply-unit.sh ${capacity}"
+  own_node="$(churn_profile_value NODE_NAME)"
+  capacity="$(churn_profile_value ADMISSION_CAPACITY_C)"
+  if [ -z "$own_node" ] || ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
+    echo "WARN: ${churn_profile} does not declare a NODE_NAME and a numeric ADMISSION_CAPACITY_C -- skipping the churn-slot assertion (node='${own_node}' capacity='${capacity}')"
+  else
+    # This ONE node's allocatable churn-slot, or empty when absent.
+    read_own_capacity() {
+      kubectl get node "$own_node" \
+        -o jsonpath='{.status.allocatable.ci-runner\.io/churn-slot}' 2>/dev/null || true
+    }
+    have="$(read_own_capacity)"
+    healed=0
+    if [ "$have" != "$capacity" ]; then
+      if [ -z "$have" ]; then
+        echo "  ${own_node} MISSING ci-runner.io/churn-slot (expected ${capacity})"
+      else
+        echo "  ${own_node} MISMATCH ci-runner.io/churn-slot=${have} (expected ${capacity})"
+      fi
+      if [ -x "$PATCH_CAPACITY" ]; then
+        echo "  self-heal: re-running ${PATCH_CAPACITY} ${churn_profile} (the ${REAPPLY_UNIT} ExecStart)"
+        "$PATCH_CAPACITY" "$churn_profile" || echo "  self-heal: patch exited $? -- re-checking anyway"
+        healed=1
+        have="$(read_own_capacity)"
+      else
+        echo "  self-heal: ${PATCH_CAPACITY} not found or not executable -- cannot re-apply; install it with node-extended-resource/install-reapply-unit.sh ${churn_profile}"
+      fi
     fi
-  fi
-  if [ "$node_count" -gt 0 ]; then
-    printf '%s\n' "$report" | grep -v '^WRONG:' || true
-    ok_nodes="$(printf '%s\n' "$report" | grep -c ' ok (' || true)"
-    if [ "$wrong" -eq 0 ]; then
-      echo "churn-slot capacity: ${ok_nodes}/${node_count} node(s) at ${capacity} (${healed} self-healed)"
+    if [ "$have" = "$capacity" ]; then
+      echo "churn-slot capacity: ${own_node} at ${capacity} (${healed} self-healed)"
     else
-      echo "WARN: churn-slot capacity: ${ok_nodes}/${node_count} node(s) at ${capacity} after ${healed} self-heal(s) -- every runner pod Kueue admits is unschedulable until this is fixed; the reapply timer re-tries every 5 min and ../runner-pod-lifecycle/ reports it as capacity-absent. By hand: systemctl start ${REAPPLY_UNIT}"
+      echo "WARN: churn-slot capacity: ${own_node} at ${have:-<absent>}, expected ${capacity}, after ${healed} self-heal(s) -- every runner pod Kueue admits onto this node is unschedulable until this is fixed; the reapply timer re-tries every 5 min and ../runner-pod-lifecycle/ reports it as capacity-absent. By hand: systemctl start ${REAPPLY_UNIT}"
     fi
   fi
 fi
@@ -690,7 +674,9 @@ kubectl -n "$RUNNERS_NAMESPACE" get autoscalingrunnersets.actions.github.com
 kubectl -n kueue-system get pods
 kubectl get clusterqueue
 kubectl -n ci-warm-cache get cronjob
-kubectl get nodes -l "$NODE_LABEL_SELECTOR" \
+# A fleet-wide informational read of every pool node's churn-slot (this converge
+# only ASSERTS its own node at step 1b, but the summary shows the whole pool).
+kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
 log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon."

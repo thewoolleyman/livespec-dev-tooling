@@ -31,9 +31,12 @@ every way they can drift apart is silent, and each drift breaks a named clause:
   the fair share, idle capacity elsewhere in the cohort is unreachable. The
   bound is two-sided for that reason, and this is the direction `DERIVATION.md`
   records the earlier "one number" reading getting wrong.
-- **Quotas that no longer sum to the node's capacity** break the fair-share term
-  itself: over-subscribed, the guaranteed floors are not guaranteed;
-  under-subscribed, capacity the host has is unreachable by anyone.
+- **Quotas that no longer sum to the pool's total capacity** break the
+  fair-share term itself: over-subscribed, the guaranteed floors are not
+  guaranteed; under-subscribed, capacity the pool has is unreachable by anyone.
+  Since the two-node opening (DERIVATION.md "The derivation at C = 44 — the
+  two-node pool") churn-slot capacity is per-node while the cohort quota is
+  cluster-wide, so the sum is taken across every node's `ADMISSION_CAPACITY_C`.
 
 None of the three raises an error. A wrong number is a valid manifest, applies
 cleanly, and produces a pool that admits the wrong amount of work.
@@ -49,9 +52,7 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _KUEUE_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "kueue"
 _ARC_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "arc"
-_SERVER_PROFILE = (
-    _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles" / "poweredge-xubuntu.env"
-)
+_PROFILES_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles"
 
 # The one cohort the fair-share term is apportioned within.
 _COHORT = "fleet-ci-runner-pool"
@@ -172,22 +173,40 @@ def test_every_repository_ceiling_is_the_bounded_multiple_of_its_fair_share() ->
     )
 
 
-def test_the_fair_shares_sum_to_the_capacity_the_node_profile_declares() -> None:
-    """The apportionment is exact: the floors add up to C, over- nor under-subscribed."""
+def _pool_capacity() -> dict[str, int]:
+    """Each pool node's `ADMISSION_CAPACITY_C`, keyed by profile name.
+
+    Churn-slot capacity is PER-NODE since the two-node opening (DERIVATION.md
+    "The derivation at C = 44 — the two-node pool (2026-09-11)"), while the Kueue
+    cohort quota is a single CLUSTER-WIDE number. So the term the fair shares sum
+    to is the TOTAL across every node's own profile, not any one node's value.
+    """
+    capacities: dict[str, int] = {}
+    for profile in sorted(_PROFILES_DIR.glob("*.env")):
+        declared = _ADMISSION_CAPACITY.search(profile.read_text(encoding="utf-8"))
+        assert declared is not None, (
+            f"every pool node's admission capacity C must be a value of its committed "
+            f"profile — the per-node profile is where the section's host-capacity term "
+            f"lives; profile={profile.relative_to(_REPO_ROOT)}"
+        )
+        capacities[profile.name] = int(declared.group("capacity"))
+    return capacities
+
+
+def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None:
+    """The apportionment is exact: the floors add up to the pool's total C across nodes."""
     quotas = _cohort_quotas()
-    declared = _ADMISSION_CAPACITY.search(_SERVER_PROFILE.read_text(encoding="utf-8"))
-    assert declared is not None, (
-        f"the node's admission capacity C must be a value of its committed profile — the "
-        f"per-node profile is where the section's host-capacity term lives; "
-        f"profile={_SERVER_PROFILE.relative_to(_REPO_ROOT)}"
-    )
-    capacity = int(declared.group("capacity"))
+    capacities = _pool_capacity()
+    assert capacities, "at least one pool node profile must declare an ADMISSION_CAPACITY_C"
+    capacity = sum(capacities.values())
     assert sum(quotas.values()) == capacity, (
-        f"the cohort's guaranteed floors must sum to exactly the capacity the node "
-        f"registers. Over-subscribed, a floor is not a floor — two repositories at their "
-        f"guaranteed share cannot both be admitted; under-subscribed, capacity the host "
-        f"has is unreachable by anyone. Kueue applies either without complaint; "
-        f"sum={sum(quotas.values())} capacity={capacity} quotas={quotas}"
+        f"the cohort's guaranteed floors must sum to exactly the pool's TOTAL registered "
+        f"capacity across every node — the cohort quota is cluster-wide while churn-slot "
+        f"capacity is per-node, so it sums to both. Over-subscribed, a floor is not a floor "
+        f"— two repositories at their guaranteed share cannot both be admitted; "
+        f"under-subscribed, capacity the pool has is unreachable by anyone. Kueue applies "
+        f"either without complaint; sum={sum(quotas.values())} capacity={capacity} "
+        f"per_node={capacities} quotas={quotas}"
     )
 
 

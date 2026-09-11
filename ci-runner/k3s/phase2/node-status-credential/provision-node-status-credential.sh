@@ -6,13 +6,15 @@
 # per-node KUBECONFIG that ServiceAccount authenticates with.
 #
 # WHAT IT FIXES. ../node-extended-resource/reapply-node-extended-resource.service
-# carries `Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml` — the k3s SERVER's
-# admin file. That file does not exist on an agent, so a node-local churn-slot
-# timer on an agent has no credential at all; nothing under ci-runner/ minted
-# one, and nothing placed one. Found by the first dry-run of the rebuild recipe
-# on gmktec-xubuntu, 2026-09-06 (livespec-dev-tooling-xa6o). This script is the
-# missing minting half; ../../secret-reinjection/seed-node-status-kubeconfig.sh
-# is the missing delivery half.
+# patches node status through the API, and on a server its patch script
+# authenticates as the k3s SERVER's admin file `/etc/rancher/k3s/k3s.yaml`. That
+# file does not exist on an agent, so a node-local churn-slot timer on an agent
+# has no credential at all; nothing under ci-runner/ minted one, and nothing
+# placed one. Found by the first dry-run of the rebuild recipe on gmktec-xubuntu,
+# 2026-09-06 (livespec-dev-tooling-xa6o). This script is the minting half;
+# ../../secret-reinjection/seed-node-status-kubeconfig.sh is the delivery half,
+# and R5 wired the consumer (an agent's reapply timer reads the delivered
+# kubeconfig) — see ./README.md.
 #
 # WHERE IT RUNS, AND WHY NOT ON THE AGENT. On the k3s SERVER, as the maintainer,
 # with the admin KUBECONFIG — because creating RBAC and reading a token Secret

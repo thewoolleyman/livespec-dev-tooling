@@ -3,17 +3,17 @@
 ## The defect this closes
 
 `../node-extended-resource/reapply-node-extended-resource.service` patches a
-node's `status.capacity` through the Kubernetes API, and it authenticates with
+node's `status.capacity` through the Kubernetes API. On a **server** its patch
+script authenticates as the k3s server's admin kubeconfig,
+`/etc/rancher/k3s/k3s.yaml`.
 
-```ini
-Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-```
-
-That is the k3s **server's** admin kubeconfig. k3s writes it on a server and
-**not on an agent**, so a node-local churn-slot timer on an agent has no
-credential at all — its first fire fails. Nothing under `ci-runner/` created
-such a credential and nothing placed one, so there was no artifact that could
-have supplied it.
+k3s writes that admin file on a server and **not on an agent**, so a node-local
+churn-slot timer on an agent has no credential at all — its first fire fails.
+Nothing under `ci-runner/` created such a credential and nothing placed one, so
+there was no artifact that could have supplied it. (Since R5 the agent's patch
+script authenticates with the kubeconfig THIS directory renders, at the path the
+agent's profile names in `CHURN_KUBECONFIG_FILE` — see "The consumer, wired by
+R5" below.)
 
 Found by the first dry-run of the rebuild recipe on `gmktec-xubuntu`,
 2026-09-06 (`livespec-dev-tooling-xa6o`, tree `b02cdb6e`). Re-verified from the
@@ -62,29 +62,35 @@ One rule, two verbs, one named node:
 - **Not `delete`, and no wildcard.** A credential on a CI machine must not be
   able to evict the node from the cluster.
 
-## What is deliberately NOT here
+## The consumer, wired by R5
 
-**No consumer.** This directory mints and delivers a credential; nothing in it
-installs a timer that uses one, and `../node-extended-resource/install-reapply-unit.sh`
-still refuses on an agent — correctly, for the three reasons its own header
-gives.
+R5 (livespec plan `k3s-on-gmktec-for-vps-usage`, epic `livespec-sab5gn`,
+resolving `livespec-dev-tooling-xa6o`) built the consumer this directory exists
+to feed. `../node-extended-resource/patch-node-churn-capacity.sh` used to resolve
+its targets with `kubectl get nodes -l k3s-role=arc-runner-host`, a **list** — so
+it could not use this credential unchanged, and widening the credential to fit it
+would have defeated the credential (the `list` bullet above). R5 made it patch a
+**single named node** — the node its profile NAMES, `by name` — which is exactly
+the shape `resourceNames` can authorize. So:
 
-That is not an oversight, and the `list` bullet above is why it cannot be one:
-`../node-extended-resource/patch-node-churn-capacity.sh` resolves its targets
-with `kubectl get nodes -l k3s-role=arc-runner-host`, a **list**. It therefore
-cannot be the consumer of this credential unchanged, and widening the credential
-to fit it would defeat the credential. A node-local consumer must address its
-own node **by name**.
+- `../node-extended-resource/install-reapply-unit.sh` now **installs on an
+  agent** (it no longer refuses): it orders the reapply unit against
+  `k3s-agent.service` and the patch script authenticates with the kubeconfig this
+  credential renders, at the path the node's profile names in
+  `CHURN_KUBECONFIG_FILE`.
+- The patch script derives its credential from the profile's role — the server's
+  admin kubeconfig, or, on an agent, the node-status kubeconfig this directory
+  mints — so the unit carries no credential of its own.
 
-**No decision about whether an agent should run one at all.** The maintainer's
-2026-09-07 ruling scoped the per-node ServiceAccount shape this directory
-implements; a later measurement raised a second option — leave node-status
-patches server-side and have the server's timer read each node's
-`ADMISSION_CAPACITY_C` from that node's profile, which needs no agent credential
-at all and would also fix the live wrong capacity above. Both are R4 questions.
-This artifact makes the first option **available and reviewable** rather than
-hypothetical; it arms nothing, and choosing the second costs only the deletion
-of this directory.
+**Which of the two options R5 chose.** The maintainer's 2026-09-07 ruling scoped
+the per-node ServiceAccount shape this directory implements; a later measurement
+raised a second option — leave node-status patches server-side and have the
+server's timer read each node's `ADMISSION_CAPACITY_C`. R5 chose the FIRST (this
+credential + a node-local agent timer), because the credential was already built
+and reviewable and a node-local timer keeps each node's capacity a fact of its
+own profile and its own systemd. The server's own timer is now scoped to the
+server's OWN node (it no longer patches every labeled node), so the two nodes'
+capacities never fight.
 
 ## Running it
 

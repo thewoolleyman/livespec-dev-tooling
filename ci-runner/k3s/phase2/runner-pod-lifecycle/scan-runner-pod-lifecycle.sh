@@ -238,8 +238,11 @@ USAGE="usage: scan-runner-pod-lifecycle.sh [--window DURATION] [--pvc-pending-se
 NAMESPACE="${RPL_NAMESPACE:-arc-runners}"
 SYSTEMS_NAMESPACE="${RPL_SYSTEMS_NAMESPACE:-arc-systems}"
 # The nodes expected to carry ci-runner.io/churn-slot: the label
-# ../node-extended-resource/patch-node-churn-capacity.sh patches and
-# ../kueue/resource-flavor.yaml selects (provision-k3s.sh's --node-label).
+# ../kueue/resource-flavor.yaml selects (provision-k3s.sh's --node-label). Since
+# R5 (livespec-dev-tooling-xa6o) capacity is PER-NODE — each node advertises its
+# own from its own profile — so this label ENUMERATES the pool's nodes for the
+# scan; it is no longer the selector patch-node-churn-capacity.sh patches (that
+# now addresses one node by name).
 NODE_SELECTOR="${RPL_NODE_SELECTOR:-k3s-role=arc-runner-host}"
 # The look-back for journal, log and event reads. Five minutes matches the
 # timer, so consecutive sweeps tile the timeline without double-counting.
@@ -769,14 +772,21 @@ log "7. capacity-absent: allocatable ci-runner.io/churn-slot on ${NODE_SELECTOR}
 # node's allocatable. When the node has none of the resource — it is a
 # node-status patch, not kubelet-owned, and a dependency-failed boot leaves
 # the reapply unit unrun (2026-09-04) — every admitted runner pod is
-# unschedulable and no capacity signal says so. Node side: one line per
-# selected node, `<name>|<allocatable, or empty>`; a node without the key is
-# a hit and contributes 0 to the total.
+# unschedulable and no capacity signal says so. PER-NODE since R5: each node
+# carries its OWN capacity (poweredge 32, gmktec 12), so "capacity-absent" is
+# read literally per node — a node whose allocatable is missing OR zero is a hit
+# and contributes 0 to the pool total. Zero counts because a churn-slot node at
+# 0 admits nothing, which is capacity-absent for scheduling exactly as a missing
+# key is. Comparing each node's OWN number to a per-node expectation is NOT done
+# here — the scan holds no node's profile — so the aggregate check below compares
+# the pool TOTAL to the cohort quota sum, which is correct for asymmetric nodes
+# (32 + 12 = 44 vs a quota sum of 44) and never false-alarms the legitimate case.
+# Node side: one line per selected node, `<name>|<allocatable, or empty>`.
 cap_total=0; cap_nodes=0; cap_missing=0
 while IFS='|' read -r name have; do
   [ -n "$name" ] || continue
   cap_nodes=$((cap_nodes+1))
-  if [[ "$have" =~ ^[0-9]+$ ]]; then
+  if [[ "$have" =~ ^[0-9]+$ ]] && [ "$have" -gt 0 ]; then
     cap_total=$((cap_total+have))
   else
     cap_missing=$((cap_missing+1)); add_detail "    node=${name} allocatable ci-runner.io/churn-slot=${have:-<absent>} (systemctl start reapply-node-extended-resource.service)"

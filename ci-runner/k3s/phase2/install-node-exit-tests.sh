@@ -14,10 +14,11 @@
 #   B. an agent profile's --dry-run plan OMITS the reconstruct converge — the
 #      only step that applies Kueue ClusterQueues and ARC scale sets — plus
 #      the secret reinjection unit, the tmpfs datastore, the iDRAC thermal step,
-#      the churn-slot reapply unit, both cluster-wide scans and the ARC log
-#      archive, each with a logged reason, and KEEPS k3s config, the kernel
-#      budgets, AppArmor (profile only), the storage layout, the host tools,
-#      sccache, the container hook and the scratch sweep;
+#      both cluster-wide scans and the ARC log archive, each with a logged
+#      reason, and KEEPS k3s config, the kernel budgets, AppArmor (profile only),
+#      the storage layout, the host tools, the churn-slot reapply timer (per-node
+#      since R5, carrying an agent NOTE for its node-status-kubeconfig
+#      prerequisite), sccache, the container hook and the scratch sweep;
 #   B2. step 1's plan NAMES the file it installs, and names a DIFFERENT one per
 #      role — config.yaml plus the local-storage skip marker on a server,
 #      config.agent.yaml and NO marker on an agent. This is the one step that
@@ -38,17 +39,20 @@
 #   E. an agent's SKIP also REMOVES the server-only units an earlier run of
 #      this runbook installed here. A skip does not invoke the installer, so
 #      the installer's own removal never runs on the node that has them: a
-#      full exit-0 runbook run left three enabled, failed timers on
-#      gmktec-xubuntu 2026-09-07 (livespec-dev-tooling-43sc). Under a stubbed
-#      systemctl those three are disabled and deleted, timer before service,
-#      followed by one daemon-reload and then one `reset-failed` per unit
-#      removed — without which the deleted units stay in `list-units
+#      full exit-0 runbook run left enabled, failed timers on gmktec-xubuntu
+#      2026-09-07 (livespec-dev-tooling-43sc). Since R5 the removable set is the
+#      THREE genuinely server-only unit-installing steps — the two cluster-wide
+#      scans and the ARC log archive; the churn-slot reapply timer is NO LONGER
+#      among them, because churn-slot now installs a per-node timer on an agent,
+#      so a reapply unit found here is legitimate and is LEFT (asserted below).
+#      Under a stubbed systemctl those three are disabled and deleted, timer
+#      before service, followed by one daemon-reload and then one `reset-failed`
+#      per unit removed — without which the deleted units stay in `list-units
 #      --state=failed` as `not-found failed` until the host reboots, which is
 #      what the next stage-4 re-run found (livespec-dev-tooling-oc5g); under a
 #      stub that reports nothing present AND nothing failed, no removal line is
 #      printed at all; under a stub that reports nothing present but the three
-#      timers STILL FAILED — gmktec-xubuntu once its unit files had been deleted
-#      by an earlier run, which is the state a clear over the units REMOVED can
+#      timers STILL FAILED — the state a clear over the units REMOVED can
 #      never converge (livespec-dev-tooling-ssbg) — the reset-failed lines are
 #      what the REMOVE header carries; and a SERVER prints none even when the
 #      stub says every unit is there.
@@ -264,12 +268,13 @@ fi
 AGENT_OUT="$REPLY_OUT"
 AGENT_PLAN="$(plan_lines "$AGENT_OUT")"
 
-# The eight skipped steps, by the label fragment that identifies each. The
+# The seven skipped steps, by the label fragment that identifies each. The
 # reconstruct converge is the only step that applies Kueue ClusterQueues and
 # ARC scale sets, so its absence is what omits Kueue and ARC from this plan.
+# churn-slot (4/10) is NOT among them since R5: it installs a per-node reapply
+# timer on an agent too (asserted as a RUN below).
 for fragment in \
   "2c/10 iDRAC cooling configuration" \
-  "4/10 churn-slot extended resource" \
   "5/10 wedged-runner scan" \
   "5b/10 runner-pod lifecycle scan" \
   "6/10 ARC log archive" \
@@ -292,24 +297,29 @@ done
 # No skipped step is silent: each SKIP line is followed by its reason.
 skip_count="$(printf '%s\n' "$AGENT_PLAN" | grep -c '^SKIP ')"
 reason_count="$(printf '%s\n' "$AGENT_OUT" | grep -c '^     reason: ')"
-if [ "$skip_count" -eq 8 ] && [ "$reason_count" -eq 8 ]; then
+if [ "$skip_count" -eq 7 ] && [ "$reason_count" -eq 7 ]; then
   ok "every one of the ${skip_count} skipped steps carries a logged reason"
 else
   no "every skipped step carries a logged reason (skips=${skip_count} reasons=${reason_count})"
 fi
 
-# The churn-slot skip is the one reason this suite reads in full, because the
-# step it omits used to ABORT the whole runbook on an agent at 4 of 10
-# (livespec-dev-tooling-ukbp): the unit is ordered against the SERVER's
-# k3s.service, and the node-status patch it reapplies selects every labeled node
-# — an act the server's own timer already performs for the whole pool. The
-# operator reads that from this line or nowhere.
-CHURN_SKIP_REASON="$(printf '%s\n' "$AGENT_OUT" | grep -A1 -F 'SKIP [agent] 4/10 churn-slot' | tail -n 1)"
-case "$CHURN_SKIP_REASON" in
-  "     reason: "*"SERVER's reapply timer"*)
-    ok "the churn-slot skip reason names the server's reapply timer" ;;
+# churn-slot RUNS on an agent since R5 (livespec-dev-tooling-xa6o): it installs a
+# PER-NODE reapply timer (ordered against k3s-agent.service, patching this one
+# node by name), so it is no longer the server-only step that once aborted the
+# runbook at 4 of 10. It carries an agent NOTE naming the one prerequisite this
+# runbook cannot satisfy from here — the node-status kubeconfig seed — so the
+# operator reads the RUN and the caveat together.
+if printf '%s\n' "$AGENT_PLAN" | grep -qF 'RUN  [agent] 4/10 churn-slot extended resource'; then
+  ok "the agent plan RUNs churn-slot (per-node reapply timer), it no longer skips it"
+else
+  no "the agent plan RUNs churn-slot (per-node reapply timer)"
+fi
+CHURN_NOTE="$(printf '%s\n' "$AGENT_OUT" | grep -A1 -F 'RUN  [agent] 4/10 churn-slot extended resource' | tail -n 1)"
+case "$CHURN_NOTE" in
+  "     note: "*"node-status kubeconfig"*"seed-node-status-kubeconfig.sh"*)
+    ok "the churn-slot agent note names the node-status kubeconfig seed prerequisite" ;;
   *)
-    no "the churn-slot skip reason names the server's reapply timer (got: ${CHURN_SKIP_REASON})" ;;
+    no "the churn-slot agent note names the node-status kubeconfig seed prerequisite (got: ${CHURN_NOTE})" ;;
 esac
 
 # The three cluster-wide sweeps are read the same way and for the same reason:
@@ -347,6 +357,7 @@ for fragment in \
   "2b/10 storage layout" \
   "2d/10 operator host tools" \
   "3/10 AppArmor profile only (--profile-only;" \
+  "4/10 churn-slot extended resource" \
   "7b/10 pool-provided sccache binary" \
   "7c/10 fleet-patched ARC container hook" \
   "10/10 boot-time orphaned-scratch sweep"
@@ -489,50 +500,46 @@ fi
 # A skip is a statement about what this run will INSTALL; it says nothing about
 # what an earlier run already put on the node, and because a skip never invokes
 # the installer, the installer's own agent-side removal never runs on the node
-# that actually has the units. gmktec-xubuntu 2026-09-07: a full runbook run at
-# tree 315c4cef exited 0 and left reapply-node-extended-resource.timer,
-# scan-wedged-runners.timer and scan-runner-pod-lifecycle.timer
-# `enabled`/`failed` with `Unit k3s.service not found` (livespec-dev-tooling-43sc).
+# that actually has the units. gmktec-xubuntu 2026-09-07: a full runbook run
+# exited 0 and left server-only timers `enabled`/`failed` with `Unit k3s.service
+# not found` (livespec-dev-tooling-43sc). Since R5 the removable set is the three
+# genuinely server-only steps — the two scans and the ARC log archive; the
+# reapply timer is NOT removed here any more, because churn-slot installs it
+# per-node on an agent (a separate assertion below proves it is LEFT).
 # ---------------------------------------------------------------------------
 printf '\n== E. the agent skip removes the stale server-only units ==\n'
 
 UNIT_DIR="/etc/systemd/system"
 
-# Exactly the three timers that host was found carrying. Their SERVICES are
+# The three server-only timers a skipped step would remove. Their SERVICES are
 # deliberately not in this stub's answer, so the assertion below also proves
 # each unit is probed on its own rather than removed as a hard-coded pair.
-GMKTEC_STALE_TIMERS="reapply-node-extended-resource.timer scan-wedged-runners.timer scan-runner-pod-lifecycle.timer"
+GMKTEC_STALE_TIMERS="scan-wedged-runners.timer scan-runner-pod-lifecycle.timer archive-arc-logs.timer"
 
 # The daemon-reload is not the last line: each removed unit is then cleared
 # from systemd's failed list, in the same order it was removed. Deleting a unit
 # file and reloading leaves the unit in `systemctl list-units --state=failed`
-# as `not-found failed` until `reset-failed` runs or the host reboots — the
-# stage-4 re-run on gmktec-xubuntu 2026-09-07 exited 0, removed all six unit
-# files, and left exactly these three timers listed failed
+# as `not-found failed` until `reset-failed` runs or the host reboots
 # (livespec-dev-tooling-oc5g).
 IFS= read -r -d '' EXPECTED_TIMER_REMOVAL <<'EOF'
-+ systemctl disable --now reapply-node-extended-resource.timer
-+ rm -f /etc/systemd/system/reapply-node-extended-resource.timer
 + systemctl disable --now scan-wedged-runners.timer
 + rm -f /etc/systemd/system/scan-wedged-runners.timer
 + systemctl disable --now scan-runner-pod-lifecycle.timer
 + rm -f /etc/systemd/system/scan-runner-pod-lifecycle.timer
++ systemctl disable --now archive-arc-logs.timer
++ rm -f /etc/systemd/system/archive-arc-logs.timer
 + systemctl daemon-reload
-+ systemctl reset-failed reapply-node-extended-resource.timer
 + systemctl reset-failed scan-wedged-runners.timer
 + systemctl reset-failed scan-runner-pod-lifecycle.timer
++ systemctl reset-failed archive-arc-logs.timer
 EOF
 
-# The whole set, for a node that carries both halves of all four skipped
+# The whole set, for a node that carries both halves of all THREE skipped
 # unit-installing steps. The TIMER precedes the service it triggers in every
 # pair, so nothing can fire between the two removals, and ONE daemon-reload
 # closes the set rather than one per installer — followed by one reset-failed
 # per unit removed, in removal order.
 IFS= read -r -d '' EXPECTED_FULL_REMOVAL <<'EOF'
-+ systemctl disable --now reapply-node-extended-resource.timer
-+ rm -f /etc/systemd/system/reapply-node-extended-resource.timer
-+ systemctl disable --now reapply-node-extended-resource.service
-+ rm -f /etc/systemd/system/reapply-node-extended-resource.service
 + systemctl disable --now scan-wedged-runners.timer
 + rm -f /etc/systemd/system/scan-wedged-runners.timer
 + systemctl disable --now scan-wedged-runners.service
@@ -546,8 +553,6 @@ IFS= read -r -d '' EXPECTED_FULL_REMOVAL <<'EOF'
 + systemctl disable --now archive-arc-logs.service
 + rm -f /etc/systemd/system/archive-arc-logs.service
 + systemctl daemon-reload
-+ systemctl reset-failed reapply-node-extended-resource.timer
-+ systemctl reset-failed reapply-node-extended-resource.service
 + systemctl reset-failed scan-wedged-runners.timer
 + systemctl reset-failed scan-wedged-runners.service
 + systemctl reset-failed scan-runner-pod-lifecycle.timer
@@ -561,9 +566,9 @@ EOF
 # publish. The three timers the stub reports still failed are cleared, in the
 # order the skip names them.
 IFS= read -r -d '' EXPECTED_RESIDUAL_CLEAR <<'EOF'
-+ systemctl reset-failed reapply-node-extended-resource.timer
 + systemctl reset-failed scan-wedged-runners.timer
 + systemctl reset-failed scan-runner-pod-lifecycle.timer
++ systemctl reset-failed archive-arc-logs.timer
 EOF
 
 # Exported, not a command prefix: the stub is a child process and reads it from
@@ -577,7 +582,7 @@ else
   no "the agent dry run still exits 0 with stale units to remove (got ${REPLY_RC})"
   printf '%s\n' "$REPLY_OUT"
 fi
-same "the three timers gmktec carried are disabled and removed, then one daemon-reload, then a reset-failed each" \
+same "the three server-only timers are disabled and removed, then one daemon-reload, then a reset-failed each" \
   "$EXPECTED_TIMER_REMOVAL" "$(command_lines "$REPLY_OUT")"
 
 # Every unit named in that sequence, read back out of it so the stub and the
@@ -588,7 +593,23 @@ ALL_STALE_UNITS="$(printf '%s' "$EXPECTED_FULL_REMOVAL" \
 export STUB_UNITS_PRESENT="$ALL_STALE_UNITS"
 run_plan --dry-run "$AGENT_PROFILE"
 unset STUB_UNITS_PRESENT
-same "both halves of all four skipped unit-installing steps go, timer before service, each reset-failed after the reload" \
+same "both halves of all three skipped unit-installing steps go, timer before service, each reset-failed after the reload" \
+  "$EXPECTED_FULL_REMOVAL" "$(command_lines "$REPLY_OUT")"
+
+# THE R5 ASSERTION: even when the stub reports the reapply units present, the
+# agent skip does NOT remove them — churn-slot installs the reapply timer
+# per-node on an agent, so it is legitimate, not stale. A node carrying the
+# reapply pair PLUS the three server-only steps removes only the latter.
+export STUB_UNITS_PRESENT="reapply-node-extended-resource.timer reapply-node-extended-resource.service ${ALL_STALE_UNITS}"
+run_plan --dry-run "$AGENT_PROFILE"
+unset STUB_UNITS_PRESENT
+if command_lines "$REPLY_OUT" | grep -qF 'reapply-node-extended-resource'; then
+  no "the agent skip leaves the per-node reapply units alone (it removed a reapply unit)"
+  command_lines "$REPLY_OUT" | grep -F 'reapply-node-extended-resource'
+else
+  ok "the agent skip leaves the per-node reapply units alone (churn-slot installs them)"
+fi
+same "with the reapply units present too, only the three server-only steps are removed" \
   "$EXPECTED_FULL_REMOVAL" "$(command_lines "$REPLY_OUT")"
 
 # The other branch of the presence probe. It is only assertable on a host that
@@ -638,7 +659,7 @@ else
   # to, and the removal is the last thing an agent plan does.
   if printf '%s\n' "$REPLY_OUT" \
        | sed -n '/^#### \[agent\] REMOVE /,$p' \
-       | grep -qF '+ systemctl reset-failed reapply-node-extended-resource.timer'; then
+       | grep -qF '+ systemctl reset-failed scan-wedged-runners.timer'; then
     ok "the reset-failed lines are printed under the REMOVE header"
   else
     no "the reset-failed lines are printed under the REMOVE header"
@@ -682,7 +703,9 @@ assert_installer_units_are_removed() {  # ... INSTALLER-PATH
     fi
   done
 }
-assert_installer_units_are_removed node-extended-resource/install-reapply-unit.sh
+# NOT install-reapply-unit.sh: since R5 its reapply units install per-node on an
+# agent (churn-slot runs, it does not skip), so they are legitimately absent from
+# the skip-removal set the three genuinely server-only installers populate.
 assert_installer_units_are_removed wedged-runner/install-wedged-runner-scan.sh
 assert_installer_units_are_removed runner-pod-lifecycle/install-runner-pod-lifecycle-scan.sh
 assert_installer_units_are_removed arc-log-archive/install-arc-log-archive.sh

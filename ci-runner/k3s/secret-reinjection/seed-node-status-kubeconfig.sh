@@ -7,10 +7,12 @@
 # CHURN_KUBECONFIG_FILE, mode 0600 root:root.
 #
 # WHY IT EXISTS. ../phase2/node-extended-resource/reapply-node-extended-resource.service
-# carries `Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml`, the k3s SERVER's
-# admin file, which does not exist on an agent — so a node-local churn-slot
-# reapply timer on an agent has no credential at all (livespec-dev-tooling-xa6o,
-# found by the 2026-09-06 rebuild dry-run on gmktec-xubuntu). The credential
+# patches node status through the API; on a server its patch script authenticates
+# as the k3s SERVER's admin file `/etc/rancher/k3s/k3s.yaml`, which does not exist
+# on an agent — so a node-local churn-slot reapply timer on an agent has no
+# credential at all (livespec-dev-tooling-xa6o, found by the 2026-09-06 rebuild
+# dry-run on gmktec-xubuntu). Since R5 the agent's reapply timer reads the
+# kubeconfig this seed places at CHURN_KUBECONFIG_FILE. The credential
 # itself is minted cluster-side by
 # ../phase2/node-status-credential/provision-node-status-credential.sh; this is
 # the half that gets it onto the node, and it is DELIBERATELY the same path the

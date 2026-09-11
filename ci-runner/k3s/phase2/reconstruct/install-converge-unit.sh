@@ -207,15 +207,15 @@ systemctl enable gate-ref-prune.timer
 log "10. Verify the unit is enabled, and that the reapply unit it Wants= is installed"
 state="$(systemctl is-enabled "${SERVICE}" 2>/dev/null || true)"
 [ "$state" = "enabled" ] || { echo "FATAL: ${SERVICE} is '${state}', expected 'enabled'"; exit 1; }
-# converge step 1b asserts the churn-slot capacity against the INSTALLED
-# reapply unit's ExecStart argument and self-heals with the patch script that
-# unit's installer copies beside this converge; NEITHER is copied here —
-# ../node-extended-resource/install-reapply-unit.sh owns both, and
-# install-node.sh runs it first. Warn rather than fail: a converge without
-# them still builds the cluster stack and says so at its step 1b.
+# converge step 1b asserts this server's own churn-slot capacity against the
+# INSTALLED reapply unit's ExecStart PROFILE and self-heals with the patch script
+# that unit's installer copies beside this converge; NEITHER the script nor the
+# profile is copied here — ../node-extended-resource/install-reapply-unit.sh owns
+# them, and install-node.sh runs it first. Warn rather than fail: a converge
+# without them still builds the cluster stack and says so at its step 1b.
 reapply_state="$(systemctl is-enabled reapply-node-extended-resource.service 2>/dev/null || true)"
 if [ "$reapply_state" != "enabled" ] || [ ! -x "${LIB_DIR}/patch-node-churn-capacity.sh" ]; then
-  echo "WARN: reapply-node-extended-resource.service is '${reapply_state:-absent}' or ${LIB_DIR}/patch-node-churn-capacity.sh is missing -- converge step 1b cannot assert the churn-slot capacity; run ../node-extended-resource/install-reapply-unit.sh CAPACITY"
+  echo "WARN: reapply-node-extended-resource.service is '${reapply_state:-absent}' or ${LIB_DIR}/patch-node-churn-capacity.sh is missing -- converge step 1b cannot assert this server's churn-slot capacity; run ../node-extended-resource/install-reapply-unit.sh <profile>"
 fi
 
 log "DONE. ${SERVICE} enabled; it converges the CI cluster stack on next boot."

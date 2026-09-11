@@ -683,6 +683,103 @@ give the C = 32 baseline on the tiered host; 40 is proposed only when that
 baseline shows the CPU with headroom at 32 and is recomputed per "Recomputing
 at another C" (exact shares `e_i = 40 * w_i / 516`) when it is.
 
+## The derivation at C = 44 — the two-node pool (2026-09-11)
+
+Plan `k3s-on-gmktec-for-vps-usage`, epic `livespec-sab5gn`, carrier **R5**,
+resolving `livespec-dev-tooling-xa6o`. This is the **first two-node
+derivation**: every table above apportions a SINGLE node's capacity, because
+until now the pool was one node (`poweredge-xubuntu`). R5 opens the second pool
+node, `gmktec-xubuntu`, for general CI churn, so the cohort quota is now
+apportioned over the capacity of BOTH nodes.
+
+**The key structural change: churn-slot capacity is now PER-NODE, not uniform.**
+`ci-runner.io/churn-slot` is a node-status extended resource — each node
+advertises its own capacity — while the Kueue cohort quota is a single
+CLUSTER-WIDE number the ten `nominalQuota`s sum to. As long as the pool was one
+node those two coincided: the cohort quota summed to that node's capacity. With
+two nodes they no longer coincide, and the cohort quota must sum to the TOTAL
+capacity ACROSS the nodes:
+
+- `poweredge-xubuntu` stays at **32** — its CPU-throughput ceiling, unchanged
+  and unrelated to this item (see "The step back to C = 32 on the tiered host
+  (2026-09-06)"); its 72 threads saturate at 35–46 running jobs.
+- `gmktec-xubuntu` is **12**. This is a DERIVED FIRST VALUE, not a settled
+  number, and it is recorded to be confirmed by the same soak method the
+  poweredge number earned. It comes from the node's 16 cores / 32 threads at
+  poweredge's measured ~1.65-threads-per-running-job ratio (≈ a 14-job
+  ceiling), MINUS reserve for the node's 3-gate budget (15 cpu, the gates
+  ClusterQueue on this node — see "The gates quota on gmktec-xubuntu
+  (2026-09-08)") and the resident `local-homelab-llama-server` in its 64 GiB
+  iGPU carveout. Plan `research/001` §3.5 recommended exactly 12; it is carried
+  here as that recommendation, to be re-measured before it is raised.
+
+So the pool's total churn-slot capacity is **C = poweredge 32 + gmktec 12 = 44**,
+and the ten `nominalQuota`s sum to 44 — the whole pool across both nodes.
+
+**Why uniform capacity would be wrong for asymmetric nodes.** The churn-slot
+capacity is what BINDS PLACEMENT: the Kubernetes scheduler will not place a
+churn-slot-requesting pod on a node whose advertised `ci-runner.io/churn-slot`
+allocatable is exhausted (VALIDATION_CHECKLIST item 7; "The physical cap is the
+scheduler, not Kueue"). If both nodes advertised the SAME number — say both 44,
+or both some uniform C — the scheduler could pile all admitted jobs onto
+`poweredge` well past its ~40 running-job ceiling, because poweredge would be
+advertising far more slots than it can actually serve. Per-node caps (32 and 12)
+are exactly what stop that: each node admits only what it can run, and the
+cluster-wide cohort quota (44) bounds the fleet total. A single uniform C cannot
+express two nodes with different real ceilings.
+
+The apportionment uses the SAME Hamilton (largest-remainder) rule and the SAME
+weights as every table above (`W = 516`); only `C` changes, 32 → 44. Exact
+shares `e_i = 44 * w_i / 516`:
+
+| repo | w | e = 44·w/516 | floor | remainder | leftover | quota |
+|---|---:|---:|---:|---:|:--:|---:|
+| livespec | 75 | 6.3953 | 6 | 0.3953 | — | 6 |
+| livespec-driver-codex | 67 | 5.7132 | 5 | 0.7132 | +1 (2nd) | 6 |
+| livespec-driver-claude | 66 | 5.6279 | 5 | 0.6279 | +1 (3rd) | 6 |
+| livespec-orchestrator-git-jsonl | 66 | 5.6279 | 5 | 0.6279 | +1 (4th, tie w/ driver-claude broken by name) | 6 |
+| livespec-overseer | 65 | 5.5426 | 5 | 0.5426 | +1 (5th) | 6 |
+| livespec-runtime | 64 | 5.4574 | 5 | 0.4574 | — | 5 |
+| livespec-dev-tooling | 63 | 5.3721 | 5 | 0.3721 | — | 5 |
+| livespec-orchestrator-beads-fabro | 21 | 1.7907 | 1 | 0.7907 | +1 (1st) | 2 |
+| livespec-console-beads-fabro | 16 | 1.3643 | 1 | 0.3643 | — | 1 |
+| livespec-driver-pi | 13 | 1.1085 | 1 | 0.1085 | — | 1 |
+| **sum** | **516** | **44.000** | **39** | | **+5** | **44** |
+
+The floors sum to 39, leaving 5 leftover units, awarded to the five largest
+remainders: `livespec-orchestrator-beads-fabro` (0.7907),
+`livespec-driver-codex` (0.7132), `livespec-driver-claude` (0.6279),
+`livespec-orchestrator-git-jsonl` (0.6279, the tie broken by name), and
+`livespec-overseer` (0.5426). `livespec` sits at its floor of 6 (its remainder
+0.3953 does not reach the fifth leftover), so the raised capacity flows to the
+mid-band repositories rather than to the largest. Every exact share exceeds 1,
+so step 5's `max(1, …)` never fires and the ten quotas sum to exactly 44 with no
+forced excess.
+
+`maxRunners` is re-derived as `max(2 × quota, 6)` per "Bounding maxRunners to
+the quota (2026-09-06)": `livespec`, `-driver-codex`, `-driver-claude`,
+`-orchestrator-git-jsonl`, `-overseer` → 12; `-runtime`, `-dev-tooling` → 10;
+`-orchestrator-beads-fabro`, `-console-beads-fabro`, `-driver-pi` → 6. The ten
+ceilings sum to 98, so a fleet-wide backlog holds at most 98 − 44 = 54 gated
+objects and the rest waits at the forge.
+
+**The per-node mechanism that sets gmktec's 12 safely.** Opening the node is
+three coupled changes landed together (R5): this quota re-derivation; the
+removal of gmktec's `node-role/ci=pending:NoSchedule` taint (its profile's
+`NODE_TAINTS`); and a PER-NODE self-patch mechanism so the agent stamps its own
+`status.capacity` with 12 rather than the server's cluster-wide patch stamping
+every node with 32. That patch —
+`../node-extended-resource/patch-node-churn-capacity.sh` — used to resolve its
+targets with `kubectl get nodes -l k3s-role=arc-runner-host`, a LIST, and patch
+every matched node with one uniform capacity; it now patches a SINGLE NAMED node
+(this node, from the profile's `NODE_NAME`) with this node's
+`ADMISSION_CAPACITY_C`. That is what lets the agent use the scoped
+`get`/`patch`-on-`nodes/status`-for-one-named-node credential the
+`../node-status-credential/` directory mints (a LIST verb is not restrictable by
+`resourceNames`, so the old uniform patch could never have used it — see that
+directory's README), and it stops the server's timer from stamping gmktec with
+32.
+
 ## Bounding maxRunners to the quota (2026-09-06)
 
 Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,
@@ -850,12 +947,19 @@ here on purpose so admission capacity can land ahead of the node opening.
 
 The derivation is parameterized so a capacity change is mechanical:
 
-1. Read the new capacity `C` (whatever
-   `../node-extended-resource/patch-node-churn-capacity.sh` was given).
+1. Read the new capacity `C`. Since "The derivation at C = 44 — the two-node
+   pool (2026-09-11)" the pool is multi-node and churn-slot capacity is
+   PER-NODE, so `C` is the SUM of every pool node's `ADMISSION_CAPACITY_C`
+   (its own profile's value, which is what
+   `../node-extended-resource/patch-node-churn-capacity.sh` stamps on that one
+   node) — today poweredge 32 + gmktec 12 = 44. On a single-node pool this is
+   just that node's capacity, which is why every table before C = 44 reads `C`
+   as one number.
 2. Recompute the table above with the same `w_i` — they do not change
    with capacity; they are a demand profile, not a capacity split.
-3. Rewrite each `cluster-queue-<repo>.yaml`'s `nominalQuota` and verify
-   the ten values sum to exactly `C`.
+3. Rewrite each `cluster-queue-<repo>.yaml`'s `nominalQuota` and verify the ten
+   values sum to exactly `C` — the CLUSTER-WIDE cohort quota, which equals the
+   TOTAL across nodes, not any single node's per-node capacity.
 4. Rewrite each `../arc/values-<repo>.yaml`'s `maxRunners` to
    `max(2 x nominalQuota, 6)` (see "
 Bounding maxRunners to the quota (2026-09-06)"), so the ceilings track the quotas.
