@@ -21,6 +21,14 @@ check now walks the role's committed file set — the `ci_converge_unit_files`
 `src` entries plus the three run-time globs — as the root instead of the
 installer's stage mode. The invariant is unchanged; only the layer that
 satisfies it moved.
+
+The relocation immediately bit: on 2026-09-12 the role installed a SUBSET of
+what the retired installer staged, omitting `gates/converge-gates-mirror.sh` and
+`warm-cache/registry-mirror/converge-registry-mirror.sh` (both called by the
+boot converge) — which, once the installer was gone, would have lost the gates
+mirror and the ghcr pull-through mirror at the next reboot. This check caught it
+and the role was completed. That is why the check had to be relocated, not
+deleted.
 """
 
 from __future__ import annotations
