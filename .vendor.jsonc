@@ -34,6 +34,23 @@
 // Landed as step 1 of livespec-dev-tooling-8o8e; the false fleet-wide
 // clause was removed, and the measurement above recorded in its place,
 // by livespec-dev-tooling-yteb.
+//
+// `livespec_runtime` is the one PARTIAL entry, and the one first-party
+// one. Only the `github_budget*` modules are copied — the budget-aware
+// GitHub client that `livespec_dev_tooling/budgeted_gh.py` routes every
+// first-party forge read through, together with its transitive PURE
+// dependencies (stdlib, plus the `returns` copy already vendored above)
+// and the package `__init__.py` / `py.typed` the import path needs.
+// Vendoring rather than depending is what the retrofit's acceptance
+// required, and the reason is that this package is installed into every
+// governed sibling repo: a dependency edge onto a second first-party
+// distribution would have to be satisfied in all of them. `upstream_ref`
+// is the livespec-runtime `origin/master` COMMIT the bytes were taken
+// from rather than a release, so the provenance is exact.
+// ⚠️ `python -m livespec_dev_tooling.vendor_update livespec_runtime`
+// would copy the WHOLE package over this partial tree. Re-vendor by
+// copying the `github_budget*` modules across by hand and re-stamping
+// this entry. Landed by livespec-dev-tooling-z69s.
 {
   "libraries": [
     {
@@ -60,6 +77,12 @@
       "upstream_url": "https://github.com/hukkin/tomli",
       "upstream_ref": "2.4.1",
       "vendored_at": "2026-05-30T21:48:23Z"
+    },
+    {
+      "name": "livespec_runtime",
+      "upstream_url": "https://github.com/thewoolleyman/livespec-runtime",
+      "upstream_ref": "4c2f5e84015309894647a83dfa2c4b85a4b8ebf7",
+      "vendored_at": "2026-09-12T02:33:00Z"
     }
   ]
 }

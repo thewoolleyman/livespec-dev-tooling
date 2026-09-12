@@ -1,0 +1,259 @@
+"""Budget-aware GitHub transport wrapper."""
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from threading import Lock
+from time import monotonic
+from time import sleep as sleep_seconds
+
+from returns.io import IOFailure
+
+from livespec_runtime.github_budget_client_support import (
+    GithubCachedRead,
+    backoff_seconds,
+    cached_response,
+    header_value,
+    int_option,
+    mapping_option,
+    poll_interval,
+    unmeasurable_classification,
+    with_snapshot,
+)
+from livespec_runtime.github_budget_measurement import (
+    RATE_LIMIT_RESOURCE,
+    classify_github_failure,
+    parse_rate_limit_snapshot,
+    snapshot_from_headers,
+)
+from livespec_runtime.github_budget_types import (
+    GithubBudgetDeferred,
+    GithubBudgetRequest,
+    GithubBudgetResponse,
+    GithubBudgetResult,
+    GithubBudgetSuccess,
+    GithubBudgetTransport,
+    GithubBudgetUnmeasurable,
+    GithubRateLimitSnapshot,
+)
+
+__all__: list[str] = []
+
+_HTTP_FORBIDDEN = 403
+_HTTP_NOT_MODIFIED = 304
+_MUTATING_METHODS = frozenset({"DELETE", "PATCH", "POST", "PUT"})
+
+
+@dataclass(slots=True, kw_only=True)
+class _ClientState:
+    """The client's mutable bookkeeping, held behind ONE private field.
+
+    `constraints.md`, in its "Public-surface constraints" section,
+    requires every public dataclass to be frozen — without
+    qualification — so the conditional-read cache, the mutation-pacing
+    clock and the mutation lock cannot be rebindable fields on
+    `GithubBudgetedClient` itself. They live here instead: the client
+    owns one instance and mutates THROUGH it, which leaves no public
+    field rebindable while the runtime behaviour is unchanged.
+
+    Module-private by construction: absent from this module's `__all__`
+    and from the `github_budget` facade, so freezing the client costs
+    the ratified surface nothing.
+    """
+
+    cache: dict[str, GithubCachedRead] = field(default_factory=dict)
+    last_mutation_at: float | None = None
+    mutation_lock: Lock = field(default_factory=Lock)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GithubBudgetedClient:
+    """Budget-aware wrapper around an injected GitHub transport."""
+
+    transport: GithubBudgetTransport
+    now: Callable[[], float] = monotonic
+    sleep: Callable[[float], None] = sleep_seconds
+    max_attempts: int = 3
+    _state: _ClientState = field(
+        default_factory=_ClientState,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    def request(
+        self,
+        *,
+        method: str,
+        resource: str,
+        headers: Mapping[str, str] | None = None,
+        value: object | None = None,
+        **options: object,
+    ) -> GithubBudgetResult:
+        """Issue one request after applying cache, pacing, backoff, and floor policy."""
+        method_name = method.upper()
+        floor_failure = self._floor_failure(
+            resource=resource,
+            deferrable=bool(options.get("deferrable", False)),
+            remaining_floor=int_option(options=options, name="remaining_floor"),
+            snapshot_headers=mapping_option(options=options, name="snapshot_headers"),
+        )
+        if floor_failure is not None:
+            return IOFailure(floor_failure)
+        if method_name in _MUTATING_METHODS:
+            with self._state.mutation_lock:
+                return self._request_with_backoff(
+                    method=method_name,
+                    resource=resource,
+                    headers=headers,
+                    value=value,
+                )
+        return self._request_with_backoff(
+            method=method_name,
+            resource=resource,
+            headers=headers,
+            value=value,
+        )
+
+    def _request_with_backoff(
+        self,
+        *,
+        method: str,
+        resource: str,
+        headers: Mapping[str, str] | None,
+        value: object | None,
+    ) -> GithubBudgetResult:
+        repeat = 0
+        attempts = max(1, self.max_attempts)
+        while True:
+            response = self._request_once(
+                method=method,
+                resource=resource,
+                headers=headers,
+                value=value,
+            )
+            snapshot = snapshot_from_headers(headers=response.headers)
+            # An UNMEASURED 403 is not a rate-limit verdict. `UNMEASURABLE`
+            # names a budget class, and both classes are read off the
+            # snapshot; without one there is nothing to classify, so the
+            # response goes back as the ordinary failure it is and the
+            # caller names it. Retrying it here would burn attempts and
+            # sleep to a reset time nobody reported.
+            if response.status_code != _HTTP_FORBIDDEN or snapshot is None:
+                return GithubBudgetSuccess(
+                    response=with_snapshot(response=response, snapshot=snapshot)
+                )
+            classification = classify_github_failure(
+                status_code=response.status_code,
+                snapshot=snapshot,
+            )
+            if repeat + 1 == attempts:
+                return IOFailure(
+                    GithubBudgetUnmeasurable(
+                        argv=f"{method} {resource}",
+                        detail=f"GitHub request blocked by {classification.value}",
+                        classification=unmeasurable_classification(classification=classification),
+                        snapshot=snapshot,
+                    )
+                )
+            self.sleep(
+                backoff_seconds(
+                    headers=response.headers,
+                    snapshot=snapshot,
+                    now=self.now(),
+                    repeat=repeat,
+                )
+            )
+            repeat += 1
+
+    def _request_once(
+        self,
+        *,
+        method: str,
+        resource: str,
+        headers: Mapping[str, str] | None,
+        value: object | None,
+    ) -> GithubBudgetResponse:
+        if method in _MUTATING_METHODS:
+            self._pace_mutation()
+        request_headers = dict(headers or {})
+        cached = self._state.cache.get(resource) if method == "GET" else None
+        if cached is not None and self.now() < cached.next_poll_at:
+            return cached_response(cached=cached, headers=cached.response.headers)
+        if cached is not None:
+            request_headers["If-None-Match"] = cached.etag
+        response = self.transport(
+            request=GithubBudgetRequest(
+                method=method,
+                resource=resource,
+                headers=request_headers,
+                value=value,
+            )
+        )
+        if cached is not None and response.status_code == _HTTP_NOT_MODIFIED:
+            return cached_response(cached=cached, headers=response.headers)
+        if method == "GET":
+            self._store_read(resource=resource, response=response)
+        return response
+
+    def _pace_mutation(self) -> None:
+        last_mutation_at = self._state.last_mutation_at
+        if last_mutation_at is not None:
+            wait = 1.0 - (self.now() - last_mutation_at)
+            self.sleep(max(0.0, wait))
+        self._state.last_mutation_at = self.now()
+
+    def _store_read(self, *, resource: str, response: GithubBudgetResponse) -> None:
+        etag = header_value(headers=response.headers, name="etag")
+        if etag is None:
+            return
+        read_poll_interval = poll_interval(headers=response.headers)
+        self._state.cache[resource] = GithubCachedRead(
+            response=response,
+            etag=etag,
+            next_poll_at=self.now() + read_poll_interval,
+        )
+
+    def _floor_failure(
+        self,
+        *,
+        resource: str,
+        deferrable: bool,
+        remaining_floor: int,
+        snapshot_headers: Mapping[str, str] | None,
+    ) -> GithubBudgetDeferred | None:
+        if not deferrable or remaining_floor <= 0:
+            return None
+        snapshot = self._preflight_snapshot(snapshot_headers=snapshot_headers)
+        # An unmeasurable budget cannot refuse work. Refusing on a reading
+        # that was never taken would stall every deferrable caller whenever
+        # the transport could not report headers — failing CLOSED on an
+        # absence, which is the shape a floor exists to avoid, not adopt.
+        if snapshot is None:
+            return None
+        failure = GithubBudgetDeferred(
+            resource=resource,
+            remaining=snapshot.remaining,
+            floor=remaining_floor,
+            snapshot=snapshot,
+        )
+        failures: dict[bool, GithubBudgetDeferred | None] = {
+            False: None,
+            True: failure,
+        }
+        return failures[snapshot.remaining < remaining_floor]
+
+    def _preflight_snapshot(
+        self,
+        *,
+        snapshot_headers: Mapping[str, str] | None,
+    ) -> GithubRateLimitSnapshot | None:
+        if snapshot_headers is not None:
+            return parse_rate_limit_snapshot(headers=snapshot_headers)
+        response = self.transport(
+            request=GithubBudgetRequest(
+                method="GET",
+                resource=RATE_LIMIT_RESOURCE,
+                headers={},
+            )
+        )
+        return snapshot_from_headers(headers=response.headers)

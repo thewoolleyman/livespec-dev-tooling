@@ -85,6 +85,11 @@ Acceptable conclusions for the head commit's `ci-green` check run:
   (a fresh repo, a repo that does not run the fan-in gate, or a push
   whose checks have not been created yet)
 
+Both GitHub reads — the offline credential probe and the check-runs
+call — are issued through `livespec_dev_tooling.budgeted_gh.gh_read`
+rather than by spawning `gh` here, so the GitHub request-budget policy
+applies to them (livespec-dev-tooling-z69s).
+
 Output discipline matches sibling checks: structlog JSON to stderr;
 no `print`, no `sys.stderr.write`.
 """
@@ -94,7 +99,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -106,6 +110,7 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402
 
+from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
 from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
     credential_skip_is_failure,
     gate_repository,
@@ -189,16 +194,16 @@ def _gh_has_stored_credential() -> bool:
     report failure during an outage, which would route a credentialed
     caller onto the fail-soft path and reopen the hole this split closes.
 
-    The subprocess's stdout is the token itself. Only `returncode` is
-    read; stdout and stderr are captured solely to keep them off the
-    terminal, and neither is logged.
+    The probe's stdout is the token itself. Only `returncode` is read;
+    stdout and stderr are captured solely to keep them off the terminal,
+    and neither is logged. Routing through `budgeted_gh.gh_read` does not
+    change that: the durable budget signal the transport appends records
+    the argv and the rate-limit numbers, and it is written only for a read
+    that reported `x-ratelimit-*` headers — which an offline credential
+    probe never does — so the token stays where it was, in a captured
+    stream nothing reads.
     """
-    completed = subprocess.run(
-        ["gh", "auth", "token"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    completed = gh_read(args=["auth", "token"])
     return completed.returncode == 0
 
 
@@ -309,12 +314,7 @@ def _fetch_master_ci_green_check(
             hint="install the gh CLI to arm the master-CI-green gate on this host",
         )
         return "skip"
-    completed = subprocess.run(
-        ["gh", "api", _check_runs_endpoint(env=os.environ)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    completed = gh_read(args=["api", _check_runs_endpoint(env=os.environ)])
     if completed.returncode != 0:
         return _classify_failed_gh_call(
             log=log,
