@@ -4,9 +4,15 @@ The tenant-connection-consistency row asserts that a beads-backed
 member's `.beads/config.yaml` (read by `bd`) and its `.livespec.jsonc`
 impl-plugin `connection` block (read by the plugin) agree on the five
 load-bearing tenant-connection fields. Exercised across pass (both
-files agree), finding (a field disagrees), and skip (either file or the
-connection block absent — not every member is beads-backed) through a
-canned-response `FleetContext` (no network, no real `gh`).
+files agree), finding (a field disagrees, or the `.livespec.jsonc` will
+not PARSE), and skip (either file unreadable — a can't-read is not a
+violation) through a canned-response `FleetContext` (no network, no
+real `gh`).
+
+A `.livespec.jsonc` the row FOUND and could not parse is a FINDING, not
+a skip, per `SPECIFICATION/contracts.md` (this repo) section
+"Pin-currency severity policy" — including that rule's context scoping:
+error in the filter-consuming preflight, warning everywhere else.
 """
 
 from __future__ import annotations
@@ -49,15 +55,24 @@ _JSONC_ARGS: tuple[str, ...] = (
 )
 
 
-def make_context(*, table: dict[tuple[str, ...], GhResult]) -> FleetContext:
-    """A `FleetContext` for owner `acme` over a canned-response runner."""
+def make_context(
+    *, table: dict[tuple[str, ...], GhResult], filter_consuming_preflight: bool = False
+) -> FleetContext:
+    """A `FleetContext` for owner `acme` over a canned-response runner.
+
+    `filter_consuming_preflight` selects the EVALUATING CONTEXT the
+    can't-PARSE severity scopes on — the fan-out preflight, whose
+    per-member verdicts the dispatch-matrix filter consumes.
+    """
 
     def run(*, args: list[str], stdin: str | None = None) -> GhResult:
         del stdin
         return table.get(tuple(args), GhResult(returncode=1, stdout="", stderr="no canned"))
 
     runner: GhRunner = run
-    return FleetContext(owner="acme", run_gh=lift_gh(runner))
+    return FleetContext(
+        owner="acme", run_gh=lift_gh(runner), filter_consuming_preflight=filter_consuming_preflight
+    )
 
 
 def _beads_config(
@@ -202,7 +217,14 @@ def test_beads_config_without_dolt_keys_is_excluded() -> None:
     assert outcome.note.startswith(EXCLUDED_NOTE_PREFIX)
 
 
-def test_unparseable_livespec_jsonc_skips() -> None:
+def test_unparseable_livespec_jsonc_is_a_finding() -> None:
+    """THE POSITIVE CONTROL — a can't-PARSE is a FINDING, never a skip.
+
+    A skip means "try again later", and a member whose committed bytes do
+    not parse fails identically on every future run until someone edits the
+    file, so the tenant-connection consistency of that member would go
+    unchecked indefinitely while the sweep exits passed.
+    """
     ctx = make_context(
         table={
             _BEADS_ARGS: _ok(text=_beads_config()),
@@ -210,11 +232,28 @@ def test_unparseable_livespec_jsonc_skips() -> None:
         }
     )
     outcome = assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER)
-    assert isinstance(outcome, RowSkip)
+    assert isinstance(outcome, RowFinding)
+    assert "widget" in outcome.message
+    assert LIVESPEC_JSONC_PATH in outcome.message
+    assert outcome.severity == "warning"
 
 
-def test_non_object_livespec_jsonc_root_skips() -> None:
-    """A `.livespec.jsonc` whose root is not an object → no connection block → skip."""
+def test_unparseable_livespec_jsonc_escalates_in_the_preflight() -> None:
+    """The context scoping v039 already carries: error where a per-member remedy exists."""
+    ctx = make_context(
+        table={
+            _BEADS_ARGS: _ok(text=_beads_config()),
+            _JSONC_ARGS: _ok(text="{ this is not valid json at all ::: "),
+        },
+        filter_consuming_preflight=True,
+    )
+    outcome = assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+
+
+def test_non_object_livespec_jsonc_root_is_a_finding() -> None:
+    """A root that is not an object is the same defect class — committed bytes, fix by hand."""
     ctx = make_context(
         table={
             _BEADS_ARGS: _ok(text=_beads_config()),
@@ -222,7 +261,7 @@ def test_non_object_livespec_jsonc_root_skips() -> None:
         }
     )
     outcome = assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER)
-    assert isinstance(outcome, RowSkip)
+    assert isinstance(outcome, RowFinding)
 
 
 def test_beads_config_ignores_lines_without_a_colon() -> None:
