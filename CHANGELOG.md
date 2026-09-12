@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.89.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.89.1...v1.89.2) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ansible:** node_taints reads taints via argv (shlex-safe) + empty-CA refusal (C5a review) ([2d781f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2d781f88010bcdde8f1947cb7a1c9bbe6d56243a))
+
 ## [1.89.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.89.0...v1.89.1) (2026-09-12)
 
 
