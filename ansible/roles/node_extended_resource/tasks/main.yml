@@ -1,36 +1,226 @@
 ---
 # node_extended_resource — the ci-runner.io/churn-slot reapply insurance: the
-# patch script, a oneshot service carrying this node's capacity, and the
-# 5-minute timer that keeps reconciling it.
+# R5 patch script, a copy of this node's profile, a oneshot service ordered
+# against this node's own k3s unit, and the 5-minute timer that keeps
+# reconciling the node's status.capacity.
 #
-# Replaces
-# ci-runner/k3s/phase2/node-extended-resource/install-reapply-unit.sh, INCLUDING
-# its agent branch.
+# Replaces ci-runner/k3s/phase2/node-extended-resource/install-reapply-unit.sh
+# at its R5 shape (PRs #2260/#2261, livespec-dev-tooling-xa6o; carried into this
+# GitOps layer for livespec-dev-tooling-9btv).
 #
-# WHY A TIMER AT ALL, when the sysctl budgets need none: an extended resource
-# set with `kubectl patch node --subresource=status` is NOT persisted by kubelet,
-# so it is lost on a kubelet restart. A kernel sysctl written under
-# /etc/sysctl.d/ has no such gap, which is why node_sysctl ships no timer.
+# PER-NODE, AND BOTH ROLES INSTALL. Churn-slot capacity is PER-NODE: each node
+# advertises its own status.capacity, set from its own profile's
+# ADMISSION_CAPACITY_C, by its own timer. patch-node-churn-capacity.sh patches
+# the SINGLE node its profile NAMES (by name, via `--subresource=status`), NOT
+# the cluster-wide LIST it patched before R5 — so the server's timer patches only
+# the server's own node, and an agent runs its own node-local timer
+# authenticating with the scoped node-status kubeconfig (node_status_credential
+# delivers it; order that role before this one on an agent). This is why the
+# pre-R5 "server-only, agent removes the units" model is gone: both roles install
+# the same shape, differing only in the k3s unit the service is ordered against
+# and the credential the patch script derives from the profile's role.
 #
-# SERVER-ONLY, AND THE AGENT PATH REMOVES RATHER THAN INSTALLS. The service is
-# server-shaped three ways and an agent satisfies none of them: it is ordered
-# Requires=k3s.service while an agent runs k3s-agent.service; it carries
-# Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml, the admin file only a server
-# holds; and patch-node-churn-capacity.sh patches EVERY node labelled
-# k3s-role=arc-runner-host with ONE capacity, so applying it is a CLUSTER-WIDE
-# act the server's own timer already performs over a selector that already
-# includes the agent. Installing it on an agent is wrong in KIND, not merely
-# misconfigured.
+# WHY A TIMER AT ALL, when the sysctl budgets need none: an extended resource set
+# with `kubectl patch node --subresource=status` is NOT persisted by kubelet, so
+# it is lost on a kubelet restart. A kernel sysctl under /etc/sysctl.d/ has no
+# such gap, which is why node_sysctl ships no timer.
 #
-# The patch SCRIPT is deliberately not removed on an agent: the server path of
-# this role owns that file, nothing on an agent executes it once the units are
-# gone, and deleting it would make the agent path a cleaner of state it does not
-# own.
+# CAPACITY IS PROFILE DATA, NEVER DEFAULTED. A missing or non-numeric
+# ADMISSION_CAPACITY_C FAILS this play — it is a measurement, not a constant
+# (ci-runner/k3s/phase2/kueue/DERIVATION.md), and a default (the pre-R5 `| default(32)`)
+# would silently stamp the wrong capacity on a node whose profile was incomplete.
 
-- name: Remove the server-only churn-slot units from an agent
-  ansible.builtin.include_tasks: remove_units.yml
-  when: node_extended_resource_cluster_role == 'agent'
+- name: Read this node's committed phase0 profile
+  # Parsed, never sourced: the `^KEY=value$` scalars this role needs, read with a
+  # file lookup + regex on the control node. The profile ships in this repo; the
+  # target has no checkout, so the lookup resolves here and the values travel.
+  ansible.builtin.set_fact:
+    node_extended_resource_profile_node: >-
+      {{ _ner_profile_text | regex_search('^NODE_NAME=(.*)$', '\1', multiline=True) }}
+    node_extended_resource_profile_role: >-
+      {{ _ner_profile_text | regex_search('^CLUSTER_ROLE=(.*)$', '\1', multiline=True) }}
+    node_extended_resource_capacity: >-
+      {{ _ner_profile_text | regex_search('^ADMISSION_CAPACITY_C=(.*)$', '\1', multiline=True) }}
+    node_extended_resource_churn_kubeconfig: >-
+      {{ _ner_profile_text | regex_search('^CHURN_KUBECONFIG_FILE=(.*)$', '\1', multiline=True) }}
+  vars:
+    _ner_profile_text: "{{ lookup('ansible.builtin.file', node_extended_resource_profile) }}"
 
-- name: Install the churn-slot reapply units on the server
-  ansible.builtin.include_tasks: install_units.yml
-  when: node_extended_resource_cluster_role == 'server'
+- name: Refuse a profile that does not match this host and its inventory role
+  # Three drift guards at once: the profile is THIS node's (NODE_NAME ==
+  # inventory_hostname), the profile and the inventory agree on the role, and the
+  # capacity is a non-negative integer with NO default.
+  ansible.builtin.assert:
+    that:
+      - node_extended_resource_profile_node == inventory_hostname
+      - node_extended_resource_profile_role == node_extended_resource_cluster_role
+      - node_extended_resource_profile_role in ['server', 'agent']
+      - node_extended_resource_capacity is match('^[0-9]+$')
+    fail_msg: >-
+      profile {{ node_extended_resource_profile }} must name this host
+      (NODE_NAME={{ node_extended_resource_profile_node }} vs
+      {{ inventory_hostname }}), agree with the inventory role
+      (profile={{ node_extended_resource_profile_role }} vs
+      inventory={{ node_extended_resource_cluster_role }}), and carry a
+      non-negative integer ADMISSION_CAPACITY_C (got
+      '{{ node_extended_resource_capacity }}')
+    success_msg: >-
+      {{ inventory_hostname }} ({{ node_extended_resource_profile_role }}):
+      churn-slot capacity {{ node_extended_resource_capacity }}
+
+- name: Select this node's k3s unit and its installed profile copy path
+  ansible.builtin.set_fact:
+    node_extended_resource_k3s_unit: >-
+      {{ 'k3s.service' if node_extended_resource_profile_role == 'server' else 'k3s-agent.service' }}
+    node_extended_resource_installed_profile: >-
+      {{ node_extended_resource_lib_dir }}/{{ node_extended_resource_profile_node }}.env
+
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ node_extended_resource_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the churn-slot patch script
+  # The unit's ExecStart path. Installing the unit without this file yields a
+  # timer that fires every five minutes and fails every time.
+  ansible.builtin.copy:
+    src: "{{ node_extended_resource_phase2_dir }}/node-extended-resource/patch-node-churn-capacity.sh"
+    dest: "{{ node_extended_resource_lib_dir }}/patch-node-churn-capacity.sh"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  notify: Apply the churn-slot capacity now
+
+- name: Install this node's profile copy
+  # The patch script reads NODE_NAME, ADMISSION_CAPACITY_C and — on an agent — the
+  # node-status kubeconfig path FROM this copy at run time, so the installed unit
+  # is boot-durable with no checkout present. Exactly what R5's
+  # install-reapply-unit.sh copies beside the patch script.
+  ansible.builtin.copy:
+    src: "{{ node_extended_resource_profile }}"
+    dest: "{{ node_extended_resource_installed_profile }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Apply the churn-slot capacity now
+
+- name: Check whether the reapply service is already installed
+  # Read BEFORE the task that writes it. Under --check the unit file is only
+  # would-be written, so a systemd_service enable that ran anyway would fail with
+  # "Could not find the requested service" and blame the host.
+  ansible.builtin.stat:
+    path: "{{ node_extended_resource_unit_dir }}/{{ node_extended_resource_service }}"
+  register: node_extended_resource_service_present
+  become: true
+
+- name: Render the reapply service from the committed unit
+  # The shipped unit carries K3S_UNIT_PLACEHOLDER and PROFILE_PATH_PLACEHOLDER so
+  # that an un-edited copy fails loudly instead of reapplying against the wrong
+  # k3s unit or the wrong node. The substitution is done here from the committed
+  # file rather than a Jinja template beside this role, so the unit has exactly
+  # one source. There is NO capacity placeholder any more — R5 removed it; the
+  # patch script reads the capacity from the profile.
+  ansible.builtin.set_fact:
+    node_extended_resource_rendered_unit: >-
+      {{ lookup('ansible.builtin.file',
+      node_extended_resource_phase2_dir ~ '/node-extended-resource/'
+      ~ node_extended_resource_service)
+      | replace('K3S_UNIT_PLACEHOLDER', node_extended_resource_k3s_unit)
+      | replace('PROFILE_PATH_PLACEHOLDER', node_extended_resource_installed_profile) }}
+
+- name: Refuse a rendered unit that still carries a placeholder
+  # The regression guard for exactly the bug this role fixes: a pre-R5 role
+  # substituted CAPACITY_PLACEHOLDER (now gone), so against the R5 unit it would
+  # have installed a unit with the two live placeholders unsubstituted. Fail
+  # rather than write one.
+  ansible.builtin.assert:
+    that:
+      - "'_PLACEHOLDER' not in node_extended_resource_rendered_unit"
+    fail_msg: >-
+      the rendered {{ node_extended_resource_service }} still contains a
+      _PLACEHOLDER token — substitution did not cover the committed unit's
+      placeholders; refusing to install it
+    success_msg: "{{ node_extended_resource_service }} rendered with no placeholder left"
+
+- name: Install the reapply service
+  ansible.builtin.copy:
+    # A YAML literal block, so the rendered unit ends in the newline the file
+    # lookup strips. Without it every run would rewrite the unit to drop its final
+    # newline and report a change that is not one.
+    content: |
+      {{ node_extended_resource_rendered_unit }}
+    dest: "{{ node_extended_resource_unit_dir }}/{{ node_extended_resource_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd for the churn-slot units
+    - Apply the churn-slot capacity now
+
+- name: Install the reapply timer
+  ansible.builtin.copy:
+    src: "{{ node_extended_resource_phase2_dir }}/node-extended-resource/{{ node_extended_resource_timer }}"
+    dest: "{{ node_extended_resource_unit_dir }}/{{ node_extended_resource_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload systemd for the churn-slot units
+
+- name: Check whether the agent's node-status kubeconfig is seeded
+  # The "apply now" handler runs the service once so a changed capacity takes
+  # effect at deploy rather than at the timer's next tick. On an AGENT the patch
+  # script authenticates with CHURN_KUBECONFIG_FILE; if node_status_credential
+  # has not delivered it yet, an immediate run would fail. So the handler is
+  # gated on this stat for an agent (a server always holds its admin kubeconfig).
+  # node_status_credential runs BEFORE this role in ci-pool.yml, so on a healthy
+  # agent the file is already present.
+  ansible.builtin.stat:
+    path: "{{ node_extended_resource_churn_kubeconfig }}"
+  register: node_extended_resource_churn_kubeconfig_present
+  become: true
+  when: node_extended_resource_profile_role == 'agent'
+
+- name: Warn when an agent's credential is not seeded yet
+  ansible.builtin.debug:
+    msg: >-
+      {{ node_extended_resource_churn_kubeconfig }} is not present on
+      {{ inventory_hostname }} yet — the reapply units are installed and enabled,
+      but the immediate apply is skipped; the node-status credential must be
+      delivered (node_status_credential) before the timer's first fire can stamp
+      this node's capacity.
+  when:
+    - node_extended_resource_profile_role == 'agent'
+    - not (node_extended_resource_churn_kubeconfig_present.stat.exists | default(false))
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the reapply service at boot
+  # BOTH the service and the timer are enabled: the service is
+  # WantedBy=multi-user.target and Before=converge-ci-stack.service, so a boot
+  # applies the resource before the queues that are denominated in it; the timer
+  # keeps reconciling it every five minutes after that. Guarded rather than
+  # forced check_mode:false — forcing it would enable a live unit during a run
+  # that promised to change nothing.
+  ansible.builtin.systemd_service:
+    name: "{{ node_extended_resource_service }}"
+    enabled: true
+  become: true
+  when: not ansible_check_mode or node_extended_resource_service_present.stat.exists
+
+- name: Enable and start the reapply timer
+  ansible.builtin.systemd_service:
+    name: "{{ node_extended_resource_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or node_extended_resource_service_present.stat.exists

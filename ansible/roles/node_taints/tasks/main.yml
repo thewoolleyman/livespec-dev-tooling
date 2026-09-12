@@ -1,0 +1,75 @@
+---
+# node_taints — reconcile a ci_pool node's `node-role/ci` taint to its committed
+# phase0 profile's NODE_TAINTS, on the server under the admin kubeconfig.
+#
+# WHY IT EXISTS. k3s applies `--node-taint` at node REGISTRATION only, so
+# emptying a profile's NODE_TAINTS removes the taint for a FRESH join but NOT from
+# an already-joined node. R5 (livespec-dev-tooling-xa6o) recorded that opening the
+# already-joined gmktec needs a one-time `kubectl taint nodes gmktec-xubuntu
+# node-role/ci-`. This role makes that converge DECLARATIVE: every apply
+# reconciles the live `node-role/ci` taint to the profile, so the hand step is
+# gone and the open/closed state of a node is a fact of its committed profile.
+#
+# SCOPE — the `node-role/ci` key ONLY. It never reads, adds or removes any other
+# taint on the node; taints this role does not own are the node's own business.
+# Idempotent: it changes the live taint only when it actually differs from the
+# profile. Runs for each ci_pool host (the node is inventory_hostname), delegating
+# the kubectl calls to the server.
+
+- name: Read this node's profile NODE_TAINTS
+  ansible.builtin.set_fact:
+    node_taints_declared: >-
+      {{ lookup('ansible.builtin.file', node_taints_profile)
+      | regex_search('^NODE_TAINTS=(.*)$', '\1', multiline=True) }}
+
+- name: Derive the desired node-role/ci taint record from the profile
+  # A NODE_TAINTS value is space-separated `key=value:Effect` records; this picks
+  # the one whose key is node-role/ci, or '' when the profile declares none
+  # (the R5 open state).
+  ansible.builtin.set_fact:
+    node_taints_desired_ci: >-
+      {{ node_taints_declared | regex_search('(node-role/ci=[^\s]+)', '\1') | default('', true) }}
+
+- name: Read the live node-role/ci taint
+  # Returns the key when the taint is present, empty when it is not. A read only.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl get node {{ inventory_hostname }}
+      -o jsonpath={.spec.taints[?(@.key=="{{ node_taints_key }}")].key}
+  delegate_to: "{{ node_taints_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_taints_admin_kubeconfig }}"
+  register: node_taints_live
+  changed_when: false
+  check_mode: false
+
+- name: Remove the node-role/ci taint the profile no longer declares
+  # The R5 open case: profile declares no node-role/ci taint but the live node
+  # still carries it. The trailing `-` is kubectl's remove syntax. changed_when
+  # true because this task only runs when a removal is actually due.
+  ansible.builtin.command:
+    cmd: kubectl taint nodes {{ inventory_hostname }} {{ node_taints_key }}-
+  delegate_to: "{{ node_taints_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_taints_admin_kubeconfig }}"
+  when:
+    - node_taints_desired_ci | length == 0
+    - node_taints_key in node_taints_live.stdout
+  changed_when: true
+
+- name: Add the node-role/ci taint the profile declares but the node lacks
+  # The closed case: a profile that declares `node-role/ci=...:Effect` on a node
+  # whose live taints have lost it (e.g. a re-registration). Applied verbatim
+  # from the profile record, key scoped to node-role/ci.
+  ansible.builtin.command:
+    cmd: kubectl taint nodes {{ inventory_hostname }} {{ node_taints_desired_ci }}
+  delegate_to: "{{ node_taints_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_taints_admin_kubeconfig }}"
+  when:
+    - node_taints_desired_ci | length > 0
+    - node_taints_key not in node_taints_live.stdout
+  changed_when: true

@@ -63,9 +63,19 @@ source of truth for how the tool is invoked.
 
 | Playbook | Hosts | Migrated from |
 |---|---|---|
+| `ci-pool.yml` | `poweredge-xubuntu`, `gmktec-xubuntu` | `ci-runner/k3s/phase2/install-node.sh` |
 | `gates-kubeconfig.yml` | `vps` | `vps-info` `services/gates-kubeconfig/` |
 | `fabro-hosts.yml` | `hp-xubuntu`, `vps` | `fabro-hosts` `services/` |
 | `dev-host.yml` | `vps` | `vps-info` `services/` |
+
+`ci-pool.yml` is the k3s pool's node-local provisioning — the roles
+`install-node.sh` drove, in that step order, role-aware by each node's
+`cluster_role`. It also carries the two steps that had no role
+(`agent_rejoin`, `secret_reinjection`) and the churn-slot credential and
+taint reconciliation (`node_status_credential`, `node_taints`) the R5
+per-node model needs. Until it landed, no playbook targeted `ci_pool`, so
+`poweredge-xubuntu` and `gmktec-xubuntu` drifted unreached
+(`livespec-dev-tooling-9btv`).
 
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that

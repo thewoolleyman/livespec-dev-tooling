@@ -1,0 +1,105 @@
+---
+# secret_reinjection — the boot-time secret reinjection insurance: each
+# injector script plus its oneshot service, ENABLED for next boot (NOT started).
+#
+# Replaces ci-runner/k3s/secret-reinjection/install-secret-reinjection-unit.sh.
+# SERVER-ONLY — it is install-node.sh step 7 (a STEP_SKIP on an agent: the
+# Secrets are cluster-scoped, written with the admin kubeconfig, owned by the
+# node that holds the datastore) — so ci-pool.yml gates this role
+# `when: cluster_role == 'server'`.
+#
+# The k3s datastore is on tmpfs, so every reboot wipes all cluster Secrets; two
+# Secrets (the ARC GitHub App credential and the gate forge PAT) are
+# reconstructed at boot, each by its own oneshot unit + injector.
+#
+# ENABLE, NOT START — exactly as the shell does (`systemctl enable`, not `--now`).
+# Running a unit applies its Secret live against the cluster, an attended cutover
+# this role does not take. Enabling makes the recreation automatic on every
+# subsequent boot, which is the disaster-recovery point. The credstore
+# credentials each unit decrypts are seeded ONCE, attended, by the maintainer via
+# the matching seed-*.sh; this role warns (never fails) per missing credential so
+# the units can be armed in either order.
+
+- name: Create the pool library directory
+  ansible.builtin.file:
+    path: "{{ secret_reinjection_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether each injector's credstore credentials are seeded
+  # Warn-only, like the shell: a missing credential means the matching seed-*.sh
+  # has not been run yet; the boot unit will FAIL until it exists, but arming it
+  # now is correct in either order.
+  ansible.builtin.stat:
+    path: "{{ secret_reinjection_credstore_dir }}/{{ item.1 }}"
+  register: secret_reinjection_cred_stat
+  become: true
+  loop: "{{ secret_reinjection_units | subelements('creds') }}"
+  loop_control:
+    label: "{{ item.0.service }}:{{ item.1 }}"
+
+- name: Warn about any unseeded credstore credential
+  ansible.builtin.debug:
+    msg: >-
+      credstore credential '{{ item.item.1 }}' for {{ item.item.0.service }} is not
+      present under {{ secret_reinjection_credstore_dir }} — the boot unit will FAIL
+      until it is seeded (attended), as a member of the github-ci-runners group:
+      with-github-ci-runners-env.sh -- {{ item.item.0.seed }}. Arming the unit anyway.
+  loop: "{{ secret_reinjection_cred_stat.results }}"
+  loop_control:
+    label: "{{ item.item.0.service }}:{{ item.item.1 }}"
+  when: not item.stat.exists
+
+- name: Install each injector script
+  # The unit's ExecStart path; the unit without it fails at every boot.
+  ansible.builtin.copy:
+    src: "{{ secret_reinjection_secret_dir }}/{{ item.injector }}"
+    dest: "{{ secret_reinjection_lib_dir }}/{{ item.injector }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ secret_reinjection_units }}"
+  loop_control:
+    label: "{{ item.injector }}"
+
+- name: Check whether each reinjection service is already installed
+  ansible.builtin.stat:
+    path: "{{ secret_reinjection_unit_dir }}/{{ item.service }}"
+  register: secret_reinjection_service_present
+  become: true
+  loop: "{{ secret_reinjection_units }}"
+  loop_control:
+    label: "{{ item.service }}"
+
+- name: Install each reinjection service unit
+  ansible.builtin.copy:
+    src: "{{ secret_reinjection_secret_dir }}/{{ item.service }}"
+    dest: "{{ secret_reinjection_unit_dir }}/{{ item.service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ secret_reinjection_units }}"
+  loop_control:
+    label: "{{ item.service }}"
+  notify: Reload systemd for the secret-reinjection units
+
+- name: Publish the changed units before enabling them
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable each reinjection service for next boot (never started here)
+  # enabled, NOT state:started — running it applies the Secret live, the attended
+  # cutover this role does not take. Guarded for --check: the unit file may be
+  # only would-be written on a first apply.
+  ansible.builtin.systemd_service:
+    name: "{{ item.0.service }}"
+    enabled: true
+  become: true
+  loop: "{{ secret_reinjection_units | zip(secret_reinjection_service_present.results) | list }}"
+  loop_control:
+    label: "{{ item.0.service }}"
+  when: not ansible_check_mode or item.1.stat.exists

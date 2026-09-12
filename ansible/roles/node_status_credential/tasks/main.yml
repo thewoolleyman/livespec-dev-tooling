@@ -1,0 +1,209 @@
+---
+# node_status_credential — an AGENT node's scoped churn-slot credential: the
+# per-node RBAC (get/patch on nodes/status for ONE named node) minted on the
+# server, and the kubeconfig it authenticates with delivered to the agent.
+#
+# Absorbs ci-runner/k3s/phase2/node-status-credential/provision-node-status-credential.sh
+# (the cluster-side mint) and ci-runner/k3s/secret-reinjection/seed-node-status-kubeconfig.sh
+# (the delivery) into the GitOps layer. R5 (livespec-dev-tooling-xa6o) built
+# those scripts; this role carries them so `just ansible-apply ansible/ci-pool.yml`
+# mints and delivers with no attended 1Password step — the GitOps shape the
+# gates_kubeconfig role established: read/mint on the SERVER under its own become,
+# write on the AGENT under ours, so no ssh identity straddles two accounts.
+#
+# THE GRANT IS NEVER WIDENED. The RBAC is get/patch on `nodes/status` for ONE
+# named node and nothing else (node-status-patch-rbac.yaml) — not `nodes` (whose
+# `spec` could untaint the node), not `list`/`watch` (not restrictable by
+# resourceNames), not `delete`. This role renders and applies that file
+# unchanged; it adds no verb, resource or node.
+#
+# KNOWN LIMITATION — poweredge's k3s datastore is tmpfs
+# (ci-runner/k3s/phase2/datastore-tmpfs/), so at EVERY poweredge boot the
+# ServiceAccount and its token Secret are recreated and a previously delivered
+# kubeconfig goes stale (401) until this role is re-applied. Re-apply IS the
+# re-seed path. A pull-on-401 on the agent (like refresh-gates-kubeconfig) is a
+# FOLLOW-UP, not this role. Until then, re-run `just ansible-apply ansible/ci-pool.yml`
+# after a poweredge reboot.
+#
+# AGENT-ONLY. A server patches node status through its own admin kubeconfig and
+# needs no narrow credential; minting one for it would be a second long-lived
+# token on the machine that holds the unrestricted one. The block below is gated
+# on the role, and the asserts restate the seed script's two refusals.
+
+- name: Mint and deliver this agent's node-status credential
+  when: node_status_credential_cluster_role == 'agent'
+  block:
+    - name: Read this agent's committed phase0 profile
+      ansible.builtin.set_fact:
+        node_status_credential_node: >-
+          {{ _nsc_profile_text | regex_search('^NODE_NAME=(.*)$', '\1', multiline=True) }}
+        node_status_credential_role: >-
+          {{ _nsc_profile_text | regex_search('^CLUSTER_ROLE=(.*)$', '\1', multiline=True) }}
+        node_status_credential_api: >-
+          {{ _nsc_profile_text | regex_search('^CLUSTER_JOIN_ADDRESS=(.*)$', '\1', multiline=True) }}
+        node_status_credential_target: >-
+          {{ _nsc_profile_text | regex_search('^CHURN_KUBECONFIG_FILE=(.*)$', '\1', multiline=True) }}
+      vars:
+        _nsc_profile_text: "{{ lookup('ansible.builtin.file', node_status_credential_profile) }}"
+
+    - name: Refuse a profile that is not this agent, names no target, or names the admin file
+      # The seed script's refusals, restated: the profile is this node's and an
+      # agent's; CHURN_KUBECONFIG_FILE is non-empty; and it is NOT the server's
+      # admin kubeconfig (writing the narrow credential under that name would make
+      # cluster-admin and this indistinguishable by path).
+      ansible.builtin.assert:
+        that:
+          - node_status_credential_node == inventory_hostname
+          - node_status_credential_role == 'agent'
+          - node_status_credential_api | length > 0
+          - node_status_credential_target | length > 0
+          - node_status_credential_target != node_status_credential_admin_kubeconfig
+        fail_msg: >-
+          profile {{ node_status_credential_profile }} must name this agent, carry a
+          non-empty CHURN_KUBECONFIG_FILE and a CLUSTER_JOIN_ADDRESS, and its
+          CHURN_KUBECONFIG_FILE must not be the server admin file
+          {{ node_status_credential_admin_kubeconfig }}
+        success_msg: "{{ inventory_hostname }}: node-status credential target {{ node_status_credential_target }}"
+
+    - name: Select the ServiceAccount and its token Secret name
+      ansible.builtin.set_fact:
+        node_status_credential_sa: "{{ node_status_credential_sa_prefix }}{{ node_status_credential_node }}"
+
+    - name: Apply the per-node RBAC on the server
+      # The fleet converge shape: validate and default LOCALLY first, so a
+      # malformed render is rejected before any object reaches the cluster, then
+      # apply. Run on the SERVER (delegate_to) under its admin kubeconfig. The
+      # rendered RBAC is the committed template with the node name substituted;
+      # the grant is not widened. noqa command-instead-of-module: no kubernetes
+      # collection is vendored in this tree, and the dry-run|apply pipeline is the
+      # exact fleet idempotence shape.
+      ansible.builtin.shell:
+        cmd: set -o pipefail && kubectl apply --dry-run=client -o yaml -f - | kubectl apply -f -
+        executable: /bin/bash
+        stdin: >-
+          {{ lookup('ansible.builtin.file', node_status_credential_rbac_template)
+          | replace('NODE_NAME_PLACEHOLDER', node_status_credential_node) }}
+      delegate_to: "{{ node_status_credential_server_host }}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ node_status_credential_admin_kubeconfig }}"
+      register: node_status_credential_rbac_apply
+      changed_when: >-
+        'created' in node_status_credential_rbac_apply.stdout
+        or 'configured' in node_status_credential_rbac_apply.stdout
+
+    - name: Wait for the token controller to populate the SA token Secret
+      # Created by the apply above, so on a cold API server it is empty for a
+      # moment; a single read would render a kubeconfig that authenticates as
+      # nobody. check_mode:false so the drift report still proves the read path
+      # rather than skipping it and rendering an empty credential.
+      ansible.builtin.command:
+        cmd: >-
+          kubectl -n {{ node_status_credential_namespace }} get secret
+          {{ node_status_credential_sa }} -o jsonpath={.data.token}
+      delegate_to: "{{ node_status_credential_server_host }}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ node_status_credential_admin_kubeconfig }}"
+      register: node_status_credential_token_b64
+      until: node_status_credential_token_b64.stdout | length > 0
+      retries: "{{ node_status_credential_token_retries }}"
+      delay: "{{ node_status_credential_token_delay }}"
+      changed_when: false
+      check_mode: false
+      # Does NOT fail the run when the Secret is still absent: under `--check`
+      # (ansible-drift) the RBAC-apply above is skipped (command tasks skip in
+      # check mode), so on a not-yet-converged agent there is no Secret to read.
+      # The render and delivery below guard on a non-empty token, so drift reports
+      # the RBAC apply as a would-be change rather than crashing here.
+      failed_when: false
+      no_log: true
+
+    - name: Read the cluster CA from the SA token Secret
+      ansible.builtin.command:
+        cmd: >-
+          kubectl -n {{ node_status_credential_namespace }} get secret
+          {{ node_status_credential_sa }} -o jsonpath={.data.ca\.crt}
+      delegate_to: "{{ node_status_credential_server_host }}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ node_status_credential_admin_kubeconfig }}"
+      register: node_status_credential_ca_b64
+      changed_when: false
+      check_mode: false
+      when: node_status_credential_token_b64.stdout | default('') | length > 0
+
+    - name: Render the node-status kubeconfig
+      # Mirrors provision-node-status-credential.sh's rendered kubeconfig exactly
+      # (cluster `ci-runner`, context `<sa>@ci-runner`). The token is the decoded
+      # JWT; certificate-authority-data stays base64 as the kubeconfig format
+      # wants. The API server is the address the AGENT joins on, from its own
+      # profile — never the admin file's loopback `server:`. no_log: the result
+      # carries the bearer token.
+      ansible.builtin.set_fact:
+        node_status_credential_kubeconfig: |
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: ci-runner
+              cluster:
+                server: {{ node_status_credential_api }}
+                certificate-authority-data: {{ node_status_credential_ca_b64.stdout }}
+          users:
+            - name: {{ node_status_credential_sa }}
+              user:
+                token: {{ node_status_credential_token_b64.stdout | b64decode }}
+          contexts:
+            - name: {{ node_status_credential_sa }}@ci-runner
+              context:
+                cluster: ci-runner
+                user: {{ node_status_credential_sa }}
+          current-context: {{ node_status_credential_sa }}@ci-runner
+      no_log: true
+      when: node_status_credential_token_b64.stdout | default('') | length > 0
+
+    - name: Check the delivery parent directory on the agent
+      ansible.builtin.stat:
+        path: "{{ node_status_credential_target | dirname }}"
+      register: node_status_credential_parent
+      become: true
+
+    - name: Refuse an arbitrary missing parent for the credential
+      # The seed script's rule: the ONLY missing parent this creates is the k3s
+      # configuration directory (or a path beneath it). Any other absent parent is
+      # a mistyped CHURN_KUBECONFIG_FILE and is refused rather than manufactured.
+      ansible.builtin.assert:
+        that:
+          - >-
+            node_status_credential_parent.stat.exists
+            or node_status_credential_target | dirname == node_status_credential_k3s_config_dir
+            or node_status_credential_target is match(node_status_credential_k3s_config_dir ~ '/')
+        fail_msg: >-
+          {{ node_status_credential_target }} names parent
+          '{{ node_status_credential_target | dirname }}', which is absent and is not the
+          k3s configuration directory {{ node_status_credential_k3s_config_dir }} — refusing
+          to manufacture a directory tree for a possibly mistyped path
+        success_msg: "parent {{ node_status_credential_target | dirname }} is acceptable"
+
+    - name: Create the k3s configuration directory on the agent if absent
+      ansible.builtin.file:
+        path: "{{ node_status_credential_target | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+      when: not node_status_credential_parent.stat.exists
+
+    - name: Deliver the node-status kubeconfig to the agent
+      # 0600 root:root, the same mode the seed script writes. no_log: bearer token.
+      # Idempotent by content — a byte-identical file reports no change.
+      ansible.builtin.copy:
+        content: "{{ node_status_credential_kubeconfig }}"
+        dest: "{{ node_status_credential_target }}"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+      no_log: true
+      when: node_status_credential_token_b64.stdout | default('') | length > 0

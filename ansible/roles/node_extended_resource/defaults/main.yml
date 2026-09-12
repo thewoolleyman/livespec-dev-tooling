@@ -1,14 +1,15 @@
 ---
 node_extended_resource_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
-node_extended_resource_cluster_role: "{{ cluster_role }}"
+# The node's committed phase0-bare-metal profile is the SINGLE source of the
+# per-node facts this role needs — the same file the R5 patch script consumes
+# and tests/spec/test_jit_admission_budget.py reads. There is deliberately NO
+# host_vars capacity: a second source of the churn-slot number would drift.
+node_extended_resource_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+node_extended_resource_profile: "{{ node_extended_resource_profiles_dir }}/{{ inventory_hostname }}.env"
 node_extended_resource_lib_dir: /usr/local/lib/ci-runner-k3s
 node_extended_resource_unit_dir: /etc/systemd/system
 node_extended_resource_service: reapply-node-extended-resource.service
 node_extended_resource_timer: reapply-node-extended-resource.timer
-# The currently-intended ci-runner.io/churn-slot node capacity. It is a
-# MEASUREMENT, not a constant (ci-runner/k3s/phase2/kueue/DERIVATION.md), and it
-# lives in the node's phase0-bare-metal profile as ADMISSION_CAPACITY_C — 32 for
-# poweredge-xubuntu, the fleet's only server. The default below yields to an
-# `admission_capacity_c` host variable the moment the inventory carries one,
-# which is where that per-node fact belongs.
-node_extended_resource_capacity: "{{ admission_capacity_c | default(32) }}"
+# The inventory's declared role for this host, cross-checked against the
+# profile's CLUSTER_ROLE in tasks (a drift guard between the two sources).
+node_extended_resource_cluster_role: "{{ cluster_role }}"

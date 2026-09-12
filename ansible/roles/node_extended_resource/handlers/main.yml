@@ -6,13 +6,21 @@
 
 - name: Apply the churn-slot capacity now
   # The shell installer runs the service once at install so a NEW capacity takes
-  # effect at deployment rather than up to five minutes later, at the timer's
-  # next tick. Here it is a HANDLER and not a task, so it fires only when the
-  # unit or the patch script actually changed: `state: started` on a oneshot
-  # runs it, and running it on every converge would report a change on every
-  # pass. Patching a node to a capacity it already carries is a cluster-side
-  # no-op, so a spurious run would be harmless but dishonest.
+  # effect at deployment rather than up to five minutes later at the timer's next
+  # tick. Here it is a HANDLER, so it fires only when the unit, the patch script
+  # or the profile copy actually changed: `state: started` on a oneshot runs it,
+  # and running it on every converge would report a change on every pass.
+  #
+  # On an AGENT it is additionally gated on the node-status kubeconfig being
+  # present: without it the patch script has no credential and the run would
+  # fail. A server always holds its admin kubeconfig, so it applies
+  # unconditionally. Patching a node to a capacity it already carries is a
+  # cluster-side no-op, so a late first apply (once the credential lands) is
+  # harmless — the timer reconciles it regardless.
   ansible.builtin.systemd_service:
     name: "{{ node_extended_resource_service }}"
     state: started
   become: true
+  when: >-
+    node_extended_resource_profile_role == 'server'
+    or (node_extended_resource_churn_kubeconfig_present.stat.exists | default(false))

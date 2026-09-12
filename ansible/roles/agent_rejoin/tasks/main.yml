@@ -1,0 +1,66 @@
+---
+# agent_rejoin — the k3s-agent rejoin watchdog: a ~60s timer that restarts a
+# wedged k3s-agent so it re-registers after the control-plane datastore (a tmpfs,
+# empty at every boot) drops its Node object.
+#
+# Replaces ci-runner/k3s/phase2/agent-rejoin/install-agent-rejoin-watchdog.sh.
+# AGENT-ONLY — it is install-node.sh step 1b, the one STEP_SERVER_SKIP — so
+# ci-pool.yml gates this role `when: cluster_role == 'agent'`. The watchdog is the
+# R5 mechanism proven live on gmktec-xubuntu; it MUST stay installed, so this role
+# carries it into the GitOps layer rather than leaving it to the retired shell.
+#
+# The shell refuses on a server (and removes any copy it finds); here the
+# playbook's `when` is the role gate, so on a server this role simply does not
+# run. Preconditions are asserted by the shell; here the only prerequisite is
+# root + systemd, which every ci_pool host has.
+
+- name: Create the pool library directory
+  ansible.builtin.file:
+    path: "{{ agent_rejoin_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the agent-rejoin watchdog script
+  # The unit's ExecStart path; the unit without it fires every minute and fails.
+  ansible.builtin.copy:
+    src: "{{ agent_rejoin_phase2_dir }}/agent-rejoin/{{ agent_rejoin_watchdog }}"
+    dest: "{{ agent_rejoin_lib_dir }}/{{ agent_rejoin_watchdog }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Check whether the agent-rejoin service is already installed
+  # Read before the write, so a --check run does not try to enable a unit whose
+  # file is only would-be written.
+  ansible.builtin.stat:
+    path: "{{ agent_rejoin_unit_dir }}/{{ agent_rejoin_service }}"
+  register: agent_rejoin_service_present
+  become: true
+
+- name: Install the agent-rejoin units
+  ansible.builtin.copy:
+    src: "{{ agent_rejoin_phase2_dir }}/agent-rejoin/{{ item }}"
+    dest: "{{ agent_rejoin_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop:
+    - "{{ agent_rejoin_service }}"
+    - "{{ agent_rejoin_timer }}"
+  notify: Reload systemd for the agent-rejoin units
+
+- name: Publish a changed unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the agent-rejoin timer
+  ansible.builtin.systemd_service:
+    name: "{{ agent_rejoin_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or agent_rejoin_service_present.stat.exists
