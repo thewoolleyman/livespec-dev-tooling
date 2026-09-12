@@ -303,12 +303,21 @@ def run_from_settings(
     travels the failure track rather than being flattened into a
     fabricated one — the whole point of the seam's conversion. A command
     that RAN and exited non-zero stays an ANSWER on the success track.
+
+    THE REFUSAL IS REPORTED WITHOUT SUPPRESSING THE COMMANDS BEHIND IT. Every
+    `marketplace add` this module plans precedes every `install`, and
+    `marketplace add` reaches GitHub over the network, so returning at the first
+    non-zero exit meant one rate limit or transient fault provisioned nothing at
+    all (`livespec-dev-tooling-357j2y`). The answer is unchanged in meaning —
+    the FIRST refusal's exit code, so the caller's exit status still names a
+    command that genuinely refused — while the cycle behind it now runs.
     """
     settings_text = settings_path.read_text(encoding="utf-8")
+    first_refusal = 0
     for command in planned_commands(settings_text=settings_text):
         answer = plugin_command_answer(outcome=runner(args=command))
         if isinstance(answer, InvocationNotPerformed):
             return IOFailure(answer)
-        if answer.returncode != 0:
-            return IOSuccess(answer.returncode)
-    return IOSuccess(0)
+        if first_refusal == 0 and answer.returncode != 0:
+            first_refusal = answer.returncode
+    return IOSuccess(first_refusal)
