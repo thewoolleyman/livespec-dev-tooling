@@ -133,6 +133,20 @@
       check_mode: false
       when: node_status_credential_token_b64.stdout | default('') | length > 0
 
+    - name: Refuse an empty cluster CA
+      # Mirrors provision-node-status-credential.sh's refusal: a Secret with a
+      # token but no ca.crt would render `certificate-authority-data:` empty — a
+      # kubeconfig that looks right and trusts nothing. Fail rather than deliver it.
+      ansible.builtin.assert:
+        that:
+          - node_status_credential_ca_b64.stdout | default('') | length > 0
+        fail_msg: >-
+          the SA token Secret {{ node_status_credential_namespace }}/{{ node_status_credential_sa }}
+          carries no ca.crt — refusing to render a kubeconfig with an empty
+          certificate-authority-data
+        success_msg: "cluster CA present for {{ node_status_credential_sa }}"
+      when: node_status_credential_token_b64.stdout | default('') | length > 0
+
     - name: Render the node-status kubeconfig
       # Mirrors provision-node-status-credential.sh's rendered kubeconfig exactly
       # (cluster `ci-runner`, context `<sa>@ci-runner`). The token is the decoded

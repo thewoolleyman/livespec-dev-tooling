@@ -30,12 +30,21 @@
     node_taints_desired_ci: >-
       {{ node_taints_declared | regex_search('(node-role/ci=[^\s]+)', '\1') | default('', true) }}
 
-- name: Read the live node-role/ci taint
-  # Returns the key when the taint is present, empty when it is not. A read only.
+- name: Read the live taint keys on this node
+  # argv:, NOT cmd: — a `cmd:` string is shlex-tokenized, which STRIPS the quotes
+  # inside a jsonpath filter and hands kubectl a broken expression. As an argv
+  # list each element is one arg with no shell parsing, so the jsonpath survives
+  # verbatim. The range over `.spec.taints[*].key` needs no inner quotes at all:
+  # it prints every taint key space-separated (empty when the node has none), and
+  # membership is tested in Ansible below.
   ansible.builtin.command:
-    cmd: >-
-      kubectl get node {{ inventory_hostname }}
-      -o jsonpath={.spec.taints[?(@.key=="{{ node_taints_key }}")].key}
+    argv:
+      - kubectl
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - "-o"
+      - "jsonpath={.spec.taints[*].key}"
   delegate_to: "{{ node_taints_server_host }}"
   become: true
   environment:
@@ -43,11 +52,28 @@
   register: node_taints_live
   changed_when: false
   check_mode: false
+  # A node not yet registered in the API (a fresh join still converging through
+  # this play) returns NotFound — that is not a failure to abort the play on; any
+  # OTHER non-zero is. failed_when is AND-ed, so it fires only on a non-NotFound
+  # error.
+  failed_when:
+    - node_taints_live.rc != 0
+    - "'NotFound' not in (node_taints_live.stderr | default(''))"
+    - "'not found' not in (node_taints_live.stderr | default(''))"
+
+- name: Note a node not yet registered (taint reconcile skipped this pass)
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} is not registered in the API yet (NotFound) —
+      skipping the {{ node_taints_key }} taint reconcile this pass; it converges
+      once the node has joined.
+  when: node_taints_live.rc != 0
 
 - name: Remove the node-role/ci taint the profile no longer declares
   # The R5 open case: profile declares no node-role/ci taint but the live node
-  # still carries it. The trailing `-` is kubectl's remove syntax. changed_when
-  # true because this task only runs when a removal is actually due.
+  # still carries it. The trailing `-` is kubectl's remove syntax. Membership is
+  # tested over the split keys (exact match, never a substring), and only when the
+  # node was actually read.
   ansible.builtin.command:
     cmd: kubectl taint nodes {{ inventory_hostname }} {{ node_taints_key }}-
   delegate_to: "{{ node_taints_server_host }}"
@@ -55,8 +81,9 @@
   environment:
     KUBECONFIG: "{{ node_taints_admin_kubeconfig }}"
   when:
+    - node_taints_live.rc == 0
     - node_taints_desired_ci | length == 0
-    - node_taints_key in node_taints_live.stdout
+    - node_taints_key in node_taints_live.stdout.split()
   changed_when: true
 
 - name: Add the node-role/ci taint the profile declares but the node lacks
@@ -70,6 +97,7 @@
   environment:
     KUBECONFIG: "{{ node_taints_admin_kubeconfig }}"
   when:
+    - node_taints_live.rc == 0
     - node_taints_desired_ci | length > 0
-    - node_taints_key not in node_taints_live.stdout
+    - node_taints_key not in node_taints_live.stdout.split()
   changed_when: true
