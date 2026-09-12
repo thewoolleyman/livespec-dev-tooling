@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-wmym
-reason=Wires the new canonical check check-marketplace-ref-release-only into the check-metadata-batch CI job (one line, between check-hook-trees-not-io-exempt and check-no-direct-destructive-cli), the only .github/workflows change needed so check-ci-matrix-completeness passes for the slug the feature commit adds. The factory built and greened the feature (PR #2136) but cannot push .github/workflows edits; maintainer authorized this workflow-only tail on 2026-09-09.
+work_item=livespec-dev-tooling-t2q4
+reason=Wire the new no_direct_github_access aggregate slug into the check-metadata-batch CI job (one line in .github/workflows/ci.yml). The factory App token cannot push workflow files (factory-exempt:workflow-only), so check-ci-matrix-completeness stays red until this lands. Maintainer authorized this workflow edit per-case on 2026-09-12; the approval:workflow-edit label was applied on their explicit instruction.
