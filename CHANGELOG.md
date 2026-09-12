@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.88.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.87.0...v1.88.0) (2026-09-12)
+
+
+### Features
+
+* route the enforcement suite's GitHub reads through the budgeted client ([e6680d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e6680d1736d3797399ae6011d784dc7e1613b085))
+
 ## [1.87.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.86.0...v1.87.0) (2026-09-12)
 
 
