@@ -25,6 +25,10 @@
     # that is not on disk.
     - fabro_server_restart_allowed | bool
     - not ansible_check_mode or fabro_server_unit_file.stat.exists
+    # A parked instance (service_state: stopped) is never restarted by a
+    # files-changed notify: its files are written for the day it comes back,
+    # and the supervise step has already stopped and disabled it.
+    - fabro_server_service_state == 'running'
 
 - name: Say which instance was left needing a restart
   listen: Fabro instance files changed
@@ -40,4 +44,8 @@
       current runs under the OLD configuration until someone restarts it.
       Quiesce the instance and re-run with -e fabro_server_restart_allowed=true,
       or restart it by hand.
-  when: not (fabro_server_restart_allowed | bool)
+  when:
+    - not (fabro_server_restart_allowed | bool)
+    # Not owed for a parked instance: there is no running server left
+    # describing a configuration other than its files.
+    - fabro_server_service_state == 'running'
