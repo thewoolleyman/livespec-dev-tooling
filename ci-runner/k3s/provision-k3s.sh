@@ -268,7 +268,7 @@ STEP_LABEL[kubeconfig-mode]="3. Make kubectl usable for the provisioning admin (
 
 STEP_AGENT_LABEL[k3s-install]="1. Install k3s ${K3S_VERSION} AGENT joining ${CFG[CLUSTER_JOIN_ADDRESS]} (idempotent — skip if already at this version)"
 
-STEP_SKIP[k3s-config]="phase2/k3s-config/config.yaml is the SERVER configuration — 'disable: local-storage', 'write-kubeconfig-mode' and 'tls-san' are server-only keys. An agent takes no server-only config; its kubelet arguments arrive with the node-local runbook, phase2/install-node.sh."
+STEP_SKIP[k3s-config]="phase2/k3s-config/config.yaml is the SERVER configuration — 'disable: local-storage', 'write-kubeconfig-mode' and 'tls-san' are server-only keys. An agent takes no server-only config; its kubelet arguments arrive with the node-local runbook, now ansible/ci-pool.yml (the k3s_config role)."
 STEP_SKIP[helm]="helm is installed here for the reconstruct-on-boot converge (phase2/reconstruct/converge-ci-stack.sh), which applies cluster-scoped objects with the admin kubeconfig and is a step an agent skips."
 STEP_SKIP[node-ready]="reads the cluster through /etc/rancher/k3s/k3s.yaml, the admin kubeconfig an agent does not hold. The SERVER is where this node's registration becomes visible."
 STEP_SKIP[tier-label]="labels a node through the API with that same admin kubeconfig, and the label it sets marks the node whose disks the pool's hostPath singletons live on — which is the tier carrier, not every node that joins."
@@ -457,7 +457,7 @@ for step_id in "${STEP_IDS[@]}"; do
 done
 
 if [ "$ROLE" = agent ]; then
-  log "DONE. Next: sudo phase2/install-node.sh ${PROFILE_PATH} (see README.md)."
+  log "DONE. Next (from the control node vps): just ansible-apply ansible/ci-pool.yml (see ansible/README.md; the retired phase2/install-node.sh runbook is now that playbook)."
   printf 'This node registered with the cluster at %s; confirm it from the SERVER with: k3s kubectl get nodes -o wide\n' "${CFG[CLUSTER_JOIN_ADDRESS]}"
 else
   log "DONE. Next: install-arc.sh, then install-kueue.sh (see README.md)."

@@ -251,7 +251,7 @@ churn_profile_value() {  # churn_profile_value KEY
   sed -n "s/^$1=//p" "$churn_profile" | tail -n1 | tr -d '[:space:]'
 }
 if [ -z "$churn_profile" ] || [ ! -f "$churn_profile" ]; then
-  echo "WARN: cannot learn this server's ci-runner.io/churn-slot profile -- ${REAPPLY_UNIT} names no readable profile in its ExecStart and CONVERGE_CHURN_PROFILE is unset; skipping the assertion. The queues applied in step 5 are denominated in this resource; install the unit with node-extended-resource/install-reapply-unit.sh <profile> (../runner-pod-lifecycle/ reports capacity-absent every 5 min until the resource is present)"
+  echo "WARN: cannot learn this server's ci-runner.io/churn-slot profile -- ${REAPPLY_UNIT} names no readable profile in its ExecStart and CONVERGE_CHURN_PROFILE is unset; skipping the assertion. The queues applied in step 5 are denominated in this resource; install it with the node_extended_resource Ansible role (just ansible-apply ansible/ci-pool.yml from the control node; ../runner-pod-lifecycle/ reports capacity-absent every 5 min until the resource is present)"
 else
   own_node="$(churn_profile_value NODE_NAME)"
   capacity="$(churn_profile_value ADMISSION_CAPACITY_C)"
@@ -277,7 +277,7 @@ else
         healed=1
         have="$(read_own_capacity)"
       else
-        echo "  self-heal: ${PATCH_CAPACITY} not found or not executable -- cannot re-apply; install it with node-extended-resource/install-reapply-unit.sh ${churn_profile}"
+        echo "  self-heal: ${PATCH_CAPACITY} not found or not executable -- cannot re-apply; install it with the node_extended_resource Ansible role (just ansible-apply ansible/ci-pool.yml)"
       fi
     fi
     if [ "$have" = "$capacity" ]; then
