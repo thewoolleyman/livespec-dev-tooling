@@ -173,6 +173,13 @@ install-worktree-pack:
 ensure-plugins:
     mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins
 
+# Compare each enabled Claude plugin's installed build with the locally
+# resolved origin/<ref> of its committed marketplace pin. This is deliberately
+# a world-state operator probe rather than a member of `check:`: installed
+# records and marketplace clones are host-local and can change without a commit.
+plugin-build-currency:
+    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.plugin_build_currency
+
 # Idempotent host-wide Codex plugin provisioning. Codex does not support
 # project-scoped plugin enablement, so these registrations intentionally land in
 # the user's default CODEX_HOME and are visible to every repo on the host. Codex
