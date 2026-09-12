@@ -642,7 +642,8 @@ fi
 # 0600: netplan warns, loudly and on every apply, about a world-readable file.
 write_file "${MOUNT_ROOT}/etc/netplan/10-ci-runner.yaml" "$netplan_content" 0600
 
-# The sudo-capable admin ../provision-k3s.sh and ../phase2/install-node.sh are
+# The sudo-capable admin ../provision-k3s.sh and the node-local provisioning
+# (now ansible/ci-pool.yml, run from the control node; was ../phase2/install-node.sh) are
 # run as. NO credential is installed for it: this tree carries no secret, so
 # authorizing a login is the operator's step at the console or over the
 # out-of-band console the rehearsal uses.
