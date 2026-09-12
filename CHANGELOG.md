@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.89.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.89.0...v1.89.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **fleet:** a can't-PARSE .livespec.jsonc is a finding, not a skip ([34d69ae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34d69ae2c5173b37b066e37875bf2f9c4ae9c080))
+
 ## [1.89.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.88.0...v1.89.0) (2026-09-12)
 
 
