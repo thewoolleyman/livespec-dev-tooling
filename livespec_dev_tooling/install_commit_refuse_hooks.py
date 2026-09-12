@@ -29,6 +29,19 @@ It cannot prevent creation. What it converts is a silent, long-lived
 violation into an immediate, actionable refusal — that is the whole of the
 promise, and it should not be overstated.
 
+FACTORY-PROVENANCE gate (livespec-dev-tooling-pxsr7w): a third branch,
+AND-ed in front of the lefthook delegation and touching none of it. Where
+the two mechanisms above decide WHERE a commit may be made, this one
+decides WHO may make it — at `commit-msg`, it reads the
+`livespec.factoryRunId` marker and hands the verdict to
+`livespec_dev_tooling.factory_provenance_gate` (which owns the staged-tree
+classification, the host-wide mode file, the `Factory-Override` audited
+exception, and the `Factory-Run-Id` trailer). Unlike the refuse branches
+above it fires IN WORKTREES too, because hand-cranking happens in host
+worktrees. It refuses on the gate's own exit code 9 and on nothing else,
+so a gate that cannot run fails OPEN rather than becoming a fleet-wide
+commit outage.
+
 OWNERSHIP OF THE WHOLE HOOKS DIRECTORY, not just the three names above:
 after writing them the installer sweeps the same directory and deletes
 every OTHER executable that reaches lefthook without the canonical
@@ -220,10 +233,64 @@ if [ "$sandbox_exempt" != "true" ]; then
   fi
 fi
 
-# Delegate to lefthook at worktrees (and in declared-exempt sandboxes) so the
-# repo's existing pre-commit / pre-push / commit-msg gates fire. The hook-name
-# is derived from the basename of $0 so the same script serves every hook.
+# The hook-name is derived from the basename of $0 so the same script serves
+# every hook; BOTH the factory-provenance gate below and the lefthook
+# delegation after it dispatch on it.
 hook_name="$(basename "$0")"
+
+# FACTORY-PROVENANCE gate (livespec-dev-tooling-pxsr7w). It decides WHO may
+# commit product implementation `.py`; the Red-Green-Replay gate the lefthook
+# delegation below runs decides whether that commit is TEST-DRIVEN. The two are
+# AND-ed and neither touches the other.
+#
+# WHY commit-msg: "$1" is the commit-message file, and BOTH the
+# `Factory-Override: <reason>` audited exception and the `Factory-Run-Id:`
+# provenance trailer live in the MESSAGE, which does not exist at pre-commit
+# time -- the same reason the shipped-path release guard is a commit-msg member.
+#
+# WHY IT ALSO FIRES IN A WORKTREE: hand-cranking happens in host worktrees, so
+# the worktree path is exactly what must be gated. Every branch above has
+# already exited for the locations that may not commit at all, so what reaches
+# here is a sanctioned worktree, a tooling-internal worktree, or a
+# declared-exempt sandbox -- all three commit, and all three are judged here.
+#
+# SCOPE is delegated to `livespec_dev_tooling.factory_provenance_gate`, which
+# classifies the staged tree against the SAME `config.derive_source_prefixes`
+# universe Red-Green-Replay uses, so that rule keeps ONE implementation rather
+# than gaining a shell copy. The `.py` test below is a cheap SUPERSET of that
+# classification, never a second copy of it: a commit staging no `.py` at all
+# can never be in scope, and skipping the interpreter keeps a docs-only commit
+# free. A commit made UNDER the marker enters regardless of what it stages,
+# because its provenance is worth recording either way.
+#
+# `--no-sync` keeps a git hook from re-resolving or mutating an environment: an
+# unsynced worktree loses the gate rather than gaining a surprise install.
+#
+# FAIL-OPEN BY CONSTRUCTION: exit code 9 -- the gate's own -- is the ONLY code
+# that refuses. A missing interpreter, an unresolvable module (a worktree whose
+# lock predates the gate), or any crash exits something else and the commit
+# proceeds. While the host-wide mode defaults to WARN a defective gate must
+# never become a fleet-wide commit outage; the flip to fail is the coordinated
+# rollout in livespec-dev-tooling-xzxrm5.
+if [ "$hook_name" = "commit-msg" ] && [ -f "${1:-}" ]; then
+  factory_run_id="$(git config --get livespec.factoryRunId || true)"
+  if [ -n "$factory_run_id" ] ||
+    git diff --cached --name-only --diff-filter=d | grep -q '[.]py$'; then
+    gate_module="livespec_dev_tooling.factory_provenance_gate"
+    gate_status=0
+    mise exec -- uv run --no-sync python -m "$gate_module" "$1" "$factory_run_id" ||
+      gate_status=$?
+    if [ "$gate_status" -eq 9 ]; then
+      echo "livespec: refusing commit; staged product .py has no factory provenance" >&2
+      echo "  marker:    livespec.factoryRunId, set by the dispatching factory run" >&2
+      echo "  exception: add a non-empty 'Factory-Override: <reason>' message trailer" >&2
+      exit 1
+    fi
+  fi
+fi
+
+# Delegate to lefthook at worktrees (and in declared-exempt sandboxes) so the
+# repo's existing pre-commit / pre-push / commit-msg gates fire.
 exec mise exec -- lefthook run --no-auto-install "$hook_name" "$@"
 """
 
