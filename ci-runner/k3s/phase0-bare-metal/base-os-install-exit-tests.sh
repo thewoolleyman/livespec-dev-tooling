@@ -9,7 +9,7 @@
 #      LABEL and carries the ci-cache, ci-containerd and ci-workvols lines
 #      BYTE-EXACT with the five in the one committed fragment,
 #      ansible/roles/storage_layout/files/ci-tiers.fstab — which is also what
-#      ../phase2/storage-layout/install-storage-layout.sh ensures, so the later
+#      the storage_layout Ansible role derives its lines from, so the later
 #      stage finds its own layout already present;
 #   3. lvm2 is installed INSIDE the chroot and the initramfs is regenerated
 #      afterwards with LVM support, which is the bootability fix the 2026-09-04
@@ -43,10 +43,9 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="${HERE}/base-os-install.sh"
 POWEREDGE="${HERE}/profiles/poweredge-xubuntu.env"
-STORAGE_LAYOUT_INSTALLER="${HERE}/../phase2/storage-layout/install-storage-layout.sh"
-# The ONE committed source of the five tier fstab lines. §B3 and §B4 read it
-# directly — it is a plain fstab fragment and not YAML, so nothing here parses a
-# data format to reach the lines.
+# The ONE committed source of the five tier fstab lines. §B3 reads it directly —
+# it is a plain fstab fragment and not YAML, so nothing here parses a data
+# format to reach the lines.
 TIER_FSTAB_FRAGMENT_REL="ansible/roles/storage_layout/files/ci-tiers.fstab"
 TIER_FSTAB_FRAGMENT="${HERE}/../../../${TIER_FSTAB_FRAGMENT_REL}"
 
@@ -223,26 +222,17 @@ else
   fi
 fi
 
-# And the same five, read out of the legacy node-local installer, so the
-# fragment is the arbiter for that shell too and not merely for this stage.
-if [ -r "$STORAGE_LAYOUT_INSTALLER" ] && [ "${#FSTAB_TIER_LINES[@]}" -eq 5 ]; then
-  drift=""
-  for line in "${FSTAB_TIER_LINES[@]}"; do
-    expanded="$(printf '%s' "$line" \
-      | sed 's|/var/cache/ci-runner/k3s-containerd|${CONTAINERD_SRC}|g; s|/var/cache/ci-runner/k3s-storage|${STORAGE_SRC}|g; s|/var/lib/rancher/k3s/agent/containerd|${CONTAINERD_DIR}|g; s|/var/lib/rancher/k3s/storage|${STORAGE_DIR}|g; s|/var/cache/ci-runner|${CACHE_MOUNT}|g; s|LABEL=ci-cache|LABEL=${LABEL_CACHE}|; s|LABEL=ci-containerd|LABEL=${LABEL_CONTAINERD}|; s|LABEL=ci-workvols|LABEL=${LABEL_WORKVOLS}|')"
-    grep -qF -- "ensure_line \"${expanded}\"" "$STORAGE_LAYOUT_INSTALLER" || drift="${drift}
-        ${expanded}"
-  done
-  if [ -z "$drift" ]; then
-    ok "B4  each of the fragment's five is the line install-storage-layout.sh itself ensures"
-  else
-    no "B4  a tier line has drifted from install-storage-layout.sh:${drift}"
-  fi
-elif [ ! -r "$STORAGE_LAYOUT_INSTALLER" ]; then
-  no "B4  install-storage-layout.sh not readable at ${STORAGE_LAYOUT_INSTALLER}"
-else
-  no "B4  skipped: ${TIER_FSTAB_FRAGMENT_REL} did not yield the five tier lines (see B3)"
-fi
+# B4 RETIRED WITH ITS SUBJECT (epic livespec-qurhq2, C5b). It read the same five
+# lines back out of phase2/storage-layout/install-storage-layout.sh (`ensure_line
+# "..."`) so the fragment was the arbiter for that shell too. That installer is
+# retired (livespec-dev-tooling-9btv); the storage_layout Ansible role replaced
+# it, and the role derives `storage_layout_fstab` from the SAME fragment §B3
+# reads (lookup('file') over ci-tiers.fstab), so there is no second generator
+# left for a byte-compare to catch drifting. The single committed source is the
+# guard, and the role's own "refuse a mountpoint fstab already names more than
+# once" assertion refuses at provision time if this stage ever wrote a divergent
+# line for a tier mountpoint. §B3 above still pins this stage's five lines
+# exactly against that source.
 
 # ---------------------------------------------------------------------------
 echo
