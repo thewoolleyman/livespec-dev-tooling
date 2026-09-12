@@ -6,16 +6,11 @@
 # Replaces ci-runner/k3s/phase2/storage-layout/install-storage-layout.sh, with
 # ONE deliberate narrowing recorded in tasks/migrate_live_stores.yml.
 #
-# THE LAYOUT — the five fstab lines, byte-exact, in storage_layout_fstab:
-#   LABEL=ci-cache       /var/cache/ci-runner                 ext4
-#   LABEL=ci-containerd  /var/cache/ci-runner/k3s-containerd  ext4
-#   LABEL=ci-workvols    /var/cache/ci-runner/k3s-storage     xfs
-#   bind /var/cache/ci-runner/k3s-containerd -> /var/lib/rancher/k3s/agent/containerd
-#   bind /var/cache/ci-runner/k3s-storage    -> /var/lib/rancher/k3s/storage
-# Each bind requires ITS OWN SOURCE mount, not merely the cache volume:
-# otherwise systemd may bind the empty mountpoint directory before the tier
-# volume lands on it, and k3s would run on the cache volume — or on / — silently,
-# since every path exists either way.
+# THE LAYOUT — the five fstab lines, byte-exact, are NOT written here and not
+# composed here. They are read verbatim from the one committed fragment,
+# files/ci-tiers.fstab, which ci-runner/k3s/phase0-bare-metal/base-os-install.sh
+# renders the same five lines from; `storage_layout_fstab` is that file with its
+# header dropped. Read that file for the layout and for the WHY of every field.
 #
 # WHY lineinfile AND NOT A MOUNT MODULE: the mount module lives in
 # ansible.posix, which this tree does not carry — ansible-core alone is what
@@ -26,6 +21,38 @@
 #
 # IT NEVER FORMATS AND NEVER DESTROYS DATA. On a node whose tiers are already
 # live it changes nothing: that no-op is its contract.
+
+- name: Refuse a fragment that disagrees with this role's tier labels and mountpoints
+  # THE SEAM THAT REPLACES THE COMPOSITION. storage_layout_fstab no longer
+  # builds the five lines out of the label and path variables in defaults — it
+  # READS them from files/ci-tiers.fstab — so the two can now drift, and the
+  # drift would be silent: the role would reconcile /etc/fstab to the fragment
+  # while creating mountpoints for, mounting and asserting on the variables'
+  # paths. Refusing here makes an edit to one side that is not matched on the
+  # other a provision-time failure instead of a half-applied layout. It also
+  # pins the fragment's ORDER and its count of five.
+  ansible.builtin.assert:
+    that:
+      - storage_layout_fstab_paths == storage_layout_expected_paths
+      - storage_layout_fstab | map('split') | map(attribute=0) | list == storage_layout_expected_sources
+    fail_msg: >-
+      files/ci-tiers.fstab names {{ storage_layout_fstab | map('split') | map(attribute=0) | list }}
+      at {{ storage_layout_fstab_paths }}; this role's defaults declare
+      {{ storage_layout_expected_sources }} at {{ storage_layout_expected_paths }}
+    success_msg: files/ci-tiers.fstab agrees with this role's tier labels and mountpoints
+  vars:
+    storage_layout_expected_sources:
+      - "LABEL={{ storage_layout_label_cache }}"
+      - "LABEL={{ storage_layout_label_containerd }}"
+      - "LABEL={{ storage_layout_label_workvols }}"
+      - "{{ storage_layout_containerd_src }}"
+      - "{{ storage_layout_workvols_src }}"
+    storage_layout_expected_paths:
+      - "{{ storage_layout_cache_mount }}"
+      - "{{ storage_layout_containerd_src }}"
+      - "{{ storage_layout_workvols_src }}"
+      - "{{ storage_layout_containerd_dir }}"
+      - "{{ storage_layout_storage_dir }}"
 
 - name: Enumerate the node's block devices
   # check_mode: false because a registered `command` is skipped under --check,
@@ -112,15 +139,13 @@
     that:
       - >-
         (storage_layout_fstab_content.content | b64decode).splitlines()
-        | select('match', '^[^#]\S*\s+' ~ (item.path | regex_escape) ~ '\s')
+        | select('match', '^[^#]\S*\s+' ~ (item | regex_escape) ~ '\s')
         | list | length <= 1
     fail_msg: >-
-      /etc/fstab carries more than one line for {{ item.path }}; reconcile them by hand
+      /etc/fstab carries more than one line for {{ item }}; reconcile them by hand
       before this role rewrites either
-    success_msg: "/etc/fstab names {{ item.path }} at most once"
-  loop: "{{ storage_layout_fstab }}"
-  loop_control:
-    label: "{{ item.path }}"
+    success_msg: "/etc/fstab names {{ item }} at most once"
+  loop: "{{ storage_layout_fstab_paths }}"
 
 - name: Ensure the five managed fstab lines
   # Keyed on the MOUNTPOINT, so an existing but DIFFERENT line for one of the
@@ -132,8 +157,8 @@
   # unrelated entry it does not manage.
   ansible.builtin.lineinfile:
     path: /etc/fstab
-    regexp: "^[^#]\\S*\\s+{{ item.path | regex_escape }}\\s"
-    line: "{{ item.line }}"
+    regexp: "^[^#]\\S*\\s+{{ (item | split)[1] | regex_escape }}\\s"
+    line: "{{ item }}"
     insertafter: EOF
     owner: root
     group: root
@@ -142,7 +167,7 @@
   become: true
   loop: "{{ storage_layout_fstab }}"
   loop_control:
-    label: "{{ item.path }}"
+    label: "{{ (item | split)[1] }}"
   notify: Reload systemd for the storage layout
 
 - name: Publish the changed fstab as mount units before mounting from it
@@ -299,7 +324,7 @@
          | regex_findall('^(\S+)\n(?:[ \t]+\[.\][^\n]*\n)*?[ \t]+\[E\]', multiline=True) }}
     storage_layout_managed_verify_errors: >-
       {{ storage_layout_verify_error_targets
-         | select('in', storage_layout_fstab | map(attribute='path') | list) | list }}
+         | select('in', storage_layout_fstab_paths) | list }}
   when: not ansible_check_mode
 
 - name: Re-read the node's mount table
@@ -326,7 +351,7 @@
       from the fstab lines above
   vars:
     storage_layout_unmounted: >-
-      {{ storage_layout_fstab | map(attribute='path')
+      {{ storage_layout_fstab_paths
          | reject('in', ansible_facts['mounts'] | map(attribute='mount') | list) | list }}
   when:
     - ansible_check_mode
@@ -341,5 +366,5 @@
       - item in (ansible_facts['mounts'] | map(attribute='mount') | list)
     fail_msg: "{{ item }} is not mounted; the layout is HALF APPLIED"
     success_msg: "{{ item }} is mounted"
-  loop: "{{ storage_layout_fstab | map(attribute='path') | list }}"
+  loop: "{{ storage_layout_fstab_paths }}"
   when: not ansible_check_mode

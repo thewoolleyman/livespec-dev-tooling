@@ -7,8 +7,10 @@
 #      commands IN THAT ORDER, and executes none of them;
 #   2. the /etc/fstab it renders finds root and the EFI system partition by
 #      LABEL and carries the ci-cache, ci-containerd and ci-workvols lines
-#      BYTE-EXACT with the five ../phase2/storage-layout/install-storage-layout.sh
-#      ensures — so the later stage finds its own layout already present;
+#      BYTE-EXACT with the five in the one committed fragment,
+#      ansible/roles/storage_layout/files/ci-tiers.fstab — which is also what
+#      ../phase2/storage-layout/install-storage-layout.sh ensures, so the later
+#      stage finds its own layout already present;
 #   3. lvm2 is installed INSIDE the chroot and the initramfs is regenerated
 #      afterwards with LVM support, which is the bootability fix the 2026-09-04
 #      hand rebuild needed;
@@ -42,6 +44,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="${HERE}/base-os-install.sh"
 POWEREDGE="${HERE}/profiles/poweredge-xubuntu.env"
 STORAGE_LAYOUT_INSTALLER="${HERE}/../phase2/storage-layout/install-storage-layout.sh"
+# The ONE committed source of the five tier fstab lines. §B3 and §B4 read it
+# directly — it is a plain fstab fragment and not YAML, so nothing here parses a
+# data format to reach the lines.
+TIER_FSTAB_FRAGMENT_REL="ansible/roles/storage_layout/files/ci-tiers.fstab"
+TIER_FSTAB_FRAGMENT="${HERE}/../../../${TIER_FSTAB_FRAGMENT_REL}"
 
 pass=0; fail=0
 ok() { printf '  PASS  %s\n' "$1"; pass=$((pass + 1)); }
@@ -187,30 +194,38 @@ else
   no "B2  the profile's swap volume is enabled by LABEL"
 fi
 
-# The three tier lines and the two binds, byte-exact. install-storage-layout.sh
-# builds the same five from its own constants; if these drift, stage 4 of the
-# rebuild stops being the no-op it is designed to be on a conforming host.
-FSTAB_TIER_LINES=(
-  'LABEL=ci-cache /var/cache/ci-runner ext4 defaults,noatime 0 2'
-  'LABEL=ci-containerd /var/cache/ci-runner/k3s-containerd ext4 defaults,noatime,x-systemd.requires-mounts-for=/var/cache/ci-runner 0 2'
-  'LABEL=ci-workvols /var/cache/ci-runner/k3s-storage xfs defaults,noatime,x-systemd.requires-mounts-for=/var/cache/ci-runner 0 2'
-  '/var/cache/ci-runner/k3s-containerd /var/lib/rancher/k3s/agent/containerd none bind,x-systemd.requires-mounts-for=/var/cache/ci-runner/k3s-containerd 0 0'
-  '/var/cache/ci-runner/k3s-storage /var/lib/rancher/k3s/storage none bind,x-systemd.requires-mounts-for=/var/cache/ci-runner/k3s-storage 0 0'
-)
-missing=""
-for line in "${FSTAB_TIER_LINES[@]}"; do
-  printf '%s' "$POWEREDGE_OUT" | grep -qF -- "$line" || missing="${missing}
-        ${line}"
-done
-if [ -z "$missing" ]; then
-  ok "B3  the five tier lines install-storage-layout.sh ensures are all rendered"
-else
-  no "B3  the five tier lines install-storage-layout.sh ensures are all rendered:${missing}"
+# The three tier lines and the two binds, byte-exact — READ FROM THE FRAGMENT
+# and not restated here. This suite is the arbiter of the claim that the
+# fragment is the single source, so a copy of the lines in this file would be
+# the very thing it exists to rule out: it would pass while base-os-install.sh
+# and the fragment drifted together away from the live role, or while a fourth
+# copy crept back in.
+FSTAB_TIER_LINES=()
+if [ -r "$TIER_FSTAB_FRAGMENT" ]; then
+  while IFS= read -r fragment_line; do
+    case "$fragment_line" in '' | '#'*) continue ;; esac
+    FSTAB_TIER_LINES+=("$fragment_line")
+  done < "$TIER_FSTAB_FRAGMENT"
 fi
 
-# And the same five, read out of that installer, so the byte-exactness claim is
-# checked against the other side rather than against a second copy of it here.
-if [ -r "$STORAGE_LAYOUT_INSTALLER" ]; then
+if [ "${#FSTAB_TIER_LINES[@]}" -ne 5 ]; then
+  no "B3  the five tier lines are read from ${TIER_FSTAB_FRAGMENT_REL}: it carries ${#FSTAB_TIER_LINES[@]}, not five"
+else
+  missing=""
+  for line in "${FSTAB_TIER_LINES[@]}"; do
+    printf '%s' "$POWEREDGE_OUT" | grep -qF -- "$line" || missing="${missing}
+        ${line}"
+  done
+  if [ -z "$missing" ]; then
+    ok "B3  the five tier lines ${TIER_FSTAB_FRAGMENT_REL} carries are all rendered"
+  else
+    no "B3  the five tier lines ${TIER_FSTAB_FRAGMENT_REL} carries are all rendered:${missing}"
+  fi
+fi
+
+# And the same five, read out of the legacy node-local installer, so the
+# fragment is the arbiter for that shell too and not merely for this stage.
+if [ -r "$STORAGE_LAYOUT_INSTALLER" ] && [ "${#FSTAB_TIER_LINES[@]}" -eq 5 ]; then
   drift=""
   for line in "${FSTAB_TIER_LINES[@]}"; do
     expanded="$(printf '%s' "$line" \
@@ -219,12 +234,14 @@ if [ -r "$STORAGE_LAYOUT_INSTALLER" ]; then
         ${expanded}"
   done
   if [ -z "$drift" ]; then
-    ok "B4  each of those five is the line install-storage-layout.sh itself ensures"
+    ok "B4  each of the fragment's five is the line install-storage-layout.sh itself ensures"
   else
     no "B4  a tier line has drifted from install-storage-layout.sh:${drift}"
   fi
-else
+elif [ ! -r "$STORAGE_LAYOUT_INSTALLER" ]; then
   no "B4  install-storage-layout.sh not readable at ${STORAGE_LAYOUT_INSTALLER}"
+else
+  no "B4  skipped: ${TIER_FSTAB_FRAGMENT_REL} did not yield the five tier lines (see B3)"
 fi
 
 # ---------------------------------------------------------------------------

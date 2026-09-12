@@ -1,0 +1,43 @@
+# ci-tiers.fstab — THE ONE COMMITTED SOURCE of the five /etc/fstab lines that
+# define a CI runner pool node's storage layout: the three LABEL-keyed CI tiers
+# and the two bind mounts that put containerd's store and the local-path PVC
+# root on them. A plain fstab fragment and not YAML, so a shell consumer reads
+# it with `read` and never parses a data format.
+#
+# READ, NEVER RE-COMPOSED. Every consumer takes these lines from HERE and none
+# of them builds a line of its own:
+#   * the storage_layout role — defaults/main.yml derives storage_layout_fstab
+#     from this file, and tasks/main.yml reconciles a live node's /etc/fstab
+#     against it;
+#   * ci-runner/k3s/phase0-bare-metal/base-os-install.sh — stage 4 of the
+#     bare-metal rebuild renders the target's /etc/fstab from these lines
+#     VERBATIM, so the later node-local stage finds the layout already present
+#     and is the no-op it is designed to be on a conforming host;
+#   * ci-runner/k3s/phase0-bare-metal/base-os-install-exit-tests.sh §B3/§B4 —
+#     the arbiter both of what that script renders and of what the legacy
+#     phase2/storage-layout/install-storage-layout.sh ensures.
+# Before this file the role and the rebuild script each composed the same five
+# lines from their own constants, and only a non-gating manual exit test stood
+# between a divergence and a silently different live /etc/fstab.
+#
+# WHY LABELS AND NOT UUIDs: the node's tiers are moving media. A filesystem UUID
+# is minted by every mkfs, so a UUID-keyed fstab has to change on every media
+# move and the git copy of the layout can never match the host's. A LABEL is
+# chosen by us and is the same on any medium. ext4 labels hold 16 bytes and XFS
+# labels 12, so the names stay short.
+#
+# PER-ROLE FILESYSTEM TYPE, which must agree with migrate-tier.sh's role_fstype:
+# the cache and containerd tiers are ext4; workvols is XFS with reflink=1 since
+# 2026-09-06, so the warm uv-cache seed can be a `cp --reflink` that gives every
+# job its own inodes.
+#
+# EACH BIND REQUIRES ITS OWN SOURCE MOUNT and not merely the cache volume:
+# otherwise systemd may bind the empty mountpoint directory before the tier
+# volume lands on it, and k3s would run on the cache volume — or on / —
+# silently, since every path exists either way. The cache volume is the parent
+# of the other two tiers, so only they carry the ordering dependency on it.
+LABEL=ci-cache /var/cache/ci-runner ext4 defaults,noatime 0 2
+LABEL=ci-containerd /var/cache/ci-runner/k3s-containerd ext4 defaults,noatime,x-systemd.requires-mounts-for=/var/cache/ci-runner 0 2
+LABEL=ci-workvols /var/cache/ci-runner/k3s-storage xfs defaults,noatime,x-systemd.requires-mounts-for=/var/cache/ci-runner 0 2
+/var/cache/ci-runner/k3s-containerd /var/lib/rancher/k3s/agent/containerd none bind,x-systemd.requires-mounts-for=/var/cache/ci-runner/k3s-containerd 0 0
+/var/cache/ci-runner/k3s-storage /var/lib/rancher/k3s/storage none bind,x-systemd.requires-mounts-for=/var/cache/ci-runner/k3s-storage 0 0

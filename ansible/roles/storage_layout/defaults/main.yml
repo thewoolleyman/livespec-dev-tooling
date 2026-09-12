@@ -1,56 +1,31 @@
 ---
 storage_layout_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
-# WHY LABELS AND NOT UUIDs: the node's tiers are moving media. A filesystem UUID
-# is minted by every mkfs, so a UUID-keyed fstab has to change on every media
-# move and the git copy of the layout can never match the host's. A LABEL is
-# chosen by us and is the same on any medium. ext4 labels hold 16 bytes and XFS
-# labels 12, so the names stay short.
+# WHY LABELS AND NOT UUIDs, and the per-role filesystem types, are recorded ONCE
+# in files/ci-tiers.fstab beside the lines they explain.
 storage_layout_label_cache: ci-cache
 storage_layout_label_containerd: ci-containerd
 storage_layout_label_workvols: ci-workvols
-# PER-ROLE FILESYSTEM TYPE, which must agree with migrate-tier.sh's role_fstype:
-# the cache and containerd tiers are ext4; workvols is XFS with reflink=1 since
-# 2026-09-06, so the warm uv-cache seed can be a `cp --reflink` that gives every
-# job its own inodes.
-storage_layout_fstype_cache: ext4
-storage_layout_fstype_containerd: ext4
-storage_layout_fstype_workvols: xfs
 storage_layout_cache_mount: /var/cache/ci-runner
 storage_layout_containerd_src: /var/cache/ci-runner/k3s-containerd
 storage_layout_workvols_src: /var/cache/ci-runner/k3s-storage
 storage_layout_containerd_dir: /var/lib/rancher/k3s/agent/containerd
 storage_layout_storage_dir: /var/lib/rancher/k3s/storage
-# THE FIVE MANAGED FSTAB LINES, byte-exact. Composed from the labels and paths
-# above rather than written out, so a path is stated once; the rendered text is
-# identical to what install-storage-layout.sh's ensure_line writes.
+# THE FIVE MANAGED FSTAB LINES, byte-exact — READ from the one committed
+# fragment rather than composed here, so that this role and
+# ci-runner/k3s/phase0-bare-metal/base-os-install.sh are no longer two
+# generators of the same text that a non-gating manual exit test was all that
+# held together. The fragment carries the WHY for every field.
 #
-# Each BIND requires ITS OWN SOURCE mount and not merely the cache volume:
-# otherwise systemd may bind the empty mountpoint directory before the tier
-# volume lands on it, and k3s would run on the cache volume — or on / —
-# silently, since every path exists either way.
-storage_layout_fstab:
-  - path: "{{ storage_layout_cache_mount }}"
-    line: >-
-      LABEL={{ storage_layout_label_cache }} {{ storage_layout_cache_mount }}
-      {{ storage_layout_fstype_cache }} defaults,noatime 0 2
-  - path: "{{ storage_layout_containerd_src }}"
-    line: >-
-      LABEL={{ storage_layout_label_containerd }} {{ storage_layout_containerd_src }}
-      {{ storage_layout_fstype_containerd }}
-      defaults,noatime,x-systemd.requires-mounts-for={{ storage_layout_cache_mount }} 0 2
-  - path: "{{ storage_layout_workvols_src }}"
-    line: >-
-      LABEL={{ storage_layout_label_workvols }} {{ storage_layout_workvols_src }}
-      {{ storage_layout_fstype_workvols }}
-      defaults,noatime,x-systemd.requires-mounts-for={{ storage_layout_cache_mount }} 0 2
-  - path: "{{ storage_layout_containerd_dir }}"
-    line: >-
-      {{ storage_layout_containerd_src }} {{ storage_layout_containerd_dir }} none
-      bind,x-systemd.requires-mounts-for={{ storage_layout_containerd_src }} 0 0
-  - path: "{{ storage_layout_storage_dir }}"
-    line: >-
-      {{ storage_layout_workvols_src }} {{ storage_layout_storage_dir }} none
-      bind,x-systemd.requires-mounts-for={{ storage_layout_workvols_src }} 0 0
+# A list of LINES and not of {path, line} records: the mountpoint is field 2 of
+# an fstab line, so `storage_layout_fstab_paths` derives it rather than a second
+# copy of it being carried alongside. Comment and blank lines are dropped here,
+# which is why no consumer has to know the fragment has a header.
+storage_layout_fstab_fragment: "{{ role_path }}/files/ci-tiers.fstab"
+storage_layout_fstab: >-
+  {{ lookup('ansible.builtin.file', storage_layout_fstab_fragment).splitlines()
+     | map('trim') | reject('match', '^(#|$)') | list }}
+storage_layout_fstab_paths: >-
+  {{ storage_layout_fstab | map('split') | map(attribute=1) | list }}
 storage_layout_dropin_dir: /etc/systemd/system/k3s.service.d
 storage_layout_dropin_name: 10-requires-storage-mounts.conf
 # The one entry that says a containerd store is a STORE. containerd's metadata
