@@ -56,13 +56,15 @@
   changed_when: false
   check_mode: false
   # A node not yet registered in the API (a fresh join still converging through
-  # this play) returns NotFound — that is not a failure to abort the play on; any
-  # OTHER non-zero is. failed_when is AND-ed, so it fires only on a non-NotFound
-  # error.
+  # this play) returns kubectl's exact `Error from server (NotFound): nodes
+  # "<name>" not found` — that is not a failure to abort the play on; any OTHER
+  # non-zero is. Match the literal `(NotFound)` reason token, not the bare words
+  # "NotFound"/"not found", so an unrelated future stderr that merely contains
+  # those words is not swallowed. failed_when is AND-ed, so it fires only on a
+  # non-NotFound error.
   failed_when:
     - node_taints_live.rc != 0
-    - "'NotFound' not in (node_taints_live.stderr | default(''))"
-    - "'not found' not in (node_taints_live.stderr | default(''))"
+    - "'(NotFound)' not in (node_taints_live.stderr | default(''))"
 
 - name: Note a node not yet registered (taint reconcile skipped this pass)
   ansible.builtin.debug:

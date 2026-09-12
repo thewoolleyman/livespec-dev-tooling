@@ -261,7 +261,8 @@ profile_load() {
   # shellcheck disable=SC2034  # read by the stages that source this file
   read -r -a PRESERVED_DEVICES <<< "${CFG[PRESERVED_PARTITIONS]}"
 
-  # CLUSTER_ROLE selects the step plan ../phase2/install-node.sh runs; an agent
+  # CLUSTER_ROLE selects the node-local step plan (now the ansible/ci-pool.yml roles,
+  # applied with `just ansible-apply`; it was ../phase2/install-node.sh before R5/9btv); an agent
   # has no cluster to run in without both the address it joins and the token
   # file it authenticates with, and a missing one of those fails at the node,
   # after the storage and the base OS are already written.

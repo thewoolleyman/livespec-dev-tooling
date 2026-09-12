@@ -15,6 +15,7 @@ ci_converge_unit_directories:
   - local-path-provisioner
   - warm-cache
   - warm-cache/pypi-proxy
+  - warm-cache/registry-mirror
   - crates-proxy
   - sccache
   - observability
@@ -64,6 +65,17 @@ ci_converge_unit_files:
   - src: warm-cache/pypi-proxy/pypi-proxy.yaml
     dest: warm-cache/pypi-proxy/pypi-proxy.yaml
     mode: "0644"
+  # The ghcr pull-through registry mirror (livespec-dev-tooling-y1t5): its
+  # apply-bearing converge and the manifest that converge applies. converge-ci-stack.sh
+  # calls converge-registry-mirror.sh at boot, so it MUST be installed here — its
+  # absence is exactly the silent-at-reboot loss the boot-converge reachability
+  # test guards.
+  - src: warm-cache/registry-mirror/converge-registry-mirror.sh
+    dest: warm-cache/registry-mirror/converge-registry-mirror.sh
+    mode: "0755"
+  - src: warm-cache/registry-mirror/registry-mirror.yaml
+    dest: warm-cache/registry-mirror/registry-mirror.yaml
+    mode: "0644"
   - src: crates-proxy/converge-crates-proxy.sh
     dest: crates-proxy/converge-crates-proxy.sh
     mode: "0755"
@@ -79,6 +91,21 @@ ci_converge_unit_files:
   - src: gates/gates-rbac.yaml
     dest: gates/gates-rbac.yaml
     mode: "0644"
+  # The delegated-gate SOURCE path (R4.S4): the apply-bearing converge that
+  # creates the bare mirrors and applies the in-cluster git daemon, the daemon
+  # manifest it applies, and the refs sweep the converge and its hourly timer
+  # run. converge-ci-stack.sh calls converge-gates-mirror.sh at boot, so all
+  # three MUST be installed here (git-daemon.yaml is applied BY the mirror
+  # converge, not by converge-ci-stack.sh directly).
+  - src: gates/converge-gates-mirror.sh
+    dest: gates/converge-gates-mirror.sh
+    mode: "0755"
+  - src: gates/git-daemon.yaml
+    dest: gates/git-daemon.yaml
+    mode: "0644"
+  - src: gates/prune-gate-refs.sh
+    dest: gates/prune-gate-refs.sh
+    mode: "0755"
   # Shipped, never applied: the template carries placeholder markers and is not
   # a valid manifest until render-gate-job.sh substitutes them, so the converge
   # must NOT kubectl apply it. The gate client renders and submits; the converge
