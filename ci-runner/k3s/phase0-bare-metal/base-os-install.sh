@@ -20,11 +20,14 @@
 #
 # WHERE IT SITS. It runs from the Recovery USB against a node whose storage
 # layout stage has completed, and BEFORE `../provision-k3s.sh`. The `/etc/fstab`
-# it writes carries the same five tier lines
-# `../phase2/storage-layout/install-storage-layout.sh` ensures, BYTE-EXACT, so
-# that stage 4's installer finds its own layout already present and is the
-# no-op it is designed to be on a conforming host. Those five lines are
-# co-maintained with that script; changing one means changing both.
+# it writes carries the five tier lines the node-local storage layout ensures,
+# BYTE-EXACT, so that stage 4 finds its own layout already present and is the
+# no-op it is designed to be on a conforming host. Byte-exactness is STRUCTURAL
+# and no longer a co-maintenance obligation: the five lines are read verbatim
+# from the one committed fragment,
+# `ansible/roles/storage_layout/files/ci-tiers.fstab`, which the storage_layout
+# Ansible role derives its own `storage_layout_fstab` from. Change them there,
+# and nowhere else.
 #
 # PROCEDURE HERE, DATA IN THE PROFILE. The release, the mirrors, the kernel
 # package, the initramfs generator, the root and swap volumes, the EFI system
@@ -68,19 +71,78 @@ CHANGES=0
 # moves it for a Recovery USB whose layout differs.
 MOUNT_ROOT="/mnt/target"
 
-# The five tier lines this stage renders into the target's /etc/fstab are the
-# five ../phase2/storage-layout/install-storage-layout.sh ensures. These
-# mountpoints are FLEET constants, not node values — the same on every pool
-# node — and are co-maintained with that script.
-CACHE_MOUNT="/var/cache/ci-runner"
-CONTAINERD_SRC="${CACHE_MOUNT}/k3s-containerd"
-STORAGE_SRC="${CACHE_MOUNT}/k3s-storage"
-CONTAINERD_DIR="/var/lib/rancher/k3s/agent/containerd"
-STORAGE_DIR="/var/lib/rancher/k3s/storage"
+# THE FIVE TIER LINES ARE READ, NOT WRITTEN HERE. They are FLEET constants, not
+# node values — the same on every pool node — and they live in ONE committed
+# fragment that the storage_layout Ansible role derives its own
+# `storage_layout_fstab` from. This stage renders them into the target's
+# /etc/fstab VERBATIM, so the later node-local stage finds its own layout
+# already present and is the no-op it is designed to be on a conforming host.
+# Before the fragment existed this script and that role each COMPOSED the same
+# five lines from their own constants, and only a non-gating manual exit test
+# stood between a divergence and a silently different live /etc/fstab
+# (livespec-dev-tooling-u3f6bw).
+TIER_FSTAB_FRAGMENT_REL="ansible/roles/storage_layout/files/ci-tiers.fstab"
+TIER_FSTAB_FRAGMENT="${SCRIPT_DIR}/../../../${TIER_FSTAB_FRAGMENT_REL}"
 
 die() { printf 'FATAL: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*"; }
 stage() { printf '\n== %s ==\n' "$*"; }
+
+[ -r "$TIER_FSTAB_FRAGMENT" ] \
+  || die "${TIER_FSTAB_FRAGMENT_REL} is not readable at ${TIER_FSTAB_FRAGMENT}; this stage renders the tier lines FROM it and composes none of its own"
+
+# The fragment with its header dropped: comment and blank lines are stripped
+# HERE so that nothing downstream has to know the file carries prose.
+TIER_FSTAB_LINES=()
+while IFS= read -r fragment_line; do
+  case "$fragment_line" in '' | '#'*) continue ;; esac
+  TIER_FSTAB_LINES+=("$fragment_line")
+done < "$TIER_FSTAB_FRAGMENT"
+[ "${#TIER_FSTAB_LINES[@]}" -eq 5 ] \
+  || die "${TIER_FSTAB_FRAGMENT_REL} carries ${#TIER_FSTAB_LINES[@]} tier lines; the layout is five"
+
+# An fstab line's fields, 1-based: 1 source, 2 mountpoint, 3 fstype, 4 options.
+fstab_field() {
+  local -a fields
+  read -r -a fields <<< "$1"
+  printf '%s' "${fields[$(($2 - 1))]}"
+}
+
+# The fragment line whose SOURCE (field 1) is the given one — `LABEL=<role>` for
+# a tier, the tier's own mountpoint for the bind laid on it. Field 1 is unique
+# across the five, so one lookup serves both shapes.
+tier_fstab_line_for() {
+  local line
+  for line in "${TIER_FSTAB_LINES[@]}"; do
+    [ "$(fstab_field "$line" 1)" = "$1" ] || continue
+    printf '%s' "$line"
+    return 0
+  done
+  return 1
+}
+
+# The mountpoint the fragment gives a source, or a non-zero exit if the fragment
+# has no line for it. One function and not a nested command substitution,
+# because a nested one would swallow the "no such line" status and hand the
+# caller an empty path.
+tier_fstab_mountpoint_for() {
+  local line
+  line="$(tier_fstab_line_for "$1")" || return 1
+  fstab_field "$line" 2
+}
+
+# The mountpoints the rest of this script needs, taken from those same lines
+# rather than restated. The CACHE tier's own mountpoint is no longer among them:
+# it was here only to build the `x-systemd.requires-mounts-for=` option of the
+# other two, and that text now comes from the fragment with the rest of the line.
+CONTAINERD_SRC="$(tier_fstab_mountpoint_for 'LABEL=ci-containerd')" \
+  || die "${TIER_FSTAB_FRAGMENT_REL} carries no LABEL=ci-containerd line"
+STORAGE_SRC="$(tier_fstab_mountpoint_for 'LABEL=ci-workvols')" \
+  || die "${TIER_FSTAB_FRAGMENT_REL} carries no LABEL=ci-workvols line"
+CONTAINERD_DIR="$(tier_fstab_mountpoint_for "$CONTAINERD_SRC")" \
+  || die "${TIER_FSTAB_FRAGMENT_REL} carries no bind of ${CONTAINERD_SRC}"
+STORAGE_DIR="$(tier_fstab_mountpoint_for "$STORAGE_SRC")" \
+  || die "${TIER_FSTAB_FRAGMENT_REL} carries no bind of ${STORAGE_SRC}"
 
 usage() {
   cat <<EOF
@@ -367,31 +429,14 @@ stage "4/10 /etc/fstab, every line found by LABEL"
 # BY LABEL, not by UUID: a UUID is minted by every mkfs, so a UUID-keyed fstab
 # has to be rewritten on every media move and can never be byte-identical to
 # the copy in git. A label is chosen by us and is the same on any medium
-# (../phase2/storage-layout/install-storage-layout.sh, "WHY LABELS").
+# (${TIER_FSTAB_FRAGMENT_REL}, "WHY LABELS").
 #
-# The three tier lines and the two binds below are BYTE-EXACT with the five
-# that installer ensures, so stage 4 of the rebuild finds them already present
-# and changes nothing. Each bind requires ITS OWN SOURCE mount, not merely the
-# cache volume: otherwise systemd may bind the empty mountpoint directory
-# before the tier volume lands on it and k3s would silently run on the wrong
-# filesystem, since every path exists either way.
-tier_mountpoint() {
-  case "$1" in
-    ci-cache) printf '%s' "$CACHE_MOUNT" ;;
-    ci-containerd) printf '%s' "$CONTAINERD_SRC" ;;
-    ci-workvols) printf '%s' "$STORAGE_SRC" ;;
-    *) return 1 ;;
-  esac
-}
-tier_options() {
-  # The cache volume is the parent of the other two, so only they carry the
-  # ordering dependency on it.
-  case "$1" in
-    ci-cache) printf 'defaults,noatime' ;;
-    *) printf 'defaults,noatime,x-systemd.requires-mounts-for=%s' "$CACHE_MOUNT" ;;
-  esac
-}
-
+# ROOT, THE ESP AND SWAP ARE NODE VALUES and are composed here from the profile.
+# The three tier lines and the two binds are NOT: they are appended VERBATIM
+# from the fragment, which is why they cannot drift from what the storage_layout
+# role ensures on the live node. The profile still chooses WHICH tiers this node
+# declares — a role it does not name gets no line, and neither does the bind
+# laid on it.
 fstab_lines=()
 fstab_lines+=("LABEL=${ROOT_LABEL} / ${ROOT_FSTYPE} defaults 0 1")
 fstab_lines+=("LABEL=${CFG[ESP_LABEL]} /boot/efi ${CFG[ESP_FSTYPE]} umask=0077 0 1")
@@ -401,23 +446,30 @@ fi
 declare -A TIER_DECLARED=()
 for record in "${TIER_RECORDS[@]}"; do
   IFS=: read -r rec_role _ <<< "$record"
-  mountpoint="$(tier_mountpoint "$rec_role")" \
-    || die "${PROFILE_PATH}: ROLE_TIERS names role '${rec_role}', which install-storage-layout.sh has no mountpoint for"
-  fstab_lines+=("LABEL=${rec_role} ${mountpoint} ${LV_FSTYPE_OF_LABEL[$rec_role]} $(tier_options "$rec_role") 0 2")
+  tier_line="$(tier_fstab_line_for "LABEL=${rec_role}")" \
+    || die "${PROFILE_PATH}: ROLE_TIERS names role '${rec_role}', which ${TIER_FSTAB_FRAGMENT_REL} carries no line for"
+  # The profile declares each tier's filesystem type too, and stage 1 formatted
+  # the volume with it. A profile that disagrees with the fragment would have
+  # this stage write a line no mkfs on this node can satisfy, so it is refused
+  # rather than silently resolved in favour of either side.
+  fragment_fstype="$(fstab_field "$tier_line" 3)"
+  [ "$fragment_fstype" = "${LV_FSTYPE_OF_LABEL[$rec_role]}" ] \
+    || die "${PROFILE_PATH}: LOGICAL_VOLUMES formats '${rec_role}' as ${LV_FSTYPE_OF_LABEL[$rec_role]}, but ${TIER_FSTAB_FRAGMENT_REL} mounts it as ${fragment_fstype}"
+  fstab_lines+=("$tier_line")
   TIER_DECLARED["$rec_role"]=1
 done
 if [ -n "${TIER_DECLARED[ci-containerd]:-}" ]; then
-  fstab_lines+=("${CONTAINERD_SRC} ${CONTAINERD_DIR} none bind,x-systemd.requires-mounts-for=${CONTAINERD_SRC} 0 0")
+  fstab_lines+=("$(tier_fstab_line_for "$CONTAINERD_SRC")")
 fi
 if [ -n "${TIER_DECLARED[ci-workvols]:-}" ]; then
-  fstab_lines+=("${STORAGE_SRC} ${STORAGE_DIR} none bind,x-systemd.requires-mounts-for=${STORAGE_SRC} 0 0")
+  fstab_lines+=("$(tier_fstab_line_for "$STORAGE_SRC")")
 fi
 
 fstab_content="# /etc/fstab — written by ci-runner/k3s/phase0-bare-metal/${SCRIPT_NAME}
 # from ${PROFILE_PATH}. Every filesystem is found by LABEL so that a tier can
 # move media without this file changing. The three ci-* lines and the two binds
-# are byte-exact with the five ../phase2/storage-layout/install-storage-layout.sh
-# ensures; edit them there and here together.
+# are copied VERBATIM from ${TIER_FSTAB_FRAGMENT_REL},
+# the one committed source the storage_layout role reads too; edit them there.
 $(printf '%s\n' "${fstab_lines[@]}")"
 write_file "${MOUNT_ROOT}/etc/fstab" "$fstab_content"
 
@@ -426,7 +478,7 @@ write_file "${MOUNT_ROOT}/etc/fstab" "$fstab_content"
 mountpoint_dirs=()
 for record in "${TIER_RECORDS[@]}"; do
   IFS=: read -r rec_role _ <<< "$record"
-  mountpoint_dirs+=("${MOUNT_ROOT}$(tier_mountpoint "$rec_role")")
+  mountpoint_dirs+=("${MOUNT_ROOT}$(tier_fstab_mountpoint_for "LABEL=${rec_role}")")
 done
 if [ -n "${TIER_DECLARED[ci-containerd]:-}" ]; then mountpoint_dirs+=("${MOUNT_ROOT}${CONTAINERD_DIR}"); fi
 if [ -n "${TIER_DECLARED[ci-workvols]:-}" ]; then mountpoint_dirs+=("${MOUNT_ROOT}${STORAGE_DIR}"); fi

@@ -31,7 +31,7 @@
       {{ storage_layout_device_mounts.results
          | rejectattr('item.mount', 'in', ansible_facts['mounts'] | map(attribute='mount') | list)
          | map(attribute='stdout_lines') | flatten
-         | reject('in', storage_layout_fstab | map(attribute='path') | list)
+         | reject('in', storage_layout_fstab_paths)
          | list }}
 
 - name: Unmount a tier volume from its foreign mountpoint
