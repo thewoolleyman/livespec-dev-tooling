@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.87.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.86.0...v1.87.0) (2026-09-12)
+
+
+### Features
+
+* commit-refuse hook gates product .py on factory provenance ([2ec4c2c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2ec4c2cdd73c4abd2b2921cb82694cbd05960704))
+* factory-provenance gate decides who may commit product .py ([130894f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/130894f92d0828c29bf946505cbc9c18f6fc737f))
+
+
+### Bug Fixes
+
+* lift a pre-railway bare-list comment reader onto the timeline railway ([64aa92d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/64aa92d979990628246a1488b2821e31565aef26))
+
 ## [1.86.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.85.3...v1.86.0) (2026-09-11)
 
 
