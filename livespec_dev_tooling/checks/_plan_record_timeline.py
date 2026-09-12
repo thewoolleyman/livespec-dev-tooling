@@ -30,6 +30,17 @@ than skipped past. Continuing would emit the three verdicts for every OTHER epic
 and report the set as complete, and `plan_close_evidence` — which fires on the
 ABSENCE of a comment — would convict the skipped epic on an absence it never
 established. That is `livespec-dev-tooling-7b6l` exactly.
+
+THE INJECTED READER MAY STILL ANSWER WITH A BARE `list` —
+`livespec-dev-tooling-fxar2z`. This is a SHIPPED seam: every consumer repo
+passes its own reader in from its own fixtures, and that conversion changed what
+the injected callable must return with neither a compat path nor a fixture
+fan-out. Measured on the forge 2026-09-10, EVERY dev-tooling pin bump past
+v1.70.0 was red in three consumers on `'list' object has no attribute 'unwrap'`,
+so the fleet could take no dev-tooling release at all. A bare list is LIFTED onto
+the railway rather than refused, because it is an ANSWER: the pre-railway shape
+simply had no way to spell a read that did not HAPPEN, and the readers that CAN
+spell it lose nothing by the lift.
 """
 
 from __future__ import annotations
@@ -37,6 +48,7 @@ from __future__ import annotations
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Protocol
 
 # Carried rather than inherited from an importer: without it the vendored
 # `returns` resolves only because some module up the import chain happens to
@@ -121,12 +133,27 @@ _RATE_REMEDIATION = (
 )
 
 
+class _LegacyCommentReader(Protocol):
+    """A PRE-RAILWAY comment reader, answering with the bare comment list.
+
+    Named beside the railway spelling rather than folded into it: a reader that
+    cannot report a read which did not HAPPEN is the shape this family converted
+    away from, and keeping it a separate, visibly legacy type is what stops the
+    compat from widening `CommentReader` — which every OTHER caller of that
+    protocol would then silently inherit.
+    """
+
+    def __call__(self, *, repo: Path, item_id: str) -> list[dict[str, object]]:
+        """Return comment records for `item_id` under `repo`."""
+        ...
+
+
 def timeline_findings(
     *,
     epics: list[dict[str, object]],
     live_slugs: frozenset[str],
     record_slugs: frozenset[str],
-    read_comments: CommentReader,
+    read_comments: CommentReader | _LegacyCommentReader,
     repo: Path,
     threshold: int = DEFAULT_DAILY_COMMENT_THRESHOLD,
 ) -> IOResult[list[Finding], LedgerReadFailed]:
@@ -136,13 +163,17 @@ def timeline_findings(
     the failure track, stopping the sweep: a partial finding list is not a
     smaller one, it is an incomplete one that the caller would report as
     complete. See the module docstring for why that is not a hypothetical.
+
+    A reader still answering with a bare `list` is accepted and lifted, for the
+    reason the module docstring records: this seam is injected from consumer
+    fixtures, so refusing the older shape stalls the whole fleet's pin.
     """
     findings: list[Finding] = []
     for epic in epics:
         epic_id = record_id(record=epic)
         if epic_id is None:
             continue
-        read = read_comments(repo=repo, item_id=epic_id)
+        read = _timeline_of(read_comments=read_comments, repo=repo, item_id=epic_id)
         if isinstance(read, IOFailure):
             return IOFailure(unsafe_perform_io(read.failure()))
         comments = unsafe_perform_io(read.unwrap())
@@ -161,6 +192,22 @@ def timeline_findings(
             _comment_rate_findings(epic_id=epic_id, comments=comments, threshold=threshold)
         )
     return IOSuccess(findings)
+
+
+def _timeline_of(
+    *, read_comments: CommentReader | _LegacyCommentReader, repo: Path, item_id: str
+) -> IOResult[list[dict[str, object]], LedgerReadFailed]:
+    """Read one epic's timeline, lifting a bare-list answer onto the railway.
+
+    The lift is the whole compat: a reader that returns `list` has ANSWERED, so
+    `IOSuccess` is the honest container for it. Nothing here invents a failure —
+    the legacy shape has no way to express one, and reading its emptiness as a
+    refusal would resurrect exactly the confusion `qndn.4` removed.
+    """
+    read = read_comments(repo=repo, item_id=item_id)
+    if isinstance(read, IOResult):
+        return read
+    return IOSuccess(read)
 
 
 def _close_evidence_findings(

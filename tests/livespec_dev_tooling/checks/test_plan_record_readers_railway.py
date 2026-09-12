@@ -327,3 +327,38 @@ def test_one_unread_timeline_fails_the_whole_family(*, tmp_path: Path) -> None:
 
     assert unsafe_perform_io(unread.failure()) is sentinel
     assert read_ids == [_EPIC], "the family stops at the first unread timeline"
+
+
+def test_a_pre_railway_reader_answering_with_a_bare_list_is_still_read(*, tmp_path: Path) -> None:
+    """An injected reader that answers with a plain `list` is lifted, not rejected.
+
+    `timeline_findings` is a SHIPPED seam: every consumer repo injects its own
+    comment reader from its own fixtures, and the conversion changed what that
+    injected callable must return without a compat path. Every dev-tooling pin
+    bump past v1.70.0 then died on `'list' object has no attribute 'unwrap'`
+    (`livespec-dev-tooling-fxar2z`), which is a fleet-wide stall rather than a
+    consumer bug — the seam owes the older shape an answer.
+
+    The rate WARN is asserted rather than mere survival, because "it did not
+    raise" would also hold if the comments had been dropped on the floor; the
+    verdict proves the bare list was READ.
+    """
+    timeline = _load(name="_plan_record_timeline")
+    day = "2026-09-10"
+
+    def _comments(*, repo: Path, item_id: str) -> list[dict[str, object]]:
+        _ = repo
+        _ = item_id
+        return [{"text": "note", "created_at": f"{day}T0{hour}:00:00Z"} for hour in range(7)]
+
+    lifted = timeline.timeline_findings(
+        epics=[_epic()],
+        live_slugs=frozenset(),
+        record_slugs=frozenset(),
+        read_comments=_comments,
+        repo=tmp_path,
+    )
+
+    findings = unsafe_perform_io(lifted.unwrap())
+    assert [finding.check_id for finding in findings] == ["plan_comment_rate"]
+    assert day in findings[0].message
