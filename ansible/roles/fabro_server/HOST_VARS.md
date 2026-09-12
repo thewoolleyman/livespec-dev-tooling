@@ -85,6 +85,13 @@ fabro_server_instances:
     github_app_id: "4688510"
     # Live on the host since 2026-08-22.
     otel_dropin: present
+    # STOPPED 2026-09-12 by maintainer instruction: the homelab project is on
+    # hold. The unit, its drop-in, settings.toml and the state directory under
+    # home_dir are all KEPT — nothing is deleted — so the instance comes back
+    # by flipping this one word to running and re-applying. The role stops and
+    # disables the unit, never restarts it, and skips the running-server
+    # verification for it. vps's mi-homelab instance is untouched by this.
+    service_state: stopped
 ```
 
 ## `host_vars/vps.yml`

@@ -49,6 +49,22 @@ fabro_server_instances: []
 #   github_app_id       which factory bot this instance publishes as
 #   otel_dropin         present | absent | unmanaged; see below
 #
+# One further axis is OPTIONAL and defaults, because omitting it cannot
+# make two instances collide — it only preserves prior behaviour:
+#
+#   service_state       running (default) | stopped. `stopped` means the
+#                       instance's unit, drop-in, settings.toml and state
+#                       directory are all KEPT on the host but the unit is
+#                       stopped and disabled, the restart handler never
+#                       fires for it, and the running-server verification is
+#                       skipped. It is how an instance is parked in version
+#                       control — a project on hold — rather than deleted
+#                       from the list (which would leave its unit running,
+#                       unmanaged, on the host). Bring it back by flipping
+#                       the word to running and re-applying. The stop is
+#                       refused while the instance is carrying active runs,
+#                       by the same quiet-server guard that gates a restart.
+#
 # render-unit.sh defaulted three of these (unit_name to fabro-server,
 # home_dir to $HOME/.fabro, port to 32276) so that the two pre-instance
 # values files needed no edit. That compatibility debt is deliberately NOT

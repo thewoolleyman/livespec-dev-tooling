@@ -58,6 +58,12 @@
     fabro_server_max_concurrent_runs: "{{ fabro_server_instance.max_concurrent_runs }}"
     fabro_server_github_app_id: "{{ fabro_server_instance.github_app_id }}"
     fabro_server_otel_dropin: "{{ fabro_server_instance.otel_dropin | default(fabro_server_otel_dropin_default) }}"
+    # OPTIONAL, and the one axis that defaults: an instance is `running`
+    # unless its mapping says `stopped`. Defaulting is safe here where it was
+    # a hazard for unit_name/home_dir/port, because an omitted value cannot
+    # make two instances share state — it only keeps the behaviour every
+    # instance had before the axis existed.
+    fabro_server_service_state: "{{ fabro_server_instance.service_state | default('running') }}"
 
 - name: Refuse an instance mapping that does not spell every axis
   # render-unit.sh exited 3 naming the one variable a values file had missed.
@@ -114,6 +120,18 @@
       otel_dropin for {{ fabro_server_unit_name }} is
       '{{ fabro_server_otel_dropin }}'; it must be present, absent or unmanaged.
     success_msg: otel drop-in disposition is understood
+
+- name: Refuse an unrecognised service_state disposition
+  # Two words, not a boolean, for the same reason as otel_dropin: a typo must
+  # fail loudly here rather than read as "not stopped" and start a parked
+  # instance, or read as "not running" and stop a live factory.
+  ansible.builtin.assert:
+    that:
+      - fabro_server_service_state in ['running', 'stopped']
+    fail_msg: >-
+      service_state for {{ fabro_server_unit_name }} is
+      '{{ fabro_server_service_state }}'; it must be running or stopped.
+    success_msg: service_state disposition is understood
 
 # --- preflight: the out-of-band state this role refuses to create ----------
 #
@@ -314,25 +332,29 @@
   changed_when: false
   check_mode: false
   when:
-    - fabro_server_restart_allowed | bool
+    # A restart on the table, OR a stop: parking an instance
+    # (service_state: stopped) interrupts whatever it is carrying exactly as a
+    # restart would, so it is gated by the same probe and the same refusal.
+    - (fabro_server_restart_allowed | bool) or fabro_server_service_state == 'stopped'
     - fabro_server_health.status | default(-1) == 200
 
-- name: Refuse to restart a factory that is carrying runs
+- name: Refuse to restart or stop a factory that is carrying runs
   # Necessary but not sufficient, and the gap is why fabro_server_restart_allowed
   # defaults to false rather than this check standing alone: a run admitted
   # between this assert and the handler at the end of the play would still be
   # killed. Nothing inside Ansible closes that window. Quiescing the instance
   # first — `fabro` admission paused, or the dispatcher stopped — is what
-  # makes an attended restart safe.
+  # makes an attended restart, or a stop, safe.
   ansible.builtin.assert:
     that:
       - (fabro_server_ps.stdout | from_json | length) == 0
     fail_msg: >-
       {{ fabro_server_unit_name }} has
       {{ fabro_server_ps.stdout | from_json | length }} active run(s);
-      refusing to interrupt them. Re-run when the instance is quiet, or leave
-      fabro_server_restart_allowed false to install the files and restart
-      later.
+      refusing to interrupt them. Re-run when the instance is quiet. For a
+      restart, leaving fabro_server_restart_allowed false installs the files
+      and defers the restart; for a stop (service_state: stopped) there is no
+      deferral — the instance stays running until it is quiet.
     success_msg: this instance has no active runs
   when: not (fabro_server_ps.skipped | default(false))
 
@@ -553,7 +575,30 @@
     state: started
     daemon_reload: true
   become: true
-  when: not ansible_check_mode or fabro_server_unit_file.stat.exists
+  when:
+    - fabro_server_service_state == 'running'
+    - not ansible_check_mode or fabro_server_unit_file.stat.exists
+
+- name: Stop and disable an instance that version control parks
+  # The other half of service_state. `stopped` is a deliberate, recorded
+  # decision — a project on hold — and this is the only task that acts on it:
+  # the unit is stopped and disabled so it does not return at boot, while the
+  # unit file, drop-in, settings.toml and state directory written above are
+  # all left in place. Re-applying with the word flipped to running is the
+  # whole procedure for bringing it back. The quiet-server refusal above has
+  # already run for this instance, so a stop here never interrupts a run.
+  #
+  # Same check-mode shape as the start: a `when`, not `check_mode: false`,
+  # so a dry run reports the stop as a would-be change and never performs it.
+  ansible.builtin.systemd_service:
+    name: "{{ fabro_server_unit_name }}.service"
+    enabled: false
+    state: stopped
+    daemon_reload: true
+  become: true
+  when:
+    - fabro_server_service_state == 'stopped'
+    - not ansible_check_mode or fabro_server_unit_file.stat.exists
 
 - name: Apply any pending restart for this instance before verifying it
   # Handlers otherwise run at the END of the play, by which time the loop has
@@ -591,6 +636,10 @@
     FABRO_BASE_URL: "http://127.0.0.1:{{ fabro_server_port }}"
     FABRO_CANONICAL_HOST: "{{ fabro_server_canonical_host }}"
   changed_when: false
+  # A parked instance (service_state: stopped) has no server to verify; the
+  # three verification tasks would otherwise fail on the very state this
+  # role just produced on purpose.
+  when: fabro_server_service_state == 'running'
 
 - name: Read the running instance's main PID
   ansible.builtin.command:
@@ -598,6 +647,7 @@
   become: true
   register: fabro_server_main_pid
   changed_when: false
+  when: fabro_server_service_state == 'running'
 
 - name: Read the working directory the running instance actually has
   ansible.builtin.stat:
@@ -607,6 +657,7 @@
   register: fabro_server_running_cwd
   when:
     - not ansible_check_mode
+    - not (fabro_server_main_pid.skipped | default(false))
     - fabro_server_main_pid.stdout | default('') | trim not in ['', '0']
 
 - name: Refuse an instance running from anywhere but its declared checkout
