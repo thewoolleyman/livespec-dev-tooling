@@ -1,0 +1,114 @@
+---
+# The k3s CI pool's node-local provisioning — poweredge-xubuntu (server) and
+# gmktec-xubuntu (agent). Migrated from ci-runner/k3s/phase2/install-node.sh.
+#
+# WHY THIS PLAYBOOK EXISTS (livespec-dev-tooling-9btv). Phase 3 of the Ansible
+# migration built the k3s-node roles and the `ci_pool` inventory group but NO
+# playbook targeted `ci_pool`, so neither `just ansible-drift` nor
+# `just ansible-apply` could reach the two k3s nodes and they drifted unnoticed
+# at Sep-8 code — including the pre-R5 churn-slot installer that would
+# over-admit. This playbook closes that gap and carries R5's per-node churn-slot
+# model (PRs #2260/#2261) into the layer that actually deploys.
+#
+# ROLE ORDER IS install-node.sh's STEP PLAN. The roles below run in the order
+# install-node.sh's STEP_IDS run, so the GitOps converge and the retired runbook
+# apply the same node-local steps in the same order. Role-awareness is split two
+# ways, exactly as install-node.sh splits it:
+#   * Roles that read `cluster_role` themselves (k3s_config, node_extended_resource,
+#     wedged_runner, runner_pod_lifecycle, arc_log_archive, storage_sweep,
+#     node_status_credential) run for every host and self-gate — a server installs
+#     the server shape, an agent the agent shape (or no-ops). They carry no `when`
+#     here.
+#   * Roles with NO cluster_role handling are gated here, matching
+#     install-node.sh's STEP_SKIP (server-only: host_thermal, secret_reinjection,
+#     ci_converge_unit, datastore_tmpfs) and STEP_SERVER_SKIP (agent-only:
+#     agent_rejoin).
+# Roles that legitimately run on BOTH roles unchanged (node_sysctl, storage_layout,
+# host_tools_ci, apparmor_profile, sccache_binary, cache_telemetry, container_hook)
+# carry neither a self-gate nor a `when`.
+#
+# TWO STEPS HAVE NO install-node.sh EQUIVALENT, and their placement is the one
+# ordering the runbook does not dictate, so it is stated here:
+#   * node_status_credential (agent-only) mints and delivers the scoped
+#     node-status kubeconfig and MUST precede node_extended_resource, so the
+#     agent's reapply timer has a credential to patch its own status.capacity with
+#     before it first fires.
+#   * node_taints reconciles the live node-role/ci taint to the profile and MUST
+#     follow node_extended_resource, so a node is never opened for scheduling
+#     before it advertises the churn-slot capacity it can actually serve.
+# credential -> capacity -> taint: that is the safe opening order, and it is why
+# these two sit where they do rather than at the ends of the list.
+
+- name: K3s CI pool node-local provisioning
+  hosts: ci_pool
+  gather_facts: true
+  roles:
+    # 1/10 — k3s config (server or agent); self-gated.
+    - role: k3s_config
+      tags: [k3s_config]
+    # 1b/10 — agent-only rejoin watchdog (STEP_SERVER_SKIP).
+    - role: agent_rejoin
+      tags: [agent_rejoin]
+      when: cluster_role == 'agent'
+    # 2/10 — inotify + keyring sysctls (one role covers both).
+    - role: node_sysctl
+      tags: [node_sysctl]
+    # 2b/10 — storage layout (mount the LABEL-ed tiers; no-op when live).
+    - role: storage_layout
+      tags: [storage_layout]
+    # 2c/10 — iDRAC cooling (PowerEdge hardware; server-only, STEP_SKIP).
+    - role: host_thermal
+      tags: [host_thermal]
+      when: cluster_role == 'server'
+    # 2d/10 — operator host tools (btop-loop).
+    - role: host_tools_ci
+      tags: [host_tools_ci]
+    # 3/10 — AppArmor kernel profile (both roles; the ConfigMap half is the
+    # server's converge, not this role).
+    - role: apparmor_profile
+      tags: [apparmor_profile]
+    # Before 4/10 — mint+deliver the agent's scoped node-status credential, so
+    # the reapply timer below has something to authenticate with (agent-only,
+    # self-gated).
+    - role: node_status_credential
+      tags: [node_status_credential]
+    # 4/10 — churn-slot extended resource + per-node reapply timer (R5); self-gated.
+    - role: node_extended_resource
+      tags: [node_extended_resource]
+    # After 4/10 — reconcile the node-role/ci taint to the profile, so the node is
+    # opened for scheduling only once it advertises its capacity.
+    - role: node_taints
+      tags: [node_taints]
+    # 5/10 — wedged-runner sweep; self-gated.
+    - role: wedged_runner
+      tags: [wedged_runner]
+    # 5b/10 — runner-pod lifecycle scan; self-gated.
+    - role: runner_pod_lifecycle
+      tags: [runner_pod_lifecycle]
+    # 6/10 — ARC log archive; self-gated.
+    - role: arc_log_archive
+      tags: [arc_log_archive]
+    # 7/10 — boot-time secret reinjection units (server-only, STEP_SKIP; enable
+    # only, never started).
+    - role: secret_reinjection
+      tags: [secret_reinjection]
+      when: cluster_role == 'server'
+    # 7b/10 — pool-provided sccache binary + its cache telemetry.
+    - role: sccache_binary
+      tags: [sccache_binary]
+    - role: cache_telemetry
+      tags: [cache_telemetry]
+    # 7c/10 — fleet-patched ARC container hook + externals extraction.
+    - role: container_hook
+      tags: [container_hook]
+    # 8/10 — reconstruct-on-boot converge unit (server-only, STEP_SKIP).
+    - role: ci_converge_unit
+      tags: [ci_converge_unit]
+      when: cluster_role == 'server'
+    # 9/10 — tmpfs datastore mount (server-only, STEP_SKIP; enable only).
+    - role: datastore_tmpfs
+      tags: [datastore_tmpfs]
+      when: cluster_role == 'server'
+    # 10/10 — boot-time orphaned-scratch sweep; self-gated.
+    - role: storage_sweep
+      tags: [storage_sweep]

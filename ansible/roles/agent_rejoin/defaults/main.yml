@@ -1,0 +1,7 @@
+---
+agent_rejoin_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+agent_rejoin_lib_dir: /usr/local/lib/ci-runner-k3s
+agent_rejoin_unit_dir: /etc/systemd/system
+agent_rejoin_watchdog: agent-rejoin-watchdog.sh
+agent_rejoin_service: agent-rejoin-watchdog.service
+agent_rejoin_timer: agent-rejoin-watchdog.timer

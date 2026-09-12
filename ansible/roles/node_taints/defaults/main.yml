@@ -1,0 +1,10 @@
+---
+node_taints_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+node_taints_profile: "{{ node_taints_profiles_dir }}/{{ inventory_hostname }}.env"
+# Reconciled on the server, under its admin kubeconfig — the same delegate_to
+# shape node_status_credential and gates_kubeconfig use.
+node_taints_server_host: poweredge-xubuntu
+node_taints_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+# This role manages exactly ONE taint key — the pool's own scheduling gate.
+# Never anything else on the node.
+node_taints_key: node-role/ci

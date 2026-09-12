@@ -1,0 +1,21 @@
+---
+node_status_credential_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+node_status_credential_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+node_status_credential_profile: "{{ node_status_credential_profiles_dir }}/{{ inventory_hostname }}.env"
+node_status_credential_cluster_role: "{{ cluster_role }}"
+# The ci_pool server that mints the credential, under its own become, with the
+# admin kubeconfig. Hardcoded exactly as gates_kubeconfig hardcodes its
+# remote_host: the pool has one server. Overridable if that ever changes.
+node_status_credential_server_host: poweredge-xubuntu
+node_status_credential_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+node_status_credential_namespace: ci-runner-node-status
+node_status_credential_sa_prefix: node-status-patcher-
+node_status_credential_rbac_template: >-
+  {{ node_status_credential_phase2_dir }}/node-status-credential/node-status-patch-rbac.yaml
+# The k3s configuration directory — the ONE parent this role will create for the
+# delivered kubeconfig, exactly as seed-node-status-kubeconfig.sh's rule. Any
+# other missing parent is refused rather than manufactured.
+node_status_credential_k3s_config_dir: /etc/rancher/k3s
+# The SA token Secret is populated asynchronously by the token controller.
+node_status_credential_token_retries: 30
+node_status_credential_token_delay: 2

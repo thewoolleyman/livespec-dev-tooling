@@ -1,0 +1,22 @@
+---
+secret_reinjection_secret_dir: "{{ role_path }}/../../../ci-runner/k3s/secret-reinjection"
+secret_reinjection_lib_dir: /usr/local/lib/ci-runner-k3s
+secret_reinjection_unit_dir: /etc/systemd/system
+secret_reinjection_credstore_dir: /etc/credstore.encrypted
+# Each reinjected Secret: its oneshot service, the injector the ExecStart runs,
+# and the credstore credentials the unit decrypts (named in the warning that
+# points at the right attended seed step). Same set as
+# install-secret-reinjection-unit.sh.
+secret_reinjection_units:
+  - service: inject-github-app-secret.service
+    injector: inject-github-app-secret.sh
+    seed: seed-github-app-creds.sh
+    creds:
+      - arc-github-app-id
+      - arc-github-app-installation-id
+      - arc-github-app-private-key
+  - service: inject-gate-forge-secret.service
+    injector: inject-gate-forge-secret.sh
+    seed: seed-gate-forge-cred.sh
+    creds:
+      - gate-forge-token
