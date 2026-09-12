@@ -28,6 +28,10 @@ from livespec_dev_tooling.fleet._ensure_plugin_artifacts import (
     artifact_record_findings,
     artifact_record_repair_paths,
 )
+from livespec_dev_tooling.fleet._invocation_failure import (
+    BINARY_ABSENT,
+    InvocationNotPerformed,
+)
 from livespec_dev_tooling.fleet._rows_claude_plugin import (
     CLAUDE_SETTINGS,
     assert_claude_plugin_currency,
@@ -144,7 +148,16 @@ def test_run_from_settings_executes_commands_in_order(*, tmp_path: Path) -> None
     assert seen == list(planned_commands(settings_text=_settings_text()))
 
 
-def test_run_from_settings_stops_at_first_failed_command(*, tmp_path: Path) -> None:
+def test_run_from_settings_attempts_every_command_past_a_refusal(*, tmp_path: Path) -> None:
+    """The refusal is still the ANSWER; it no longer suppresses the commands behind it.
+
+    This replaces `test_run_from_settings_stops_at_first_failed_command`, which
+    asserted `seen == list(planned_commands(...))[:2]` and so pinned the
+    fail-fast cycle as intended behaviour (`livespec-dev-tooling-357j2y`). The
+    command that refuses here is the SECOND `marketplace add`, which is exactly
+    the position the defect was reachable from: every add precedes every
+    `install`, so returning there installed nothing at all.
+    """
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir()
     settings.write_text(_settings_text(), encoding="utf-8")
@@ -155,7 +168,7 @@ def test_run_from_settings_stops_at_first_failed_command(*, tmp_path: Path) -> N
         return _ran(returncode=17 if len(seen) == 2 else 0)
 
     assert run_from_settings(settings_path=settings, runner=runner) == IOSuccess(17)
-    assert seen == list(planned_commands(settings_text=_settings_text()))[:2]
+    assert seen == list(planned_commands(settings_text=_settings_text()))
 
 
 _MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
@@ -949,12 +962,28 @@ def test_registry_findings_ignore_non_object_entries() -> None:
     assert any("one@alpha" in f for f in findings)
 
 
-def test_ensure_reports_a_failing_command_and_stops() -> None:
+def test_ensure_attempts_every_install_when_a_marketplace_add_fails() -> None:
+    """A failed `marketplace add` must not suppress the installs behind it.
+
+    This replaces `test_ensure_reports_a_failing_command_and_stops`, which
+    asserted `len(ran) == 1` and so pinned the fail-fast cycle as intended
+    behaviour (`livespec-dev-tooling-357j2y`). `planned_commands` emits BOTH
+    `marketplace add` commands before ANY `install`, and `marketplace add` is a
+    network operation against GitHub — a rate limit, a transient fault, or a
+    momentarily unavailable repo each exits non-zero. Returning there left
+    `main` exiting 4 having installed nothing, which is the symptom that started
+    the incident: plugins enabled by committed settings with no install record,
+    a state Claude Code resolves to no operations and no error.
+
+    EVERY REFUSAL IS STILL REPORTED, one finding per failing command. The fix
+    removes the suppression, not the report, so the assertion on `findings` is
+    an equality over BOTH failing adds rather than an `any(...)` over one.
+    """
     ran: list[tuple[str, ...]] = []
 
     def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
         ran.append(args)
-        return _ran(returncode=9)
+        return _ran(returncode=9 if args[2] == "marketplace" else 0)
 
     findings = ensure(
         settings_text=_M3,
@@ -962,5 +991,43 @@ def test_ensure_reports_a_failing_command_and_stops() -> None:
         runner=runner,
         read_registry=lambda: None,
     )
-    assert any("exit 9" in f for f in findings)
-    assert len(ran) == 1
+
+    planned = list(planned_commands(settings_text=_M3))
+    # A positive control on the fixture: an `_M3` deriving no install command
+    # would satisfy the assertion below while proving nothing.
+    assert [command for command in planned if command[2] == "install"] != []
+    assert ran == planned
+    assert findings == tuple(
+        f"command failed with exit 9: {' '.join(command)}"
+        for command in planned
+        if command[2] == "marketplace"
+    )
+
+
+def test_ensure_keeps_refusals_collected_before_an_invocation_that_never_ran() -> None:
+    """Stopping at an invocation that never HAPPENED must not discard what preceded it.
+
+    The cycle continues past a command that RAN and refused but ends at one that
+    never ran, because "the binary is not there" is a fact about `argv[0]` that
+    every planned command shares rather than a verdict on one command. That stop
+    RETURNS the refusals already collected alongside it — dropping them would
+    reintroduce the reporting half of `livespec-dev-tooling-357j2y` at a
+    different door.
+    """
+
+    def runner(*, args: tuple[str, ...]) -> PluginCommandOutcome:
+        if args[2] == "marketplace":
+            return _ran(returncode=9)
+        return IOFailure(
+            InvocationNotPerformed(argv=args, kind=BINARY_ABSENT, detail="claude not on PATH")
+        )
+
+    findings = ensure(
+        settings_text=_M3,
+        project_root="/repo",
+        runner=runner,
+        read_registry=lambda: None,
+    )
+
+    assert [finding for finding in findings if "exit 9" in finding] != []
+    assert [finding for finding in findings if BINARY_ABSENT in finding] != []

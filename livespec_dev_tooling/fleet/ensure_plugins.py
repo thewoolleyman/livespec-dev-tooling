@@ -203,21 +203,37 @@ def _registry_repair_paths(
 def _run_commands(
     *, commands: tuple[tuple[str, ...], ...], runner: PluginCommandRunner
 ) -> tuple[str, ...]:
-    """Run one provisioning cycle and return the first command failure.
+    """Run one provisioning cycle and return EVERY command failure it saw.
 
-    The two failures are kept APART because they call for opposite
-    operator responses: a command that RAN and refused is the plugin
-    CLI's own verdict, while a command that never ran at all is an
-    install or permissions problem on the host and says nothing about
-    the plugin.
+    A REFUSAL NO LONGER SUPPRESSES THE COMMANDS BEHIND IT. `planned_commands`
+    emits every `marketplace add` before any `install`, and `marketplace add` is
+    a network operation against GitHub — a rate limit, a transient fault, or a
+    momentarily unavailable repo each exits non-zero. Returning at the first of
+    them installed NOTHING while `main` still exited 4, which is the incident
+    symptom: plugins enabled by committed settings with no install record, a
+    state Claude Code resolves to no operations and no error
+    (`livespec-dev-tooling-357j2y`). Continuing is not tolerance — every refusal
+    is still reported, one finding per failing command.
+
+    AN INVOCATION THAT NEVER HAPPENED STILL STOPS THE CYCLE, and the two
+    failures stay APART because they call for opposite operator responses: a
+    command that RAN and refused is the plugin CLI's own verdict, while a
+    command that never ran at all is an install or permissions problem on the
+    host and says nothing about the plugin. That fact is about `argv[0]`, which
+    every planned command shares, so running the remainder would restate one
+    host problem as a dozen findings. The stop RETURNS the refusals already
+    collected alongside it rather than discarding them — dropping them would
+    reintroduce the reporting half of the defect at a different door.
     """
+    findings: list[str] = []
     for command in commands:
         answer = plugin_command_answer(outcome=runner(args=command))
         if isinstance(answer, InvocationNotPerformed):
-            return (f"command did not run: {answer.reason}",)
+            findings.append(f"command did not run: {answer.reason}")
+            return tuple(findings)
         if answer.returncode != 0:
-            return (f"command failed with exit {answer.returncode}: {' '.join(command)}",)
-    return ()
+            findings.append(f"command failed with exit {answer.returncode}: {' '.join(command)}")
+    return tuple(findings)
 
 
 def ensure(
