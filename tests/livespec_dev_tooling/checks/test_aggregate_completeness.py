@@ -162,13 +162,19 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 78-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 79-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    # 78 since livespec-dev-tooling-wmym wired the canonical
+    # 79 since livespec-dev-tooling-t2q4 wired the repo-private
+    # `check-no-direct-github-access` (the GitHub request-budget Verifier: first-
+    # party code reaches GitHub through `budgeted_gh.gh_read` or not at all). It
+    # is repo-private rather than canonical because arming the ban fleet-wide
+    # ahead of the sibling retrofit would redden three members on their next pin
+    # bump, and its anti-vacuous guard would hard-fail the one member with zero
+    # first-party Python. The 78th was livespec-dev-tooling-wmym's canonical
     # `check-marketplace-ref-release-only` (the livespec-family marketplace ref
     # guard) on top of livespec-dev-tooling-hizx's
     # `check-plan-no-live-handoff-file`, which took the count to 77. The 76th
@@ -181,7 +187,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     # stays EXACT rather than becoming a `>=`: its job is to make any change to
     # the inventory a deliberate edit here, and a lower bound would let a silent
     # drop through.
-    assert wired is not None and len(wired) == 78
+    assert wired is not None and len(wired) == 79
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None

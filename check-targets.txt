@@ -76,6 +76,7 @@ check-coverage
 check-fleet-conformance
 check-fleet-conformance-admin
 check-fabro-image-pin-lockstep
+check-no-direct-github-access
 check-no-workflow-edits
 check-shipped-path-release-guard
 check-uv-lock-version-sync

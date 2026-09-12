@@ -597,6 +597,7 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/checks/test_rop_pipeline_shape.py",
     "tests/livespec_dev_tooling/checks/test_supervisor_discipline.py",
     "tests/livespec_dev_tooling/test_green_token.py",
+    "tests/livespec_dev_tooling/test_no_direct_github_access.py",
     "tests/livespec_dev_tooling/test_tdd_commit.py",
 ]
 

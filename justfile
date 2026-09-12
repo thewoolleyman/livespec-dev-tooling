@@ -278,6 +278,7 @@ check:
         check-fleet-conformance
         check-fleet-conformance-admin
         check-fabro-image-pin-lockstep
+        check-no-direct-github-access
         check-no-workflow-edits
         check-shipped-path-release-guard
         check-uv-lock-version-sync
@@ -609,6 +610,20 @@ check-fleet-conformance-admin:
 # `check:` aggregate above AND the CI check-metadata matrix.
 check-fabro-image-pin-lockstep:
     uv run python -m livespec_dev_tooling.fabro_image_pin_lockstep
+
+# GitHub request-budget Verifier (work-item livespec-dev-tooling-t2q4): fail
+# when first-party code reaches GitHub directly — an argv whose first element
+# is `gh`, or a string constant naming the GitHub API host — instead of going
+# through livespec_dev_tooling.budgeted_gh.gh_read. Armed unconditionally: no
+# lever, no warn-only mode, no skip. Repo-private (the module deliberately
+# lives OUTSIDE livespec_dev_tooling/checks/, so canonical_check_slugs never
+# discovers it) because arming it fleet-wide would redden three siblings that
+# still hold 20 unrouted call sites, and would hard-fail the one fleet member
+# with zero first-party Python on its anti-vacuous guard alone; promotion
+# travels with that cross-repo retrofit, per livespec's New-obligation
+# discipline. A literal member of check-targets.txt's repo-private block.
+check-no-direct-github-access:
+    uv run python -m livespec_dev_tooling.no_direct_github_access
 
 check-coverage:
     scripts/just/check-coverage.sh
