@@ -11,10 +11,13 @@ orchestrator rename). This row asserts the five pairs agree from the
 central fleet vantage point, making any drift un-mergeable.
 
 Per the fleet contract's can't-read-is-not-absent discipline: a member
-that lacks either file, or whose `.livespec.jsonc` carries no
-`connection` block, is not beads-backed (or not yet wired) and yields a
-skip — never a false red. Only a member with BOTH connection sources
-present and a definite disagreement yields a finding.
+whose file could not be READ is not beads-backed (or not yet wired) and
+yields a skip — never a false red; a member whose `.livespec.jsonc`
+parses and carries no `connection` block is INAPPLICABLE, an excluded
+pass. A member with BOTH connection sources present and a definite
+disagreement yields a finding — and so does a `.livespec.jsonc` the row
+FOUND and could not PARSE, which is a definitive property of committed
+bytes rather than a transport failure (see `_member_connection`).
 
 The parse/lookup/compare primitives this row shares with the LOCAL
 `reconcile_livespec_jsonc_complete` row (`_rows_local_jsonc`) live in the
@@ -60,37 +63,46 @@ __all__: list[str] = [
 
 
 def _member_connection(
-    *, member: FleetMember, jsonc_text: str
+    *, ctx: FleetContext, member: FleetMember, jsonc_text: str
 ) -> Result[dict[str, object], RowOutcome]:
     """The member's connection block, or the outcome its defect or absence earns.
 
     ⛔ The failure track is `RowOutcome`, not `RowSkip`, and the widening is
     the POINT rather than a concession: the two non-success answers here are
-    NOT the same kind. A document that will not PARSE is a can't-read and stays
-    a skip; a document that parses and definitively carries no connection block
-    is INAPPLICABLE and is an excluded pass. Annotating this `RowSkip` is what
-    let the two be written as one thing.
+    NOT the same kind. A document that will not PARSE is a FINDING; a document
+    that parses and definitively carries no connection block is INAPPLICABLE
+    and is an excluded pass.
 
     Split out to keep `assert_tenant_connection_consistency` at the
     six-return cap: the conversion added a branch, which is the structural
     cost every conversion in this epic pays somewhere.
 
-    SEVERITY IS UNCHANGED — an unusable document was a skip before the
-    conversion and stays one. Only the REASON changes, from "carries no
-    impl-plugin connection block" (a statement about the member's config
-    that the row never verified) to one naming the defect. v039's ratified
-    "a can't-PARSE is NEVER a pass" is scoped to pin-currency rows
-    (`contracts.md` section "Pin-currency severity policy"); generalizing it to
-    this row is a ratification, not a conversion.
+    A CAN'T-PARSE IS NEVER A PASS AND NEVER A SKIP, per this repo's
+    `SPECIFICATION/contracts.md` section "Pin-currency severity policy" (v039),
+    whose can't-READ / can't-PARSE rule the maintainer ruled binds this row too
+    (work-item livespec-dev-tooling-9hpu). A skip says "could not be evaluated,
+    try again later", and a member whose committed bytes do not parse fails
+    identically on every future run until someone edits the file — so the row
+    would never evaluate that member while the sweep exits passed. The render
+    is deliberately IDENTICAL to `walk_failure_outcome`'s can't-PARSE arm,
+    including the context scoping the ratified text carries: error in the
+    filter-consuming preflight, where the dispatch-matrix filter can exclude
+    that member BY NAME, and warning in every context that can only pass or
+    fail as a whole. Nothing STRICTER than v039 is asserted here.
+
+    A can't-READ is untouched: `assert_tenant_connection_consistency` skips
+    before reaching here when the file itself is unreadable or absent.
     """
     block = connection_block(text=jsonc_text)
     if isinstance(block, Failure):
         return Failure(
-            RowSkip(
-                reason=(
-                    f"{member.repo}: {LIVESPEC_JSONC_PATH} is not a usable JSONC object map "
-                    f"({block.failure().detail})"
-                )
+            RowFinding(
+                message=(
+                    f"{member.repo}: {LIVESPEC_JSONC_PATH} could not be PARSED "
+                    f"(a definitive property of committed bytes, not a transient read "
+                    f"failure): {block.failure().detail}"
+                ),
+                severity="error" if ctx.filter_consuming_preflight else "warning",
             )
         )
     connection = block.unwrap()
@@ -112,12 +124,14 @@ def assert_tenant_connection_consistency(*, ctx: FleetContext, member: FleetMemb
 
     TWO OUTCOMES FOR TWO DIFFERENT THINGS, and conflating them is what
     livespec-dev-tooling-8o8e.2 fixed. SKIPS only when a source could not be
-    READ — an unreadable `.beads/config.yaml` or `.livespec.jsonc`, or a
-    document that will not parse — which is what feeds `blind_rows`. EXCLUDES
-    (a pass carrying the excluded-with-reason note) when the sources were read
-    and the row simply does not APPLY: no `dolt.*` connection keys, so the
-    member is not beads-backed, or no impl-plugin connection block. Findings
-    name every mismatched key.
+    READ — an unreadable or absent `.beads/config.yaml` or `.livespec.jsonc` —
+    which is what feeds `blind_rows`. EXCLUDES (a pass carrying the
+    excluded-with-reason note) when the sources were read and the row simply
+    does not APPLY: no `dolt.*` connection keys, so the member is not
+    beads-backed, or no impl-plugin connection block. FINDS when the sources
+    disagree, naming every mismatched key — or when the `.livespec.jsonc` was
+    read and will not PARSE, which is a defect of committed bytes rather than
+    an unevaluable row (`_member_connection`).
     """
     beads_text = ctx.file_text(repo=member.repo, path=BEADS_CONFIG_PATH)
     if beads_text is None:
@@ -134,7 +148,7 @@ def assert_tenant_connection_consistency(*, ctx: FleetContext, member: FleetMemb
         return row_excluded(
             reason=f"{member.repo}: {BEADS_CONFIG_PATH} carries no dolt.* connection keys"
         )
-    resolved = _member_connection(member=member, jsonc_text=jsonc_text)
+    resolved = _member_connection(ctx=ctx, member=member, jsonc_text=jsonc_text)
     if isinstance(resolved, Failure):
         return resolved.failure()
     mismatched = mismatched_keys(beads=beads, connection=resolved.unwrap())
