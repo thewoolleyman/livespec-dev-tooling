@@ -772,6 +772,13 @@ ban-relative-imports = "all"
 # for the check modules above. The RealCliRunner (and its subprocess call) now
 # lives in the extracted `_cli_e2e_driver` module.
 "livespec_dev_tooling/testing/_cli_e2e_driver.py" = ["S603", "S607", "S404"]
+# The package's ONE budgeted `gh` boundary (work-item
+# livespec-dev-tooling-z69s) spawns the argv the vendored transport built —
+# `gh` plus the caller's argument tail, each element its own argv member and
+# no shell — which is the same documented pattern as the check modules above.
+# S603/S607/S404 are over-strict for it; the callers that used to carry this
+# exemption per-file no longer spawn anything.
+"livespec_dev_tooling/budgeted_gh.py" = ["S603", "S607", "S404"]
 
 # ---------------------------------------------------------------------------
 # Pyright — strict + seven strict-plus diagnostics. Per

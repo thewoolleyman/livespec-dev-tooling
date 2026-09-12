@@ -96,6 +96,7 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from livespec_dev_tooling.agent_hooks._subagent_stop_guard_transcript import (  # noqa: E402
     extract_created_worktree_paths,
 )
+from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: E402
 
 __all__: list[str] = []
 
@@ -239,6 +240,22 @@ def _unarmed_pr_marker(*, worktree: Path) -> str | None:
     `_pushed_branch_name` for why letting `gh` default to the checkout's
     current branch misreports a rename as a missing pull request.
 
+    The read is issued through `livespec_dev_tooling.budgeted_gh.gh_read`
+    rather than by spawning `gh` here, so the GitHub request-budget policy
+    applies to it (livespec-dev-tooling-z69s). It carries the same
+    per-call timeout it always did, and the fail-open contract is
+    unchanged: `gh_read` reports a missing binary or an expired timeout as
+    a non-zero read that carries no "no pull requests found" answer, which
+    is the branch that already yielded None.
+
+    It is NOT declared deferrable, even though a hook marker is exactly
+    the advisory work a reserved floor exists to hold back. The client
+    measures a floor with a preflight `/rate_limit` read, and this
+    directory's contract budgets this path ONE forge round trip (see
+    `agent_hooks/CLAUDE.md`: blocking paths are sub-second except the
+    single `gh` call); a second one to decide whether to take the first
+    would cost more latency than the deferral could save budget.
+
     Fail-open contract: an unresolvable push name, and any `gh` failure
     other than the explicit "no pull requests found" answer (missing
     binary, network error, auth failure, timeout, malformed payload),
@@ -247,17 +264,11 @@ def _unarmed_pr_marker(*, worktree: Path) -> str | None:
     branch = _pushed_branch_name(worktree=worktree)
     if branch is None:
         return None
-    try:
-        result = subprocess.run(
-            ["gh", "pr", "view", branch, "--json", "state,autoMergeRequest"],
-            cwd=str(worktree),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_GH_TIMEOUT_SECONDS,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
+    result = gh_read(
+        args=["pr", "view", branch, "--json", "state,autoMergeRequest"],
+        cwd=worktree,
+        timeout=_GH_TIMEOUT_SECONDS,
+    )
     if result.returncode != 0:
         if "no pull requests found" in result.stderr.lower():
             return "branch is pushed but has NO PR (gh pr create, then gh pr merge --auto)"

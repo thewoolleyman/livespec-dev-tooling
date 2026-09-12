@@ -12,6 +12,11 @@ merge-gate contract names are split across them: the `required_status_checks`
 object carries `contexts` and `strict`, and `enforce_admins` has its own
 sub-endpoint.
 
+Every one of those forge reads is issued through
+`livespec_dev_tooling.budgeted_gh.gh_read`, never by spawning `gh` here, so
+the GitHub request-budget policy applies to them (livespec-dev-tooling-z69s).
+The `git` reads below are NOT forge traffic and stay direct subprocesses.
+
 The names stay private and are re-exported by the check module, so a caller —
 or a test — still reaches them through `branch_protection_alignment`.
 """
@@ -28,6 +33,7 @@ from typing import cast
 
 import structlog
 
+from livespec_dev_tooling.budgeted_gh import gh_read
 from livespec_dev_tooling.checks._gate_context import gate_repository
 
 __all__: list[str] = [
@@ -188,13 +194,11 @@ def _default_branch_from_api(*, owner_repo: str) -> str | None:
     `GET repos/{owner_repo}` needs only basic repository read access
     (the default Actions GITHUB_TOKEN has it), so this fallback still
     resolves correctly where the symref is unset.
+
+    Issued through `budgeted_gh.gh_read`, like every GitHub read in this
+    module, so the request-budget policy applies to it.
     """
-    completed = subprocess.run(
-        ["gh", "api", f"repos/{owner_repo}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    completed = gh_read(args=["api", f"repos/{owner_repo}"])
     if completed.returncode != 0:
         return None
     parsed = json.loads(completed.stdout)
@@ -269,12 +273,7 @@ def _fetch_required_contexts(
     # `contexts`: the strict-off assertion needs the `strict` flag, which
     # the /contexts list endpoint does not return.
     api_path = f"repos/{owner_repo}/branches/{branch}/protection/required_status_checks"
-    completed = subprocess.run(
-        ["gh", "api", api_path],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    completed = gh_read(args=["api", api_path])
     if completed.returncode != 0:
         combined = f"{completed.stdout}\n{completed.stderr}"
         if _NOT_PROTECTED_MARKER in combined:
@@ -342,12 +341,7 @@ def _fetch_admin_enforcement(
     api_path = (
         f"repos/{protection.owner_repo}/branches/{protection.branch}/protection/enforce_admins"
     )
-    completed = subprocess.run(
-        ["gh", "api", api_path],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    completed = gh_read(args=["api", api_path])
     if completed.returncode != 0:
         log.warning(
             "gh api call failed reading the enforce_admins sub-endpoint",

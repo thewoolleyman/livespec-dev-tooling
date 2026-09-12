@@ -11,15 +11,26 @@ earn.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.budgeted_gh import GhRead
 from livespec_dev_tooling.checks import branch_protection_alignment, master_ci_green
 from livespec_dev_tooling.checks._gate_context import GATE_CONTEXT_ENV
 
 if TYPE_CHECKING:
     import pytest
+
+
+def _failed_read(*, stderr: str) -> GhRead:
+    """One budgeted read that came back non-zero, carrying `stderr`.
+
+    The seam these tests stub is `master_ci_green.gh_read`, the budgeted
+    boundary the check now reads GitHub through (livespec-dev-tooling-z69s);
+    before the retrofit it was `master_ci_green.subprocess.run`. Same shape,
+    same three fields, so the dispositions below are unchanged.
+    """
+    return GhRead(returncode=1, stdout="", stderr=stderr)
 
 
 def _unreadable_master_ci(*, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -30,13 +41,7 @@ def _unreadable_master_ci(*, monkeypatch: pytest.MonkeyPatch) -> None:
     keep passing if the classifier stopped being consulted.
     """
     monkeypatch.setattr(master_ci_green, "_gh_has_stored_credential", lambda: False)
-    monkeypatch.setattr(
-        master_ci_green.subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr=""
-        ),
-    )
+    monkeypatch.setattr(master_ci_green, "gh_read", lambda **_kwargs: _failed_read(stderr=""))
 
 
 def test_master_ci_green_passes_without_a_credential_outside_a_gate(
@@ -69,11 +74,7 @@ def test_master_ci_green_fails_on_a_rejected_credential_inside_a_gate(
         lambda **_kwargs: True,
     )
     monkeypatch.setattr(
-        master_ci_green.subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="HTTP 401"
-        ),
+        master_ci_green, "gh_read", lambda **_kwargs: _failed_read(stderr="HTTP 401")
     )
     assert master_ci_green.main() == 1
 
