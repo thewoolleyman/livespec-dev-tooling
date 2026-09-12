@@ -908,6 +908,26 @@ omit = [
     "/tmp/*",
     "/private/var/folders/*",
     "mutants/*",
+    # THE INVARIANT: coverage must never measure code the repository does not
+    # own. A relative `source` allowlist cannot express it here (see the
+    # block comment above: pytest-cov's pth startup hook instruments
+    # subprocesses whose cwd is a tmp_path, and a relative `source` resolves
+    # against THAT cwd, silently dropping the repo-owned check scripts the
+    # per-file suite runs). So the repo keeps omit-based, no-source measurement
+    # and excludes the external-host trees by construction instead. Any Python a
+    # test's subprocess runs from a SYSTEM path — host-installed tooling under
+    # /usr or /opt — is foreign code the pth hook would otherwise instrument, so
+    # both roots are omitted wholesale. First-party code never lives there (it is
+    # under the repo root, in a checkout or a worktree), so this hides no gap.
+    #
+    # Root cause this closes (livespec-dev-tooling / epic livespec-qurhq2 C11):
+    # the bd lifecycle-guard at /usr/local/bin/bd-guard-emit.py was instrumented
+    # as a test subprocess, and its error branches execute or not depending on
+    # the bd backend's state during the parallel run — so check-per-file-coverage
+    # read 99.98% on about half the runs with ZERO .py changed. A flake is a hard
+    # blocker, and the missing invariant was "repo-owned only".
+    "/usr/*",
+    "/opt/*",
     # Same class as the two absolute paths above: foreign code a test's
     # SUBPROCESS executes, which the pth startup hook then instruments.
     # A Fabro sandbox installs a `/usr/bin/gh` WRAPPER that mints a fresh
