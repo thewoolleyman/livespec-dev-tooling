@@ -21,6 +21,16 @@
 #   - bubblewrap (HARD codex-acp requirement — for BOTH its
 #     require_escalated command execution AND its apply_patch edit tool;
 #     dropping it silently breaks Codex-driven runs)
+#   - a headless browser payload: the Playwright CLI plus the Chromium
+#     build that Playwright release pins, with its system libraries.
+#     ITS CONSUMER is factory-captured proofs in the
+#     livespec-orchestrator-beads-fabro reserved workflow — a dispatched
+#     run that has to SHOW a rendered page rather than assert about it.
+#     Like the adapters, it lands in this agent layer and NOT in `base`,
+#     so CI image pulls are unchanged: a browser is the largest instance
+#     yet of payload only Fabro sandboxes execute, and pushing it down to
+#     `base` would add every one of those bytes to every CI job's pull
+#     for a capability no CI job uses.
 #   - BOTH ACP adapters preinstalled: @agentclientprotocol/claude-agent-acp
 #     (Claude) as a global so `npx -y <adapter>` resolves locally, and
 #     @agentclientprotocol/codex-acp (the orchestrator's Codex adapter) under
@@ -168,3 +178,115 @@ RUN set -eux; \
         printf '\n# Dependency compiles served from the factory host sccache when it answers,\n# plain rustc otherwise (agent layer; sccache-or-rustc probes once per container).\n[build]\nrustc-wrapper = "/usr/local/bin/sccache-or-rustc"\nincremental = false\n' \
             >> /root/.cargo/config.toml; \
     fi
+
+# ---------------------------------------------------------------
+# Headless browser payload — Playwright plus the Chromium build this
+# Playwright release pins. ARG form so `just check-fabro-image-pin-lockstep`
+# can parse the pin mechanically; declared in THIS layer only, because that
+# check MERGES the ARG lines across the layer tree and a second copy would
+# drift silently rather than fail. PLAYWRIGHT_VERSION has no `.mise.toml`
+# counterpart (Playwright is not a host toolchain pin), so it carries no
+# lockstep obligation — the two ACP adapter ARGs above are the precedent.
+# ---------------------------------------------------------------
+ARG PLAYWRIGHT_VERSION=1.63.0
+
+RUN npm install -g --fetch-retries=5 \
+        playwright@${PLAYWRIGHT_VERSION}
+
+# The Chromium build this Playwright release pins, plus its system libraries.
+# `--with-deps` shells out to apt on this Ubuntu 24.04 chain, and those apt
+# calls are Playwright's own children, so the retry posture is installed as an
+# apt.conf.d drop-in (a `-o` flag would reach only OUR apt invocation) and
+# removed again in the same step, leaving no config residue. Lists are cleaned
+# in the layer that populated them, matching the bubblewrap step above.
+#
+# NO `PLAYWRIGHT_BROWSERS_PATH`: the install is left at Playwright's DEFAULT
+# destination, which for uid 0 with HOME=/root is /root/.cache/ms-playwright.
+# Fabro spawns ACP nodes under a fail-closed env allowlist, so a browser that
+# can only be located through an environment variable is a browser the sandbox
+# cannot find at runtime. The `test -d` proves the default root really is where
+# the bytes landed rather than leaving it to assumption.
+RUN set -eux; \
+    printf 'Acquire::Retries "5";\n' > /etc/apt/apt.conf.d/99livespec-acquire-retries; \
+    apt-get -o Acquire::Retries=5 update; \
+    playwright install --with-deps chromium; \
+    rm -f /etc/apt/apt.conf.d/99livespec-acquire-retries; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    test -d /root/.cache/ms-playwright
+
+# What the image actually carries, recorded for the sandbox to read and printed
+# so the build log carries it too. Both numbers are READ BACK from the install
+# rather than written down: Playwright's pin already determines which Chromium
+# build lands, so a literal here would be a second copy free to drift, and a
+# drifted versions file reports a browser the image does not have. The binary is
+# found by globbing the default browsers root (`chromium-*` does not match the
+# sibling `chromium_headless_shell-*` directory), and the glob is required to
+# resolve — an unmatched glob would otherwise leave the loop variable holding the
+# pattern itself and record a nonsense version.
+RUN set -eux; \
+    chromium_bin=""; \
+    for candidate in /root/.cache/ms-playwright/chromium-*/chrome-linux/chrome; do \
+        if [ -x "${candidate}" ]; then chromium_bin="${candidate}"; fi; \
+    done; \
+    test -n "${chromium_bin}"; \
+    playwright_version="$(playwright --version | awk '{print $NF}')"; \
+    chromium_version="$("${chromium_bin}" --version | awk '{print $NF}')"; \
+    test -n "${playwright_version}"; \
+    test -n "${chromium_version}"; \
+    mkdir -p /etc/livespec; \
+    printf 'playwright %s\nchromium %s\n' "${playwright_version}" "${chromium_version}" \
+        > /etc/livespec/sandbox-browser-versions; \
+    cat /etc/livespec/sandbox-browser-versions
+
+# BUILD-TIME SMOKE CHECK — an end-to-end capture, not a version probe.
+# `playwright --version` and a present binary prove nothing about whether this
+# browser can actually render: the ways a containerized headless Chromium fails
+# are missing shared libraries, no usable sandbox for uid 0, and a missing font
+# stack, and every one of them passes a version probe and then fails on the
+# first real navigation. So this step IS the whole round trip: it writes a page,
+# serves that page itself over the loopback interface (hermetic — no internet,
+# no third-party URL that can change under the build), drives the installed
+# Chromium at it through the Playwright CLI, and keeps the PNG only long enough
+# to check it. `playwright screenshot` forces headless, and Playwright's
+# `chromiumSandbox` default of false is what lets Chromium run as uid 0 here.
+RUN set -eux; \
+    smoke_port=45231; \
+    smoke_dir="$(mktemp -d)"; \
+    printf '%s\n' \
+        '<!doctype html><html><head><meta charset="utf-8">' \
+        '<title>livespec fabro-sandbox headless browser smoke</title></head>' \
+        '<body style="margin:0;background:#0b2545">' \
+        '<h1 style="color:#ffffff;font:700 56px/1.4 sans-serif;padding:64px">' \
+        'livespec fabro-sandbox: headless Chromium rendered this page over loopback.' \
+        '</h1></body></html>' \
+        > "${smoke_dir}/page.html"; \
+    printf '%s\n' \
+        'const http = require("http");' \
+        'const fs = require("fs");' \
+        'const body = fs.readFileSync(process.argv[2]);' \
+        'http.createServer(function (_req, res) {' \
+        '  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });' \
+        '  res.end(body);' \
+        '}).listen(Number(process.argv[3]), "127.0.0.1");' \
+        > "${smoke_dir}/serve.js"; \
+    node "${smoke_dir}/serve.js" "${smoke_dir}/page.html" "${smoke_port}" & \
+    smoke_server="$!"; \
+    smoke_ready=""; \
+    for _attempt in 1 2 3 4 5 6 7 8 9 10; do \
+        if node -e 'require("http").get({host:"127.0.0.1",port:Number(process.argv[1]),path:"/page.html"},function(res){process.exit(res.statusCode===200?0:1);}).on("error",function(){process.exit(1);});' "${smoke_port}"; then \
+            smoke_ready=1; \
+            break; \
+        fi; \
+        sleep 1; \
+    done; \
+    test -n "${smoke_ready}"; \
+    playwright screenshot --browser chromium --viewport-size "1280,720" \
+        "http://127.0.0.1:${smoke_port}/page.html" "${smoke_dir}/smoke.png"; \
+    smoke_signature="$(od -An -N8 -tx1 < "${smoke_dir}/smoke.png" | tr -d ' \n')"; \
+    test "${smoke_signature}" = "89504e470d0a1a0a"; \
+    smoke_bytes="$(wc -c < "${smoke_dir}/smoke.png")"; \
+    test "${smoke_bytes}" -gt 1024; \
+    echo "sandbox browser smoke: ${smoke_bytes} PNG bytes, signature ${smoke_signature}"; \
+    kill "${smoke_server}"; \
+    rm -rf "${smoke_dir}"
