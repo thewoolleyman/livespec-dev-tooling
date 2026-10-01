@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.91.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.90.0...v1.91.0) (2026-10-01)
+
+
+### Features
+
+* **fabro-sandbox:** bake headless Chromium and Playwright into the agent image with a build-time screenshot smoke check (livespec-dev-tooling-bz2kia) ([b15a07b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b15a07b02455996f16d7d1aca7ee9abe8e35bb3c))
+
 ## [1.90.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.89.3...v1.90.0) (2026-09-12)
 
 
