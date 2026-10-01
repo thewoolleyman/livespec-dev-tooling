@@ -178,7 +178,7 @@ def test_versions_file_records_what_was_installed_and_the_build_prints_it() -> N
         '"${chromium_bin}" --version' in step
     ), "the recorded Chromium version is read from the installed browser binary"
     assert (
-        f"{_DEFAULT_BROWSERS_ROOT}/chromium-*/chrome-linux/chrome" in step
+        f"{_DEFAULT_BROWSERS_ROOT}/chromium-*/chrome-linux*/chrome" in step
     ), "the binary is located by globbing Playwright's default browsers root"
     assert (
         f"cat {_VERSIONS_FILE}" in step

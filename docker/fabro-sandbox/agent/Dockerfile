@@ -223,10 +223,14 @@ RUN set -eux; \
 # found by globbing the default browsers root (`chromium-*` does not match the
 # sibling `chromium_headless_shell-*` directory), and the glob is required to
 # resolve — an unmatched glob would otherwise leave the loop variable holding the
-# pattern itself and record a nonsense version.
+# pattern itself and record a nonsense version. The binary's directory is
+# `chrome-linux64` for the Chrome for Testing builds Playwright has shipped
+# since the CfT cutover (measured on the pinned release: "Chrome for Testing
+# ... chrome-linux64.zip") and `chrome-linux` for the older layout; the glob
+# accepts both so a Playwright bump cannot silently break this step again.
 RUN set -eux; \
     chromium_bin=""; \
-    for candidate in /root/.cache/ms-playwright/chromium-*/chrome-linux/chrome; do \
+    for candidate in /root/.cache/ms-playwright/chromium-*/chrome-linux*/chrome; do \
         if [ -x "${candidate}" ]; then chromium_bin="${candidate}"; fi; \
     done; \
     test -n "${chromium_bin}"; \
