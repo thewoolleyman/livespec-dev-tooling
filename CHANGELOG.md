@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.91.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.91.1...v1.91.2) (2026-10-01)
+
+
+### Bug Fixes
+
+* **fabro-sandbox:** locate the Chrome for Testing binary under chrome-linux64 in the agent image versions step (livespec-dev-tooling-fglb7d) ([f29e972](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f29e972cce13800e319009fdac5862780c21c35e))
+
 ## [1.91.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.91.0...v1.91.1) (2026-10-01)
 
 
