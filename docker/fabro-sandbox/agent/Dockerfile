@@ -294,3 +294,43 @@ RUN set -eux; \
     echo "sandbox browser smoke: ${smoke_bytes} PNG bytes, signature ${smoke_signature}"; \
     kill "${smoke_server}"; \
     rm -rf "${smoke_dir}"
+
+# ---------------------------------------------------------------
+# herdr — the terminal workspace manager a dispatched run drives to create,
+# split, write to and read back real panes. ARG form so
+# `just check-fabro-image-pin-lockstep` can parse the pins mechanically;
+# declared in THIS layer only, because that check MERGES the ARG lines across
+# the layer tree and a second copy would drift silently rather than fail.
+# Neither ARG has a `.mise.toml` counterpart — herdr is not a host toolchain
+# pin — so neither carries a lockstep obligation, exactly as PLAYWRIGHT_VERSION
+# and the SCCACHE_* pair above.
+#
+# HERDR_SHA256 is a SECOND pin, not a convenience. A release asset URL is
+# mutable, so the version alone does not make the download reproducible; the
+# digest does. ORDER IS LOAD-BEARING: `curl -o` writes a NON-executable file
+# and `install -m 0755` is the moment the payload becomes runnable, so the
+# `sha256sum -c` sits strictly between them and an unverified binary is never
+# executable in this layer.
+#
+# The asset is a static-pie x86-64 binary with no runtime library dependency,
+# so there is no apt step here and nothing to clean up after one. It lands in
+# /usr/local/bin, which is on a non-root sandbox shell's default PATH — a
+# payload reachable only by sourcing something is a payload the sandbox cannot
+# find, the same constraint that keeps the browser at its default root.
+#
+# The version is READ BACK from the installed binary and held to the ARG. A
+# release asset that quietly carried a different build would otherwise install
+# silently, and every assertion downstream would be about a herdr nobody pinned.
+# ---------------------------------------------------------------
+ARG HERDR_VERSION=0.9.3
+ARG HERDR_SHA256=18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7
+
+RUN set -eux; \
+    curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
+        -o /tmp/herdr-linux-x86_64 \
+        "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-x86_64"; \
+    echo "${HERDR_SHA256}  /tmp/herdr-linux-x86_64" | sha256sum -c -; \
+    install -m 0755 /tmp/herdr-linux-x86_64 /usr/local/bin/herdr; \
+    rm -f /tmp/herdr-linux-x86_64; \
+    test "$(herdr --version | awk '{print $NF}')" = "${HERDR_VERSION}"; \
+    herdr --version
