@@ -185,3 +185,32 @@ RUN git config --system user.useConfigOnly true \
 # Dockerfile.dockerignore allowlists this one file into the (repo-root)
 # build context.
 COPY --chmod=0755 livespec_dev_tooling/otel_step_timer.py /usr/local/bin/livespec-step-timer
+
+# WHAT THIS IMAGE CAN DO, published for the sandbox to read.
+#
+# ITS CONSUMER is the Definition-of-Done gate in
+# livespec-orchestrator-beads-fabro, which checks each factory-captured
+# assertion against the capabilities the running sandbox image PUBLISHES here.
+# That makes this file an assertion the gate BELIEVES — there is no second
+# source to catch it with — so every name is probed in this same step before it
+# is written, and a layer that failed to install what it declares fails the
+# build instead of publishing a capability the image does not carry.
+#
+# Format: one lowercase snake_case name per line, no comments. The file is
+# parsed, not read.
+#   terminal  the pty + terminfo stack a dispatched run needs to drive an
+#             interactive terminal at all. It has no binary of its own; tmux
+#             is its consumer here, and the agent layer's herdr smoke step is
+#             where the round trip is exercised end to end.
+#   tmux      the multiplexer the apt step above bakes for factory-tier
+#             acceptance tests that drive real private tmux sockets.
+#
+# The AGENT layer REWRITES this file with its own, longer list rather than
+# appending to it, so each published image in the chain states exactly what IT
+# carries. The python and python-rust layers add toolchain, not capabilities,
+# and inherit this file unchanged.
+RUN set -eux; \
+    tmux -V; \
+    mkdir -p /etc/livespec; \
+    printf '%s\n' terminal tmux > /etc/livespec/sandbox-capabilities; \
+    cat /etc/livespec/sandbox-capabilities
