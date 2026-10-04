@@ -58,6 +58,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.92.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.91.2...v1.92.0) (2026-10-04)
+
+
+### Features
+
+* **fabro-sandbox:** name the herdr and capability-file consumers in the agent image header (livespec-dev-tooling-74c65i) ([5f1d2a4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5f1d2a41e8bb845bdf28ad586b641a78365170e1))
+* **fabro-sandbox:** pin and checksum-verify herdr in the agent image (livespec-dev-tooling-74c65i) ([88530d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/88530d19ae1f084ce5704645a993df6113c1d1dd))
+* **fabro-sandbox:** publish /etc/livespec/sandbox-capabilities from the base and agent images (livespec-dev-tooling-74c65i) ([f971986](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f9719869ddf21e25c2e8e74c8546185724cceb92))
+* **fabro-sandbox:** smoke a headless herdr pane round trip at agent image build time (livespec-dev-tooling-74c65i) ([c2f9fe4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c2f9fe4bd01888b21171c3fc337c3c1924130f2e))
+* **fabro-sandbox:** tear the herdr smoke server and its session state down before the layer commits (livespec-dev-tooling-74c65i) ([af2e1fb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/af2e1fb952333e20de6934c9aac85448f8ad5d7f))
+
 ## [1.91.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.91.1...v1.91.2) (2026-10-01)
 
 
