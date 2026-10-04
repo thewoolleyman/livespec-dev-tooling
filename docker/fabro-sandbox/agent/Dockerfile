@@ -361,6 +361,18 @@ RUN set -eux; \
 # layout change fails here instead of silently addressing the wrong pane.
 # python3 is the base layer's system interpreter (the same one
 # `livespec-step-timer` resolves through), not a uv-managed one.
+#
+# TEARDOWN, and it is part of the check rather than tidiness. A server still
+# running when the step ends is reaped by the builder at an unspecified moment,
+# so whether its state reaches the layer is a race; a session directory baked
+# into the image is state every container then starts from, which makes a stale
+# snapshot look live to the next reader; and the socket inside it is a dead file
+# with a live name, which a run that found it would address as a server. So the
+# step stops the server, deletes the session (which takes its state directory
+# and socket with it), PROVES the directory is gone rather than trusting the
+# delete, and finally removes its own scratch directory. All of it in THIS step:
+# a later `RUN rm` cannot help, because the bytes are already committed into the
+# layer this step produced.
 RUN set -eux; \
     smoke_session=livespec-herdr-smoke; \
     smoke_state="/root/.config/herdr/sessions/${smoke_session}"; \
@@ -388,6 +400,9 @@ RUN set -eux; \
     herdr --session "${smoke_session}" pane wait-output --match "${smoke_text}" --timeout 30000 "${split_pane}"; \
     herdr --session "${smoke_session}" pane read --source visible --format text "${split_pane}" | grep -F "${smoke_text}"; \
     echo "sandbox herdr smoke: read back from ${split_pane}, a split of ${root_pane}"; \
+    herdr --session "${smoke_session}" server stop; \
+    herdr session delete "${smoke_session}"; \
+    test ! -e "${smoke_state}"; \
     rm -rf "${smoke_dir}"
 
 # WHAT THIS IMAGE CAN DO — the base layer's capability file, REWRITTEN with the

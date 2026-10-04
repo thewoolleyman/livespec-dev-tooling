@@ -213,3 +213,51 @@ def test_herdr_smoke_step_fails_the_build_on_any_failed_step() -> None:
         f"{swallowed} would swallow a failure in the smoke step, which is the one step "
         "whose whole purpose is to fail"
     )
+
+
+def test_smoke_step_leaves_no_server_and_no_session_state_in_the_committed_layer() -> None:
+    """The published layer carries the binary — not a live server, a socket or a session.
+
+    Three distinct residues, and each is its own problem. A server still running when
+    the step ends is a process the builder reaps at an unspecified moment, so whether
+    its state lands in the layer is a race. A session directory baked into the image
+    is state every container then starts from, which makes a stale snapshot look like
+    a live one to the next reader. And the socket inside it is a dead file with a live
+    name: a run that found it would address a server that does not exist.
+
+    Order is part of the assertion. `session delete` operates on a STOPPED session, so
+    stopping has to come first; and the step must PROVE the directory is gone rather
+    than trust the delete, because a silent no-op there is indistinguishable from a
+    successful removal.
+    """
+    step = _step_containing(needle=_SMOKE_MARKER)
+    stop = f"{_HERDR} server stop"
+    delete = 'herdr session delete "${smoke_session}"'
+    assert stop in step, "the smoke server must be stopped by the step that started it"
+    assert delete in step, "the session's state directory and socket must be removed with it"
+    assert step.index(stop) < step.index(delete), (
+        "`session delete` removes a STOPPED session, so the stop has to come first — "
+        "deleting a live session is the ordering that silently leaves state behind"
+    )
+    assert 'test -S "${smoke_state}/herdr.sock"' in step and step.index(
+        'test -S "${smoke_state}/herdr.sock"'
+    ) < step.index(
+        stop
+    ), "the socket is asserted PRESENT while the server runs, so its absence later means something"
+    assert (
+        'test ! -e "${smoke_state}"' in step
+    ), "the step must PROVE the session directory is gone, not trust `session delete` to say so"
+    assert step.index(delete) < step.index(
+        'test ! -e "${smoke_state}"'
+    ), "the proof belongs after the removal it is about"
+    assert step.rstrip().endswith('rm -rf "${smoke_dir}"'), (
+        "the step must END by removing its temporary directory, so the server log is "
+        "gone before the layer is committed — a later `RUN rm` cannot help, the bytes "
+        "are already committed into the layer this step produced"
+    )
+    stray = [
+        line
+        for line in step.splitlines()
+        if "/tmp/" in line and "${smoke_dir}" not in line and "--cwd /tmp" not in line
+    ]
+    assert not stray, f"a scratch file outside the temporary directory survives the layer: {stray}"
