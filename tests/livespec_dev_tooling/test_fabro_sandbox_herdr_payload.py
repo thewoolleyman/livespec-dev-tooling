@@ -44,6 +44,12 @@ _HERDR_BIN = "/usr/local/bin/herdr"
 _VERSION_ARG_LINE = re.compile(r"^ARG HERDR_VERSION=(?P<version>\S+)$", re.MULTILINE)
 _SHA256_ARG_LINE = re.compile(r"^ARG HERDR_SHA256=(?P<digest>\S+)$", re.MULTILINE)
 
+# The one fragment that appears in the smoke step and nowhere else, so
+# `_step_containing` resolves that step unambiguously.
+_SMOKE_MARKER = "pane wait-output"
+_SESSION = '"${smoke_session}"'
+_HERDR = "herdr --session " + _SESSION
+
 
 def _run_steps(*, text: str) -> list[str]:
     """Every `RUN` instruction in `text`, backslash line-continuations kept intact.
@@ -128,3 +134,82 @@ def test_herdr_is_pinned_by_agent_layer_args_and_verified_before_it_becomes_exec
     assert _HERDR_VERSION not in text.replace(
         f"ARG HERDR_VERSION={_HERDR_VERSION}", ""
     ), "the pinned version must appear exactly once, on the ARG line"
+
+
+def test_smoke_step_drives_a_headless_herdr_server_through_a_whole_pane_round_trip() -> None:
+    """The capture is END-TO-END: start a server with no terminal, then pane in, pane out.
+
+    `herdr --version` and a present binary prove nothing about whether this image can
+    drive panes. The ways a headless terminal workspace fails inside a container — a
+    server that cannot allocate a pty, a socket it cannot bind, a pane whose shell never
+    starts — all pass a version probe and then fail on the first real pane. So the step
+    has to BE the round trip: a server in its own named session, a pane, a split of that
+    pane, one line of literal text in, and the same line read back out.
+
+    Nothing attaches a terminal to that server. A docker build has no tty, which is
+    exactly the shape a dispatched run runs in, so the headless `server` subcommand is
+    the only correct way in; an `attach` here would both hang the build and prove the
+    wrong thing.
+    """
+    step = _step_containing(needle=_SMOKE_MARKER)
+    assert (
+        f'{_HERDR} server > "${{smoke_dir}}/server.log" 2>&1 &' in step
+    ), "the server runs headless, in its own named session, with its log kept for the build"
+    assert (
+        "session attach" not in step
+    ), "nothing may attach a terminal to the smoke server — the build has no tty to attach"
+    assert f"{_HERDR} pane list >/dev/null 2>&1" in step, (
+        "readiness is POLLED on a real socket call rather than slept for: a fixed sleep "
+        "is either a slower build or a flake, depending on the host"
+    )
+    assert (
+        'test -S "${smoke_state}/herdr.sock"' in step
+    ), "the step must prove the server's socket exists before it drives anything over it"
+    assert (
+        f'root_pane="$({_HERDR} workspace create --cwd /tmp' in step
+    ), "the first pane comes from a real workspace the server creates"
+    assert (
+        f'split_pane="$({_HERDR} pane split "${{root_pane}}" --direction right' in step
+    ), "the split is a real split of the pane the server just reported"
+    assert step.count('["pane_id"]') == 2, (
+        "both pane ids are READ from the server's own JSON replies; assuming them would "
+        "address the wrong pane in silence the day the layout changes"
+    )
+    assert (
+        'test "${root_pane}" != "${split_pane}"' in step
+    ), "a split that returned the pane it split would pass every other assertion here"
+    assert (
+        f'{_HERDR} pane send-text "${{split_pane}}" "${{smoke_text}}"' in step
+    ), "one line of literal text goes into the split pane"
+    assert (
+        f'{_HERDR} pane read --source visible --format text "${{split_pane}}"'
+        ' | grep -F "${smoke_text}"' in step
+    ), "and the SAME line is read back out of that pane — the read is the assertion"
+
+
+def test_herdr_smoke_step_fails_the_build_on_any_failed_step() -> None:
+    """A smoke check that cannot fail the build is decoration, so hold the failure path.
+
+    Two ways this degrades silently. The step could stop aborting on a non-zero command
+    (`set -e` dropped, or a failure swallowed by `|| true`), leaving a green build on a
+    herdr that never rendered a pane. Or the wait for the pane echo could become
+    unbounded — `pane wait-output` without `--timeout` waits INDEFINITELY, which turns a
+    broken pane from a build failure into a build that never ends, and a hung build
+    reports no verdict at all.
+    """
+    step = _step_containing(needle=_SMOKE_MARKER)
+    assert step.startswith("RUN set -eux;"), (
+        "the smoke step must abort on the first non-zero command — without `set -e` a "
+        "failed pane operation or a failed read-back leaves the build green"
+    )
+    assert (
+        f'{_HERDR} pane wait-output --match "${{smoke_text}}" --timeout ' in step
+    ), "the wait on the pane echo must be BOUNDED, so a dead pane fails instead of hanging"
+    assert (
+        'test -n "${smoke_ready}"' in step
+    ), "a server that never answered must fail the build, not fall through to the panes"
+    swallowed = [token for token in ("|| true", "; true", "set +e", "|| :") if token in step]
+    assert not swallowed, (
+        f"{swallowed} would swallow a failure in the smoke step, which is the one step "
+        "whose whole purpose is to fail"
+    )

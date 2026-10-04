@@ -334,3 +334,58 @@ RUN set -eux; \
     rm -f /tmp/herdr-linux-x86_64; \
     test "$(herdr --version | awk '{print $NF}')" = "${HERDR_VERSION}"; \
     herdr --version
+
+# BUILD-TIME SMOKE CHECK — a pane ROUND TRIP, not a version probe.
+# `herdr --version` and a present binary prove nothing about whether this image
+# can drive panes: the ways a headless terminal workspace fails inside a
+# container are a server that cannot allocate a pty, a socket it cannot bind,
+# and a pane whose shell never starts — and every one of them passes a version
+# probe and then fails on the first real pane. So this step IS the whole round
+# trip: it starts a server in its own named session, creates a pane, splits
+# that pane, sends one line of literal text to the split, and reads that same
+# line back out of it.
+#
+# NO TERMINAL IS ATTACHED, and that is the point rather than an accident of the
+# builder: `herdr --session <name> server` is the headless entry point, a docker
+# build has no tty, and a dispatched run drives herdr over the socket in exactly
+# the same shape. An `attach` here would hang the build AND prove the wrong
+# thing.
+#
+# Readiness is POLLED on a real socket call instead of slept for — a fixed sleep
+# is either a slower build or a flake, depending on the host — and the wait on
+# the pane echo is BOUNDED by `--timeout`, because `pane wait-output` otherwise
+# waits indefinitely and a hung build reports no verdict at all. `wait-output`
+# only synchronizes; the assertion is the `pane read` + `grep -F` after it, so a
+# regression in `read` cannot pass by riding on the matcher. Both pane ids come
+# out of the server's own JSON replies rather than being assumed, so an upstream
+# layout change fails here instead of silently addressing the wrong pane.
+# python3 is the base layer's system interpreter (the same one
+# `livespec-step-timer` resolves through), not a uv-managed one.
+RUN set -eux; \
+    smoke_session=livespec-herdr-smoke; \
+    smoke_state="/root/.config/herdr/sessions/${smoke_session}"; \
+    smoke_text="livespec fabro-sandbox herdr pane round trip"; \
+    smoke_dir="$(mktemp -d)"; \
+    herdr --session "${smoke_session}" server > "${smoke_dir}/server.log" 2>&1 & \
+    smoke_ready=""; \
+    for _attempt in 1 2 3 4 5 6 7 8 9 10; do \
+        if herdr --session "${smoke_session}" pane list >/dev/null 2>&1; then \
+            smoke_ready=1; \
+            break; \
+        fi; \
+        sleep 1; \
+    done; \
+    test -n "${smoke_ready}"; \
+    test -S "${smoke_state}/herdr.sock"; \
+    root_pane="$(herdr --session "${smoke_session}" workspace create --cwd /tmp \
+        | python3 -c 'import json,sys; sys.stdout.write(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])')"; \
+    test -n "${root_pane}"; \
+    split_pane="$(herdr --session "${smoke_session}" pane split "${root_pane}" --direction right \
+        | python3 -c 'import json,sys; sys.stdout.write(json.load(sys.stdin)["result"]["pane"]["pane_id"])')"; \
+    test -n "${split_pane}"; \
+    test "${root_pane}" != "${split_pane}"; \
+    herdr --session "${smoke_session}" pane send-text "${split_pane}" "${smoke_text}"; \
+    herdr --session "${smoke_session}" pane wait-output --match "${smoke_text}" --timeout 30000 "${split_pane}"; \
+    herdr --session "${smoke_session}" pane read --source visible --format text "${split_pane}" | grep -F "${smoke_text}"; \
+    echo "sandbox herdr smoke: read back from ${split_pane}, a split of ${root_pane}"; \
+    rm -rf "${smoke_dir}"
