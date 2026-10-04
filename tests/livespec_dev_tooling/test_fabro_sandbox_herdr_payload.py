@@ -261,3 +261,23 @@ def test_smoke_step_leaves_no_server_and_no_session_state_in_the_committed_layer
         if "/tmp/" in line and "${smoke_dir}" not in line and "--cwd /tmp" not in line
     ]
     assert not stray, f"a scratch file outside the temporary directory survives the layer: {stray}"
+
+
+def test_header_names_the_consumers_of_the_herdr_payload_and_of_the_capability_file() -> None:
+    """The header answers "who asked for this" for BOTH of this slice's additions.
+
+    A payload with no recorded consumer is a payload nobody can safely delete, and the
+    capability file is worse than that: it is read by a gate in ANOTHER repository, so
+    the only place a reader of this Dockerfile can learn that deleting a line there
+    breaks a Definition-of-Done check over here is this header. The browser payload
+    already set the precedent of naming its consumer in the same block.
+    """
+    header = _DOCKERFILE.read_text(encoding="utf-8").split("\nARG ", 1)[0]
+    for phrase in ("herdr", "livespec-overseer", "herdr panes alongside tmux"):
+        assert phrase in header, f"the header must name the herdr payload's consumer: {phrase!r}"
+    for phrase in (
+        "/etc/livespec/sandbox-capabilities",
+        "Definition-of-Done gate",
+        "livespec-orchestrator-beads-fabro",
+    ):
+        assert phrase in header, f"the header must name the capability file's consumer: {phrase!r}"

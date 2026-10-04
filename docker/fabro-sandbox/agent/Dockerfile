@@ -36,6 +36,20 @@
 #     @agentclientprotocol/codex-acp (the orchestrator's Codex adapter) under
 #     the dedicated prefix /opt/livespec/codex-acp, invoked at its baked path
 #     — baked, never per-run npx-fetched
+#   - a pinned, checksum-verified herdr: the terminal workspace manager a
+#     dispatched run drives to create, split, write to and read back real
+#     panes. ITS CONSUMER is the livespec-overseer plan overseer-uzvcbn
+#     ("herdr panes alongside tmux"), whose Proof of Done cannot be
+#     factory-captured until a sandbox can actually run herdr. Like the
+#     browser, it lands in this agent layer and NOT in `base`: no CI job
+#     drives panes, so CI image pulls stay unchanged.
+#   - /etc/livespec/sandbox-capabilities, REWRITTEN here with the full list of
+#     what this image carries. ITS CONSUMER is the Definition-of-Done gate in
+#     livespec-orchestrator-beads-fabro, which checks each factory-captured
+#     assertion against the capabilities the running sandbox image publishes
+#     in that file. `base` writes its own shorter list and this layer replaces
+#     it, so each published image in the chain states exactly what IT carries
+#     — and deleting a name here fails a gate in another repository.
 #
 # node itself stays in `base`: CI genuinely needs it (pyright shells out
 # to npm), so it is toolchain, not agent payload. NO secrets are baked;
