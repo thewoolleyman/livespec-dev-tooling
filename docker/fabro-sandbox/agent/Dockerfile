@@ -389,3 +389,24 @@ RUN set -eux; \
     herdr --session "${smoke_session}" pane read --source visible --format text "${split_pane}" | grep -F "${smoke_text}"; \
     echo "sandbox herdr smoke: read back from ${split_pane}, a split of ${root_pane}"; \
     rm -rf "${smoke_dir}"
+
+# WHAT THIS IMAGE CAN DO — the base layer's capability file, REWRITTEN with the
+# agent payload added. Its consumer is the Definition-of-Done gate in
+# livespec-orchestrator-beads-fabro; the base layer's own copy of this step
+# carries the full rationale and the format rules.
+#
+# A REWRITE rather than an append, deliberately: an append would make the file a
+# record of which layers ran instead of what the published image carries, and a
+# half-written append is indistinguishable from a complete one. The two names
+# this layer adds are the two payloads it installs.
+#   headless_browser  Playwright plus the Chromium build it pins, installed above
+#   herdr             the pinned terminal workspace manager, smoke-tested above
+# Every name is re-probed here, including the two inherited from base: this step
+# is the one that publishes the claim, so it is the one that has to stand it up.
+RUN set -eux; \
+    tmux -V; \
+    test -d /root/.cache/ms-playwright; \
+    herdr --version; \
+    mkdir -p /etc/livespec; \
+    printf '%s\n' terminal tmux headless_browser herdr > /etc/livespec/sandbox-capabilities; \
+    cat /etc/livespec/sandbox-capabilities
