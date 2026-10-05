@@ -1,4 +1,4 @@
-"""The `SPECIFICATION/contracts.md` §"Versioning" lockstep, read off the checkout.
+"""The versioning lockstep of `SPECIFICATION/contracts.md`, read off the checkout.
 
 The section makes two claims, and each fails in a way nothing else here would
 catch.

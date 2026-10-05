@@ -1,4 +1,5 @@
-"""§"Runner-pool node rebuild recipe" — data in the profile, procedure in the scripts, refusal by name.
+"""The runner-pool node rebuild recipe of `SPECIFICATION/non-functional-requirements.md` — data in
+the profile, procedure in the scripts, refusal by name.
 
 The section's obligations are about SHAPE — which artifact carries which
 knowledge — and every one of them degrades quietly, because a rebuild recipe is

@@ -48,8 +48,8 @@ is produced by the artifact under test:
     where the same seeds survive and the same proxy gets a cargo source
     replacement written — so a harness that simply never seeded anything fails.
   - the canary tag is paired with an operator-switched run tagged `operator`,
-    which is the distinctness
-    `non-functional-requirements.md` §"Cold canary" requires in as many words.
+    which is the distinctness the cold-canary rules of
+    `non-functional-requirements.md` require in as many words.
 
 The stale-generation scenario has no runtime half a check runner can reach — it
 is a host timer, a gauge and a Honeycomb trigger — so it keeps the sibling's
@@ -470,7 +470,8 @@ def _stale_trigger_gaps(*, trigger: str, interval_s: int | None) -> list[str]:
 
 
 def test_a_cache_fault_degrades_a_job_to_cold_and_never_fails_it(*, tmp_path: Path) -> None:
-    """§"a cache fault degrades a job to cold and never fails it", clause by clause.
+    """The scenario in which a cache fault degrades a job to cold and never fails it, clause
+    by clause.
 
     THE GIVEN, AS THE POD ACTUALLY MEETS IT. "The warm-cache tree is absent or
     unreadable on the node" reaches a job pod as ONE observable and nothing
@@ -585,7 +586,7 @@ def test_a_cache_fault_degrades_a_job_to_cold_and_never_fails_it(*, tmp_path: Pa
 
 
 def test_a_canary_job_runs_cold_and_is_tagged(*, tmp_path: Path) -> None:
-    """§"a canary job runs cold and is tagged", clause by clause.
+    """The scenario in which a canary job runs cold and is tagged, clause by clause.
 
     GIVEN THE POOL'S CANARY FRACTION IS ONE JOB IN N. N is a plain value in the
     pod template (`CI_CACHE_CANARY_N`), and the rule is
@@ -598,8 +599,9 @@ def test_a_canary_job_runs_cold_and_is_tagged(*, tmp_path: Path) -> None:
     a rule that selects nothing. At the committed N the selected set must stay a
     minority, because a canary that ran most jobs cold would be the kill switch
     wearing the canary's name. The rule reads only the pod name the kubelet set
-    and N from the template — never a workflow value, which
-    §"Trust by construction" forbids for any per-job decision.
+    and N from the template — never a workflow value, which the
+    trust-by-construction rules of `non-functional-requirements.md` forbid for
+    any per-job decision.
 
     EVERY CACHE TIER MUST BE SKIPPED. Asserted against a run where every tier
     WAS available: the seeds are in the volume and the crates proxy answers its
@@ -618,7 +620,8 @@ def test_a_canary_job_runs_cold_and_is_tagged(*, tmp_path: Path) -> None:
     The emitter must read that state into the attributes COMMON to every cache
     span, not just the warm-copy ones, which is the difference between "every
     cache span for that job" and "most of them". The operator control arm is the
-    distinctness §"Cold canary" demands in as many words: the same hook, the
+    distinctness the cold-canary rules of `non-functional-requirements.md`
+    demand in as many words: the same hook, the
     same reader, `CI_CACHE_KILL_SWITCH=operator` — tagged `operator`, never
     `canary`.
 
@@ -754,7 +757,7 @@ def test_a_canary_job_runs_cold_and_is_tagged(*, tmp_path: Path) -> None:
 
 
 def test_a_stale_warm_cache_generation_fires_the_trigger() -> None:
-    """§"a stale warm-cache generation fires the trigger", clause by clause.
+    """The scenario in which a stale warm-cache generation fires the trigger, clause by clause.
 
     WHY THIS ONE IS READ RATHER THAN RUN. Its two siblings above turn on a
     decision a committed shell script makes, so they execute it. This scenario's

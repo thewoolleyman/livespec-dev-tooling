@@ -1,4 +1,4 @@
-"""The `SPECIFICATION/constraints.md` §"Self-application" dogfood loop, read off the config.
+"""The self-application dogfood loop of `SPECIFICATION/constraints.md`, read off the config.
 
 The constraint states that `just check` in this repo MUST run every shared
 check this library ships AGAINST THIS REPO'S OWN SOURCE TREE, and gives the

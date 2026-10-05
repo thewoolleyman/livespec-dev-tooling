@@ -1041,8 +1041,10 @@ def test_no_except_outside_io_rejects_foreign_code_catch_wrapping_first_party_co
 ) -> None:
     """A foreign-code catch guarding MORE than the foreign call fails.
 
-    Spec §"ROP composition" requires the foreign-code catch to wrap
-    ONLY the foreign call. A catch spanning a block of first-party code
+    The ROP-composition rules of
+    `livespec/SPECIFICATION/non-functional-requirements.md` require the
+    foreign-code catch to wrap ONLY the foreign call. A catch spanning
+    a block of first-party code
     with the foreign call somewhere inside it re-labels every bug in
     that block as "the extension crashed" — the misattribution the
     clause exists to prevent — so a multi-statement guarded block is an
@@ -1079,7 +1081,8 @@ def test_no_except_outside_io_accepts_foreign_code_catch_around_a_lone_call(
 
     The foreign-code flavor is accounted per EXTENSION INVOCATION
     SURFACE, not per process entry artifact, so it is not confined to a
-    declared supervisor `main()`; spec §"ROP composition" says outright
+    declared supervisor `main()`; the ROP-composition rules of
+    `livespec/SPECIFICATION/non-functional-requirements.md` say outright
     that it sits outside the `main()` boundary and is governed by its
     own clause. Its position is therefore DERIVED from the call it
     isolates — never granted wholesale to a tree — and a pure-layer

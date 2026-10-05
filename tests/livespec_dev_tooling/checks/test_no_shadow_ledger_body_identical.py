@@ -7,8 +7,8 @@ packaged carrier constant
 The role key must be declared before the check is used. Declared-empty is a
 sanctioned no-op; declared non-empty requires the configured path to exist
 and match byte-for-byte, else exit 4 with a `missing` or `body_mismatch`
-failure mode (`SPECIFICATION/contracts.md`
-§"`no_shadow_ledger_body_identical` check", steps 2 and 3).
+failure mode (steps 2 and 3 of the `no_shadow_ledger_body_identical` check's
+contract in `SPECIFICATION/contracts.md`).
 
 The last two cases are the ones `livespec-dev-tooling-okz` was filed for, and
 they are the reason "byte-identical" has to be MEASURED rather than asserted

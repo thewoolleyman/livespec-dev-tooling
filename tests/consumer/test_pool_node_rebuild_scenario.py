@@ -321,7 +321,8 @@ def _gating_exposure(*, workflow: str, nodes: tuple[str, ...]) -> list[str]:
 def test_a_pool_node_is_rebuilt_from_bare_metal_by_the_recipe_and_its_profile(
     tmp_path: Path,
 ) -> None:
-    """§"a pool node is rebuilt from bare metal by the recipe and its profile", clause by clause.
+    """The scenario in which a pool node is rebuilt from bare metal by the recipe and its
+    profile, clause by clause.
 
     ONE PROCEDURE, ONE PROFILE PER NODE, REHEARSED FROM EMPTY STORAGE: both
     committed profiles are run through the SAME stage, from a world in which the

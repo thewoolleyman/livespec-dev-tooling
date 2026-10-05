@@ -258,9 +258,9 @@ def test_unarmed_until_naming_a_closed_work_item_is_reported_as_a_conformance_fa
 ) -> None:
     """THE FAIL CAPABILITY the promised expiry never had: a CLOSED payload is convicted.
 
-    `SPECIFICATION/scenarios.md` §"Scenario: an unarmed-until payload naming a
-    closed work item is a conformance failure" ratifies both the verdict and
-    its wording — the report MUST identify the consumer, the key and the item,
+    The `SPECIFICATION/scenarios.md` scenario in which an unarmed-until payload
+    naming a closed work item is a conformance failure ratifies both the verdict
+    and its wording — the report MUST identify the consumer, the key and the item,
     and MUST state that the declaration claims pending work that is already
     complete. Until the shared resolver was adopted here nothing in this
     library resolved the id against any tracker, so this branch was
@@ -351,8 +351,8 @@ def test_unarmed_until_naming_another_trackers_item_is_unverified_not_convicted(
 ) -> None:
     """A cross-tracker citation is LEGITIMATE, so local absence must not convict it.
 
-    `SPECIFICATION/contracts.md` §"Role keys" requires a verifier of this
-    property to resolve identifiers ACROSS trackers, "since a consumer MAY
+    The role-keys contract of `SPECIFICATION/contracts.md` requires a verifier
+    of this property to resolve identifiers ACROSS trackers, "since a consumer MAY
     legitimately cite a work item held in another repository's tracker; a
     verifier that resolves only within the declaring repo would reject valid
     declarations". Measured across the fleet on 2026-07-28, THREE of the four

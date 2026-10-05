@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/spec.md` §"Non-goals" negatives, asserted as invariants.
+"""Consumer-tier: the non-goal negatives of `SPECIFICATION/spec.md`, asserted as invariants.
 
 A non-goal is a promise about what a consumer will NOT find, so each one is
 read the way a consumer meets it — off the installed distribution's metadata
@@ -16,8 +16,8 @@ and off the shipped tree — rather than off intent:
   interpreter would need at runtime regardless of metadata).
 - **Hosting checks that are intrinsically `livespec`-specific.** Asserted as
   the absence of the two named livespec-private checks from the shipped
-  canonical set — the partition's own worked examples, per `contracts.md`
-  §"Shared check inventory".
+  canonical set — the partition's own worked examples, per the shared
+  check inventory of `contracts.md`.
 - **A `templates/library/` extraction in v1.** Asserted as the absence of
   that tree.
 
@@ -59,7 +59,7 @@ _PUBLISH_MECHANISMS = (
     "publish-url",
 )
 
-# The two checks `contracts.md` §"Shared check inventory" names as
+# The two checks the shared check inventory of `contracts.md` names as
 # livespec-private: each asserts a property of livespec-core's own layout,
 # so neither may appear in this library's shipped set.
 _LIVESPEC_PRIVATE_CHECKS = ("check-schema-dataclass-pairing", "check-copier-template-smoke")

@@ -1,4 +1,5 @@
-"""§"Self-application" — "as part of the standard local + CI safety net", which is the whole clause.
+"""The self-application rule of `SPECIFICATION/non-functional-requirements.md` — "as part of the
+standard local + CI safety net", which is the whole clause.
 
 The section's first sentence defers: "The library MUST apply its own checks to
 itself per `constraints.md` §'Self-application'". Two siblings already hold that

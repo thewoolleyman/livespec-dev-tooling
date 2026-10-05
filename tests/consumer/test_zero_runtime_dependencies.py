@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/constraints.md` §"Dependencies" invariant.
+"""Consumer-tier: the dependencies invariant of `SPECIFICATION/constraints.md`.
 
 The constraint states the library MUST declare NO runtime dependencies, and
 that tool versions are pinned by each consuming repo's own `[dependency-
@@ -63,8 +63,9 @@ _DEPENDENCIES_KEY = re.compile(r"^dependencies\s*=", re.MULTILINE)
 # pins, one `"<name>==<version>"` entry per line.
 _DEV_GROUP = re.compile(r"^dev = \[\n(?P<body>.*?)^\]", re.MULTILINE | re.DOTALL)
 
-# The tools §"Dependencies" names as the current shelled-out set, each of which
-# must carry an exact pin in the dev group rather than a runtime dependency.
+# The tools the dependencies constraint of `SPECIFICATION/constraints.md` names as
+# the current shelled-out set, each of which must carry an exact pin in the dev
+# group rather than a runtime dependency.
 _PINNED_TOOLS = ("ruff", "pyright", "pytest")
 
 

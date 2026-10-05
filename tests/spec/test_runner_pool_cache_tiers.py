@@ -1,4 +1,5 @@
-"""§"Runner-pool build cache tiers" — the one committed budget, and the guardrails on its writer.
+"""The runner-pool build cache tiers of `SPECIFICATION/non-functional-requirements.md` — the one
+committed budget, and the guardrails on its writer.
 
 Most of this section is a posture the pool either has or does not have, and the
 isolation suite already tests the trust half from inside a routed job. Two

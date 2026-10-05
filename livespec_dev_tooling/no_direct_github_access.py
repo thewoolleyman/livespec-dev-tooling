@@ -80,8 +80,9 @@ repository:
 - Direct GitHub access still exists in first-party code in three siblings —
   livespec (4 sites), livespec-runtime (4 after its own exempt mint constant),
   and livespec-orchestrator-beads-fabro (12). None routes through the
-  sanctioned client. livespec's `SPECIFICATION/non-functional-requirements.md`
-  §"Fleet membership contract" requires under New-obligation discipline that a
+  sanctioned client. The fleet-membership contract in livespec's
+  `SPECIFICATION/non-functional-requirements.md` requires under
+  New-obligation discipline that a
   change adding an obligation wire all current members in the SAME change, so
   that the fleet is never red by construction the moment a rule lands. That
   20-site cross-repo retrofit is not this work-item's scope, and this

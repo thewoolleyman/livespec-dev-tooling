@@ -267,7 +267,8 @@ def _local_compile_gaps(*, template: str) -> list[str]:
 
 
 def test_a_routed_job_reads_the_warm_cache_and_cannot_write_it() -> None:
-    """§"a routed job reads the warm cache and cannot write it", clause by clause.
+    """The scenario in which a routed job reads the warm cache and cannot write it, clause
+    by clause.
 
     RESOLVE FROM THE CACHE WITHOUT CONTACTING THE PACKAGE INDEX: two tiers, two
     committed mechanisms, each silent when wrong. uv reads whatever
@@ -380,7 +381,7 @@ def test_a_routed_job_reads_the_warm_cache_and_cannot_write_it() -> None:
 
 
 def test_a_jobs_compilation_cache_writes_are_refused() -> None:
-    """§"a job's compilation-cache writes are refused", clause by clause.
+    """The scenario in which a job's compilation-cache writes are refused, clause by clause.
 
     REACHABLE THROUGH ITS READ-ONLY ENDPOINT: a job pod connects to the shared
     redis as the UNAUTHENTICATED `default` user, because the pod carries no

@@ -1,4 +1,5 @@
-"""Consumer-tier: `SPECIFICATION/scenarios.md` §"an empty clean role key makes its consuming check stricter, not blinder".
+"""Consumer-tier: the `SPECIFICATION/scenarios.md` scenario in which an empty
+clean role key makes its consuming check stricter, not blinder.
 
     Given a consumer declares `io_trees` as a bare `[]`
     When the catch-position and domain-raise checks run

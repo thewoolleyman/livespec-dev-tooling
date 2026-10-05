@@ -72,12 +72,12 @@ _UNDECLARED_ROLE_KEY_MESSAGE = " ".join(
     )
 )
 
-# The ratified wording, not a paraphrase. `SPECIFICATION/scenarios.md` §"Scenario:
-# an unarmed-until payload naming a closed work item is a conformance failure"
-# requires the report to identify the consumer, the key and the item, AND to state
-# that the declaration claims pending work that is already complete. The last
-# clause is the one a reader acts on, so it is spelled out rather than implied by
-# the status field alone.
+# The ratified wording, not a paraphrase. `SPECIFICATION/scenarios.md` makes an
+# unarmed-until payload that names a CLOSED work item a conformance failure, and
+# requires the report to identify the consumer, the key and the item, AND to
+# state that the declaration claims pending work that is already complete. The
+# last clause is the one a reader acts on, so it is spelled out rather than
+# implied by the status field alone.
 _UNARMED_UNTIL_CLOSED_MESSAGE = " ".join(
     (
         "role key declared UNARMED pending named work whose work-item is CLOSED —",
@@ -86,10 +86,11 @@ _UNARMED_UNTIL_CLOSED_MESSAGE = " ".join(
         "payload at the work that is genuinely still open",
     )
 )
-# The honest-degradation SKIP. `SPECIFICATION/spec.md` §"Non-goals" admits exactly
-# one way to proceed without an answer, and it is a skip CARRYING ITS REASON —
-# never a silent pass, never a hard-failed offline build. `liveness_unverified`
-# is what keeps this from rendering like the verified-open case below.
+# The honest-degradation SKIP. The non-goals of `SPECIFICATION/spec.md` admit
+# exactly one way to proceed without an answer, and it is a skip CARRYING ITS
+# REASON — never a silent pass, never a hard-failed offline build.
+# `liveness_unverified` is what keeps this from rendering like the
+# verified-open case below.
 _UNARMED_UNTIL_UNVERIFIED_MESSAGE = " ".join(
     (
         "role key declared UNARMED pending named work — the concept applies here.",
@@ -116,7 +117,7 @@ def _announce_unarmed_until(
     expiry now exists.
 
     Resolution goes through `checks/_work_item_liveness`, the ONE shared mechanism
-    `SPECIFICATION/spec.md` §"Non-goals" requires for the work-item-liveness
+    the non-goals of `SPECIFICATION/spec.md` require for the work-item-liveness
     exception — a gate hand-rolling its own lookup is non-conforming there even
     when its behaviour is otherwise correct. `bd_status_reader` is read off this
     MODULE at call time so a test can substitute a deterministic double; no unit
@@ -128,11 +129,11 @@ def _announce_unarmed_until(
     like a pass is the defect this closes.
 
     AN ID THIS REPO'S OWN STORE DOES NOT HOLD IS UNVERIFIED, NOT DEAD, and the
-    asymmetry is ratified rather than cautious: `SPECIFICATION/contracts.md`
-    §"Role keys" requires a verifier of this property to resolve identifiers
-    ACROSS trackers, "since a consumer MAY legitimately cite a work item held in
-    another repository's tracker; a verifier that resolves only within the
-    declaring repo would reject valid declarations". Measured across the fleet on
+    asymmetry is ratified rather than cautious: the role-key contract of
+    `SPECIFICATION/contracts.md` requires a verifier of this property to resolve
+    identifiers ACROSS trackers, "since a consumer MAY legitimately cite a work
+    item held in another repository's tracker; a verifier that resolves only
+    within the declaring repo would reject valid declarations". Measured across the fleet on
     2026-07-28, THREE of the four live payloads cite an id in a tenant the
     declaring repo does not own, so convicting on absence-from-the-local-tenant
     would put three conformant repos in false breach. This is the one place this

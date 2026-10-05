@@ -12,9 +12,10 @@ this repository actually gets — is the committed gitops that the controller ru
 UNDER: the per-repository scale sets, the Kueue cohort that admits their pods,
 the fleet-owned Kueue `Configuration`, and the node profile carrying the pool's
 physical capacity. Every clause below is asserted against those files, and only
-where a clause has a decidable consequence in them. `ci-runner/k3s/phase2/
-README.md` §"What does NOT move to Kueue/ARC" is the record of which half of the
-section lands where; this file covers the half that lands here.
+where a clause has a decidable consequence in them. The record of which half of
+the section lands where is the part of `ci-runner/k3s/phase2/README.md`
+describing what does NOT move to Kueue/ARC; this file covers the half that lands
+here.
 
 Each number is hand-maintained in a DIFFERENT file, so every way they drift
 apart is silent: a wrong number is a valid manifest, applies cleanly, and
@@ -189,7 +190,8 @@ def _active_config_lines() -> list[str]:
 
 
 def test_replacement_admission_is_neither_clock_serialized_nor_billed_to_a_private_budget() -> None:
-    """§"JIT replacement is immediate but installation-budgeted", both halves.
+    """The scenario in which JIT replacement is immediate but
+    installation-budgeted, both halves.
 
     IMMEDIATE: "A fixed positive minimum interval between all runner admissions
     is prohibited; rate protection comes from the installation-wide budget and
@@ -224,7 +226,8 @@ def test_replacement_admission_is_neither_clock_serialized_nor_billed_to_a_priva
 
 
 def test_the_startup_batch_admits_all_permitted_demand_inside_the_half_budget_burst() -> None:
-    """§"JIT startup batch immediately admits all permitted demand within the half-budget point burst".
+    """The scenario in which the JIT startup batch immediately admits all
+    permitted demand within the half-budget point burst.
 
     The startup batch admits "every demand item permitted by the repository
     desired-admission formula, remaining physical host capacity, and the
@@ -261,7 +264,7 @@ def test_the_startup_batch_admits_all_permitted_demand_inside_the_half_budget_bu
 
 
 def test_a_throttle_opens_one_circuit_that_evicts_no_healthy_runner() -> None:
-    """§"JIT throttle opens one shared circuit".
+    """The scenario in which a JIT throttle opens one shared circuit.
 
     ONE: the circuit is installation-wide, and the committed pool gives it
     exactly one installation and exactly one admission cohort to be wide over.

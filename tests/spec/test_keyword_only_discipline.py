@@ -1,4 +1,4 @@
-"""The `non-functional-requirements.md` §"Keyword-only arguments" dataclass rule.
+"""The keyword-only-arguments dataclass rule of `non-functional-requirements.md`.
 
 The section states three rules, and they are NOT enforced by the same thing:
 

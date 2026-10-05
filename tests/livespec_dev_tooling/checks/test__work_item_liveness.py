@@ -1,6 +1,6 @@
 """Beside-tests for the shared work-item liveness resolver.
 
-The resolver is the mechanism `SPECIFICATION/spec.md` §"Non-goals" requires
+The resolver is the mechanism the non-goals of `SPECIFICATION/spec.md` require
 ("one shared mechanism, not per-gate hand-rolls") for the work-item-liveness
 exception to the network-I/O prohibition. What these tests pin is the pair of
 properties that make it non-vacuous:

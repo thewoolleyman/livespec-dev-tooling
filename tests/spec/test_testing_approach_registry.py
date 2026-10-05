@@ -1,4 +1,5 @@
-"""§"Testing approach" — the scenario-tier coverage rules, applied to this registry.
+"""The testing approach of `SPECIFICATION/non-functional-requirements.md` — the scenario-tier
+coverage rules, applied to this registry.
 
 The section's H3 "Scenario-tier coverage" is where its testable content is
 concentrated, and it makes three claims about `tests/heading-coverage.json`

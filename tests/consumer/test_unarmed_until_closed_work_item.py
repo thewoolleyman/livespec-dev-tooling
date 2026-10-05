@@ -1,4 +1,5 @@
-"""Consumer-tier: `SPECIFICATION/scenarios.md` §"an unarmed-until payload naming a closed work item is a conformance failure".
+"""Consumer-tier: the `SPECIFICATION/scenarios.md` scenario in which an unarmed-until payload
+naming a closed work item is a conformance failure.
 
     Given a consumer declares a union role key as `unarmed_until` whose payload
     names a work item that is closed

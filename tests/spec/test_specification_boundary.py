@@ -1,4 +1,4 @@
-"""The `non-functional-requirements.md` §"Boundary" routing table, read off the spec tree.
+"""The content-boundary routing table of `non-functional-requirements.md`, read off the spec tree.
 
 The section is a ROUTING TABLE: five bullets, each naming a class of content
 and the ONE file it must live in. A routing table is only worth its ink where
@@ -26,8 +26,9 @@ naming its six enumerated topics and requiring a heading for each.
 **Duplication is permitted only as a CROSS-REFERENCE.** `## Self-application`
 is an H2 in both `constraints.md` and this file, which the routing table
 allows only because this file's copy CITES the other rather than restating
-it ("The library MUST apply its own checks to itself per `constraints.md`
-§"Self-application""). A duplicated heading whose body does NOT name the
+it — its body says the library must apply its own checks to itself per the
+duplicated self-application heading of `constraints.md`, and that citation is
+the whole of it. A duplicated heading whose body does NOT name the
 file it duplicates is a second definition, and two definitions of one rule
 drift. That is asserted generally, over whatever headings this file happens
 to share with a sibling, so a future duplicate inherits the requirement

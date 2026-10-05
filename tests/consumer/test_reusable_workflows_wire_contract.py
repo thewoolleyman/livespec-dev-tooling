@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/contracts.md` §"Reusable workflows wire contract".
+"""Consumer-tier: the reusable-workflows wire contract of `SPECIFICATION/contracts.md`.
 
 The section states two things a consumer's `uses:` line depends on and nothing
 else can supply: the FILE NAME is the semver-stable identifier, and the
@@ -28,7 +28,7 @@ Asserted in three directions, each a distinct break:
   no check.
 
 The workflow file is read as TEXT rather than parsed: this library declares zero
-runtime dependencies (`constraints.md` §"Dependencies") and ships no YAML
+runtime dependencies (per the dependencies rules of `constraints.md`) and ships no YAML
 parser, and the assertions above are about line shapes GitHub itself fixes.
 """
 

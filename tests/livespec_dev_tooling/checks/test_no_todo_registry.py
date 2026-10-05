@@ -302,7 +302,7 @@ def test_release_tier_passes_owned_entry_when_liveness_unverifiable(
 def test_shipped_default_reader_is_the_shared_resolver() -> None:
     """The default seam is the SHARED resolver, not a per-gate hand-roll.
 
-    `SPECIFICATION/spec.md` §"Non-goals" admits the liveness lookup only
+    The non-goals of `SPECIFICATION/spec.md` admit the liveness lookup only
     through "one shared mechanism"; a gate wiring its own is non-conforming
     even when its behaviour is right. Pinning the default here is what stops
     the injectable seam from drifting into a private lookup.

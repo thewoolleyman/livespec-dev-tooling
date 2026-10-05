@@ -24,7 +24,7 @@ Covers the declared-absence half of the union a consumer WRITES into its
   non-zero. The retired `legacy-ambiguous-empty` variant did the former.
 
 The sibling `test_consumer_configuration_schema.py` registers the
-`contracts.md` §"Consumer configuration schema" heading and asserts the SCHEMA
+consumer-configuration-schema heading of `contracts.md` and asserts the SCHEMA
 properties (one location, declaration-presence, the clean-key half). These are
 the scenario-level parse outcomes, and neither file's assertions stand in for
 the other's.

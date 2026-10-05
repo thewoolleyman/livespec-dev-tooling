@@ -1,4 +1,4 @@
-"""The `SPECIFICATION/contracts.md` §"Role keys" consumer enumerations, made derivable.
+"""The role-key consumer enumerations of `SPECIFICATION/contracts.md`, made derivable.
 
 That section is the single source of truth a consumer reads to decide what
 declaring a role key will arm — or what declaring it absent will disarm. Its
@@ -41,7 +41,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PACKAGE = _REPO_ROOT / "livespec_dev_tooling"
 _CONTRACTS = _REPO_ROOT / "SPECIFICATION" / "contracts.md"
 
-# The role-key inventory: the bolded-backtick bullets of §"Role keys".
+# The role-key inventory: the bolded-backtick bullets of the role-keys section of contracts.md.
 _ROLE_KEYS_SECTION = re.compile(r"^### Role keys\n(?P<body>.*?)(?=^### )", re.MULTILINE | re.DOTALL)
 _ROLE_KEY_BULLET = re.compile(r"^- \*\*`(?P<name>[a-z_]+)`\*\*")
 # The canonical clause. It runs to the first sentence end, so the enumeration has

@@ -1,4 +1,5 @@
-"""§"Typechecker rule set" — strict mode plus the seven elevated diagnostics.
+"""The typechecker rule set of `SPECIFICATION/non-functional-requirements.md` — strict mode plus
+the seven elevated diagnostics.
 
 The section names `pyright` in `strict` mode with seven strict-plus
 diagnostics elevated, and lists them. Each is a `[tool.pyright]` line that can
