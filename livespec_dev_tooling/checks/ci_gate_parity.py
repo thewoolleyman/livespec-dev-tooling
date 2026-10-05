@@ -22,8 +22,9 @@ checks than master — the seam that let a workflow-only PR merge green and
 redden master on 2026-09-04.
 
 The clause names TWO forbidden directions, and this check enforces both. Per
-`livespec/SPECIFICATION/non-functional-requirements.md` §"CI as a merge gate
-(branch protection)" (v217), the guard FAILS when a gating job — at the job
+the branch-protection merge-gate rules in
+`livespec/SPECIFICATION/non-functional-requirements.md` (v217), the guard FAILS
+when a gating job — at the job
 level or in its real steps — is conditioned on the TRIGGERING EVENT **or** on a
 changeset predicate in the FORBIDDEN DIRECTION: so that it runs on a `push` to
 master but is skipped, or runs a smaller check set, on a `pull_request`. A job

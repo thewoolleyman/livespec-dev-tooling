@@ -1,4 +1,5 @@
-"""§"Adaptive JIT runner admission budget" — the three static terms of the min(), held together.
+"""The adaptive JIT runner admission budget of `SPECIFICATION/non-functional-requirements.md`
+— the three static terms of the min(), held together.
 
 The section's admission formula is `min(queued jobs, doubled repository logical
 ceiling, fair share of remaining host-wide capacity)` under a physical invariant:

@@ -10,10 +10,11 @@ repository actually gets — is the committed gitops and unit files they run
 UNDER: the per-repository scale sets, the Kueue cohort that admits their pods,
 and the systemd units that restore the pool's shared state and restart its
 supervisors. Every clause below is asserted against those files, and only where
-a clause has a decidable consequence in them. `ci-runner/k3s/phase2/README.md`
-§"What does NOT move to Kueue/ARC" is the record of which half of the section
-lands where: the installation-wide REST point budget and the circuit breaker
-itself are ARC's OWN controller's concern and a confirmed GAP rather than
+a clause has a decidable consequence in them. The record of which half of the
+section lands where is the part of `ci-runner/k3s/phase2/README.md` describing
+what does NOT move to Kueue/ARC: the installation-wide REST point budget and
+the circuit breaker itself are ARC's OWN controller's concern and a confirmed
+GAP rather than
 anything committed here. So the restart scenario is asserted as what a restart
 of a supervisor can and cannot do TO THE POOL — not as the circuit's internal
 bookkeeping, which this repository does not hold.
@@ -301,7 +302,8 @@ def _restarts_without_pacing(*, units: dict[str, str]) -> list[str]:
 
 
 def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_cap() -> None:
-    """§"JIT fleet capacity borrows fairly without exceeding 482 runners", both halves.
+    """The scenario in which JIT fleet capacity borrows fairly without exceeding
+    482 runners, both halves.
 
     BORROWS FAIRLY: "Repositories MAY borrow unused fair capacity." Two committed
     preconditions make that reachable, and each fails silently. On the Kueue side,
@@ -377,7 +379,8 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
 
 
 def test_a_restarted_jit_supervisor_recovers_shared_state_without_a_reburst() -> None:
-    """§"JIT circuit state survives restart without a reburst", clause by clause.
+    """The scenario in which JIT circuit state survives restart without a
+    reburst, clause by clause.
 
     RECOVER THAT SHARED STATE BEFORE ADMITTING DEMAND: this pool's k3s datastore
     is tmpfs, so the shared state a restart must recover lives in two units —

@@ -2,7 +2,7 @@
 
 Covers two `SPECIFICATION/spec.md` headings.
 
-§"Project intent" states the library MUST publish a Python package
+The project-intent rules state the library MUST publish a Python package
 consumable via `uv` git source AND a set of GitHub composite Actions plus
 reusable workflows, and that consumers MUST use both surfaces IN CONCERT —
 the Python package for local `just check` invocations, the composite
@@ -15,8 +15,8 @@ thread resolves in that namespace. A consumer whose CI runs the Actions
 while its developers run `just check` would otherwise be running two
 divergent suites and never learn it.
 
-§"Architecture" states each `livespec_dev_tooling/checks/<slug>.py` module
-is invocable as `python -m livespec_dev_tooling.checks.<slug>` and MUST
+The architecture rules state each `livespec_dev_tooling/checks/<slug>.py`
+module is invocable as `python -m livespec_dev_tooling.checks.<slug>` and MUST
 exit `0` on pass or non-zero on fail, with structured stderr describing the
 failure. That is exercised against a synthetic mini fixture: one shipped
 check is driven over a clean tree and over a tree carrying a
@@ -111,7 +111,7 @@ def _structured_stderr_events(*, stderr: str) -> list[dict[str, object]]:
 def test_both_published_surfaces_name_one_check_entrypoint_set() -> None:
     """The package surface and the Actions/workflows surface resolve to one entrypoint set.
 
-    The `spec.md` §"Project intent" obligation: both surfaces are published,
+    The project-intent obligation of `spec.md`: both surfaces are published,
     and a consumer uses them in concert rather than running two suites.
     """
     pyproject = _PYPROJECT.read_text(encoding="utf-8")
@@ -161,7 +161,7 @@ def test_a_shipped_check_exits_zero_on_pass_and_nonzero_with_structured_stderr_o
 ) -> None:
     """The `python -m` entrypoint's exit-code and structured-stderr contract, both legs.
 
-    The `spec.md` §"Architecture" obligation for every module of the Python
+    The architecture obligation of `spec.md` for every module of the Python
     package surface: exit `0` on pass, non-zero on fail with structured
     stderr describing the failure.
     """

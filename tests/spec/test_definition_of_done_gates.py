@@ -1,4 +1,4 @@
-"""The `SPECIFICATION/spec.md` §"Definition of Done" gates, read off the merge gate itself.
+"""The definition-of-done gates of `SPECIFICATION/spec.md`, read off the merge gate itself.
 
 The DoD is the list of conditions a livespec-dev-tooling change MUST satisfy
 BEFORE MERGE. Three of its bullets are decidable from the tree, and each one

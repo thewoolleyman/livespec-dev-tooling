@@ -1,4 +1,5 @@
-"""§"Toolchain pins" — the file/pin PARTITION, and the exactness that makes drift visible.
+"""The toolchain-pin rules of `SPECIFICATION/non-functional-requirements.md` — the file/pin
+PARTITION, and the exactness that makes drift visible.
 
 The section is two clauses, and the second one depends entirely on the first:
 

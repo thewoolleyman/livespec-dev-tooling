@@ -1,10 +1,10 @@
-"""Consumer-tier: the `SPECIFICATION/constraints.md` §"CLI shape" wrapper contract.
+"""Consumer-tier: the CLI-shape wrapper contract of `SPECIFICATION/constraints.md`.
 
-The constraint holds every check to the wrapper shape `contracts.md` §"CLI
-surface" codifies, and its load-bearing half — the half a consumer's wiring
-depends on and the half that has no other guard — is where configuration comes
-FROM: zero positional arguments by default, and configuration read from the
-working directory's `[tool.livespec_dev_tooling]` block rather than from
+The constraint holds every check to the wrapper shape the CLI surface codified
+in `contracts.md` defines, and its load-bearing half — the half a consumer's
+wiring depends on and the half that has no other guard — is where configuration
+comes FROM: zero positional arguments by default, and configuration read from
+the working directory's `[tool.livespec_dev_tooling]` block rather than from
 positional argv. A check that grew a required positional would break every
 `just check-<slug>` recipe, every `run-check` matrix entry, and every commit
 hook that invokes it, all of which name the module and nothing else.

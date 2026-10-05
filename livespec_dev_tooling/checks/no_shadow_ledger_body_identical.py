@@ -44,8 +44,8 @@ Exit codes:
 ⛔ THE COMPARISON IS ON BYTES, and for a long time it was not. This module
 compared `path.read_text(encoding="utf-8")` against the canonical string —
 TEXT identity after UTF-8 decode and universal-newline translation, not the
-BYTE identity its own name, the exit-code table above, and
-`SPECIFICATION/contracts.md` §"`no_shadow_ledger_body_identical` check"
+BYTE identity its own name, the exit-code table above, and this check's own
+contract in `SPECIFICATION/contracts.md`
 (algorithm step 3, "if its BYTES differ") all mandate. A CRLF-lined Driver
 copy therefore decoded back to exactly `CANONICAL_NO_SHADOW_LEDGER_BODY` and
 this check — the Verifier slot whose whole contract is byte-identity —
@@ -93,7 +93,7 @@ __all__: list[str] = []
 
 
 _CHECK_ID = "no_shadow_ledger_body_identical"
-# `4`, per contracts.md §"`no_shadow_ledger_body_identical` check": "exit `4`
+# `4`, per this check's own contract in contracts.md: "exit `4`
 # with structured stderr findings on fail". The constant read `1` while the
 # docstring above and the ratified contract both said `4`, which collapsed a
 # genuine finding onto the SAME code the undeclared-key gate returns — a

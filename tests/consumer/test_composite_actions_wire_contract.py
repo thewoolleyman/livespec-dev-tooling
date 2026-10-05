@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/contracts.md` §"Composite Actions wire contract".
+"""Consumer-tier: the Composite Actions wire contract of `SPECIFICATION/contracts.md`.
 
 A consumer reaches these Actions by `uses:` path and passes them inputs by
 name, so the wire — the input names, which are required, and what an omitted
@@ -27,9 +27,9 @@ shared "declares its inputs, outputs, and required permissions" rule:
 
 `action.yml` is read as TEXT and its `inputs:` / `outputs:` blocks parsed by
 line shape rather than by a YAML parser: this library declares zero runtime
-dependencies (`constraints.md` §"Dependencies") and ships no YAML parser, and
-the block grammar under assertion is exactly the two-space-indented mapping
-GitHub itself requires.
+dependencies (the dependency rules of `constraints.md`) and ships no YAML
+parser, and the block grammar under assertion is exactly the two-space-indented
+mapping GitHub itself requires.
 """
 
 from __future__ import annotations

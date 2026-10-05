@@ -363,7 +363,7 @@ def _write_owned_py_with_lloc(
 def test_liveness_is_resolved_by_the_shared_resolver_not_a_local_seam() -> None:
     """The hand-rolled `_probe_marker_liveness` seam is GONE, replaced by the shared one.
 
-    `SPECIFICATION/spec.md` §"Non-goals" admits the work-item-liveness
+    The non-goals of `SPECIFICATION/spec.md` admit the work-item-liveness
     lookup only as "one shared mechanism, not per-gate hand-rolls" — a gate
     rolling its own is non-conforming there even when its behaviour is
     otherwise correct. This asserted the SHAPE rather than a behaviour

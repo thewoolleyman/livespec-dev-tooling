@@ -1,4 +1,5 @@
-"""§"Commit and merge discipline" — the refusal EXECUTED, and the strategy that preserves prefixes.
+"""The commit-and-merge discipline of `SPECIFICATION/non-functional-requirements.md` — the refusal
+EXECUTED, and the strategy that preserves prefixes.
 
 The section is one causal chain, not three independent rules: every commit on
 `master` carries a Conventional Commits subject prefix, `release-please` reads

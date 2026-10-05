@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/constraints.md` §"CI matrix shape" contract.
+"""Consumer-tier: the CI-matrix-shape contract of `SPECIFICATION/constraints.md`.
 
 The constraint calls itself consumer-observable and says why: a consumer's
 branch-protection wiring names INDIVIDUAL MATRIX ENTRIES as required checks, so

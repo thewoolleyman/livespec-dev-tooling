@@ -1,4 +1,5 @@
-"""§"Structural pattern matching" — `case _: assert_never(<subject>)`, argument included.
+"""The structural-pattern-matching rules of `SPECIFICATION/non-functional-requirements.md` —
+`case _: assert_never(<subject>)`, argument included.
 
 The section requires every `match` over a closed sum type to terminate with
 `case _: assert_never(<subject>)`, "so pyright's exhaustiveness check fires".
@@ -22,8 +23,9 @@ wrong expression, which is to say it checks nothing.
 The coverage configuration is the reason the failure is invisible at
 runtime too: `[tool.coverage.report].exclude_also` carries `case _:`
 precisely because these arms are unreachable by mandate (the sibling
-§"Code coverage thresholds" spells that out), so an arm calling
-`assert_never` on the wrong value is never executed and never measured. The
+coverage thresholds of `SPECIFICATION/non-functional-requirements.md` spell
+that out), so an arm calling `assert_never` on the wrong value is never
+executed and never measured. The
 comparison here is textual — `ast.unparse` of the argument against
 `ast.unparse` of the subject — which is the strictest reading available
 statically and the one the section's `<subject>` placeholder states.

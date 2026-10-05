@@ -1,16 +1,18 @@
-"""Consumer-tier: the `SPECIFICATION/contracts.md` §"Cross-repo coordination automation surface".
+"""Consumer-tier: the cross-repo coordination automation surface of
+`SPECIFICATION/contracts.md`.
 
 This section is the canonical implementation specification for the pin-and-bump
 policy: the reusable workflow INVENTORY every consumer delegates to, the
-`repository_dispatch` event types the surface fires, and — under §"Self-hosting"
-— the shims by which this library is a consumer of its own automation. Each is
-consumer-observable and each rots in a different way.
+`repository_dispatch` event types the surface fires, and — under the same file's
+self-hosting rules — the shims by which this library is a consumer of its own
+automation. Each is consumer-observable and each rots in a different way.
 
 - **The inventory ships whole, with its declared wire.** All four workflows the
-  §"Reusable workflow inventory" enumerates must exist and declare the inputs
-  and secrets their callers pass. `release_url` is asserted required on the
-  dispatcher and OPTIONAL on the bump-pin handler, because the section states
-  exactly that asymmetry and a caller reading it backwards fails at run time.
+  reusable workflow inventory of `contracts.md` enumerates must exist and
+  declare the inputs and secrets their callers pass. `release_url` is asserted
+  required on the dispatcher and OPTIONAL on the bump-pin handler, because the
+  section states exactly that asymmetry and a caller reading it backwards fails
+  at run time.
   The two threshold defaults (`staleness_threshold_releases` `1`,
   `park_threshold_hours` `24`) are asserted for the reason every default is: a
   consumer that omits the input never sees the number it got.
@@ -20,7 +22,8 @@ consumer-observable and each rots in a different way.
   handler is wired for, and it fails SILENTLY — GitHub accepts any event type
   and simply matches no workflow.
 - **Self-hosting: this library carries all three consumer shims, delegating.**
-  It is a FULL participant in the §"Bump-pin policy" sense — it both receives
+  It is a FULL participant in the sense the bump-pin policy of `contracts.md`
+  defines — it both receives
   (`bump-pin-from-dispatch.yml` on `repository_dispatch: sibling-released`, plus
   `pin-freshness.yml` on a schedule) and produces (`release-dispatch.yml` on
   `release: published`). Each shim must be a THIN delegation: the section's DRY
@@ -30,8 +33,8 @@ consumer-observable and each rots in a different way.
   the fork the discipline exists to prevent.
 
 The workflow files are read as TEXT rather than parsed: this library declares
-zero runtime dependencies (`constraints.md` §"Dependencies") and ships no YAML
-parser.
+zero runtime dependencies (the dependency rules of `constraints.md`) and ships
+no YAML parser.
 """
 
 from __future__ import annotations
@@ -71,8 +74,8 @@ _INHERITED_SECRETS: dict[str, tuple[str, ...]] = {
     "reusable-release-park.yml": (),
 }
 
-# The three consumer shims §"Self-hosting" requires, each mapped to the reusable
-# workflow it must delegate to.
+# The three consumer shims the self-hosting rules require, each mapped to the
+# reusable workflow it must delegate to.
 _SELF_HOSTED_SHIMS: dict[str, str] = {
     "release-dispatch.yml": "reusable-release-dispatch.yml",
     "bump-pin-from-dispatch.yml": "reusable-bump-pin-from-dispatch.yml",

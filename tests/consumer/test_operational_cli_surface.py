@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/contracts.md` §"CLI surface" operational modules.
+"""Consumer-tier: the operational modules of the CLI surface in `SPECIFICATION/contracts.md`.
 
 The section's first paragraph — zero positional argv, `--help` exiting `0`, no
 network I/O — is covered where a consumer meets it, at

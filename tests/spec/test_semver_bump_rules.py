@@ -1,9 +1,9 @@
-"""The `SPECIFICATION/contracts.md` §"Semver discipline" bump rules, made enforceable.
+"""The semver-discipline bump rules of `SPECIFICATION/contracts.md`, made enforceable.
 
 That the enumerated surface still RESOLVES is asserted at
-`tests.consumer.test_semver_stable_surface` (the `constraints.md` §"Semver
-discipline" invariant). What that leaves uncovered is whether the BUMP RULES can
-be applied to the surface at all, and the two ways they silently cannot:
+`tests.consumer.test_semver_stable_surface` (the semver-discipline invariant
+carried by `constraints.md`). What that leaves uncovered is whether the BUMP RULES
+can be applied to the surface at all, and the two ways they silently cannot:
 
 - **A MAJOR-class key change has to be observable.** The enumeration makes "the
   `[tool.livespec_dev_tooling]` consumer-configuration key set" a semver-stable
@@ -19,7 +19,8 @@ be applied to the surface at all, and the two ways they silently cannot:
 
 - **A MAJOR-class removal from either enumerated INVOCATION SET has to be
   observable.** The enumeration names two invocation sets — `checks` and
-  `workflow_checks` — and §"`release_bump_classification` check" records, as
+  `workflow_checks` — and the `release_bump_classification` check as described in
+  `contracts.md` records, as
   limit one, that a consumer which has not declared `invocation_set_trees` moves
   its inventory by nothing when a slug is added, deleted, or renamed, so "the
   check will pass a PATCH release over a MAJOR change". This repository's public
@@ -46,7 +47,7 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONTRACTS = _REPO_ROOT / "SPECIFICATION" / "contracts.md"
 
-# The role-key inventory: the bolded-backtick bullets of §"Role keys".
+# The role-key inventory: the bolded-backtick bullets of the role-keys subsection.
 _ROLE_KEYS_SECTION = re.compile(r"^### Role keys\n(?P<body>.*?)(?=^### )", re.MULTILINE | re.DOTALL)
 _ROLE_KEY_BULLET = re.compile(r"^- \*\*`(?P<name>[a-z_]+)`\*\*", re.MULTILINE)
 
@@ -61,7 +62,7 @@ _ENUMERATED_INVOCATION_SETS = (
 
 
 def _documented_role_keys() -> set[str]:
-    """Every role key the §"Role keys" inventory declares."""
+    """Every role key the role-keys inventory of `contracts.md` declares."""
     matched = _ROLE_KEYS_SECTION.search(_CONTRACTS.read_text(encoding="utf-8"))
     assert matched is not None, 'contracts.md must carry the "### Role keys" inventory'
     documented = set(_ROLE_KEY_BULLET.findall(matched.group("body")))

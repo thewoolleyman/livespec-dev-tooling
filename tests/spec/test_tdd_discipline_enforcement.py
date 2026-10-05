@@ -1,4 +1,5 @@
-"""§"Test-Driven Development discipline" — the gates it names, at the stage it names.
+"""The Test-Driven Development discipline of `SPECIFICATION/non-functional-requirements.md` —
+the gates it names, at the stage it names.
 
 The section is three bullets, and every one of them ends in a NAMED
 enforcement surface rather than in an exhortation. What makes those names

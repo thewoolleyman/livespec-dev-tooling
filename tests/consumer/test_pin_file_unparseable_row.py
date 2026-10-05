@@ -1,4 +1,5 @@
-"""Consumer-tier: `SPECIFICATION/scenarios.md` §"an unparseable pin file is a finding, never a passing row".
+"""Consumer-tier: the `SPECIFICATION/scenarios.md` scenario in which an unparseable pin
+file is a finding, never a passing row.
 
     Given a fleet member carries a file at a path a known pin format claims
     And the walk finds that file and cannot parse its contents

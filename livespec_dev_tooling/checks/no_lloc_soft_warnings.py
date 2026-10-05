@@ -24,8 +24,8 @@ CLAUDE.md.
 
 MARKER LIVENESS IS RESOLVED BY THE SHARED RESOLVER. The ownership
 marker is a STAND-DOWN on an explicitly named work-item id, so it
-falls under the one exception this repository's
-`SPECIFICATION/spec.md` §"Non-goals" carves to the network-I/O
+falls under the one exception the non-goals of this repository's
+`SPECIFICATION/spec.md` carve to the network-I/O
 prohibition — and that clause requires "one shared mechanism, not
 per-gate hand-rolls". `checks/_work_item_liveness` IS that
 mechanism; this check reaches it through `main`'s `ledger_reader`

@@ -1,7 +1,7 @@
-"""Consumer-tier: the `SPECIFICATION/constraints.md` §"Semver discipline" invariant.
+"""Consumer-tier: the semver-discipline invariant of `SPECIFICATION/constraints.md`.
 
-The constraint delegates the ENUMERATION of the semver-stable surface to
-`contracts.md` §"Semver discipline" and keeps one invariant for itself: NO
+The constraint delegates the ENUMERATION of the semver-stable surface to the
+semver-discipline rules of `contracts.md` and keeps one invariant for itself: NO
 breaking change to any enumerated surface element may land outside a MAJOR
 version bump.
 
@@ -25,8 +25,8 @@ The enumerated elements resolved here, in the order `contracts.md` lists them:
 - The reusable workflow paths, each still declaring the `workflow_call:`
   trigger that makes it callable at all.
 
-  Those last two are read off the MINIMUM SETS `contracts.md` §"Composite
-  Actions wire contract" and §"Reusable workflows wire contract" name, not
+  Those last two are read off the MINIMUM SETS the composite-Actions wire
+  contract and the reusable-workflows wire contract of `contracts.md` name, not
   off the tree — the tree cannot convict a removal of itself. Each section
   says the path IS the semver-stable identifier, so a name the specification
   enumerates and the checkout no longer carries is precisely the break this

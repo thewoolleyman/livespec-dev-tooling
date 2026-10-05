@@ -1,4 +1,5 @@
-"""§"Code coverage thresholds" — the floor, and the exclusion list read off the spec.
+"""The code-coverage thresholds of `SPECIFICATION/non-functional-requirements.md` — the floor, and
+the exclusion list read off the spec.
 
 Two claims, and the second is the one with teeth.
 

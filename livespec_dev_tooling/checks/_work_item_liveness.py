@@ -1,6 +1,6 @@
 """The single shared work-item liveness resolver every stand-down gate calls.
 
-This repository's `SPECIFICATION/spec.md` §"Non-goals" carves ONE exception
+The non-goals of this repository's `SPECIFICATION/spec.md` carve ONE exception
 to the network-I/O prohibition: a check that stands down, weakens, or
 exempts on an EXPLICITLY NAMED work-item id MAY resolve that id against the
 repository's own configured work-item store, solely to learn whether it

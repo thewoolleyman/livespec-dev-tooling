@@ -332,7 +332,8 @@ def _stats(*, hits: int, misses: int, location: str) -> str:
 
 
 def test_a_fabro_sandbox_hits_the_shared_compilation_cache(tmp_path: Path, receiver: str) -> None:
-    """§"a fabro sandbox hits the shared compilation cache", clause by clause.
+    """The scenario in which a fabro sandbox hits the shared compilation cache,
+    clause by clause.
 
     THE IMAGE SETS THE WRAPPER AND THE HOST ENDPOINT OVER THE DOCKER BRIDGE:
     four committed facts, each silent when wrong. The endpoint must name the

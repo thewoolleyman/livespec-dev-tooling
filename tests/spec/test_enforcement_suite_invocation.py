@@ -1,4 +1,5 @@
-"""§"Enforcement-suite invocation" — the ban, read over the region the shipped scan cannot see.
+"""The enforcement-suite invocation rules of `SPECIFICATION/non-functional-requirements.md` — the
+ban, read over the region the shipped scan cannot see.
 
 The section states the rule and names the gate that enforces it: "direct tool
 invocations (`ruff check ...`, `pytest ...`, `python3 ...`) inside `run:` blocks

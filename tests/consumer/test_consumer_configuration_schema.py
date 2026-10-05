@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/contracts.md` §"Consumer configuration schema".
+"""Consumer-tier: the consumer configuration schema of `SPECIFICATION/contracts.md`.
 
 The schema is the surface a consumer WRITES, so it is asserted through the
 loader a consumer's checks read it with, against fixture trees under `tmp_path`
@@ -13,12 +13,13 @@ rather than against any one repo's opinions.
   and the constant is what each enforcing check reads "rather than restate the
   list; a second copy of the set is precisely the drift this contract exists to
   prevent". Asserted against this repository's own block — the self-application
-  case §"Per-consumer pyproject declarations" names.
+  case named by the per-consumer pyproject declarations that `contracts.md`
+  codifies.
 - **Declared-ness is recorded distinctly from value.** "Value alone cannot carry
   the distinction ... without recorded declaration-presence a check cannot tell a
-  sanctioned opt-out from a silent omission — which is the whole distinction
-  §"Role keys" rests on." Asserted with two fixtures whose parsed VALUES for a
-  key are both empty and whose declaration-presence differs.
+  sanctioned opt-out from a silent omission" — which is the whole distinction the
+  role-key rules of `contracts.md` rest on. Asserted with two fixtures whose
+  parsed VALUES for a key are both empty and whose declaration-presence differs.
 - **A bare `[]` / `""` on a UNION key is rejected at load, and stays legitimate
   on a CLEAN one.** The rejecting loader is the "unrepresentable-after-parse plus
   fail-loud-at-parse" guarantee, and the diagnostic "MUST name the offending key

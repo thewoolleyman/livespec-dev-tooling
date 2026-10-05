@@ -1,12 +1,13 @@
-"""Consumer-tier: the `SPECIFICATION/contracts.md` §"Consumer compat block — pin-and-bump policy".
+"""Consumer-tier: the consumer compat block and its pin-and-bump policy, from
+`SPECIFICATION/contracts.md`.
 
 The section owns the release-level coordination policy, and the part of it a
 consumer both WRITES and is judged on is the `compat` block: a top-level section
 in `.livespec.jsonc` keyed by the consumer's OWN plugin / library name, carrying
 `livespec` (a semver range) and `pinned` (the release tag it currently runs
-against). This library is itself a consumer (§"Self-hosting"), so its own block
-is the case under test — the section names it as one of the shapes the policy
-binds.
+against). This library is itself a consumer under the self-hosting rules of
+`contracts.md`, so its own block is the case under test — the section names it
+as one of the shapes the policy binds.
 
 Four properties, each failing independently:
 
@@ -25,9 +26,10 @@ Four properties, each failing independently:
   metadata." Asserted as an exact field set rather than as a keyword scan: a
   field this contract does not name is one no reader of the contract expects to
   find in a committed, world-readable file.
-- **The declared block is what the automation actually discovers.** "This is the
-  same block shape the pin-autodiscovery walk recognizes per §"Pin autodiscovery
-  rules"." Asserted by running the shipped walk over this repository and
+- **The declared block is what the automation actually discovers.** The contract
+  states that this is the same block shape the pin-autodiscovery walk
+  recognizes, per the pin-autodiscovery rules that `contracts.md` also carries.
+  Asserted by running the shipped walk over this repository and
   requiring a record whose `pin_key` is this consumer's own name and whose
   `current_value` is byte-equal to the declared `pinned`. That is the join
   between the schema and the mechanism, and it is where a correctly-written

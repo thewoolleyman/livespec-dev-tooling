@@ -1,4 +1,5 @@
-"""§"Hooks and CI" — the mirrored ORDER, and the one ordering constraint that is not cosmetic.
+"""The hooks-and-CI wiring of `SPECIFICATION/non-functional-requirements.md` — the mirrored ORDER,
+and the one ordering constraint that is not cosmetic.
 
 The section names the members of three lefthook stages and the order they run
 in, "per livespec `contracts.md` section 'Pre-commit step ordering'". Most of

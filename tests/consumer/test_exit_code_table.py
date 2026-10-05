@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/contracts.md` §"Exit-code table" contract.
+"""Consumer-tier: the exit-code-table contract of `SPECIFICATION/contracts.md`.
 
 The table is what a consumer's CI reads: a `just check-<slug>` recipe, a
 `run-check` matrix entry, and a commit hook all branch on the integer a shipped
@@ -18,10 +18,11 @@ the table's highest row must also be named in its own module's docstring.
 a shipped check over two consumer fixtures differing only in whether the source
 module under `source_trees` carries the violation the check exists to find. The
 clean tree must yield exactly `0`; the violating tree must yield a code the
-table documents, accompanied by the structured stderr finding §"CLI surface"
-requires ("The non-zero exit MUST be accompanied by structured findings emitted
-on stderr describing what failed and where"). Holding everything but the
-violation fixed is what makes this a proof rather than a coincidence.
+table documents, accompanied by the structured stderr finding the CLI surface of
+`contracts.md` requires ("The non-zero exit MUST be accompanied by structured
+findings emitted on stderr describing what failed and where"). Holding
+everything but the violation fixed is what makes this a proof rather than a
+coincidence.
 
 The check is invoked IN-PROCESS (`main()` under `monkeypatch.chdir`) per the
 `tests_no_subprocess_spawn` discipline. The `git` the fixture builds is real —

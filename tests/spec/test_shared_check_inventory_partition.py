@@ -1,4 +1,4 @@
-"""The `SPECIFICATION/contracts.md` §"Shared check inventory" partition, read off the tree.
+"""The shared check inventory partition of `SPECIFICATION/contracts.md`, read off the tree.
 
 The section codifies WHICH shipped modules are canonical check slugs, and it
 says twice that the placement is "load-bearing, not a filing preference": the

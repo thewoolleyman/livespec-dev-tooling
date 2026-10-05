@@ -1,4 +1,4 @@
-"""Consumer-tier: the `SPECIFICATION/constraints.md` §"Runtime" Python floor.
+"""Consumer-tier: the Python floor set by the runtime constraint of `SPECIFICATION/constraints.md`.
 
 The constraint states the library MUST target Python 3.10 or later and MUST
 NOT use any language feature introduced after 3.10 unless the introducing

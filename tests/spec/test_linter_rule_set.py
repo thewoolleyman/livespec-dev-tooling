@@ -1,4 +1,5 @@
-"""§"Linter rule set" — the categories the section enumerates, read FROM the section.
+"""The linter rule set of `SPECIFICATION/non-functional-requirements.md` — the categories the
+section enumerates, read FROM the section.
 
 The section is a CONFIGURATION CONTRACT: it names the ruff categories that
 must be selected, the one rule that may be ignored, the four pylint

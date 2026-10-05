@@ -1,4 +1,5 @@
-"""§"Runner-pool cache telemetry" — per-TIER attribution, a deterministic canary, a dead-man column.
+"""The runner-pool cache telemetry of `SPECIFICATION/non-functional-requirements.md` — per-TIER
+attribution, a deterministic canary, a dead-man column.
 
 "A tier with no emitted signal MUST NOT be considered shipped" is the section's
 opening, and the rest of it is a set of shapes the signal has to have. Three of
