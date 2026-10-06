@@ -20,6 +20,13 @@ newly-authored one, must leave an inherited row that is CORRECTLY REGISTERED
 with no finding at all, and must fall back to judging everything — loudly —
 when it cannot tell what changed.
 
+Plus the ratchet's TERMINAL state — a committed register that has reached
+EMPTY. Every other arm here seeds a baseline carrying at least one entry, so
+each proves only that a row outside a NON-EMPTY baseline is refused. At zero
+there is no baseline left to be outside of, and the pair at the bottom of this
+module (a refusal and its control) is what proves the `unregistered_todo`
+direction still stands between a resolved repository and a fresh cop-out.
+
 Driven IN-PROCESS (`monkeypatch.chdir(tmp_path)` + `capsys` + `rc = main()`)
 exactly as `test_no_todo_registry_staged_scope.py` is, so no
 `COVERAGE_PROCESS_START`-instrumented child races the parallel dispatcher.
@@ -97,6 +104,33 @@ def _entry(
         "heading": heading,
         "work_item": work_item,
         "first_seen": first_seen,
+    }
+
+
+_GOVERNED_SPEC_FILE = "scenarios.md"
+_GOVERNED_SPEC_RELPATH = f"SPECIFICATION/{_GOVERNED_SPEC_FILE}"
+_GOVERNED_HEADING = "## Scenario: a governed behaviour already covered by a real test"
+
+
+def _governed_resolved_row() -> dict[str, object]:
+    """The registry row for the governed heading in a repository at zero debt."""
+    return {
+        "spec_root": "SPECIFICATION",
+        "spec_file": _GOVERNED_SPEC_FILE,
+        "heading": _GOVERNED_HEADING,
+        "test": "tests.consumer.test_governed.test_it",
+    }
+
+
+def _governed_todo_row() -> dict[str, object]:
+    """The same heading's row re-opened as transitional debt — the new cop-out."""
+    return {
+        "spec_root": "SPECIFICATION",
+        "spec_file": _GOVERNED_SPEC_FILE,
+        "heading": _GOVERNED_HEADING,
+        "test": "TODO",
+        "reason": "owed integration-tier test",
+        "work_item": "livespec-dev-tooling-own",
     }
 
 
@@ -188,6 +222,27 @@ def _stage(
     if register is not None:
         _write(tmp_path=tmp_path, relpath=_REGISTER_RELPATH, entries=register)
         _git(cwd=tmp_path, args=["add", _REGISTER_RELPATH])
+
+
+def _commit_governed_spec_heading(*, tmp_path: Path) -> None:
+    """Put a REAL governed heading into `HEAD`'s spec tree.
+
+    The ratchet never opens the spec files — it judges the registry against the
+    register — so this is deliberately not a precondition of the CHECK. It is a
+    precondition of the SCENARIO: a heading is only "pre-existing" if the spec
+    really carries it at `HEAD`, and a fixture naming a heading that no spec
+    file contains would prove the refusal against a key no governed repository
+    could ever produce.
+    """
+    spec = tmp_path / _GOVERNED_SPEC_RELPATH
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    _ = spec.write_text(
+        f"# Scenarios\n\n{_GOVERNED_HEADING}\n\n"
+        "Given a governed behaviour\n\nWhen it runs\n\nThen it holds\n",
+        encoding="utf-8",
+    )
+    _git(cwd=tmp_path, args=["add", _GOVERNED_SPEC_RELPATH])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "seed the governed spec heading"])
 
 
 def _run_check(
@@ -545,3 +600,61 @@ def test_an_unreadable_register_decides_no_direction_either(
     assert (
         "unregistered_todo" not in result.combined
     ), f"no direction may be decided from an unreadable file; output={result.combined!r}"
+
+
+def test_a_new_todo_for_a_governed_heading_fails_against_an_empty_committed_register(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: at an EMPTY register, a newly-authored `TODO` row is refused outright.
+
+    The repository is in the ratchet's terminal state: the governed heading
+    exists in `HEAD`'s spec tree, its registry row resolves to a real test, and
+    the committed register is `[]`. The staged change re-opens that row as
+    `test: "TODO"` without a register entry — which, with the baseline at zero,
+    there is no legitimate way to add.
+
+    Driven under the authoring-time scope lever, because the per-commit tier IS
+    that lever: the key is one this tree authors, so the narrowing must leave
+    the finding judged rather than demote it to a warning.
+    """
+    _seed_repo(tmp_path=tmp_path, registry=[_governed_resolved_row()], register=[])
+    _commit_governed_spec_heading(tmp_path=tmp_path)
+    _stage(tmp_path=tmp_path, registry=[_governed_todo_row()])
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a TODO row authored against an empty register must be refused; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert (
+        "unregistered_todo" in result.combined
+    ), f"the refusal must name the new-cop-out direction; output={result.combined!r}"
+    assert (
+        _GOVERNED_HEADING in result.combined
+    ), f"the refusal must name the heading it judged; output={result.combined!r}"
+
+
+def test_the_same_empty_register_passes_when_the_tree_authors_no_todo(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTROL for the arm above: the identical repository, unstaged, is clean.
+
+    Without it the refusal proves only that the check says no — not that it says
+    no to the STAGED ROW rather than to the empty register itself. A ratchet
+    that convicted a resolved repository for having finished would be refusing
+    its own success condition.
+    """
+    _seed_repo(tmp_path=tmp_path, registry=[_governed_resolved_row()], register=[])
+    _commit_governed_spec_heading(tmp_path=tmp_path)
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"an unchanged repository at zero debt must pass; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "unregistered_todo" not in result.combined, (
+        f"a register at empty with no TODO rows must draw no finding; "
+        f"output={result.combined!r}"
+    )
