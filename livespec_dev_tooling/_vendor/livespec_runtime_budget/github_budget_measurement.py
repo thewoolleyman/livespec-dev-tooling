@@ -23,7 +23,7 @@ from pathlib import Path
 
 from returns.io import IOResult, IOSuccess
 
-from livespec_runtime.github_budget_types import (
+from livespec_runtime_budget.github_budget_types import (
     GhExecutor,
     GhInvocation,
     GithubBudgetRequest,

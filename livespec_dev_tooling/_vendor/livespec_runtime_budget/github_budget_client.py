@@ -8,7 +8,7 @@ from time import sleep as sleep_seconds
 
 from returns.io import IOFailure
 
-from livespec_runtime.github_budget_client_support import (
+from livespec_runtime_budget.github_budget_client_support import (
     GithubCachedRead,
     backoff_seconds,
     cached_response,
@@ -19,13 +19,13 @@ from livespec_runtime.github_budget_client_support import (
     unmeasurable_classification,
     with_snapshot,
 )
-from livespec_runtime.github_budget_measurement import (
+from livespec_runtime_budget.github_budget_measurement import (
     RATE_LIMIT_RESOURCE,
     classify_github_failure,
     parse_rate_limit_snapshot,
     snapshot_from_headers,
 )
-from livespec_runtime.github_budget_types import (
+from livespec_runtime_budget.github_budget_types import (
     GithubBudgetDeferred,
     GithubBudgetRequest,
     GithubBudgetResponse,

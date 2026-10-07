@@ -1,7 +1,9 @@
 """Tests for `livespec_dev_tooling/budgeted_gh.py` and the retrofit it landed.
 
-Two halves, and the second is the point of the work-item
-(livespec-dev-tooling-z69s, livespec core epic livespec-httc):
+Three parts — the second is the point of the work-item that landed the
+retrofit (livespec-dev-tooling-z69s, livespec core epic livespec-httc), and
+the third is the point of the work-item that isolated the vendored namespace
+the retrofit introduced (livespec-dev-tooling-r44po2):
 
 1. The boundary itself — `gh_read` answers in the `CompletedProcess`
    vocabulary its callers already read, passes the argument tail through
@@ -24,12 +26,21 @@ Two halves, and the second is the point of the work-item
    the file the conversion had to reach. Both are listed below so the
    negative control covers the named file as well as its successor.
 
+3. THE NAMESPACE ISOLATION of the vendored copy. The copy is PARTIAL —
+   `github_budget*` and nothing else — so the name it occupies must not be
+   the name a consumer's COMPLETE public runtime occupies, in either import
+   order. The three proofs in the last section are the whole of that
+   contract; the section comment there carries why each needs its own
+   interpreter.
+
 The strongest positive control here is not an AST count but the DURABLE
 BUDGET SIGNAL: the vendored transport appends one JSONL row per read it
 could MEASURE, and only the budgeted transport writes it. A site whose
 read produced a row demonstrably went through the client. Two sites are
 driven that way end-to-end below, with a fake `gh` that echoes
-`x-ratelimit-*` headers the way `gh` does under `GH_DEBUG=api`.
+`x-ratelimit-*` headers the way `gh` does under `GH_DEBUG=api`, and the
+isolation proofs reuse it to show the client still READS rather than
+merely still imports.
 """
 
 from __future__ import annotations
@@ -39,6 +50,8 @@ import importlib.metadata
 import inspect
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -53,6 +66,12 @@ from livespec_dev_tooling.checks.master_ci_green import _gh_has_stored_credentia
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SIGNAL_PATH_ENV = "LIVESPEC_GITHUB_BUDGET_LOG"
 _SUBPROCESS_SPAWNERS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
+_VENDOR_ROOT = _REPO_ROOT / "livespec_dev_tooling" / "_vendor"
+# The top-level name the PARTIAL vendored subset occupies, and the name it
+# must NEVER occupy. `livespec_runtime` is the PUBLIC package a consumer
+# installs complete; the subset here carries `github_budget*` only.
+_VENDORED_BUDGET_PACKAGE = "livespec_runtime_budget"
+_PUBLIC_RUNTIME_PACKAGE = "livespec_runtime"
 
 # The retrofitted files, each with the number of budgeted reads it is
 # expected to issue. MEASURED from the tree, not projected: the
@@ -412,11 +431,229 @@ def test_the_default_branch_read_is_recorded_on_the_budget_signal(
 
 
 def test_the_budgeted_client_is_vendored_rather_than_a_runtime_dependency() -> None:
-    vendored = _REPO_ROOT / "livespec_dev_tooling" / "_vendor" / "livespec_runtime"
+    """The client's bytes are local, under a name no public package claims.
+
+    The second assertion is the STRUCTURAL half of the namespace isolation
+    the last section proves behaviourally, and it is the one a re-vendoring
+    mistake trips: `vendor_update` writes to `_vendor/<name>`, so running it
+    for the `livespec_runtime` manifest entry would put a directory of that
+    name back on the `sys.path` entry every module here prepends — and the
+    shadow would be silent, because a partial package imports fine until a
+    caller asks for a submodule it does not carry.
+    """
+    vendored = _VENDOR_ROOT / _VENDORED_BUDGET_PACKAGE
     assert (vendored / "github_budget.py").is_file()
+    assert not (_VENDOR_ROOT / _PUBLIC_RUNTIME_PACKAGE).exists()
     client_source = Path(inspect.getfile(budgeted_gh.GithubBudgetedClient))
     assert client_source.is_relative_to(vendored)
     installed = {
         distribution.metadata["Name"] for distribution in importlib.metadata.distributions()
     }
     assert "livespec-runtime" not in installed
+
+
+# ---------------------------------------------------------------------------
+# NAMESPACE ISOLATION — the PARTIAL vendored copy must not shadow a consumer's
+# COMPLETE public `livespec_runtime` (livespec-dev-tooling-r44po2; unblocks
+# livespec core PR #2791).
+#
+# Every module in this package prepends `_vendor/` to `sys.path`, so while the
+# `github_budget*` subset sat at `_vendor/livespec_runtime/` that prepend bound
+# the name `livespec_runtime` to a package carrying NO `spec_governance`, no
+# `cross_repo` and no `hygiene_scan`. Core PR #2791 is the consumer that paid
+# for it: importing this package's configuration first took its own runtime's
+# submodules away, and the reverse order took the budget client away.
+#
+# WHY EACH PROOF NEEDS ITS OWN INTERPRETER. `sys.modules` and `sys.path` are
+# PROCESS-GLOBAL and the pytest process has already imported both sides by the
+# time any test here runs, so the import order under test cannot be staged
+# in-process. These are the spawns `subprocess_spawn_allowlist` admits for this
+# file; each scrubs the coverage variables per that contract. A test-session
+# preload would be the opposite of a proof — it would CONCEAL the shadowing
+# these regress, which is why the work-item forbids one.
+#
+# WHY THE PUBLIC RUNTIME IS A LOCAL FIXTURE. The regression is one of import
+# RESOLUTION, so the fixture needs only the submodule NAMES core PR #2791
+# imports — never a checkout of the real package, which would make this suite
+# fail whenever a downstream repo is absent.
+# ---------------------------------------------------------------------------
+
+_PUBLIC_RUNTIME_MODULES = ("spec_governance", "hygiene_scan")
+_PUBLIC_RUNTIME_SUBPACKAGES = ("cross_repo",)
+# What the fixture's modules report, so a resolved import is attributable: a
+# submodule answering with this prefix came from the PUBLIC fixture and not
+# from anything vendored here.
+_PUBLIC_ORIGIN_PREFIX = "public:"
+_FAKE_GH_STDOUT = '{"default_branch": "main"}'
+_FAKE_GH_READ_ARGS = ["api", "repos/test-owner/test-repo"]
+_FAKE_GH_READ_ARGV = "gh api repos/test-owner/test-repo"
+
+# Import dev-tooling FIRST, then the public runtime's submodules. Two entry
+# paths, run as separate children: `config` is the module EVERY shared check
+# imports (and the one that prepends the vendor path), while `budgeted_gh` is
+# the module that actually binds the vendored budget modules.
+_CONFIG_ENTRY_SCRIPT = """
+import json
+import livespec_dev_tooling.config  # noqa: F401
+import livespec_runtime.cross_repo as cross_repo
+import livespec_runtime.hygiene_scan as hygiene_scan
+import livespec_runtime.spec_governance as spec_governance
+print(json.dumps([spec_governance.ORIGIN, hygiene_scan.ORIGIN, cross_repo.ORIGIN]))
+"""
+_BUDGET_CLIENT_ENTRY_SCRIPT = """
+import json
+from livespec_dev_tooling.budgeted_gh import gh_read  # noqa: F401
+import livespec_runtime.cross_repo as cross_repo
+import livespec_runtime.hygiene_scan as hygiene_scan
+import livespec_runtime.spec_governance as spec_governance
+print(json.dumps([spec_governance.ORIGIN, hygiene_scan.ORIGIN, cross_repo.ORIGIN]))
+"""
+# Import the public runtime FIRST, then take a real budgeted read through the
+# vendored client. Reporting the read rather than the import is deliberate: an
+# import that resolved to a shadowed module can still fail at the first call.
+_PUBLIC_RUNTIME_FIRST_SCRIPT = """
+import json
+import livespec_runtime.spec_governance as spec_governance
+from livespec_dev_tooling.budgeted_gh import gh_read
+read = gh_read(args=%(args)r)
+print(json.dumps({
+    "origin": spec_governance.ORIGIN,
+    "returncode": read.returncode,
+    "stdout": read.stdout.strip(),
+}))
+"""
+# No public runtime on any import root: the vendored subset must still answer,
+# and must still not be reachable under the public name.
+_STANDALONE_SCRIPT = """
+import importlib.util
+import json
+from livespec_dev_tooling.budgeted_gh import gh_read
+read = gh_read(args=%(args)r)
+print(json.dumps({
+    "public_runtime_importable": importlib.util.find_spec("livespec_runtime") is not None,
+    "returncode": read.returncode,
+    "stdout": read.stdout.strip(),
+}))
+"""
+
+
+def _write_public_runtime(*, root: Path) -> Path:
+    """Write a representative PUBLIC `livespec_runtime`, returning its root.
+
+    Representative of the SHAPE the shadow broke and nothing more: a regular
+    package carrying the three submodules core PR #2791 imports, one of them
+    a subpackage, each reporting its own origin.
+    """
+    site = root / "public-runtime-site"
+    package = site / _PUBLIC_RUNTIME_PACKAGE
+    package.mkdir(parents=True, exist_ok=True)
+    _ = (package / "__init__.py").write_text(
+        '"""Stand-in for the COMPLETE public livespec-runtime package."""\n',
+        encoding="utf-8",
+    )
+    for name in _PUBLIC_RUNTIME_MODULES:
+        _ = (package / f"{name}.py").write_text(
+            f'ORIGIN = "{_PUBLIC_ORIGIN_PREFIX}{name}"\n', encoding="utf-8"
+        )
+    for name in _PUBLIC_RUNTIME_SUBPACKAGES:
+        subpackage = package / name
+        subpackage.mkdir(exist_ok=True)
+        _ = (subpackage / "__init__.py").write_text(
+            f'ORIGIN = "{_PUBLIC_ORIGIN_PREFIX}{name}"\n', encoding="utf-8"
+        )
+    return site
+
+
+def _run_isolated(
+    *,
+    script: str,
+    import_roots: list[Path],
+    path: str | None = None,
+    signal: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run `script` in a fresh interpreter whose import roots are `import_roots`.
+
+    `COVERAGE_PROCESS_START` / `COV_CORE_*` are scrubbed because the
+    `subprocess_spawn_allowlist` contract requires it: an instrumented child
+    writes `.coverage.*` that races concurrent coverage runs under the
+    parallel check dispatcher. The budget-signal path is likewise pointed at
+    the test's own tmp tree, so a read the client MEASURES cannot append to
+    the repo-relative default.
+    """
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name != "COVERAGE_PROCESS_START" and not name.startswith("COV_CORE_")
+    }
+    env["PYTHONPATH"] = os.pathsep.join(str(root) for root in import_roots)
+    if path is not None:
+        env["PATH"] = path
+    if signal is not None:
+        env[_SIGNAL_PATH_ENV] = str(signal)
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(_REPO_ROOT),
+        env=env,
+    )
+
+
+@pytest.mark.parametrize(
+    "script",
+    [_CONFIG_ENTRY_SCRIPT, _BUDGET_CLIENT_ENTRY_SCRIPT],
+    ids=["config-entry-path", "budget-client-entry-path"],
+)
+def test_dev_tooling_imported_first_leaves_the_public_runtime_complete(
+    tmp_path: Path, script: str
+) -> None:
+    result = _run_isolated(
+        script=script, import_roots=[_write_public_runtime(root=tmp_path), _REPO_ROOT]
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [
+        f"{_PUBLIC_ORIGIN_PREFIX}spec_governance",
+        f"{_PUBLIC_ORIGIN_PREFIX}hygiene_scan",
+        f"{_PUBLIC_ORIGIN_PREFIX}cross_repo",
+    ]
+
+
+def test_the_public_runtime_imported_first_leaves_the_budget_client_working(
+    tmp_path: Path,
+) -> None:
+    signal = tmp_path / "budget.jsonl"
+    result = _run_isolated(
+        script=_PUBLIC_RUNTIME_FIRST_SCRIPT % {"args": _FAKE_GH_READ_ARGS},
+        import_roots=[_write_public_runtime(root=tmp_path), _REPO_ROOT],
+        path=_install_fake_gh(
+            tmp_path=tmp_path, stdout=_FAKE_GH_STDOUT, stderr_lines=_MEASURED_HEADERS
+        ),
+        signal=signal,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "origin": f"{_PUBLIC_ORIGIN_PREFIX}spec_governance",
+        "returncode": 0,
+        "stdout": _FAKE_GH_STDOUT,
+    }
+    assert [row["argv"] for row in _signal_rows(path=signal)] == [_FAKE_GH_READ_ARGV]
+
+
+def test_the_budget_client_reads_with_no_public_runtime_installed(tmp_path: Path) -> None:
+    signal = tmp_path / "budget.jsonl"
+    result = _run_isolated(
+        script=_STANDALONE_SCRIPT % {"args": _FAKE_GH_READ_ARGS},
+        import_roots=[_REPO_ROOT],
+        path=_install_fake_gh(
+            tmp_path=tmp_path, stdout=_FAKE_GH_STDOUT, stderr_lines=_MEASURED_HEADERS
+        ),
+        signal=signal,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "public_runtime_importable": False,
+        "returncode": 0,
+        "stdout": _FAKE_GH_STDOUT,
+    }
+    assert [row["argv"] for row in _signal_rows(path=signal)] == [_FAKE_GH_READ_ARGV]
