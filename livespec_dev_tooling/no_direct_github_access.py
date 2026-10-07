@@ -47,7 +47,7 @@ paid for once:
   re-derived their own file set without that exclusion and made vendoring
   uncommittable. It is also what realizes two of this check's three
   specified exemptions: the vendored budget client under
-  `_vendor/livespec_runtime/github_budget*` and `livespec_runtime.github_auth`
+  `_vendor/livespec_runtime_budget/github_budget*` and `livespec_runtime.github_auth`
   (whose `mint` documents in place why it reaches GitHub through urllib rather
   than a `gh` subprocess) are BOTH under `_vendor/`, so the shared filter drops
   them before this check ever opens a file. They need no registry entry here,

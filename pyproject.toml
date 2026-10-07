@@ -596,6 +596,15 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/checks/test_red_green_replay.py",
     "tests/livespec_dev_tooling/checks/test_rop_pipeline_shape.py",
     "tests/livespec_dev_tooling/checks/test_supervisor_discipline.py",
+    # Added by livespec-dev-tooling-r44po2, and NOT a gratuitous spawn: its
+    # three namespace-isolation proofs assert on IMPORT ORDER between the
+    # partial vendored budget subset and a consumer's complete public
+    # `livespec_runtime`. `sys.modules` and `sys.path` are process-global and
+    # the pytest process has already imported both sides, so the order under
+    # test is unstageable in-process — and a session-wide preload that made it
+    # stageable would conceal the very shadowing these regress. The children
+    # scrub COVERAGE_PROCESS_START + COV_CORE_* per the contract above.
+    "tests/livespec_dev_tooling/test_budgeted_gh.py",
     "tests/livespec_dev_tooling/test_green_token.py",
     "tests/livespec_dev_tooling/test_no_direct_github_access.py",
     "tests/livespec_dev_tooling/test_tdd_commit.py",

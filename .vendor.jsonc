@@ -47,10 +47,26 @@
 // distribution would have to be satisfied in all of them. `upstream_ref`
 // is the livespec-runtime `origin/master` COMMIT the bytes were taken
 // from rather than a release, so the provenance is exact.
+// ⚠️ THE ON-DISK DIRECTORY IS `_vendor/livespec_runtime_budget/`, NOT
+// `_vendor/livespec_runtime/`, and the `name` above deliberately still
+// reads `livespec_runtime` because it is what the cross-repo pin matcher
+// normalizes the source repo `livespec-runtime` to (per this repo's
+// SPECIFICATION/contracts.md §"Pin autodiscovery rules"). The directory carries the
+// isolated name because this entry is PARTIAL: every module in the
+// package prepends `_vendor/` to `sys.path`, so held under the upstream
+// name the partial tree shadowed a consumer's COMPLETE `livespec_runtime`
+// and broke `spec_governance` / `cross_repo` / `hygiene_scan` imports in
+// one order and this client's own import in the other (livespec core
+// PR #2791; isolated by livespec-dev-tooling-r44po2). The only deviation
+// from the upstream bytes is the matching substitution in each module's
+// own absolute imports.
 // ⚠️ `python -m livespec_dev_tooling.vendor_update livespec_runtime`
-// would copy the WHOLE package over this partial tree. Re-vendor by
-// copying the `github_budget*` modules across by hand and re-stamping
-// this entry. Landed by livespec-dev-tooling-z69s.
+// would copy the WHOLE package into `_vendor/livespec_runtime/` — both
+// over-vendoring this partial tree AND putting that shadow back. Re-vendor
+// by copying the `github_budget*` modules across by hand, re-applying the
+// name substitution, and re-stamping this entry; the beside-test
+// `test_the_budgeted_client_is_vendored_rather_than_a_runtime_dependency`
+// is what catches it if you forget. Landed by livespec-dev-tooling-z69s.
 {
   "libraries": [
     {

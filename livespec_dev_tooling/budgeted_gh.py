@@ -16,6 +16,16 @@ and depending on a client livespec-runtime supplies is an ordinary
 downstream dependency; what stays banned is this repo reading INTO a
 downstream consumer.
 
+⚠️ THE VENDORED COPY IS PARTIAL, SO IT CARRIES ITS OWN TOP-LEVEL NAME.
+`_vendor/livespec_runtime_budget/` holds `github_budget*` and nothing else,
+and the `sys.path` prepend below is process-wide: under the upstream name
+that prepend bound `livespec_runtime` to a package missing
+`spec_governance`, `cross_repo` and `hygiene_scan`, so a consumer that
+imported this package first lost its own complete runtime and one that
+imported its runtime first lost this client (livespec core PR #2791;
+isolated by livespec-dev-tooling-r44po2). Both import orders are regressed
+in fresh interpreters by this module's beside-test.
+
 ⚠️ WHAT ROUTING BUYS HERE, AND WHAT IT DOES NOT. The policies are applied
 by the client, but the two that read NUMBERS — the conditional-read cache
 and the reserved floor — can only act on response headers the transport
@@ -52,14 +62,14 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-# `returns` and `livespec_runtime` are VENDORED, not installed; a bare
+# `returns` and the budget client are VENDORED, not installed; a bare
 # import here would resolve only when some earlier import in the process
 # happened to run first.
 _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
-from livespec_runtime.github_budget import (  # noqa: E402  — vendor-path-aware import.
+from livespec_runtime_budget.github_budget import (  # noqa: E402  — vendor-path-aware import.
     GhInvocation,
     GithubBudgetedClient,
     gh_invocation,

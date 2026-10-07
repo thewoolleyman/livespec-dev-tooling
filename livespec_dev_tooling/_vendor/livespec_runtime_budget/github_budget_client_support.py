@@ -11,8 +11,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Literal, cast
 
-from livespec_runtime.github_budget_measurement import snapshot_from_headers
-from livespec_runtime.github_budget_types import (
+from livespec_runtime_budget.github_budget_measurement import snapshot_from_headers
+from livespec_runtime_budget.github_budget_types import (
     GithubBudgetResponse,
     GithubRateLimitClassification,
     GithubRateLimitSnapshot,

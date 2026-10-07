@@ -1,7 +1,7 @@
 """GitHub request-budget helpers."""
 
-from livespec_runtime.github_budget_client import GithubBudgetedClient
-from livespec_runtime.github_budget_measurement import (
+from livespec_runtime_budget.github_budget_client import GithubBudgetedClient
+from livespec_runtime_budget.github_budget_measurement import (
     append_rate_limit_snapshot,
     classify_github_failure,
     extract_conditional_headers,
@@ -10,7 +10,7 @@ from livespec_runtime.github_budget_measurement import (
     gh_transport,
     parse_rate_limit_snapshot,
 )
-from livespec_runtime.github_budget_types import (
+from livespec_runtime_budget.github_budget_types import (
     GhExecutor,
     GhInvocation,
     GithubBudgetDeferred,

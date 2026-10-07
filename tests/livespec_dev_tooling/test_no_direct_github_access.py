@@ -325,7 +325,7 @@ def test_a_vendored_violation_is_outside_the_first_party_scope(
     """A `_vendor/` path segment is excluded, so vendoring stays committable.
 
     This is how the concern's two remaining exemptions — the vendored budget
-    client under `_vendor/livespec_runtime/github_budget*` and
+    client under `_vendor/livespec_runtime_budget/github_budget*` and
     `livespec_runtime.github_auth.mint` — are realized: the suite's shared
     first-party filter drops them before the check opens a file. Three earlier
     checks re-derived their own file set without that exclusion and made
@@ -333,7 +333,7 @@ def test_a_vendored_violation_is_outside_the_first_party_scope(
     """
     _seed(
         root=tmp_path,
-        rel="pkg/_vendor/livespec_runtime/github_budget.py",
+        rel="pkg/_vendor/livespec_runtime_budget/github_budget.py",
         body=_module_source(call_lines=_GH_ARGV_CALL),
     )
     _seed(root=tmp_path, rel="pkg/clean.py", body="__all__: list[str] = []\n")
