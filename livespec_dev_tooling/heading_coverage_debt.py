@@ -135,6 +135,7 @@ __all__: list[str] = [
     "first_seen_dates",
     "generate_register",
     "head_rows",
+    "head_text",
     "live_todo_keys",
     "load_rows",
     "main",
@@ -348,6 +349,24 @@ def _git_stdout(*, cwd: Path, args: list[str]) -> str:
     return completed.stdout
 
 
+def head_text(*, cwd: Path, path: Path) -> IOResult[str, HeadCopyIncomparable]:
+    """The TEXT of `path` as of `HEAD`; a FAILURE when HEAD carries no copy of it.
+
+    The unparsed half of `head_rows` below, factored out because the v067
+    spec-first direction compares a GOVERNED SPEC FILE across the same two
+    revisions and a markdown file has no rows. Both callers must agree, to the
+    character, on what "HEAD does not carry this" means — the `GIT_*`-stripped
+    invocation and the one failure reason that covers every way git can decline
+    — and a second spelling of it would let a spec file read as absent where a
+    registry read as present.
+    """
+    revision = f"HEAD:{path.as_posix()}"
+    text = _git_stdout(cwd=cwd, args=["show", revision])
+    if not text:
+        return IOFailure(HeadCopyIncomparable(reason="head-copy-absent", revision=revision))
+    return IOSuccess(text)
+
+
 def head_rows(*, cwd: Path, path: Path) -> IOResult[list[dict[str, object]], HeadCopyIncomparable]:
     """The rows of `path` as of `HEAD`; a FAILURE when HEAD carries no comparable copy.
 
@@ -358,13 +377,16 @@ def head_rows(*, cwd: Path, path: Path) -> IOResult[list[dict[str, object]], Hea
     what changed" pass as "nothing changed", which is precisely what a sentinel
     a caller may forget to test invites.
     """
-    revision = f"HEAD:{path.as_posix()}"
-    text = _git_stdout(cwd=cwd, args=["show", revision])
-    if not text:
-        return IOFailure(HeadCopyIncomparable(reason="head-copy-absent", revision=revision))
-    rows = _rows_from_text(text=text)
+    committed = head_text(cwd=cwd, path=path)
+    if isinstance(committed, IOFailure):
+        return committed
+    rows = _rows_from_text(text=unsafe_perform_io(committed.unwrap()))
     if rows is None:
-        return IOFailure(HeadCopyIncomparable(reason="head-copy-not-an-array", revision=revision))
+        return IOFailure(
+            HeadCopyIncomparable(
+                reason="head-copy-not-an-array", revision=f"HEAD:{path.as_posix()}"
+            )
+        )
     return IOSuccess(rows)
 
 
