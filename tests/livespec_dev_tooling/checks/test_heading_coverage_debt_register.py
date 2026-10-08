@@ -334,8 +334,8 @@ def _commit_governed_spec_heading(*, tmp_path: Path) -> None:
 def _seed_governed_repo(
     *,
     tmp_path: Path,
-    headings: list[str],
-    registry: object,
+    headings: list[str] | None,
+    registry: object | None,
     register: object,
 ) -> None:
     """A repo whose `HEAD` carries the governed spec file AND both rows files.
@@ -344,10 +344,19 @@ def _seed_governed_repo(
     governed spec file's H2 set, the coverage registry's keys, and the debt
     register's keys — so every one of them has to be COMMITTED for the
     comparison to be the one a real authoring run makes.
+
+    `headings=None` and `registry=None` LEAVE that file out of the baseline
+    commit, which is how the evidence-unavailability arms are reached. Each
+    needs a `HEAD` the debt REGISTER is comparable against — otherwise growth is
+    unjudged and no admission is in question at all — while exactly one of the
+    other two comparisons cannot be made, so the arm proves which read failed
+    rather than that something failed.
     """
     _init_repo(tmp_path=tmp_path)
-    _write_governed_spec(tmp_path=tmp_path, headings=headings)
-    _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries=registry)
+    if headings is not None:
+        _write_governed_spec(tmp_path=tmp_path, headings=headings)
+    if registry is not None:
+        _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries=registry)
     _write(tmp_path=tmp_path, relpath=_REGISTER_RELPATH, entries=register)
     _git(cwd=tmp_path, args=["add", "-A"])
     _git(cwd=tmp_path, args=["commit", "-q", "-m", "baseline"], committed_at=_BASELINE_AT)
@@ -666,6 +675,14 @@ def test_adoption_under_the_scope_lever_treats_an_absent_head_register_as_empty(
     assert result.returncode == 0, (
         f"the adoption commit must pass under the scope lever too; "
         f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    # v067 does not change first-adoption behavior, and the spec-first direction
+    # is where that could silently break: this tree has no governed spec file at
+    # all and no `HEAD` coverage registry, so an admission question asked here
+    # would report an evidence failure on the very commit that adopts the
+    # ratchet. Growth is UNJUDGED at adoption, so no admission is in question.
+    assert "spec_first" not in result.combined, (
+        f"first adoption must raise no admission question at all; " f"output={result.combined!r}"
     )
 
 
@@ -1408,3 +1425,140 @@ def test_spec_first_admission_refuses_a_same_file_heading_replacement(
     result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
 
     _assert_refused(result=result, heading=_NEW_HEADING, why="a same-file heading replacement")
+
+
+def _assert_evidence_refused(*, result: _CheckRun, evidence: str, why: str) -> None:
+    """Assert `result` REPORTED an evidence failure naming `evidence`, and refused.
+
+    Both halves are the ratified requirement, and each alone is insufficient. A
+    bare refusal is indistinguishable from the decided refusals above, so an
+    author reading it goes looking for a condition they failed rather than for
+    the comparison the repository could not make. A report with no refusal would
+    be the far worse half: unavailable evidence that passed would make every
+    admission obtainable by removing the evidence against it, which is cheaper
+    than satisfying a single one of the conditions.
+    """
+    assert result.returncode != 0, (
+        f"{why} must refuse new-heading admission; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "spec_first_evidence_unavailable" in result.combined, (
+        f"{why} must report an EVIDENCE failure, not a decided refusal; "
+        f"output={result.combined!r}"
+    )
+    assert evidence in result.combined, (
+        f"{why} must name the comparison it could not make ({evidence}); "
+        f"output={result.combined!r}"
+    )
+    assert _NEW_HEADING in result.combined, (
+        f"{why} must name the heading whose eligibility is unestablished; "
+        f"output={result.combined!r}"
+    )
+
+
+def test_new_heading_admission_refuses_an_absent_head_specification_copy(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: `HEAD` carries no copy of the specification file — nothing to compare.
+
+    The register IS comparable, so growth is judged and the admission question is
+    genuinely asked; what cannot be answered is whether the heading is NEW, because
+    there is no pre-change copy of the file it lives in. A change that creates a
+    governed specification file outright looks exactly like this, and treating its
+    absent copy as "no headings before" would admit every heading in the new file as
+    spec-first debt in one commit.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=None,
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[_governed_resolved_row(), _governed_todo_row(heading=_NEW_HEADING)],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_evidence_refused(
+        result=result,
+        evidence="head-specification-copy-absent",
+        why="an absent HEAD copy of the governed specification file",
+    )
+
+
+def test_new_heading_admission_refuses_an_incomparable_head_coverage_registry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: `HEAD` carries no coverage registry — the key's novelty is unestablished.
+
+    The specification comparison is available and would say the heading is new.
+    The clause requires BOTH: the heading absent from `HEAD`'s specification AND
+    its coverage key absent from `HEAD`'s registry, because a key that already
+    had a row is not a new heading's key whatever that row said. With no registry
+    at `HEAD` the second half cannot be read, so the real-test-to-TODO regression
+    the clause names first would be indistinguishable from a fresh key.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=None,
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[_governed_resolved_row(), _governed_todo_row(heading=_NEW_HEADING)],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_evidence_refused(
+        result=result,
+        evidence="head-coverage-registry-incomparable",
+        why="an incomparable HEAD coverage registry",
+    )
+
+
+def test_new_heading_admission_refuses_an_unreadable_live_specification(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: the WORKING-TREE specification file cannot be read — the third read.
+
+    Both `HEAD` reads succeed here; the one that fails is the live copy, which is
+    where the clause's "introduces its exact H2 heading into the governed live
+    specification" is established. A file this run cannot open proves nothing
+    about what it contains, and reading it as "no headings" would answer a
+    question about THE HEADING with a fact about the filesystem — the same
+    unreadable-is-not-empty distinction the two rows files already draw.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[_governed_resolved_row(), _governed_todo_row(heading=_NEW_HEADING)],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+    # A directory where the governed specification file belongs: the staged
+    # BLOB still carries the new heading, so only the working-tree read fails,
+    # which is what isolates this arm from the two `HEAD` reads above.
+    spec = tmp_path / _GOVERNED_SPEC_RELPATH
+    spec.unlink()
+    spec.mkdir()
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_evidence_refused(
+        result=result,
+        evidence="live-specification-unreadable",
+        why="an unreadable working-tree specification file",
+    )

@@ -62,9 +62,26 @@ the debt ratchet to the coverage check it has no other relationship with. The
 two MAY disagree only in the fail-closed direction: a heading this scanner
 misses is a heading whose debt is REFUSED, never one silently admitted.
 
-Output discipline: this module DECIDES and emits nothing — the caller owns
-every diagnostic — so `print` (T20) and `sys.stderr.write`
-(`check-no-write-direct`) have nothing to ban here.
+UNAVAILABLE EVIDENCE REFUSES AND SAYS SO — IT IS NOT A SILENT NO. All three
+reads can fail: `HEAD` may carry no copy of the specification file (a change
+that creates one outright), no coverage registry at all, or the working-tree
+copy may be unopenable. Each leaves the eligibility question UNANSWERED, so
+the admission is refused — and the refusal alone is not enough. Refusing in
+the same words as the decided refusals sends an author looking for a condition
+they did not fail, so the comparison that could not be made is reported by
+name. The other half matters more: unavailable evidence that PASSED would make
+every admission obtainable by removing the evidence against it, which is
+cheaper than satisfying a single one of the conditions.
+
+FIRST ADOPTION ASKS NO ADMISSION QUESTION, which is why the evidence report
+cannot red the commit that adopts the ratchet. The caller reaches this module
+only when `HEAD`'s debt REGISTER is comparable; at adoption it is not, growth
+is unjudged, and `grown` is never computed — so there is no key whose
+eligibility an evidence failure could be reported about.
+
+Output discipline: per spec, `print` (T20) and `sys.stderr.write`
+(`check-no-write-direct`) are banned in this tree; the one diagnostic here
+flows through the vendored structlog, which the caller configures.
 """
 
 from __future__ import annotations
@@ -80,6 +97,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
@@ -95,8 +113,22 @@ from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
 # importer, `heading_coverage_debt_register.py`, so pyright's per-file analysis
 # does not flag them unused across the package boundary.
 __all__: list[str] = [
+    "SpecFirstDecision",
+    "SpecFirstFinding",
+    "report_spec_first_violations",
     "spec_first_admitted",
 ]
+
+
+_UNAVAILABLE_MESSAGE = (
+    "heading-coverage-debt.json entry adds a register key whose new-heading eligibility "
+    "this run cannot establish: the `evidence` field names the comparison against HEAD "
+    "that could not be made. Per livespec-dev-tooling's "
+    'SPECIFICATION/non-functional-requirements.md §"Scenario-tier coverage" an unavailable '
+    "or unreadable comparison REFUSES the bounded spec-first admission rather than "
+    "establishing it — commit the governed specification file and the coverage registry, "
+    "or restore the copy this run could not read"
+)
 
 
 def _h2_headings(*, source: str) -> frozenset[str]:
@@ -224,37 +256,61 @@ class _Declared:
     acknowledged: frozenset[tuple[str, str, str]]
 
 
+@dataclass(frozen=True, kw_only=True)
+class SpecFirstFinding:
+    """One grown key whose new-heading eligibility could not be ESTABLISHED.
+
+    `evidence` names the comparison that could not be made, which is the whole
+    value of the finding over the bare refusal the caller emits anyway: it tells
+    an author which of three repository reads to go and fix, instead of sending
+    them to re-check conditions they satisfied.
+    """
+
+    code: str
+    key: tuple[str, str, str]
+    evidence: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class SpecFirstDecision:
+    """The exception's two answers for one run, deliberately not collapsed into one.
+
+    `admitted` is subtracted from the caller's growth findings; `unproved`
+    carries the keys whose eligibility is UNANSWERED. A key is in neither set
+    when the exception simply did not apply to it — that is an ordinary decided
+    refusal, and the caller's `register_grew` finding is its whole report.
+    """
+
+    admitted: frozenset[tuple[str, str, str]]
+    unproved: list[SpecFirstFinding]
+
+
 def _admits(
     *,
-    cwd: Path,
     key: tuple[str, str, str],
-    head_registry_keys: frozenset[tuple[str, str, str]] | None,
+    live: frozenset[str],
+    before: frozenset[str],
+    head_registry_keys: frozenset[tuple[str, str, str]],
     declared: _Declared,
 ) -> bool:
     """Whether `key` is the bounded spec-first exception rather than plain growth.
 
     ONE conjunction, deliberately, because the ratified clause IS one: every
     condition must hold, and a key that fails any of them is the growth the
-    shrink-only direction already named. Both spec revisions are read before the
-    test rather than inside it, so an unreadable working tree and an
-    incomparable `HEAD` are distinguishable answers rather than one short
-    circuit.
+    shrink-only direction already named. Every argument is already KNOWN here —
+    the caller establishes the three evidence reads answered before asking, so
+    this function decides and never reports an unavailability.
 
     `declared.todo_owners.get(key)` doubles as the ORPHAN test: a register entry
     with no live `TODO` row places no owner, so a dangling key fails here rather
     than needing a condition of its own — and it must, because without the row
     there is no owner and no acknowledgment for the next two conditions to read.
     """
-    spec_root, spec_file, heading = key
-    live = _live_headings(cwd=cwd, spec_root=spec_root, spec_file=spec_file)
-    before = _head_headings(cwd=cwd, spec_root=spec_root, spec_file=spec_file)
+    heading = key[2]
     owner = declared.todo_owners.get(key)
     return (
-        head_registry_keys is not None
-        and key not in head_registry_keys
-        and live is not None
+        key not in head_registry_keys
         and heading in live
-        and before is not None
         and heading not in before
         and not before - live
         and owner is not None
@@ -263,14 +319,40 @@ def _admits(
     )
 
 
+def _unavailable(
+    *,
+    before: frozenset[str] | None,
+    head_registry_keys: frozenset[tuple[str, str, str]] | None,
+) -> str:
+    """Which comparison could not be made; the caller has established one could not.
+
+    Ordered by how little the run could do about it: a missing `HEAD` registry
+    defeats every key at once, a missing `HEAD` copy of one specification file
+    defeats that file's keys, and an unreadable working-tree copy is the local
+    condition an author can fix on the spot. Reporting one name rather than a
+    set keeps the remedy single — the next run re-reads all three anyway.
+
+    The live read is the RESIDUAL and so takes no parameter: the caller calls
+    this only when one of the three failed, so with both `HEAD` reads answered
+    the working-tree copy is the one that did not. Taking `live` to re-test it
+    would add a branch no fixture can reach, which is a worse record of the
+    reasoning than this sentence.
+    """
+    if head_registry_keys is None:
+        return "head-coverage-registry-incomparable"
+    if before is None:
+        return "head-specification-copy-absent"
+    return "live-specification-unreadable"
+
+
 def spec_first_admitted(
     *,
     cwd: Path,
     grown: list[tuple[str, str, str]],
     registry_rows: list[dict[str, object]],
     register_rows: list[dict[str, object]],
-) -> frozenset[tuple[str, str, str]]:
-    """The subset of `grown` the bounded v067 spec-first exception admits.
+) -> SpecFirstDecision:
+    """What the bounded v067 spec-first exception says about each key in `grown`.
 
     `grown` is the shrink-only direction's own finding set, passed in rather than
     recomputed, so the exception can only ever REMOVE a key the caller already
@@ -282,10 +364,11 @@ def spec_first_admitted(
     The evidence reads are skipped entirely when nothing grew, and that is
     load-bearing rather than an optimisation: the overwhelming majority of runs
     carry no growth at all, and a repository at zero debt must not be asked to
-    open a spec file to confirm it.
+    open a spec file to confirm it — nor to report an evidence failure about a
+    key no direction named.
     """
     if not grown:
-        return frozenset()
+        return SpecFirstDecision(admitted=frozenset(), unproved=[])
     live_todo = todo_rows(rows=registry_rows)
     declared = _Declared(
         todo_owners=_owners(rows=live_todo),
@@ -293,8 +376,42 @@ def spec_first_admitted(
         acknowledged=_acknowledged(rows=live_todo),
     )
     head_registry_keys = _head_registry_keys(cwd=cwd)
-    return frozenset(
-        key
-        for key in grown
-        if _admits(cwd=cwd, key=key, head_registry_keys=head_registry_keys, declared=declared)
-    )
+    admitted: set[tuple[str, str, str]] = set()
+    unproved: list[SpecFirstFinding] = []
+    for key in grown:
+        spec_root, spec_file, _ = key
+        live = _live_headings(cwd=cwd, spec_root=spec_root, spec_file=spec_file)
+        before = _head_headings(cwd=cwd, spec_root=spec_root, spec_file=spec_file)
+        if head_registry_keys is None or before is None or live is None:
+            unproved.append(
+                SpecFirstFinding(
+                    code="spec_first_evidence_unavailable",
+                    key=key,
+                    evidence=_unavailable(before=before, head_registry_keys=head_registry_keys),
+                )
+            )
+            continue
+        if _admits(
+            key=key,
+            live=live,
+            before=before,
+            head_registry_keys=head_registry_keys,
+            declared=declared,
+        ):
+            admitted.add(key)
+    return SpecFirstDecision(admitted=frozenset(admitted), unproved=unproved)
+
+
+def report_spec_first_violations(*, findings: list[SpecFirstFinding]) -> None:
+    """Report every unestablished eligibility at error level — the caller owns the exit code."""
+    log = structlog.get_logger("heading_coverage_debt_register")
+    for finding in findings:
+        log.error(
+            _UNAVAILABLE_MESSAGE,
+            spec_root=finding.key[0],
+            spec_file=finding.key[1],
+            heading=finding.key[2],
+            finding=finding.code,
+            evidence=finding.evidence,
+            failing=True,
+        )
