@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.93.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.92.3...v1.93.0) (2026-10-08)
+
+
+### Features
+
+* **checks:** admit bounded spec-first heading-coverage debt ([3fc5bee](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3fc5bee9e90711afee51e47b309c925751096997))
+* **checks:** refuse every non-spec-first heading-debt addition ([a8df47b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a8df47b23fef45283b42d2fb1691c3b2d6754cb3))
+* **checks:** report the HEAD evidence a heading-debt admission needs ([67d19ba](https://github.com/thewoolleyman/livespec-dev-tooling/commit/67d19ba56cfcf02f481ab0e312d071f878ed4f7f))
+
+
+### Bug Fixes
+
+* **checks:** refuse a spec-first admission the acknowledgment does not earn ([95bedae](https://github.com/thewoolleyman/livespec-dev-tooling/commit/95bedaeb0ab5f7487c8089ff6953e4911c3f6830))
+* **checks:** refuse an admission acknowledging the wrong test tier ([2e33d54](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e33d5462f00379361678bfdbca250196cbb921b))
+
 ## [1.92.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.92.2...v1.92.3) (2026-10-08)
 
 
