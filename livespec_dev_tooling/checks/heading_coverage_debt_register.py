@@ -174,7 +174,11 @@ _MESSAGES = {
     ),
     "register_grew": (
         "heading-coverage-debt.json entry is absent from HEAD's register — the register "
-        "GREW. It may only shrink toward empty"
+        "GREW. It may only shrink toward empty, with the ONE bounded exception for debt "
+        "whose exact H2 heading this same change introduces into the governed live "
+        "specification: the coverage row must name an owner the register entry matches "
+        "and acknowledge the owed test, and that specification file must remove no "
+        "existing heading"
     ),
     "register_row_incomplete": (
         "heading-coverage-debt.json entry is missing a required field — every entry "
@@ -397,7 +401,12 @@ def main() -> int:
         # whole-tree aggregate before committing reads the same tree an
         # authoring-time run does, and refusing them there would make the
         # exception reachable only through the pre-commit subset.
-        admitted = spec_first_admitted(cwd=cwd, grown=[finding.key for finding in grown])
+        admitted = spec_first_admitted(
+            cwd=cwd,
+            grown=[finding.key for finding in grown],
+            registry_rows=registry_rows,
+            register_rows=register_rows,
+        )
         findings += [finding for finding in grown if finding.key not in admitted]
     authoring = bool(os.environ.get(_SCOPE_ENV_VAR))
     if authoring:
