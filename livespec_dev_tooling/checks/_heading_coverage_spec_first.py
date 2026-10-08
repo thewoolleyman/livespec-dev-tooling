@@ -47,10 +47,38 @@ THE OWNER IS CHECKED ON BOTH SIDES BECAUSE A MATCH IS THE EVIDENCE OF
 MECHANICAL GENERATION. The generator synchronizes a register entry's
 `work_item` from its live coverage row, so two nonempty owners that DISAGREE
 are proof the entry was not generated — and the clause admits only generated
-rows. The coverage row's own `reason` is read for PRESENCE only: whether an
-acknowledgment says the right thing is `heading_coverage`'s ratified
-judgement, and re-deciding it here would give a repository two places to
-disagree about one rule.
+rows.
+
+THE ACKNOWLEDGMENT IS READ FOR CONTENT, THROUGH THE ONE RATIFIED PREDICATE.
+This file previously read the coverage row's `reason` for PRESENCE only, on the
+reasoning that whether an acknowledgment says the right thing is
+`heading_coverage`'s judgement and deciding it twice would give a repository
+two places to disagree about one rule. That reasoning was wrong, and it was
+wrong in the direction that costs something: the clause makes the required-tier
+acknowledgment a CONDITION OF THE ADMISSION, so presence-only does not avoid a
+disagreement — it MANUFACTURES one. Measured on three fixtures identical in
+every other condition, the ratchet admitted `not testable` and `a unit test is
+owed` while `heading_coverage` refused both on the same row, and the admission
+is the verdict that wins: it silences this check's own growth direction and
+banks the row into the shrink-only register. Two surfaces, opposite verdicts,
+one row.
+
+The repair is not a second rule but the SAME one, read twice: the content
+judgement is delegated to `reason_defect`, the public predicate
+`_heading_coverage_reason_predicate` already exports and `heading_coverage`'s
+reason guard already consumes. One predicate with two readers agrees by
+construction; two predicates agree by coincidence. The refusal carries that
+predicate's own `(defect, evidence)` pair rather than restating it, which is
+also the "identify the failed evidence" half of the clause — a bare growth
+finding would send an author to re-check the heading, the owner and the removal
+disqualifier, every one of which they satisfied.
+
+An ABSENT or blank `reason` is a different state and keeps its old treatment:
+there is no wording to judge, so the growth direction's own finding is the
+whole report. Only a reason that is declared and REFUSED earns a finding of its
+own, and only when every other condition held — otherwise the report would name
+the acknowledgment as deciding a key that some earlier condition had already
+settled.
 
 ⛔ THE H2 SET IS RESTATED HERE RATHER THAN SHARED WITH `heading_coverage`. That
 check's `_extract_h2_headings` is module-private and serves a different walk —
@@ -101,6 +129,9 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling.checks._heading_coverage_reason_predicate import (  # noqa: E402
+    reason_defect,
+)
 from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
     COVERAGE_PATH,
     head_rows,
@@ -120,15 +151,28 @@ __all__: list[str] = [
 ]
 
 
-_UNAVAILABLE_MESSAGE = (
-    "heading-coverage-debt.json entry adds a register key whose new-heading eligibility "
-    "this run cannot establish: the `evidence` field names the comparison against HEAD "
-    "that could not be made. Per livespec-dev-tooling's "
-    'SPECIFICATION/non-functional-requirements.md §"Scenario-tier coverage" an unavailable '
-    "or unreadable comparison REFUSES the bounded spec-first admission rather than "
-    "establishing it — commit the governed specification file and the coverage registry, "
-    "or restore the copy this run could not read"
-)
+# One message per finding CODE: refusing in the same words would send the reader
+# of either one looking for the other's cause.
+_MESSAGES = {
+    "spec_first_evidence_unavailable": (
+        "heading-coverage-debt.json entry adds a register key whose new-heading eligibility "
+        "this run cannot establish: the `evidence` field names the comparison against HEAD "
+        "that could not be made. Per livespec-dev-tooling's "
+        'SPECIFICATION/non-functional-requirements.md §"Scenario-tier coverage" an unavailable '
+        "or unreadable comparison REFUSES the bounded spec-first admission rather than "
+        "establishing it — commit the governed specification file and the coverage registry, "
+        "or restore the copy this run could not read"
+    ),
+    "spec_first_acknowledgment_refused": (
+        "heading-coverage.json row satisfies every other condition of the bounded spec-first "
+        "admission, but its `reason` is not the required-tier acknowledgment that admission is "
+        "conditioned on — `reason_defect` names what it asserted or omitted, `evidence` the "
+        "wording that failed. Per livespec-dev-tooling's "
+        'SPECIFICATION/non-functional-requirements.md §"Scenario-tier coverage" it MUST '
+        "acknowledge that a real test at the required tier is owed, judged by the one predicate "
+        "`heading_coverage` applies to the same row — rewrite it to name the owed test and tier"
+    ),
+}
 
 
 def _h2_headings(*, source: str) -> frozenset[str]:
@@ -225,21 +269,29 @@ def _owners(*, rows: list[dict[str, object]]) -> dict[tuple[str, str, str], str]
     return owners
 
 
-def _acknowledged(*, rows: list[dict[str, object]]) -> frozenset[tuple[str, str, str]]:
-    """The keys whose row carries a `reason` at all — presence, never content.
+def _reason_defects(
+    *, rows: list[dict[str, object]]
+) -> dict[tuple[str, str, str], tuple[str, str] | None]:
+    """Key → the `(defect, evidence)` its `reason` draws; `None` when it acknowledges.
 
-    The ratified clause puts the CONTENT rule ("MUST acknowledge that a real
-    test at the required tier is owed and MUST name nothing else") under
-    `heading_coverage`, so this direction reads only whether the acknowledgment
-    exists. Judging the wording twice would let the two checks disagree about
-    one rule, and the one that ran first would win.
+    A key is ABSENT when its row declares no reason at all, and that third state
+    is the point of returning a mapping rather than a set: declared-and-refused
+    is a condition this direction decides and reports, while
+    not-declared-at-all is the growth direction's own finding and must not be
+    reported twice under two names.
+
+    The judgement itself is `reason_defect`'s — the ratified predicate
+    `heading_coverage`'s reason guard reads for the identical row. Nothing about
+    the wording is decided here, which is what keeps the two surfaces from
+    disagreeing about one rule.
     """
-    acknowledged: set[tuple[str, str, str]] = set()
+    defects: dict[tuple[str, str, str], tuple[str, str] | None] = {}
     for row in rows:
         key = register_key(row=row)
-        if key is not None and _text(value=row.get("reason")) is not None:
-            acknowledged.add(key)
-    return frozenset(acknowledged)
+        reason = _text(value=row.get("reason"))
+        if key is not None and reason is not None:
+            defects[key] = reason_defect(reason=reason)
+    return defects
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -253,39 +305,49 @@ class _Declared:
 
     todo_owners: dict[tuple[str, str, str], str]
     register_owners: dict[tuple[str, str, str], str]
-    acknowledged: frozenset[tuple[str, str, str]]
+    reason_defects: dict[tuple[str, str, str], tuple[str, str] | None]
 
 
 @dataclass(frozen=True, kw_only=True)
 class SpecFirstFinding:
-    """One grown key whose new-heading eligibility could not be ESTABLISHED.
+    """One grown key the exception refused with something to say about WHY.
 
-    `evidence` names the comparison that could not be made, which is the whole
-    value of the finding over the bare refusal the caller emits anyway: it tells
-    an author which of three repository reads to go and fix, instead of sending
-    them to re-check conditions they satisfied.
+    `evidence` names what failed — the comparison that could not be made, or the
+    wording the acknowledgment predicate refused — which is the whole value of
+    the finding over the bare refusal the caller emits anyway: it tells an author
+    which read or which field to go and fix, instead of sending them to re-check
+    conditions they satisfied.
+
+    `defect` carries the acknowledgment predicate's own discriminator under the
+    same field name `heading_coverage`'s reason guard prints, so the two surfaces
+    name one defect identically. It is `None` for an evidence failure, which has
+    no wording to classify, and is emitted either way: a conditional field would
+    make an absent `reason_defect` ambiguous between "not that kind of finding"
+    and "that key was omitted".
     """
 
     code: str
     key: tuple[str, str, str]
     evidence: str
+    defect: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
 class SpecFirstDecision:
     """The exception's two answers for one run, deliberately not collapsed into one.
 
-    `admitted` is subtracted from the caller's growth findings; `unproved`
-    carries the keys whose eligibility is UNANSWERED. A key is in neither set
-    when the exception simply did not apply to it — that is an ordinary decided
-    refusal, and the caller's `register_grew` finding is its whole report.
+    `admitted` is subtracted from the caller's growth findings; `reported`
+    carries the keys the exception has something to SAY about — eligibility it
+    could not establish, or an acknowledgment it decided against. A key is in
+    neither set when the exception simply did not apply to it, which is an
+    ordinary decided refusal the caller's `register_grew` finding reports whole.
     """
 
     admitted: frozenset[tuple[str, str, str]]
-    unproved: list[SpecFirstFinding]
+    reported: list[SpecFirstFinding]
 
 
-def _admits(
+def _eligible(
     *,
     key: tuple[str, str, str],
     live: frozenset[str],
@@ -293,18 +355,24 @@ def _admits(
     head_registry_keys: frozenset[tuple[str, str, str]],
     declared: _Declared,
 ) -> bool:
-    """Whether `key` is the bounded spec-first exception rather than plain growth.
+    """Whether every admission condition EXCEPT the acknowledgment holds for `key`.
 
-    ONE conjunction, deliberately, because the ratified clause IS one: every
-    condition must hold, and a key that fails any of them is the growth the
-    shrink-only direction already named. Every argument is already KNOWN here —
-    the caller establishes the three evidence reads answered before asking, so
-    this function decides and never reports an unavailability.
+    ONE conjunction, deliberately, because this half of the ratified clause IS
+    one: every condition must hold, and a key that fails any of them is the
+    growth the shrink-only direction already named. Every argument is already
+    KNOWN here — the caller establishes the three evidence reads answered before
+    asking, so this function decides and never reports an unavailability.
+
+    The acknowledgment is the one condition deliberately LEFT OUT, because it is
+    the only one whose failure earns a finding of its own: separating it is what
+    lets the caller say "this would have been admitted but for the reason"
+    rather than reporting the acknowledgment as deciding a key some earlier
+    condition had already settled.
 
     `declared.todo_owners.get(key)` doubles as the ORPHAN test: a register entry
     with no live `TODO` row places no owner, so a dangling key fails here rather
     than needing a condition of its own — and it must, because without the row
-    there is no owner and no acknowledgment for the next two conditions to read.
+    there is no owner and no `reason` for the acknowledgment to read.
     """
     heading = key[2]
     owner = declared.todo_owners.get(key)
@@ -315,7 +383,6 @@ def _admits(
         and not before - live
         and owner is not None
         and declared.register_owners.get(key) == owner
-        and key in declared.acknowledged
     )
 
 
@@ -368,22 +435,22 @@ def spec_first_admitted(
     key no direction named.
     """
     if not grown:
-        return SpecFirstDecision(admitted=frozenset(), unproved=[])
+        return SpecFirstDecision(admitted=frozenset(), reported=[])
     live_todo = todo_rows(rows=registry_rows)
     declared = _Declared(
         todo_owners=_owners(rows=live_todo),
         register_owners=_owners(rows=register_rows),
-        acknowledged=_acknowledged(rows=live_todo),
+        reason_defects=_reason_defects(rows=live_todo),
     )
     head_registry_keys = _head_registry_keys(cwd=cwd)
     admitted: set[tuple[str, str, str]] = set()
-    unproved: list[SpecFirstFinding] = []
+    reported: list[SpecFirstFinding] = []
     for key in grown:
         spec_root, spec_file, _ = key
         live = _live_headings(cwd=cwd, spec_root=spec_root, spec_file=spec_file)
         before = _head_headings(cwd=cwd, spec_root=spec_root, spec_file=spec_file)
         if head_registry_keys is None or before is None or live is None:
-            unproved.append(
+            reported.append(
                 SpecFirstFinding(
                     code="spec_first_evidence_unavailable",
                     key=key,
@@ -391,27 +458,43 @@ def spec_first_admitted(
                 )
             )
             continue
-        if _admits(
+        if not _eligible(
             key=key,
             live=live,
             before=before,
             head_registry_keys=head_registry_keys,
             declared=declared,
         ):
+            continue
+        if key not in declared.reason_defects:
+            # No `reason` declared: nothing to judge, so growth reports it whole.
+            continue
+        defect = declared.reason_defects[key]
+        if defect is None:
             admitted.add(key)
-    return SpecFirstDecision(admitted=frozenset(admitted), unproved=unproved)
+            continue
+        reported.append(
+            SpecFirstFinding(
+                code="spec_first_acknowledgment_refused",
+                key=key,
+                evidence=defect[1],
+                defect=defect[0],
+            )
+        )
+    return SpecFirstDecision(admitted=frozenset(admitted), reported=reported)
 
 
 def report_spec_first_violations(*, findings: list[SpecFirstFinding]) -> None:
-    """Report every unestablished eligibility at error level — the caller owns the exit code."""
+    """Report every refusal this module owns at error level — the caller owns the exit code."""
     log = structlog.get_logger("heading_coverage_debt_register")
     for finding in findings:
         log.error(
-            _UNAVAILABLE_MESSAGE,
+            _MESSAGES[finding.code],
             spec_root=finding.key[0],
             spec_file=finding.key[1],
             heading=finding.key[2],
             finding=finding.code,
+            reason_defect=finding.defect,
             evidence=finding.evidence,
             failing=True,
         )

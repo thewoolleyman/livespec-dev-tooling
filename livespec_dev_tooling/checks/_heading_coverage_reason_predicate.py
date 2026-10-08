@@ -56,9 +56,12 @@ from dataclasses import dataclass
 
 from livespec_dev_tooling.heading_coverage_debt import todo_rows
 
-# Names in `__all__` mark this private sibling's public surface to its sole
-# importer, `_heading_coverage_reason_guard.py`, so pyright's per-file analysis
-# does not flag them unused across the package boundary.
+# Names in `__all__` mark this private sibling's public surface to its two
+# importers — `_heading_coverage_reason_guard.py`, which judges every TODO row,
+# and `_heading_coverage_spec_first.py`, which conditions the bounded spec-first
+# admission on the same predicate so the two surfaces cannot disagree about one
+# row — so pyright's per-file analysis does not flag them unused across the
+# package boundary.
 __all__: list[str] = [
     "ReasonFinding",
     "reason_defect",
