@@ -21,7 +21,8 @@ Three directions, all read from the repository's own committed files:
   entry is left behind, which would silently bank a shrink that never
   happened and leave room for a future `TODO` to slip in unchallenged.
 - `register_grew` — a register key absent from `HEAD`'s register. The
-  shrink-only rule itself.
+  shrink-only rule itself, now carrying the ONE bounded exception v067 ratified
+  (see "SPEC-FIRST ADMISSION" below).
 
 A fourth, `register_row_incomplete`, guards the ratified SCHEMA: a register
 row must carry the key three plus `work_item` and `first_seen`. Debt with no
@@ -50,6 +51,17 @@ moved date: the register neither grows nor shrinks, the schema holds, every
 live `TODO` stays registered — and the release-tier age bound's clock
 restarts. They live whole in `_heading_coverage_first_seen`, which owns both
 evidence reads, the tier split, and why only moving a date LATER is forbidden.
+
+SPEC-FIRST ADMISSION is the ONE exception to the shrink-only rule, ratified at
+v067 and living whole in `_heading_coverage_spec_first`. A grown key whose exact
+H2 heading this change INTRODUCES into the governed live specification — absent
+from `HEAD`'s copy of that file and from `HEAD`'s coverage registry — is not
+growth but the shape a spec-first repository legitimately produces at
+ratification time, before any implementation item can land the test. It is
+subtracted from `register_grew` rather than built into it, so the shrink-only
+rule stays stated whole, and the exception is earned from repository data at two
+revisions rather than requested: there is no field, lever or wording an author
+can write to obtain it.
 
 NON-BREAKING BY CONSTRUCTION. The register is generated from the live
 registry (`livespec_dev_tooling.heading_coverage_debt`), so at adoption the
@@ -130,6 +142,9 @@ from livespec_dev_tooling.checks._heading_coverage_age_bound import (  # noqa: E
 from livespec_dev_tooling.checks._heading_coverage_first_seen import (  # noqa: E402
     judged_first_seen_findings,
     report_first_seen_violations,
+)
+from livespec_dev_tooling.checks._heading_coverage_spec_first import (  # noqa: E402
+    spec_first_admitted,
 )
 from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
     COVERAGE_PATH,
@@ -373,7 +388,17 @@ def main() -> int:
         )
     else:
         baseline_rows = unsafe_perform_io(baseline_scan.unwrap())
-        findings += _growth_findings(register_rows=register_rows, baseline_rows=baseline_rows)
+        grown = _growth_findings(register_rows=register_rows, baseline_rows=baseline_rows)
+        # The bounded v067 exception is applied HERE rather than inside
+        # `_growth_findings` so the shrink-only rule stays stated whole: growth is
+        # computed from the two register key sets alone, and the admission then
+        # subtracts the keys whose spec evidence earns it. It is deliberately NOT
+        # gated on the authoring lever either — a contributor running the
+        # whole-tree aggregate before committing reads the same tree an
+        # authoring-time run does, and refusing them there would make the
+        # exception reachable only through the pre-commit subset.
+        admitted = spec_first_admitted(cwd=cwd, grown=[finding.key for finding in grown])
+        findings += [finding for finding in grown if finding.key not in admitted]
     authoring = bool(os.environ.get(_SCOPE_ENV_VAR))
     if authoring:
         findings = _judged(
