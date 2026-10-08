@@ -548,7 +548,7 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a heading-coverage debt register admits only spec-first growth and fails every other addition",
     "test": "tests.livespec_dev_tooling.checks.test_heading_coverage_debt_register.test_a_register_that_grew_fails",
-    "reason": "Integration-tier: the existing real-git check runner proves the registry-only growth refusal and its unchanged-baseline control. Positive spec-first admission is a separately tracked post-ratification implementation obligation; this mapping does not claim that new arm is already proved."
+    "reason": "Integration-tier: the existing real-git check runner proves the registry-only growth refusal and its unchanged-baseline control. Companion arms `test_an_authored_first_seen_moved_later_than_head_fails`, `test_a_committed_first_seen_later_than_the_earliest_todo_commit_fails` and `test_committed_debt_whose_required_history_evidence_is_unavailable_is_refused` now prove the three first-seen date refusals in the same runner — authored inflation against HEAD, committed inflation against the earliest-TODO-commit committer date, and unavailable history evidence — each paired with a control that keeps a legitimately earlier date and unchanged valid registered debt passing (livespec-dev-tooling-4x2qkw). Positive spec-first admission is a separately tracked post-ratification implementation obligation; this mapping does not claim that new arm is already proved."
   },
   {
     "spec_root": "SPECIFICATION",
@@ -576,6 +576,6 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the heading-coverage debt register regenerates from the live registry and matches byte-for-byte",
     "test": "tests.livespec_dev_tooling.test_heading_coverage_debt.test_main_writes_the_register_and_regenerating_it_changes_nothing",
-    "reason": "Integration-tier: the existing generator test proves mechanical byte-for-byte generation and repeated regeneration. Preservation of existing first-seen dates while adding new spec-first debt is owed by the post-ratification factory implementation; this mapping does not claim that new arm is already proved."
+    "reason": "Integration-tier: the existing generator test proves mechanical byte-for-byte generation and repeated regeneration. Companion arms `test_main_preserves_a_recorded_date_against_a_later_committer_date` and `test_generate_register_preserves_a_recorded_date_and_synchronizes_the_owner` now prove that regeneration PRESERVES an already-recorded first-seen date against a later committer date while resynchronizing the owner from the live coverage row (livespec-dev-tooling-4x2qkw). Admission of NEW spec-first debt is owed by the separately tracked next slice; this mapping does not claim that arm is already proved."
   }
 ]
