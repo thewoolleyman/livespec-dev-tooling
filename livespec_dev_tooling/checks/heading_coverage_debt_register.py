@@ -39,6 +39,18 @@ change. It lives whole in the private sibling `_heading_coverage_age_bound`
 the bound's configuration, the date arithmetic, the tier decision and both
 of its diagnostics.
 
+A SIXTH and SEVENTH guard the first-seen DATE rather than the set of keys
+(v067): `first_seen_moved_later` at the authoring tier, where the evidence is
+the date `HEAD`'s own register records, and
+`first_seen_after_earliest_todo_commit` at pre-push and CI, where it is the
+committer date of the earliest commit whose registry blob already carried the
+key as a `TODO` — with `first_seen_evidence_unavailable` for the case where
+that history cannot answer at all. None of the five directions above can see a
+moved date: the register neither grows nor shrinks, the schema holds, every
+live `TODO` stays registered — and the release-tier age bound's clock
+restarts. They live whole in `_heading_coverage_first_seen`, which owns both
+evidence reads, the tier split, and why only moving a date LATER is forbidden.
+
 NON-BREAKING BY CONSTRUCTION. The register is generated from the live
 registry (`livespec_dev_tooling.heading_coverage_debt`), so at adoption the
 baseline IS today's set and every direction is satisfied on an untouched
@@ -114,6 +126,10 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 from livespec_dev_tooling.checks._heading_coverage_age_bound import (  # noqa: E402
     judged_age_findings,
     report_age_violations,
+)
+from livespec_dev_tooling.checks._heading_coverage_first_seen import (  # noqa: E402
+    judged_first_seen_findings,
+    report_first_seen_violations,
 )
 from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
     COVERAGE_PATH,
@@ -358,7 +374,8 @@ def main() -> int:
     else:
         baseline_rows = unsafe_perform_io(baseline_scan.unwrap())
         findings += _growth_findings(register_rows=register_rows, baseline_rows=baseline_rows)
-    if os.environ.get(_SCOPE_ENV_VAR):
+    authoring = bool(os.environ.get(_SCOPE_ENV_VAR))
+    if authoring:
         findings = _judged(
             findings=findings,
             cwd=cwd,
@@ -372,10 +389,22 @@ def main() -> int:
     aged = judged_age_findings(
         registry_rows=registry_rows, register_rows=register_rows, repo_root=cwd
     )
+    # The date directions are not narrowed either, and for the opposite
+    # reason: the lever SELECTS which of the two runs rather than filtering
+    # either one's output. A moved date is authored by construction — it
+    # differs from the value HEAD records — so there is nothing inherited left
+    # for a narrowing to spare.
+    dated = judged_first_seen_findings(
+        cwd=cwd,
+        registry_rows=registry_rows,
+        register_rows=register_rows,
+        authoring=authoring,
+    )
     for finding in findings:
         _emit(finding=finding, failing=True)
     report_age_violations(findings=aged)
-    return 1 if findings or aged else 0
+    report_first_seen_violations(findings=dated)
+    return 1 if findings or aged or dated else 0
 
 
 if __name__ == "__main__":

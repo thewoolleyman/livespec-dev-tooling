@@ -56,6 +56,15 @@ Preserving a date EARLIER than the git evidence is therefore correct and
 deliberate; only moving one later is forbidden, and the check next door
 enforces that direction on both the authored and the committed tier.
 
+That enforcement is why `as_calendar_date` and `live_todo_keys` live HERE
+rather than privately beside the direction that first needed them. Both now
+have two readers — the release-tier age bound and the committed-tier date
+comparison — and the two MUST agree, to the character, on which `first_seen`
+values are measurable and which registry rows a verdict may concern. Two
+copies of that judgement would let a row be unmeasurable to one reader and
+measurable to the other, which is an escape hatch rather than a disagreement:
+the row would be convicted by neither.
+
 ## ON THE `IOResult` RAILWAY — `livespec-dev-tooling-qndn.15`
 
 Both reads this module owns collapsed a NON-ANSWER into an answer's spelling,
@@ -100,7 +109,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal, cast
 
@@ -122,9 +131,11 @@ __all__: list[str] = [
     "REGISTER_PATH",
     "HeadCopyIncomparable",
     "RowsUnreadable",
+    "as_calendar_date",
     "first_seen_dates",
     "generate_register",
     "head_rows",
+    "live_todo_keys",
     "load_rows",
     "main",
     "register_key",
@@ -279,6 +290,32 @@ def register_row_is_complete(*, row: dict[str, object]) -> bool:
 def todo_rows(*, rows: list[dict[str, object]]) -> list[dict[str, object]]:
     """The `test: "TODO"` rows among `rows` — the debt the register tracks."""
     return [row for row in rows if row.get("test") == "TODO"]
+
+
+def as_calendar_date(*, value: object) -> date | None:
+    """`value` read as an ISO calendar date; `None` when it is not one.
+
+    `None` is the UNMEASURABLE answer, and its callers convict on it. It is
+    never "assume today": a row whose date cannot be read would then be born
+    young on every run, and the bound would silently stop applying to exactly
+    the rows whose register entry is malformed.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def live_todo_keys(*, registry_rows: list[dict[str, object]]) -> set[tuple[str, str, str]]:
+    """The keys of every live `TODO` row — the rows a date or age verdict may concern."""
+    keys: set[tuple[str, str, str]] = set()
+    for row in todo_rows(rows=registry_rows):
+        key = register_key(row=row)
+        if key is not None:
+            keys.add(key)
+    return keys
 
 
 def _git_stdout(*, cwd: Path, args: list[str]) -> str:

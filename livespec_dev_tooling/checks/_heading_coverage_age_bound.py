@@ -46,6 +46,14 @@ AN UNMEASURABLE `first_seen` IS CONVICTED, NOT SKIPPED. A register entry whose
 how old this is" must never be spelled the same way as "it is young". It fires
 its own diagnostic at the same tier.
 
+Which dates are measurable, and which registry rows a verdict may concern, are
+decided by `as_calendar_date` and `live_todo_keys` in
+`livespec_dev_tooling.heading_coverage_debt` — this module's own privates until
+the committed-tier date comparison in `_heading_coverage_first_seen` became
+their second reader. They moved to the shared vocabulary rather than being
+copied because the two readers MUST agree to the character: a row unmeasurable
+to one and measurable to the other would be convicted by neither.
+
 Output discipline: per spec, `print` (T20) and `sys.stderr.write`
 (`check-no-write-direct`) are banned in this tree. Diagnostics flow through
 structlog (JSON to stderr) under the PARENT's `heading_coverage_debt_register`
@@ -75,8 +83,9 @@ from livespec_dev_tooling.config import (  # noqa: E402
     load_heading_coverage_todo_age_bound_days,
 )
 from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
+    as_calendar_date,
+    live_todo_keys,
     register_key,
-    todo_rows,
 )
 
 # Names in `__all__` mark this private sibling's public surface to its sole
@@ -139,32 +148,6 @@ def age_bound_days(*, repo_root: Path) -> int:
     return declared
 
 
-def _as_calendar_date(*, value: object) -> date | None:
-    """`value` read as an ISO calendar date; `None` when it is not one.
-
-    `None` is the UNMEASURABLE answer, and its caller convicts on it. It is
-    never "assume today": a row whose date cannot be read would then be born
-    young on every run, and the bound would silently stop applying to exactly
-    the rows whose register entry is malformed.
-    """
-    if not isinstance(value, str):
-        return None
-    try:
-        return date.fromisoformat(value.strip())
-    except ValueError:
-        return None
-
-
-def _live_todo_keys(*, registry_rows: list[dict[str, object]]) -> set[tuple[str, str, str]]:
-    """The keys of every live `TODO` row — the rows an age verdict may concern."""
-    keys: set[tuple[str, str, str]] = set()
-    for row in todo_rows(rows=registry_rows):
-        key = register_key(row=row)
-        if key is not None:
-            keys.add(key)
-    return keys
-
-
 def age_findings(
     *,
     registry_rows: list[dict[str, object]],
@@ -185,14 +168,14 @@ def age_findings(
     as `>=` would shorten every repository's stated window by a day.
     """
     bound = age_bound_days(repo_root=repo_root)
-    live = _live_todo_keys(registry_rows=registry_rows)
+    live = live_todo_keys(registry_rows=registry_rows)
     findings: list[AgeFinding] = []
     for row in register_rows:
         key = register_key(row=row)
         if key is None or key not in live:
             continue
         declared = row.get("first_seen")
-        first_seen = _as_calendar_date(value=declared)
+        first_seen = as_calendar_date(value=declared)
         if first_seen is None:
             findings.append(
                 AgeFinding(
