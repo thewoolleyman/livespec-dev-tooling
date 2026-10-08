@@ -134,6 +134,20 @@ def _write_registry(*, tmp_path: Path, entries: object) -> None:
     )
 
 
+def _write_register(*, tmp_path: Path, entries: object) -> None:
+    """Write `entries` to the fixture's `tests/heading-coverage-debt.json`.
+
+    The register is the generator's OWN PRIOR OUTPUT, which is what makes it an
+    input: the recorded `first_seen` dates are the only part of the register a
+    regeneration may not re-derive.
+    """
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    _ = (tests_dir / "heading-coverage-debt.json").write_text(
+        json.dumps(entries, indent=2) + "\n", encoding="utf-8"
+    )
+
+
 def _commit_registry(*, tmp_path: Path, entries: object, committed_at: str) -> None:
     """Overwrite the registry with `entries` and commit it at `committed_at`."""
     _write_registry(tmp_path=tmp_path, entries=entries)
@@ -145,6 +159,13 @@ def _commit_registry(*, tmp_path: Path, entries: object, committed_at: str) -> N
     )
 
 
+def _init_repo(*, tmp_path: Path) -> None:
+    """An empty git repository with a deterministic committer identity."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
+    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+
+
 def _seed_repo(*, tmp_path: Path) -> None:
     """A repo whose registry history is: A only, then unreadable, then A + B + resolved.
 
@@ -153,9 +174,7 @@ def _seed_repo(*, tmp_path: Path) -> None:
     skipped rather than crash the generator. The first and last commits differ
     so `first_seen` can be asserted per key rather than per file.
     """
-    _git(cwd=tmp_path, args=["init", "-q"])
-    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
-    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+    _init_repo(tmp_path=tmp_path)
     _commit_registry(
         tmp_path=tmp_path,
         entries=[_TODO_A, _UNKEYED_TODO],
@@ -399,6 +418,123 @@ def test_generate_register_propagates_an_unreadable_registry(*, tmp_path: Path) 
     assert unsafe_perform_io(generated.failure()).reason == "rows-file-not-an-array"
 
 
+def test_generate_register_preserves_a_recorded_date_and_synchronizes_the_owner(
+    *, tmp_path: Path
+) -> None:
+    """A date already recorded SURVIVES regeneration; the owner is re-read from the row.
+
+    `first_seen` is the one field a regeneration may not re-derive. Row A's
+    recorded date is DELIBERATELY earlier than the earliest commit whose
+    registry blob carried it as a `TODO` (2026-01-02), because that is the
+    ordinary shape: a row authored in a working tree is dated the day it was
+    authored and committed a day or more later, so the recorded date
+    legitimately PRECEDES the git evidence. Re-reading history would move it
+    LATER — the one direction the ratified clause forbids — and reset the
+    release-tier age bound's clock.
+
+    The owner is the opposite and must NOT be preserved: it is synchronized
+    from the live coverage row every run, so reassigning the debt in the
+    registry reaches the register mechanically rather than by a hand edit.
+    """
+    _seed_repo(tmp_path=tmp_path)
+    _write_register(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Heading A",
+                "work_item": "livespec-dev-tooling-reassigned-away",
+                "first_seen": "2025-12-01",
+            }
+        ],
+    )
+
+    generated = _MODULE.generate_register(cwd=tmp_path, today="2026-09-09")
+
+    assert isinstance(generated, IOSuccess)
+    assert unsafe_perform_io(generated.unwrap()) == [
+        {
+            "spec_root": "SPECIFICATION",
+            "spec_file": "spec.md",
+            "heading": "## Heading A",
+            "work_item": "livespec-dev-tooling-aaa",
+            "first_seen": "2025-12-01",
+        },
+        {
+            "spec_root": "SPECIFICATION",
+            "spec_file": "spec.md",
+            "heading": "## Heading B",
+            "work_item": "livespec-dev-tooling-bbb",
+            "first_seen": "2026-03-04",
+        },
+    ]
+
+
+def test_generate_register_falls_back_to_git_for_an_unkeyed_or_undated_recorded_row(
+    *, tmp_path: Path
+) -> None:
+    """Only a KEYED row carrying a real date preserves anything; the rest fall through.
+
+    An unkeyed register row has no identity to preserve a date for, and a
+    `first_seen` that is not a non-empty string is not a date. Carrying either
+    forward would hand the release-tier age bound a value it cannot measure and
+    call it preserved, so both defer to the git-derived answer — which is the
+    same answer the generator gave before any date was recorded.
+    """
+    _seed_repo(tmp_path=tmp_path)
+    _write_register(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Heading A",
+                "work_item": "livespec-dev-tooling-aaa",
+                "first_seen": 20251201,
+            },
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Heading B",
+                "work_item": "livespec-dev-tooling-bbb",
+                "first_seen": "   ",
+            },
+            {"heading": "## Heading Unkeyed", "first_seen": "2025-12-01"},
+        ],
+    )
+
+    generated = _MODULE.generate_register(cwd=tmp_path, today="2026-09-09")
+
+    assert isinstance(generated, IOSuccess)
+    assert [row["first_seen"] for row in unsafe_perform_io(generated.unwrap())] == [
+        "2026-01-02",
+        "2026-03-04",
+    ]
+
+
+def test_generate_register_propagates_an_unreadable_recorded_register(*, tmp_path: Path) -> None:
+    """A register that will not parse must NOT regenerate as one with no recorded dates.
+
+    This is the registry failure's mirror, and it costs the same thing: read as
+    "nothing is recorded", every existing row would be re-dated from git on the
+    next run, which moves every working-tree-authored date LATER in one silent
+    overwrite.
+    """
+    _seed_repo(tmp_path=tmp_path)
+    _write_register(tmp_path=tmp_path, entries={"not": "an array"})
+
+    generated = _MODULE.generate_register(cwd=tmp_path, today="2026-09-09")
+
+    assert isinstance(generated, IOFailure)
+    unreadable = unsafe_perform_io(generated.failure())
+    assert unreadable.reason == "rows-file-not-an-array"
+    assert unreadable.path.endswith("tests/heading-coverage-debt.json"), (
+        f"the failure must name the REGISTER rather than the registry, or an author "
+        f"reading it would go and fix the wrong file; got {unreadable.path!r}"
+    )
+
+
 def test_render_register_is_stable_and_newline_terminated() -> None:
     """The on-disk bytes are indented JSON with a trailing newline — diffable."""
     rendered = _MODULE.render_register(rows=[{"heading": "## Héading"}])
@@ -423,6 +559,51 @@ def test_main_writes_the_register_and_regenerating_it_changes_nothing(
     assert json.loads(first.decode("utf-8"))[0]["heading"] == "## Heading A"
     assert _MODULE.main() == 0
     assert register.read_bytes() == first
+
+
+@pytest.mark.integration
+def test_main_preserves_a_recorded_date_against_a_later_committer_date(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SCENARIO: regeneration preserves every existing first-seen date.
+
+    The ordinary authoring sequence, compressed: a `TODO` is authored in the
+    working tree, where no committed blob carries it yet, so the first
+    generation dates it from `today`. The commit that lands it then carries a
+    LATER committer date, and a regeneration that re-read history would move
+    the recorded date forward to it — resetting the release-tier age bound's
+    clock on debt that is already running.
+
+    The landing commit is dated 2099-01-01 so the proof rests on the ORDER of
+    the two dates rather than on the calendar day this suite happens to run,
+    which is the host-date coupling the sibling age-bound suite had to design
+    around.
+    """
+    _init_repo(tmp_path=tmp_path)
+    _commit_registry(
+        tmp_path=tmp_path, entries=[_RESOLVED], committed_at="2026-01-02T00:00:00+00:00"
+    )
+    monkeypatch.chdir(tmp_path)
+    _write_registry(tmp_path=tmp_path, entries=[_TODO_A, _RESOLVED])
+
+    assert _MODULE.main() == 0
+    register = tmp_path / "tests" / "heading-coverage-debt.json"
+    authored_at = json.loads(register.read_text(encoding="utf-8"))[0]["first_seen"]
+    _git(cwd=tmp_path, args=["add", "tests"])
+    _git(
+        cwd=tmp_path,
+        args=["commit", "-q", "-m", "land the authored TODO"],
+        committed_at="2099-01-01T00:00:00+00:00",
+    )
+
+    assert _MODULE.main() == 0
+
+    assert [row["first_seen"] for row in json.loads(register.read_text(encoding="utf-8"))] == [
+        authored_at
+    ]
+    preserved = register.read_bytes()
+    assert _MODULE.main() == 0
+    assert register.read_bytes() == preserved
 
 
 @pytest.mark.integration

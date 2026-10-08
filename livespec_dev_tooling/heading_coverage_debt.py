@@ -34,6 +34,28 @@ cannot place — a row added in the working tree, or a registry with no
 history yet — falls back to the caller-supplied `today`, so generation never
 invents a date that looks measured.
 
+...AND ONCE RECORDED IT IS PRESERVED, NEVER RE-DERIVED. v067 of this
+repository's `SPECIFICATION/non-functional-requirements.md` adds the other
+half of that sentence:
+
+> Once recorded, `first_seen` MUST NOT move later [...] generator
+> regeneration MUST preserve existing dates, add only genuinely new rows,
+> and keep ownership synchronized with the live coverage row.
+
+So the register's OWN rows are an input to its regeneration, and the two
+fields are read from opposite sides: `first_seen` from the recorded register
+(falling back to git, then to `today`, for a genuinely new key) and
+`work_item` from the live coverage row every run. The asymmetry is the whole
+rule. A date re-derived each run moves LATER for the ordinary case — a row
+authored in a working tree is dated `today` and committed a day or more
+after, so its recorded date legitimately PRECEDES the git evidence — and
+moving it forward resets the age bound's clock on debt that is already
+running. An owner, by contrast, is a live fact about who owes the test, so
+re-reading it is what keeps a reassignment mechanical instead of a hand edit.
+Preserving a date EARLIER than the git evidence is therefore correct and
+deliberate; only moving one later is forbidden, and the check next door
+enforces that direction on both the authored and the committed tier.
+
 ## ON THE `IOResult` RAILWAY — `livespec-dev-tooling-qndn.15`
 
 Both reads this module owns collapsed a NON-ANSWER into an answer's spelling,
@@ -333,27 +355,60 @@ def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
     return dates
 
 
+def _recorded_first_seen(*, rows: list[dict[str, object]]) -> dict[tuple[str, str, str], str]:
+    """Key → the `first_seen` date ALREADY RECORDED for it in `rows`.
+
+    Only a KEYED row carrying a non-empty string places anything. An unkeyed
+    row has no identity to preserve a date for, and a `first_seen` that is not
+    a non-empty string is not a date: carrying either forward would hand the
+    release-tier age bound a value it cannot measure and call it preserved, so
+    both defer to the git-derived answer — the same answer the generator gave
+    before any date was recorded.
+    """
+    recorded: dict[tuple[str, str, str], str] = {}
+    for row in rows:
+        key = register_key(row=row)
+        value = row.get("first_seen")
+        if key is not None and isinstance(value, str) and value.strip():
+            recorded[key] = value
+    return recorded
+
+
 def generate_register(
     *, cwd: Path, today: str
 ) -> IOResult[list[dict[str, object]], RowsUnreadable]:
     """The register the live registry under `cwd` implies, sorted by key.
 
     One row per `TODO` row in `tests/heading-coverage.json`, carrying the key,
-    the owning `work_item` verbatim, and the git-derived first-seen date
-    (falling back to `today` for a key no committed blob carries yet). Sorting
-    by key makes the output a pure function of the registry's CONTENT rather
-    than of its file order, which is what lets a regeneration be compared
+    the owning `work_item` verbatim from the LIVE row, and the first-seen date
+    ALREADY RECORDED for that key — falling back to the git-derived date, and
+    then to `today`, only for a key the register does not yet carry. Sorting by
+    key makes the output a pure function of the registry's CONTENT rather than
+    of its file order, which is what lets a regeneration be compared
     byte-for-byte.
+
+    THE RECORDED DATE WINS OVER GIT, per the module docstring's second half: a
+    re-derived date moves LATER for the ordinary working-tree-authored row and
+    resets the age bound's clock, so regeneration preserves rather than
+    recomputes. The owner is deliberately NOT preserved — it is resynchronized
+    from the live row on every run.
 
     The failure track is `load_rows`' verbatim, PROPAGATED rather than
     absorbed, and that is the point of converting it: a registry that will not
     parse used to generate an EMPTY register, which `main()` then wrote over
     the real one. A generator whose output IS the ratchet's baseline must
-    refuse rather than bank a shrink nobody made.
+    refuse rather than bank a shrink nobody made. The REGISTER is now read on
+    the same track and for the mirror reason: read as "nothing is recorded", an
+    unparseable register would re-date every existing row from git in one
+    silent overwrite.
     """
     loaded = load_rows(path=cwd / COVERAGE_PATH)
     if isinstance(loaded, IOFailure):
         return loaded
+    previous = load_rows(path=cwd / REGISTER_PATH)
+    if isinstance(previous, IOFailure):
+        return previous
+    recorded = _recorded_first_seen(rows=unsafe_perform_io(previous.unwrap()))
     rows = todo_rows(rows=unsafe_perform_io(loaded.unwrap()))
     dates = first_seen_dates(cwd=cwd)
     generated: list[tuple[tuple[str, str, str], dict[str, object]]] = []
@@ -370,7 +425,7 @@ def generate_register(
                     "spec_file": key[1],
                     "heading": key[2],
                     "work_item": work_item if isinstance(work_item, str) else "",
-                    "first_seen": dates.get(key, today),
+                    "first_seen": recorded.get(key, dates.get(key, today)),
                 },
             )
         )
