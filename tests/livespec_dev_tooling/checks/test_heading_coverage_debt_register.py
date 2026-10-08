@@ -1434,7 +1434,7 @@ def _stage_spec_first_reason(*, tmp_path: Path, reason: str) -> None:
     admits — the exact new H2 introduced, nothing removed from that file, the
     coverage key absent from `HEAD`'s registry, the owner matching on both
     sides, the register entry mechanically generated. Sharing the whole fixture
-    is what makes the three arms below a controlled comparison rather than three
+    is what makes the arms below a controlled comparison rather than several
     separate stories: the `reason` string is the only variable, so a verdict that
     differs between them can only be the acknowledgment's.
     """
@@ -1463,10 +1463,18 @@ def _assert_acknowledgment_refused(
     The refusal alone is not what the ratified clause asks for. A bare
     `register_grew` sends an author to re-check the heading, the owner and the
     removal disqualifier — every one of which they satisfied — so the finding has
-    to say WHICH condition decided it and carry the same `(defect, evidence)`
-    pair `heading_coverage` prints for the identical row. That is the
-    "identify the failed evidence" half, and it is also what keeps the two
-    surfaces agreeing by construction: one predicate, two readers.
+    to say WHICH condition decided it and carry a `(defect, evidence)` pair that
+    names the condition rather than restating the refusal. That is the
+    "identify the failed evidence" half.
+
+    The pair's ORIGIN differs by arm, and the helper deliberately does not care
+    which: a general acknowledgment defect carries the ratified predicate's own
+    code, the one `heading_coverage` prints for the identical row, which is what
+    keeps those two surfaces agreeing by construction; the required-tier floor
+    carries the admission's own code, because the floor is a condition OF THE
+    ADMISSION and `heading_coverage` judges the same row by its own direction 4.
+    Asserting the pair rather than its provenance is what lets both arms share
+    one assertion without claiming a sibling check refuses what it does not.
     """
     assert result.returncode != 0, (
         f"{why} must refuse new-heading admission; "
@@ -1537,17 +1545,82 @@ def test_spec_first_admission_refuses_a_reason_that_names_no_required_tier(
     )
 
 
+def test_spec_first_admission_refuses_an_acknowledgment_naming_the_wrong_tier(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: naming A tier is not naming the REQUIRED one; `unit-tier` is the proof.
+
+    The arm above refuses `a unit test is owed` for naming no tier at all, and
+    that refusal sits ONE TOKEN away from being satisfiable by the very wording
+    the clause exists to forbid. `a unit-tier test is owed` carries a tier word,
+    an owed word and a test word, so the general acknowledgment predicate — whose
+    tier family accepts the generic token `tier` — passes it, and measured on the
+    exact fixture the arms above share, the admission ACCEPTED it. That is the
+    one reason which explicitly names the tier livespec-dev-tooling's
+    `SPECIFICATION/non-functional-requirements.md` §"Scenario-tier coverage" says
+    a `scenarios.md` heading must NEVER be covered at: "never a unit-tier helper
+    test, since a scenario describes consumer-observable behavior".
+
+    So this is the ratified clause's MISMATCHED acknowledgment rather than its
+    missing one, and it is the admission that must refuse it: a generic tier
+    token admitted here would let a governed scenario bank shrink-only debt
+    against coverage that can never discharge it. The finding carries its own
+    defect code and reports the FLOOR it failed rather than the wording it used,
+    because the wording is not what is wrong with it — the tier is.
+    """
+    _stage_spec_first_reason(tmp_path=tmp_path, reason="a unit-tier test is owed")
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_acknowledgment_refused(
+        result=result,
+        defect="does-not-acknowledge-the-required-tier",
+        evidence="required-tier: integration-or-above",
+        why="a reason acknowledging an owed test at the WRONG tier",
+    )
+
+
+def test_spec_first_admission_refuses_a_reason_naming_no_tier_vocabulary_at_all(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTROL that the required-tier floor COMPOSES with the general predicate.
+
+    A floor layered on top of the general acknowledgment predicate could be
+    reached either by tightening the admission or by RELAXING that predicate so
+    every reason falls through to the new condition, and the wrong-tier arm alone
+    cannot tell those apart — both refuse it. This reason names no tier in any
+    vocabulary, not even the wrong one, so it must still be refused by the
+    general predicate's own `missing: tier` finding rather than by the floor.
+    Holding that arm's defect code fixed is what proves the two conditions
+    compose rather than one displacing the other, and it is why the exact
+    negative the defect was first measured against stays measured.
+    """
+    _stage_spec_first_reason(tmp_path=tmp_path, reason="a real test is owed")
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_acknowledgment_refused(
+        result=result,
+        defect="does-not-acknowledge-an-owed-test",
+        evidence="missing: tier",
+        why="a reason naming no tier vocabulary at all",
+    )
+
+
 def test_spec_first_admission_admits_a_required_tier_acknowledgment(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """CONTROL for the two arms above: the same tree with a valid reason is admitted.
+    """CONTROL for the arms above: the same tree with a valid reason is admitted.
 
-    Without it the two refusals prove only that this fixture fails, not that the
+    Without it the refusals prove only that this fixture fails, not that the
     `reason` is what failed it — and a condition tightened until nothing passes is
     not a tightened condition, it is a retired exception. The reason here is the
-    one the sibling scenario names as legitimate transitional debt, so the three
-    arms together say the admission tracks the ratified predicate rather than
-    merely saying no more often.
+    one the sibling scenario names as legitimate transitional debt, and it is the
+    control the required-tier floor needs most: the floor refuses the generic
+    `tier` token, so an over-tightening that also refused the real
+    integration-tier acknowledgment would leave the exception unreachable while
+    every refusal arm still passed. All the arms together say the admission
+    tracks the ratified clause rather than merely saying no more often.
     """
     _stage_spec_first_reason(tmp_path=tmp_path, reason="a real integration-tier test is owed")
 
