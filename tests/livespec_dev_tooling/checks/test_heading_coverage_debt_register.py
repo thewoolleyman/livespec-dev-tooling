@@ -111,26 +111,66 @@ _GOVERNED_SPEC_FILE = "scenarios.md"
 _GOVERNED_SPEC_RELPATH = f"SPECIFICATION/{_GOVERNED_SPEC_FILE}"
 _GOVERNED_HEADING = "## Scenario: a governed behaviour already covered by a real test"
 
+# The heading a spec-first change INTRODUCES. Absent from `HEAD`'s governed spec
+# file and from `HEAD`'s coverage registry, which is the whole of what makes the
+# bounded v067 exception apply to it.
+_NEW_HEADING = "## Scenario: a genuinely new governed behaviour this change introduces"
 
-def _governed_resolved_row() -> dict[str, object]:
-    """The registry row for the governed heading in a repository at zero debt."""
+_OWNER = "livespec-dev-tooling-own"
+
+# Every spec-first fixture pins its baseline commit's date, because the
+# committed-tier date direction reads the committer date of the earliest commit
+# whose registry blob carried a key as a `TODO`. A fixture that let the host
+# clock decide could not place a register entry on either side of it.
+_BASELINE_AT = "2026-03-04T00:00:00+00:00"
+_BASELINE_DATE = "2026-03-04"
+_LANDING_AT = "2026-03-05T00:00:00+00:00"
+
+
+def _governed_resolved_row(*, heading: str = _GOVERNED_HEADING) -> dict[str, object]:
+    """The registry row for a governed heading in a repository at zero debt."""
     return {
         "spec_root": "SPECIFICATION",
         "spec_file": _GOVERNED_SPEC_FILE,
-        "heading": _GOVERNED_HEADING,
+        "heading": heading,
         "test": "tests.consumer.test_governed.test_it",
     }
 
 
-def _governed_todo_row() -> dict[str, object]:
-    """The same heading's row re-opened as transitional debt — the new cop-out."""
+def _governed_todo_row(
+    *,
+    heading: str = _GOVERNED_HEADING,
+    work_item: str = _OWNER,
+    reason: str = "owed integration-tier test",
+) -> dict[str, object]:
+    """A governed heading's row carried as transitional debt.
+
+    At the default `heading` this is the row re-opened on a PRE-EXISTING heading
+    — the new cop-out. At `_NEW_HEADING` it is the spec-first row the bounded
+    v067 exception admits, and `work_item` / `reason` are the two declarations
+    that exception requires: who owes the test, and an acknowledgment that a
+    real test at the required tier is owed.
+    """
     return {
         "spec_root": "SPECIFICATION",
         "spec_file": _GOVERNED_SPEC_FILE,
-        "heading": _GOVERNED_HEADING,
+        "heading": heading,
         "test": "TODO",
-        "reason": "owed integration-tier test",
-        "work_item": "livespec-dev-tooling-own",
+        "reason": reason,
+        "work_item": work_item,
+    }
+
+
+def _governed_entry(
+    *, heading: str, work_item: str = _OWNER, first_seen: str = _BASELINE_DATE
+) -> dict[str, object]:
+    """The register entry mechanical regeneration produces for a governed heading."""
+    return {
+        "spec_root": "SPECIFICATION",
+        "spec_file": _GOVERNED_SPEC_FILE,
+        "heading": heading,
+        "work_item": work_item,
+        "first_seen": first_seen,
     }
 
 
@@ -257,25 +297,74 @@ def _commit_staged(*, tmp_path: Path, committed_at: str, message: str) -> None:
     _git(cwd=tmp_path, args=["commit", "-q", "-m", message], committed_at=committed_at)
 
 
-def _commit_governed_spec_heading(*, tmp_path: Path) -> None:
-    """Put a REAL governed heading into `HEAD`'s spec tree.
+def _write_governed_spec(*, tmp_path: Path, headings: list[str]) -> None:
+    """Write the governed spec file so its H2 set is exactly `headings`.
 
-    The ratchet never opens the spec files — it judges the registry against the
-    register — so this is deliberately not a precondition of the CHECK. It is a
-    precondition of the SCENARIO: a heading is only "pre-existing" if the spec
-    really carries it at `HEAD`, and a fixture naming a heading that no spec
-    file contains would prove the refusal against a key no governed repository
-    could ever produce.
+    The H2 SET is the fixture's whole payload: new-heading eligibility is read
+    from the difference between this file's headings in the working tree and in
+    `HEAD`, and the same-file replacement disqualifier is read from what this
+    set LOST. A fixture that appended text without controlling the set could
+    prove neither direction.
     """
     spec = tmp_path / _GOVERNED_SPEC_RELPATH
     spec.parent.mkdir(parents=True, exist_ok=True)
-    _ = spec.write_text(
-        f"# Scenarios\n\n{_GOVERNED_HEADING}\n\n"
-        "Given a governed behaviour\n\nWhen it runs\n\nThen it holds\n",
-        encoding="utf-8",
+    body = "".join(
+        f"{heading}\n\nGiven a governed behaviour\n\nWhen it runs\n\nThen it holds\n\n"
+        for heading in headings
     )
+    _ = spec.write_text(f"# Scenarios\n\n{body}", encoding="utf-8")
+
+
+def _commit_governed_spec_heading(*, tmp_path: Path) -> None:
+    """Put a REAL governed heading into `HEAD`'s spec tree.
+
+    The ratchet's four set-shaped directions never open the spec files — they
+    judge the registry against the register — so this is deliberately not a
+    precondition of THOSE. It is a precondition of the SCENARIO: a heading is
+    only "pre-existing" if the spec really carries it at `HEAD`, and a fixture
+    naming a heading that no spec file contains would prove the refusal against
+    a key no governed repository could ever produce. The v067 spec-first
+    direction then reads this file for real, on both revisions.
+    """
+    _write_governed_spec(tmp_path=tmp_path, headings=[_GOVERNED_HEADING])
     _git(cwd=tmp_path, args=["add", _GOVERNED_SPEC_RELPATH])
     _git(cwd=tmp_path, args=["commit", "-q", "-m", "seed the governed spec heading"])
+
+
+def _seed_governed_repo(
+    *,
+    tmp_path: Path,
+    headings: list[str],
+    registry: object,
+    register: object,
+) -> None:
+    """A repo whose `HEAD` carries the governed spec file AND both rows files.
+
+    The spec-first direction compares three things against `HEAD` — the
+    governed spec file's H2 set, the coverage registry's keys, and the debt
+    register's keys — so every one of them has to be COMMITTED for the
+    comparison to be the one a real authoring run makes.
+    """
+    _init_repo(tmp_path=tmp_path)
+    _write_governed_spec(tmp_path=tmp_path, headings=headings)
+    _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries=registry)
+    _write(tmp_path=tmp_path, relpath=_REGISTER_RELPATH, entries=register)
+    _git(cwd=tmp_path, args=["add", "-A"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "baseline"], committed_at=_BASELINE_AT)
+
+
+def _stage_governed_change(
+    *,
+    tmp_path: Path,
+    headings: list[str],
+    registry: object,
+    register: object,
+) -> None:
+    """Overwrite and stage all three files, as a spec-first author mid-commit would."""
+    _write_governed_spec(tmp_path=tmp_path, headings=headings)
+    _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries=registry)
+    _write(tmp_path=tmp_path, relpath=_REGISTER_RELPATH, entries=register)
+    _git(cwd=tmp_path, args=["add", "-A"])
 
 
 def _run_check(
@@ -933,3 +1022,152 @@ def test_the_same_empty_register_passes_when_the_tree_authors_no_todo(
         f"a register at empty with no TODO rows must draw no finding; "
         f"output={result.combined!r}"
     )
+
+
+def test_spec_first_debt_for_a_new_heading_is_admitted_against_a_nonempty_register(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: the bounded v067 exception — a genuinely new H2 may carry new debt.
+
+    Every condition the ratified clause names holds at once: the change
+    INTRODUCES `_NEW_HEADING` into the governed live specification, neither that
+    heading nor its coverage key exists at `HEAD`, no existing H2 is removed from
+    that file, the new coverage row names an owner and acknowledges an owed
+    required-tier test, and mechanical regeneration has supplied the matching
+    owner and a first-seen date.
+
+    Without the exception this is indistinguishable from `register_grew`: the
+    register carries a key `HEAD`'s does not, which is the shrink-only
+    direction's entire definition. What separates them is spec evidence the
+    ratchet previously never read.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row(), _todo(heading="## A")],
+        register=[_entry(heading="## A", first_seen=_BASELINE_DATE)],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[
+            _governed_resolved_row(),
+            _todo(heading="## A"),
+            _governed_todo_row(heading=_NEW_HEADING),
+        ],
+        register=[
+            _entry(heading="## A", first_seen=_BASELINE_DATE),
+            _governed_entry(heading=_NEW_HEADING),
+        ],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"spec-first debt for a genuinely new H2 heading must be admitted; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "register_grew" not in result.combined, (
+        f"an admitted spec-first key must not be reported as growth at all; "
+        f"output={result.combined!r}"
+    )
+    assert "spec_first" not in result.combined, (
+        f"an admitted key must draw no admission finding either; " f"output={result.combined!r}"
+    )
+
+
+def test_spec_first_debt_for_a_new_heading_is_admitted_against_an_empty_register(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: reaching zero does NOT retire the exception — the same rules apply.
+
+    The ratified clause is explicit that an empty register "MUST permit the same
+    narrowly defined spec-first admission", and that reaching zero "MUST NOT
+    retire scoped authorship, ownership or the reason acknowledgment needed for
+    future ratification". Every arm above this one seeds a baseline carrying at
+    least one entry, so each could be satisfied by an admission rule that only
+    worked where a register already existed.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[_governed_resolved_row(), _governed_todo_row(heading=_NEW_HEADING)],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"spec-first debt must be admitted against an EMPTY prior register too; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "register_grew" not in result.combined
+    assert "spec_first" not in result.combined
+
+
+def test_an_admitted_spec_first_row_stays_ordinary_registered_debt_after_commit(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: an admitted row needs no override once it lands.
+
+    Two phases of ONE repository, because the ratified clause is about what
+    happens to an admitted row rather than about either tier alone: the authoring
+    tier admits the row, the change is COMMITTED, and the pre-push/CI tier — the
+    scope lever UNSET, no environment override of any kind — then judges it as
+    ordinary registered debt and passes.
+
+    The second phase is the one that could regress silently. After the commit the
+    shrink-only direction has nothing to say (`HEAD` now carries the key), so the
+    verdict passes to the committed-tier date direction, whose evidence is the
+    committer date of the earliest commit whose registry blob carried the key as
+    a `TODO`. The recorded date is the authoring day and the landing commit is a
+    day later, which is the ordinary shape — and the one a re-derived date would
+    have broken.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[_governed_resolved_row(), _governed_todo_row(heading=_NEW_HEADING)],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    authored = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert authored.returncode == 0, (
+        f"the authoring tier must admit the row before the landed tier can be "
+        f"asked about it; got returncode={authored.returncode} "
+        f"output={authored.combined!r}"
+    )
+
+    _commit_staged(tmp_path=tmp_path, committed_at=_LANDING_AT, message="admit spec-first debt")
+
+    landed = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert landed.returncode == 0, (
+        f"an admitted row must remain valid as ordinary registered debt at "
+        f"pre-push and CI with NO override; got returncode={landed.returncode} "
+        f"output={landed.combined!r}"
+    )
+    for code in (
+        "unregistered_todo",
+        "stale_register_entry",
+        "register_grew",
+        "register_row_incomplete",
+        "first_seen_after_earliest_todo_commit",
+        "first_seen_evidence_unavailable",
+    ):
+        assert code not in landed.combined, (
+            f"a landed admitted row must draw no {code} finding; " f"output={landed.combined!r}"
+        )
