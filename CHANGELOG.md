@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.92.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.92.2...v1.92.3) (2026-10-08)
+
+
+### Bug Fixes
+
+* **checks:** preserve heading-debt first-seen dates across regeneration ([33a023b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/33a023b71f45488419ad16e237734eea0d55a4e9))
+* **checks:** reject heading-debt first-seen date inflation ([b82a130](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b82a130d7c2ec0fbab678abf492f53f7b4e033fd))
+
 ## [1.92.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.92.1...v1.92.2) (2026-10-07)
 
 
