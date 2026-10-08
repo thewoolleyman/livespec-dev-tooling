@@ -73,6 +73,26 @@ also the "identify the failed evidence" half of the clause — a bare growth
 finding would send an author to re-check the heading, the owner and the removal
 disqualifier, every one of which they satisfied.
 
+AND THE DELEGATION ALONE WAS STILL NOT THE WHOLE CONDITION. `reason_defect`
+governs every spec file, so its tier family accepts the bare token `tier` by
+design — only `scenarios.md` carries a ratified tier FLOOR. Measured 2026-10-08
+on the same controlled fixture, that generality admitted `a unit-tier test is
+owed`: a tier word, an owed word and a test word, and the one wording
+`SPECIFICATION/non-functional-requirements.md` rules out by name where it bounds
+a scenario's tier ("never a unit-tier helper test"). The clause's words are "a real
+test at the REQUIRED tier", so naming some tier is not naming the required one,
+and an acknowledgment of the wrong tier is the clause's MISMATCHED
+acknowledgment rather than its missing one — a row admitted on it banks
+shrink-only debt against coverage that can never discharge it.
+
+So the acknowledgment condition is TWO predicates, composed in order:
+`reason_defect` first, then `required_tier_defect` on whatever it accepted.
+Order is the whole of why a reason naming no tier at all still reports
+`missing: tier` rather than the floor. The floor asks which spec file it is
+judging and declines to answer for files with no ratified bound — a floor that
+fired everywhere would not be a stricter reading of the clause but an
+unratified one.
+
 An ABSENT or blank `reason` is a different state and keeps its old treatment:
 there is no wording to judge, so the growth direction's own finding is the
 whole report. Only a reason that is declared and REFUSED earns a finding of its
@@ -131,6 +151,7 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling.checks._heading_coverage_reason_predicate import (  # noqa: E402
     reason_defect,
+    required_tier_defect,
 )
 from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
     COVERAGE_PATH,
@@ -166,11 +187,13 @@ _MESSAGES = {
     "spec_first_acknowledgment_refused": (
         "heading-coverage.json row satisfies every other condition of the bounded spec-first "
         "admission, but its `reason` is not the required-tier acknowledgment that admission is "
-        "conditioned on — `reason_defect` names what it asserted or omitted, `evidence` the "
-        "wording that failed. Per livespec-dev-tooling's "
-        'SPECIFICATION/non-functional-requirements.md §"Scenario-tier coverage" it MUST '
-        "acknowledge that a real test at the required tier is owed, judged by the one predicate "
-        "`heading_coverage` applies to the same row — rewrite it to name the owed test and tier"
+        "conditioned on — `reason_defect` names what it asserted, omitted, or under-tiered, and "
+        "`evidence` carries either the wording that failed or the tier floor it did not clear. "
+        "Per livespec-dev-tooling's SPECIFICATION/non-functional-requirements.md "
+        '§"Scenario-tier coverage" it MUST acknowledge that a real test at the required tier is '
+        "owed: name the owed test AND a tier, and for a scenarios.md heading name a tier at or "
+        "above integration — a bare `tier` or a unit tier does not clear that floor, because a "
+        "scenario describes consumer-observable behavior"
     ),
 }
 
@@ -280,17 +303,37 @@ def _reason_defects(
     not-declared-at-all is the growth direction's own finding and must not be
     reported twice under two names.
 
-    The judgement itself is `reason_defect`'s — the ratified predicate
-    `heading_coverage`'s reason guard reads for the identical row. Nothing about
-    the wording is decided here, which is what keeps the two surfaces from
-    disagreeing about one rule.
+    The judgement itself is the predicate module's — nothing about the wording is
+    decided here, which is what keeps this surface from disagreeing with
+    `heading_coverage`'s reason guard about one rule.
+
+    IT TAKES TWO PREDICATES BECAUSE THE CLAUSE NAMES TWO THINGS: an
+    acknowledgment that a real test is owed, and that the test is at the REQUIRED
+    tier. `reason_defect` is the first and is asked FIRST, so a reason naming no
+    tier at all keeps that predicate's own `missing: tier` finding — the exact
+    negative the defect below was first measured against — rather than being
+    re-diagnosed as a floor failure. `required_tier_defect` is the second, and it
+    is consulted ONLY on a reason the first already accepted: it closes the
+    wording the general tier family admits by design, `a unit-tier test is owed`,
+    which carries a tier word, an owed word and a test word while naming the one
+    tier a `scenarios.md` heading must never be covered at. It takes the key's
+    spec file because the floor is ratified for that file alone, and answers
+    nothing for the rest.
+
+    The two COMPOSE rather than one overriding the other, so this stays one
+    mapping with one `(defect, evidence)` per key; the codes differ, so the
+    finding still says which of the two conditions decided it.
     """
     defects: dict[tuple[str, str, str], tuple[str, str] | None] = {}
     for row in rows:
         key = register_key(row=row)
         reason = _text(value=row.get("reason"))
-        if key is not None and reason is not None:
-            defects[key] = reason_defect(reason=reason)
+        if key is None or reason is None:
+            continue
+        defect = reason_defect(reason=reason)
+        if defect is None:
+            defect = required_tier_defect(spec_file=key[1], reason=reason)
+        defects[key] = defect
     return defects
 
 

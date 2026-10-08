@@ -34,6 +34,36 @@ THE PREDICATE IS A CONJUNCTION, and both halves are load-bearing:
   wording blocklist any new phrasing routes around; the positive half is what
   makes an acknowledgment the only passing shape.
 
+THE REQUIRED TIER IS A SECOND, NARROWER QUESTION — `required_tier_defect`.
+The conjunction above asks whether a reason acknowledges an owed test AT SOME
+TIER, and its tier family accepts the bare token `tier` deliberately: this
+predicate governs EVERY spec file, and only `scenarios.md` carries a ratified
+tier FLOOR. That generality let exactly one wording through. Measured
+2026-10-08 against the bounded v067 spec-first admission, which conditions
+itself on this predicate, on fixtures identical in every other admission
+condition: `a unit test is owed` was refused for naming no tier, while `a
+unit-tier test is owed` — a tier word, an owed word and a test word — was
+ADMITTED. The one reason that explicitly names the tier
+`SPECIFICATION/non-functional-requirements.md` rules out by name, where it puts
+every scenario's mapped test at the integration tier or above ("never a
+unit-tier helper test, since a scenario describes consumer-observable
+behavior"), satisfied the condition whose whole purpose is to require the right
+tier. That is the ratified clause's MISMATCHED acknowledgment, not its missing
+one.
+
+THE FLOOR IS ASKED SEPARATELY RATHER THAN FOLDED INTO THE CONJUNCTION, and the
+split is load-bearing in both directions. Folding an integration-or-above
+requirement into `reason_defect` would impose a `scenarios.md` floor on every
+spec file that has none, and would move `heading_coverage`'s reason-guard
+verdicts on rows no ratified direction asks it to re-judge — tightening one
+surface by silently changing another. Keeping the floor out of this module
+entirely would put a reason-reading rule somewhere other than where
+reason-reading lives. So `required_tier_defect` asks WHICH FILE it is looking at
+before it answers, and answers `None` — no opinion — for every spec file
+without a ratified floor. Its caller runs it AFTER `reason_defect`, which is
+what keeps a reason naming no tier at all on the general predicate's own
+`missing: tier` finding instead of re-diagnosing it as a floor failure.
+
 ⛔ THE TIER VOCABULARY IS RESTATED HERE RATHER THAN SHARED WITH
 `_heading_coverage_tier_resolution`. That module's `_TIER_REASON_KEYWORDS` is
 module-private and answers a DIFFERENT question — "does this `scenarios.md`
@@ -66,6 +96,7 @@ __all__: list[str] = [
     "ReasonFinding",
     "reason_defect",
     "reason_findings",
+    "required_tier_defect",
 ]
 
 
@@ -169,6 +200,33 @@ _ACKNOWLEDGMENT_TOKENS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 _UNACKNOWLEDGED = "does-not-acknowledge-an-owed-test"
 
+# The one spec file carrying a ratified tier FLOOR, and the tier words that
+# satisfy it. `SPECIFICATION/non-functional-requirements.md` puts every
+# `scenarios.md` heading's mapped test at the "integration tier or above", so
+# these are the four tiers AT OR ABOVE that bound — the same four
+# `DEFAULT_SCENARIO_TIERS` allowlists as node-id prefixes.
+#
+# ⛔ The generic token `tier` is deliberately ABSENT. Its presence in the
+# conjunction's tier family above is what admitted `a unit-tier test is owed`,
+# and re-including it here would reproduce that defect in the predicate written
+# to close it. A word naming the floor is the only thing that clears the floor.
+_FLOORED_SPEC_FILE = "scenarios.md"
+
+_REQUIRED_TIER_TOKENS: tuple[str, ...] = (
+    "integration",
+    "e2e",
+    "consumer",
+    "pyramid",
+)
+
+_WRONG_TIER = "does-not-acknowledge-the-required-tier"
+
+# The evidence names the FLOOR, not the wording that missed it — the inverse of
+# the cop-out families, which quote the phrase they matched. For a wrong-tier
+# acknowledgment the wording is not what is wrong; the TIER is, and an author
+# shown only which words failed would rewrite the sentence and keep the tier.
+_REQUIRED_TIER_EVIDENCE = "required-tier: integration-or-above"
+
 
 @dataclass(frozen=True, kw_only=True)
 class ReasonFinding:
@@ -225,6 +283,29 @@ def reason_defect(*, reason: str) -> tuple[str, str] | None:
     if missing:
         return (_UNACKNOWLEDGED, "missing: " + ", ".join(missing))
     return None
+
+
+def required_tier_defect(*, spec_file: str, reason: str) -> tuple[str, str] | None:
+    """The (defect code, evidence) when `reason` clears no tier floor `spec_file` has.
+
+    `None` is NO OPINION, and it carries two readings on purpose: a spec file
+    with no ratified tier floor has none to fail, and a reason naming a tier at
+    or above the floor has met it. Neither is an acknowledgment verdict —
+    `reason_defect` owns that question, and this predicate is only ever asked
+    about a reason that already passed it, so a `None` here never means "this
+    reason is fine".
+
+    The return SHAPE matches `reason_defect`'s so a caller can treat the two as
+    one decision with two causes rather than branching on which predicate spoke.
+    The codes differ, which is what tells an author whether to add a tier or to
+    change the one they named.
+    """
+    if spec_file != _FLOORED_SPEC_FILE:
+        return None
+    normalized = _normalized(reason=reason)
+    if any(token in normalized for token in _REQUIRED_TIER_TOKENS):
+        return None
+    return (_WRONG_TIER, _REQUIRED_TIER_EVIDENCE)
 
 
 def reason_findings(*, entries: list[dict[str, object]]) -> list[ReasonFinding]:
