@@ -1427,6 +1427,145 @@ def test_spec_first_admission_refuses_a_same_file_heading_replacement(
     _assert_refused(result=result, heading=_NEW_HEADING, why="a same-file heading replacement")
 
 
+def _stage_spec_first_reason(*, tmp_path: Path, reason: str) -> None:
+    """Seed and stage the ADMITTED spec-first change, varying only the TODO `reason`.
+
+    Every other admission condition is held fixed at the shape the arm above
+    admits — the exact new H2 introduced, nothing removed from that file, the
+    coverage key absent from `HEAD`'s registry, the owner matching on both
+    sides, the register entry mechanically generated. Sharing the whole fixture
+    is what makes the three arms below a controlled comparison rather than three
+    separate stories: the `reason` string is the only variable, so a verdict that
+    differs between them can only be the acknowledgment's.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[
+            _governed_resolved_row(),
+            _governed_todo_row(heading=_NEW_HEADING, reason=reason),
+        ],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+
+def _assert_acknowledgment_refused(
+    *, result: _CheckRun, defect: str, evidence: str, why: str
+) -> None:
+    """Assert `result` refused the admission and named the acknowledgment defect.
+
+    The refusal alone is not what the ratified clause asks for. A bare
+    `register_grew` sends an author to re-check the heading, the owner and the
+    removal disqualifier — every one of which they satisfied — so the finding has
+    to say WHICH condition decided it and carry the same `(defect, evidence)`
+    pair `heading_coverage` prints for the identical row. That is the
+    "identify the failed evidence" half, and it is also what keeps the two
+    surfaces agreeing by construction: one predicate, two readers.
+    """
+    assert result.returncode != 0, (
+        f"{why} must refuse new-heading admission; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "spec_first_acknowledgment_refused" in result.combined, (
+        f"{why} must draw the acknowledgment refusal by name, not a bare growth "
+        f"finding; output={result.combined!r}"
+    )
+    assert defect in result.combined, (
+        f"{why} must name the defect it refused ({defect}); " f"output={result.combined!r}"
+    )
+    assert evidence in result.combined, (
+        f"{why} must carry the evidence that failed ({evidence}); " f"output={result.combined!r}"
+    )
+    assert _NEW_HEADING in result.combined, (
+        f"{why} must name the heading whose admission it refused; " f"output={result.combined!r}"
+    )
+
+
+def test_spec_first_admission_refuses_a_reason_asserting_non_testability(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a cop-out reason is not the acknowledgment the admission requires.
+
+    The ratified clause conditions the admission on a row that "acknowledges
+    that a real test at the required tier is owed", and the sibling
+    non-testability scenario settles that `not testable` is never such an
+    acknowledgment — there is no non-testable category. Reading the field for
+    mere PRESENCE admits this row, which is the worst available outcome: the
+    ratchet would grant a spec-first admission, silencing its own growth
+    direction and banking the row into the shrink-only register, on a reason
+    `heading_coverage` rejects. Two surfaces, opposite verdicts, one row.
+    """
+    _stage_spec_first_reason(tmp_path=tmp_path, reason="not testable")
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_acknowledgment_refused(
+        result=result,
+        defect="asserts-non-testability",
+        evidence="not testable",
+        why="a reason asserting the heading is not testable",
+    )
+
+
+def test_spec_first_admission_refuses_a_reason_that_names_no_required_tier(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: acknowledging SOME owed test is not acknowledging the REQUIRED tier.
+
+    This reason makes no cop-out claim at all — it says a test is owed, which a
+    blocklist of refused wordings would wave through. What it does not say is the
+    TIER, and the clause names a real test "at the required tier" precisely
+    because a unit test standing in for an owed integration-tier test is how a
+    governed scenario ends up with coverage that never exercises it. The arm
+    exists so the condition cannot be satisfied by avoiding the cop-out phrases.
+    """
+    _stage_spec_first_reason(tmp_path=tmp_path, reason="a unit test is owed")
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_acknowledgment_refused(
+        result=result,
+        defect="does-not-acknowledge-an-owed-test",
+        evidence="missing: tier",
+        why="a reason acknowledging an owed test at no required tier",
+    )
+
+
+def test_spec_first_admission_admits_a_required_tier_acknowledgment(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTROL for the two arms above: the same tree with a valid reason is admitted.
+
+    Without it the two refusals prove only that this fixture fails, not that the
+    `reason` is what failed it — and a condition tightened until nothing passes is
+    not a tightened condition, it is a retired exception. The reason here is the
+    one the sibling scenario names as legitimate transitional debt, so the three
+    arms together say the admission tracks the ratified predicate rather than
+    merely saying no more often.
+    """
+    _stage_spec_first_reason(tmp_path=tmp_path, reason="a real integration-tier test is owed")
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a reason acknowledging an owed required-tier test must still be admitted; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert (
+        "spec_first_acknowledgment_refused" not in result.combined
+    ), f"a valid acknowledgment must draw no refusal; output={result.combined!r}"
+    assert "register_grew" not in result.combined, (
+        f"an admitted spec-first key must not be reported as growth at all; "
+        f"output={result.combined!r}"
+    )
+
+
 def _assert_evidence_refused(*, result: _CheckRun, evidence: str, why: str) -> None:
     """Assert `result` REPORTED an evidence failure naming `evidence`, and refused.
 

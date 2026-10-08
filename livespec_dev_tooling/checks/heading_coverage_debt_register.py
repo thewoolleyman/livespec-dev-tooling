@@ -61,11 +61,13 @@ ratification time, before any implementation item can land the test. It is
 subtracted from `register_grew` rather than built into it, so the shrink-only
 rule stays stated whole, and the exception is earned from repository data at two
 revisions rather than requested: there is no field, lever or wording an author
-can write to obtain it. Its one own diagnostic,
-`spec_first_evidence_unavailable`, fires when a comparison the admission needs
-cannot be made at all — unavailable evidence refuses the admission AND says
-which read failed, rather than refusing in the same words as a condition the
-author actually failed.
+can write to obtain it. It owns two diagnostics of its own, both for refusals
+`register_grew` alone would misdirect: `spec_first_evidence_unavailable` when a
+comparison the admission needs cannot be made at all, and
+`spec_first_acknowledgment_refused` when every other condition held but the
+coverage row's `reason` is not the required-tier acknowledgment the admission is
+conditioned on — judged by the same ratified predicate `heading_coverage`
+applies to that row, so the two surfaces cannot reach opposite verdicts on it.
 
 NON-BREAKING BY CONSTRUCTION. The register is generated from the live
 registry (`livespec_dev_tooling.heading_coverage_debt`), so at adoption the
@@ -388,10 +390,10 @@ def main() -> int:
     register_rows = unsafe_perform_io(register_scan.unwrap())
     findings = _ratchet_findings(registry_rows=registry_rows, register_rows=register_rows)
     # Stays EMPTY unless growth was both computed and asked about, which is what
-    # keeps the v067 evidence report off the first-adoption commit: with no
-    # comparable `HEAD` register there is no grown key whose eligibility an
-    # evidence failure could concern.
-    unproved: list[SpecFirstFinding] = []
+    # keeps the v067 refusals off the first-adoption commit: with no comparable
+    # `HEAD` register there is no grown key whose admission either of them could
+    # concern.
+    reported: list[SpecFirstFinding] = []
     baseline_scan = head_rows(cwd=cwd, path=REGISTER_PATH)
     if isinstance(baseline_scan, IOFailure):
         emit.warning(
@@ -419,7 +421,7 @@ def main() -> int:
             register_rows=register_rows,
         )
         findings += [finding for finding in grown if finding.key not in decision.admitted]
-        unproved = decision.unproved
+        reported = decision.reported
     authoring = bool(os.environ.get(_SCOPE_ENV_VAR))
     if authoring:
         findings = _judged(
@@ -450,14 +452,15 @@ def main() -> int:
         _emit(finding=finding, failing=True)
     report_age_violations(findings=aged)
     report_first_seen_violations(findings=dated)
-    report_spec_first_violations(findings=unproved)
-    # `unproved` is counted in its own right rather than leaned on the
+    report_spec_first_violations(findings=reported)
+    # `reported` is counted in its own right rather than leaned on the
     # `register_grew` finding that accompanies every key in it today. The two
     # happen to coincide — a grown key always differs from `HEAD`, so the
     # staged-diff narrowing can never demote it to a warning — and resting an
-    # "evidence could not be read" verdict on that coincidence is exactly the
-    # shape that fails silently if either side is ever rescoped.
-    return 1 if findings or aged or dated or unproved else 0
+    # "evidence could not be read" or "the acknowledgment was refused" verdict
+    # on that coincidence is exactly the shape that fails silently if either
+    # side is ever rescoped.
+    return 1 if findings or aged or dated or reported else 0
 
 
 if __name__ == "__main__":
