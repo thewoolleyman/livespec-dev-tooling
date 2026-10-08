@@ -173,7 +173,19 @@ class _CheckRun(NamedTuple):
     combined: str
 
 
-def _git(*, cwd: Path, args: list[str]) -> None:
+def _git(*, cwd: Path, args: list[str], committed_at: str | None = None) -> None:
+    """Run `git <args>` in `cwd`, optionally pinning the commit's dates.
+
+    `committed_at` pins BOTH `GIT_AUTHOR_DATE` and `GIT_COMMITTER_DATE`, which
+    the committed-tier date directions need: their evidence is the committer
+    date of the earliest commit whose registry blob carried a key as a `TODO`,
+    so a fixture that cannot choose that date cannot place a register entry on
+    either side of it.
+    """
+    env = {"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"}
+    if committed_at is not None:
+        env["GIT_AUTHOR_DATE"] = committed_at
+        env["GIT_COMMITTER_DATE"] = committed_at
     # S603/S607: argv is a fixed list (literal git binary + test-controlled
     # args); bare `git` is the canonical invocation per system PATH; no
     # untrusted shell input.
@@ -183,7 +195,7 @@ def _git(*, cwd: Path, args: list[str]) -> None:
         capture_output=True,
         text=True,
         check=True,
-        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+        env=env,
     )
 
 
@@ -194,22 +206,38 @@ def _write(*, tmp_path: Path, relpath: str, entries: object) -> None:
     _ = target.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
 
 
-def _seed_repo(*, tmp_path: Path, registry: object, register: object | None = None) -> None:
+def _init_repo(*, tmp_path: Path) -> None:
+    """An empty git repository with a deterministic committer identity."""
+    _git(cwd=tmp_path, args=["init", "-q"])
+    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
+    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+
+
+def _seed_repo(
+    *,
+    tmp_path: Path,
+    registry: object,
+    register: object | None = None,
+    committed_at: str | None = None,
+) -> None:
     """A git repo whose `HEAD` carries `registry`, and `register` when supplied.
 
     `register=None` seeds the ADOPTION shape — `HEAD` has no debt register at
     all — which is the state every consumer is in on the commit that adopts the
     ratchet.
+
+    `committed_at` pins the baseline commit's date. Left unset the host clock
+    decides, which every arm predating the committed-tier date directions
+    relies on; an arm that places a register entry relative to the registry's
+    own history must pin it instead.
     """
-    _git(cwd=tmp_path, args=["init", "-q"])
-    _git(cwd=tmp_path, args=["config", "user.email", "test@example.com"])
-    _git(cwd=tmp_path, args=["config", "user.name", "Test"])
+    _init_repo(tmp_path=tmp_path)
     _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries=registry)
     _git(cwd=tmp_path, args=["add", _REGISTRY_RELPATH])
     if register is not None:
         _write(tmp_path=tmp_path, relpath=_REGISTER_RELPATH, entries=register)
         _git(cwd=tmp_path, args=["add", _REGISTER_RELPATH])
-    _git(cwd=tmp_path, args=["commit", "-q", "-m", "baseline"])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "baseline"], committed_at=committed_at)
 
 
 def _stage(
@@ -222,6 +250,11 @@ def _stage(
     if register is not None:
         _write(tmp_path=tmp_path, relpath=_REGISTER_RELPATH, entries=register)
         _git(cwd=tmp_path, args=["add", _REGISTER_RELPATH])
+
+
+def _commit_staged(*, tmp_path: Path, committed_at: str, message: str) -> None:
+    """Commit whatever `_stage` just staged, at `committed_at`."""
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", message], committed_at=committed_at)
 
 
 def _commit_governed_spec_heading(*, tmp_path: Path) -> None:
@@ -600,6 +633,248 @@ def test_an_unreadable_register_decides_no_direction_either(
     assert (
         "unregistered_todo" not in result.combined
     ), f"no direction may be decided from an unreadable file; output={result.combined!r}"
+
+
+def test_an_authored_first_seen_moved_later_than_head_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: the authoring tier compares an existing date against `HEAD` and refuses later.
+
+    Moving a recorded `first_seen` forward is how debt is laundered into fresh
+    debt without resolving anything: the key stays registered, the register
+    neither grows nor shrinks, the schema holds — and the release-tier age
+    bound's clock restarts. None of the three pre-existing directions can see
+    it, which is why this one reads `HEAD`'s own register as the evidence.
+
+    Two entries ride along to pin what the comparison PLACES and what it
+    cannot: an unkeyed entry has no identity to compare, and an entry whose
+    `first_seen` is not a calendar date has no date to compare. Neither may be
+    convicted here — the release-tier age bound already names an unmeasurable
+    date, and double-convicting one defect as two sends an author looking for
+    a second problem that does not exist.
+    """
+    unkeyed_entry: dict[str, object] = {"heading": "## Unkeyed", "first_seen": "2026-01-02"}
+    undated_entry = _entry(heading="## Undated", first_seen="not-a-date")
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A"), _todo(heading="## Undated")],
+        register=[_entry(heading="## A", first_seen="2026-01-02"), unkeyed_entry, undated_entry],
+        committed_at="2026-01-02T00:00:00+00:00",
+    )
+    _stage(
+        tmp_path=tmp_path,
+        register=[_entry(heading="## A", first_seen="2026-03-04"), unkeyed_entry, undated_entry],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a first-seen date moved later than HEAD's must be refused; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_moved_later" in result.combined, (
+        f"the refusal must name the inflation direction rather than a ratchet "
+        f"finding; output={result.combined!r}"
+    )
+    assert "## A" in result.combined
+    assert "## Unkeyed" not in result.combined, (
+        f"an unkeyed entry has no identity to compare and must draw no date "
+        f"finding; output={result.combined!r}"
+    )
+
+
+def test_an_authored_first_seen_moved_earlier_than_head_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTROL: only moving a date LATER is forbidden — earlier is legitimate.
+
+    Without this arm the refusal above would prove only that the check reacts
+    to a changed date. The ratified clause is directional ("Once recorded,
+    `first_seen` MUST NOT move later"), and a check that refused any change
+    would block the correction of a date that was recorded too late — the very
+    inflation it exists to remove.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        register=[_entry(heading="## A", first_seen="2026-01-02")],
+        committed_at="2026-01-02T00:00:00+00:00",
+    )
+    _stage(tmp_path=tmp_path, register=[_entry(heading="## A", first_seen="2025-12-01")])
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"moving a recorded date EARLIER must pass; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_moved_later" not in result.combined
+
+
+def test_a_committed_first_seen_later_than_the_earliest_todo_commit_fails(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: pre-push and CI reject a date later than the earliest TODO commit.
+
+    The inflation here is already COMMITTED, so the `HEAD` comparison above
+    cannot see it: the register on disk is byte-identical to `HEAD`'s. What
+    convicts it is the registry's own history — the row was carried as a `TODO`
+    from 2026-01-02, and the register claims it was first seen 2026-05-10,
+    which is four months of age the repository silently did not owe.
+
+    Run with the scope lever UNSET, because that is what the pre-push and CI
+    tier IS; the paired arm below proves the authoring tier does not demand
+    this evidence of a row it is still authoring.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        committed_at="2026-01-02T00:00:00+00:00",
+    )
+    _stage(tmp_path=tmp_path, register=[_entry(heading="## A", first_seen="2026-05-10")])
+    _commit_staged(
+        tmp_path=tmp_path,
+        committed_at="2026-05-10T00:00:00+00:00",
+        message="record the register with an inflated first-seen date",
+    )
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a committed first-seen date later than the earliest TODO commit must be "
+        f"refused; got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_after_earliest_todo_commit" in result.combined, (
+        f"the refusal must name the history-evidence direction; " f"output={result.combined!r}"
+    )
+    assert "## A" in result.combined
+    assert "2026-01-02" in result.combined, (
+        f"the refusal must report the committer-date evidence it judged against, "
+        f"or the author cannot tell which date is wrong; output={result.combined!r}"
+    )
+
+
+def test_the_authoring_tier_leaves_the_committed_history_comparison_to_pre_push(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The SAME repository, under the authoring lever, draws no history finding.
+
+    The two tiers rest on different evidence by design: an authored row's date
+    is compared against `HEAD`, because the commit carrying its registry `TODO`
+    does not exist yet and demanding committed evidence of it would refuse the
+    very admission the ratified clause permits. Only after the commit does the
+    history comparison become answerable — which is the tier this arm proves it
+    is confined to.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        committed_at="2026-01-02T00:00:00+00:00",
+    )
+    _stage(tmp_path=tmp_path, register=[_entry(heading="## A", first_seen="2026-05-10")])
+    _commit_staged(
+        tmp_path=tmp_path,
+        committed_at="2026-05-10T00:00:00+00:00",
+        message="record the register with an inflated first-seen date",
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"the authoring tier must not demand committed history evidence; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_after_earliest_todo_commit" not in result.combined
+
+
+def test_committed_debt_whose_required_history_evidence_is_unavailable_is_refused(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: unavailable required history evidence refuses validation.
+
+    The registry carries the `TODO` but NO commit does, so there is no earliest
+    carrying commit to read a committer date from — the shape a repository
+    reaches when the registry is untracked, or when the history that holds it
+    has been removed. "I could not establish the date" must never be spelled
+    the same way as "the date is fine": an unanswerable comparison that passed
+    would make every inflated date launderable by removing its evidence.
+    """
+    _init_repo(tmp_path=tmp_path)
+    _write(
+        tmp_path=tmp_path,
+        relpath=_REGISTER_RELPATH,
+        entries=[_entry(heading="## A", first_seen="2026-01-02")],
+    )
+    _git(cwd=tmp_path, args=["add", _REGISTER_RELPATH])
+    _git(
+        cwd=tmp_path,
+        args=["commit", "-q", "-m", "a register with no registry history behind it"],
+        committed_at="2026-01-02T00:00:00+00:00",
+    )
+    _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries=[_todo(heading="## A")])
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"registered debt whose history evidence cannot be read must be refused; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_evidence_unavailable" in result.combined, (
+        f"the refusal must name the EVIDENCE as the thing that failed, not the "
+        f"date; output={result.combined!r}"
+    )
+    assert "## A" in result.combined
+
+
+def test_a_committed_first_seen_earlier_than_a_truncated_history_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTROL: a recorded date PRECEDING the earliest visible TODO commit is valid.
+
+    This is the ordinary shape, not an edge: a row authored in a working tree
+    is dated the day it was authored and committed later, so the recorded date
+    legitimately precedes the committer date. It is also what a SHALLOW clone
+    looks like — truncating history moves the earliest visible carrying commit
+    forward, and a check that read that as inflation would convict a repository
+    for how it was cloned rather than for anything it authored.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        register=[_entry(heading="## A", first_seen="2025-12-01")],
+        committed_at="2026-03-04T00:00:00+00:00",
+    )
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a recorded date earlier than the earliest visible TODO commit must pass; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_after_earliest_todo_commit" not in result.combined
+    assert "first_seen_evidence_unavailable" not in result.combined
+
+
+def test_a_resolved_repository_needs_no_history_evidence(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTROL: at zero debt the committed tier asks history for nothing at all.
+
+    The register is empty and no live row is a `TODO`, so there is no recorded
+    date to validate — and a tier that demanded history evidence anyway would
+    refuse the ratchet's own success condition, which is the state this
+    repository is in today.
+    """
+    _seed_repo(tmp_path=tmp_path, registry=[_governed_resolved_row()], register=[])
+    _commit_governed_spec_heading(tmp_path=tmp_path)
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a repository at zero debt must pass the committed tier; "
+        f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_evidence_unavailable" not in result.combined
 
 
 def test_a_new_todo_for_a_governed_heading_fails_against_an_empty_committed_register(
