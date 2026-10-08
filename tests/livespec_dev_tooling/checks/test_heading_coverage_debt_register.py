@@ -1171,3 +1171,240 @@ def test_an_admitted_spec_first_row_stays_ordinary_registered_debt_after_commit(
         assert code not in landed.combined, (
             f"a landed admitted row must draw no {code} finding; " f"output={landed.combined!r}"
         )
+
+
+def _assert_refused(*, result: _CheckRun, heading: str, why: str) -> None:
+    """Assert `result` refused `heading` as growth, with an actionable finding.
+
+    Every arm below is a DIFFERENT way to miss the bounded v067 exception, and
+    they all land in the same place: the key is growth the exception did not
+    admit, so the shrink-only direction convicts it by name and the finding
+    carries the heading an author has to go and look at. Sharing the assertion
+    is what keeps the arms comparable — a refusal that stopped naming the
+    heading, or that became a silent non-zero, would regress all seven at once.
+    """
+    assert result.returncode != 0, (
+        f"{why} must be refused; " f"got returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "register_grew" in result.combined, (
+        f"{why} must be convicted by the shrink-only direction; " f"output={result.combined!r}"
+    )
+    assert heading in result.combined, (
+        f"{why} must name the heading it judged; " f"output={result.combined!r}"
+    )
+
+
+def test_spec_first_admission_refuses_a_pre_existing_heading_regression(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a real test re-opened as a `TODO` is the regression, not spec-first debt.
+
+    The heading has been in the governed specification since the baseline and its
+    registry row carried a real test. The staged change replaces that test with
+    `TODO` and registers it. Nothing about the heading is new, so the exception
+    must not reach it — this is the cheapest attack on the ratchet and the one
+    the ratified clause names first.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_todo_row()],
+        register=[_governed_entry(heading=_GOVERNED_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_refused(result=result, heading=_GOVERNED_HEADING, why="a real-test-to-TODO regression")
+
+
+def test_spec_first_admission_refuses_a_registry_only_addition(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a new coverage key whose heading no specification file carries.
+
+    The registry row and the register entry are both new and both well formed —
+    everything an author writes is in place. What is missing is the only thing
+    they cannot write: the heading itself, in the governed live specification.
+    Admitting this would make the exception requestable from the registry alone,
+    which is an exemption list with extra steps.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row(), _governed_todo_row(heading=_NEW_HEADING)],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_refused(result=result, heading=_NEW_HEADING, why="a registry-only addition")
+
+
+def test_spec_first_admission_refuses_a_dangling_register_entry(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a new heading and a register entry, with no coverage row between them.
+
+    The specification really does introduce the heading, so the spec evidence
+    the exception reads is genuine — and the entry is still inadmissible,
+    because there is no `TODO` row for it to own. Without the coverage row there
+    is no owner and no acknowledgment to check, so an admission here would
+    launder an entry past both of those conditions by omitting the row that
+    carries them.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_refused(result=result, heading=_NEW_HEADING, why="a dangling register entry")
+    assert "stale_register_entry" in result.combined, (
+        f"a dangling entry must also be named by the direction that owns it; "
+        f"output={result.combined!r}"
+    )
+
+
+def test_spec_first_admission_refuses_a_todo_row_with_no_owner(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: an unowned coverage row cannot be admitted, however new its heading.
+
+    The ratified clause requires the new coverage row to declare a NONEMPTY
+    `work_item`. The register entry here carries one, so the schema direction is
+    satisfied and nothing else in the ratchet looks at the registry row's owner
+    — which is exactly why the exception has to.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[
+            _governed_resolved_row(),
+            _governed_todo_row(heading=_NEW_HEADING, work_item=""),
+        ],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_refused(result=result, heading=_NEW_HEADING, why="an unowned coverage row")
+
+
+def test_spec_first_admission_refuses_an_owner_the_register_does_not_match(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: mechanical regeneration supplies the MATCHING owner — so a mismatch is not it.
+
+    Both owners are nonempty and well formed, and they name different work
+    items. That is the signature of a HAND-WRITTEN register entry: the generator
+    synchronizes the owner from the live coverage row, so a divergence is proof
+    the entry did not come from it, and the clause admits only mechanically
+    generated rows.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[_governed_resolved_row(), _governed_todo_row(heading=_NEW_HEADING)],
+        register=[
+            _governed_entry(heading=_NEW_HEADING, work_item="livespec-dev-tooling-other"),
+        ],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_refused(result=result, heading=_NEW_HEADING, why="a mismatched owner")
+
+
+def test_spec_first_admission_refuses_a_row_with_no_acknowledgment(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: the acknowledgment that a real test is owed must be PRESENT to be admitted.
+
+    The clause requires the new coverage row to carry an acknowledgment that a
+    real test at the required tier is owed. Whether a present `reason` says only
+    that is `heading_coverage`'s judgement and stays there; what this direction
+    owes is the refusal of an admission requested with no acknowledgment at all.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING, _NEW_HEADING],
+        registry=[
+            _governed_resolved_row(),
+            _governed_todo_row(heading=_NEW_HEADING, reason=""),
+        ],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_refused(result=result, heading=_NEW_HEADING, why="a missing acknowledgment")
+
+
+def test_spec_first_admission_refuses_a_same_file_heading_replacement(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: renaming a heading cannot reset its debt — a removal disqualifies the file.
+
+    Read key by key this is indistinguishable from the admitted arm: the new
+    heading is genuinely absent from `HEAD`, its coverage key is new, the row is
+    owned and acknowledges the owed test. What makes it a RENAME is the other
+    half of the same diff — the pre-existing H2 the file LOST — and the ratified
+    clause disqualifies new debt in a specification file that removes any
+    existing heading, precisely so a covered heading cannot be reissued as debt
+    under a new name.
+    """
+    _seed_governed_repo(
+        tmp_path=tmp_path,
+        headings=[_GOVERNED_HEADING],
+        registry=[_governed_resolved_row()],
+        register=[],
+    )
+    _stage_governed_change(
+        tmp_path=tmp_path,
+        headings=[_NEW_HEADING],
+        registry=[_governed_todo_row(heading=_NEW_HEADING)],
+        register=[_governed_entry(heading=_NEW_HEADING)],
+    )
+
+    result = _run_check(cwd=tmp_path, scope="true", monkeypatch=monkeypatch, capsys=capsys)
+
+    _assert_refused(result=result, heading=_NEW_HEADING, why="a same-file heading replacement")
