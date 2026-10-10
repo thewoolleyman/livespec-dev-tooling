@@ -335,6 +335,45 @@
         "pr": "npx -y @agentclientprotocol/claude-agent-acp"
       },
 
+      // Per-node ACP turn ceilings (contracts.md "ACP node timeouts", v081).
+      // The plugin's built-in default is 1800s for EVERY node; that default is
+      // the maintainer's fleet-wide ruling and is NOT relitigated here -- it
+      // stays in force for every node absent from this table. This repo had NO
+      // override at all, so every node ran at 1800s.
+      //
+      // WHY THIS REPO NOW OVERRIDES, with the measurement rather than a
+      // preference. The dev-tooling-backlog-drain (epic livespec-dev-tooling-
+      // kcoslm) stalled its entire gate-heavy keep class on this ceiling: the
+      // RGR `implement`/`review_fix` ACP turn executes this repository's full
+      // `just check` aggregate (4,172 tests) as a Red->Green pair plus a
+      // coverage rerun, and under factory load that turn exceeds 1800s. The
+      // failure is systemic, not item-specific -- s1ic, u3f6bw, and cross-actor
+      // ozbqmx all died identically in one wave with the "ACP turn timed out"
+      // signature at the configured ceiling (the constant, not a slow turn),
+      // while master CI was GREEN (the gate itself PASSES; only the sandbox
+      // turn was shorter than the aggregate runtime). The not-yet-dispatched
+      // keeps go7a/xam/izbq/uw3h would fail identically. This blocks ALL
+      // gate-heavy product-.py dispatch for the drain; tmux-worker fallback is
+      // disallowed for this repo, so there is no in-session route either.
+      // Maintainer direction 2026-10-10 (live in-session resume of kcoslm):
+      // raise the ceiling.
+      //
+      // The values mirror livespec-orchestrator-beads-fabro's own proven
+      // table, which fixed the byte-identical failure signature in that repo
+      // (its heavier 7,194-test aggregate died the same way at 1800038 ms and
+      // was restored to prior working behaviour with exactly these headrooms):
+      // implement 14400s, review_fix 7200s, fix/janitor 3600s. A generous turn
+      // ceiling only bounds the worst case -- a fast turn returns immediately
+      // -- so over-provisioning here is safe; under-provisioning is what caused
+      // the stall. Every other node (pr, review, disposition, proof_*, and the
+      // terminal handlers) stays at the 1800s default, which it already met.
+      "node_timeouts": {
+        "implement": 14400,
+        "janitor": 3600,
+        "fix": 3600,
+        "review_fix": 7200
+      },
+
       "wip_cap": 10,
       "default_factory": "hp",
       "factories": {
