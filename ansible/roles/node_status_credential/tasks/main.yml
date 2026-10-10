@@ -123,10 +123,20 @@
       no_log: true
 
     - name: Read the cluster CA from the SA token Secret
+      # argv form, NOT a `cmd:` string: the command module shlex-splits a string,
+      # which strips the backslash and hands kubectl `{.data.ca.crt}` (key `crt`
+      # under key `ca`) — an empty read on a Secret whose ca.crt is populated. That
+      # was the 2026-10-10 apply failure on gmktec-xubuntu (livespec-lfie5z).
       ansible.builtin.command:
-        cmd: >-
-          kubectl -n {{ node_status_credential_namespace }} get secret
-          {{ node_status_credential_sa }} -o jsonpath={.data.ca\.crt}
+        argv:
+          - kubectl
+          - -n
+          - "{{ node_status_credential_namespace }}"
+          - get
+          - secret
+          - "{{ node_status_credential_sa }}"
+          - -o
+          - 'jsonpath={.data.ca\.crt}'
       delegate_to: "{{ node_status_credential_server_host }}"
       become: true
       environment:
@@ -136,16 +146,55 @@
       check_mode: false
       when: node_status_credential_token_b64.stdout | default('') | length > 0
 
+    - name: Fall back to the namespace's kube-root-ca.crt ConfigMap for the cluster CA
+      # Since Kubernetes 1.21 kube-controller-manager publishes kube-root-ca.crt into every
+      # namespace as the CA source for projected ServiceAccount tokens. A token Secret's
+      # ca.crt is a legacy token-controller field that may be absent, so it is only tried first.
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - "{{ node_status_credential_namespace }}"
+          - get
+          - configmap
+          - kube-root-ca.crt
+          - -o
+          - 'jsonpath={.data.ca\.crt}'
+      delegate_to: "{{ node_status_credential_server_host }}"
+      become: true
+      environment:
+        KUBECONFIG: "{{ node_status_credential_admin_kubeconfig }}"
+      register: node_status_credential_ca_configmap
+      changed_when: false
+      check_mode: false
+      # An absent ConfigMap leaves stdout empty and the refusal below reports it.
+      failed_when: false
+      when:
+        - node_status_credential_token_b64.stdout | default('') | length > 0
+        - node_status_credential_ca_b64.stdout | default('') | length == 0
+
+    - name: Select the cluster CA (base64, as certificate-authority-data wants)
+      # The Secret's ca.crt is already base64; the ConfigMap holds PEM text.
+      ansible.builtin.set_fact:
+        node_status_credential_ca_data: >-
+          {{ node_status_credential_ca_b64.stdout
+             if node_status_credential_ca_b64.stdout | default('') | length > 0
+             else (node_status_credential_ca_configmap.stdout | default('') | b64encode
+                   if node_status_credential_ca_configmap.stdout | default('') | length > 0
+                   else '') }}
+      when: node_status_credential_token_b64.stdout | default('') | length > 0
+
     - name: Refuse an empty cluster CA
       # Mirrors provision-node-status-credential.sh's refusal: a Secret with a
-      # token but no ca.crt would render `certificate-authority-data:` empty — a
+      # token but no CA would render `certificate-authority-data:` empty — a
       # kubeconfig that looks right and trusts nothing. Fail rather than deliver it.
       ansible.builtin.assert:
         that:
-          - node_status_credential_ca_b64.stdout | default('') | length > 0
+          - node_status_credential_ca_data | default('') | length > 0
         fail_msg: >-
-          the SA token Secret {{ node_status_credential_namespace }}/{{ node_status_credential_sa }}
-          carries no ca.crt — refusing to render a kubeconfig with an empty
+          neither the SA token Secret {{ node_status_credential_namespace }}/{{ node_status_credential_sa }}
+          nor the ConfigMap {{ node_status_credential_namespace }}/kube-root-ca.crt
+          carries a ca.crt — refusing to render a kubeconfig with an empty
           certificate-authority-data
         success_msg: "cluster CA present for {{ node_status_credential_sa }}"
       when: node_status_credential_token_b64.stdout | default('') | length > 0
@@ -165,7 +214,7 @@
             - name: ci-runner
               cluster:
                 server: {{ node_status_credential_api }}
-                certificate-authority-data: {{ node_status_credential_ca_b64.stdout }}
+                certificate-authority-data: {{ node_status_credential_ca_data }}
           users:
             - name: {{ node_status_credential_sa }}
               user:
