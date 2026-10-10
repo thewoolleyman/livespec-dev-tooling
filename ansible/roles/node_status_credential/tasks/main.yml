@@ -34,15 +34,18 @@
   when: node_status_credential_cluster_role == 'agent'
   block:
     - name: Read this agent's committed phase0 profile
+      # regex_findall | first, NOT regex_search(..., '\1'): with a group argument
+      # regex_search returns a LIST (['x'], not 'x'), so every scalar compare below
+      # would fail; a missing key yields '' and still fails the assertion.
       ansible.builtin.set_fact:
         node_status_credential_node: >-
-          {{ _nsc_profile_text | regex_search('^NODE_NAME=(.*)$', '\1', multiline=True) }}
+          {{ _nsc_profile_text | regex_findall('^NODE_NAME=(.*)$', multiline=True) | first | default('') }}
         node_status_credential_role: >-
-          {{ _nsc_profile_text | regex_search('^CLUSTER_ROLE=(.*)$', '\1', multiline=True) }}
+          {{ _nsc_profile_text | regex_findall('^CLUSTER_ROLE=(.*)$', multiline=True) | first | default('') }}
         node_status_credential_api: >-
-          {{ _nsc_profile_text | regex_search('^CLUSTER_JOIN_ADDRESS=(.*)$', '\1', multiline=True) }}
+          {{ _nsc_profile_text | regex_findall('^CLUSTER_JOIN_ADDRESS=(.*)$', multiline=True) | first | default('') }}
         node_status_credential_target: >-
-          {{ _nsc_profile_text | regex_search('^CHURN_KUBECONFIG_FILE=(.*)$', '\1', multiline=True) }}
+          {{ _nsc_profile_text | regex_findall('^CHURN_KUBECONFIG_FILE=(.*)$', multiline=True) | first | default('') }}
       vars:
         _nsc_profile_text: "{{ lookup('ansible.builtin.file', node_status_credential_profile) }}"
 

@@ -17,10 +17,13 @@
 # the kubectl calls to the server.
 
 - name: Read this node's profile NODE_TAINTS
+  # regex_findall | first, NOT regex_search(..., '\1'): with a group argument
+  # regex_search returns a LIST (['x'], not 'x'), so every scalar compare below
+  # would fail; a missing key yields '' and still fails the assertion.
   ansible.builtin.set_fact:
     node_taints_declared: >-
       {{ lookup('ansible.builtin.file', node_taints_profile)
-      | regex_search('^NODE_TAINTS=(.*)$', '\1', multiline=True) }}
+      | regex_findall('^NODE_TAINTS=(.*)$', multiline=True) | first | default('') }}
 
 - name: Derive the desired node-role/ci taint record from the profile
   # A NODE_TAINTS value is space-separated `key=value:Effect` records; this picks
@@ -28,7 +31,7 @@
   # (the R5 open state).
   ansible.builtin.set_fact:
     node_taints_desired_ci: >-
-      {{ node_taints_declared | regex_search('(node-role/ci=[^\s]+)', '\1') | default('', true) }}
+      {{ node_taints_declared | regex_findall('(node-role/ci=[^\s]+)') | first | default('') }}
 
 - name: Read the live taint keys on this node
   # argv:, NOT cmd: — a `cmd:` string is shlex-tokenized, which STRIPS the quotes

@@ -34,15 +34,18 @@
   # Parsed, never sourced: the `^KEY=value$` scalars this role needs, read with a
   # file lookup + regex on the control node. The profile ships in this repo; the
   # target has no checkout, so the lookup resolves here and the values travel.
+  # regex_findall | first, NOT regex_search(..., '\1'): with a group argument
+  # regex_search returns a LIST (['x'], not 'x'), so every scalar compare below
+  # would fail; a missing key yields '' and still fails the assertion.
   ansible.builtin.set_fact:
     node_extended_resource_profile_node: >-
-      {{ _ner_profile_text | regex_search('^NODE_NAME=(.*)$', '\1', multiline=True) }}
+      {{ _ner_profile_text | regex_findall('^NODE_NAME=(.*)$', multiline=True) | first | default('') }}
     node_extended_resource_profile_role: >-
-      {{ _ner_profile_text | regex_search('^CLUSTER_ROLE=(.*)$', '\1', multiline=True) }}
+      {{ _ner_profile_text | regex_findall('^CLUSTER_ROLE=(.*)$', multiline=True) | first | default('') }}
     node_extended_resource_capacity: >-
-      {{ _ner_profile_text | regex_search('^ADMISSION_CAPACITY_C=(.*)$', '\1', multiline=True) }}
+      {{ _ner_profile_text | regex_findall('^ADMISSION_CAPACITY_C=(.*)$', multiline=True) | first | default('') }}
     node_extended_resource_churn_kubeconfig: >-
-      {{ _ner_profile_text | regex_search('^CHURN_KUBECONFIG_FILE=(.*)$', '\1', multiline=True) }}
+      {{ _ner_profile_text | regex_findall('^CHURN_KUBECONFIG_FILE=(.*)$', multiline=True) | first | default('') }}
   vars:
     _ner_profile_text: "{{ lookup('ansible.builtin.file', node_extended_resource_profile) }}"
 
