@@ -83,35 +83,54 @@
         state: absent
 
 - name: Locate racadm
+  # `follow: true` so a candidate that is a symlink is judged by what it points
+  # at; `executable` is os.access(X_OK) as the become user (root).
   ansible.builtin.stat:
     path: "{{ item }}"
+    follow: true
   register: host_thermal_racadm
   become: true
   loop: "{{ host_thermal_racadm_paths }}"
 
-- name: Refuse a host where racadm is absent after the install
+- name: Pick the first racadm candidate root can execute
+  # EXECUTABLE, not merely present — the shell's `[ -x "$RACADM" ]` fallback,
+  # which the first conversion of this role dropped. Dell's srvadmin-idracadm7
+  # 11.0.0.0 ships /opt/dell/srvadmin/sbin/racadm-wrapper-idrac7 mode 0644 (dpkg
+  # --verify passes, so that is the package's own mode, not drift) and its
+  # postinst points /opt/dell/srvadmin/sbin/racadm at it. The path EXISTS but
+  # nobody, root included, can exec it: the first live apply of ci-pool.yml
+  # (2026-10-10) picked it and failed with
+  #   [Errno 13] Permission denied: b'/opt/dell/srvadmin/sbin/racadm'
+  # although the task ran under become. The wrapper only `exec`s
+  # /opt/dell/srvadmin/bin/idracadm7, the next candidate, so skipping it loses
+  # nothing. The `exists` select comes first because `executable` is reported
+  # only for a path that exists.
+  ansible.builtin.set_fact:
+    host_thermal_racadm_bin: >-
+      {{ host_thermal_racadm.results | selectattr('stat.exists')
+         | selectattr('stat.executable') | map(attribute='item') | first | default('') }}
+
+- name: Refuse a host where no racadm is executable after the install
   ansible.builtin.assert:
     that:
-      - host_thermal_racadm.results | selectattr('stat.exists') | list | length > 0
+      - host_thermal_racadm_bin | length > 0
     fail_msg: >-
-      racadm is at none of {{ host_thermal_racadm_paths | join(', ') }} after the
-      package install; the iDRAC settings this role owns cannot be reached
-    success_msg: >-
-      racadm:
-      {{ host_thermal_racadm.results | selectattr('stat.exists') | map(attribute='item') | first }}
+      none of {{ host_thermal_racadm_paths | join(', ') }} is an executable file
+      after the package install; the iDRAC settings this role owns cannot be
+      reached
+    success_msg: "racadm: {{ host_thermal_racadm_bin }}"
 
 - name: Verify racadm answers in-band
   # The shell's step 5, and it is not ceremony: the first live install left the
   # binary in place but unable to run, because Dell's packages LINK
   # libargtable2 without declaring it. `getversion` is the cheapest call that
   # proves the whole path — binary, shared libraries, and the host's internal
-  # IPMI pass-through to the iDRAC — actually works.
+  # IPMI pass-through to the iDRAC — actually works. It runs as root (become):
+  # the in-band IPMI pass-through needs /dev/ipmi0.
   #
   # A post-install verification of what the tasks above produced, so it stays
   # skipped under --check.
-  ansible.builtin.command: >-
-    {{ host_thermal_racadm.results | selectattr('stat.exists') | map(attribute='item') | first }}
-    getversion
+  ansible.builtin.command: "{{ host_thermal_racadm_bin }} getversion"
   register: host_thermal_racadm_version
   changed_when: false
   become: true

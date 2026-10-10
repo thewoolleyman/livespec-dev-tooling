@@ -20,37 +20,76 @@
 # (k3s-agent.service active) is never true there. install-agent-rejoin-watchdog.sh
 # refuses to install it on a server for the same reason.
 #
-# THE FOUR GATES, ALL of which must hold before it acts — so a transient blip,
-# an agent that is merely down (Restart=always owns that), an unreachable server
-# (nothing to rejoin to), or a just-restarted agent (give it time) never trip it:
+# THE GATES, ALL of which must hold before it acts — so a transient blip, an
+# agent that is merely down (Restart=always owns that), an unreachable server
+# (nothing to rejoin to), an agent that is still registering, or a
+# just-restarted agent (give it time) never trip it:
 #   1. k3s-agent.service is `active` — the process is up, which is the
 #      necessary condition for the alive-but-wedged state;
+#   1b. it has been active for at least REJOIN_SETTLE_SEC seconds — one full
+#      registration cycle. A k3s agent logs the wedge signature below as a
+#      normal part of EVERY registration (the kubelet starts before its Node
+#      object exists), so an agent that has only just turned active is
+#      registering, not wedged;
 #   2. the control-plane API server named in the agent config is REACHABLE — a
 #      restart cannot rejoin a node to a server that is down, so restarting then
 #      would be a no-op loop against an outage rather than a repair;
 #   3. the agent journal shows `node "<hostname>" not found` at least
-#      REJOIN_MIN_HITS times in the last REJOIN_WINDOW_SEC seconds — the
-#      signature of the wedge, required repeatedly so one stray line is not it;
+#      REJOIN_MIN_HITS times in the last REJOIN_WINDOW_SEC seconds AFTER the
+#      last `Successfully registered node` line for this node — the signature of
+#      the wedge, required repeatedly so one stray line is not it. This is the
+#      watchdog's evidence that the Node object is ABSENT: the kubelet's node
+#      lister is a watch on the API server, so its sustained `not found`, with
+#      no successful registration since, is the API server's own answer, read
+#      without this script holding a credential;
 #   4. no restart happened in the last REJOIN_RATE_LIMIT_SEC seconds (a stamp
 #      file) — one restart per cooldown, so a genuinely broken agent becomes a
 #      slow, visible restart loop rather than an unbounded hammer.
-# When all hold: remove the node-password (k3s recreates it; a stale one can
-# itself block re-registration) and restart the agent, then stamp. Otherwise it
-# exits 0 quietly — the healthy case is the common case and must not spam the
-# journal every minute.
+# When all hold: restart the agent, then stamp. Otherwise it exits 0 quietly —
+# the healthy case is the common case and must not spam the journal every
+# minute.
+#
+# IT NEVER TOUCHES THE NODE PASSWORD (/etc/rancher/node/password). Earlier
+# revisions removed it before restarting, on the theory that a stale one could
+# block re-registration. That theory was backwards, and on 2026-09-28 it caused
+# a twelve-day outage of gmktec-xubuntu:
+#   * poweredge-xubuntu rebooted at 19:45 PDT, wiping its tmpfs datastore;
+#   * gmktec's k3s-agent (in systemd's `activating` state since 2026-09-16,
+#     because it had never reached the server) reached the fresh server; the
+#     kubelet logged the `not found` lines every registration logs at
+#     19:46:10-11, then `Successfully registered node` at 19:46:11, and the
+#     server minted gmktec's node-password secret from the agent's CURRENT
+#     password;
+#   * at 19:46:13 the unit turned `active`, and the watchdog tick in that same
+#     second counted the six registration lines as a wedge (gate 1b and the
+#     after-registration rule in gate 3 did not exist), removed the password
+#     and restarted the agent;
+#   * the restarted agent wrote a NEW password at 19:46:14, which no longer
+#     matched the hash the server had minted seconds earlier, so the server
+#     logged `unable to verify password for node gmktec-xubuntu: hash does not
+#     match` every ~10s from then on, the agent stayed `activating` (so gate 1
+#     never held again and the watchdog never retried), and the Node went
+#     NotReady.
+# The server mints the secret from whatever password the agent presents FIRST;
+# a server whose datastore was wiped holds no secret, so the agent's existing
+# password is never stale against it. Removing it can only create a mismatch.
+# Recovering from a mismatch that already exists is the SERVER's job (ansible
+# role agent_node_password deletes the stale secret on evidence), not this one.
 #
 # Every input is an env override so the whole decision is assertable off-host
-# (./install-agent-rejoin-watchdog-exit-tests.sh drives it with fake
-# systemctl/journalctl/date on PATH). It reads the journal, a TCP port and
-# systemctl; it never touches the API server or a kubeconfig.
+# (./agent-rejoin-watchdog-exit-tests.sh drives it with fake
+# systemctl/journalctl/timeout on PATH). It reads the journal, a TCP port,
+# /proc/uptime and systemctl; it never touches the API server, a kubeconfig, or
+# the node password.
 set -uo pipefail
 
 NODE_NAME="${REJOIN_NODE_NAME:-$(hostname)}"
 AGENT_UNIT="${REJOIN_AGENT_UNIT:-k3s-agent.service}"
 CONFIG="${REJOIN_K3S_CONFIG:-/etc/rancher/k3s/config.yaml}"
-NODE_PASSWORD="${REJOIN_NODE_PASSWORD:-/etc/rancher/node/password}"
 STAMP="${REJOIN_STAMP:-/run/agent-rejoin-watchdog.last-restart}"
+UPTIME_FILE="${REJOIN_UPTIME_FILE:-/proc/uptime}"
 WINDOW_SEC="${REJOIN_WINDOW_SEC:-180}"
+SETTLE_SEC="${REJOIN_SETTLE_SEC:-180}"
 MIN_HITS="${REJOIN_MIN_HITS:-5}"
 RATE_LIMIT_SEC="${REJOIN_RATE_LIMIT_SEC:-300}"
 TCP_TIMEOUT="${REJOIN_TCP_TIMEOUT:-5}"
@@ -61,6 +100,22 @@ log() { printf '%s agent-rejoin-watchdog: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ'
 # this watchdog's; acting here would race that and could restart during systemd's
 # own restart backoff.
 if ! systemctl is-active --quiet "${AGENT_UNIT}"; then
+  exit 0
+fi
+
+# GATE 1b — active for at least one registration cycle. Both clocks are
+# MONOTONIC (seconds since boot), so a wall-clock step cannot fake an age. An
+# unreadable timestamp holds rather than acts: the cost of a missed tick is one
+# minute, the cost of a wrong restart was twelve days.
+active_enter_us="$(systemctl show -p ActiveEnterTimestampMonotonic --value "${AGENT_UNIT}" 2>/dev/null)"
+uptime_s="$(cut -d' ' -f1 "${UPTIME_FILE}" 2>/dev/null)"
+uptime_s="${uptime_s%%.*}"
+case "${active_enter_us}${uptime_s}" in
+  ''|*[!0-9]*) exit 0 ;;
+esac
+[ "${active_enter_us}" -gt 0 ] || exit 0
+active_age=$((uptime_s - active_enter_us / 1000000))
+if [ "${active_age}" -lt "${SETTLE_SEC}" ]; then
   exit 0
 fi
 
@@ -96,9 +151,12 @@ if ! timeout "${TCP_TIMEOUT}" bash -c ": < /dev/tcp/${server_host}/${server_port
   exit 0
 fi
 
-# GATE 3 — the wedge signature, counted over the window. grep -c exits non-zero
-# on zero matches; `set -uo` (no -e) lets the count land as 0 and the script go
-# on. The needle is QUOTE-AGNOSTIC on purpose: when the Node object is gone k3s
+# GATE 3 — the wedge signature, counted over the window, and only AFTER the
+# last successful registration of this node in it: every registration logs the
+# signature before the kubelet's Node object exists, so lines that precede a
+# `Successfully registered node` are a registration, not a wedge (2026-09-28:
+# six of them, at 19:46:10-11, ahead of the 19:46:11 registration). The needle
+# is QUOTE-AGNOSTIC on purpose: when the Node object is gone k3s
 # logs the error through klog as `... node \"<name>\" not found` and
 # `... nodes \"<name>\" not found` — the inner quotes arrive BACKSLASH-ESCAPED in
 # the journal message (kubelet_node_status, nodelease and eviction_manager all
@@ -108,7 +166,10 @@ fi
 # `date` are both LOCAL time, so the window is computed in the journal's own zone.
 since="$(date '+%Y-%m-%d %H:%M:%S' -d "-${WINDOW_SEC} seconds" 2>/dev/null)"
 hits="$(journalctl -u "${AGENT_UNIT}" --since "${since}" --no-pager 2>/dev/null \
-        | grep -c -E "${NODE_NAME}[^ ]* not found")"
+        | awk -v node="${NODE_NAME}" '
+            index($0, "Successfully registered node") && index($0, node) { n = 0; next }
+            $0 ~ (node "[^ ]* not found") { n++ }
+            END { print n + 0 }')"
 hits="${hits:-0}"
 if [ "${hits}" -lt "${MIN_HITS}" ]; then
   exit 0
@@ -126,11 +187,7 @@ if [ -f "${STAMP}" ]; then
   fi
 fi
 
-log "WEDGED: ${AGENT_UNIT} is active, ${server_host}:${server_port} is reachable, and the agent journal shows 'node \"${NODE_NAME}\" not found' ${hits}x in the last ${WINDOW_SEC}s — removing the node-password and restarting the agent to force re-registration"
-# The node-password can itself block a rejoin when the server's record of it was
-# lost with the datastore; k3s recreates it on the next start. Removing a missing
-# file is not an error.
-rm -f "${NODE_PASSWORD}"
+log "WEDGED: ${AGENT_UNIT} has been active ${active_age}s, ${server_host}:${server_port} is reachable, and the agent journal shows 'node \"${NODE_NAME}\" not found' ${hits}x in the last ${WINDOW_SEC}s with no successful registration since — restarting the agent to force re-registration (the node password is left untouched)"
 if systemctl restart "${AGENT_UNIT}"; then
   # Stamp only on a restart that was actually issued, so the cooldown measures
   # real restarts rather than attempts.

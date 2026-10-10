@@ -73,8 +73,10 @@ source of truth for how the tool is invoked.
 `cluster_role`. It also carries the two steps that had no role
 (`agent_rejoin`, `secret_reinjection`) and the churn-slot credential and
 taint reconciliation (`node_status_credential`, `node_taints`) the R5
-per-node model needs. Until it landed, no playbook targeted `ci_pool`, so
-`poweredge-xubuntu` and `gmktec-xubuntu` drifted unreached
+per-node model needs, and the server-side, evidence-gated repair of an agent's
+stale k3s node-password secret (`agent_node_password`). Until it landed, no
+playbook targeted `ci_pool`, so `poweredge-xubuntu` and `gmktec-xubuntu`
+drifted unreached
 (`livespec-dev-tooling-9btv`).
 
 Roles live one per replaced service, named for the service with hyphens

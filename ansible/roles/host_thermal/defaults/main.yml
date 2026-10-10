@@ -27,8 +27,9 @@ host_thermal_extra_packages:
 host_thermal_stage_dir: /var/tmp/racadm-install
 # Where racadm ends up, in the order install-racadm.sh looks. The wrapper under
 # sbin is what a PATH lookup finds when the packages register one; the bin path
-# is the binary itself, which is what a host that got the packages without the
-# wrapper has.
+# is the binary itself. The role takes the first candidate root can EXECUTE, not
+# the first that exists: Dell's 11.0.0.0 package ships the sbin wrapper mode 0644,
+# so on poweredge-xubuntu the bin path is the one that runs.
 host_thermal_racadm_paths:
   - /opt/dell/srvadmin/sbin/racadm
   - /opt/dell/srvadmin/bin/idracadm7
