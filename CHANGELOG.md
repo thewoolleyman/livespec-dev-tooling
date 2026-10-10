@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.93.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.1...v1.93.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ansible:** first live ci-pool.yml apply — racadm under become, idempotent bind mounts, evidence-gated node-password reconcile, watchdog race (livespec-lfie5z) ([5f4c784](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5f4c7844a7f2da226be76cae6b4f9a621b438183))
+
 ## [1.93.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.0...v1.93.1) (2026-10-10)
 
 
