@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.93.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.0...v1.93.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ansible:** parse phase0 profile scalars as strings — regex_search with a group returns a list (livespec-lfie5z) ([a2573bd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a2573bd805107ed1f2869ae6a84ed8bff4d06b75))
+
 ## [1.93.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.92.3...v1.93.0) (2026-10-08)
 
 
