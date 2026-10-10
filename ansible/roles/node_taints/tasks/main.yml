@@ -19,7 +19,8 @@
 - name: Read this node's profile NODE_TAINTS
   # regex_findall | first, NOT regex_search(..., '\1'): with a group argument
   # regex_search returns a LIST (['x'], not 'x'), so every scalar compare below
-  # would fail; a missing key yields '' and still fails the assertion.
+  # would fail. A missing or empty NODE_TAINTS yields '' — the OPEN (untainted)
+  # state this role reconciles to, not an error: there is no assertion here.
   ansible.builtin.set_fact:
     node_taints_declared: >-
       {{ lookup('ansible.builtin.file', node_taints_profile)

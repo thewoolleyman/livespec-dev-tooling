@@ -4,8 +4,9 @@ Read this before touching the CI runner node's storage tiers (`ci-cache`,
 `ci-containerd`, `ci-workvols`), before installing or surveying NVMe
 hardware on the node, and before running anything under
 `ci-runner/k3s/phase2/storage-layout/`. It is agent-facing operational
-guidance; the layout itself is defined by `install-storage-layout.sh` and
-documented in `ci-runner/k3s/phase2/README.md` ("Storage layout:
+guidance; the layout itself is defined by the one committed source
+`ansible/roles/storage_layout/files/ci-tiers.fstab`, reconciled onto a node by
+the `storage_layout` role of `ansible/ci-pool.yml`, and documented in `ci-runner/k3s/phase2/README.md` ("Storage layout:
 media-neutral tier identity"). Every entry below is drawn from something that
 actually went wrong on `poweredge-xubuntu` on 2026-09-04.
 

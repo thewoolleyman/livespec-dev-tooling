@@ -4,8 +4,9 @@
 # partition table, LVM volume groups, logical volumes and role-labelled
 # filesystems that the later stages assume already exist.
 #
-# WHERE IT SITS. `../phase2/storage-layout/install-storage-layout.sh` is this
-# script's CONSUMER, not its replacement: it starts from filesystems that
+# WHERE IT SITS. The `storage_layout` Ansible role (ansible/roles/storage_layout,
+# applied from the control node by `just ansible-apply ansible/ci-pool.yml`) is
+# this script's CONSUMER, not its replacement: it starts from filesystems that
 # ALREADY carry the role labels and refuses when a label resolves to zero
 # devices. Producing those labelled filesystems from empty storage is what this
 # stage does. The stage order for a whole node is in README.md beside this file.
@@ -559,11 +560,11 @@ for record in "${LV_RECORDS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-stage "7/7 filesystems, carrying the labels install-storage-layout.sh resolves"
+stage "7/7 filesystems, carrying the labels the storage_layout role resolves"
 # ---------------------------------------------------------------------------
 # The per-role filesystem types come from the profile and MUST agree with
-# ../phase2/storage-layout/migrate-tier.sh's role_fstype and with
-# install-storage-layout.sh's fstab lines — the reflink option is what lets the
+# ../phase2/storage-layout/migrate-tier.sh's role_fstype and with the committed
+# ansible/roles/storage_layout/files/ci-tiers.fstab lines — the reflink option is what lets the
 # warm-cache seed give every job its own inodes.
 make_fs() {
   local fstype="$1" label="$2" device="$3"

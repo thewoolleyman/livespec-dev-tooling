@@ -13,9 +13,11 @@
 #     bare-metal rebuild renders the target's /etc/fstab from these lines
 #     VERBATIM, so the later node-local stage finds the layout already present
 #     and is the no-op it is designed to be on a conforming host;
-#   * ci-runner/k3s/phase0-bare-metal/base-os-install-exit-tests.sh §B3/§B4 —
-#     the arbiter both of what that script renders and of what the legacy
-#     phase2/storage-layout/install-storage-layout.sh ensures.
+#   * ci-runner/k3s/phase0-bare-metal/base-os-install-exit-tests.sh §B3 — the
+#     arbiter of what that script renders. (The legacy node-local
+#     phase2/storage-layout/install-storage-layout.sh composed its own lines; it
+#     is RETIRED, livespec-dev-tooling-9btv, and the storage_layout role that
+#     replaced it reads this file, so no second generator is left to compare.)
 # Before this file the role and the rebuild script each composed the same five
 # lines from their own constants, and only a non-gating manual exit test stood
 # between a divergence and a silently different live /etc/fstab.
