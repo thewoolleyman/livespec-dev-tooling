@@ -21,7 +21,7 @@
 # response and the manual/automatic switch are community-documented iDRAC8 OEM
 # IPMI commands (0x30 0xce / 0x30 0x30, well-tested on 2.x firmware); the
 # thermal profile has no IPMI form and lives in the iDRAC attribute store,
-# reachable in-band by racadm (install-racadm.sh) with no credentials.
+# reachable in-band by racadm (the host_thermal Ansible role installs it) with no credentials.
 #
 # WHY RE-APPLY AT ALL: all three live in the iDRAC, survive host reboots and OS
 # rebuilds, and are lost only on an iDRAC reset-to-defaults or firmware wipe.
@@ -48,7 +48,7 @@ command -v ipmitool >/dev/null || { echo "FATAL: ipmitool not found on PATH" >&2
 RACADM="$(command -v racadm || true)"
 [ -n "$RACADM" ] || RACADM="/opt/dell/srvadmin/sbin/racadm"
 [ -x "$RACADM" ] || RACADM="/opt/dell/srvadmin/bin/idracadm7"
-[ -x "$RACADM" ] || { echo "FATAL: racadm not installed — run install-racadm.sh first" >&2; exit 1; }
+[ -x "$RACADM" ] || { echo "FATAL: racadm not installed — apply the host_thermal role first (just ansible-apply ansible/ci-pool.yml --tags host_thermal, from the control node)" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 log "0. Fan control: re-assert AUTOMATIC (closed thermal loop)"
