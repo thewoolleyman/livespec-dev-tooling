@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.93.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.2...v1.93.3) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ansible:** node_status_credential reads the cluster CA from kube-root-ca.crt when the SA token Secret carries none (livespec-lfie5z) ([f7dc420](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f7dc420fa2ca578ae15ac6ad2f32148d68dcfc32))
+
 ## [1.93.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.1...v1.93.2) (2026-10-10)
 
 
