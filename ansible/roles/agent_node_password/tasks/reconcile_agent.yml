@@ -1,0 +1,217 @@
+---
+# One agent's evidence-gated node-password reconcile. Read the header of
+# tasks/main.yml first. Every read here carries check_mode: false so a drift
+# run evaluates the real evidence.
+
+- name: Read the agent's node name from its committed phase0 profile
+  # regex_findall | first, the idiom node_status_credential uses: regex_search
+  # with a group returns a list.
+  ansible.builtin.set_fact:
+    agent_node_password_node: >-
+      {{ lookup('ansible.builtin.file',
+                agent_node_password_profiles_dir ~ '/' ~ agent_node_password_agent ~ '.env')
+         | regex_findall('^NODE_NAME=(.*)$', multiline=True) | first | default('') }}
+
+- name: Refuse a profile whose node name is not the agent's inventory name
+  ansible.builtin.assert:
+    that:
+      - agent_node_password_node == agent_node_password_agent
+    fail_msg: >-
+      the committed profile for {{ agent_node_password_agent }} names node
+      '{{ agent_node_password_node }}'; refusing to reconcile a secret for a name
+      the inventory does not carry
+    success_msg: "reconciling node {{ agent_node_password_node }}"
+
+- name: Name the agent's node-password secret
+  ansible.builtin.set_fact:
+    agent_node_password_secret: "{{ agent_node_password_node }}{{ agent_node_password_secret_suffix }}"
+
+- name: Read the agent Node's Ready condition
+  # A read. NotFound is an answer (the Node is absent), not a failure.
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - node
+      - "{{ agent_node_password_node }}"
+      - -o
+      - jsonpath={.status.conditions[?(@.type=="Ready")].status}
+  environment:
+    KUBECONFIG: "{{ agent_node_password_admin_kubeconfig }}"
+  register: agent_node_password_ready
+  changed_when: false
+  check_mode: false
+  failed_when:
+    - agent_node_password_ready.rc != 0
+    - "'NotFound' not in agent_node_password_ready.stderr"
+  become: true
+
+- name: Read whether the agent's node-password secret exists
+  # `-o name` prints only `secret/<name>`, never the secret's data.
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - -n
+      - "{{ agent_node_password_namespace }}"
+      - get
+      - secret
+      - "{{ agent_node_password_secret }}"
+      - -o
+      - name
+  environment:
+    KUBECONFIG: "{{ agent_node_password_admin_kubeconfig }}"
+  register: agent_node_password_secret_read
+  changed_when: false
+  check_mode: false
+  failed_when:
+    - agent_node_password_secret_read.rc != 0
+    - "'NotFound' not in agent_node_password_secret_read.stderr"
+  become: true
+
+- name: Read the server journal for a current password rejection of the agent
+  # Counts the rejections naming THIS node (the trailing colon keeps one node
+  # name from matching another that extends it) and keeps the newest one as the
+  # evidence quoted below. pipefail so an unreadable journal fails rather than
+  # reading as zero.
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      journalctl -u {{ agent_node_password_server_unit }}
+      --since {{ agent_node_password_evidence_since }} --no-pager --output cat
+      | awk -v needle={{ ('unable to verify password for node ' ~ agent_node_password_node ~ ': hash does not match') | quote }}
+      'index($0, needle) { n++; last = $0 } END { print n + 0; print last }'
+    executable: /bin/bash
+  register: agent_node_password_journal
+  changed_when: false
+  check_mode: false
+  become: true
+
+- name: Read the agent's installed agent-rejoin watchdog
+  # Delegated to the agent. ignore_unreachable: an unreachable DELEGATE would
+  # otherwise mark the SERVER unreachable and drop it from the rest of the play;
+  # here it simply reads as "not the committed watchdog", which refuses the
+  # delete.
+  ansible.builtin.stat:
+    path: "{{ agent_node_password_watchdog_installed }}"
+    checksum_algorithm: sha1
+  delegate_to: "{{ agent_node_password_agent }}"
+  ignore_unreachable: true
+  register: agent_node_password_watchdog
+
+- name: Weigh the evidence
+  ansible.builtin.set_fact:
+    agent_node_password_node_state: >-
+      {{ 'absent' if agent_node_password_ready.rc != 0
+         else (agent_node_password_ready.stdout | trim | default('Unknown', true)) }}
+    agent_node_password_hits: "{{ agent_node_password_journal.stdout_lines[0] | default('0') | int }}"
+    agent_node_password_last_hit: "{{ agent_node_password_journal.stdout_lines[1] | default('') }}"
+    agent_node_password_secret_present: "{{ agent_node_password_secret_read.rc == 0 }}"
+    agent_node_password_watchdog_fixed: >-
+      {{ (agent_node_password_watchdog.stat | default({})).checksum | default('')
+         == lookup('ansible.builtin.file', agent_node_password_watchdog_committed, rstrip=False) | hash('sha1') }}
+
+- name: Decide whether the secret is stale
+  ansible.builtin.set_fact:
+    agent_node_password_missing: >-
+      {{ ([] if agent_node_password_node_state != 'True'
+            else ['the Node is Ready, so its registered secret is correct'])
+         + ([] if agent_node_password_hits | int > 0
+            else ['no "hash does not match" rejection naming ' ~ agent_node_password_node
+                  ~ ' in the ' ~ agent_node_password_server_unit ~ ' journal since '
+                  ~ agent_node_password_evidence_since])
+         + ([] if agent_node_password_secret_present | bool
+            else ['no secret ' ~ agent_node_password_namespace ~ '/' ~ agent_node_password_secret
+                  ~ ' exists'])
+         + ([] if agent_node_password_watchdog_fixed | bool or ansible_check_mode
+            else [agent_node_password_agent ~ ' does not run the committed agent-rejoin watchdog ('
+                  ~ agent_node_password_watchdog_installed ~ '), which would re-create the mismatch'
+                  ~ ' (run agent_rejoin first)']) }}
+
+- name: Skip the agent whose secret is not proven stale
+  ansible.builtin.debug:
+    msg: >-
+      {{ agent_node_password_node }}: NOT deleting
+      {{ agent_node_password_namespace }}/{{ agent_node_password_secret }}.
+      Evidence not found: {{ agent_node_password_missing | join('; ') }}.
+      (Node Ready={{ agent_node_password_node_state }};
+      rejections since {{ agent_node_password_evidence_since }}={{ agent_node_password_hits }})
+  when: agent_node_password_missing | length > 0
+
+- name: Report the stale secret this run WOULD delete
+  # --check only. Reported as a change so it appears in the drift report's
+  # change list, which is what an operator reads before an apply.
+  ansible.builtin.debug:
+    msg: >-
+      {{ agent_node_password_node }}: WOULD delete
+      {{ agent_node_password_namespace }}/{{ agent_node_password_secret }}.
+      Node Ready={{ agent_node_password_node_state }};
+      {{ agent_node_password_hits }} rejection(s) since {{ agent_node_password_evidence_since }}, newest:
+      {{ agent_node_password_last_hit }};
+      installed watchdog {{ 'is the committed one'
+        if agent_node_password_watchdog_fixed | bool
+        else 'is NOT yet the committed one (agent_rejoin, earlier in a real run, installs it; a real run re-checks)' }}
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - agent_node_password_missing | length == 0
+
+- name: Delete the stale node-password secret
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - -n
+      - "{{ agent_node_password_namespace }}"
+      - delete
+      - secret
+      - "{{ agent_node_password_secret }}"
+  environment:
+    KUBECONFIG: "{{ agent_node_password_admin_kubeconfig }}"
+  register: agent_node_password_delete
+  changed_when: "'deleted' in agent_node_password_delete.stdout"
+  become: true
+  when:
+    - not ansible_check_mode
+    - agent_node_password_missing | length == 0
+
+- name: Wait for the agent to re-register and the server to re-mint its secret
+  # Closes the window described in tasks/main.yml. Reporting only: an agent
+  # that is slow to retry must not fail the server's run, so the result is read
+  # by the next task rather than asserted. Keyed on the delete's own output
+  # rather than a handler: the wait belongs to THIS agent's iteration of the
+  # loop, and a handler would run once, after every agent.
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - -n
+      - "{{ agent_node_password_namespace }}"
+      - get
+      - secret
+      - "{{ agent_node_password_secret }}"
+      - -o
+      - name
+  environment:
+    KUBECONFIG: "{{ agent_node_password_admin_kubeconfig }}"
+  register: agent_node_password_reminted
+  until: agent_node_password_reminted.rc == 0
+  retries: "{{ agent_node_password_reregister_retries }}"
+  delay: "{{ agent_node_password_reregister_delay }}"
+  changed_when: false
+  failed_when: false
+  become: true
+  when: "'deleted' in (agent_node_password_delete.stdout | default(''))"
+
+- name: Report whether the agent re-registered
+  ansible.builtin.debug:
+    msg: >-
+      {{ agent_node_password_node }}:
+      {{ 'the server re-minted ' ~ agent_node_password_secret
+           ~ ' — the agent re-registered with its current password'
+         if agent_node_password_reminted.rc | default(1) == 0
+         else 'NO re-mint of ' ~ agent_node_password_secret
+           ~ ' within the wait; the name is unclaimed until the agent next registers'
+           ~ ' — check k3s-agent on ' ~ agent_node_password_agent }}
+  when: "'deleted' in (agent_node_password_delete.stdout | default(''))"

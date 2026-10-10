@@ -1,0 +1,71 @@
+---
+# agent_node_password — the SERVER-side reconcile of an agent's k3s
+# node-password secret, evidence-gated.
+#
+# WHAT IT REPAIRS. A k3s server stores a hash of each agent's node password in
+# the kube-system secret `<node>.node-password.k3s`, minted from the password
+# the agent presents at its FIRST registration. If the agent later presents a
+# different password (its /etc/rancher/node/password was rewritten), the server
+# refuses it forever:
+#   Sending HTTP/1.1 403 response to <agent>: unable to verify password for
+#   node <node>: hash does not match
+# every ~10s, the agent's k3s-agent.service sits in `activating`, and the Node
+# goes NotReady. That is exactly gmktec-xubuntu from 2026-09-28 19:46 PDT until
+# this role: the agent-rejoin watchdog removed the password two seconds after
+# the agent had registered with it (the race is documented in
+# ci-runner/k3s/phase2/agent-rejoin/agent-rejoin-watchdog.sh), and nothing
+# noticed for twelve days. The k3s remedy is to delete the stale secret; the
+# agent's next attempt then registers with its CURRENT password and the server
+# mints a fresh secret from it.
+#
+# This role is the committed, auditable form of that one-time fix, so it is
+# never a hand `kubectl delete`. It runs on the server (ci-pool.yml gates it
+# `when: cluster_role == 'server'`) for every ci_pool agent in the inventory.
+#
+# THE EVIDENCE GATE. It deletes ONLY when ALL of these hold, and otherwise
+# skips with a message naming each piece of evidence it did not find:
+#   1. the agent's Node is NOT Ready (or absent) — a Ready node is registered
+#      and its secret is correct by definition;
+#   2. the server's own k3s journal carries a `hash does not match` rejection
+#      naming that node within agent_node_password_evidence_since — the
+#      mismatch is current, not historical;
+#   3. the secret exists — there is something stale to delete;
+#   4. the agent runs the COMMITTED agent-rejoin watchdog. The pre-2026-10-10
+#      watchdog removes the node password whenever it sees registration-time
+#      `not found` lines, so deleting the secret while it is installed would let
+#      the agent register and then re-create the same mismatch. ci-pool.yml
+#      orders this role AFTER agent_rejoin, so on a normal run the fixed copy is
+#      already in place; under --check the copy is only planned, so this gate is
+#      reported as pending rather than as missing evidence.
+#
+# WHY THE DELETE IS SAFE. The secret is not cluster state anything else reads; it
+# exists only to verify the agent's password on registration, and the server
+# re-mints it from whichever password the agent next presents. Deleting it
+# changes nothing for a node that is already registered (gate 1 excludes those).
+#
+# THE WINDOW IT OPENS. Between the delete and the agent's next registration
+# attempt (the agent retries every ~10s, so seconds), the server holds no
+# password for the name, and ANY host that can reach the API server with the
+# cluster join token could register under that node name and have ITS password
+# minted. The agent would then be the one refused. The exposure is bounded by
+# the join token (not by the LAN alone) and by those seconds; the task after the
+# delete watches for the re-mint and reports it.
+#
+# UNDER --check it reads everything (the reads carry check_mode: false), reports
+# what it WOULD delete as a change, and deletes nothing.
+
+- name: Refuse to run anywhere but the k3s server
+  ansible.builtin.assert:
+    that:
+      - cluster_role == 'server'
+    fail_msg: >-
+      agent_node_password reconciles agent secrets through the server's admin
+      kubeconfig and journal; {{ inventory_hostname }} has cluster_role
+      {{ cluster_role | default('undefined') }}
+    success_msg: "{{ inventory_hostname }} is the k3s server"
+
+- name: Reconcile each ci_pool agent's node-password secret
+  ansible.builtin.include_tasks: reconcile_agent.yml
+  loop: "{{ agent_node_password_agents }}"
+  loop_control:
+    loop_var: agent_node_password_agent

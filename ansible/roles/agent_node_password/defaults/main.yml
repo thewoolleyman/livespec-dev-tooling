@@ -1,0 +1,30 @@
+---
+agent_node_password_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
+agent_node_password_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+# Every ci_pool agent in the inventory. The node name itself is read from each
+# agent's committed phase0 profile and must equal its inventory name.
+agent_node_password_agents: >-
+  {{ groups['ci_pool'] | map('extract', hostvars)
+     | selectattr('cluster_role', 'defined')
+     | selectattr('cluster_role', 'equalto', 'agent')
+     | map(attribute='inventory_hostname') | list }}
+agent_node_password_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+agent_node_password_namespace: kube-system
+# k3s names the secret `<node>.node-password.k3s` in kube-system.
+agent_node_password_secret_suffix: .node-password.k3s
+# The SERVER's own unit, whose journal carries the rejection.
+agent_node_password_server_unit: k3s.service
+# How far back a rejection counts as current evidence. The server logs one every
+# ~10s while an agent is refused, so ten minutes holds ~60 lines for a live
+# refusal and none for one that ended.
+agent_node_password_evidence_since: -10min
+# The agent-rejoin watchdog as installed on the agent, and as committed. The
+# delete is refused while the agent still runs any other version (see the header
+# of tasks/main.yml).
+agent_node_password_watchdog_installed: /usr/local/lib/ci-runner-k3s/agent-rejoin-watchdog.sh
+agent_node_password_watchdog_committed: >-
+  {{ agent_node_password_phase2_dir }}/agent-rejoin/agent-rejoin-watchdog.sh
+# After a delete, how long to watch for the agent's re-registration (the secret
+# re-minted). Reporting only; a slow agent does not fail the server's run.
+agent_node_password_reregister_retries: 24
+agent_node_password_reregister_delay: 5

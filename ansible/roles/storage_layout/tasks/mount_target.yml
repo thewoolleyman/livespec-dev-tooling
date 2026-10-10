@@ -2,16 +2,52 @@
 # Mount ONE managed target from the fstab lines this role has already ensured.
 #
 # `mount <target>` and not a mount module, because the mount module lives in
-# ansible.posix and this tree runs ansible-core alone. Idempotence comes from
-# util-linux itself: mounting an already-mounted target exits non-zero with
-# "already mounted", which is read as no-change rather than as a failure. That
-# is also why the targets are mounted one include at a time — each reads the
-# host as it is after the previous one, which is the bookkeeping the shell kept
-# by hand in MOUNT_PLANNED.
+# ansible.posix and this tree runs ansible-core alone. The targets are mounted
+# one include at a time so each reads the host as it is after the previous one,
+# which is the bookkeeping the shell kept by hand in MOUNT_PLANNED.
+#
+# IDEMPOTENCE IS A READ FIRST, NOT util-linux's "already mounted". This file
+# used to call `mount <target>` unconditionally and treat util-linux's "already
+# mounted" refusal as no-change. That refusal exists for block-device lines
+# only. For a BIND fstab line util-linux does not refuse: it mounts the source
+# over the target a SECOND time, stacking a new layer, and exits 0. The first
+# live apply of ci-pool.yml (2026-10-10) did exactly that on poweredge-xubuntu,
+# reporting both binds `changed` and leaving a duplicate stacked bind on
+# /var/lib/rancher/k3s/agent/containerd and /var/lib/rancher/k3s/storage — and
+# every later apply would have added another layer. So the target is read with
+# `mountpoint` first, and the mount runs only when nothing is mounted there.
+#
+# THE EXISTING DUPLICATE LAYER IS DELIBERATELY LEFT ALONE. It is the same source
+# bound over itself, so it hides nothing and changes nothing the kubelet or
+# containerd sees, and the next reboot discards it (fstab mounts each line
+# once). An unmount here would be a live operation under a running k3s for no
+# benefit, so this file never unmounts anything.
+
+- name: Read the mount state of {{ storage_layout_mount_target }}
+  # A read, so it runs under --check too. mountpoint(1) exits 0 when the target
+  # is a mountpoint and 32 when it is not. Anything else is a real failure and
+  # stops the play — including `Permission denied`, which is what an unprivileged
+  # read of a k3s directory gets, and why this runs under become. ONE exception:
+  # under --check on a fresh host the tasks above have only PLANNED the target
+  # directory, so `No such file or directory` there is expected and reads as
+  # "not mounted" (the mount below is a command task and skips under --check).
+  # No -q: the error text on stderr is what tells those cases apart.
+  ansible.builtin.command: mountpoint {{ storage_layout_mount_target }}
+  register: storage_layout_mountpoint
+  changed_when: false
+  failed_when:
+    - storage_layout_mountpoint.rc not in [0, 32]
+    - not (ansible_check_mode and 'No such file or directory' in storage_layout_mountpoint.stderr)
+  check_mode: false
+  become: true
 
 - name: Mount {{ storage_layout_mount_target }}
   # noqa: command-instead-of-module — the mount module is ansible.posix.mount,
   # and ansible.posix is not available to this tree.
+  #
+  # The "already mounted" tolerance stays as a second line of defence for a
+  # block-device line mounted between the read above and this task; it can
+  # never fire for a bind line, which is why the read above is the real guard.
   ansible.builtin.command: mount {{ storage_layout_mount_target }}
   register: storage_layout_mount_result
   changed_when: storage_layout_mount_result.rc == 0
@@ -19,3 +55,4 @@
     - storage_layout_mount_result.rc != 0
     - "'already mounted' not in storage_layout_mount_result.stderr"
   become: true
+  when: storage_layout_mountpoint.rc != 0

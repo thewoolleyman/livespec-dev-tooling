@@ -22,13 +22,22 @@
 #   * Roles with NO cluster_role handling are gated here, matching
 #     install-node.sh's STEP_SKIP (server-only: host_thermal, secret_reinjection,
 #     ci_converge_unit, datastore_tmpfs) and STEP_SERVER_SKIP (agent-only:
-#     agent_rejoin).
+#     agent_rejoin). agent_node_password (server-only) has no install-node.sh
+#     step and is gated here the same way.
 # Roles that legitimately run on BOTH roles unchanged (node_sysctl, storage_layout,
 # host_tools_ci, apparmor_profile, sccache_binary, cache_telemetry, container_hook)
 # carry neither a self-gate nor a `when`.
 #
-# TWO STEPS HAVE NO install-node.sh EQUIVALENT, and their placement is the one
+# THREE STEPS HAVE NO install-node.sh EQUIVALENT, and their placement is the one
 # ordering the runbook does not dictate, so it is stated here:
+#   * agent_node_password (server-only) deletes an agent's stale k3s
+#     node-password secret, on evidence only, so a refused agent can
+#     re-register. It MUST follow agent_rejoin: that role installs the fixed
+#     agent-rejoin watchdog, and the pre-2026-10-10 watchdog would re-create the
+#     mismatch as soon as the agent registered (the role refuses the delete
+#     until the agent runs the committed copy). It sits right after agent_rejoin
+#     rather than later so the agent is re-registered before node_status_credential
+#     and node_extended_resource need it.
 #   * node_status_credential (agent-only) mints and delivers the scoped
 #     node-status kubeconfig and MUST precede node_extended_resource, so the
 #     agent's reapply timer has a credential to patch its own status.capacity with
@@ -50,6 +59,11 @@
     - role: agent_rejoin
       tags: [agent_rejoin]
       when: cluster_role == 'agent'
+    # 1c — server-only, evidence-gated reconcile of each agent's stale
+    # node-password secret; after agent_rejoin (see the header).
+    - role: agent_node_password
+      tags: [agent_node_password]
+      when: cluster_role == 'server'
     # 2/10 — inotify + keyring sysctls (one role covers both).
     - role: node_sysctl
       tags: [node_sysctl]

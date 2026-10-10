@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# agent-rejoin-watchdog-exit-tests.sh — prove the FOUR GATES of
+# agent-rejoin-watchdog-exit-tests.sh — prove the GATES of
 # ./agent-rejoin-watchdog.sh WITHOUT touching any host: that it restarts the
-# k3s-agent if and only if the process is up, the server is reachable, the wedge
-# signature is present enough times in the window, and no restart is inside the
-# cooldown.
+# k3s-agent if and only if the process is up AND has been up for a registration
+# cycle, the server is reachable, the wedge signature is present enough times in
+# the window after the last successful registration, and no restart is inside
+# the cooldown — and that it never touches the node password.
 #
 # HOW IT STAYS OFF THE HOST. The three commands that reach the outside world are
-# FAKES on a scratch PATH: `systemctl` (answers is-active from STUB_AGENT_ACTIVE
-# and records a restart to the tripwire), `timeout` (the TCP-reachability probe,
+# FAKES on a scratch PATH: `systemctl` (answers is-active from STUB_AGENT_ACTIVE,
+# `show -p ActiveEnterTimestampMonotonic` from STUB_ACTIVE_ENTER_US, and records
+# a restart to the tripwire), `timeout` (the TCP-reachability probe,
 # answers from STUB_SERVER_REACHABLE), and `journalctl` (prints STUB_JOURNAL so
 # the real `grep -c` counts the signature). Everything else is real against files
 # in this suite's scratch dir: the k3s config, the node-password and the cooldown
 # stamp are real paths under TMPROOT, so real `date`/`stat`/`rm`/`grep` exercise
-# the true logic. "Did it restart?" is read as a `systemctl restart` line in the
-# tripwire.
+# the true logic. /proc/uptime is replaced by a scratch file (REJOIN_UPTIME_FILE)
+# so the unit's active age is set per case. "Did it restart?" is read as a
+# `systemctl restart` line in the tripwire.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
 set -uo pipefail
@@ -54,6 +57,9 @@ printf '%s\n' \
   'if [ "${1:-}" = is-active ]; then' \
   '  [ -n "${STUB_AGENT_ACTIVE:-}" ] && exit 0 || exit 3' \
   'fi' \
+  'if [ "${1:-}" = show ]; then' \
+  '  printf "%s\n" "${STUB_ACTIVE_ENTER_US:-}"; exit 0' \
+  'fi' \
   'if [ "${1:-}" = restart ]; then' \
   '  printf "systemctl restart %s\n" "${2:-}" >> "$TRIPWIRE"; exit 0' \
   'fi' \
@@ -84,6 +90,20 @@ CONFIG="${TMPROOT}/config.yaml"
 printf 'server: https://192.168.1.200:6443\n' > "$CONFIG"
 NODE_PASSWORD="${TMPROOT}/node-password"
 STAMP="${TMPROOT}/stamp"
+# The monotonic clock: the host has been up 100000s. The unit's active-enter
+# time is set per case; SETTLED puts it 600s ago (past the 180s settle),
+# JUST_ACTIVE puts it at "now" (the 2026-09-28 tick fired in the same second the
+# unit turned active).
+UPTIME_FILE="${TMPROOT}/uptime"
+printf '100000.42 380000.00\n' > "$UPTIME_FILE"
+SETTLED_US=$(( (100000 - 600) * 1000000 ))
+JUST_ACTIVE_US=$(( 100000 * 1000000 ))
+export STUB_ACTIVE_ENTER_US="$SETTLED_US"
+# A real node password the watchdog must never remove or rewrite.
+printf 'agent-password-bytes\n' > "$NODE_PASSWORD"
+PASSWORD_SUM="$(sha256sum "$NODE_PASSWORD")"
+password_intact() { [ -f "$NODE_PASSWORD" ] && [ "$(sha256sum "$NODE_PASSWORD")" = "$PASSWORD_SUM" ]; }
+REGISTERED='I0928 19:46:11.108411 kubelet_node_status.go:78] "Successfully registered node" node="testnode"'
 
 # journal_with N -> N wedge lines (alternating the singular and plural klog
 # forms) plus a benign line, exactly as journalctl would render them.
@@ -107,19 +127,20 @@ run_watchdog() {
     REJOIN_K3S_CONFIG="$CONFIG" \
     REJOIN_NODE_PASSWORD="$NODE_PASSWORD" \
     REJOIN_STAMP="$STAMP" \
-    REJOIN_WINDOW_SEC=180 REJOIN_MIN_HITS=5 REJOIN_RATE_LIMIT_SEC=300 \
+    REJOIN_UPTIME_FILE="$UPTIME_FILE" \
+    REJOIN_WINDOW_SEC=180 REJOIN_MIN_HITS=5 REJOIN_RATE_LIMIT_SEC=300 REJOIN_SETTLE_SEC=180 \
     "$SCRIPT" >/dev/null 2>&1 || true
 }
 restarted() { grep -q '^systemctl restart' "$TRIPWIRE"; }
 
-printf '== agent-rejoin-watchdog four-gate logic ==\n'
+printf '== agent-rejoin-watchdog gate logic ==\n'
 
 # The one case that must act: all four gates hold.
 rm -f "$STAMP"
 export STUB_AGENT_ACTIVE=1 STUB_SERVER_REACHABLE=1
 STUB_JOURNAL="$(journal_with 6)" run_watchdog
 if restarted; then ok "wedged (active, reachable, 6 hits, no cooldown) -> restarts the agent"; else no "wedged case did not restart"; fi
-[ ! -e "$NODE_PASSWORD" ] || no "the wedged case should have removed the node-password"
+password_intact && ok "the wedged case left the node password untouched" || no "the wedged case removed or rewrote the node password"
 [ -f "$STAMP" ] && ok "the wedged case wrote the cooldown stamp" || no "the wedged case wrote no stamp"
 
 # Gate 1: agent down -> Restart=always owns it, this watchdog does not act.
@@ -156,13 +177,40 @@ restarted && no "a restart 30s ago (< 300s cooldown) should NOT restart again" |
 STUB_JOURNAL="$(journal_with 6)" run_watchdog
 restarted && ok "past the cooldown -> restarts again" || no "past the cooldown it should restart again"
 
+# Gate 1b — THE 2026-09-28 SEQUENCE. The unit turned active in the same second
+# the tick fired, and the six signature lines were the registration's own. Every
+# other gate holds; the watchdog must still not act.
+rm -f "$STAMP"
+export STUB_AGENT_ACTIVE=1 STUB_SERVER_REACHABLE=1 STUB_ACTIVE_ENTER_US="$JUST_ACTIVE_US"
+STUB_JOURNAL="$(journal_with 6)" run_watchdog
+restarted && no "an agent active for 0s (< 180s settle) should NOT restart" || ok "just turned active (2026-09-28) -> no restart"
+password_intact && ok "the just-active case left the node password untouched" || no "the just-active case touched the node password"
+
+# Gate 1b — an unreadable active timestamp holds rather than acts.
+export STUB_ACTIVE_ENTER_US=""
+STUB_JOURNAL="$(journal_with 6)" run_watchdog
+restarted && no "an unreadable active timestamp should NOT restart" || ok "unreadable active timestamp -> holds"
+export STUB_ACTIVE_ENTER_US="$SETTLED_US"
+
+# Gate 3 — signature lines BEFORE a successful registration are that
+# registration's own, not a wedge.
+rm -f "$STAMP"
+STUB_JOURNAL="$(journal_with 6)${REGISTERED}"$'\n' run_watchdog
+restarted && no "signature lines followed by a successful registration should NOT restart" || ok "signature then 'Successfully registered node' -> no restart"
+
+# Gate 3 — a wedge that persists AFTER the registration is still a wedge.
+rm -f "$STAMP"
+STUB_JOURNAL="$(journal_with 3)${REGISTERED}"$'\n'"$(journal_with 6)" run_watchdog
+restarted && ok "registration then 6 more signature lines -> restarts" || no "a wedge after the registration should restart"
+password_intact && ok "the post-registration wedge left the node password untouched" || no "the post-registration wedge touched the node password"
+
 # A config with no server line AND no --server in the unit is not a joined agent
 # -> nothing to rejoin to.
 rm -f "$STAMP"
 printf 'token-file: /x\n' > "${TMPROOT}/noserver.yaml"
 : > "$TRIPWIRE"
 PATH="${FAKEBIN}:${PATH}" REJOIN_NODE_NAME="$NODE_NAME" REJOIN_K3S_CONFIG="${TMPROOT}/noserver.yaml" \
-  REJOIN_NODE_PASSWORD="$NODE_PASSWORD" REJOIN_STAMP="$STAMP" \
+  REJOIN_NODE_PASSWORD="$NODE_PASSWORD" REJOIN_STAMP="$STAMP" REJOIN_UPTIME_FILE="$UPTIME_FILE" \
   "$SCRIPT" >/dev/null 2>&1 || true
 restarted && no "a config with no server line and no unit --server should NOT restart" || ok "no server anywhere -> no restart"
 
@@ -175,8 +223,8 @@ rm -f "$STAMP"
 export STUB_AGENT_ACTIVE=1 STUB_SERVER_REACHABLE=1 STUB_UNIT_SERVER="https://192.168.1.200:6443"
 STUB_JOURNAL="$(journal_with 6)" \
   PATH="${FAKEBIN}:${PATH}" REJOIN_NODE_NAME="$NODE_NAME" REJOIN_K3S_CONFIG="${TMPROOT}/noserver.yaml" \
-  REJOIN_NODE_PASSWORD="$NODE_PASSWORD" REJOIN_STAMP="$STAMP" \
-  REJOIN_WINDOW_SEC=180 REJOIN_MIN_HITS=5 REJOIN_RATE_LIMIT_SEC=300 \
+  REJOIN_NODE_PASSWORD="$NODE_PASSWORD" REJOIN_STAMP="$STAMP" REJOIN_UPTIME_FILE="$UPTIME_FILE" \
+  REJOIN_WINDOW_SEC=180 REJOIN_MIN_HITS=5 REJOIN_RATE_LIMIT_SEC=300 REJOIN_SETTLE_SEC=180 \
   "$SCRIPT" >/dev/null 2>&1 || true
 unset STUB_UNIT_SERVER
 restarted && ok "server from the unit's --server flag (no config server:) -> restarts" || no "the unit-provided server should have let it restart"
