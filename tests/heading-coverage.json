@@ -577,5 +577,29 @@
     "heading": "## Scenario: the heading-coverage debt register regenerates from the live registry and matches byte-for-byte",
     "test": "tests.livespec_dev_tooling.test_heading_coverage_debt.test_main_writes_the_register_and_regenerating_it_changes_nothing",
     "reason": "Integration-tier: the existing generator test proves mechanical byte-for-byte generation and repeated regeneration. Companion arms `test_main_preserves_a_recorded_date_against_a_later_committer_date` and `test_generate_register_preserves_a_recorded_date_and_synchronizes_the_owner` now prove that regeneration PRESERVES an already-recorded first-seen date against a later committer date while resynchronizing the owner from the live coverage row (livespec-dev-tooling-4x2qkw). Admission of NEW spec-first debt is owed by the separately tracked next slice; this mapping does not claim that arm is already proved."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Fabro factory host provisioning",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-finosf",
+    "reason": "Spec-first debt: a real unit-tier test is owed, asserting over the committed ansible/fabro-hosts.yml play and the fabro_server role that the uniqueness preflight refuses a repeated unit_name, home_dir or port and that an instance omitting binary_path and home_env renders its unit unchanged. livespec-dev-tooling-finosf owns landing it with the per-instance axes."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Fabro instance that names its own binary and home renders a unit that runs them",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-finosf",
+    "reason": "Spec-first debt: a real integration-tier test is owed that renders the fabro_server unit template for one instance without and one with binary_path and home_env and asserts the byte-identical default, the ExecStart binary, Environment=HOME and the uniqueness preflight. livespec-dev-tooling-finosf owns landing it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: converging the Fabro sandbox envelope never restarts dockerd outside a drained window",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-ig5iwg",
+    "reason": "Spec-first debt: a real integration-tier test is owed that converges the sandbox-envelope role against a daemon.json holding foreign keys and asserts the slice limits, the preserved keys, cgroup-parent and that no dockerd restart ran without the drained-restart tag. livespec-dev-tooling-ig5iwg owns landing it."
   }
 ]

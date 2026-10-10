@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Fabro factory host provisioning",
+    "work_item": "livespec-dev-tooling-finosf",
+    "first_seen": "2026-10-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Fabro instance that names its own binary and home renders a unit that runs them",
+    "work_item": "livespec-dev-tooling-finosf",
+    "first_seen": "2026-10-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: converging the Fabro sandbox envelope never restarts dockerd outside a drained window",
+    "work_item": "livespec-dev-tooling-ig5iwg",
+    "first_seen": "2026-10-10"
+  }
+]
