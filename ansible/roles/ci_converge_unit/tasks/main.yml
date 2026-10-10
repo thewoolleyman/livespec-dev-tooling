@@ -137,3 +137,90 @@
   when: >-
     ansible_facts['services'][ci_converge_unit_reapply_service]['status'] | default('absent') != 'enabled'
     or not ci_converge_unit_reapply_script_present.stat.exists
+
+- name: Run the boot converge now, on this apply only
+  # CONSENT-GATED by ci_converge_unit_run_now (default false; pass
+  # `-e ci_converge_unit_run_now=true` on ONE apply). converge-ci-stack.service
+  # applies the WHOLE cluster stack — the provisioner, Kueue, every
+  # ClusterQueue, ARC and every scale set — so starting it mid-apply changes the
+  # live pool under whatever CI jobs are running. A routine apply must never
+  # reach that, which is why the default only ENABLES the unit (above).
+  #
+  # THE BOOT PATH IS UNCHANGED: with the switch off this role behaves exactly as
+  # before, and the unit still runs at every boot, which is what rebuilds the
+  # tmpfs datastore. The switch exists because enable-only means a committed
+  # change to an applied manifest reaches the cluster only at the next reboot:
+  # found on the third live ci-pool.yml apply (2026-10-10), the unit had last
+  # run at the 2026-09-28 boot, so the committed ClusterQueue quotas (sum 44)
+  # had never been applied and the live queues still summed to 32.
+  #
+  # Never under --check: there is no dry form of applying the stack, so a drift
+  # report shows these tasks skipped whatever the switch says.
+  when:
+    - ci_converge_unit_run_now | bool
+    - not ansible_check_mode
+  block:
+    - name: Start the converge unit
+      # A oneshot's start job completes when ExecStart exits, so this normally
+      # returns only once the converge has finished. failed_when: false because
+      # the outcome is read from the unit's own Result below, which names a
+      # timeout or an exit code instead of a bare non-zero from systemctl.
+      ansible.builtin.systemd_service:
+        name: "{{ ci_converge_unit_service }}"
+        state: started
+      register: ci_converge_unit_run_now_start
+      failed_when: false
+      become: true
+
+    - name: Wait for the converge to exit
+      # Covers a converge already running when the start was asked for (the
+      # module then starts nothing) and a start job that returned early. A
+      # oneshot without RemainAfterExit ends inactive (or failed), never active.
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - --property=ActiveState
+          - --property=Result
+          - --property=ExecMainStatus
+          - "{{ ci_converge_unit_service }}"
+      register: ci_converge_unit_run_now_state
+      until: >-
+        (ci_converge_unit_run_now_state.stdout
+         | regex_findall('^ActiveState=(.*)$', multiline=True) | first | default(''))
+        not in ['activating', 'active', 'deactivating', 'reloading']
+      retries: >-
+        {{ (ci_converge_unit_run_now_wait_seconds | int
+            / ci_converge_unit_run_now_poll_seconds | int) | round | int }}
+      delay: "{{ ci_converge_unit_run_now_poll_seconds }}"
+      changed_when: false
+      become: true
+
+    - name: Read the converge's result
+      ansible.builtin.set_fact:
+        ci_converge_unit_run_now_result: >-
+          {{ ci_converge_unit_run_now_state.stdout
+          | regex_findall('^Result=(.*)$', multiline=True) | first | default('') }}
+        ci_converge_unit_run_now_exit: >-
+          {{ ci_converge_unit_run_now_state.stdout
+          | regex_findall('^ExecMainStatus=(.*)$', multiline=True) | first | default('') }}
+
+    - name: Report the converge's result
+      ansible.builtin.debug:
+        msg: >-
+          {{ ci_converge_unit_service }} ran now on {{ inventory_hostname }}:
+          Result={{ ci_converge_unit_run_now_result }}
+          ExecMainStatus={{ ci_converge_unit_run_now_exit }}
+          (start: {{ ci_converge_unit_run_now_start.msg | default('ok') }})
+
+    - name: Refuse a converge that did not succeed
+      ansible.builtin.assert:
+        that:
+          - ci_converge_unit_run_now_result == 'success'
+        fail_msg: >-
+          {{ ci_converge_unit_service }} ended with Result={{ ci_converge_unit_run_now_result }}
+          (ExecMainStatus={{ ci_converge_unit_run_now_exit }}); read
+          `journalctl -u {{ ci_converge_unit_service }}` on {{ inventory_hostname }}.
+          The stack is partly applied; the converge is idempotent, so fix the cause
+          and re-run with ci_converge_unit_run_now=true.
+        success_msg: "{{ ci_converge_unit_service }}: success"

@@ -120,3 +120,15 @@ ci_converge_unit_files:
 # failure: a converge without it still builds the cluster stack and says so.
 ci_converge_unit_reapply_service: reapply-node-extended-resource.service
 ci_converge_unit_reapply_script: patch-node-churn-capacity.sh
+# OFF BY DEFAULT, AND DELIBERATELY SO. Setting this true (`-e
+# ci_converge_unit_run_now=true` on ONE apply) makes the role START
+# converge-ci-stack.service once the tree is installed and the unit enabled,
+# wait for the oneshot to exit and fail unless it succeeded. The converge applies
+# the WHOLE cluster stack, so it is opt-in per run rather than something a
+# routine converge can reach; left false, the unit runs at the next boot only.
+ci_converge_unit_run_now: false
+# How long to wait for a converge that is still running when the start returns
+# (one already started by boot, or a start job that returned early), probed
+# every ci_converge_unit_run_now_poll_seconds.
+ci_converge_unit_run_now_wait_seconds: 1800
+ci_converge_unit_run_now_poll_seconds: 5
