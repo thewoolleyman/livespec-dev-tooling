@@ -8,8 +8,8 @@ sudoers, NetworkManager DHCP on all NICs, and the full storage toolchain —
 debootstrap` plus a copy of `perccli64` at `/opt/MegaRAID/perccli/`.
 
 This is the environment a pool node is rebuilt FROM: it boots before the node
-has an operating system, before k3s exists, and before `../../phase2/
-install-node.sh`'s admin-kubeconfig precondition can be satisfied. Spec:
+has an operating system, before k3s exists, and before the node-provisioning stage's admin-kubeconfig
+precondition (`just ansible-apply ansible/ci-pool.yml`) can be satisfied. Spec:
 `SPECIFICATION/non-functional-requirements.md` §"Runner-pool node rebuild
 recipe".
 

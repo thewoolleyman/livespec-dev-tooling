@@ -182,9 +182,12 @@ after every live action taken for this checklist.
    `8192` at 12:20Z with no manual re-apply — `systemd-sysctl` picked up
    the drop-in as designed. The same boot also confirmed the kubelet
    `max-pods=200` from `/etc/rancher/k3s/config.yaml` (allocatable pods
-   200) and the churn-slot reapply (64). The original procedure follows.
-   Run `node-inotify-budget/install-inotify-sysctl.sh` as root on
-   `poweredge-xubuntu` (it is idempotent), then confirm
+   200) and the churn-slot reapply (64). The original procedure follows,
+   with its install step re-pointed: the node-local installer it named is
+   retired (`livespec-dev-tooling-9btv`) and the `node_sysctl` Ansible role
+   installs the drop-in now. Apply it from the control node with
+   `just ansible-apply ansible/ci-pool.yml --tags node_sysctl` (it is
+   idempotent), then confirm
    `sysctl -n fs.inotify.max_user_instances` reports `8192`. Then, at
    the next maintenance reboot (never during CI), confirm the value is
    STILL `8192` after boot with no manual re-apply — i.e. that

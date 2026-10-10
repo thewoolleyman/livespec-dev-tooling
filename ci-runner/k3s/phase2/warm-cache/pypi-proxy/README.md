@@ -37,8 +37,9 @@ The comparison the choice rests on (measured 2026-09-04, uv 0.9.26) is in
 
 - **Converge / re-apply**: `KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   ../converge-warm-cache.sh` on the host (it applies this manifest first).
-  After editing the manifest, also re-run
-  `../../reconstruct/install-converge-unit.sh` so the boot copy under
+  After editing the manifest, also re-apply the `ci_converge_unit` role
+  (`just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit` from the
+  control node) so the boot copy under
   `/usr/local/lib/ci-runner-k3s/warm-cache/pypi-proxy/` matches.
 - **Is it live?** `kubectl -n ci-warm-cache get deploy,pods,svc pypi-proxy`.
   From a pod in the cluster (or `kubectl -n ci-warm-cache exec` into the

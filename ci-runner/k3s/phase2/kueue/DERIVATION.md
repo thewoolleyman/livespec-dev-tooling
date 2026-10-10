@@ -458,7 +458,8 @@ The same incident's kernel-side term — `fs.inotify.max_user_instances`,
 default 128, ~2 per containerd shim plus ~21 for kubelet/cadvisor, exhausted
 at roughly 50 containers' worth of shims — was raised to 8192 on the host
 (`/etc/sysctl.d/99-ci-runner-inotify.conf`). The inotify budget now has a
-node-local install mechanism — `../node-inotify-budget/install-inotify-sysctl.sh`
+node-local install mechanism — the `node_sysctl` Ansible role (it replaced
+`../node-inotify-budget/install-inotify-sysctl.sh`, `livespec-dev-tooling-9btv`)
 writes that drop-in from the shipped `99-ci-runner-inotify.conf` and applies it,
 so a new or rebuilt pool member inherits it and `systemd-sysctl` re-applies it at
 every boot (no reapply timer is needed, unlike `../node-extended-resource/`,
@@ -780,7 +781,17 @@ every matched node with one uniform capacity; it now patches a SINGLE NAMED node
 directory's README), and it stops the server's timer from stamping gmktec with
 32.
 
-**The convergence order (the maintainer runs this off the R5 PR).** The three
+**The convergence order is now the playbook's role order.** The steps below
+name the node-local scripts R5 was written against; those installers are
+retired (`livespec-dev-tooling-9btv`), and `just ansible-apply
+ansible/ci-pool.yml` from the control node performs all four, in the play's
+role order: `node_status_credential` (step 2), then `node_extended_resource` on
+both roles (steps 1 and 3 together), then `node_taints` (step 4, reconciling the
+live taint to the profile). That order keeps the two constraints below: the
+agent's credential exists before its reapply timer first fires, and the node is
+opened for scheduling last. The list is kept as the record of why.
+
+**The convergence order (as written for the R5 PR).** The three
 parts land in one PR but they must be APPLIED in an order, because the wrong one
 leaves gmktec either over-admitting or fighting itself:
 
