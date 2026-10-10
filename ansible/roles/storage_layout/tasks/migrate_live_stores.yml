@@ -2,13 +2,15 @@
 # THE ONE PLACE THIS ROLE IS NARROWER THAN THE SHELL, stated rather than papered
 # over.
 #
-# install-storage-layout.sh reads a directory that a bind mount COVERS by
-# unmounting it inside a private mount namespace (`unshare -m`), which is how it
-# distinguishes "the tier already holds the store" from "the bind is already
-# laid over the only copy of the store". No Ansible module can do that, and
-# reproducing it as a raw `unshare` here would be the hand-rolled shell this
+# The retired install-storage-layout.sh read a directory that a bind mount
+# COVERS by unmounting it inside a private mount namespace (`unshare -m`), which
+# is how it distinguished "the tier already holds the store" from "the bind is
+# already laid over the only copy of the store". No Ansible module can do that,
+# and reproducing it as a raw `unshare` here would be the hand-rolled shell this
 # conversion exists to remove. So this role DETECTS that state and REFUSES,
-# naming the installer that repairs it, rather than guessing.
+# naming the hand repair, rather than guessing. The installer is gone
+# (livespec-dev-tooling-9btv; last at c53ec28b), so the repair is an attended
+# step performed from its recorded procedure, never a script this role invokes.
 #
 # What it does handle is the plain case: a bind target that still holds a store
 # on the root filesystem while its tier does not. That is the one-time bootstrap
@@ -73,16 +75,19 @@
 - name: Refuse a bind already laid over a store its tier does not carry
   # The `repair` verdict of the shell installer. Seeing under a live bind needs
   # a private mount namespace, which this role does not open; refusing is the
-  # honest answer, and the shell installer is the repair.
+  # honest answer, and an attended hand repair is the only repair.
   ansible.builtin.assert:
     that:
       - (item.tier_holds_store | bool) or not (item.bind_mounted | bool)
     fail_msg: >-
       {{ item.dir }} is bind-mounted while {{ item.src }} carries no {{ item.role }} store.
       Whatever lies under that bind may be the only copy, and reading it needs a private
-      mount namespace this role does not open. Run
-      ci-runner/k3s/phase2/storage-layout/install-storage-layout.sh on this host,
-      which performs that probe and the repair.
+      mount namespace this role does not open. Repair it BY HAND on this host:
+      probe under `unshare -m` (unmount the bind inside the private namespace and
+      list what the directory holds), move the store onto {{ item.src }}, and
+      re-apply this role. The retired install-storage-layout.sh performed exactly
+      that probe and move — read it from git history
+      (`git show c53ec28b:ci-runner/k3s/phase2/storage-layout/install-storage-layout.sh`).
     success_msg: "{{ item.role }}: nothing hidden under {{ item.dir }}"
   loop: "{{ storage_layout_migrations }}"
   loop_control:

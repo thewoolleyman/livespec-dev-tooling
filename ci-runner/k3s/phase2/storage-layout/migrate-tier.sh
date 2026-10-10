@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # migrate-tier.sh — move a CI storage tier to new media, or replace its
-# filesystem in place, by COPY + RELABEL, with /etc/fstab untouched and
-# install-storage-layout.sh a no-op throughout.
+# filesystem in place, by COPY + RELABEL, with /etc/fstab untouched by THIS
+# script throughout: the five tier lines are GitOps-owned — committed in
+# ansible/roles/storage_layout/files/ci-tiers.fstab and reconciled onto the node
+# by the storage_layout role of ansible/ci-pool.yml, applied from the control
+# node (`just ansible-apply ansible/ci-pool.yml --tags storage_layout`). This
+# script only ever READS the fstab line a role's label names, to check it agrees
+# with role_fstype; it never writes one. (Before livespec-dev-tooling-9btv the
+# node-local install-storage-layout.sh wrote them and this script ran it.)
 #
 # This is README "Storage layout: media-neutral tier identity" → "Moving a
 # tier to new media" as code, generalised from the script that carried the
@@ -14,8 +20,8 @@
 # LABEL; moving it means putting the bytes on a new volume and moving the
 # label, never editing fstab.
 #
-# PER-ROLE FILESYSTEM TYPE — the one place it is decided (the installer's
-# five fstab lines MUST agree; see role_fstype below):
+# PER-ROLE FILESYSTEM TYPE — the one place it is decided (the committed
+# ci-tiers.fstab lines MUST agree; see role_fstype below):
 #   ci-cache       ext4
 #   ci-containerd  ext4   (overlayfs snapshotter; no copy-on-write need)
 #   ci-workvols    xfs    (reflink=1: the warm uv-cache seed is `cp --reflink`,
@@ -46,8 +52,13 @@
 #       unmounts bind, tier and temp mount; swaps labels (old → `old-<suffix>`,
 #       new → ROLE); refreshes /dev/disk/by-label without a blanket udev
 #       trigger; `mount -a`; proves every path resolves to the new device;
-#       starts k3s and the After=k3s oneshots; compares the image count; runs
-#       install-storage-layout.sh, which must report every line present.
+#       starts k3s and the After=k3s oneshots; compares the image count; prints
+#       each role's fstab line, which must name the role's type. A cutover
+#       REFUSES UP FRONT — before stopping k3s — when /etc/fstab's line for a
+#       role does not already name role_fstype: the `mount -a` below reads that
+#       line, and this script does not write it. A type change is committed to
+#       ci-tiers.fstab and applied from the control node inside the same quiet
+#       window, BEFORE the cutover.
 #
 #   switch-live ROLE
 #       The NO-window switch, for a tier that holds only per-job data and a
@@ -65,10 +76,12 @@
 #   finish-live ROLE
 #       After drain reaches zero: relabels old → `old-<suffix>` and new → ROLE
 #       ONLINE (tune2fs for ext4; `xfs_io label` for a mounted XFS), renames
-#       the LVs when `ROLE-new` naming was used, runs install-storage-layout.sh
-#       (which rewrites the fstab line's type if the role's type changed), and
-#       records that the old volume stays mounted UNDERNEATH until the next
-#       boot — fstab then mounts only the new one.
+#       the LVs when `ROLE-new` naming was used, prints the role's fstab line
+#       and — when its type no longer matches the volume now carrying the label
+#       — says so LOUDLY: commit the type to ci-tiers.fstab and apply the
+#       storage_layout role from the control node AT ONCE, because until then a
+#       reboot cannot mount the tier. Records that the old volume stays mounted
+#       UNDERNEATH until the next boot — fstab then mounts only the new one.
 #
 #   reclaim ROLE
 #       Removes the volume labelled `old-<suffix>` (refuses while it is mounted
@@ -100,7 +113,6 @@
 # order shifts across boots behind a switch).
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE_MOUNT="/var/cache/ci-runner"
 TMP_ROOT="/mnt/migrate-tier"
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -136,6 +148,17 @@ role_fstype() {
   esac
 }
 label_limit() { case "$1" in xfs) echo 12 ;; *) echo 16 ;; esac; }
+# /etc/fstab is GitOps-owned (header): read the role's LABEL= line, never write it.
+FSTAB_APPLY_HINT="commit the type to ansible/roles/storage_layout/files/ci-tiers.fstab and apply it from the control node: just ansible-apply ansible/ci-pool.yml --tags storage_layout"
+fstab_line_of() { grep -E "^LABEL=$1 " /etc/fstab || true; }
+fstab_type_of() { fstab_line_of "$1" | awk '{print $3}'; }
+require_fstab_agrees() {  # ROLE — die unless fstab's line for ROLE names role_fstype
+  [ "$(fstab_type_of "$1")" = "$(role_fstype "$1")" ] || die "/etc/fstab names ${1} as '$(fstab_type_of "$1")', not $(role_fstype "$1") [$(fstab_line_of "$1")]; ${FSTAB_APPLY_HINT}"
+}
+report_fstab_line() {  # ROLE — print the line; WARN (do not die) when its type disagrees
+  log "fstab ${1}: $(fstab_line_of "$1")"
+  [ "$(fstab_type_of "$1")" = "$(role_fstype "$1")" ] || log "WARN: /etc/fstab names ${1} as '$(fstab_type_of "$1")', not $(role_fstype "$1") — a reboot cannot mount it until you ${FSTAB_APPLY_HINT}"
+}
 suffix() { printf '%s' "${1#ci-}"; }
 check_label() {  # check_label LABEL FSTYPE
   [ "${#1}" -le "$(label_limit "$2")" ] || die "label '$1' exceeds ${2}'s $(label_limit "$2")-byte limit"
@@ -258,7 +281,7 @@ cmd_prepare() {
       [ -z "$(fstype_of "$dev")" ] || die "${dev} has a filesystem with no label; refusing to guess"
       make_fs "$dev" "$fstype" "$newlabel"
       log "${fstype} created on ${dev} with LABEL=${newlabel}" ;;
-    "$role") die "${dev} already carries the ROLE label ${role} — the switch already happened, or two volumes carry it; run install-storage-layout.sh" ;;
+    "$role") die "${dev} already carries the ROLE label ${role} — the switch already happened, or two volumes carry it; check with 'migrate-tier.sh drain-status ${role}' and the storage_layout drift (just ansible-drift ansible/ci-pool.yml --tags storage_layout, from the control node)" ;;
     *) die "${dev} carries an unexpected label '$(blkid -p -o value -s LABEL "$dev")'" ;;
   esac
 
@@ -292,6 +315,7 @@ cmd_cutover() {
 
   for role in "${roles[@]}"; do
     switch_preconditions "$role"
+    require_fstab_agrees "$role"   # the mount -a below reads this line; this script does not write it
     log "cutover ${role}: ${OLD} → ${NEW}"
   done
 
@@ -340,8 +364,8 @@ cmd_cutover() {
     fi
   done
 
-  log "install-storage-layout.sh BEFORE mount -a: it rewrites a tier line whose filesystem type changed, and mounts the relabelled volumes"
-  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present:|\+ |    old:|    new:|FATAL)' || true
+  # fstab already names each role's type (checked before k3s was stopped), so
+  # mount -a mounts the relabelled volumes from the GitOps-owned lines as-is.
   systemctl daemon-reload
   mount -a || die "mount -a"
   for role in "${roles[@]}"; do
@@ -366,8 +390,8 @@ cmd_cutover() {
   log "failed units: $(systemctl --failed --no-legend | wc -l)"
   rm -f "$before" "$after"
 
-  log "install-storage-layout.sh must now be a no-op (every line present, drop-in byte-identical)"
-  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present:|\+ |FATAL)' || true
+  for role in "${roles[@]}"; do report_fstab_line "$role"; done
+  log "confirm the layout is converged from the control node: just ansible-drift ansible/ci-pool.yml --tags storage_layout (must report no change)"
   log "CUTOVER DONE for: ${roles[*]}. The old volumes keep their data under old-<suffix> until 'reclaim ROLE' removes them."
 }
 
@@ -432,9 +456,7 @@ cmd_finish_live() {
   # The temp mount of the new volume is no longer needed; the tier mount is the live one.
   umount "${TMP_ROOT}/${role}" 2>/dev/null || true
 
-  log "install-storage-layout.sh (rewrites the tier line's type if the role's filesystem changed; the live stack is already mounted, so it mounts nothing)"
-  bash "${SCRIPT_DIR}/install-storage-layout.sh" | grep -E '^(present:|\+ |    old:|    new:|FATAL)' || true
-  grep -E "^LABEL=${role} " /etc/fstab
+  report_fstab_line "$role"   # the live stack is already mounted; only the next boot reads this line
   log "FINISH-LIVE DONE for ${role}. The old volume (${old}, LABEL=old-$(suffix "$role")) stays mounted UNDERNEATH ${src} until the next boot;"
   log "fstab then mounts only the new one. After that boot: 'migrate-tier.sh reclaim ${role}' removes the old LV and grows the new."
 }

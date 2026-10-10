@@ -274,7 +274,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | Path | Role |
 |---|---|
 
-> **The node-local `install-*.sh` installers and `install-node.sh` were RETIRED in C5b (`livespec-dev-tooling-9btv`).** The Ansible roles under `ansible/roles/` install these artifacts now, applied from the control node with `just ansible-apply ansible/ci-pool.yml`; the `ci-runner/k3s/phase2/**` files are the runtime artifacts those roles copy. See `ansible/README.md` and the layer map in `.ai/gitops-deployment.md`. Rows below that name a retired `install-*.sh` carry a **(RETIRED …)** marker naming the role that replaced it; the rationale in each such row is retained as the history the role inherits.
+> **The node-local `install-*.sh` installers and `install-node.sh` were RETIRED in C5b (`livespec-dev-tooling-9btv`).** The Ansible roles under `ansible/roles/` install these artifacts now, applied from the control node with `just ansible-apply ansible/ci-pool.yml`; the `ci-runner/k3s/phase2/**` files are the runtime artifacts those roles copy. See `ansible/README.md` and `SPECIFICATION/non-functional-requirements.md` §"Runner-pool node rebuild recipe". Rows below that name a retired `install-*.sh` carry a **(RETIRED …)** marker naming the role that replaced it; the rationale in each such row is retained as the history the role inherits.
 
 | `kueue/resource-flavor.yaml` | The one `ResourceFlavor` every per-repo `ClusterQueue` requests from, keyed on the `ci-runner.io/churn-slot` extended resource. |
 | `kueue/DERIVATION.md` | How the specification's admission formula becomes each repository's actual `nominalQuota`: the four terms and their mechanisms, the demand weights, the largest-remainder apportionment, the recomputation procedure for a new capacity, and the decisions on the generator question and the still-open permanent capacity. Read this before editing any number in `kueue/`. |
@@ -345,7 +345,7 @@ fleet's actual call volume) needs a live-cluster observation —
 | `node-keyring-budget/60-k3s-container-keyring.conf` + `install-keyring-sysctl.sh` | **(RETIRED in C5b, 9btv — the `node_sysctl` Ansible role installs this now; see `ansible/ci-pool.yml`.)** The per-user kernel keyring quota (`kernel.keys.maxkeys = 2000`, `maxbytes = 200000`) as a `/etc/sysctl.d/` drop-in. Every container start allocates a session keyring against uid 0 under containerd/runc; the kernel default of 200 was exhausted on this host on 2026-08-13 by two repositories' concurrency. The value had survived on the host only as an untracked drop-in under an earlier name; the 2026-09-02 gitops audit found it with no git source, and the installer now ships it under this name and removes the untracked predecessor. |
 | `storage-layout/install-storage-layout.sh` | **(RETIRED in C5b, 9btv — the `storage_layout` Ansible role installs this now; see `ansible/ci-pool.yml`.)** Takes a node from labelled-but-unmounted volumes to the live storage layout, printing every mutating step as a `+ ` line and running none of them under `--dry-run`. Refuses unless each tier label resolves to exactly one device; unmounts any FOREIGN mountpoint of a tier volume whose own mountpoint is still free (a desktop's udisks automount at `/run/media/<user>/ci-cache`, seen on `gmktec-xubuntu` 2026-09-07) while leaving a live tier's kubelet per-pod binds alone; mounts the `ci-cache` tier and creates the two tier mountpoints ON it; ensures the FIVE `/etc/fstab` lines that define the layout — the three CI tiers found by filesystem LABEL (`ci-cache` at `/var/cache/ci-runner`, `ci-containerd` and `ci-workvols` mounted under it) and the two bind mounts putting containerd's store and the local-path PVC root on them — byte-exact and with no UUID argument, replacing a differing line for one of those mountpoints (fstab backed up first); then mounts every remaining managed mountpoint, `findmnt --verify`s, installs the k3s drop-in below, and REFUSES to exit 0 unless all five are actually mounted. When k3s (`k3s.service` or `k3s-agent.service`) is already running here and its containerd store or local-path root holds content the tier does not, the unit is stopped, the content is `rsync -aHAX`ed onto the tier, the binds are mounted and the unit is started again — a bind laid over a live store would HIDE it. "The tier already holds it" means the tier carries the STORE — `io.containerd.metadata.v1.bolt` for the containerd tier, any entry for the local-path root — and NEVER the `lost+found` that `mkfs.ext4` puts on every fresh filesystem: reading that as content is what bound a freshly formatted tier over `gmktec-xubuntu`'s live containerd store on 2026-09-07 (`livespec-dev-tooling-zmle`). A bind found ALREADY laid over a store the tier does not carry is REPAIRED in place — unit stopped, bind unmounted, the store copied out from under it onto the tier (the copy keeps what the tier has and never deletes), bind remounted, unit started, and the store then verified VISIBLE THROUGH the bind. Both modes take that verdict from one function, so the plan `--dry-run` prints is the run that happens; reading what a bind covers is an `unshare -m` probe that unmounts it inside a private mount namespace, which is why a determinate `--dry-run` needs root and an unprivileged one reports the tier as unreadable rather than guessing. Runs at ANY point after phase 0 stage 1, before or after k3s. Labels, not UUIDs, so the lines are identical on the array stand-in LVs and on the NVMe (livespec plan `ci-runner-pod-lifecycle-reliability`, `livespec-el5y`; see "Storage layout: media-neutral tier identity" below). Never formats and never destroys data; on a node whose tiers are already live it runs NO command at all, which is the no-op contract `migrate-tier.sh` ends every procedure on. |
 | `storage-layout/10-requires-storage-mounts.conf` | `k3s.service.d/` drop-in: `RequiresMountsFor=` both bind targets, so k3s refuses to start — loudly, every `After=k3s` oneshot failing by dependency — rather than silently running the pool's churn on `/` when a tier is missing. Kept by hand on the host from 2026-09-04's NVMe attempt; from git since `livespec-el5y`. |
-| `storage-layout/migrate-tier.sh` | Moves a tier to new media, or replaces its filesystem in place, by COPY + RELABEL with fstab untouched — the "Moving a tier" procedures below as code, and the ONE place each role's filesystem type is decided (`role_fstype`: `ci-workvols` is XFS with reflink, the others ext4; the installer's lines must agree). `prepare ROLE VG PV_BY_ID SIZE` (live, idempotent: PV/VG/LV, the role's filesystem under the temporary `new-<suffix>` label, bulk rsync; refuses a PV on any device that already carries a signature — a stale copy from a failed attempt is never reused; names the LV `ROLE-new` when the VG already holds the live one). `cutover ROLE...` (the quiet-window switch: refuses unless zero EphemeralRunners; stops k3s, final delta + dry-run verification + inode counts, unmount, swap labels, by-label refresh through dm events — never a blanket `udevadm trigger` — `mount -a`, proves every path is on the new device, starts k3s and the `After=k3s` oneshots, compares the image count, ends by running `install-storage-layout.sh`). `switch-live ROLE` (NO window: STACKS the new filesystem over the tier mountpoint and a fresh bind over the bind target, never unmounting the old — the mount units stay active so the k3s drop-in cannot fire; running pods finish on the old volume, every new work volume lands on the new one), `drain-status ROLE` (pods still holding an old volume), `finish-live ROLE` (online relabel, LV rename, installer run; the old volume stays mounted underneath until the next boot), `reclaim ROLE` (after that boot: remove the old LV, grow the new). Carried the containerd store and the work volumes onto the first NVMe on 2026-09-04 (livespec `livespec-e2vcqf`) and reformatted `ci-workvols` as XFS live on 2026-09-06 (`livespec-dev-tooling-hmv2bo`); see `.ai/ci-node-storage-tiers.md`. |
+| `storage-layout/migrate-tier.sh` | Moves a tier to new media, or replaces its filesystem in place, by COPY + RELABEL with fstab untouched — the "Moving a tier" procedures below as code, and the ONE place each role's filesystem type is decided (`role_fstype`: `ci-workvols` is XFS with reflink, the others ext4; the installer's lines must agree). `prepare ROLE VG PV_BY_ID SIZE` (live, idempotent: PV/VG/LV, the role's filesystem under the temporary `new-<suffix>` label, bulk rsync; refuses a PV on any device that already carries a signature — a stale copy from a failed attempt is never reused; names the LV `ROLE-new` when the VG already holds the live one). `cutover ROLE...` (the quiet-window switch: refuses unless zero EphemeralRunners; stops k3s, final delta + dry-run verification + inode counts, unmount, swap labels, by-label refresh through dm events — never a blanket `udevadm trigger` — `mount -a`, proves every path is on the new device, starts k3s and the `After=k3s` oneshots, compares the image count, ends by printing each role's fstab line, which must name the role's type; it refuses up front when `/etc/fstab` does not, since the line is GitOps-owned by the `storage_layout` role and the script never writes it). `switch-live ROLE` (NO window: STACKS the new filesystem over the tier mountpoint and a fresh bind over the bind target, never unmounting the old — the mount units stay active so the k3s drop-in cannot fire; running pods finish on the old volume, every new work volume lands on the new one), `drain-status ROLE` (pods still holding an old volume), `finish-live ROLE` (online relabel, LV rename, a loud WARN when the fstab line's type now disagrees — commit it to `ci-tiers.fstab` and apply the `storage_layout` role; the old volume stays mounted underneath until the next boot), `reclaim ROLE` (after that boot: remove the old LV, grow the new). Carried the containerd store and the work volumes onto the first NVMe on 2026-09-04 (livespec `livespec-e2vcqf`) and reformatted `ci-workvols` as XFS live on 2026-09-06 (`livespec-dev-tooling-hmv2bo`); see `.ai/ci-node-storage-tiers.md`. |
 | `storage-layout/install-storage-layout-exit-tests.sh` | **(RETIRED in C5b, 9btv — the `storage_layout` Ansible role installs this now; see `ansible/ci-pool.yml`.)** That installer's exit tests. Every case resolves the installer's paths under a scratch `STORAGE_LAYOUT_ROOT` and runs it against fake `lsblk`/`blkid`/`findmnt`/`mount`/`umount`/`systemctl`/`rsync` answering from files this suite writes — so the suite proves the fresh-host ordering as an EQUALITY (the cache mount and both tier mountpoints before the first fstab line and before `findmnt --verify`), that a `/run/media` automount is unmounted first while a live tier's kubelet per-pod bind never is, that a running `k3s-agent.service` is stopped, its store rsynced onto the tier, the binds mounted and the unit started again in that order, that a converged host plans not one mutating command, and — running each of the three step-5 states BOTH ways from the same world and asserting the two plans are identical — that a tier carrying only `lost+found` is copied onto, that one carrying `io.containerd.metadata.v1.bolt` is not (and the skip names what it found), and that a bind already laid over a hidden store is repaired stop → umount → rsync → mount → start and is a no-op on the next run; and — executing for real inside its own `mktemp -d` — that a run over the half-applied state `gmktec-xubuntu` was left in (five lines in fstab, nothing mounted) mounts everything and neither duplicates nor rewrites one byte of fstab. Touches no host and needs no root. |
 | `datastore-tmpfs/20-requires-datastore-mount.conf` | `k3s.service.d/` drop-in installed by `install-datastore-tmpfs.sh` only: `RequiresMountsFor=` the tmpfs datastore mount, because since the 2026-09-04 array rebuild the directory underneath holds a stale backup restore, not a rollback copy. Changes the rollback steps — read its header. |
 | `node-extended-resource/reapply-node-extended-resource.service` (boot ordering) | Since 2026-09-02 also `WantedBy=multi-user.target` and `Before=converge-ci-stack.service`: on a tmpfs-datastore boot the node object is new, so the churn-slot resource every queue is denominated in is applied before the queues, not up to a minute later by the timer's first tick. Since 2026-09-04 the converge states the same dependency from its side (`After=`/`Wants=`) and asserts the capacity itself at step 1b (`livespec-kgl3`). |
@@ -860,8 +860,10 @@ this table is fixed; only the medium behind a label ever changes.
 | containerd store | `ci-containerd` | `/var/cache/ci-runner/k3s-containerd` | `/var/lib/rancher/k3s/agent/containerd` | image layers, snapshots, container root filesystems |
 | runner work volumes | `ci-workvols` | `/var/cache/ci-runner/k3s-storage` | `/var/lib/rancher/k3s/storage` | every runner's `local-path` PVC scratch, and beside them the warm uv cache lower (`.warm`, `warm-cache/`) each volume is seeded from — one filesystem by necessity, since neither a hardlink nor a reflink crosses a filesystem. **XFS with reflink** since 2026-09-06 (the other two tiers are ext4): a reflink seed gives every job its own inodes, so a job's writes never reach the shared generation (livespec plan `ci-runner-pod-lifecycle-reliability` research/006 option (a); `livespec-dev-tooling-hmv2bo`). An XFS label holds 12 bytes. |
 
-`storage-layout/install-storage-layout.sh` ensures the five `/etc/fstab`
-lines that say exactly this (its header lists them byte-for-byte) and the
+The `storage_layout` Ansible role (`ansible/roles/storage_layout`, applied
+from the control node by `just ansible-apply ansible/ci-pool.yml`) ensures the
+five `/etc/fstab` lines that say exactly this — read verbatim from the ONE
+committed source `ansible/roles/storage_layout/files/ci-tiers.fstab` — and the
 k3s drop-in that makes k3s refuse to start unless both binds are mounted —
 and it MOUNTS them, in the one order that works: the `ci-cache` tier first,
 because the other two mountpoints live on it and a directory made under an
@@ -951,9 +953,15 @@ why, so the log it prints reads correctly (`ci-containerd` shown;
    `findmnt` that the tier path AND the bind target are on the new device;
    `systemctl start k3s` plus the `After=k3s` oneshots a manual start does
    not pull in; compare `crictl images -q | wc -l` before and after (74 = 74
-   on 2026-09-04); finally run `install-storage-layout.sh`, which must
-   report every line `present` and the drop-in byte-identical. The old
-   volume keeps the data under `old-containerd` until it is reclaimed.
+   on 2026-09-04); finally print each role's fstab line, which must name
+   the role's type, and confirm from the control node that
+   `just ansible-drift ansible/ci-pool.yml --tags storage_layout` reports no
+   change. (The script never writes fstab: a cutover REFUSES up front when
+   `/etc/fstab` does not already name the role's committed type, since its
+   `mount -a` reads that line — commit a type change to `ci-tiers.fstab` and
+   apply the `storage_layout` role BEFORE the cutover, inside the same quiet
+   window.) The old volume keeps the data under `old-containerd` until it is
+   reclaimed.
 
 **Never `udevadm trigger --subsystem-match=block` on this host** to refresh
 `/dev/disk/by-label`: on 2026-09-04 that marked the mounted device-mapper
@@ -992,10 +1000,15 @@ a mount going AWAY under k3s; this only ever adds one).
 4. `finish-live ci-workvols` — relabels ONLINE (`tune2fs -L` for the old
    ext4; `xfs_io -c 'label -s …'` for the mounted new XFS), renames the LVs
    (`ci-workvols` → `ci-workvols-old`, `ci-workvols-new` → `ci-workvols`),
-   runs `install-storage-layout.sh`, which replaces the tier's fstab line
-   because its type changed (`ext4` → `xfs`; fstab backed up, old and new
-   printed). The old volume stays mounted UNDERNEATH until the next boot;
-   `findmnt` shows both, the top one is the live one.
+   and prints the tier's fstab line, WARNING loudly when its type no longer
+   matches the volume now carrying the label (`ext4` → `xfs`): the line is
+   GitOps-owned, so commit the new type to `ci-tiers.fstab` and apply the
+   `storage_layout` role from the control node AT ONCE — until then a reboot
+   cannot mount the tier. (On 2026-09-06 the then-current node-local
+   `install-storage-layout.sh` rewrote the line in this step; that installer is
+   retired, `livespec-dev-tooling-9btv`.) The old volume stays mounted
+   UNDERNEATH until the next boot; `findmnt` shows both, the top one is the
+   live one.
 5. After the next boot (fstab mounts only the new): `reclaim ci-workvols` —
    removes `ci-workvols-old`, extends the LV over the freed extents,
    `xfs_growfs` online.
@@ -1086,7 +1099,8 @@ expressions. AppArmor stays in **enforce** mode; no capability was added
 and nothing was made privileged. `type: Localhost` means a node missing
 the profile fails pod admission rather than silently running unconfined.
 
-Apply it to a node with `apparmor/install-apparmor-profile.sh`, then add
+Apply it to a node with the `apparmor_profile` role (from the control node:
+`just ansible-apply ansible/ci-pool.yml --tags apparmor_profile`), then add
 the volume, `volumeMount`, and env var shown in
 `arc/values-livespec-overseer.yaml` to that repo's values file.
 
@@ -1244,9 +1258,11 @@ Since `livespec-wm7c` these files carry a `fleet-container-hook`
 `/usr/local/lib/ci-runner-k3s/hooks/<runner-version>/index.js`, so the
 node MUST have installed that hook before the values are applied — a
 `type: File` hostPath whose path is absent fails the runner pod at mount
-with `FailedMount`, and every job for that scale set queues. Run
-`install-node.sh` (step 7c installs the hook and extracts the externals)
-before the first apply on any node, and before the apply of any bump.
+with `FailedMount`, and every job for that scale set queues. Apply the
+`container_hook` role (from the control node: `just ansible-apply
+ansible/ci-pool.yml --tags container_hook` — it installs the hook and extracts
+the externals) before the first apply on any node, and before the apply of
+any bump.
 That ordering is what makes the failure impossible rather than merely
 loud: the alternative, a `DirectoryOrCreate` mount, would present an
 empty directory and let the runner start against a hook that is not
@@ -1528,7 +1544,7 @@ at all.
 
 ### It runs automatically
 
-`wedged-runner/install-wedged-runner-scan.sh` installs the sweep as a
+The `wedged_runner` role (`ansible/ci-pool.yml`) installs the sweep as a
 systemd timer on the pool's SERVER, every 5 minutes, in an
 explicitly-chosen `report` or `clear` mode. The server is the only node
 that installs it: the sweep covers the pool's runner pods CLUSTER-WIDE, so
@@ -1700,7 +1716,7 @@ journal, and `failed calling webhook "mpod.kb.io"` in job logs.
 
 Those two commands are now run for you, widened to the whole family, every
 five minutes: `runner-pod-lifecycle/scan-runner-pod-lifecycle.sh` (installed
-by `install-runner-pod-lifecycle-scan.sh`, driven by the `.timer`) is the
+by the `runner_pod_lifecycle` role, driven by the `.timer`) is the
 second gate beside the wedge sweep — the wedge scan answers "is a runner
 dead to GitHub?", this one answers "is the host failing to bring pods up?".
 It reports ten classes, each read from the node-side observable that
@@ -2213,18 +2229,20 @@ Each pass appends only the lines it has not already archived, per pod:
 /var/lib/ci-runner-k3s/arc-log-archive/   per-pod "last archived timestamp" state
 ```
 
-Install it on the pool's SERVER, and after any server rebuild:
+Install it on the pool's SERVER, and after any server rebuild, by applying the
+`arc_log_archive` role from the control node (`vps`):
 
 ```bash
-sudo ci-runner/k3s/phase2/arc-log-archive/install-arc-log-archive.sh
+just ansible-apply ansible/ci-pool.yml --tags arc_log_archive
 ```
 
 **SERVER-only** (`livespec-dev-tooling-qcq0`). What it archives is the ARC
 CONTROLLER's and LISTENERS' logs, read through the admin kubeconfig — pods
 that run on the server, for the whole pool — so there is nothing on an agent
-for it to archive and no credential for it to read with. `--role agent` (or
-`CLUSTER_ROLE=agent`) therefore REFUSES non-zero and first disables and
-removes any copy an earlier run left on the node. It removes NEITHER
+for it to archive and no credential for it to read with. The role therefore
+self-gates on the inventory's `cluster_role`: on an `agent` it installs nothing
+and disables and removes any copy an earlier run left on the node. It removes
+NEITHER
 `/var/log/arc-archive` nor `/var/lib/ci-runner-k3s/arc-log-archive`: those
 hold archived logs, and deleting them to tidy up after an install would be
 destroying the evidence this whole mechanism exists to keep.
@@ -2234,8 +2252,9 @@ opposite reason: `archive-arc-logs.service` is ordered
 `After=network-online.target` rather than `Requires=k3s.service`, so on an
 agent it installs, enables and starts without complaining, and then fails
 silently every two minutes. The scans announce their unsuitability; this one
-does not. `arc-log-archive/install-arc-log-archive-exit-tests.sh` asserts
-both roles off-host, under `--dry-run` and tripwires, never as root.
+does not — which is why the role's agent branch is a removal, not a skip.
+(The retired node-local installer's exit tests asserted both roles off-host;
+they went with it, `livespec-dev-tooling-9btv`.)
 
 Read it during an incident exactly as you would read `kubectl logs`, except
 that it reaches back:
