@@ -14,7 +14,7 @@
 #
 # ROLE-AWARE (2026-09-06, livespec-dev-tooling-mj4zrr, livespec plan
 # `k3s-on-gmktec-for-vps-usage` carrier R3), for the same reason
-# `phase2/install-node.sh` is: the fleet is gaining a SECOND node, and a second
+# `phase2/install-node.sh` (now ansible/ci-pool.yml) was: the fleet is gaining a SECOND node, and a second
 # node must be brought up by THIS script rather than by a second copy of it.
 # The role, and every other node-specific value, is read from the node's
 # `phase0-bare-metal/profiles/<node>.env` through the shared parser
@@ -314,9 +314,42 @@ step_k3s_config() {
   # /etc/rancher/k3s/config.yaml (kubelet max-pods, the bundled local-storage
   # disable) is read by k3s on every start; installing it first means a fresh
   # node's very first start already carries it, and a rebuilt node cannot lose
-  # the hand-set values this replaced (livespec-a6lxuv, livespec-sernfh). The
-  # installer is idempotent and never restarts k3s.
-  "${SCRIPT_DIR}/phase2/k3s-config/install-k3s-config.sh"
+  # the hand-set values this replaced (livespec-a6lxuv, livespec-sernfh).
+  #
+  # ONE SOURCE, WRITTEN HERE FIRST AND CONVERGED BY THE PLAYBOOK AFTER. The
+  # committed phase2/k3s-config/config.yaml is the only source. This stage
+  # writes it because it runs before k3s exists, and the node-provisioning
+  # stage (ansible/ci-pool.yml, whose k3s_config role keeps the same file
+  # converged from the same source) cannot reach the node until this stage has
+  # run — the same single-source shape as the tier fstab lines, which
+  # phase0-bare-metal/base-os-install.sh writes from the committed fragment
+  # before the storage_layout role converges them. This step used to call
+  # phase2/k3s-config/install-k3s-config.sh, retired with the other node-local
+  # installers (livespec-dev-tooling-9btv; pre-deletion 5d79cd5a); it keeps
+  # only that installer's SERVER half — an agent skips this step — at the same
+  # modes the k3s_config role uses. Idempotent; never restarts k3s.
+  local src="${SCRIPT_DIR}/phase2/k3s-config/config.yaml"
+  local dest=/etc/rancher/k3s/config.yaml
+  local manifests=/var/lib/rancher/k3s/server/manifests
+  local marker="${manifests}/local-storage.yaml.skip"
+  [ -f "$src" ] || die "committed k3s server config not found at ${src}"
+  if [ -f "$dest" ] && cmp -s "$src" "$dest"; then
+    echo "${dest} already matches ${src} — unchanged"
+  else
+    install -d -m 0755 -o root -g root "$(dirname "$dest")"
+    install -m 0600 -o root -g root "$src" "$dest"
+    echo "installed ${dest} from ${src} (read at the next k3s start)"
+  fi
+  # The second of two enforcement points for the local-storage disable: k3s's
+  # documented per-manifest opt-out, which holds however config-file and
+  # command-line --disable values merge.
+  install -d -m 0700 -o root -g root "$manifests"
+  if [ -e "$marker" ]; then
+    echo "${marker} already present"
+  else
+    install -m 0600 -o root -g root /dev/null "$marker"
+    echo "wrote ${marker}"
+  fi
 }
 
 step_k3s_install() {
@@ -460,5 +493,5 @@ if [ "$ROLE" = agent ]; then
   log "DONE. Next (from the control node vps): just ansible-apply ansible/ci-pool.yml (see ansible/README.md; the retired phase2/install-node.sh runbook is now that playbook)."
   printf 'This node registered with the cluster at %s; confirm it from the SERVER with: k3s kubectl get nodes -o wide\n' "${CFG[CLUSTER_JOIN_ADDRESS]}"
 else
-  log "DONE. Next: install-arc.sh, then install-kueue.sh (see README.md)."
+  log "DONE. Next (from the control node vps): just ansible-apply ansible/ci-pool.yml, then install-arc.sh and install-kueue.sh (see README.md, rebuild sequence steps 4 and 5)."
 fi

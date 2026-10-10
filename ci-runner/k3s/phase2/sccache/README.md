@@ -14,7 +14,7 @@ serves fabro sandboxes on the factory host through the same door.
 |---|---|
 | `sccache-redis.yaml` | Namespace `ci-sccache`, the RAM-resident redis Deployment (`redis:8.8.2-alpine` by digest, `maxmemory 16gb` + `allkeys-lru`, RDB snapshots on the `ci-cache` tier so a reboot restores the cache, non-root, read-only rootfs, `hostPort 6379`), and the ClusterIP Service. Its header carries the trust argument, the memory-ceiling derivation, and the persistence rationale. |
 | `converge-sccache-redis.sh` | Idempotent (root): ensures the host-held writer credential (`/etc/ci-runner/sccache-redis-writer.pass`, generated on first run), renders the ACL into the `sccache-redis-acl` Secret, projects the credential into the populator's namespace as `sccache-redis-writer`, applies the manifest, bounded rollout wait. Run by the boot converge (step 8c) and by hand. |
-| `install-sccache-binary.sh` | Node-local (root): the pinned, checksum-verified sccache binary at `/usr/local/lib/ci-runner-k3s/bin/sccache`. The pool PROVIDES the binary — mounted read-only into every job container and the populator at `/opt/ci-runner/bin` — so no routed repository bumps its `container:` pin to get the tier. Run by `install-node.sh` (7b) and after a version bump. |
+| `install-sccache-binary.sh` | **(RETIRED in C5b, 9btv — the `sccache_binary` Ansible role installs the binary now; see `ansible/ci-pool.yml`.)** Node-local (root): the pinned, checksum-verified sccache binary at `/usr/local/lib/ci-runner-k3s/bin/sccache`. The pool PROVIDES the binary — mounted read-only into every job container and the populator at `/opt/ci-runner/bin` — so no routed repository bumps its `container:` pin to get the tier. Was run by `install-node.sh` (7b) and after a version bump. |
 | `../arc/hook-pod-template.yaml` | The reader side: `SCCACHE_REDIS_ENDPOINT` (the cluster Service, as the unauthenticated read-only user) and `SCCACHE_REDIS_RW_MODE=READ_ONLY` on the `$job` container; the `postStart` appends `[build] rustc-wrapper` + `incremental = false` to `/.cargo/config.toml` only when the binary is mounted and redis answers a TCP probe. |
 | `../warm-cache/warm-cache-populate.sh` | The ONE writer: builds each routed Rust repository's default branch (four cargo invocations mirroring the matrix's compile shapes, `--all-features`) at the job's own checkout path and cargo home, under `nice`/`ionice` at the repository's `build.jobs` cap, as the `sccache-writer` user; gated by a marker key in redis so an unchanged branch and toolchain costs nothing. |
 
@@ -95,9 +95,13 @@ populator's writes; the cache gauges and the hit-floor trigger are the alarm.
 ## Operating it
 
 - **Converge / re-apply**: `KUBECONFIG=/etc/rancher/k3s/k3s.yaml sudo
-  ./converge-sccache-redis.sh`; after editing the manifest, also re-run
-  `../reconstruct/install-converge-unit.sh`. Bump sccache: edit the version
-  and sha256 in `install-sccache-binary.sh`, run it as root; job pods pick
+  ./converge-sccache-redis.sh`; after editing the manifest, also re-apply the
+  `ci_converge_unit` role (`just ansible-apply ansible/ci-pool.yml --tags
+  ci_converge_unit`). Bump sccache: edit `sccache_binary_version`,
+  `sccache_binary_sha256`, `sccache_binary_asset` and `sccache_binary_url` in
+  `ansible/roles/sccache_binary/defaults/main.yml` and apply
+  `just ansible-apply ansible/ci-pool.yml --tags sccache_binary` from the
+  control node; job pods pick
   the new binary up on their next start (it is a hostPath mount).
 - **Is it live?** `kubectl -n ci-sccache get deploy,pods,svc`; `kubectl -n
   ci-sccache exec deploy/sccache-redis -- redis-cli DBSIZE` and `INFO memory`.

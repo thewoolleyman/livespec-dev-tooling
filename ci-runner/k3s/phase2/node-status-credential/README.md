@@ -73,8 +73,9 @@ would have defeated the credential (the `list` bullet above). R5 made it patch a
 **single named node** — the node its profile NAMES, `by name` — which is exactly
 the shape `resourceNames` can authorize. So:
 
-- `../node-extended-resource/install-reapply-unit.sh` now **installs on an
-  agent** (it no longer refuses): it orders the reapply unit against
+- The node-local reapply-unit install now **installs on an agent** (R5 made
+  the retired `install-reapply-unit.sh` stop refusing; the
+  `node_extended_resource` Ansible role that replaced it installs on both roles): it orders the reapply unit against
   `k3s-agent.service` and the patch script authenticates with the kubeconfig this
   credential renders, at the path the node's profile names in
   `CHURN_KUBECONFIG_FILE`.

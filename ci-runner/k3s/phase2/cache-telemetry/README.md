@@ -9,7 +9,7 @@ The pod-side half of SPECIFICATION v054 §"Runner-pool cache telemetry"
 | File | Role |
 | --- | --- |
 | `ci-cache-span.sh` | The emitter. Installed as `/opt/ci-runner/bin/ci-cache-span` inside every job container (read-only pool mount). `warm-copy <tier> <hit> <generation> <copy_ms> <copy_bytes> <copy_method> <error>` emits one `cache.warm-copy` span; `job-summary` emits one `cache.job-summary` span with `build.cache.sccache.{enabled,hits,misses,errors,hit_ratio,backend,rw_mode}` read from the job's own sccache server if one is listening. Every span: `repo`, `git.commit.sha`, `git.branch`, `ci.event` (from the runner's `event.json`), `build.env=ci`, `host.name`, `build.cache.kill_switch` (`""` / `operator` / `canary`), `k8s.pod.name`. `publish-endpoint` derives this pod's collector address from its own default route and publishes it for both consumers (see "Why the default gateway"). POSIX sh around an inline `python3` (the job image carries `/usr/bin/python3`); no jq, no curl, no key. |
-| `install-cache-telemetry.sh` | Node-local (root), run by `../install-node.sh` after the sccache installer: copies the emitter to `/usr/local/lib/ci-runner-k3s/bin/ci-cache-span`. Re-run after changing the emitter; the ConfigMap converge does not carry it. |
+| `install-cache-telemetry.sh` | **(RETIRED in C5b, 9btv — the `cache_telemetry` Ansible role installs the emitter now; see `ansible/ci-pool.yml`.)** It copied the emitter to `/usr/local/lib/ci-runner-k3s/bin/ci-cache-span`. After changing the emitter, apply `just ansible-apply ansible/ci-pool.yml --tags cache_telemetry` from the control node; the ConfigMap converge does not carry it. |
 
 Where the calls live: `../arc/hook-pod-template.yaml` (header item 6) sets
 `CI_CACHE_CANARY_N` and
@@ -120,7 +120,7 @@ both cold and must be told apart in the hit-floor trigger's exclusion.
 ## Verify
 
 ```bash
-# on the node, after install-node.sh / a converge:
+# on the node, after `just ansible-apply ansible/ci-pool.yml` / a converge:
 ls -l /usr/local/lib/ci-runner-k3s/bin/ci-cache-span
 kubectl -n arc-runners get configmap arc-hook-pod-template -o jsonpath='{.data.hook-pod-template\.yaml}' | grep -c ci-cache-span   # 4
 # the derived endpoint IS the cni0 gateway, and it answers (run on the node):
@@ -137,8 +137,10 @@ kubectl -n arc-runners exec <job pod> -- cat /__w/_temp/_ci_cache/otlp_endpoint
 ```
 
 A node whose emitter predates `publish-endpoint` writes no
-`otlp_endpoint` and emits nothing at all, so **re-run
-`install-cache-telemetry.sh` on every pool node** as part of landing this —
+`otlp_endpoint` and emits nothing at all, so **apply the
+`cache_telemetry` role to every pool node** (`just ansible-apply
+ansible/ci-pool.yml --tags cache_telemetry` from the control node) as part
+of landing this —
 the ConfigMap converge does not carry the emitter.
 
 Fail-soft is the contract: an absent emitter, an empty endpoint, a dead

@@ -569,8 +569,9 @@ populate-failing trigger instead of silently starving the cache.
 - **Install / re-converge**: `KUBECONFIG=/etc/rancher/k3s/k3s.yaml
   ./install-warm-cache.sh` on the host. Re-run after adding a routed
   repository (it re-derives the list) or changing the populator, the
-  verifier, the proxy manifest or the hook template; also re-run
-  `../reconstruct/install-converge-unit.sh` so the boot copy under
+  verifier, the proxy manifest or the hook template; also re-apply
+  the `ci_converge_unit` role (`just ansible-apply ansible/ci-pool.yml --tags
+  ci_converge_unit` from the control node) so the boot copy under
   `/usr/local/lib/ci-runner-k3s/warm-cache/` matches. Then
   `../arc/recycle-scale-set-runners.sh <scale-set>` for any scale set with
   idle runners, as after any values change. The seed itself is part of the
@@ -997,7 +998,7 @@ premise").
 
 Steps 1–3 were performed on `poweredge-xubuntu` on 2026-09-08/09 (the
 after-state above). They remain the order for any new server node; a
-freshly provisioned node gets NONE of them from `install-node.sh` today
+freshly provisioned node gets NONE of them from `ansible/ci-pool.yml` today
 (see "The half that is open").
 
 1. `KUBECONFIG=/etc/rancher/k3s/k3s.yaml registry-mirror/converge-registry-mirror.sh`,
@@ -1013,17 +1014,18 @@ freshly provisioned node gets NONE of them from `install-node.sh` today
    the candidate list for that node before the timer's first `--apply`.
 4. The mirror's cluster half is rebuilt on every boot by
    `../reconstruct/converge-ci-stack.sh` step 8d, and
-   `../reconstruct/install-converge-unit.sh` copies `registry-mirror/`
-   into `/usr/local/lib/ci-runner-k3s/` so the boot copy carries it. Re-run
-   that installer after step 1 so the host's boot copy matches this tree;
+   the `ci_converge_unit` Ansible role copies `registry-mirror/`
+   into `/usr/local/lib/ci-runner-k3s/` so the boot copy carries it. Re-apply
+   that role (`just ansible-apply ansible/ci-pool.yml --tags ci_converge_unit`)
+   after step 1 so the host's boot copy matches this tree;
    the k3s datastore is tmpfs, so anything applied by hand and not on the
    boot path is gone at the next reboot — which is how the mirror was lost
    at the 2026-09-09 05:08Z reboot (`livespec-dev-tooling-y1t5`).
 
 ### The half that is open
 
-**A freshly provisioned node carries neither half.** `install-node.sh`
-has no step for `registry-mirror/install-registry-mirror.sh` or
+**A freshly provisioned node carries neither half.** `ansible/ci-pool.yml`
+(like the retired `install-node.sh` before it) has no role for `registry-mirror/install-registry-mirror.sh` or
 `sandbox-image-prune/install-sandbox-image-prune.sh`, so a cattle
 rebuild of the NODE (as opposed to the cluster, which step 8d covers)
 comes up with no `registries.yaml` and no prune timer until an operator

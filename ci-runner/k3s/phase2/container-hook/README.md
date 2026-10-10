@@ -39,14 +39,14 @@ proposed upstream so the fleet patch can be dropped when accepted.
 | `bundle/<runner-version>/index.js` + `index.js.sha256` + `BUILD-INFO` | The COMMITTED build output (8.9 MB, an ncc bundle; `dist/` is gitignored in this repo, hence the name). The node needs no Node toolchain: the installer copies from the checkout. `BUILD-INFO` records the image, the derived hook version and its source, the tag commit, the upstream asset's sha256, the image cross-check result, the patch's sha256, the patched bundle's sha256 and size, the line delta, and the Node/npm versions. |
 | `extract-externals.sh` | Node-local (root): mounts the pinned image read-only through containerd (`ctr -n k8s.io images mount --rw=false`; pulls it first only if this node never ran a runner pod), cross-checks the runner version inside (`bin/Runner.Listener.deps.json`) and optionally the bundled hook's sha256, copies `/home/runner/externals` to `/var/lib/rancher/k3s/storage/.externals/<runner-version>/` with the marker file, verifies a per-file sha256 manifest, moves it into place atomically, and LAST publishes `.externals/current` — a relative symlink to that version directory, by one atomic rename — because the provisioner's setup script cannot know the runner version and seeds from that one name. Idempotent on the manifest, and republishes the pointer even when it copies nothing. Its step 0 is a BOUNDED wait (`--wait-seconds`, default 120, probing every 2 s) for containerd to answer `ctr version` before the first pull: `../install-node.sh` may have replaced this node's k3s config a few steps earlier, and on `gmktec-xubuntu` 2026-09-07 step 7c reached the pull five seconds before k3s-agent's containerd was serving and died at `dial unix /run/k3s/containerd/containerd.sock: connect: connection refused`, so the runbook only succeeded when invoked a second time (`livespec-dev-tooling-4qp4`). `--dry-run` prints the plan, that wait included, without root. |
 | `extract-externals-exit-tests.sh` | That script's exit tests. Drives it with a FAKE `ctr` on a scratch `PATH` that logs every call and serves a two-file image out of the suite's own `mktemp -d`, and a fake `id` (the script writes under `/var/lib/rancher/k3s` on a node, so it requires root) — so the suite proves that `--dry-run` names the bounded wait, its socket and its cadence BEFORE the step that pulls and invokes no `ctr` at all, that a containerd answering only on the third probe is waited out and the pull issued only afterwards (with the extraction completing and the `current` pointer published), and that a containerd that never answers ends the run non-zero inside its bound, naming the socket, with no pull attempted and nothing written under the storage root. Touches no host and needs no root. |
-| `install-container-hook.sh` | Node-local (root), run by `../install-node.sh` step 7c: verifies the committed bundle's manifest and that it was built for the pinned image, installs it to `/usr/local/lib/ci-runner-k3s/hooks/<runner-version>/index.js` (0644 root), then runs `extract-externals.sh` with the hook cross-check. |
+| `install-container-hook.sh` | **(RETIRED in C5b, 9btv — the `container_hook` Ansible role does its install side now; see `ansible/ci-pool.yml`.)** Node-local (root), was run by `install-node.sh` step 7c: verified the committed bundle's manifest and that it was built for the pinned image, installs it to `/usr/local/lib/ci-runner-k3s/hooks/<runner-version>/index.js` (0644 root), then runs `extract-externals.sh` with the hook cross-check. |
 
 ## How the pieces fit
 
 ```
 developer host                          CI node (poweredge-xubuntu)
 --------------                          ---------------------------
-build-patched-hook.sh                   install-node.sh 7c -> install-container-hook.sh
+build-patched-hook.sh                   ansible/ci-pool.yml -> container_hook role
   derive hook version (Dockerfile ARG)    verify bundle/<v>/index.js.sha256 + BUILD-INFO
   image bytes == release asset            install /usr/local/lib/ci-runner-k3s/hooks/<v>/index.js
   unpatched rebuild == release asset      extract-externals.sh
@@ -144,12 +144,12 @@ order:
    `ACTIONS_RUNNER_PRESEEDED_EXTERNALS_VERSION=<new version>`. Each file
    states the version three times and no file can inherit it from another —
    Helm applies each on its own with `-f`, merging no shared base — so this
-   is a rewrite of every file, and `assert_values_pins_agree` (run by both
-   `build-patched-hook.sh` and `install-container-hook.sh`) refuses a
-   half-rewritten set. The provisioner's setup script needs no edit at all:
+   is a rewrite of every file, and `build-patched-hook.sh`'s
+   `assert_values_pins_agree`, like the `container_hook` role's first task,
+   refuses a half-rewritten set. The provisioner's setup script needs no edit at all:
    it seeds from `.externals/current`, which step 3 republishes.
-3. On the node: `sudo ../install-node.sh ../../phase0-bare-metal/profiles/<node>.env`
-   (step 7c installs the
+3. From the control node `vps`: `just ansible-apply ansible/ci-pool.yml --tags container_hook`
+   (the `container_hook` role installs the
    new hook beside the old one, extracts the new image's externals under their
    own version directory, and moves `.externals/current` onto it; nothing
    running changes yet, because volumes already provisioned keep the seed they
@@ -183,8 +183,8 @@ order:
   Dockerfile default was overridden at image build. Derive the version from
   the bytes instead (compare the image's `index.js` against release assets)
   and pass the finding on; the script has no override flag on purpose.
-- **`install-container-hook.sh`: no bundle for this runner version**, or the
-  bundle's `BUILD-INFO` names a different digest. Step 1 of the bump was
+- **The `container_hook` role: no bundle for this runner version**, or the
+  bundle's `index.js` does not match its committed `index.js.sha256`. Step 1 of the bump was
   skipped; nothing is installed.
 - **`extract-externals.sh`: the image's runner is not the tag's version**, or
   the bundled hook's sha256 is not what the bundle patched. A mismatched
@@ -253,5 +253,6 @@ touch while that item was editing them:
   repository change alone: the single-start watcher must show externals
   present at +0 s, no copy in the hook log, per-start writes under 100 MB, a
   real node20 and a real node24 action green on the pool, and one clean reboot
-  survived — all of which need the host apply (`install-node.sh` step 7c, then
+  survived — all of which need the host apply (the `container_hook` role via
+  `just ansible-apply ansible/ci-pool.yml`, then
   the values applied per release and idle runners recycled).

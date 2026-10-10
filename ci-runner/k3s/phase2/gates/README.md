@@ -32,7 +32,7 @@ token. A verdict cannot be separated from the tree it was produced against.
 | `converge-gates-mirror.sh` | The converge: creates the bare mirrors on the `ci-cache` tier with the ownership and mode the receive path and the daemon both need, sweeps once, applies the daemon. Run on every boot by `../reconstruct/converge-ci-stack.sh` step 10c. |
 | `git-daemon.yaml` | The read-only in-cluster daemon (`ConfigMap` + `Deployment` + `Service`) serving those mirrors at `git://git-gates.gates.svc.cluster.local:9418`. |
 | `prune-gate-refs.sh` | The `refs/gates/*` sweep. Run once per converge and hourly by the timer. |
-| `gate-ref-prune.service` / `.timer` | The host timer that runs the sweep. Installed and enabled by `../reconstruct/install-converge-unit.sh`. |
+| `gate-ref-prune.service` / `.timer` | The host timer that runs the sweep. Installed and enabled by the `ci_converge_unit` Ansible role (`ansible/ci-pool.yml`). |
 | `gates-mirror-exit-tests.sh` | Proves mirror-creation idempotence and the pruning cutoff without touching a host or a cluster. |
 | `gates-rbac.yaml` | R4.S2: the gate submitter's ServiceAccount and Role. |
 | `gate-job-template.yaml`, `render-gate-job.sh` | R4.S5: the Job a gate run instantiates, and its renderer. |
