@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.93.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.3...v1.93.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ci-runner:** complete ci_converge_unit role + relocate boot-converge reachability test (C5b) ([2bf830b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2bf830bf34cd59fff82ca5e6caa8907fb7c96819))
+
 ## [1.93.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.2...v1.93.3) (2026-10-10)
 
 
