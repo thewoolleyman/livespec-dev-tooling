@@ -61,16 +61,25 @@ recipe").
    never run k3s — that directory is otherwise made by the k3s installer this
    step runs, which is too late — so the two run in this order with no hand step
    between them.
-4. **`sudo phase2/install-node.sh phase0-bare-metal/profiles/<node>.env`** — the
-   ordered node-local runbook. It reads the node's cluster role and its
-   admission capacity `C` from the same profile step 1 used, and runs the step
-   plan that role calls for.
+4. **`just ansible-apply ansible/ci-pool.yml`** — the node-local provisioning,
+   run FROM THE CONTROL NODE `vps` (never on the node; there is deliberately no
+   checkout there), preceded by `just ansible-drift ansible/ci-pool.yml`, whose
+   diff is read before the apply. The play selects the `ci_pool` inventory
+   group; each role reads this node's `cluster_role` from its entry in
+   `ansible/inventory/legacy.yml` and its admission capacity `C` from the same
+   profile step 1 used, and runs the step plan that role calls for. This is the
+   layer the automation applies — the roles under `ansible/roles/` are the
+   installers, and the `phase2/` artifacts they copy are not
+   (`SPECIFICATION/non-functional-requirements.md` §"Runner-pool node rebuild
+   recipe", **One procedure, staged.**). Steps 1–3 stay committed shell because
+   they run before k3s exists.
 5. **`install-arc.sh`, `install-kueue.sh`** — the phase-1 by-hand cluster
    provisioning legs, superseded for boot durability by `phase2/reconstruct/`.
 
-Every node-specific value in steps 1–4 comes from that node's
-`phase0-bare-metal/profiles/<node>.env`; a second node is a second profile, not
-a second procedure.
+Every node-specific value in steps 1–3 comes from that node's
+`phase0-bare-metal/profiles/<node>.env`, and step 4 reads that profile and the
+node's inventory entry; a second node is a second profile plus a second
+inventory entry, not a second procedure.
 
 Two profiles are committed, and between them they exercise both shapes the
 sequence has:

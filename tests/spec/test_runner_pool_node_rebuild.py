@@ -27,10 +27,20 @@ it has rotted.
   safety mechanism, not decoration.
 
 - **"The documented rebuild sequence MUST name the bare-metal stage as its first
-  step, so that a rebuild done exactly as written starts from empty storage and
-  not from a prepared disk."** The clause is explicitly about the DOCUMENT: a
-  sequence whose step 1 is the k3s install reads as complete and produces a node
-  built on whatever storage layout happened to already be there.
+  step [...] and MUST name the playbook apply as its node-provisioning step."**
+  Both clauses are explicitly about the DOCUMENT: a sequence whose step 1 is the
+  k3s install reads as complete and produces a node built on whatever storage
+  layout happened to already be there; a sequence whose provisioning step is a
+  shell runbook run ON the node lands every node-local facility in the layer
+  the automation no longer applies — the inverted-layer defect of 2026-09-11/12
+  (livespec plan `gitops-deployment-discipline`).
+
+- **"The node-provisioning stage MUST be the committed Ansible playbook
+  `ansible/ci-pool.yml`"**, applied from the control node against the `ci_pool`
+  inventory group. The playbook is a stage of the procedure like the shell
+  stages before it, so it is held to the same no-embedded-identity rule; and it
+  MUST select the group rather than a node, or a second node would need a
+  second playbook — the "second procedure" the section forbids.
 """
 
 from __future__ import annotations
@@ -45,15 +55,18 @@ _K3S = _REPO_ROOT / "ci-runner" / "k3s"
 _BARE_METAL = _K3S / "phase0-bare-metal"
 _PROFILES_DIR = _BARE_METAL / "profiles"
 _README = _K3S / "README.md"
+_PLAYBOOK = _REPO_ROOT / "ansible" / "ci-pool.yml"
 
 # The staged procedure: the bare-metal stages, the shared profile parser, the
-# k3s install, and the ordered node-local runbook.
+# k3s install, and the committed playbook that provisions the node from the
+# control node. The shell stages run before k3s exists; the playbook is the
+# layer the automation applies once it does.
 _PROCEDURE = (
     _BARE_METAL / "storage-layout.sh",
     _BARE_METAL / "base-os-install.sh",
     _BARE_METAL / "profile.sh",
     _K3S / "provision-k3s.sh",
-    _K3S / "phase2" / "install-node.sh",
+    _PLAYBOOK,
 )
 
 # The profile keys whose values IDENTIFY one node — its name, the media it
@@ -78,9 +91,13 @@ _UNSET_VALUES = ("", "auto")
 
 _CONSENT_FLAG = "--i-consent-to-destroy"
 _BARE_METAL_STAGE = "phase0-bare-metal/"
+_PROVISIONING_STEP = "just ansible-apply ansible/ci-pool.yml"
+_RETIRED_RUNBOOK = "install-node.sh"
+_POOL_GROUP = "ci_pool"
 
 _PROFILE_ENTRY = re.compile(r"^(?P<key>[A-Z][A-Z0-9_]*)=(?P<value>.*)$", re.MULTILINE)
 _NUMBERED_STEP = re.compile(r"^(?P<number>\d+)\.\s+\*\*`(?P<artifact>[^`]+)`", re.MULTILINE)
+_PLAY_HOSTS = re.compile(r"^\s{0,2}hosts:\s*(?P<selector>\S+)\s*$", re.MULTILINE)
 
 
 def _profiles() -> dict[str, dict[str, str]]:
@@ -109,7 +126,7 @@ def _executable_lines(*, source: Path) -> list[tuple[int, str]]:
 
 
 def test_no_stage_of_the_procedure_embeds_a_value_that_belongs_to_one_node() -> None:
-    """Node identity lives in the profile; the stages carry none of it."""
+    """Node identity lives in the profile; the stages — the playbook included — carry none of it."""
     identity = {
         value: f"{name}:{key}"
         for name, profile in _profiles().items()
@@ -187,4 +204,34 @@ def test_the_documented_rebuild_sequence_starts_at_the_bare_metal_stage() -> Non
         f"step reads as complete and produces a node built on whatever storage layout "
         f"happened to already be there — the prepared-disk start the section names "
         f"explicitly; first={first_number}. {first_artifact!r}"
+    )
+
+
+def test_the_documented_sequence_provisions_the_node_with_the_playbook_apply() -> None:
+    """The provisioning step is the committed playbook from the control node, not the retired runbook."""
+    artifacts = [
+        artifact for _, artifact in _NUMBERED_STEP.findall(_README.read_text(encoding="utf-8"))
+    ]
+    assert any(artifact.startswith(_PROVISIONING_STEP) for artifact in artifacts), (
+        f"the documented sequence must name `{_PROVISIONING_STEP}` as its node-provisioning "
+        f"step — the layer the automation applies; steps={artifacts}"
+    )
+    assert not any(_RETIRED_RUNBOOK in artifact for artifact in artifacts), (
+        f"the documented sequence must not name the retired shell runbook as a step: a "
+        f"rebuild done exactly as written would land every node-local facility in the layer "
+        f"the automation no longer applies (R5, 2026-09-11/12); steps={artifacts}"
+    )
+
+
+def test_the_playbook_is_committed_and_selects_the_pool_group_not_a_node() -> None:
+    """One playbook for the group: a second node is a second inventory entry, never a second play."""
+    assert _PLAYBOOK.is_file(), (
+        f"the node-provisioning stage must be the committed playbook "
+        f"{_PLAYBOOK.relative_to(_REPO_ROOT)}; every stage of the procedure is a committed artifact"
+    )
+    selectors = _PLAY_HOSTS.findall(_PLAYBOOK.read_text(encoding="utf-8"))
+    assert selectors == [_POOL_GROUP], (
+        f"the playbook must carry one play selecting the `{_POOL_GROUP}` inventory group, so "
+        f"that a second pool node is a second inventory entry consumed by the same play and "
+        f"never a second procedure; selectors={selectors}"
     )
