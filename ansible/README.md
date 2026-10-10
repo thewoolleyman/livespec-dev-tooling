@@ -79,6 +79,11 @@ playbook targeted `ci_pool`, so `poweredge-xubuntu` and `gmktec-xubuntu`
 drifted unreached
 (`livespec-dev-tooling-9btv`).
 
+`ci_converge_unit` only ENABLES `converge-ci-stack.service` for the next boot; to
+apply a committed change to the cluster stack now, pass `-e
+ci_converge_unit_run_now=true` on one `just ansible-apply ansible/ci-pool.yml`
+(it starts the converge, waits for it, and fails unless it succeeded).
+
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that
 genuinely vary by machine live in `inventory/host_vars/<host>.yml` rather than
