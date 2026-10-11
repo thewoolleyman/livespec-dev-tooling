@@ -31,6 +31,13 @@
       tags: [host_tools]
     - role: sccache_redis
       tags: [sccache_redis]
+    # The aggregate resource envelope around this host's sandbox containers,
+    # interim until the Kubernetes sandbox backend restores per-run limits. Its
+    # own tag converges the envelope and restarts NOTHING; the separate
+    # `docker_sandbox_slice_drained_restart` tag is the operator's restart, taken
+    # inside a drained window. See the role's HOST_VARS.md.
+    - role: docker_sandbox_slice
+      tags: [docker_sandbox_slice]
   tasks:
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:
