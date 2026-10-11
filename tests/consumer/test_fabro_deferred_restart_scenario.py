@@ -47,6 +47,19 @@ CONTROL ARMS. Every positive arm is paired. The marker arm proves the gate REFUS
 permitted run (a handler that wrote the marker on every run would make the marker mean
 nothing) and that at least one file-changing task notifies the event, so a role whose
 notify had been dropped cannot pass by having a well-gated handler nothing reaches.
+
+THE CLAIM IS A DEBUG TASK, SO ITS `when:` IS WHAT DECIDES WHETHER IT SPEAKS — work-item
+livespec-dev-tooling-ylaf75. Measured on `hp-xubuntu` 2026-10-11 at master `f05fb95b`: an
+apply with `fabro_server_restart_allowed` false printed "carries a restart into this run."
+for `fabro-server`, `fabro-server-mi-homelab` and `fabro-server-candidate` while none of
+the three owed one — the restart-pending directory was empty, both running units kept
+their `ActiveEnterTimestamp`, and the task reported `ok` rather than `changed`. The gap is
+that `changed_when` decides whether the NOTIFICATION is raised; it does not suppress a
+message Ansible has already rendered, so the fixed opening sentence printed on every run.
+A line saying an instance carries a restart reads, to the operator holding a quiesced
+window, as a restart of a fleet factory that is carrying live runs — which is why the
+converged control below is the load-bearing arm and why these arms read `when:` rather
+than `changed_when:`.
 """
 
 from __future__ import annotations
@@ -88,6 +101,12 @@ _DECIDE_TASK = "Decide whether this instance carries a restart into this run"
 _MARKER_PROBE = "Look for a restart this instance deferred on an earlier run"
 _DEFERRED_FACT = "fabro_server_restart_deferred"
 _DOC_HEADING = "## The deferred restart"
+
+# The operator-visible claim this mechanism's message makes, stated because the Definition
+# of Done states it as the thing a converged run must not print. The arms below assert it
+# is PRESENT in the role first, so a reword fails loudly rather than silently emptying the
+# scan that looks for every entry capable of making it.
+_CARRYING_CLAIM = "carries a restart into this run"
 
 
 def _unquote(*, value: str) -> str:
@@ -343,6 +362,32 @@ def _prose(*, section: str) -> str:
     return section.replace("`", "").replace("**", "")
 
 
+# A `msg:` folded block and its continuation lines. Scoped to the field rather than to the
+# whole entry because the entry that DERIVES the two facts is named "Decide whether this
+# instance carries a restart into this run" — so a scan matching the phrase anywhere in a
+# body picks up a `set_fact` that prints nothing, and then asks whether a task with no
+# `when:` fires. That is a failure reported against an entry no operator ever reads.
+_MESSAGE_FIELD = re.compile(r"^    msg: >-\n(?P<lines>(?:      .*\n)+)", re.MULTILINE)
+
+
+def _message_of(*, body: str) -> str:
+    """The operator-visible message one entry prints, with its YAML folding collapsed.
+
+    Collapsed because the role folds its messages across lines to stay inside the file's
+    width, so the sentence an operator reads on one line of terminal output is split
+    mid-phrase in the source. A phrase match against the raw bytes would miss it.
+    """
+    match = _MESSAGE_FIELD.search(body)
+    return "" if match is None else " ".join(match["lines"].split())
+
+
+def _carrying_claim_entries() -> list[tuple[str, str]]:
+    """Every entry whose printed message tells the operator this instance owes a restart."""
+    return [
+        (name, body) for name, body in _every_entry() if _CARRYING_CLAIM in _message_of(body=body)
+    ]
+
+
 def _marker_clearing_entries() -> list[tuple[str, str]]:
     """Every entry that removes this instance's restart-pending marker."""
     return [
@@ -466,11 +511,51 @@ def test_a_refused_rerun_keeps_the_marker_and_reports_the_restart_still_pending(
     )
 
 
+def test_a_converged_instance_is_never_told_it_carries_a_restart() -> None:
+    """A run on which nothing is owed prints no line claiming a restart is carried."""
+    claiming = _carrying_claim_entries()
+    assert claiming, (
+        f"no entry of the role prints a message containing {_CARRYING_CLAIM!r}, so this arm "
+        f"and its control are both vacuous. Either the claim was reworded — in which case "
+        f"state the new wording here — or the account of WHY an instance owes a restart has "
+        f"been dropped, which is the one thing the marker deliberately does not carry"
+    )
+    converged = _host_state(restart_allowed=False)
+    for name, body in claiming:
+        assert not _fires(body=body, field="when", scope=converged), (
+            f"{name!r} prints {_CARRYING_CLAIM!r} on a CONVERGED instance — no "
+            f"restart-pending marker, and a running server already executing the file at "
+            f"its binary_path. Measured on hp-xubuntu 2026-10-11: the line printed for all "
+            f"three instances while none owed a restart. To the operator it reads as a "
+            f"restart of a factory carrying live runs, which is the most expensive thing "
+            f"this role can appear to have done;\nwhen={_conditions(body=body, field='when')}"
+        )
+    claim = _named(name=_CARRY_TASK, source=_TASKS)
+    assert _fires(
+        body=claim, field="when", scope=_host_state(restart_allowed=False, deferred=True)
+    ), (
+        f"the control arm, and the half a silence fix is apt to break: an instance WITH a "
+        f"restart-pending marker must still reach the claim, because the claim is the only "
+        f"task that notifies {_FILES_CHANGED!r} on a run where no file changed. Gated into "
+        f"silence on that run too, the standing deferral is neither applied nor reported — "
+        f"the defect this file's second arm exists to keep fixed;\n"
+        f"when={_conditions(body=claim, field='when')}"
+    )
+    assert _conditions(body=claim, field="notify") == [_FILES_CHANGED], (
+        "and it must still carry the notify: a `when` that lets the claim run is worth "
+        "nothing if the event it raises was dropped in the same edit"
+    )
+
+
 def test_the_restart_gates_stay_inside_the_vocabulary_this_test_can_evaluate() -> None:
     """The control on the evaluator: every gate the arms read must actually be evaluated."""
     scope = _host_state(restart_allowed=False, deferred=True, stale=True, restarted=True)
     gated = (
         (_TASKS, _CARRY_TASK, "changed_when"),
+        # The claim's `when:` joined this list with livespec-dev-tooling-ylaf75: it decides
+        # whether the task SPEAKS, which on a converged instance is the difference between
+        # silence and a line announcing a restart of a live factory.
+        (_TASKS, _CARRY_TASK, "when"),
         (_HANDLERS, _RESTART_HANDLER, "when"),
         (_HANDLERS, _RECORD_HANDLER, "when"),
         (_HANDLERS, _REPORT_HANDLER, "when"),
