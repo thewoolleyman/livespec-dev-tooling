@@ -429,6 +429,16 @@
       exit. This role does not kill processes.
     success_msg: nothing unsupervised is holding this instance's port
 
+- name: Resolve where this instance's deferred restart is recorded
+  # Its own fact rather than a line in "Resolve this instance's axes", because
+  # it is not an axis: nothing in host_vars names it and no instance may
+  # override it. The path is the role's directory plus the instance's unit
+  # name, which is the one identifier the role has already refused to let two
+  # instances share — so two instances can never collide on one marker.
+  ansible.builtin.set_fact:
+    fabro_server_restart_pending_marker: "{{ fabro_server_restart_pending_dir }}/{{ fabro_server_unit_name }}"
+  check_mode: false
+
 - name: Ask this instance whether any Fabro run is active
   # install.sh's require_quiet_server, and it runs only when a restart is
   # actually on the table. FABRO_SERVER pins the probe to THIS instance; the
@@ -556,6 +566,22 @@
   # and then fails only on a real apply.
   ansible.builtin.file:
     path: "{{ fabro_server_libexec_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Create the directory this host's restart-pending markers live in
+  # Same reason the libexec directory above is its own task, and the same
+  # reason docker_sandbox_slice owns the directory its marker lives in:
+  # `--check` cannot see past an absent parent, so the marker write would be
+  # reported as a would-be change on every dry run and then fail only on a
+  # real apply. Owning it here is what makes a first apply on a fresh host
+  # succeed. One directory per host, shared by every instance; the file inside
+  # it is per instance.
+  ansible.builtin.file:
+    path: "{{ fabro_server_restart_pending_dir }}"
     state: directory
     owner: root
     group: root

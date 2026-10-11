@@ -168,6 +168,39 @@ fabro_server_web_verify_attempts: 300
 # quiet server; the preflight then re-checks that it really is quiet.
 fabro_server_restart_allowed: false
 
+# --- where a refused restart is REMEMBERED ---------------------------------
+#
+# A REFUSAL THAT CANNOT BE REDEEMED IS NOT A DEFERRAL. The comment above says a
+# changed unit file is "left to take effect at the next restart the operator
+# chooses". That was not true of the role as it stood: the notification lived
+# only in the run's own handler queue, so the next run — the one the operator
+# makes with -e fabro_server_restart_allowed=true, exactly as HOST_VARS.md
+# tells them to — arrived with nothing to act on and restarted nothing.
+#
+# Measured on hp-xubuntu 2026-10-11 (work-item livespec-dev-tooling-vmeiv6):
+# pass 1 installed the v0.382 carrier at the candidate's binary_path and
+# changed its unit with the flag false, and reported the instance NOT
+# restarted. Pass 2 with the flag true cleared the carrying-runs refusal,
+# changed nothing, never notified the handler, and left the candidate serving
+# 0.378.0-nightly.0 with 72 hours of uptime. Nothing errored, which is what
+# made it survive: the second run's output is indistinguishable from a
+# converged host's.
+#
+# So the deferral is written to a FILE on the host, one per instance, and a
+# later run reads it. This is the mechanism docker_sandbox_slice already uses
+# for the same shape (a setting that takes effect only on a restart, recorded
+# as pending and applied by an operator-selected run); the difference is that
+# this marker is PER INSTANCE, because a host runs several Fabro servers and a
+# marker naming only the host would not say which of them owes the restart.
+#
+# The directory is the role's; the file inside it is named for the instance's
+# unit, resolved as fabro_server_restart_pending_marker in tasks/main.yml.
+# /var/lib rather than /run: this must survive a reboot. A deferral that a
+# reboot forgot would be worse than none, because a reboot STARTS the instance
+# from its new unit file and so silently resolves some deferrals and not
+# others, leaving no way to tell which.
+fabro_server_restart_pending_dir: /var/lib/fabro-server/restart-pending
+
 # --- settings.toml ---------------------------------------------------------
 #
 # False means the settings template is rendered in permanent check mode and
