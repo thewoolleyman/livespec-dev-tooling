@@ -14,6 +14,15 @@
   the first unset name instead, before anything is written. Same failure, one
   layer down, with nothing to maintain.
 
+  TWO LINES READ A PER-INSTANCE VARIABLE WHERE THEY ONCE SPELLED THE HOST'S
+  HOME. `Environment=HOME` renders fabro_server_home_env and ExecStart renders
+  fabro_server_binary_path, both resolved in tasks/main.yml from OPTIONAL
+  instance axes that default to the host home and to
+  <host_home>/.fabro/bin/fabro. An instance that names neither therefore
+  renders exactly the bytes this template rendered before the axes existed,
+  which is the property tests/consumer/test_fabro_instance_axes_scenario.py
+  holds against a captured pre-axis unit.
+
   The in-body comments below are the live unit's own and are deliberately
   preserved verbatim, so that rendering this template and diffing it against a
   host's installed unit stays the verification the fabro-hosts README
@@ -31,7 +40,7 @@ Wants=network-online.target docker.service tailscaled.service
 Type=simple
 User={{ fabro_server_host_user }}
 Group={{ fabro_server_host_group }}
-Environment=HOME={{ fabro_server_host_home }}
+Environment=HOME={{ fabro_server_home_env }}
 # Cold SlateDB warmup under host load can exceed the verifier's default 60s
 # budget, which makes ExecStartPost fail, which makes Restart=always kill a
 # half-booted server -- a self-reinforcing crash loop that does not recover.
@@ -53,7 +62,7 @@ WorkingDirectory={{ fabro_server_host_checkout }}
 # --storage-dir and --config are passed EXPLICITLY even for the default
 # instance, where they equal Fabro's built-ins: an instance that relied on the
 # defaults would silently share the fleet server's state.
-ExecStart={{ fabro_server_host_home }}/.fabro/bin/fabro server start --foreground --bind 127.0.0.1:{{ fabro_server_port }} --web --no-upgrade-check --storage-dir {{ fabro_server_home_dir }}/storage --config {{ fabro_server_home_dir }}/settings.toml
+ExecStart={{ fabro_server_binary_path }} server start --foreground --bind 127.0.0.1:{{ fabro_server_port }} --web --no-upgrade-check --storage-dir {{ fabro_server_home_dir }}/storage --config {{ fabro_server_home_dir }}/settings.toml
 ExecStartPost=/usr/local/libexec/fabro-server-verify-web
 Restart=always
 RestartSec=5

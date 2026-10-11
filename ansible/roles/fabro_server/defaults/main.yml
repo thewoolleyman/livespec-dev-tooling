@@ -27,10 +27,12 @@
 # the instance's <home_dir>/storage/server.env, its settings.toml, its GitHub
 # App private key in the instance's own Fabro vault, and a `tailscale serve`
 # mapping for the new port in the tailscale-admin repository. The Fabro
-# binary at <host_home>/.fabro/bin/fabro is shared and needs nothing new.
+# binary at <host_home>/.fabro/bin/fabro is shared and needs nothing new —
+# unless the instance names a `binary_path` of its own, which is its own
+# fifth piece of out-of-band state: the role never builds a binary.
 
 # The host's instances. Supplied per host in host_vars; see HOST_VARS.md for
-# the four that exist today. The role reads this list only to prove the
+# the five that exist today. The role reads this list only to prove the
 # instances do not collide with one another.
 fabro_server_instances: []
 
@@ -49,8 +51,31 @@ fabro_server_instances: []
 #   github_app_id       which factory bot this instance publishes as
 #   otel_dropin         present | absent | unmanaged; see below
 #
-# One further axis is OPTIONAL and defaults, because omitting it cannot
+# Three further axes are OPTIONAL and default, because omitting one cannot
 # make two instances collide — it only preserves prior behaviour:
+#
+#   binary_path         the Fabro binary this instance's unit starts.
+#                       Defaults to <host_home>/.fabro/bin/fabro, the binary
+#                       every instance shared when it was the only one there
+#                       could be. An instance names its own to run a
+#                       DIFFERENT BUILD from its siblings, which is what a
+#                       cutover rehearsal is: hp's candidate instance carries
+#                       the build production moves onto, beside the fleet
+#                       instance still carrying the current one. The role
+#                       never builds it; the preflight stats the path this
+#                       axis resolves to, so a declared-but-absent binary is
+#                       refused before anything is written.
+#
+#   home_env            the unit's Environment=HOME. Defaults to
+#                       <host_home>. Independent of home_dir on purpose:
+#                       home_dir is the state root the server is POINTED at
+#                       with --storage-dir and --config, while this is the
+#                       HOME its process and its CLI resolve ~/.fabro
+#                       against. The fleet instance keeps the account's home
+#                       and puts its state in <home>/.fabro; the candidate
+#                       instance sets both to its own root, which is how it
+#                       was hand-installed on 2026-10-08 and what this axis
+#                       exists to express rather than tolerate.
 #
 #   service_state       running (default) | stopped. `stopped` means the
 #                       instance's unit, drop-in, settings.toml and state
