@@ -123,14 +123,20 @@ def test_an_unreadable_switch_is_off(*, tmp_path: Path) -> None:
     assert delegated_gate_enabled(repo_root=tmp_path) is False
 
 
-def test_this_repository_has_not_opted_in() -> None:
-    """Default OFF until the slice is proven — asserted of the real tree.
+def test_this_repository_has_opted_in() -> None:
+    """The first repository to opt in — asserted of the real tree.
 
-    The rollout is per repository and this slice wires the CLIENT, not the
-    opt-in. A future commit that flips this repository has to change this test
-    deliberately, which is the review the flip is owed.
+    This test was `..._has_not_opted_in` and asserted `False` until
+    livespec-dev-tooling-pj7q4m; flipping it IS the deliberate review the
+    rollout is owed, which is why it was written as an assertion about the real
+    `pyproject.toml` rather than left implicit.
+
+    The flip is only safe because the switch is no longer the whole answer: a
+    push delegates only where the pushing user can read the gates credential, so
+    this repository gates on the cluster from the VPS and locally everywhere
+    else — this suite's own host included.
     """
-    assert delegated_gate_enabled(repo_root=_REPO_ROOT) is False
+    assert delegated_gate_enabled(repo_root=_REPO_ROOT) is True
 
 
 # ---------------------------------------------------------------------------

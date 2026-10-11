@@ -603,32 +603,28 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Delegated pre-push gate",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-pj7q4m",
-    "reason": "Spec-first debt: a real consumer-tier test is owed asserting the opt-in, host-eligibility and no-verdict refusal; livespec-dev-tooling-pj7q4m owns landing it."
+    "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_delegation_is_selected_by_the_opt_in_and_the_host_together",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). The mapped arm proves the section's first two bullets totally: it walks every opt-in shape the \"Opt-in\" bullet enumerates (absent key, `false`, a value of another type, the literal `true`) and both host-eligibility answers the \"Host eligibility\" bullet names, then asserts this repository's own live opt-in — the first in the fleet. Companion arms in the same module prove the remaining bullets: the three scenario tests cover the local fall-through, the green-verdict completion with its green token, and the no-verdict refusal, and each also asserts the recipe branch the probe's exit code selects. \"Credential use\" and \"Credential installation\" are proven in tests/consumer/test_gates_credential_provisioning.py, which runs the shipped `with-gates-kubeconfig` and `refresh-gates-kubeconfig` against fakes on their own PATH and reads the installing role's owner, group and mode; the wrapper, the role and the client are held to ONE credential path by tests.livespec_dev_tooling.test_gate_credential.test_the_client_and_the_wrapper_and_the_role_name_one_credential."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an opted-in push from a host that cannot read the gates kubeconfig gates locally",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-pj7q4m",
-    "reason": "Spec-first debt: a real integration-tier test is owed that drives the pre-push gate in a fixture repository setting delegated_gate = true on a host whose pushing user cannot read the gates kubeconfig, and asserts that the local just check fall-through runs, that the gated-locally line prints and that no gate Job is submitted to the gates namespace. livespec-dev-tooling-pj7q4m owns landing it."
+    "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_an_opted_in_push_from_a_host_without_the_credential_gates_locally",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). Two arms, because the seam between the decision and the recipe IS an exit code: the decision arm drives the shipped `gate_remote_delegate` entry point in a fixture repository that sets `delegated_gate = true`, with the gates credential pointed at an absent path, and asserts the non-zero answer plus the printed gated-locally line (the scenario's second Then); the recipe arm feeds that same exit code to the real scripts/just/check-pre-push.sh against stub `uv` and `just`, and asserts it invokes `just hook_gate=1 check` (the first Then) and never `gate_remote_delegate run`, so nothing is submitted to the gates namespace (the third). Eligibility is made false by ABSENCE rather than by a permission bit, because the suite runs as root in the factory sandbox where a mode-0000 fixture is still readable."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an opted-in push from an eligible host completes on a green cluster verdict",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-pj7q4m",
-    "reason": "Spec-first debt: a real integration-tier test is owed that drives the pre-push gate in a fixture repository setting delegated_gate = true on a host whose pushing user can read the gates kubeconfig, against a stubbed gates cluster, and asserts that a gate Job runs for the committed HEAD tree, that the push completes only after its green verdict and that the green token is recorded for that tree. livespec-dev-tooling-pj7q4m owns landing it."
+    "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_an_opted_in_push_from_an_eligible_host_completes_on_a_green_cluster_verdict",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). The gate client's only door to the world is its GateCommandRunner seam, so a canned cluster answers every command and no API server, mirror or host is reached. The mapped arm proves all three Thens: the probe answers 0 for the opted-in fixture repository on a host holding a readable credential and the recipe arm then execs `gate_remote_delegate run` rather than any `just` target; the submit carries `--namespace gates` through the credential wrapper and the manifest rendered for the committed HEAD tree's own hash, which is the same hash the mirror ref is named for; the run polls through a Job that has not been admitted yet before reading `Complete`, so the push completes only AFTER the green verdict; and the existing `green_token write` CLI is invoked, which is the token the pre-push gate's own skip path reads."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an opted-in push is refused when no verdict arrives",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-pj7q4m",
-    "reason": "Spec-first debt: a real integration-tier test is owed that drives the pre-push gate in a fixture repository setting delegated_gate = true on an eligible host whose cluster API server is unreachable, and asserts that the push is refused and that the local just check fall-through does not run in place of the missing verdict. livespec-dev-tooling-pj7q4m owns landing it."
+    "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_an_opted_in_push_is_refused_when_no_verdict_arrives",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). The Given is modelled as the canned cluster refusing every CLUSTER command with kubectl's own unreachable-API-server wording while the local git and renderer steps still succeed — the host is fine, the cluster is not. The mapped arm proves the first Then as NO_VERDICT with `refuses_push` true and no green token written (asserted as the absence of the `green_token write` invocation, not merely as a flag), and the second Then in the recipe arm: with the client exiting non-zero the script exits non-zero and invokes no `just` target at all, so the local aggregate does not run in place of the missing verdict. That is the half a recipe could get wrong while looking generous — falling back locally would turn \"we could not gate this\" into \"we gated it some other way\"."
   }
 ]

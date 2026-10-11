@@ -164,6 +164,19 @@ neutral_hook_body_path = { not_applicable = "produces the canonical body but ins
 # (severity increase only — no escape hatch).
 file_lloc_hard_gate = true
 plan_lifecycle_anchor = true
+# Delegate this repository's pre-push aggregate to the gates namespace of the
+# self-hosted k3s pool — the FIRST repository to opt in, and the rollout is per
+# repository on purpose (SPECIFICATION/contracts.md §"Delegated pre-push gate").
+#
+# THIS KEY IS NOT HOST-BLIND, which is what makes opting in safe. It travels with
+# the code and says nothing about where a push happens, so it is ANDed at push
+# time with whether the pushing user can read the gates kubeconfig on THIS host
+# (`gate_credential.gates_kubeconfig_readable`). On the VPS, which holds the
+# credential, a push gates on the cluster; from a Fabro sandbox or a laptop,
+# which do not, the push runs the full local `just check` fall-through and says
+# so. Nothing about the fail-closed rule moves: once a push HAS delegated, a
+# verdict that never arrives refuses it rather than falling back to local.
+delegated_gate = true
 mirror_pairings = [
     { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
 ]
