@@ -86,6 +86,14 @@
     # refused apart; see the assert below.
     fabro_server_binary_source: "{{ fabro_server_instance.binary_source | default('') }}"
     fabro_server_binary_sha256: "{{ fabro_server_instance.binary_sha256 | default('') }}"
+    # OPTIONAL, and EMPTY by default — the word for "this instance's sandbox
+    # environment catalog is not declared here". Unlike every axis above it,
+    # this one names SERVER-MANAGED state rather than a file or a unit
+    # setting: a sandbox environment lives in the instance's own store and is
+    # written through its /api/v1/environments API, so the empty list is also
+    # the only default that leaves the catalog of an instance predating the
+    # axis exactly as its server holds it.
+    fabro_server_environments: "{{ fabro_server_instance.environments | default([]) }}"
 
 - name: Refuse an instance mapping that does not spell every axis
   # render-unit.sh exited 3 naming the one variable a values file had missed.
@@ -177,6 +185,64 @@
       '{{ fabro_server_binary_sha256 }}'. Declaring NEITHER is the normal case
       and leaves the host's binary alone.
     success_msg: this instance's binary-install pair is either absent or complete
+
+- name: Refuse an environment declaration that does not spell every field
+  # A PREFLIGHT, like every other refusal in this file, and for a sharper
+  # reason than most: a declaration missing a field reaches the environments
+  # API as a body the server refuses outright — every field of a create or
+  # replace request is required and an unknown one is rejected — so an
+  # incomplete declaration would present as a 422 part-way through a converge
+  # rather than as a refusal before the host is read.
+  #
+  # The memory grammar is Fabro's own: an integer and one of its size units.
+  # It is checked here because the alternative is a 422 naming a serde type,
+  # and because the unit decides what the server STORES — note that Fabro
+  # re-renders a stored size in the largest decimal unit that divides it
+  # exactly, so a value spelled some other way (a binary unit, or 8000MB for
+  # 8GB) converges but is reported as changed on every subsequent run.
+  # Declare the size the way Fabro renders it.
+  ansible.builtin.assert:
+    that:
+      - _fabro_server_environment_fields | difference(item.keys() | list) | length == 0
+      - item.id | default('') | length > 0
+      - item.image | default('') | length > 0
+      - (item.cpu | default(0) | int) > 0
+      - item.memory | default('') is match('^[0-9]+(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)$')
+    fail_msg: >-
+      This declared environment of {{ fabro_server_unit_name }} is incomplete or
+      malformed. Every one of {{ _fabro_server_environment_fields | join(', ') }}
+      must be spelled out: a non-empty id to write it in the catalog under, a
+      non-empty docker image, a cpu count above zero, and a memory size that is
+      an integer followed by one of B, KB, MB, GB, TB, KiB, MiB, GiB or TiB.
+      This entry declares {{ item | dict2items | map(attribute='key') | sort | join(', ') }}.
+      See roles/fabro_server/HOST_VARS.md.
+    success_msg: this environment declaration is complete
+  vars:
+    _fabro_server_environment_fields:
+      - id
+      - image
+      - cpu
+      - memory
+  loop: "{{ fabro_server_environments }}"
+  loop_control:
+    label: "{{ item.id | default('an entry with no id') }}"
+
+- name: Refuse two declared environments that share an id
+  # The catalog is keyed by id, so two entries carrying one id are two
+  # declarations of which only the last would survive — and SILENTLY, because
+  # each write succeeds on its own. This is the environments-list analogue of
+  # the instance-list refusal above, and it runs for the same reason: the role
+  # can see the whole list, so the proof belongs in the play that does the
+  # writing rather than in a repo-side test.
+  ansible.builtin.assert:
+    that:
+      - (fabro_server_environments | map(attribute='id') | list | unique | length) == (fabro_server_environments | length)
+    fail_msg: >-
+      Two of {{ fabro_server_unit_name }}'s declared environments share an id.
+      Each declared environment needs an id of its own; the catalog keyed by
+      that id is the one thing two entries cannot share.
+    success_msg: this instance's declared environments are distinct
+  when: fabro_server_environments | length > 1
 
 # --- preflight: the out-of-band state this role refuses to create ----------
 #

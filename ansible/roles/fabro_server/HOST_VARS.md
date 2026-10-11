@@ -51,7 +51,7 @@ per instance and a `roles:` entry runs once per host.
 
 Every other key of an instance mapping must be spelled out — the role refuses a
 mapping that misses one, because an instance that inherited `unit_name`,
-`home_dir` or `port` would silently share the fleet server's state. These five
+`home_dir` or `port` would silently share the fleet server's state. These six
 are the exception, and they are safe to default for one reason: omitting one
 cannot make two instances collide. It only keeps the behaviour the instance had
 before the axis existed.
@@ -62,6 +62,7 @@ before the axis existed.
 | `binary_source` | empty — the role leaves whatever is at `binary_path` alone | an **absolute control-node path** holding the build this instance should run. Declared, the role installs that file at `binary_path`; omitted, the instance's binary is out-of-band state the role only ever reads. |
 | `binary_sha256` | empty — the role leaves whatever is at `binary_path` alone | the sha256 `binary_source` must hash to. Declared together with `binary_source` or not at all; the role refuses the pair half-spelled, and refuses a source that does not hash to this digest **before** it reads the factory host. |
 | `home_env` | `fabro_server_host_home` | the unit's `Environment=HOME`. Independent of `home_dir`: `home_dir` is the state root the server is POINTED at with `--storage-dir` and `--config`, while this is the `HOME` its process and its CLI resolve `~/.fabro` against. |
+| `environments` | `[]` — the role leaves whatever the instance's server holds alone | the instance's **sandbox environment catalog**: a list of entries, each spelling an `id`, a docker `image`, a `cpu` count and a `memory` size. The one axis that is not a file this role renders — a sandbox environment is server-managed state behind the instance's `/api/v1/environments` API. See "The sandbox environment catalog" below. |
 | `service_state` | `running` | `stopped` parks the instance in version control — unit, drop-in, `settings.toml` and state directory all KEPT on the host, the unit stopped and disabled, the restart handler never fired for it and the running-server verification skipped. Bring it back by flipping the word and re-applying. Refused while the instance is carrying runs, by the quiet-server guard that gates a restart. |
 
 An instance that omits `binary_path` and `home_env` renders a unit **byte-identical**
