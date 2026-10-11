@@ -100,6 +100,7 @@ _CARRY_TASK = "Claim a restart this instance carried over from an earlier run"
 _DECIDE_TASK = "Decide whether this instance carries a restart into this run"
 _MARKER_PROBE = "Look for a restart this instance deferred on an earlier run"
 _DEFERRED_FACT = "fabro_server_restart_deferred"
+_STALE_FACT = "fabro_server_binary_stale"
 _DOC_HEADING = "## The deferred restart"
 
 # The operator-visible claim this mechanism's message makes, stated because the Definition
@@ -544,6 +545,45 @@ def test_a_converged_instance_is_never_told_it_carries_a_restart() -> None:
     assert _conditions(body=claim, field="notify") == [_FILES_CHANGED], (
         "and it must still carry the notify: a `when` that lets the claim run is worth "
         "nothing if the event it raises was dropped in the same edit"
+    )
+
+
+def test_the_claim_speaks_for_a_deferral_and_for_a_stale_binary_and_for_nothing_else() -> None:
+    """The claim's gate admits exactly the two dispositions that owe a restart.
+
+    Both halves are needed and neither implies the other. A marker is the deferral an
+    earlier run RECORDED; a stale binary is a running server executing a file other than
+    the one at its `binary_path`, which is how a candidate instance that was restarted from
+    some other path presents — and that one leaves no marker behind, so a gate reading only
+    the marker is silent on exactly the drift the `/proc/<pid>/exe` probe exists to find.
+    """
+    claim = _named(name=_CARRY_TASK, source=_TASKS)
+    owing = (
+        (_DEFERRED_FACT, _host_state(restart_allowed=False, deferred=True)),
+        (_STALE_FACT, _host_state(restart_allowed=False, stale=True)),
+    )
+    for fact, scope in owing:
+        assert _fires(body=claim, field="when", scope=scope), (
+            f"an instance owing a restart because {fact} is true does NOT reach the claim, "
+            f"so nothing notifies {_FILES_CHANGED!r} on a run where no file changed and the "
+            f"restart it owes is neither applied nor reported. The two dispositions are "
+            f"independent — a stale binary leaves no marker — so a gate carrying only one of "
+            f"them silently drops the other;\nwhen={_conditions(body=claim, field='when')}"
+        )
+    assert not _fires(body=claim, field="when", scope=_host_state(restart_allowed=False)), (
+        f"and the paired control, which is why the gate is these two facts rather than "
+        f"`true`: with neither {_DEFERRED_FACT} nor {_STALE_FACT} set the instance owes "
+        f"nothing, and the claim must not run at all"
+    )
+    assert set(_conditions(body=claim, field="when")) == set(
+        _conditions(body=claim, field="changed_when")
+    ), (
+        f"the gate and {'changed_when'!r} must read the SAME condition. This task's only "
+        f"effects are the message its gate admits and the event its changed_when raises, so "
+        f"two different conditions can only mean one of the two is wrong: a run that printed "
+        f"the claim and notified nothing, or one that notified without saying why;\n"
+        f"when={_conditions(body=claim, field='when')}\n"
+        f"changed_when={_conditions(body=claim, field='changed_when')}"
     )
 
 
