@@ -40,6 +40,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ANSIBLE = _REPO_ROOT / "ansible"
 _ROLE = _ANSIBLE / "roles" / "fabro_server"
 _TASKS = _ROLE / "tasks" / "main.yml"
+_ENVIRONMENT_TASKS = _ROLE / "tasks" / "environment.yml"
+_HANDLERS = _ROLE / "handlers" / "main.yml"
 
 # The Definition of Done's own vocabulary, stated because it states it: the axis an
 # instance mapping gains, and the four fields each declared environment spells.
@@ -56,6 +58,25 @@ _DUPLICATE_REFUSAL = "Refuse two declared environments that share an id"
 # refusal that fires after a write has already left the host changed.
 _FIRST_WRITE = "Create the shared libexec directory"
 _ENVIRONMENTS_FACT = "fabro_server_environments"
+_API_TASK = "Resolve this instance's environments API"
+_CATALOG_INCLUDE = "Create or update each sandbox environment this instance declares"
+_CATALOG_READ = "Read what this instance's catalog holds for this environment"
+_CURRENT_TASK = "Resolve what the catalog currently holds for this environment"
+_TEMPLATE_READ = "Read the catalog entry a new environment is derived from"
+_BASE_TASK = "Resolve the catalog entry this environment's unnamed fields come from"
+_SETTINGS_TASK = "Resolve the settings this environment is written with"
+_CREATE_TASK = "Create this environment in the instance's catalog"
+_API_URL_FACT = "fabro_server_environments_url"
+_PRESENT_FACT = "fabro_server_environment_present"
+_SETTINGS_FACT = "fabro_server_environment_settings"
+_ENVIRONMENT_LOOP_VAR = "fabro_server_environment"
+
+# The API this slice writes through, and the one environment variable the instance's
+# own `server.env` carries the credential under. Both are the Definition of Done's
+# words rather than the role's, which is why they are stated here.
+_API_PATH = "/api/v1/environments"
+_TOKEN_NAME = "FABRO_DEV_TOKEN"
+_SERVER_ENV = "storage/server.env"
 
 
 def _unquote(*, value: str) -> str:
@@ -73,7 +94,17 @@ def _tasks_of(*, source: Path) -> list[tuple[str, str]]:
     suite — `[dependency-groups].dev` carries none, deliberately, since the package
     itself is dependency-free. A task begins at a column-zero `- name:` line and ends at
     the next one, which is the shape every role file in this tree uses.
+
+    An ABSENT file asserts rather than raising. A reader that died on the open would fail
+    with a `FileNotFoundError` from deep inside `pathlib`, which says that a path is
+    missing and nothing about which claim went unproved; the assertion says what the file
+    is for.
     """
+    assert source.is_file(), (
+        f"the role MUST carry {source.name}: every claim this module makes about what a "
+        f"converge does to an instance's catalog is read out of that file, so its absence "
+        f"is the catalog work not existing at all"
+    )
     text = source.read_text(encoding="utf-8")
     openings = [match.start() for match in re.finditer(r"^- name: ", text, re.MULTILINE)]
     assert openings, (
@@ -126,6 +157,14 @@ _BARE_ITEM = re.compile(r"^ {6}- (?P<item>[a-z_]+)$", re.MULTILINE)
 _LIST_FIELD = re.compile(r"^  (?P<field>[a-z_]+):\n(?P<items>(?:    (?:#|- ).*\n)+)", re.MULTILINE)
 _SCALAR_FIELD = re.compile(r"^  (?P<field>[a-z_]+): (?P<value>[^\n>|].*)$", re.MULTILINE)
 _LIST_ITEM = "- "
+# One mapping entry of a `set_fact` or an `environment` block, inline or folded. The
+# folded continuation sits deeper than the key, which is what ends one entry and begins
+# the next without a YAML parser.
+_SET_FACT_KEY = re.compile(r"^ {4}(?P<fact>[A-Za-z_][A-Za-z_0-9]*): (?P<value>.*)$")
+_FOLDED_LINE = re.compile(r"^ {6,}(?P<text>\S.*)$")
+# The YAML block indicators a folded value opens with. They are syntax, not part of
+# the expression the role evaluates, so the reader drops them.
+_BLOCK_SCALARS = frozenset({">", ">-", "|", "|-"})
 
 
 def _conditions(*, body: str, field: str) -> list[str]:
@@ -164,6 +203,53 @@ def _resolution_expressions() -> dict[str, str]:
 def _bare_items(*, body: str) -> frozenset[str]:
     """Every bare identifier listed in one task's own blocks."""
     return frozenset(match["item"] for match in _BARE_ITEM.finditer(body))
+
+
+def _set_facts(*, name: str, source: Path) -> dict[str, str]:
+    """Each fact one `set_fact` task sets, and the expression it sets it to.
+
+    Folded (`>-`) as well as inline, because every expression in this slice that is
+    worth reading is long enough that its author folded it. The value is normalised to
+    one line, which is what Jinja sees: a folded scalar's newlines are spaces, and the
+    block indicator itself is YAML syntax rather than part of the expression.
+    """
+    body = _named(name=name, source=source)
+    facts: dict[str, str] = {}
+    key: str | None = None
+    for line in body.splitlines():
+        entry = _SET_FACT_KEY.match(line)
+        if entry is not None:
+            key = entry["fact"]
+            inline = entry["value"].strip()
+            facts[key] = "" if inline in _BLOCK_SCALARS else _unquote(value=inline)
+            continue
+        folded = _FOLDED_LINE.match(line)
+        if folded is not None and key is not None:
+            facts[key] = f"{facts[key]} {folded['text']}".strip()
+            continue
+        key = None
+    assert facts, (
+        f"{name!r} must set at least one fact this reader can see; a set_fact whose "
+        f"entries it cannot read is a derivation nothing here checks"
+    )
+    return facts
+
+
+def _api_calls() -> dict[str, str]:
+    """Every task of the role that runs a shell command, by name, with its command text.
+
+    `shell` rather than `command` is how this role reaches the environments API at all:
+    the token has to be read out of the instance's own `server.env` ON THE HOST and
+    piped into curl, which needs a pipe. So "every shell task" is the honest population
+    for the credential arms below — they are claims about all of them, not about the
+    three this slice happens to add.
+    """
+    return {
+        name: body
+        for source in (_TASKS, _ENVIRONMENT_TASKS, _HANDLERS)
+        for name, body in _tasks_of(source=source)
+        if "ansible.builtin.shell:" in body
+    }
 
 
 # --- the axis an instance mapping gains ------------------------------------
@@ -240,3 +326,149 @@ def test_an_instance_mapping_accepts_an_optional_catalog_of_declared_environment
             f"because this service is the orchestrator's own server: a run that refuses after "
             f"writing has already changed a host it then declined to converge"
         )
+
+
+# --- writing a declared environment through the instance's own API ---------
+
+
+def test_each_declared_environment_is_written_through_this_instances_environments_api() -> None:
+    """The second assertion, create half: one request per declared environment, to its own server."""
+    url = _set_facts(name=_API_TASK, source=_TASKS).get(_API_URL_FACT)
+    assert url is not None, (
+        f"the role MUST resolve {_API_URL_FACT}: the catalog of a two-instance host belongs "
+        f"to ONE of its servers, and a request sent to whichever server the CLI's default "
+        f"target names would write the wrong instance's catalog;\nresolved={_API_TASK!r}"
+    )
+    assert url == f"http://127.0.0.1:{{{{ fabro_server_port }}}}{_API_PATH}", (
+        f"the API MUST be {_API_PATH} on THIS instance's own loopback port, which is the "
+        f"only address that identifies one server of a host that runs several; the role "
+        f"resolves {url!r}"
+    )
+    include = _named(name=_CATALOG_INCLUDE, source=_TASKS)
+    assert _conditions(body=include, field="loop") == [f"{{{{ {_ENVIRONMENTS_FACT} }}}}"], (
+        f"the catalog work MUST be included once per DECLARED environment, looping over "
+        f"{_ENVIRONMENTS_FACT}. An instance declaring none then reaches its server not at "
+        f"all, which is what makes the axis safe to add to five live instances;\n"
+        f"loop={_conditions(body=include, field='loop')}"
+    )
+    assert f"loop_var: {_ENVIRONMENT_LOOP_VAR}" in include, (
+        f"the loop MUST name its variable {_ENVIRONMENT_LOOP_VAR}, not Ansible's `item`: "
+        f"the included file is read by an operator who cannot see this loop, and `item` in "
+        f"a nested include is the classic way one loop's value is read as another's"
+    )
+    read = _named(name=_CATALOG_READ, source=_ENVIRONMENT_TASKS)
+    assert f"{{{{ {_API_URL_FACT} }}}}/{{{{ {_ENVIRONMENT_LOOP_VAR}.id }}}}" in read, (
+        f"the catalog read MUST GET {_API_PATH}/<id> — the per-environment endpoint — so "
+        f"that 404 answers 'this environment does not exist yet' for THIS id rather than "
+        f"being inferred from a list;\ntask={read!r}"
+    )
+    assert _conditions(body=read, field="changed_when") == ["false"], (
+        "the read MUST be changed_when false. A read that reported itself changed would "
+        "make every converge of a converged host report drift it does not have"
+    )
+    assert _conditions(body=read, field="check_mode") == ["false"], (
+        "the read MUST run under `--check` too: this repository's rule is that a drift "
+        "report which skipped its own probes would report on a catalog it never inspected"
+    )
+    create = _named(name=_CREATE_TASK, source=_ENVIRONMENT_TASKS)
+    assert "--request POST" in create and f"{{{{ {_API_URL_FACT} }}}}" in create, (
+        f"creating an absent environment MUST POST to {_API_PATH} itself — the collection "
+        f"endpoint, which is the only one that accepts an id;\ntask={create!r}"
+    )
+    assert f"{_SETTINGS_FACT}\n" in create or f"{_SETTINGS_FACT} " in create, (
+        f"the POST body MUST be built from {_SETTINGS_FACT}, the settings the role derived "
+        f"for this environment; a body spelled inline in the request would be a second "
+        f"place the declared values live"
+    )
+    assert _conditions(body=create, field="changed_when") == ["true"], (
+        "creating an environment that was not in the catalog IS a change, and must say so: "
+        "a shell task reports nothing by itself, so a converge that created the factory's "
+        "environment would otherwise be indistinguishable from one that found it already "
+        "there"
+    )
+    assert _conditions(body=create, field="when") == [f"not ({_PRESENT_FACT} | bool)"], (
+        f"the create MUST be gated on the environment being ABSENT from the catalog. "
+        f"POSTing an id the catalog already holds is a 409, so an ungated create turns "
+        f"every second converge into a failed run;\nwhen={_conditions(body=create, field='when')}"
+    )
+
+
+def test_the_request_body_is_derived_from_the_catalog_rather_than_spelled_in_the_role() -> None:
+    """The control on the body: the role overrides the declared fields and invents nothing."""
+    current = _set_facts(name=_CURRENT_TASK, source=_ENVIRONMENT_TASKS)
+    assert _PRESENT_FACT in current, (
+        f"the role MUST derive {_PRESENT_FACT} from the catalog read itself. Every gate "
+        f"below reads that fact, so a fact derived from anything else is a gate answering "
+        f"about a catalog nobody looked at;\nderived={sorted(current)}"
+    )
+    assert "stdout_lines" in current[_PRESENT_FACT] and "200" in current[_PRESENT_FACT], (
+        f"{_PRESENT_FACT} MUST come from the status line of the catalog read's own output; "
+        f"the role derives it from {current[_PRESENT_FACT]!r}"
+    )
+    base = _set_facts(name=_BASE_TASK, source=_ENVIRONMENT_TASKS)
+    settings = _set_facts(name=_SETTINGS_TASK, source=_ENVIRONMENT_TASKS)
+    assert _SETTINGS_FACT in settings, f"the role must derive {_SETTINGS_FACT}"
+    expression = settings[_SETTINGS_FACT]
+    base_fact = next(iter(base))
+    assert expression.startswith(f"{{{{ {base_fact}"), (
+        f"{_SETTINGS_FACT} MUST be built BY OVERRIDING the catalog entry the role read, "
+        f"not assembled from role-side constants. A create or replace request requires "
+        f"every field the server's build knows and refuses any field it does not, and this "
+        f"repository cannot know which fields a given factory host's Fabro build has — the "
+        f"candidate instance exists precisely to run a DIFFERENT build from its sibling. A "
+        f"body carried from the server's own answer is the one shape that cannot be wrong "
+        f"about its schema, and it also means a converge never resets a field version "
+        f"control does not declare;\nexpression={expression!r}"
+    )
+    for field in ("image", "resources"):
+        assert f"'{field}'" in expression, (
+            f"the derived settings MUST override {field!r} — the two sub-objects the "
+            f"declared image, cpu and memory live in;\nexpression={expression!r}"
+        )
+    for response_only in ("id", "revision"):
+        assert f"- {response_only}\n" in _named(name=_SETTINGS_TASK, source=_ENVIRONMENT_TASKS), (
+            f"{response_only!r} MUST be dropped from the derived settings. The API carries "
+            f"both OUTSIDE the settings — the id in the create body and the path, the "
+            f"revision in the If-Match header — and refuses a request body that repeats "
+            f"them, so carrying the catalog entry verbatim would be refused"
+        )
+
+
+def test_the_api_credential_is_read_on_the_host_and_never_enters_ansibles_own_variables() -> None:
+    """The second assertion, credential half: the token is used without being logged."""
+    calls = _api_calls()
+    assert calls, (
+        "the role MUST reach the environments API through a host-side shell: the credential "
+        "lives in a 0600 file on the factory host, and the whole point of this shape is "
+        "that it is read there rather than slurped back to the controller"
+    )
+    reading = {name: body for name, body in calls.items() if _TOKEN_NAME in body}
+    assert reading, (
+        f"at least one of those tasks MUST read {_TOKEN_NAME}; the environments API "
+        f"authenticates with it and nothing else the role holds"
+    )
+    for name, body in sorted(reading.items()):
+        assert _SERVER_ENV in body, (
+            f"{name!r} must read the token out of the instance's own {_SERVER_ENV}. That "
+            f"file is where Fabro generates it, is mode 0600, and is per instance — a "
+            f"token taken from anywhere else would authenticate against a different server "
+            f"or not at all"
+        )
+        assert "--header @-" in body, (
+            f"{name!r} MUST hand curl the Authorization header on STDIN (`--header @-`). "
+            f"Spelled as an argument the token would sit in the host's process table for "
+            f"the life of the request, readable by anything that can run `ps`; on stdin it "
+            f"never appears in an argv at all;\ntask={body!r}"
+        )
+    for source in (_TASKS, _ENVIRONMENT_TASKS, _HANDLERS):
+        for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), start=1):
+            if _TOKEN_NAME not in line:
+                continue
+            assert "{{" not in line, (
+                f"{source.name}:{number} resolves {_TOKEN_NAME} through a Jinja expression: "
+                f"{line!r}. That is the one shape this assertion forbids — a templated "
+                f"token is a VALUE in Ansible's variable space, which means it reaches the "
+                f"play's own diagnostics, `-v` output, the module invocation record and any "
+                f"message that interpolates the variable. Read it in the host-side shell "
+                f"instead, where Ansible never sees it"
+            )

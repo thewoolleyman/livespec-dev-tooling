@@ -264,6 +264,24 @@ fabro_server_settings_mode: "0600"
 # hp instance would strip working telemetry.
 fabro_server_otel_dropin_default: unmanaged
 
+# --- the catalog entry a NEW environment is derived from -------------------
+#
+# A create or replace request to /api/v1/environments requires EVERY field the
+# server's build knows and refuses ANY field it does not, and an `environments`
+# declaration names only four of them. The rest — the provider, the network
+# policy, the lifecycle, the labels, the environment variables — are carried
+# from a catalog entry the server itself returned, which is the one body shape
+# that cannot be wrong about a schema this repository cannot know. hp runs two
+# instances on two different Fabro builds on purpose, so "cannot know" is the
+# normal case rather than a hypothetical.
+#
+# For an environment the catalog already holds, that entry IS its own base. For
+# one it does not hold yet, this names the entry to derive from: `default`, the
+# environment every Fabro server seeds, so a factory host always has one. It is
+# not a per-instance axis because an instance that needed a different base would
+# be declaring a second environment, which the axis already expresses.
+fabro_server_environment_template_id: default
+
 # --- shared, host-invariant destinations -----------------------------------
 fabro_server_libexec_dir: /usr/local/libexec
 fabro_server_unit_dir: /etc/systemd/system

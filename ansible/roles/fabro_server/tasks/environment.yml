@@ -1,0 +1,234 @@
+---
+# ONE declared sandbox environment of ONE Fabro instance, reconciled against that
+# instance's own server-managed catalog. Included once per entry of the
+# instance's `environments` axis by tasks/main.yml, which supplies
+# `fabro_server_environment`.
+#
+# WHY A REQUEST AND NOT A RENDERED FILE. Every other thing this role manages is a
+# file: a unit, a drop-in, a settings.toml, a binary. A sandbox environment is
+# not. On this engine it is SERVER-MANAGED state — it lives in the instance's own
+# store, is read and written through GET/POST /api/v1/environments and
+# GET/PUT /api/v1/environments/{id}, and a workflow.toml [environments.*] table
+# is never selected. So the only way version control reaches a catalog is a
+# request the converge makes.
+#
+# WHY THE REQUEST BODY IS DERIVED FROM THE CATALOG RATHER THAN SPELLED HERE. A
+# create or replace request requires EVERY field the server's build knows and
+# refuses ANY field it does not. This repository cannot know which fields a given
+# factory host's Fabro build has — hp runs two instances on two different builds
+# on purpose, which is what the cutover rehearsal IS — so a body assembled from
+# role-side constants would be this repository's GUESS at a schema. The body
+# below is instead the catalog entry the server itself returned, with the four
+# fields version control declares overridden onto it. That shape cannot be wrong
+# about its own schema, and it has a second property worth as much: a converge
+# never resets a field version control does not declare, so an environment's
+# network policy, its labels and its env map survive a converge untouched.
+#
+# WHY THE CREDENTIAL IS READ BY THE SHELL AND NOT BY ANSIBLE. The environments API
+# authenticates with the instance's FABRO_DEV_TOKEN, which Fabro generates into
+# <home_dir>/storage/server.env at mode 0600. Reading it with `slurp` would carry
+# a live credential back to the controller and into the play's variable space,
+# where it reaches `-v` output, the module invocation record and anything that
+# interpolates the variable. So every request below reads it in the host-side
+# shell and pipes it to curl as a whole header line on STDIN — `--header @-`.
+# Ansible never holds the value, and because the header is on stdin rather than
+# in an argument, neither does the host's process table. That is why these tasks
+# carry no `no_log`: there is no value here to hide, and hiding them would hide
+# the API's own error body, which is the entire diagnostic for a refused write.
+#
+# The token's own character set is why the `sed` below needs no unquoting: a dev
+# token is `fabro_dev_` plus 64 hex characters, and Fabro's env-file writer quotes
+# a value only when it falls outside `[A-Za-z0-9_\-./+=]`.
+
+- name: Read what this instance's catalog holds for this environment
+  # TWO VALUES OUT OF ONE REQUEST: the body on stdout, and the status code on a
+  # final line of its own. `--fail-with-body` is deliberately NOT used, because
+  # 404 is an ANSWER here — "this environment is not in the catalog yet", which
+  # is the create case — and a curl that exited non-zero on it would turn the
+  # normal first converge into a failed run.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --header @- --header 'Accept: application/json' \
+          --write-out '\n%{http_code}' "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}/{{ fabro_server_environment.id }}"
+  register: fabro_server_environment_read
+  changed_when: false
+  check_mode: false
+
+- name: Refuse a catalog answer this role cannot act on
+  # Only two answers are ones this role acts on. 401 means the token in
+  # server.env is not the one the running server started with — a real condition
+  # on a host whose server.env was regenerated under a running process — and
+  # anything else is a server fault. Naming the status is what separates those
+  # from the 404 that is a normal first converge.
+  ansible.builtin.assert:
+    that:
+      - fabro_server_environment_read.stdout_lines | length > 0
+      - (fabro_server_environment_read.stdout_lines[-1] | trim) in ['200', '404']
+    fail_msg: >-
+      GET {{ fabro_server_environments_url }}/{{ fabro_server_environment.id }} on
+      {{ fabro_server_unit_name }} answered
+      '{{ fabro_server_environment_read.stdout_lines[-1] | default('nothing') | trim }}'.
+      Only 200 (the catalog holds this environment) and 404 (it does not yet) are
+      answers this role acts on: 401 means {{ fabro_server_home_dir }}/storage/server.env
+      does not carry the token the running server started with, and anything else
+      is a fault in the server. Nothing in the catalog has been written.
+    success_msg: the catalog answered for this environment
+
+- name: Resolve what the catalog currently holds for this environment
+  # The status line decides which of the two cases this is; the lines before it
+  # are the entry itself. Both facts come from the ONE read above rather than
+  # from a second request, so the decision below and the body it builds describe
+  # the same catalog at the same moment.
+  ansible.builtin.set_fact:
+    fabro_server_environment_present: >-
+      {{ (fabro_server_environment_read.stdout_lines[-1] | trim) == '200' }}
+    fabro_server_environment_current: >-
+      {{ fabro_server_environment_read.stdout_lines[:-1] | join('\n') | from_json
+      if (fabro_server_environment_read.stdout_lines[-1] | trim) == '200' else {} }}
+  check_mode: false
+
+- name: Read the catalog entry a new environment is derived from
+  # ONLY for an environment the catalog does not hold. An entry it does hold is
+  # its own base — the fields version control does not declare are already that
+  # entry's — so this request would be a second read of a catalog this run has
+  # already answered for.
+  #
+  # The entry read here is the one every Fabro server seeds, so a factory host
+  # always has one; `fabro_server_environment_template_id` is the role default
+  # rather than a per-instance axis because an instance that needed a different
+  # base would be declaring a second environment, which the axis already
+  # expresses.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --header @- --header 'Accept: application/json' \
+          --write-out '\n%{http_code}' "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}/{{ fabro_server_environment_template_id }}"
+  register: fabro_server_environment_template_read
+  changed_when: false
+  check_mode: false
+  when: not (fabro_server_environment_present | bool)
+
+- name: Resolve the catalog entry this environment's unnamed fields come from
+  # One fact, two sources, and the `| default([])` is what makes the skipped
+  # read above safe to read from: a task Ansible skipped registers a result with
+  # no stdout at all, so the template branch reads as an empty mapping and the
+  # refusal below names it rather than a Jinja error naming an attribute.
+  ansible.builtin.set_fact:
+    fabro_server_environment_base: >-
+      {{ fabro_server_environment_current if (fabro_server_environment_present | bool)
+      else (fabro_server_environment_template_read.stdout_lines[:-1] | join('\n') | from_json
+      if (fabro_server_environment_template_read.stdout_lines | default([]) | length > 0
+      and (fabro_server_environment_template_read.stdout_lines[-1] | trim) == '200')
+      else {}) }}
+  check_mode: false
+
+- name: Refuse a declared environment the catalog cannot be extended from
+  ansible.builtin.assert:
+    that:
+      - fabro_server_environment_base | length > 0
+    fail_msg: >-
+      {{ fabro_server_environment.id }} is not in {{ fabro_server_unit_name }}'s
+      catalog, and neither is the '{{ fabro_server_environment_template_id }}'
+      entry this role derives a new one from. Every field a declaration does not
+      name — the provider, the network policy, the lifecycle, the labels and the
+      environment variables — is carried from that entry rather than guessed
+      here, because the environments API requires every field it knows and
+      refuses every field it does not, and this repository cannot know which
+      fields the Fabro build on this host has. Nothing has been written. Create
+      the entry by hand once, or declare an environment the catalog already
+      holds.
+    success_msg: this environment has a catalog entry to derive its unnamed fields from
+
+- name: Refuse to derive a docker-image environment from a non-docker catalog entry
+  # The declaration names a docker IMAGE, so an entry whose provider is anything
+  # else would take the image and ignore it — an environment that looks declared
+  # and runs something else, which is the shape of the failure this whole slice
+  # exists to end.
+  ansible.builtin.assert:
+    that:
+      - (fabro_server_environment_base.provider | default('')) == 'docker'
+    fail_msg: >-
+      The catalog entry {{ fabro_server_environment.id }} would be derived from
+      has provider '{{ fabro_server_environment_base.provider | default('none') }}',
+      not docker, while this declaration names the docker image
+      {{ fabro_server_environment.image }}. A non-docker environment ignores an
+      image, so writing this would produce an environment that reads as declared
+      and runs something else. Nothing has been written.
+    success_msg: this environment's base entry runs docker images
+
+- name: Resolve the image and resource settings version control declares
+  # The declared fields, in the two sub-objects the API carries them in, each
+  # COMBINED onto whatever the base entry holds rather than replacing it: an
+  # image or resources object may carry a field this repository does not know
+  # about, and dropping it would be the same guess at a schema the derivation
+  # exists to avoid. `dockerfile` is the one field set rather than merged — an
+  # image cannot be both a named docker image and an inline Dockerfile, and this
+  # declaration names the former.
+  ansible.builtin.set_fact:
+    fabro_server_environment_image: >-
+      {{ fabro_server_environment_base.image | default({})
+      | combine({'docker': fabro_server_environment.image, 'dockerfile': none}) }}
+    fabro_server_environment_resources: >-
+      {{ fabro_server_environment_base.resources | default({})
+      | combine({'cpu': fabro_server_environment.cpu | int,
+      'memory': fabro_server_environment.memory}) }}
+  check_mode: false
+
+- name: Resolve the settings this environment is written with
+  # `id` and `revision` are dropped because the API carries both OUTSIDE the
+  # settings — the id in the create body and in the replace path, the revision
+  # in the replace request's If-Match header — and a request body that repeated
+  # either is refused as carrying an unknown field.
+  ansible.builtin.set_fact:
+    fabro_server_environment_settings: >-
+      {{ fabro_server_environment_base
+      | combine({'image': fabro_server_environment_image,
+      'resources': fabro_server_environment_resources})
+      | dict2items | rejectattr('key', 'in', _fabro_server_environment_response_only)
+      | items2dict }}
+  vars:
+    _fabro_server_environment_response_only:
+      - id
+      - revision
+  check_mode: false
+
+- name: Create this environment in the instance's catalog
+  # The collection endpoint, which is the one that accepts an id. `--fail-with-body`
+  # HERE, unlike on the reads, because every status but success is a fault worth
+  # stopping the play for — and the body carries the server's own reason, which
+  # is why these tasks are not hidden behind `no_log`.
+  #
+  # Ansible skips a `shell` task under `--check`, which is exactly the behaviour
+  # wanted: a dry run must not write a live factory's catalog. The reads above
+  # carry `check_mode: false` and so still run, which is what lets a drift report
+  # answer for a catalog it really inspected.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --fail-with-body --header @- \
+          --header 'Content-Type: application/json' --request POST \
+          --data-binary "${FABRO_ENVIRONMENT_BODY}" "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}"
+    FABRO_ENVIRONMENT_BODY: >-
+      {{ fabro_server_environment_settings
+      | combine({'id': fabro_server_environment.id}) | to_json }}
+  changed_when: true
+  when: not (fabro_server_environment_present | bool)
