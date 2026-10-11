@@ -33,8 +33,9 @@
 #
 # SECRET DISCIPLINE. The rendered kubeconfig carries a bearer token. It is never
 # echoed, never logged and never placed on argv: it flows from `kubectl` into a
-# shell variable and out through `install -m 0600 /dev/stdin`, so it exists on
-# disk only as an owner-only file. `--dry-run` requires no cluster and reads no
+# shell variable and out through a HEREDOC into an owner-only temp file that is
+# then renamed over the destination, so it exists on disk only as an owner-only
+# file. `--dry-run` requires no cluster and reads no
 # credential, which is what makes the whole plan — including the exact RBAC
 # bytes — reviewable before anything is minted, and what lets
 # ./provision-node-status-credential-exit-tests.sh assert this off-host.
@@ -245,9 +246,28 @@ SA_TOKEN="$(printf '%s' "$SA_TOKEN" | base64 -d)"
 log "3. Render the kubeconfig to ${RENDER_TO} (mode ${RENDER_MODE})"
 # `certificate-authority-data` is passed through STILL base64-encoded, which is
 # the encoding the kubeconfig format wants -- decoding and re-encoding it would
-# be two chances to corrupt a certificate for no gain. The heredoc reaches
-# `install` over /dev/stdin, so neither the token nor the CA is ever an argv.
-install -m "$RENDER_MODE" /dev/stdin "$RENDER_TO" <<KUBECONFIG_EOF
+# be two chances to corrupt a certificate for no gain. The heredoc is `cat`'s
+# STDIN, so neither the token nor the CA is ever an argv.
+#
+# THE WRITE IS A TEMP FILE AND A RENAME, NOT `install /dev/stdin "$RENDER_TO"`.
+# uutils coreutils -- what Ubuntu 25.10 and 26.04 ship INSTEAD of GNU coreutils,
+# and what the pool's machines run -- fails `install` with `install: No such
+# file or directory` (exit 1) whenever the DESTINATION operand already exists.
+# A re-run of this converge renders the SAME token rather than rotating it (see
+# the IDEMPOTENT note in the header), so a `--render-to` naming a file an
+# earlier run produced is the ORDINARY state of the server, and that is the
+# state the write refused. Measured 2026-10-11 on uutils 0.2.2 (Ubuntu 25.10)
+# and 0.8.0 (Ubuntu 26.04): absent destination exit 0, existing destination
+# exit 1 (livespec-dev-tooling-74q6iw).
+#
+# The temp file is created under `umask 077` in the destination's OWN directory,
+# so it is never readable beyond its owner for even an instant, is given
+# RENDER_MODE, and is then renamed over the destination: atomic, and independent
+# of which coreutils this machine carries. A `gnu`-prefixed binary is NOT the
+# fix: it is not guaranteed on every host in the fleet.
+RENDER_TMP="$(umask 077 && mktemp "${RENDER_TO}.render.XXXXXX")"
+trap 'rm -f -- "${RENDER_TMP}"' EXIT
+cat > "$RENDER_TMP" <<KUBECONFIG_EOF
 apiVersion: v1
 kind: Config
 clusters:
@@ -266,6 +286,9 @@ contexts:
       user: ${SA_NAME}
 current-context: ${SA_NAME}@ci-runner
 KUBECONFIG_EOF
+chmod "$RENDER_MODE" "$RENDER_TMP"
+mv -f "$RENDER_TMP" "$RENDER_TO"
+trap - EXIT
 
 log "DONE. ${NODE_NAME}'s node-status credential is minted."
 printf 'rendered: %s (%s) -- it grants get+patch on nodes/status for %s and nothing else.\n' \

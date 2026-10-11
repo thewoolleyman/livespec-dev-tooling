@@ -29,14 +29,30 @@
 #      `--dry-run=client -o yaml | kubectl apply -f -` form;
 #   G. the COMMITTED gmktec-xubuntu profile names a CHURN_KUBECONFIG_FILE that
 #      is NOT the k3s server's admin kubeconfig -- the defect this whole
-#      artifact exists to close.
+#      artifact exists to close;
+#   H. THE RE-RENDER: `--render-to` naming a file an earlier run already
+#      produced is rewritten at RENDER_MODE and exits 0. A re-run renders the
+#      SAME token rather than rotating it, so that is the ORDINARY state of the
+#      server -- and `install -m MODE /dev/stdin DEST` exited 1 in exactly that
+#      state under uutils coreutils (livespec-dev-tooling-74q6iw).
 #
-# HOW IT STAYS OFF THE CLUSTER. Every case runs against a PATH of TRIPWIRES for
+# HOW IT STAYS OFF THE CLUSTER. Cases A-G run against a PATH of TRIPWIRES for
 # `kubectl`, `install`, `sudo` and `base64`, so "executed nothing" is asserted
-# rather than assumed. No case reaches the live path at all: the live path needs
-# a cluster, and a suite that needed one could not run in CI or in a sandbox.
-# Scratch profiles are copies of the committed one under this suite's own
-# scratch directory; nothing here reads or writes any `/etc` on this machine.
+# rather than assumed. Scratch profiles are copies of the committed one under
+# this suite's own scratch directory; nothing here reads or writes any `/etc` on
+# this machine.
+#
+# §H IS THE ONE CASE THAT REACHES THE LIVE PATH, and it reaches it against a
+# FAKE CLUSTER: a `kubectl` that carries the converge's
+# `--dry-run=client -o yaml | apply` pipeline and serves a FIXTURE
+# ServiceAccount token Secret this suite invents. Nothing is applied anywhere and
+# no credential is read. The WRITE, however, is real -- `mktemp`, `cat`, `chmod`
+# and `mv` are the host's own binaries and the render lands in this suite's
+# scratch dir -- while `install` is a uutils LENS that REFUSES an existing
+# destination exactly as uutils' does. That combination is the whole point: the
+# write path is real, but an `install` able to overwrite is not available to it,
+# so the defect is reproducible here on a GNU host, where it is otherwise
+# invisible. §H is why this suite could not see it before.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
 set -uo pipefail
@@ -349,6 +365,87 @@ fi
 grep -qxF "CHURN_KUBECONFIG_FILE=${SERVER_ADMIN_KUBECONFIG}" "$AGENT_COMMITTED" \
   && no "${AGENT_NODE} does NOT point at the server's admin kubeconfig" \
   || ok "${AGENT_NODE} does NOT point at the server's admin kubeconfig"
+
+# ===========================================================================
+printf '\n== H. the re-render: an EXISTING --render-to destination is rewritten ==\n'
+# ===========================================================================
+# The FIXTURE credential. Shaped like what the token controller populates; its
+# token is the word `fixture`, it is invented here, and this file is the only
+# place it lives. The CA is passed through STILL base64-encoded, which is the
+# encoding the kubeconfig format wants.
+FIXTURE_SA_TOKEN="fixture.not.a.real.serviceaccount.token"
+FIXTURE_CA_B64="Zml4dHVyZS1jYS1ub3QtYS1yZWFsLWNlcnRpZmljYXRl"
+FIXTURE_SA_TOKEN_B64="$(printf '%s' "$FIXTURE_SA_TOKEN" | base64 -w0)"
+export FIXTURE_SA_TOKEN_B64 FIXTURE_CA_B64
+
+LIVEBIN="${TMPROOT}/livebin"
+mkdir -p "$LIVEBIN"
+
+# The fake cluster. `apply --dry-run=client` echoes what it validated so the
+# second stage of the converge pipeline has something to consume; `apply -f -`
+# consumes and applies nothing. The two `get secret` reads serve the fixture.
+cat > "${LIVEBIN}/kubectl" <<'FAKE_KUBECTL'
+#!/usr/bin/env bash
+case " $* " in
+  *" apply "*)
+    if [ "${2:-}" = --dry-run=client ]; then cat; else cat > /dev/null; fi
+    exit 0 ;;
+  *.data.token*) printf '%s' "$FIXTURE_SA_TOKEN_B64"; exit 0 ;;
+  *.data.ca*) printf '%s' "$FIXTURE_CA_B64"; exit 0 ;;
+esac
+exit 0
+FAKE_KUBECTL
+
+# The uutils `install` lens. `-d` is delegated untouched; anything else whose
+# destination already exists is refused with uutils' own message and exit code.
+REAL_INSTALL="$(command -v install)"
+export REAL_INSTALL
+cat > "${LIVEBIN}/install" <<'UUTILS_INSTALL'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" = -d ] && exec "${REAL_INSTALL}" "$@"
+done
+dest=""
+for arg in "$@"; do dest="$arg"; done
+if [ -e "$dest" ]; then
+  printf 'install: No such file or directory\n' >&2
+  exit 1
+fi
+exec "${REAL_INSTALL}" "$@"
+UUTILS_INSTALL
+chmod +x "${LIVEBIN}"/*
+
+RENDER_TO="${TMPROOT}/node-status-kubeconfig"
+printf 'the kubeconfig an earlier run rendered\n' > "$RENDER_TO"
+chmod 0644 "$RENDER_TO"
+
+PATH="${LIVEBIN}:${PATH}" KUBECONFIG="${TMPROOT}/admin.kubeconfig" \
+  "$SCRIPT" --render-to "$RENDER_TO" "$AGENT_COMMITTED" > "$OUT" 2>&1
+RC=$?
+
+[ "$RC" -eq 0 ] \
+  && ok "a re-render over an existing destination exits 0" \
+  || { no "a re-render over an existing destination exits 0 (rc=${RC})"; cat "$OUT"; }
+
+grep -qF "token: ${FIXTURE_SA_TOKEN}" "$RENDER_TO" \
+  && ok "the re-rendered kubeconfig carries the DECODED ServiceAccount token" \
+  || no "the re-rendered kubeconfig carries the DECODED ServiceAccount token"
+
+grep -qF "certificate-authority-data: ${FIXTURE_CA_B64}" "$RENDER_TO" \
+  && ok "the CA is passed through still base64-encoded" \
+  || no "the CA is passed through still base64-encoded"
+
+[ "$(stat -c '%a' "$RENDER_TO")" = 600 ] \
+  && ok "the re-rendered kubeconfig comes back at RENDER_MODE, not the replaced file's 0644" \
+  || no "the re-rendered kubeconfig comes back at RENDER_MODE, not the replaced file's 0644 (got $(stat -c '%a' "$RENDER_TO"))"
+
+grep -qF "$FIXTURE_SA_TOKEN" "$OUT" \
+  && no "the token is never echoed into the converge's own output" \
+  || ok "the token is never echoed into the converge's own output"
+
+[ -z "$(find "$TMPROOT" -maxdepth 1 -name 'node-status-kubeconfig.render.*' -print -quit)" ] \
+  && ok "the write left no temp file holding the token beside the destination" \
+  || no "a temp file holding the token survived the write"
 
 # ---------------------------------------------------------------------------
 printf '\n== %d passed, %d failed ==\n' "$pass" "$fail"
