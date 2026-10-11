@@ -620,7 +620,14 @@
   # where it reads as a restart of a factory that is carrying live runs. So the
   # gate is on the task itself: this task's only effects are that sentence and
   # that notification, and a run which owes nothing must produce neither.
-  when: fabro_server_restart_deferred | bool
+  #
+  # Deliberately the SAME condition `changed_when` carries, and both halves of
+  # it are load-bearing. The marker is the deferral an earlier run recorded; a
+  # stale binary is a running server executing a file other than the one at its
+  # binary_path, which leaves no marker — it is what the /proc/<pid>/exe probe
+  # above exists to find. A gate reading only the marker would be silent on
+  # exactly the instance that probe was added for.
+  when: fabro_server_restart_deferred | bool or fabro_server_binary_stale | bool
 
 - name: Ask this instance whether any Fabro run is active
   # install.sh's require_quiet_server, and it runs only when a restart is
