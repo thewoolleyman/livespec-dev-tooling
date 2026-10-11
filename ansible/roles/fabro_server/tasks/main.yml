@@ -476,6 +476,17 @@
   # candidate was, before it had a binary_path of its own), the target is that
   # other path and the inequality says so just as plainly. One comparison
   # covers both, which is why this is a link read and not a digest compare.
+  #
+  # Comparing the RAW link target is also why this is not `readlink -f`: full
+  # resolution is what loses the "(deleted)" case, which is the one the
+  # measured hp-xubuntu failure presents as. The cost is that a binary_path
+  # which is itself a SYMLINK would read as stale on every run, because the
+  # kernel reports the resolved file and not the link systemd was given. No
+  # instance uses one today — the install path below renames a regular file
+  # onto binary_path, and the preflight stats it as a regular executable — and
+  # if one ever does, this comparison is the thing to revisit rather than the
+  # marker.
+
   ansible.builtin.stat:
     path: "/proc/{{ fabro_server_incumbent_pid.stdout | trim }}/exe"
     follow: false
