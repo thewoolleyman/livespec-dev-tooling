@@ -413,6 +413,30 @@ def test_a_push_from_a_linked_worktree_publishes_to_the_repositorys_mirror(
     assert built.unwrap().mirror_url == f"{GATE_MIRROR_ROOT}/{_REPOSITORY}.git"
 
 
+def test_one_job_name_covers_the_primary_checkout_and_a_worktree_alike(*, tmp_path: Path) -> None:
+    """Two directories, one repository, one tree — so exactly one Job name.
+
+    A directory-derived name made these two differ, which is a second identity
+    for the same gate: the same tree re-gated from the other checkout submits a
+    separately-named Job and waits on it, rather than naming the gate the tree
+    already has.
+    """
+    expected = f"gate-{_REPOSITORY}-{_TREE[:12]}"
+    submitted: list[str] = []
+    for directory in (_REPOSITORY, _WORKTREE_DIR):
+        repo_root = tmp_path / directory
+        repo_root.mkdir()
+        built = gate_remote_request(
+            repo_root=repo_root,
+            renderer=_RENDERER,
+            runner=_StubWorld(origin=_REPOSITORY_ORIGIN),
+        )
+        assert isinstance(built, Success)
+        submitted.append(built.unwrap().job_name)
+
+    assert submitted == [expected, expected]
+
+
 def test_a_clone_with_no_origin_is_named_by_its_primary_checkout(*, tmp_path: Path) -> None:
     """The fallback, and why it is not the checkout directory either.
 
