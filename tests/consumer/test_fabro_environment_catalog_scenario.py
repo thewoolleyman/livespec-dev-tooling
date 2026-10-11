@@ -16,6 +16,34 @@ expressed as a rendered file the way `settings.toml` and the unit are; the only 
 version control reaches the catalog is a request the converge makes, authenticated with
 the `FABRO_DEV_TOKEN` the instance's `server.env` already carries.
 
+THESE ARMS READ TEXT, AND THE ROLE WAS CONTROLLED AGAINST REAL JINJA BY MEASUREMENT.
+Ansible and Jinja are not importable in this suite — `ansible-lint` and
+`ansible-playbook` resolve through `uvx` against their own interpreter (see the
+justfile), because ansible-core 2.21 requires a Python floor this repository does not
+carry — so every arm below reads the role as TEXT and evaluates only the tiny gate
+vocabulary `_truth` understands. On 2026-10-11, before this slice was committed, the
+committed `tasks/environment.yml` was walked through ansible-core 2.21.4's OWN filter
+and test plugins for three modelled catalog answers: the declared environment absent
+(404), present and already matching, and present carrying the seeded `default` entry's
+settings. Every `set_fact`, every `assert` condition, every `when` and every `debug`
+message was rendered in file order. The results:
+
+- the POST body came out carrying `id`, `provider`, `image`, `resources`, `network`,
+  `lifecycle`, `labels`, `volumes` and `env` — exactly Fabro's
+  `CreateEnvironmentRequest` — with the declared image and envelope overridden and the
+  base entry's `env` map carried through untouched; the PUT body was the same minus
+  `id` and `revision`, which is `ReplaceEnvironmentRequest`;
+- the match decision read False / True / False for the three answers, and on the
+  matching one BOTH writes were skipped;
+- the replace carried `If-Match` with the revision that run's own read returned.
+
+That walk also FOUND TWO DEFECTS no text-reading arm could have seen, and each is now an
+arm of its own: `items2dict` refusing the generator `rejectattr` hands it — which made
+the whole derivation unevaluable, while `--syntax-check` passed it — and the disposition
+report sitting after the writes it narrates. The walk is not reproduced in the suite; it
+needs a network-resolved second interpreter, which no test may depend on. It is recorded
+here as the evidence behind the claims above.
+
 WHAT IS DERIVED AND WHAT IS STATED. The axis name, the fields a declaration must spell,
 the fact the role resolves them into, the task names and every gate predicate are READ
 out of the role, so a role that resolves or gates differently fails here instead of being
