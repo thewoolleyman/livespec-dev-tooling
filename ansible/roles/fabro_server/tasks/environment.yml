@@ -232,3 +232,73 @@
       | combine({'id': fabro_server_environment.id}) | to_json }}
   changed_when: true
   when: not (fabro_server_environment_present | bool)
+
+- name: Decide whether the catalog already matches what version control declares
+  # FIELD BY FIELD, and only on the fields version control DECLARES. Comparing
+  # whole settings would report drift for every field the server defaults or
+  # normalises, which would make a converged instance report a change forever —
+  # and a converge that always writes is a converge whose report says nothing.
+  #
+  # The memory comparison is a string compare against what the catalog returned,
+  # which is sound because Fabro stores a size and re-renders it in the largest
+  # decimal unit that divides it exactly: `8GB` round-trips as `8GB`. A value
+  # spelled some other way for the same size converges on the first run and is
+  # then reported as changed on every run after it, which is why the declaration
+  # refusal in main.yml says to declare the size the way Fabro renders it.
+  ansible.builtin.set_fact:
+    fabro_server_environment_matches: >-
+      {{ (fabro_server_environment_present | bool)
+      and (fabro_server_environment_current.image.docker | default('')) == fabro_server_environment.image
+      and (fabro_server_environment_current.resources.cpu | default(0) | int) == (fabro_server_environment.cpu | int)
+      and (fabro_server_environment_current.resources.memory | default('')) == fabro_server_environment.memory }}
+  check_mode: false
+
+- name: Name this environment's disposition in the run output
+  # UNGATED on purpose, and the only task in this file that is. Ansible skips a
+  # `shell` under `--check`, so without this a drift report would say nothing at
+  # all about a catalog — neither that it matches nor that a converge would
+  # rewrite it. A debug task runs in check mode and reports no change, so it
+  # names the finding without being one.
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: environment
+      {{ fabro_server_environment.id }}
+      {{ 'already holds the declared image, cpu and memory; nothing to write'
+         if fabro_server_environment_matches | bool
+         else ('is absent from the catalog and will be created'
+         if not (fabro_server_environment_present | bool)
+         else 'is in the catalog with other settings and will be replaced') }}.
+      Declared image {{ fabro_server_environment.image }}, cpu
+      {{ fabro_server_environment.cpu }}, memory
+      {{ fabro_server_environment.memory }}.
+
+- name: Replace this environment in the instance's catalog
+  # The per-environment endpoint, and the ONLY write this role makes to an
+  # environment the catalog already holds. `If-Match` carries the revision the
+  # read above returned, which is the server's own optimistic-concurrency
+  # check: if anything changed the entry between that read and this write, the
+  # server refuses rather than overwriting a change it cannot see. The header is
+  # required, so there is no form of this request that skips the check.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --fail-with-body --header @- \
+          --header 'Content-Type: application/json' \
+          --header "If-Match: ${FABRO_ENVIRONMENT_REVISION}" --request PUT \
+          --data-binary "${FABRO_ENVIRONMENT_BODY}" "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}/{{ fabro_server_environment.id }}"
+    FABRO_ENVIRONMENT_REVISION: "{{ fabro_server_environment_current.revision | default('') }}"
+    FABRO_ENVIRONMENT_BODY: "{{ fabro_server_environment_settings | to_json }}"
+  changed_when: true
+  when:
+    # BOTH halves, and the second is the whole point of this slice: an
+    # environment the catalog already holds with the declared image, cpu and
+    # memory is written by nothing, so a converged instance reports no change
+    # for it.
+    - fabro_server_environment_present | bool
+    - not (fabro_server_environment_matches | bool)
