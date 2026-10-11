@@ -437,6 +437,23 @@ def test_one_job_name_covers_the_primary_checkout_and_a_worktree_alike(*, tmp_pa
     assert submitted == [expected, expected]
 
 
+def test_the_renderer_is_told_the_repository_not_the_worktree(*, tmp_path: Path) -> None:
+    """`--repo` is the name the manifest itself carries, so it is passed too.
+
+    The renderer DEFAULTS it to the basename of `--repo-root`, which is the same
+    directory-derived name this fix exists to stop using. Leaving it off would
+    therefore put the worktree's name back inside the Job — its labels and its
+    in-cluster source URL — even with the mirror URL and the Job name correct.
+    """
+    repo_root = tmp_path / _WORKTREE_DIR
+    repo_root.mkdir()
+    runner = _StubWorld(origin=_REPOSITORY_ORIGIN)
+    _ = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
+
+    render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
+    assert render[render.index("--repo") + 1] == _REPOSITORY
+
+
 def test_a_clone_with_no_origin_is_named_by_its_primary_checkout(*, tmp_path: Path) -> None:
     """The fallback, and why it is not the checkout directory either.
 

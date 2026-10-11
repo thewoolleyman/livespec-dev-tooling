@@ -274,7 +274,6 @@ def gate_remote_request(
     if isinstance(named, Failure):
         return Failure(named.failure())
     repo = named.unwrap()
-    checkout_name = repo_root.name
     job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
     render_argv = [
         str(renderer),
@@ -283,7 +282,7 @@ def gate_remote_request(
         "--tree-hash",
         tree_hash,
         "--repo",
-        checkout_name,
+        repo,
         "--job-name",
         job_name,
     ]
