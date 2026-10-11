@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.93.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.4...v1.93.5) (2026-10-11)
+
+
+### Bug Fixes
+
+* **ansible:** refresh-gates-kubeconfig re-runs over an existing destination ([403d50b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/403d50bd7d9c970be5fa112213c0161b808f0c90))
+* **ci-runner:** provision-node-status-credential re-renders an existing kubeconfig ([856a65e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/856a65eb565b96f09ceb83feb1c44c0f296099b0))
+* **ci-runner:** seed-k3s-agent-join-token re-seeds an existing target ([0ef6246](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0ef6246bef94a353088ba58e2627a3585388c8f6))
+* **ci-runner:** seed-node-status-kubeconfig re-seeds an existing target ([9114051](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9114051ffb5f4d98a54533513e1a9d5874ba24e5))
+
 ## [1.93.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.3...v1.93.4) (2026-10-10)
 
 
