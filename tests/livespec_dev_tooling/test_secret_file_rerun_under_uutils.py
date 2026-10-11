@@ -31,6 +31,7 @@ assertion 5.
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import stat
@@ -46,6 +47,20 @@ _REFRESH_GATES = (
 )
 _SEED_JOIN_TOKEN = _K3S / "secret-reinjection" / "seed-k3s-agent-join-token.sh"
 _SEED_NODE_STATUS = _K3S / "secret-reinjection" / "seed-node-status-kubeconfig.sh"
+_PROVISION_NODE_STATUS = (
+    _K3S / "phase2" / "node-status-credential" / "provision-node-status-credential.sh"
+)
+# How each script hands its secret to the file, named exactly. Every entry is a
+# PIPE into `tee`'s stdin or a HEREDOC into `cat`'s, which is what keeps the
+# value off every argv — `printf` is a bash builtin, so nothing on the host can
+# read it out of /proc.
+_SECRET_DELIVERY = {
+    _REFRESH_GATES: '| tee "${tmp_dest}"',
+    _SEED_JOIN_TOKEN: '| sudo tee "$TMP_TARGET"',
+    _SEED_NODE_STATUS: '| sudo tee "$TMP_TARGET"',
+    _PROVISION_NODE_STATUS: 'cat > "$RENDER_TMP" <<KUBECONFIG_EOF',
+}
+
 # The COMMITTED second node's profile. Every value the seed scripts read is that
 # node's own data; only the destination path is redirected, because the
 # committed value names a file on THAT node holding a cluster credential.
@@ -65,6 +80,13 @@ _FIXTURE_NODE_STATUS_KUBECONFIG = "apiVersion: v1\nkind: Config\nusers:\n  - nam
 _FIXTURE_KUBECONFIG = (
     "kind: Config\napiVersion: v1\nclusters:\n- cluster:\n    server: https://127.0.0.1:6443\n"
 )
+
+# The cluster-side provisioner's fixtures: a ServiceAccount token (invented here,
+# handed to the fake `kubectl` base64-encoded the way a real Secret carries it)
+# and a CA blob passed through STILL encoded, which is the encoding the
+# kubeconfig format wants.
+_FIXTURE_SA_TOKEN = "fixture.not.a.real.serviceaccount.token"
+_FIXTURE_CA_B64 = "Zml4dHVyZS1jYS1ub3QtYS1yZWFsLWNlcnRpZmljYXRl"
 
 # The real binaries behind a logger. `install` and `chown` are NOT in this list:
 # each needs a behaviour of its own (the uutils lens, and the ownership rewrite
@@ -137,6 +159,22 @@ exec {real} "$@"
 
 # `ssh`: log the argv and emit the fixture kubeconfig, standing in for the
 # remote `sudo cat`. No host is contacted and no credential is read.
+# `kubectl`: log the argv, carry the converge's `--dry-run=client -o yaml | apply`
+# pipeline (the first stage echoes the manifest it validated, the second
+# consumes it), and serve the ServiceAccount token Secret the provisioner waits
+# for. No cluster is contacted and nothing is applied anywhere.
+_KUBECTL_SHIM = """\
+printf 'kubectl %s\\n' "$*" >> "$ARGV_LOG"
+case " $* " in
+  *" apply "*)
+    if [ "${2:-}" = --dry-run=client ]; then cat; else cat > /dev/null; fi
+    exit 0 ;;
+  *.data.token*) printf '%s' "$FIXTURE_SA_TOKEN_B64"; exit 0 ;;
+  *.data.ca*) printf '%s' "$FIXTURE_CA_B64"; exit 0 ;;
+esac
+exit 0
+"""
+
 _SSH_SHIM = """\
 printf 'ssh %s\\n' "$*" >> "$ARGV_LOG"
 printf '%s' "$FIXTURE_KUBECONFIG"
@@ -337,3 +375,83 @@ def test_seed_node_status_kubeconfig_rewrites_an_existing_target(*, tmp_path: Pa
     assert (
         target.stat().st_uid == os.getuid()
     ), "the re-delivered credential must carry the requested ownership"
+
+
+def test_provision_node_status_credential_rewrites_an_existing_rendered_kubeconfig(
+    *, tmp_path: Path
+) -> None:
+    """Definition of Done 4: a re-run rewrites the rendered kubeconfig at its mode.
+
+    The token Secret is populated by the converge's own step 1, so a re-run
+    renders the SAME token rather than rotating it — which means the re-run is
+    the NORMAL path here, not an exception, and `--render-to` pointing at a file
+    an earlier run already produced is the ordinary state of the server.
+    """
+    bin_dir = _write_path_bin(tmp_path=tmp_path)
+    _shim(bin_dir=bin_dir, name="kubectl", body=_KUBECTL_SHIM)
+    render_to = tmp_path / "node-status-kubeconfig"
+    _ = render_to.write_text("the kubeconfig an earlier run rendered\n", encoding="utf-8")
+    render_to.chmod(0o644)
+
+    result = _run(
+        script=_PROVISION_NODE_STATUS,
+        args=["--render-to", str(render_to), str(_AGENT_PROFILE)],
+        bin_dir=bin_dir,
+        env={
+            "ARGV_LOG": str(tmp_path / "argv.log"),
+            "KUBECONFIG": str(tmp_path / "admin.kubeconfig"),
+            "FIXTURE_SA_TOKEN_B64": base64.b64encode(_FIXTURE_SA_TOKEN.encode()).decode(),
+            "FIXTURE_CA_B64": _FIXTURE_CA_B64,
+        },
+    )
+
+    assert result.returncode == 0, (
+        "re-rendering over an EXISTING kubeconfig must exit 0; under an "
+        "`install` that refuses an existing destination it did not: "
+        f"rc={result.returncode}\n{result.stdout}\n{result.stderr}"
+    )
+    rendered = render_to.read_text(encoding="utf-8")
+    assert (
+        f"token: {_FIXTURE_SA_TOKEN}" in rendered
+    ), "the re-rendered kubeconfig must carry the decoded ServiceAccount token"
+    assert (
+        f"certificate-authority-data: {_FIXTURE_CA_B64}" in rendered
+    ), "the CA must be passed through STILL base64-encoded, the encoding the format wants"
+    assert stat.S_IMODE(render_to.stat().st_mode) == 0o600, (
+        "the rendered kubeconfig must come back at its declared mode, not at the "
+        "mode the file it replaced happened to carry"
+    )
+
+
+def test_every_secret_write_is_delivered_over_stdin_or_a_heredoc() -> None:
+    """Definition of Done 5: the secret reaches the destination file, never an argv.
+
+    This is the invariant the repair had to PRESERVE rather than establish: the
+    `install -m MODE /dev/stdin DEST` idiom it replaced kept the secret off argv
+    too, which is why it was the fleet idiom in the first place. What is asserted
+    here is that the replacement kept that property — each script still hands its
+    secret to a command over standard input or a heredoc — and that the idiom
+    itself is gone from all four, so a future edit cannot quietly reintroduce the
+    destination-already-exists refusal.
+
+    The behavioural half lives beside each script, in its own exit-test suite:
+    those run the real write and assert the fixture credential appears nowhere in
+    what `sudo` was asked to run.
+    """
+    for script, delivery in _SECRET_DELIVERY.items():
+        text = script.read_text(encoding="utf-8")
+        # Comments are out of scope: the design record has to be able to name
+        # what it replaced, and a comment delivers no secret anywhere.
+        declared = "\n".join(
+            line for line in text.splitlines() if not line.lstrip().startswith("#")
+        )
+        assert delivery in text, (
+            f"{script.name} must deliver its secret over stdin or a heredoc as "
+            f"{delivery!r}; a secret on a command line is readable out of /proc "
+            "by anything on the host"
+        )
+        assert "/dev/stdin" not in declared, (
+            f"{script.name} still names /dev/stdin — the `install -m MODE "
+            "/dev/stdin DEST` idiom exits 1 under uutils coreutils whenever DEST "
+            "already exists, which is the whole of livespec-dev-tooling-74q6iw"
+        )
