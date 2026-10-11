@@ -16,17 +16,27 @@ if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
 fi
 
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec
-# `k3s-on-gmktec-for-vps-usage`). The switch is `delegated_gate` in this repo's
-# own `[tool.livespec_dev_tooling]` block and it DEFAULTS OFF, so the probe below
-# exits non-zero here and the local aggregate runs exactly as it always has. Only
-# the FALL-THROUGH is replaced when a repo opts in: the green-token skip above is
-# untouched, because S7b writes the SAME token through the SAME CLI a local
-# aggregate does, so a byte-identical tree is skippable whichever path gated it.
+# `k3s-on-gmktec-for-vps-usage`; the contract is this repo's
+# SPECIFICATION/contracts.md §"Delegated pre-push gate"). This repo HAS opted in
+# — `delegated_gate = true` in its own `[tool.livespec_dev_tooling]` block — so
+# which branch a push takes is decided by the host, not by this file. Only the
+# FALL-THROUGH is ever replaced: the green-token skip above is untouched, because
+# a delegated pass writes the SAME token through the SAME CLI a local aggregate
+# does, so a byte-identical tree is skippable whichever path gated it.
 #
-# The probe is silent and its exit code is the whole answer. Every doubt it can
-# have — an absent key, a `false`, a malformed pyproject, a traceback — exits
-# non-zero and lands here, on the strict local path, which is the only direction
-# in which a mistake is merely expensive rather than an ungated push.
+# The probe's exit code is the whole answer, and it answers for THIS PUSH: the
+# switch AND whether the pushing user can read the gates kubeconfig on this host.
+# From the VPS, which holds the credential, that is 0 and the gate runs on the
+# cluster; from a Fabro sandbox or a laptop it is non-zero and the probe itself
+# prints that this push gated locally. Every doubt it can have — an absent key, a
+# `false`, a malformed pyproject, a traceback, no credential — exits non-zero and
+# lands here, on the strict local path, which is the only direction in which a
+# mistake is merely expensive rather than an ungated push.
+#
+# Once delegation IS selected, this is the last local branch: a delegated run
+# that reaches no verdict REFUSES the push rather than falling through to the
+# aggregate below, because "we could not gate this" must never quietly become
+# "we gated it some other way".
 if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
     echo ":: pre-push: delegated gate is enabled for this repo; gating on the cluster"
     exec uv run python -m livespec_dev_tooling.gate_remote_delegate run
