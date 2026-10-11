@@ -613,6 +613,14 @@
          if fabro_server_binary_stale | bool else '' }}
   changed_when: fabro_server_restart_deferred | bool or fabro_server_binary_stale | bool
   notify: Fabro instance files changed
+  # `changed_when` decides whether the NOTIFICATION is raised; it does not stop
+  # Ansible rendering a message it has already been handed. Without this gate
+  # the fixed opening sentence above printed on every run — measured on
+  # hp-xubuntu 2026-10-11 for all three instances while none owed a restart,
+  # where it reads as a restart of a factory that is carrying live runs. So the
+  # gate is on the task itself: this task's only effects are that sentence and
+  # that notification, and a run which owes nothing must produce neither.
+  when: fabro_server_restart_deferred | bool
 
 - name: Ask this instance whether any Fabro run is active
   # install.sh's require_quiet_server, and it runs only when a restart is
