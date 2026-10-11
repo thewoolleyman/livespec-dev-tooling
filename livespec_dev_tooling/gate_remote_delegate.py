@@ -64,6 +64,7 @@ from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
+    GateCommandResult,
     GateCommandRunner,
     GateStepFailed,
     Sleeper,
@@ -109,6 +110,12 @@ GATE_RENDERER_INSTALLED = Path("/usr/local/lib/ci-runner-k3s/gates/render-gate-j
 
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
+_REPO_NAME_STEP = "derive-repo-name"
+
+# What `_answered` reads back when a probe did not answer at all — a git that is
+# not on PATH, a spawn that failed. Non-zero rather than empty stdout so the one
+# reader below needs no second branch for a shape it treats identically.
+_UNANSWERED = GateCommandResult(returncode=1, stdout="", stderr="")
 
 # The renderer's own default job name, computed here rather than parsed back out
 # of the manifest — and passed to it explicitly, so the name this client waits on
@@ -175,6 +182,76 @@ def resolve_renderer(*, repo_root: Path) -> Path:
     return GATE_RENDERER_INSTALLED
 
 
+def _answered(*, repo_root: Path, runner: GateCommandRunner, argv: list[str]) -> str:
+    """One probe's stdout, with every did-not-answer shape as the empty string.
+
+    A command that never RAN and a command that ran and REFUSED are kept apart
+    everywhere a gate's verdict depends on the difference. Here they do not
+    differ: either way this probe named nothing, and the caller's next move is
+    the same — ask the other probe, and fail closed if it is silent too.
+    """
+    ran = runner(argv=argv, cwd=repo_root).value_or(_UNANSWERED)
+    return ran.stdout.strip() if ran.returncode == 0 else ""
+
+
+def _repo_name_from_url(*, url: str) -> str:
+    """The last path component of a remote URL, without its `.git` suffix.
+
+    Both canonical forms reduce the same way, so no regex is wanted: the
+    separator after the host is `/` for https and `:` for the scp-style form,
+    and splitting on each in turn reaches the final segment of either. A URL
+    carrying credentials — a Fabro sandbox's origin does — contributes nothing
+    past the host, so no secret can reach the name this returns.
+    """
+    tail = url.rstrip("/").rsplit("/", maxsplit=1)[-1].rsplit(":", maxsplit=1)[-1]
+    return tail.removesuffix(".git")
+
+
+def _gate_repo_name(*, repo_root: Path, runner: GateCommandRunner) -> Result[str, GateStepFailed]:
+    """Name the REPOSITORY this push gates — never the directory it runs in.
+
+    `repo_root.name` was that name until 2026-10-11, and it is right only for a
+    primary checkout. A LINKED WORKTREE'S DIRECTORY IS ITS BRANCH, so a push
+    from `~/.worktrees/<repo>/<branch>` named the mirror, the Job and the
+    renderer's `--repo` after the branch. The gate mirror holds one bare
+    repository per repository, so that push was refused with
+    `'<branch>.git' does not appear to be a git repository` — and since the
+    primary checkout refuses pushes outright, the opt-in was unusable from every
+    checkout it was meant to gate.
+
+    The origin remote is asked FIRST because it is the repository's own
+    identity rather than a fact about this host's directory layout, and it reads
+    identically in a worktree and in the checkout the worktree was added from.
+    `--git-common-dir` is the fallback for a clone with no origin: from inside a
+    worktree it answers the PRIMARY checkout's `.git`, so its parent is the
+    repository directory even there. A clone that answers neither names nothing,
+    and naming nothing is a step that did not complete — the gate is never
+    submitted against a guessed mirror.
+    """
+    origin_argv = ["git", "remote", "get-url", "origin"]
+    from_origin = _repo_name_from_url(
+        url=_answered(repo_root=repo_root, runner=runner, argv=origin_argv)
+    )
+    if from_origin:
+        return Success(from_origin)
+    common_argv = ["git", "rev-parse", "--git-common-dir"]
+    common_dir = _answered(repo_root=repo_root, runner=runner, argv=common_argv)
+    from_common_dir = (repo_root / common_dir).resolve().parent.name if common_dir else ""
+    if from_common_dir:
+        return Success(from_common_dir)
+    return Failure(
+        GateStepFailed(
+            step=_REPO_NAME_STEP,
+            argv=tuple(common_argv),
+            returncode=None,
+            detail=(
+                "neither the origin remote URL nor the parent of the git common "
+                f"directory names a repository for {repo_root}"
+            ),
+        )
+    )
+
+
 def gate_remote_request(
     *, repo_root: Path, renderer: Path, runner: GateCommandRunner
 ) -> Result[GateRunRequest, GateStepFailed]:
@@ -193,8 +270,12 @@ def gate_remote_request(
     if isinstance(tree, Failure):
         return Failure(tree.failure())
     tree_hash = tree.unwrap().stdout.strip()
-    repo = repo_root.name
-    job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
+    named = _gate_repo_name(repo_root=repo_root, runner=runner)
+    if isinstance(named, Failure):
+        return Failure(named.failure())
+    repo = named.unwrap()
+    checkout_name = repo_root.name
+    job_name = f"gate-{checkout_name}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -202,7 +283,7 @@ def gate_remote_request(
         "--tree-hash",
         tree_hash,
         "--repo",
-        repo,
+        checkout_name,
         "--job-name",
         job_name,
     ]

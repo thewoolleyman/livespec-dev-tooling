@@ -54,6 +54,20 @@ _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _RENDERER = Path("/opt/gates/render-gate-job.sh")
 _MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: gate-widget-4b825dc642cb\n"
 
+# The canned clone's identity: an origin naming `widget` and a `--git-common-dir`
+# answer of a primary checkout's own `.git`, which is what git prints there.
+_ORIGIN_URL = "git@github.com:acme/widget.git"
+_COMMON_DIR = ".git"
+
+# The two names a delegated push has to keep apart, and the one shape that
+# separates them. A linked worktree's DIRECTORY is its branch; the REPOSITORY it
+# is a checkout of is what the mirror, the Job and the renderer are named after.
+# Measured 2026-10-11 on the VPS: a push from the worktree below was refused
+# because `proof-delegated-gate-green.git` is not a repository on the mirror.
+_WORKTREE_DIR = "proof-delegated-gate-green"
+_REPOSITORY = "livespec-dev-tooling"
+_REPOSITORY_ORIGIN = f"git@github.com:thewoolleyman/{_REPOSITORY}.git"
+
 
 # ---------------------------------------------------------------------------
 # The switch — OFF unless the repository says exactly `true`
@@ -271,9 +285,17 @@ _JOB_COMPLETE = json.dumps({"status": {"conditions": [{"type": "Complete", "stat
 
 
 def _kind_of(*, argv: list[str]) -> str:
-    """Name the step one argv belongs to, for the canned answers below."""
+    """Name the step one argv belongs to, for the canned answers below.
+
+    `--git-common-dir` is matched BEFORE `rev-parse`, because the two identity
+    probes and the tree read are all spelled `git rev-parse`.
+    """
+    if "--git-common-dir" in argv:
+        return "read-common-dir"
     if "rev-parse" in argv:
         return "read-tree"
+    if "get-url" in argv:
+        return "read-origin"
     if argv[0] == str(_RENDERER):
         return "render"
     if "get" in argv:
@@ -281,18 +303,14 @@ def _kind_of(*, argv: list[str]) -> str:
     return "other"
 
 
-_STDOUT = {
-    "read-tree": f"{_TREE}\n",
-    "render": _MANIFEST,
-    "other": "",
-}
-
-
 class _StubWorld:
     """Every command a delegated push issues, canned.
 
-    `refuse` names the ONE step that answers non-zero; everything else succeeds,
-    so each refusal test differs from the happy path by exactly one command.
+    `refuse` names the steps that answer non-zero; everything else succeeds, so
+    each refusal test differs from the happy path by exactly the commands it
+    names. `origin` and `common_dir` are the clone's two identity answers, so a
+    linked worktree is expressed as a `repo_root` whose directory name differs
+    from the repository those two name.
 
     The polls are answered in sequence rather than from one canned payload, so a
     run has to WAIT at least once before it sees a verdict. That is the realistic
@@ -300,10 +318,23 @@ class _StubWorld:
     sleeper seam is reached at all.
     """
 
-    def __init__(self, *, refuse: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        refuse: tuple[str, ...] = (),
+        origin: str = _ORIGIN_URL,
+        common_dir: str = _COMMON_DIR,
+    ) -> None:
         self.argvs: list[tuple[str, ...]] = []
         self._refuse = refuse
         self._polls = 0
+        self._stdout = {
+            "read-tree": f"{_TREE}\n",
+            "read-origin": f"{origin}\n",
+            "read-common-dir": f"{common_dir}\n",
+            "render": _MANIFEST,
+            "other": "",
+        }
 
     def _poll(self) -> str:
         """Not admitted yet, then complete."""
@@ -321,9 +352,9 @@ class _StubWorld:
         _ = (cwd, stdin, stream)
         self.argvs.append(tuple(argv))
         kind = _kind_of(argv=argv)
-        if kind == self._refuse:
+        if kind in self._refuse:
             return Success(GateCommandResult(returncode=1, stdout="", stderr=f"{kind} refused"))
-        stdout = self._poll() if kind == "get-job" else _STDOUT[kind]
+        stdout = self._poll() if kind == "get-job" else self._stdout[kind]
         return Success(GateCommandResult(returncode=0, stdout=stdout, stderr=""))
 
 
@@ -358,10 +389,65 @@ def test_the_renderer_is_told_the_name_the_run_will_wait_on(*, tmp_path: Path) -
     assert _TREE in render
 
 
+def test_a_push_from_a_linked_worktree_publishes_to_the_repositorys_mirror(
+    *, tmp_path: Path
+) -> None:
+    """The mirror is named after the REPOSITORY, not the directory pushed from.
+
+    The gate mirror holds one bare repository per repository, so a worktree
+    directory in the URL is a path that does not exist there. Measured
+    2026-10-11 on the VPS: the first delegated push from a worktree was refused
+    NO_VERDICT with `'proof-delegated-gate-green.git' does not appear to be a
+    git repository`, and since the primary checkout refuses pushes outright, no
+    delegated push could succeed at all.
+    """
+    repo_root = tmp_path / _WORKTREE_DIR
+    repo_root.mkdir()
+    built = gate_remote_request(
+        repo_root=repo_root,
+        renderer=_RENDERER,
+        runner=_StubWorld(origin=_REPOSITORY_ORIGIN),
+    )
+
+    assert isinstance(built, Success)
+    assert built.unwrap().mirror_url == f"{GATE_MIRROR_ROOT}/{_REPOSITORY}.git"
+
+
+def test_a_clone_with_no_origin_is_named_by_its_primary_checkout(*, tmp_path: Path) -> None:
+    """The fallback, and why it is not the checkout directory either.
+
+    `--git-common-dir` answers the PRIMARY checkout's `.git` from inside a
+    linked worktree, so its parent is the repository directory even there —
+    which is exactly what the directory name is not.
+    """
+    repo_root = tmp_path / _WORKTREE_DIR
+    repo_root.mkdir()
+    built = gate_remote_request(
+        repo_root=repo_root,
+        renderer=_RENDERER,
+        runner=_StubWorld(refuse=("read-origin",), common_dir=str(tmp_path / _REPOSITORY / ".git")),
+    )
+
+    assert isinstance(built, Success)
+    assert built.unwrap().mirror_url == f"{GATE_MIRROR_ROOT}/{_REPOSITORY}.git"
+
+
+def test_a_clone_that_names_no_repository_assembles_nothing(*, tmp_path: Path) -> None:
+    """Fail closed rather than guess: a mirror is never named from a directory."""
+    built = gate_remote_request(
+        repo_root=tmp_path,
+        renderer=_RENDERER,
+        runner=_StubWorld(refuse=("read-origin", "read-common-dir")),
+    )
+
+    assert isinstance(built, Failure)
+    assert built.failure().step == "derive-repo-name"
+
+
 def test_a_tree_that_cannot_be_read_assembles_nothing(*, tmp_path: Path) -> None:
     """No tree hash means no ref, no Job and no request."""
     built = gate_remote_request(
-        repo_root=tmp_path, renderer=_RENDERER, runner=_StubWorld(refuse="read-tree")
+        repo_root=tmp_path, renderer=_RENDERER, runner=_StubWorld(refuse=("read-tree",))
     )
 
     assert isinstance(built, Failure)
@@ -371,7 +457,7 @@ def test_a_tree_that_cannot_be_read_assembles_nothing(*, tmp_path: Path) -> None
 def test_a_manifest_that_cannot_be_rendered_assembles_nothing(*, tmp_path: Path) -> None:
     """A renderer that refuses is a gate that cannot be submitted."""
     built = gate_remote_request(
-        repo_root=tmp_path, renderer=_RENDERER, runner=_StubWorld(refuse="render")
+        repo_root=tmp_path, renderer=_RENDERER, runner=_StubWorld(refuse=("render",))
     )
 
     assert isinstance(built, Failure)
@@ -383,7 +469,7 @@ def test_a_run_that_could_not_be_assembled_reaches_no_verdict(*, tmp_path: Path)
     verdict = run_delegated_gate(
         repo_root=tmp_path,
         renderer=_RENDERER,
-        runner=_StubWorld(refuse="render"),
+        runner=_StubWorld(refuse=("render",)),
         sleeper=_no_sleep,
     )
 
