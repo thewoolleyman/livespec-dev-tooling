@@ -575,3 +575,45 @@ Then the systemd slice MUST carry the memory and CPU limits named by the role va
 And `daemon.json` MUST carry `cgroup-parent` naming that slice and every key it held before
 
 And `dockerd` MUST NOT have been restarted, and the pending restart MUST be recorded
+
+## Scenario: an opted-in push from a host that cannot read the gates kubeconfig gates locally
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user cannot read the gates kubeconfig
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the local `just check` fall-through MUST run
+
+And the pre-push gate MUST print a line saying it gated locally
+
+And a gate Job MUST NOT be submitted to the `gates` namespace
+
+## Scenario: an opted-in push from an eligible host completes on a green cluster verdict
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then a gate Job for the committed tree at the pushing worktree's `HEAD` MUST run in the `gates` namespace
+
+And the push MUST complete only after that Job reports a green verdict
+
+And the green token MUST be recorded for that tree
+
+## Scenario: an opted-in push is refused when no verdict arrives
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+And the cluster's API server is unreachable from that host
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the push MUST be refused
+
+And the local `just check` fall-through MUST NOT run in place of the missing verdict

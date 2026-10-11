@@ -598,5 +598,37 @@
     "heading": "## Scenario: converging the Fabro sandbox envelope never restarts dockerd outside a drained window",
     "test": "tests.consumer.test_docker_sandbox_slice_scenario.test_no_converge_path_restarts_the_daemon_without_the_operators_drained_restart_tag",
     "reason": "The spec-first debt livespec-dev-tooling-ig5iwg owed is landed with the docker_sandbox_slice role. Consumer-tier (integration-tier-or-above per the scenario-tier rule). The mapped arm proves the third Then's first half totally: it reads EVERY executable task of the role (tasks and handlers), derives the drained-restart tag from the role's own gated tasks, and asserts that every task able to stop or replace the container daemon is gated on both the `never` tag and `when: '<tag>' in ansible_run_tags` — with a control arm proving the gate predicate refuses an ungated restart and that a restart path exists at all. Companion arms in the same module prove the remaining Thens: `test_the_slice_carries_the_memory_and_cpu_limits_the_role_variables_name` renders the committed slice template and holds each limit directive against its role variable (with the default values asserted ABSENT from the template body), `test_converging_keeps_every_daemon_json_key_the_host_held_and_adds_cgroup_parent` evaluates the role's committed `combine` merge against a daemon.json holding foreign keys, and `test_the_pending_restart_is_recorded_for_a_daemon_that_has_not_loaded_the_slice` evaluates the role's own pending-restart condition both ways."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Delegated pre-push gate",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "reason": "Spec-first debt: a real consumer-tier test is owed asserting the opt-in, host-eligibility and no-verdict refusal; livespec-dev-tooling-pj7q4m owns landing it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an opted-in push from a host that cannot read the gates kubeconfig gates locally",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "reason": "Spec-first debt: a real integration-tier test is owed that drives the pre-push gate in a fixture repository setting delegated_gate = true on a host whose pushing user cannot read the gates kubeconfig, and asserts that the local just check fall-through runs, that the gated-locally line prints and that no gate Job is submitted to the gates namespace. livespec-dev-tooling-pj7q4m owns landing it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an opted-in push from an eligible host completes on a green cluster verdict",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "reason": "Spec-first debt: a real integration-tier test is owed that drives the pre-push gate in a fixture repository setting delegated_gate = true on a host whose pushing user can read the gates kubeconfig, against a stubbed gates cluster, and asserts that a gate Job runs for the committed HEAD tree, that the push completes only after its green verdict and that the green token is recorded for that tree. livespec-dev-tooling-pj7q4m owns landing it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an opted-in push is refused when no verdict arrives",
+    "test": "TODO",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "reason": "Spec-first debt: a real integration-tier test is owed that drives the pre-push gate in a fixture repository setting delegated_gate = true on an eligible host whose cluster API server is unreachable, and asserts that the push is refused and that the local just check fall-through does not run in place of the missing verdict. livespec-dev-tooling-pj7q4m owns landing it."
   }
 ]
