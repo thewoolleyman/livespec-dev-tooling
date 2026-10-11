@@ -111,14 +111,72 @@ entirely, so the binary is replaced under a busy factory. `rename(2)` does not
 touch the inode a running process already execs — the server keeps serving its
 runs from the old build, the new one sits at `binary_path` waiting for the next
 start, and the handler says out loud in the run output that it did not restart.
-Picking up the new build is then an operator's deliberate act: quiesce the
-instance and re-run with `-e fabro_server_restart_allowed=true`, or restart it by
-hand.
+Picking up the new build is then an operator's deliberate act, and the role
+carries the deferral forward so that act works: see
+**The deferred restart** below.
 
 Rollback is step 4 in reverse and needs no role change: move the `.bak` over
 `binary_path` by hand, or point `binary_source` at the build you want and declare
 its digest. Both the `.incoming` and `.bak` siblings are left on the host
 deliberately; nothing in the role reaps them.
+
+## The deferred restart
+
+**A restart this role refuses is recorded on the host, and a later run applies
+it.** Without that record the refusal is lost with the run that raised it, and
+the re-run the paragraph above asks for cannot do anything. Measured on
+`hp-xubuntu` 2026-10-11, before this existed: the apply that installed the
+v0.382 carrier at `fabro-server-candidate`'s `binary_path` reported that the
+instance was **not** restarted; the follow-up run with
+`-e fabro_server_restart_allowed=true` then found nothing changed, notified no
+handler, and left the candidate serving `0.378.0-nightly.0` with 72 hours of
+uptime. Nothing errored, and the drift read said the host was converged.
+
+**Where the record lives.** One file per instance, under the directory
+`fabro_server_restart_pending_dir` names — `/var/lib/fabro-server` by default,
+a variable only so a host that cannot use `/var/lib` can say so. The file name
+is `<unit_name>.restart-pending` and is deliberately **not** configurable: two
+instances sharing one marker would make one instance's deferral apply to the
+other's restart. `docker_sandbox_slice` carries the same mechanism for the same
+reason — a message in a play recap is gone the moment the terminal scrolls, and
+the next drift read is where the operator will look.
+
+**What a refusing run does.** Any run that changes this instance's files with
+`fabro_server_restart_allowed` false writes that marker, beside the run output
+naming the instance it did not restart. A second refusing run rewrites
+identical bytes and reports no change, so the marker never becomes noise. The
+marker survives every run that does not apply it: nothing but the restart
+removes it.
+
+**What a permitting run does.** A run with `fabro_server_restart_allowed` true
+restarts an instance that has a marker, and then removes it. The carrying-runs
+refusal has already halted the play if the instance is carrying runs, so the
+restart is gated exactly as every other restart in this role is — this
+mechanism adds no second path to `systemctl`.
+
+**The second trigger, which needs no record at all.** The same run also
+restarts an instance whose **running server executes a file other than its
+`binary_path`**, read from `/proc/<MainPID>/exe`. That covers the state nobody
+recorded: a binary replaced out of band, a marker removed by hand, or a server
+started before this role managed the instance. The probe fails **open** — a
+stopped unit, a `MainPID` of 0 and an unreadable `/proc` entry all mean
+"nothing owed" — because restarting a live factory on the strength of a probe
+that failed is worse than leaving a deferral unapplied. The marker is unaffected
+by that, so a deferral that WAS recorded survives a failed probe.
+
+**The whole operator procedure.** Run `just ansible-drift ansible/fabro-hosts.yml`
+and read it, as the play always requires. A refusing run that found a deferral
+says so and names the marker file. Then quiesce the instance — pause admission,
+or stop the dispatcher — and run
+`just ansible-apply ansible/fabro-hosts.yml -e fabro_server_restart_allowed=true`.
+Restarting the unit by hand clears the record too, on the next run.
+
+**Rollback** is to remove the marker file, which returns the host to exactly the
+state it was in before the deferral was recorded: nothing else reads it, and the
+running-binary comparison still catches a genuinely stale server on the next
+permitting run. There is nothing to retire — unlike the drained `dockerd`
+restart in `docker_sandbox_slice`, this is not an interim control standing in
+for a backend that will one day enforce the same thing.
 
 ## `host_vars/hp-xubuntu.yml`
 
@@ -264,6 +322,12 @@ verifier's own 60.
 two are per-run decisions an operator makes with `-e`, not standing
 configuration; making either a committed host variable would turn a
 deliberate act into a default.
+
+`fabro_server_restart_pending_dir` defaults to `/var/lib/fabro-server` and is
+host-invariant in practice, like `fabro_server_libexec_dir` and
+`fabro_server_unit_dir`. It is a variable only so a host that cannot use
+`/var/lib` can say so; see "The deferred restart" above for what is written
+there and what reads it.
 
 ## The `ansible_managed` banner
 

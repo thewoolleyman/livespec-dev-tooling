@@ -194,6 +194,8 @@ _RUNNING_PID_TASK = "Read the main PID of whatever this instance is running now"
 _RUNNING_BINARY_TASK = "Read the file this instance's running server actually executes"
 _CLEAR_HANDLER = "Clear the restart-pending marker this restart satisfied"
 _PENDING_REPORT = "Say that this instance's deferred restart is still pending"
+_DEFERRED_DOC_HEADING = "## The deferred restart"
+_MARKER_DIR_VARIABLE = "fabro_server_restart_pending_dir"
 
 # The v0.382 carrier build the fabro-currency cutover moves hp's production factory
 # onto: where it is staged on the control node, and the digest it hashes to. Both are
@@ -1899,3 +1901,57 @@ def test_a_refusing_run_keeps_the_marker_and_says_the_restart_is_still_pending()
                 f"deferral erased by the converge that declined it is the defect this slice "
                 f"exists to fix, re-expressed"
             )
+
+
+def test_the_role_documents_how_a_deferred_restart_is_recorded_and_how_one_is_applied() -> None:
+    """The sixth assertion: "Documented beside the values", for the mechanism just added."""
+    section = _doc_section(heading=_DEFERRED_DOC_HEADING)
+    document = _ROLE_DOC.read_text(encoding="utf-8")
+    variables = _host_variables(source=_INVENTORY)
+    marker_dir = str(variables[_MARKER_DIR_VARIABLE])
+    assert f"`{_MARKER_DIR_VARIABLE}`" in document and marker_dir in document, (
+        f"{_MARKER_DIR_VARIABLE} is a variable the role reads, so the document MUST name it "
+        f"AND the {marker_dir!r} it defaults to. An undocumented variable is one an operator "
+        f"discovers by reading the role, which is the drift this document exists to prevent"
+    )
+    candidate = _instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY)
+    marker = str(
+        _restart_scope(
+            instance=candidate, marker_present=True, running_binary=None, restart_allowed=False
+        )[_MARKER_FACT]
+    )
+    suffix = marker[len(marker_dir) + 1 + len(str(candidate["unit_name"])) :]
+    for token in (marker_dir, suffix):
+        assert token in section, (
+            f"the section MUST name {token!r}, so an operator can find the record on the "
+            f"host without reading the role's set_fact. Both halves are read out of the role "
+            f"here rather than restated, so a role that names the marker differently fails "
+            f"this arm; marker={marker!r}"
+        )
+    assert "-e fabro_server_restart_allowed=true" in section, (
+        "the section MUST name the exact invocation that APPLIES a deferral. 'How a later "
+        "run applies it' is the half the document was missing on 2026-10-11: it told the "
+        "operator to re-run with that flag to pick up a new build, and that re-run could "
+        "not restart anything"
+    )
+    assert len(section.split()) > 120, (
+        f"the section must carry the mechanism, not a stub: it has to say what a refusing "
+        f"run records, what a permitting run does with it, and what clears it — the reader "
+        f"is the operator holding a quiesced factory open; words={len(section.split())}"
+    )
+    stale_promise = (
+        "Picking up the new build is then an operator's deliberate act: quiesce the\n"
+        "instance and re-run with `-e fabro_server_restart_allowed=true`, or restart it by\n"
+        "hand."
+    )
+    assert stale_promise not in document, (
+        "the binary-install section's existing promise must now POINT AT this mechanism "
+        "rather than restate the re-run on its own. Left as it was, the document carries the "
+        "same sentence that was true-sounding and inoperable on 2026-10-11, beside a section "
+        "explaining why it needed a marker to work"
+    )
+    assert _DEFERRED_DOC_HEADING.removeprefix("## ") in document.split(_DEFERRED_DOC_HEADING)[0], (
+        f"the earlier prose must REFERENCE the {_DEFERRED_DOC_HEADING!r} section by name. A "
+        f"reader who stops at the binary-install walkthrough is exactly the reader who needs "
+        f"it, and a section nothing links to is one they will not reach"
+    )
