@@ -30,6 +30,27 @@
     # and the supervise step has already stopped and disabled it.
     - fabro_server_service_state == 'running'
 
+- name: Clear the restart-pending marker this restart satisfied
+  listen: Fabro instance files changed
+  # DECLARED AFTER THE RESTART, AND THAT IS THE WHOLE DESIGN. Ansible runs
+  # handlers sharing a `listen` in the order the file declares them, so a clear
+  # written above the restart would remove the record and THEN attempt the
+  # restart — and a restart that failed would leave an instance owing one with
+  # nothing on the host saying so. In this order the record outlives a failed
+  # restart and the next run still sees it.
+  ansible.builtin.file:
+    path: "{{ fabro_server_restart_pending_marker }}"
+    state: absent
+  become: true
+  when:
+    # Gated on the run having been PERMITTED, symmetrically with the writer
+    # below being gated on the run having refused. A clear that fired on a
+    # refusing run would erase the deferral by the very converge that failed to
+    # apply it, which is this mechanism's own defect one layer down.
+    - fabro_server_restart_allowed | bool
+    - not ansible_check_mode or fabro_server_unit_file.stat.exists
+    - fabro_server_service_state == 'running'
+
 - name: Record that this instance's restart is still pending
   listen: Fabro instance files changed
   # THE DEFERRAL, WRITTEN DOWN. The debug handler below says the same thing to

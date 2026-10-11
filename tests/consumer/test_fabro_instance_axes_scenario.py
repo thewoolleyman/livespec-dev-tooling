@@ -132,6 +132,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -191,6 +192,7 @@ _NOT_RESTARTED_HANDLER = "Say which instance was left needing a restart"
 _CARRIER_TASK = "Carry this instance's deferred restart into this run"
 _RUNNING_PID_TASK = "Read the main PID of whatever this instance is running now"
 _RUNNING_BINARY_TASK = "Read the file this instance's running server actually executes"
+_CLEAR_HANDLER = "Clear the restart-pending marker this restart satisfied"
 
 # The v0.382 carrier build the fabro-currency cutover moves hp's production factory
 # onto: where it is staged on the control node, and the digest it hashes to. Both are
@@ -981,6 +983,44 @@ def _restart_scope(
     return scope
 
 
+def _bodies_of(*, source: Path) -> list[tuple[str, str]]:
+    """Every top-level task of one role file, as `(name, body)` in file order.
+
+    Text-sliced for the same reason `_task_body` is: no YAML library is importable in
+    this suite. The ENUMERATION matters where `_task_body` does not — "nothing else in
+    the role removes this file" is a claim about every task and handler there is, and a
+    reader that can only fetch a task BY NAME cannot make it.
+    """
+    text = source.read_text(encoding="utf-8")
+    openings = [match.start() for match in re.finditer(r"^- name: ", text, re.MULTILINE)]
+    assert openings, (
+        f"{source.name} must declare its tasks as column-zero `- name:` entries; a task "
+        f"this reader cannot see is a task nothing below checks, and the arms using it "
+        f"assert over EVERY task rather than over one"
+    )
+    return [
+        (text[start:stop].split("\n", 1)[0][len("- name: ") :].strip(), text[start:stop])
+        for start, stop in pairwise([*openings, len(text)])
+    ]
+
+
+def _executable_bodies() -> list[tuple[str, str]]:
+    """Every task AND handler of the role — everything an apply can run."""
+    return [*_bodies_of(source=_TASKS), *_bodies_of(source=_HANDLERS)]
+
+
+def _handler_index(*, name: str) -> int:
+    """Where one handler sits in `handlers/main.yml`, counted in handlers.
+
+    Order is load-bearing among handlers that share a `listen`: Ansible runs them in the
+    order the file declares, so "the marker is cleared only after the restart" is a
+    statement about this index and nothing else in the role expresses it.
+    """
+    names = [handler for handler, _ in _bodies_of(source=_HANDLERS)]
+    assert name in names, f"handlers/main.yml must still carry the handler {name!r}"
+    return names.index(name)
+
+
 def _hp_instances() -> list[dict[str, str]]:
     """The two `hp-xubuntu` instances the deferred-restart arms model, fleet first.
 
@@ -1729,3 +1769,61 @@ def test_a_permitting_run_restarts_an_instance_executing_a_file_other_than_its_b
             f"Taken afterwards it would answer about the server this run produced rather "
             f"than the one it inherited, which is the comparison that is being made"
         )
+
+
+def test_restarting_an_instance_removes_its_restart_pending_marker() -> None:
+    """The fourth assertion: the restart is what clears the record, and the only thing."""
+    handler = _task_body(name=_CLEAR_HANDLER, source=_HANDLERS)
+    assert _task_list_field(body=handler, field="listen") == [_FILES_CHANGED], (
+        f"the marker MUST be cleared by a handler on the same {_FILES_CHANGED!r} "
+        f"notification the restart itself listens to. A clear anywhere else would run on "
+        f"converges the restart did not"
+    )
+    assert _module_argument(body=handler, module="ansible.builtin.file", argument="state") == (
+        "absent"
+    ), "clearing the record means REMOVING the file; anything else leaves it readable"
+    assert _handler_index(name=_RESTART_HANDLER) < _handler_index(name=_CLEAR_HANDLER), (
+        f"the clear MUST be declared AFTER {_RESTART_HANDLER!r}. Ansible runs handlers "
+        f"sharing a listen in file order, so a clear declared first would remove the record "
+        f"and THEN attempt the restart — and a restart that fails would leave an instance "
+        f"owing one with nothing on the host saying so"
+    )
+    gates = _task_list_field(body=handler, field="when")
+    for instance in _hp_instances():
+        restarting = _restart_scope(
+            instance=instance, marker_present=True, running_binary=None, restart_allowed=True
+        )
+        assert _holds(conditions=gates, scope=restarting), (
+            f"{instance['unit_name']}: a run that RESTARTS the instance MUST clear its "
+            f"marker. A marker that outlives the restart it asked for makes every later "
+            f"permitting run restart a live factory that owes nothing; when={gates}"
+        )
+        cleared = _render_templated(
+            text=_module_argument(body=handler, module="ansible.builtin.file", argument="path"),
+            scope=restarting,
+        )
+        assert cleared == restarting[_MARKER_FACT], (
+            f"the handler MUST remove THIS instance's marker, the one the role's set_fact "
+            f"names. A clear aimed at any other path would leave this instance's deferral "
+            f"standing and remove a sibling's; path={cleared!r}"
+        )
+        refusing = _restart_scope(
+            instance=instance, marker_present=True, running_binary=None, restart_allowed=False
+        )
+        assert not _holds(conditions=gates, scope=refusing), (
+            f"{instance['unit_name']}: the control arm — a run that did NOT restart must not "
+            f"clear the record either. That is the whole bug this slice fixes, reintroduced "
+            f"one layer down: the deferral would be erased by the very converge that failed "
+            f"to apply it"
+        )
+    removers = [
+        (name, body)
+        for name, body in _executable_bodies()
+        if _MARKER_FACT in body
+        and re.search(r"^    state: absent$", body, re.MULTILINE) is not None
+    ]
+    assert [name for name, _ in removers] == [_CLEAR_HANDLER], (
+        f"the restart MUST be the ONLY thing in the role that removes a marker, so a "
+        f"deferral survives every converge until the window is actually taken; the role "
+        f"removes it in {[name for name, _ in removers]}"
+    )
