@@ -6,6 +6,13 @@ terminal, delete the ref. Every reach into the world goes through the
 `GateCommandRunner` seam, so the whole client runs against a canned runner with
 no cluster, no mirror and no host touched.
 
+EVERY CLUSTER COMMAND RUNS THROUGH `with-gates-kubeconfig`, never a bare
+`kubectl` — the prefix is applied in `_kubectl`, the one place cluster commands
+are built, so no step can be spelled without it. `gate_credential` carries why:
+a bare `kubectl` authenticates with the pushing user's own environment, which on
+the VPS login user holds no kubeconfig, and it never reaches the credential
+refresh the wrapper exists to perform.
+
 WHAT THIS SLICE DELIBERATELY DOES NOT DO IS ADJUDICATE. A `Failed` gate comes
 back from here as an ordinary SUCCESS carrying the terminal state it read;
 deciding pass from fail, and writing the existing green token on a pass, is
@@ -48,6 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias, cast
 
+from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
     GateStepFailed,
@@ -201,8 +209,17 @@ def run_gate(
 
 
 def _kubectl(*, request: GateRunRequest) -> list[str]:
-    """The namespaced `kubectl` prefix every cluster command here shares."""
-    return ["kubectl", "--namespace", request.namespace]
+    """The namespaced `kubectl` prefix every cluster command here shares.
+
+    THROUGH `with-gates-kubeconfig`, and that is not a convenience. A bare
+    `kubectl` authenticates with whatever `KUBECONFIG` the pushing user's
+    environment carries — on the VPS login user, none at all — and it never
+    reaches the wrapper's refresh-on-rejection path, so the first gate after a
+    control-plane boot fails 401 with nothing to fix it. The prefix is applied
+    HERE, where every cluster command is built, so no step can be spelled
+    without it.
+    """
+    return with_gates_kubeconfig(argv=["kubectl", "--namespace", request.namespace])
 
 
 def _head_tree_hash(
