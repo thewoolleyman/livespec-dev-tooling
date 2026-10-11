@@ -9,6 +9,18 @@ is SHARED — one client, shipped once — and the wiring is per repository, so 
 rollout is a sequence of small, separately reviewable edits rather than one flip
 that moves the whole fleet's gate at the same instant.
 
+DELEGATION IS SELECTED BY TWO FACTS, NOT ONE, and the second was missing until
+2026-10-11. The switch below travels with the CODE and describes no host, so an
+opted-in repository delegated from every host that cloned it; a host holding no
+gates credential then failed closed, which is correct for a gate and fatal for a
+factory — the push is refused and nothing says why. So the switch is now ANDed
+with host eligibility (`gate_credential.gates_kubeconfig_readable`): the pushing
+user must be able to read the gates kubeconfig on this host. Anywhere else the
+push takes the local `just check` fall-through and SAYS SO (`GATED_LOCALLY`),
+because an opted-in repository that quietly gates somewhere else is the one shape
+an operator cannot tell apart after the fact. Nothing about the fail-closed rule
+moves: once delegation IS selected, every no-verdict shape still refuses.
+
 THE SWITCH IS PER-REPOSITORY AND DEFAULTS OFF. It is `delegated_gate` in the
 consuming repository's own `[tool.livespec_dev_tooling]` block — the same place
 `plan_lifecycle_anchor` and `file_lloc_hard_gate` live, read by its own dedicated
@@ -49,6 +61,7 @@ import sys
 from pathlib import Path
 
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
+from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
@@ -70,10 +83,12 @@ import structlog  # noqa: E402  — vendor-path-aware import.
 from returns.result import Failure, Result, Success  # noqa: E402  — same.
 
 __all__: list[str] = [
+    "GATED_LOCALLY",
     "GATE_MIRROR_ROOT",
     "GATE_RENDERER_INSTALLED",
     "GATE_RENDERER_IN_REPO",
     "delegated_gate_enabled",
+    "delegated_gate_selected",
     "gate_remote_request",
     "main",
     "resolve_renderer",
@@ -100,6 +115,16 @@ _RENDER_STEP = "render-gate-job"
 # is the name it asked for even if that default ever moves.
 _JOB_NAME_TREE_CHARS = 12
 
+# What an OPTED-IN repository says when the host it is being pushed from holds no
+# readable gates credential. Printed rather than left silent because an opted-in
+# repository that quietly gates somewhere else is the one shape an operator
+# cannot tell apart afterwards: a locally-gated push and a cluster-gated one look
+# identical once they have completed.
+GATED_LOCALLY = (
+    "delegated gate is switched on for this repository, but this host cannot read the "
+    "gates kubeconfig, so this push is gating locally on the full just check aggregate"
+)
+
 
 def delegated_gate_enabled(*, repo_root: Path) -> bool:
     """Answer whether `repo_root` has opted in to the delegated gate.
@@ -116,6 +141,23 @@ def delegated_gate_enabled(*, repo_root: Path) -> bool:
     except ConfigParseError:
         return False
     return declared is True
+
+
+def delegated_gate_selected(*, repo_root: Path) -> bool:
+    """Answer whether THIS push, from THIS host, delegates its gate.
+
+    Two independent facts, and the switch is only one of them. `delegated_gate`
+    lives in the repository's own `pyproject.toml`, so it travels with the CODE
+    and describes no host; whether the pushing user can read the gates
+    credential is a property of the HOST and is read from it. A host that holds
+    no credential — a factory sandbox, a fresh laptop — therefore keeps gating
+    locally in an opted-in repository instead of delegating and failing closed.
+
+    The ordering matters for silence, not for the answer: the switch is read
+    first, so a repository that has not opted in never reaches the credential
+    question and nothing is narrated at the overwhelming majority of pushes.
+    """
+    return delegated_gate_enabled(repo_root=repo_root) and gates_kubeconfig_readable()
 
 
 def resolve_renderer(*, repo_root: Path) -> Path:
@@ -207,9 +249,13 @@ def run_delegated_gate(
 def main() -> int:
     """The two answers a repository's `check-pre-push` recipe needs.
 
-    `enabled` is SILENT and reports through its exit code alone, so a repository
-    that has not opted in — every repository, today — sees a pre-push that is
-    byte-for-byte the one it saw before this slice landed.
+    `enabled` answers whether THIS push delegates — the repository's switch AND
+    this host's credential — because the exit code is the whole branch the recipe
+    takes and a recipe cannot read the host for itself. It stays SILENT for a
+    repository that has not opted in, so such a repository sees a pre-push
+    byte-for-byte the one it saw before this slice landed. It speaks in exactly
+    one case: switched ON, host ineligible, which is the case that would
+    otherwise gate differently without saying so.
     """
     structlog.configure(
         processors=[
@@ -233,7 +279,11 @@ def main() -> int:
     repo_root = Path.cwd()
 
     if parsed.command == "enabled":
-        return 0 if delegated_gate_enabled(repo_root=repo_root) else 1
+        if delegated_gate_selected(repo_root=repo_root):
+            return 0
+        if delegated_gate_enabled(repo_root=repo_root):
+            log.warning(GATED_LOCALLY, kubeconfig=str(gates_kubeconfig_path()))
+        return 1
 
     verdict = run_delegated_gate(
         repo_root=repo_root, renderer=resolve_renderer(repo_root=repo_root)
