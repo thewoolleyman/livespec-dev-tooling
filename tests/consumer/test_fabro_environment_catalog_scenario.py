@@ -27,6 +27,7 @@ derived those from the file it is checking would assert nothing.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from itertools import pairwise
 from pathlib import Path
 
@@ -66,9 +67,14 @@ _TEMPLATE_READ = "Read the catalog entry a new environment is derived from"
 _BASE_TASK = "Resolve the catalog entry this environment's unnamed fields come from"
 _SETTINGS_TASK = "Resolve the settings this environment is written with"
 _CREATE_TASK = "Create this environment in the instance's catalog"
+_MATCH_TASK = "Decide whether the catalog already matches what version control declares"
+_DISPOSITION_TASK = "Name this environment's disposition in the run output"
+_REPLACE_TASK = "Replace this environment in the instance's catalog"
 _API_URL_FACT = "fabro_server_environments_url"
 _PRESENT_FACT = "fabro_server_environment_present"
 _SETTINGS_FACT = "fabro_server_environment_settings"
+_CURRENT_FACT = "fabro_server_environment_current"
+_MATCHES_FACT = "fabro_server_environment_matches"
 _ENVIRONMENT_LOOP_VAR = "fabro_server_environment"
 
 # The API this slice writes through, and the one environment variable the instance's
@@ -157,6 +163,7 @@ _BARE_ITEM = re.compile(r"^ {6}- (?P<item>[a-z_]+)$", re.MULTILINE)
 _LIST_FIELD = re.compile(r"^  (?P<field>[a-z_]+):\n(?P<items>(?:    (?:#|- ).*\n)+)", re.MULTILINE)
 _SCALAR_FIELD = re.compile(r"^  (?P<field>[a-z_]+): (?P<value>[^\n>|].*)$", re.MULTILINE)
 _LIST_ITEM = "- "
+_NOT = "not "
 # One mapping entry of a `set_fact` or an `environment` block, inline or folded. The
 # folded continuation sits deeper than the key, which is what ends one entry and begins
 # the next without a YAML parser.
@@ -472,3 +479,152 @@ def test_the_api_credential_is_read_on_the_host_and_never_enters_ansibles_own_va
                 f"message that interpolates the variable. Read it in the host-side shell "
                 f"instead, where Ansible never sees it"
             )
+
+
+# --- the run that writes nothing because the catalog already matches -------
+
+
+def _truth(*, condition: str, scope: Mapping[str, bool]) -> bool:
+    """One gate condition of the role, evaluated against one modelled catalog state.
+
+    The vocabulary is exactly what the role's two write gates use — a reference, an
+    optional `| bool`, `not`, and parentheses — and nothing else. An unmodelled name
+    ASSERTS rather than defaulting: a gate evaluated against a value this test invented
+    is a gate evaluated against a different condition, which is worse than one left
+    unevaluated because it answers confidently.
+    """
+    text = condition.strip()
+    if text.startswith(_NOT):
+        return not _truth(condition=text[len(_NOT) :], scope=scope)
+    if text.startswith("(") and text.endswith(")"):
+        return _truth(condition=text[1:-1], scope=scope)
+    name = text.removesuffix("| bool").strip()
+    assert name in scope, (
+        f"the role's catalog gate reads {name!r}, which this test does not model. Model "
+        f"it rather than letting the arms below answer about a catalog state that was "
+        f"never described"
+    )
+    return scope[name]
+
+
+def _fires(*, name: str, scope: Mapping[str, bool]) -> bool:
+    """Whether every `when:` condition of one task holds — Ansible ANDs a list.
+
+    An EMPTY list asserts rather than returning True. Ansible's own reading of a missing
+    `when:` is "always", so returning True would be faithful to Ansible and useless
+    here: every arm below asks whether a write fires on one catalog state and not
+    another, and a gate this reader could not see answers both questions the same way
+    while looking exactly like a gate that passed.
+    """
+    conditions = _conditions(body=_named(name=name, source=_ENVIRONMENT_TASKS), field="when")
+    assert conditions, (
+        f"{name!r} writes a live factory's catalog and MUST carry a `when:` this reader "
+        f"can see; an unread gate reads as firing unconditionally, which here means "
+        f"rewriting an environment on every converge"
+    )
+    return all(_truth(condition=condition, scope=scope) for condition in conditions)
+
+
+def _catalog_state(*, present: bool, matches: bool) -> dict[str, bool]:
+    """One modelled state of the instance's catalog for one declared environment."""
+    return {_PRESENT_FACT: present, _MATCHES_FACT: matches}
+
+
+def test_a_run_whose_declared_environments_already_match_the_catalog_writes_nothing() -> None:
+    """The third assertion, with both control arms: converged writes, drift does."""
+    converged = _catalog_state(present=True, matches=True)
+    for write in (_CREATE_TASK, _REPLACE_TASK):
+        assert not _fires(name=write, scope=converged), (
+            f"{write!r} MUST be skipped for an environment the catalog already holds with "
+            f"the declared image, cpu and memory. A converge that wrote anyway would report "
+            f"a change on every run of a converged host, which makes the change report "
+            f"itself worthless — and every write to this API is a write to the catalog a "
+            f"live factory dispatches runs into"
+        )
+    drifted = _catalog_state(present=True, matches=False)
+    assert _fires(name=_REPLACE_TASK, scope=drifted), (
+        "the first control arm: an environment the catalog holds with OTHER settings MUST "
+        "be replaced. Without it 'writes nothing when converged' would be satisfied by a "
+        "role that never writes an existing environment at all, which is the hand-POSTed "
+        "catalog this slice exists to replace"
+    )
+    assert not _fires(name=_CREATE_TASK, scope=drifted), (
+        "an environment the catalog already holds must not be CREATED: the collection "
+        "endpoint refuses an id it already carries, so the run would fail rather than "
+        "converge"
+    )
+    absent = _catalog_state(present=False, matches=False)
+    assert _fires(name=_CREATE_TASK, scope=absent), (
+        "the second control arm: the measured hp-candidate state — the declared "
+        "environment absent from the catalog entirely — MUST be created. That is the "
+        "condition the canary run failed in"
+    )
+    assert not _fires(name=_REPLACE_TASK, scope=absent), (
+        "an absent environment must not be REPLACED: the per-environment endpoint 404s, "
+        "and the If-Match revision it would carry does not exist"
+    )
+
+
+def test_the_match_decision_is_read_from_the_catalog_and_covers_every_declared_value() -> None:
+    """The control on the decision: it compares the declared values against the real entry."""
+    decision = _set_facts(name=_MATCH_TASK, source=_ENVIRONMENT_TASKS)
+    assert _MATCHES_FACT in decision, f"the role must derive {_MATCHES_FACT}"
+    expression = decision[_MATCHES_FACT]
+    assert _CURRENT_FACT in expression, (
+        f"{_MATCHES_FACT} MUST be computed against {_CURRENT_FACT}, the entry the catalog "
+        f"read returned. A decision taken against anything else is a gate answering about "
+        f"a catalog nobody looked at;\nexpression={expression!r}"
+    )
+    for field in _FIELDS:
+        if field == "id":
+            # The id is not COMPARED — it is what the entry was looked up by, so an
+            # answer about any other id could not have been returned by that read.
+            continue
+        assert f"{_ENVIRONMENT_LOOP_VAR}.{field}" in expression, (
+            f"the decision MUST compare the declared {field!r}. A field left out of it is "
+            f"a field a converge would never correct: the catalog would keep the server's "
+            f"own value and every run would report the environment as already matching"
+        )
+    assert _PRESENT_FACT in expression, (
+        f"{_MATCHES_FACT} MUST be false for an environment the catalog does not hold at "
+        f"all, independently of the comparisons: the entry it would compare against is the "
+        f"empty mapping, and every `| default()` in those comparisons would then decide "
+        f"the answer rather than the catalog"
+    )
+    replace = _named(name=_REPLACE_TASK, source=_ENVIRONMENT_TASKS)
+    assert "--request PUT" in replace, (
+        f"replacing MUST be a PUT to {_API_PATH}/<id>; POST is the create endpoint and "
+        f"refuses an id the catalog already holds"
+    )
+    assert "If-Match" in replace and f"{_CURRENT_FACT}.revision" in replace, (
+        "the replace MUST carry If-Match with the revision the read returned. That is the "
+        "server's own optimistic-concurrency check: without it a converge would overwrite "
+        "a change made between the read and the write, and the API requires the header, so "
+        "there is no form of this request that skips the check"
+    )
+    disposition = _named(name=_DISPOSITION_TASK, source=_ENVIRONMENT_TASKS)
+    assert _conditions(body=disposition, field="when") == [], (
+        "the disposition report MUST be ungated. Ansible skips a `shell` under `--check`, "
+        "so it is the only thing a drift read can learn about a catalog from — and a drift "
+        "read that said nothing would be indistinguishable from one that found no drift"
+    )
+    assert _MATCHES_FACT in disposition and _PRESENT_FACT in disposition, (
+        "the report MUST name both halves of the decision, so the operator reading a dry "
+        "run can tell 'already converged' from 'would be created' from 'would be replaced'"
+    )
+
+
+def test_the_catalog_write_gates_stay_inside_the_vocabulary_this_test_can_evaluate() -> None:
+    """The control on the evaluator: every gate the arms read must actually be evaluated."""
+    scope = _catalog_state(present=True, matches=True)
+    for write in (_CREATE_TASK, _REPLACE_TASK):
+        conditions = _conditions(body=_named(name=write, source=_ENVIRONMENT_TASKS), field="when")
+        for condition in conditions:
+            assert isinstance(_truth(condition=condition, scope=scope), bool), (
+                f"{write}: the role's gate {condition!r} must evaluate to a verdict here, "
+                f"or the arms above are reading a condition this evaluator does not "
+                f"understand — and an unevaluated gate is a test that has stopped checking "
+                f"whether a converge rewrites a live factory's catalog"
+            )
+    with pytest.raises(AssertionError, match="does not model"):
+        _truth(condition="fabro_server_environment_a_fact_no_arm_describes", scope=scope)
