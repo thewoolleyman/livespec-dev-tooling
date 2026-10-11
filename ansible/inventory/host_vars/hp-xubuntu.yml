@@ -86,10 +86,19 @@ fabro_server_instances:
     otel_dropin: present
     # Its own build, beside its own state root — the two axes this instance
     # exists to exercise. HOME is the state root rather than the account home,
-    # which is how it was hand-installed; the role never builds the binary, and
-    # its preflight refuses the host if this path is absent or not executable.
+    # which is how it was hand-installed.
     binary_path: /home/cwoolley/.fabro-candidate/bin/fabro
     home_env: /home/cwoolley/.fabro-candidate
+    # The v0.382 carrier build, staged on the control node (vps) and carried
+    # from there. Measured 2026-10-11: the host's candidate instance was
+    # running fabro 0.378.0-nightly.0 (64b9d88), so the first apply after this
+    # lands REPLACES that binary. The digest is the gate — the source path is
+    # inside a mutable state tree, so a declaration without one would install
+    # whatever is there on the day it runs. The replacement does not restart
+    # the instance: fabro_server_restart_allowed is false by default and the
+    # carrying-runs refusal gates it even when it is true.
+    binary_source: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
+    binary_sha256: effe9d03c859e8072934947ce598980ea337065df17e737867685a1508514799
     # Spelled rather than defaulted: this instance is deliberately RUNNING, and
     # the word is what the cutover flips on the fleet instance instead.
     service_state: running

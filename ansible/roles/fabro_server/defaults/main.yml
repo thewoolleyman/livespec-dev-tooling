@@ -28,8 +28,10 @@
 # App private key in the instance's own Fabro vault, and a `tailscale serve`
 # mapping for the new port in the tailscale-admin repository. The Fabro
 # binary at <host_home>/.fabro/bin/fabro is shared and needs nothing new —
-# unless the instance names a `binary_path` of its own, which is its own
-# fifth piece of out-of-band state: the role never builds a binary.
+# unless the instance names a `binary_path` of its own, which is a fifth
+# piece of out-of-band state UNLESS the instance also names a
+# `binary_source`: the role never builds a binary, but it will install one it
+# is told to copy from the control node.
 
 # The host's instances. Supplied per host in host_vars; see HOST_VARS.md for
 # the five that exist today. The role reads this list only to prove the
@@ -51,7 +53,7 @@ fabro_server_instances: []
 #   github_app_id       which factory bot this instance publishes as
 #   otel_dropin         present | absent | unmanaged; see below
 #
-# Three further axes are OPTIONAL and default, because omitting one cannot
+# Five further axes are OPTIONAL and default, because omitting one cannot
 # make two instances collide — it only preserves prior behaviour:
 #
 #   binary_path         the Fabro binary this instance's unit starts.
@@ -76,6 +78,33 @@ fabro_server_instances: []
 #                       instance sets both to its own root, which is how it
 #                       was hand-installed on 2026-10-08 and what this axis
 #                       exists to express rather than tolerate.
+#
+#   binary_source       an ABSOLUTE CONTROL-NODE path holding the build this
+#   binary_sha256       instance should run, and the sha256 that file must
+#                       hash to. Declared together or not at all; both
+#                       default to the empty string, which means the role
+#                       leaves whatever is at binary_path exactly as it finds
+#                       it — the behaviour every instance had before the pair
+#                       existed. Where binary_path says which build the unit
+#                       STARTS, these say whether the role PUTS one there.
+#
+#                       Declared, the role checks the control-node file's
+#                       digest BEFORE touching the host, and then — only if
+#                       the host's copy is not already that build — stages a
+#                       copy beside binary_path, keeps the outgoing binary
+#                       under a name carrying its own sha256 prefix, and
+#                       renames the staged copy into place. A replacement
+#                       notifies the restart handler, which still refuses by
+#                       default and, wherever it does not, is still gated by
+#                       the carrying-runs refusal. Either way replacing a
+#                       binary never interrupts a factory that is carrying
+#                       runs: a rename leaves the inode a running process
+#                       execs untouched. HOST_VARS.md has the whole sequence.
+#
+#                       The role STILL never builds a binary. What it will do
+#                       is carry one the operator has already staged, which
+#                       is what makes a by-hand copy to a factory host
+#                       unnecessary rather than merely discouraged.
 #
 #   service_state       running (default) | stopped. `stopped` means the
 #                       instance's unit, drop-in, settings.toml and state

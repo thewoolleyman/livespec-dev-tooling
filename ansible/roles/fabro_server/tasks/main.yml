@@ -9,12 +9,16 @@
 #
 # WHAT THIS ROLE IS ALLOWED TO DO. It writes the shared verifier, one unit
 # file, and one OTLP drop-in, then makes sure the unit is enabled and running.
-# It does NOT restart a running server unless told it may, does NOT write
-# settings.toml unless told to, does NOT kill any process, and does not create
-# any of the five pieces of out-of-band state the instance needs. Every one of
-# those refusals is a preflight assert below rather than a mid-run failure,
-# because this service is the orchestrator's own server: on both hosts it is
-# carrying live Fabro runs while this role runs against it.
+# It also INSTALLS the instance's Fabro binary — but only for an instance that
+# declares binary_source and binary_sha256, and only from a control-node file
+# that really hashes to that digest. It still never BUILDS one, and an
+# instance that declares neither axis leaves whatever the host holds exactly
+# as it found it. It does NOT restart a running server unless told it may,
+# does NOT write settings.toml unless told to, does NOT kill any process, and
+# does not create any of the other pieces of out-of-band state the instance
+# needs. Every one of those refusals is a preflight assert below rather than a
+# mid-run failure, because this service is the orchestrator's own server: on
+# both hosts it is carrying live Fabro runs while this role runs against it.
 #
 # THE HOST GUARD DOES NOT MIGRATE. install.sh refused to apply one host's
 # values on another, comparing the values file's canonical host against both
@@ -72,6 +76,16 @@
     # needs no second role and no hand-installed unit.
     fabro_server_binary_path: "{{ fabro_server_instance.binary_path | default(fabro_server_host_home ~ '/.fabro/bin/fabro') }}"
     fabro_server_home_env: "{{ fabro_server_instance.home_env | default(fabro_server_host_home) }}"
+    # OPTIONAL, both, and both EMPTY by default — which is the word for "this
+    # instance's binary is not managed from the control node". Where
+    # binary_path says which build the unit STARTS, these two say whether the
+    # role PUTS one there: a control-node path to copy from, and the sha256
+    # that path must hash to. Empty is the only safe default because it is the
+    # one value that means "touch nothing", and touching nothing is what every
+    # instance did before the pair existed. The two are one decision and are
+    # refused apart; see the assert below.
+    fabro_server_binary_source: "{{ fabro_server_instance.binary_source | default('') }}"
+    fabro_server_binary_sha256: "{{ fabro_server_instance.binary_sha256 | default('') }}"
 
 - name: Refuse an instance mapping that does not spell every axis
   # render-unit.sh exited 3 naming the one variable a values file had missed.
@@ -141,6 +155,29 @@
       '{{ fabro_server_service_state }}'; it must be running or stopped.
     success_msg: service_state disposition is understood
 
+- name: Refuse an instance that does not spell both halves of the binary-install pair
+  ansible.builtin.assert:
+    that:
+      # The two axes are one decision, and either half alone is a hazard
+      # rather than a partial feature. A source with no digest installs
+      # whatever the control node happens to hold at that path today — the
+      # "a build placed by hand" failure this pair exists to end, re-expressed
+      # one layer up. A digest with no source names a build nothing reads.
+      - (fabro_server_binary_source | length > 0) == (fabro_server_binary_sha256 | length > 0)
+      # Absolute, because the alternative failure is quiet rather than loud:
+      # ansible.builtin.copy resolves a RELATIVE src against the role's own
+      # files/ directory, so a relative source would look for the build inside
+      # this repository and fail naming a path the operator never wrote.
+      - fabro_server_binary_source | length == 0 or fabro_server_binary_source[:1] == '/'
+    fail_msg: >-
+      binary_source and binary_sha256 for {{ fabro_server_unit_name }} must be
+      declared together, and binary_source must be an absolute control-node
+      path. This instance declares binary_source
+      '{{ fabro_server_binary_source }}' and binary_sha256
+      '{{ fabro_server_binary_sha256 }}'. Declaring NEITHER is the normal case
+      and leaves the host's binary alone.
+    success_msg: this instance's binary-install pair is either absent or complete
+
 # --- preflight: the out-of-band state this role refuses to create ----------
 #
 # install.sh's require_inputs, minus the two source files it checked for,
@@ -154,34 +191,96 @@
 # `--check` drift report would skip its own preconditions and report on a host
 # it never actually inspected.
 
+- name: Read the control node's copy of the binary this instance installs
+  # On the CONTROL NODE, which is the whole point of the axis: the carrier
+  # build is staged there once and the operator stops copying binaries to
+  # factory hosts by hand. delegate_to keeps this one read local even though
+  # every other task in this file speaks to the factory host, and become is
+  # explicitly false because the staged build belongs to the operator's own
+  # account, not to root.
+  ansible.builtin.stat:
+    path: "{{ fabro_server_binary_source }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: fabro_server_binary_source_stat
+  check_mode: false
+  when: fabro_server_binary_source | length > 0
+
+- name: Refuse a control-node binary that is absent or does not hash to its declared digest
+  # Before the factory host is read, let alone written. The digest is the only
+  # thing standing between "the role installs the build version control names"
+  # and "the role installs whatever is at that path today", and that path is
+  # inside a mutable state tree under a home directory — exactly the kind of
+  # thing that changes underneath a declaration without anyone editing it.
+  ansible.builtin.assert:
+    that:
+      - fabro_server_binary_source_stat.stat.exists
+      - fabro_server_binary_source_stat.stat.checksum == fabro_server_binary_sha256
+    fail_msg: >-
+      {{ fabro_server_binary_source }} on the control node is missing, or its
+      sha256 is not the {{ fabro_server_binary_sha256 }} this instance
+      declares. Nothing on {{ inventory_hostname }} has been read or changed.
+      Stage the build again, or declare the digest it really has — never the
+      other way round.
+    success_msg: the control node's copy of this instance's binary matches its declared digest
+  when: fabro_server_binary_source | length > 0
+
 - name: Look for the Fabro binary this instance starts
   # The instance's OWN binary, which is the host's shared one unless the
   # instance named another. Probing the shared path for an instance that names
   # its own would clear the preflight against a build the unit never starts —
   # a check that passes by reading the wrong file.
+  #
+  # sha256 rather than stat's default sha1, because this digest is compared
+  # against the one version control declares and that declaration is a sha256.
   ansible.builtin.stat:
     path: "{{ fabro_server_binary_path }}"
+    checksum_algorithm: sha256
   become: true
   register: fabro_server_binary
   check_mode: false
 
+- name: Decide whether this instance's binary must be replaced
+  # ONE place answers "is this instance's binary managed from the control
+  # node, and is the host's copy already that build", and the three install
+  # tasks plus the refusal below all read it. An instance that names no source
+  # is never replaced, whatever the host holds.
+  #
+  # `| default('')` carries the first-install case: a stat of a path with no
+  # file at it reports exists false and omits checksum entirely rather than
+  # reporting an empty one, so an undefined digest reads as "not the declared
+  # build" and the install proceeds.
+  ansible.builtin.set_fact:
+    fabro_server_binary_replace: >-
+      {{ fabro_server_binary_source | length > 0
+      and fabro_server_binary.stat.checksum | default('') != fabro_server_binary_sha256 }}
+  check_mode: false
+
 - name: Refuse a host with no built Fabro binary
+  # Skipped for exactly one instance: the one whose binary this run is about
+  # to install. Everywhere else the refusal is unchanged, because an instance
+  # that declares no source still owns its binary out of band.
   ansible.builtin.assert:
     that:
       - fabro_server_binary.stat.exists
       - fabro_server_binary.stat.executable
     fail_msg: >-
-      {{ fabro_server_binary_path }} is missing or not executable. This role
-      never builds or downloads it. Build it in the pinned
-      factory-integration worktree — `cargo clean --release -p fabro-spa`
-      then `cargo dev build --release -p fabro-cli`, the targeted clean being
+      {{ fabro_server_binary_path }} is missing or not executable, and this
+      instance is not installing one — it declares no binary_source, or it
+      declares a source the host already holds. This role never BUILDS a
+      binary. Build it in the pinned factory-integration worktree —
+      `cargo clean --release -p fabro-spa` then
+      `cargo dev build --release -p fabro-cli`, the targeted clean being
       required because Cargo will not otherwise refresh the gitignored SPA
-      assets — and replace the binary atomically per the
-      livespec-orchestrator-beads-fabro runbook. Every instance that does not
-      name its own binary_path shares the host's
+      assets — then either replace the binary atomically per the
+      livespec-orchestrator-beads-fabro runbook, or stage it on the control
+      node and declare binary_source plus binary_sha256 on this instance.
+      Every instance that does not name its own binary_path shares the host's
       {{ fabro_server_host_home }}/.fabro/bin/fabro; only its state is
       per-instance.
     success_msg: this instance's Fabro binary is present and executable
+  when: not (fabro_server_binary_replace | bool)
 
 - name: Look for the checkout this instance runs in
   ansible.builtin.stat:
@@ -376,6 +475,79 @@
   when: not (fabro_server_ps.skipped | default(false))
 
 # --- install ---------------------------------------------------------------
+#
+# THE BINARY GOES FIRST, AND IT GOES IN THREE STEPS. Every refusal above has
+# already run — including, wherever a restart is on the table at all, the
+# carrying-runs one — so by here the role is allowed to change this instance.
+# Note what the exception means rather than hides: with the default
+# fabro_server_restart_allowed false, the carrying-runs probe is skipped and a
+# binary IS replaced under a busy factory. That is safe and deliberate.
+# Renaming over a path does not touch the inode a running process already
+# execs, so the server keeps serving its runs from the old build and the
+# handler says out loud that it was not restarted.
+#
+# The three steps are stage, keep, rename, and the split
+# is not ceremony: binary_path is the file a running server's ExecStart
+# named and the file Restart=always re-execs, so a partial write there is a
+# factory that cannot start. Nothing becomes live until the rename, which is
+# rename(2) within one directory.
+#
+# All three are gated on the single decision fact, so a converged host skips
+# them and the role stays idempotent — and, because only the rename notifies,
+# a dry run cannot produce a phantom restart of a live factory out of a copy
+# it never performed.
+
+- name: Stage this instance's binary beside the one it replaces
+  # The owner, group and mode are set HERE, once, because rename(2) carries
+  # them onto binary_path unchanged. A mechanism that wrote binary_path
+  # directly would need a second chown, and a missing one is invisible until
+  # systemd fails to exec the file.
+  ansible.builtin.copy:
+    src: "{{ fabro_server_binary_source }}"
+    dest: "{{ fabro_server_binary_path }}.incoming"
+    owner: "{{ fabro_server_host_user }}"
+    group: "{{ fabro_server_host_group }}"
+    mode: "0755"
+  become: true
+  when: fabro_server_binary_replace | bool
+
+- name: Keep the outgoing binary beside the one that replaces it
+  # Named for the sha256 of the build it HOLDS, not for the time it was kept.
+  # The point of keeping it is to be able to say which build a rollback
+  # returns to, and `fabro --version` cannot be asked of a file that is no
+  # longer the one the unit starts — so the digest has to be in the name.
+  #
+  # Skipped where there is nothing to keep, which is a real host state: an
+  # instance whose binary_path holds no file yet is precisely the one this
+  # pair of axes exists to provision.
+  ansible.builtin.copy:
+    src: "{{ fabro_server_binary_path }}"
+    dest: "{{ fabro_server_binary_path }}.{{ fabro_server_binary.stat.checksum[:12] }}.bak"
+    remote_src: true
+    owner: "{{ fabro_server_host_user }}"
+    group: "{{ fabro_server_host_group }}"
+    mode: "0755"
+  become: true
+  when:
+    - fabro_server_binary_replace | bool
+    - fabro_server_binary.stat.exists
+
+- name: Rename the staged copy onto this instance's binary path
+  # The one step that changes which build the instance will start, and the
+  # only one that notifies. A `command` rather than a module because rename(2)
+  # within a directory is exactly the semantics wanted and no module spells
+  # it; changed_when is true because reaching this task at all means the
+  # staged build is not the one the host held.
+  ansible.builtin.command:
+    argv:
+      - mv
+      - -f
+      - "{{ fabro_server_binary_path }}.incoming"
+      - "{{ fabro_server_binary_path }}"
+  become: true
+  changed_when: true
+  when: fabro_server_binary_replace | bool
+  notify: Fabro instance files changed
 
 - name: Create the shared libexec directory
   # The shell created it with `install -d` on every run. Ansible needs it as
