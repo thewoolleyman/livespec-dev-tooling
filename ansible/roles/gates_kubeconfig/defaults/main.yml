@@ -18,3 +18,10 @@ gates_kubeconfig_ssh_user: ubuntu
 # Where the tool reads gates_kubeconfig_ssh_user from at runtime. Must match the
 # GATES_SSH_ENV default the shipped refresh-gates-kubeconfig reads.
 gates_kubeconfig_ssh_env: /etc/ci-runner/gates-refresh.env
+# The group that may READ the credential. The credential is a bearer token, so it
+# is never world-readable; a dedicated group is what lets the pushing login user
+# read it without owning it and without handing the token to every member of a
+# group the host already uses for something else. The WRITE stays root's — the
+# runtime refresh tool reaches it through the wrapper's `sudo -n`. Must match the
+# GATES_GROUP default the shipped refresh-gates-kubeconfig reads.
+gates_kubeconfig_group: gates-client

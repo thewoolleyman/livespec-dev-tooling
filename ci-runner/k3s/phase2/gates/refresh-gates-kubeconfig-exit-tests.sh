@@ -7,6 +7,12 @@
 # `ssh poweredge` issued as root fails; the tool must drop the fetch to
 # GATES_SSH_USER via `sudo -u` while keeping the write under root.
 #
+# It also proves the replacement's OWNERSHIP and MODE (livespec-dev-tooling-pj7q4m):
+# root and the gate-client group at 0640. The gate client runs as the pushing
+# LOGIN user, so a refresh that left the credential root-only would silently
+# un-delegate the host it just refreshed — a perfectly valid file nobody who
+# pushes can read, and a next push that fails 401 for a reason nothing states.
+#
 # HOW IT STAYS OFF THE HOST. `id`, `sudo` and `ssh` are FAKES on this suite's own
 # PATH: `id` reports a EUID this suite chooses, and `sudo`/`ssh` log their argv
 # and emit a fixture kubeconfig on stdout (standing in for the remote
@@ -93,6 +99,18 @@ fi
 exec "${REAL_INSTALL}" "$@"
 EOF
 
+# chown: a LOGGING NO-OP, and it has to be. Only root can give a file away, and
+# the group the tool chowns to is a provisioned pool fact that does not exist on
+# a developer's machine or in a CI container — so a real chown here would fail
+# for one of two reasons on every host this suite runs on. The ownership is
+# therefore asserted on the ARGV the tool issues; the MODE below is asserted on
+# the real file, because chmod needs no privilege the writer lacks.
+cat > "${BIN}/chown" <<'EOF'
+#!/usr/bin/env bash
+printf 'chown %s\n' "$*" >> "${ARGV_LOG}"
+exit 0
+EOF
+
 # mktemp / tee / chmod / mv: the REAL binaries behind a logger, so the write the
 # tool performs is a real filesystem write into this suite's scratch dir.
 for tool in mktemp tee chmod mv; do
@@ -157,12 +175,46 @@ fi
 rm -f "${SCRATCH}/dest.kubeconfig"
 run_tool 0 /nonexistent-env
 DEST_MODE="$(stat -c '%a' "${SCRATCH}/dest.kubeconfig" 2>/dev/null)"
-if [ "${RUN_RC}" -eq 0 ] && [ "${DEST_MODE}" = 600 ] \
+if [ "${RUN_RC}" -eq 0 ] && [ "${DEST_MODE}" = 640 ] \
    && [ "$(cat "${SCRATCH}/dest.kubeconfig")" = "${FIXTURE%$'\n'}" ] \
-   && ! grep -qE '^sudo -u .* (tee|mv|chmod|install) ' "${ARGV_LOG}"; then
-  ok "D: the destination is written at 0600 by the current euid, not via sudo -u"
+   && ! grep -qE '^sudo -u .* (tee|mv|chmod|chown|install) ' "${ARGV_LOG}"; then
+  ok "D: the destination is written at 0640 by the current euid, not via sudo -u"
 else
   no "D: the write path was wrong (rc=${RUN_RC}, mode='${DEST_MODE}', argv: $(tr '\n' '|' < "${ARGV_LOG}"))"
+fi
+
+# --- D2. the replacement is handed to root and the gate-client group ---------
+# The gate client runs as the pushing LOGIN user, so a refresh that left the
+# credential root-only would silently un-delegate the host it just refreshed:
+# the file is valid and unreadable, and the next push fails 401 for a reason
+# nothing on the host states. Asserted on the argv — see the chown fake above.
+if grep -qE '^chown root:gates-client .*/dest\.kubeconfig\.refresh\.' "${ARGV_LOG}"; then
+  ok "D2: the replacement is given to root and the gate-client group before the rename"
+else
+  no "D2: the replacement was not chowned to root:gates-client (argv: $(tr '\n' '|' < "${ARGV_LOG}"))"
+fi
+
+# --- D3. the env-file's GATES_GROUP selects the group, as it does the identity -
+ENVF_GROUP="${SCRATCH}/gates-refresh-group.env"
+printf 'GATES_GROUP=other-gate-clients\n' > "${ENVF_GROUP}"
+rm -f "${SCRATCH}/dest.kubeconfig"
+run_tool 0 "${ENVF_GROUP}"
+if [ "${RUN_RC}" -eq 0 ] && grep -qE '^chown root:other-gate-clients ' "${ARGV_LOG}"; then
+  ok "D3: the env-file's GATES_GROUP selects the group the replacement is given to"
+else
+  no "D3: the env-file group was not honoured (rc=${RUN_RC}, argv: $(tr '\n' '|' < "${ARGV_LOG}"))"
+fi
+
+# --- D4. a non-root run skips the chown and still lands the mode ------------
+# Only root can give a file away, and a user refreshing a file they own needs
+# no chown at all — refusing there would be a self-inflicted failure.
+rm -f "${SCRATCH}/dest.kubeconfig"
+run_tool 1000 /nonexistent-env
+DEST_MODE="$(stat -c '%a' "${SCRATCH}/dest.kubeconfig" 2>/dev/null)"
+if [ "${RUN_RC}" -eq 0 ] && [ "${DEST_MODE}" = 640 ] && ! grep -qE '^chown ' "${ARGV_LOG}"; then
+  ok "D4: a non-root run writes 0640 and issues no chown"
+else
+  no "D4: the non-root write path was wrong (rc=${RUN_RC}, mode='${DEST_MODE}', argv: $(tr '\n' '|' < "${ARGV_LOG}"))"
 fi
 
 # --- E. a non-kubeconfig fetch refuses to overwrite ------------------------
@@ -189,8 +241,8 @@ run_tool 0 /nonexistent-env
 DEST_MODE="$(stat -c '%a' "${SCRATCH}/dest.kubeconfig" 2>/dev/null)"
 if [ "${RUN_RC}" -eq 0 ] \
    && [ "$(cat "${SCRATCH}/dest.kubeconfig")" = "${FIXTURE%$'\n'}" ] \
-   && [ "${DEST_MODE}" = 600 ]; then
-  ok "F: a re-run over an existing destination replaces it at 0600 and exits 0"
+   && [ "${DEST_MODE}" = 640 ]; then
+  ok "F: a re-run over an existing destination replaces it at 0640 and exits 0"
 else
   no "F: the re-run over an existing destination failed (rc=${RUN_RC}, mode='${DEST_MODE}')"
 fi
@@ -205,7 +257,7 @@ else
 fi
 
 if [ "${fail}" -eq 0 ]; then
-  echo "PASS refresh-gates-kubeconfig-exit-tests (7 passed, 0 failed)"
+  echo "PASS refresh-gates-kubeconfig-exit-tests (10 passed, 0 failed)"
   exit 0
 fi
 echo "FAIL refresh-gates-kubeconfig-exit-tests" >&2

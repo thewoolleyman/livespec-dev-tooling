@@ -111,13 +111,20 @@ fi
 exec {real} "$@"
 """
 
-# `chown root:root` rewritten to the invoking user's own names. That rewrite IS
-# the privilege the real `sudo` would have supplied, and it is the reason this
-# suite passes unprivileged as well as as root (where it is a no-op).
+# Any `chown root:<group>` spec rewritten to the invoking user's own names. That
+# rewrite IS the privilege the real `sudo` would have supplied, and it is the
+# reason this suite passes unprivileged as well as as root.
+#
+# EVERY root-owned spec, not just `root:root`: `refresh-gates-kubeconfig` hands
+# the credential to root and the GATE-CLIENT group, which is a provisioned pool
+# fact that exists on no developer machine and in no CI container — so passing
+# that spec through would fail with `invalid group` rather than prove anything.
+# The group this suite's scripts ask for is asserted beside them, on the argv
+# logged above; what this suite is for is the uutils `install` regression.
 _CHOWN_SHIM = """\
 printf 'chown %s\\n' "$*" >> "$ARGV_LOG"
 spec="$1"; shift
-[ "$spec" = root:root ] && spec="$(id -un):$(id -gn)"
+case "$spec" in root:*) spec="$(id -un):$(id -gn)" ;; esac
 exec {real} "$spec" "$@"
 """
 
@@ -232,7 +239,7 @@ def _run(
 def test_refresh_gates_kubeconfig_rewrites_an_existing_destination_when_run_as_root(
     *, tmp_path: Path
 ) -> None:
-    """Definition of Done 1: an existing destination is REPLACED, 0600, exit 0.
+    """Definition of Done 1: an existing destination is REPLACED, 0640, exit 0.
 
     The pull-on-401 path in `with-gates-kubeconfig` calls this tool, so a refresh
     that fails whenever the file it is repairing already exists is a credential
@@ -244,6 +251,12 @@ def test_refresh_gates_kubeconfig_rewrites_an_existing_destination_when_run_as_r
     unprivileged suite created, so "owned by whoever ran it" is the off-host
     generalisation of "owned by root when root runs it". The live replay on the
     VPS is the Definition of Done's own host-captured half.
+
+    The mode is 0640, not 0600: the gate client runs as the pushing LOGIN user,
+    so the credential is root-owned and readable by a declared gate-client group
+    (livespec-dev-tooling-pj7q4m). The group the tool asks for is asserted in
+    `tests/consumer/test_gates_credential_provisioning.py`, where the chown argv
+    is read rather than rewritten.
     """
     bin_dir = _write_path_bin(tmp_path=tmp_path)
     _shim(bin_dir=bin_dir, name="ssh", body=_SSH_SHIM)
@@ -274,7 +287,9 @@ def test_refresh_gates_kubeconfig_rewrites_an_existing_destination_when_run_as_r
     assert (
         dest.read_text(encoding="utf-8") == _FIXTURE_KUBECONFIG
     ), "the fetched kubeconfig must REPLACE the stale one"
-    assert stat.S_IMODE(dest.stat().st_mode) == 0o600, "the refreshed file must be owner-only"
+    assert (
+        stat.S_IMODE(dest.stat().st_mode) == 0o640
+    ), "the refreshed file must be readable by the gate-client group and no wider"
     assert dest.stat().st_uid == os.getuid(), "the refreshed file must belong to the writing euid"
 
 
