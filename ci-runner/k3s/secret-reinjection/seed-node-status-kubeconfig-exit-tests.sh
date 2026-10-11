@@ -12,8 +12,11 @@
 #      exits 0 with the variable UNSET, and executes nothing;
 #   B. a live run writes the fixture value byte for byte, mode 0600, and the
 #      value never reaches an argv;
-#   C. an immediate second run REPORTS the file unchanged and runs no `install`
-#      at all;
+#   C. an immediate second run REPORTS the file unchanged and reaches for no
+#      write command at all, while a RE-DELIVERY over an existing target (a
+#      rotated value, and a target whose mode was widened by hand) rewrites it
+#      at the requested mode and ownership and exits 0 -- the uutils `install`
+#      refusal this case now stands against (livespec-dev-tooling-74q6iw);
 #   D. the refusals: the variable unset, the variable set but EMPTY, a profile
 #      whose CLUSTER_ROLE is not `agent`, an EMPTY CHURN_KUBECONFIG_FILE, a
 #      CHURN_KUBECONFIG_FILE naming the k3s SERVER's admin kubeconfig, and one
@@ -33,11 +36,15 @@
 # of TRIPWIRES for `sudo` and `install`, so "executed nothing" is asserted rather
 # than assumed. Cases B, C and F's live runs need the write to really happen, so
 # they run against a PATH carrying a FAKE `sudo` that logs the command and then
-# runs it AS THE INVOKING USER, rewriting `install`'s `-o root -g root` to this
-# user's own names — emulating the ONE privilege the real sudo supplies. The
-# suite therefore never NEEDS root, and passes unchanged either way. Every
-# directory §F creates is under this suite's own scratch root; no `/etc` on this
-# machine is read or written.
+# runs it AS THE INVOKING USER, rewriting every request for root ownership
+# (`install`'s `-o root -g root`, and `chown`'s `root:root`) to this user's own
+# names — emulating the ONE privilege the real sudo supplies. The suite therefore
+# never NEEDS root, and passes unchanged either way. That working PATH ALSO
+# carries a uutils `install` LENS: the write is real, but an `install` able to
+# overwrite an existing destination is deliberately not available to it, which
+# is what makes §C's re-delivery cases able to see the defect on a GNU host.
+# Every directory §F creates is under this suite's own scratch root; no `/etc` on
+# this machine is read or written.
 #
 # It is ./seed-k3s-agent-join-token-exit-tests.sh's structure on purpose: the
 # script under test is deliberately that script's shape, so a divergence in
@@ -104,10 +111,12 @@ for tool in sudo install; do
 done
 
 # The working PATH: a `sudo` that records what it was asked to do and then does
-# it as this (unprivileged) user, with `install`'s root ownership flags
-# rewritten to this user's own. That rewrite is the whole of the privilege the
-# real sudo would have supplied; the mode, the source operand and the target are
-# the script's own and are passed through untouched.
+# it as this (unprivileged) user, with every request for ROOT OWNERSHIP rewritten
+# to this user's own names — `install`'s `-o`/`-g` flags and, since the write
+# became a temp-file-plus-rename, a bare `root:root` operand (`chown`'s). That
+# rewrite is the whole of the privilege the real sudo would have supplied; the
+# mode, the stdin and the target are the script's own and are passed through
+# untouched.
 WORKBIN="${TMPROOT}/workbin"
 mkdir -p "$WORKBIN"
 cat > "${WORKBIN}/sudo" <<'FAKE_SUDO'
@@ -118,12 +127,35 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -o) args+=(-o "$(id -un)"); shift 2 ;;
     -g) args+=(-g "$(id -gn)"); shift 2 ;;
+    root:root) args+=("$(id -un):$(id -gn)"); shift ;;
     *) args+=("$1"); shift ;;
   esac
 done
 exec "${args[@]}"
 FAKE_SUDO
 chmod +x "${WORKBIN}/sudo"
+
+# `install` on the working PATH is the uutils LENS, not the host's binary, for
+# the reason the header gives. `-d` is delegated untouched: uutils accepts an
+# existing directory there, and §F's parent creation is not what the regression
+# was about. Everything else the write reaches for — mktemp, tee, chown, chmod,
+# mv — is the host's own binary, so §B, §C and §F write for real.
+REAL_INSTALL="$(command -v install)"
+export REAL_INSTALL
+cat > "${WORKBIN}/install" <<'UUTILS_INSTALL'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" = -d ] && exec "${REAL_INSTALL}" "$@"
+done
+dest=""
+for arg in "$@"; do dest="$arg"; done
+if [ -e "$dest" ]; then
+  printf 'install: No such file or directory\n' >&2
+  exit 1
+fi
+exec "${REAL_INSTALL}" "$@"
+UUTILS_INSTALL
+chmod +x "${WORKBIN}/install"
 
 # run_seed BIN ARGS... -> stdout+stderr in REPLY_OUT, code in REPLY_RC.
 # The credential variable is NOT exported here; each case decides.
@@ -220,8 +252,8 @@ else
   no "B3  the target is mode 0600 (got $(stat -c '%a' "$TARGET"))"
 fi
 
-# The whole of the credential discipline, asserted: the value must reach
-# `install` over STDIN, so it must appear NOWHERE in what sudo was asked to run.
+# The whole of the credential discipline, asserted: the value must reach `tee`
+# over STDIN, so it must appear NOWHERE in what sudo was asked to run.
 if grep -qF 'notasecret' "$SUDO_LOG"; then
   no "B4  the credential never appears on an argv"
   cat "$SUDO_LOG"
@@ -229,10 +261,13 @@ else
   ok "B4  the credential never appears on an argv"
 fi
 
-if grep -qF '/dev/stdin' "$SUDO_LOG"; then
-  ok "B5  the write goes through /dev/stdin"
+if grep -qE "^sudo tee ${TARGET}\.seed\." "$SUDO_LOG" \
+   && grep -qF -- "chown root:root ${TARGET}.seed." "$SUDO_LOG" \
+   && grep -qE "^sudo mv -f ${TARGET}\.seed\.[A-Za-z0-9]+ ${TARGET}$" "$SUDO_LOG"; then
+  ok "B5  the write is a tee over STDIN, then chown root:root, then mv -f over the target"
 else
-  no "B5  the write goes through /dev/stdin"
+  no "B5  the write is a tee over STDIN, then chown root:root, then mv -f over the target"
+  cat "$SUDO_LOG"
 fi
 
 if printf '%s\n' "$REPLY_OUT" | grep -qF 'notasecret'; then
@@ -254,12 +289,38 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if grep -q 'install' "$SUDO_LOG"; then
-  no "C2  the second run ran no install at all"
+if grep -qE '^sudo (tee|mv|chown|chmod) ' "$SUDO_LOG"; then
+  no "C2  the second run reached for no write command at all"
   cat "$SUDO_LOG"
 else
-  ok "C2  the second run ran no install at all"
+  ok "C2  the second run reached for no write command at all"
 fi
+
+# THE RE-DELIVERY. The target already exists here, which is the state in which
+# `install /dev/stdin "$TARGET"` exited 1 on every node the pool actually runs,
+# and a hand-widened mode is restored by the write rather than surviving it: the
+# mode is set on the temp file, so the replaced file's own mode cannot carry over
+# (livespec-dev-tooling-74q6iw).
+export "${KUBECONFIG_VAR}=${FIXTURE_KUBECONFIG}-rotated"
+chmod 0644 "$TARGET"
+: > "$SUDO_LOG"
+run_seed "$WORKBIN" "$AGENT_PROFILE"
+
+if [ "$REPLY_RC" -eq 0 ] && [ "$(cat "$TARGET")" = "${FIXTURE_KUBECONFIG}-rotated" ] \
+   && [ "$(stat -c '%a' "$TARGET")" = 600 ] \
+   && [ "$(stat -c '%U:%G' "$TARGET")" = "$(id -un):$(id -gn)" ]; then
+  ok "C3  a re-delivery over an existing 0644 target rewrites it at 0600 with the requested ownership"
+else
+  no "C3  a re-delivery over an existing 0644 target rewrites it at 0600 with the requested ownership (rc=${REPLY_RC}, mode='$(stat -c '%a' "$TARGET" 2>/dev/null)')"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+if [ -z "$(find "$TARGET_DIR" -name "$(basename "$TARGET").seed.*" -print -quit)" ]; then
+  ok "C4  the write left no temp file holding the credential beside the target"
+else
+  no "C4  a temp file holding the credential survived the write"
+fi
+export "${KUBECONFIG_VAR}=${FIXTURE_KUBECONFIG}"
 
 # ---------------------------------------------------------------------------
 printf '\n== D. the refusals ==\n'

@@ -45,6 +45,7 @@ _REFRESH_GATES = (
     _REPO_ROOT / "ansible" / "roles" / "gates_kubeconfig" / "files" / "refresh-gates-kubeconfig"
 )
 _SEED_JOIN_TOKEN = _K3S / "secret-reinjection" / "seed-k3s-agent-join-token.sh"
+_SEED_NODE_STATUS = _K3S / "secret-reinjection" / "seed-node-status-kubeconfig.sh"
 # The COMMITTED second node's profile. Every value the seed scripts read is that
 # node's own data; only the destination path is redirected, because the
 # committed value names a file on THAT node holding a cluster credential.
@@ -53,6 +54,10 @@ _AGENT_PROFILE = _K3S / "phase0-bare-metal" / "profiles" / "gmktec-xubuntu.env"
 # Shaped like a k3s join token so the assertions read like the real thing. It is
 # not one, and this file is the only place it lives.
 _FIXTURE_JOIN_TOKEN = "K10fixturenotasecret::server:0123456789abcdef"
+
+# Shaped like the kubeconfig the cluster-side provisioner renders. Its token is
+# the word `fixture`; nothing here reads 1Password or a cluster.
+_FIXTURE_NODE_STATUS_KUBECONFIG = "apiVersion: v1\nkind: Config\nusers:\n  - name: node-status-patcher-gmktec-xubuntu\n    user:\n      token: fixture\n"
 
 # A syntactically-valid kubeconfig carrying the two markers
 # `refresh-gates-kubeconfig` requires before it writes anything. Never a real
@@ -292,3 +297,43 @@ def test_seed_k3s_agent_join_token_rewrites_an_existing_target(*, tmp_path: Path
         "the re-seeded token must carry the requested ownership (root:root on a "
         "node; this suite's own user behind the sudo/chown shims)"
     )
+
+
+def test_seed_node_status_kubeconfig_rewrites_an_existing_target(*, tmp_path: Path) -> None:
+    """Definition of Done 3: a re-run rewrites the target, owner/group/mode, exit 0.
+
+    The delivery half of the churn-slot credential, and deliberately the join
+    token's own shape — so it carried the join token's defect too, and a
+    re-delivery after a rotation failed on the file it was replacing.
+    """
+    bin_dir = _write_path_bin(tmp_path=tmp_path)
+    target = tmp_path / "etc" / "rancher" / "k3s" / "node-status-kubeconfig"
+    target.parent.mkdir(parents=True)
+    _ = target.write_text("the kubeconfig a rotation replaces\n", encoding="utf-8")
+    target.chmod(0o644)
+    profile = _redirected_profile(tmp_path=tmp_path, key="CHURN_KUBECONFIG_FILE", value=target)
+
+    result = _run(
+        script=_SEED_NODE_STATUS,
+        args=[str(profile)],
+        bin_dir=bin_dir,
+        env={
+            "ARGV_LOG": str(tmp_path / "argv.log"),
+            "K3S_NODE_STATUS_KUBECONFIG_CI_RUNNER": _FIXTURE_NODE_STATUS_KUBECONFIG,
+        },
+    )
+
+    assert result.returncode == 0, (
+        "re-delivering an EXISTING node-status kubeconfig must exit 0; under an "
+        "`install` that refuses an existing destination it did not: "
+        f"rc={result.returncode}\n{result.stdout}\n{result.stderr}"
+    )
+    assert (
+        target.read_text(encoding="utf-8") == _FIXTURE_NODE_STATUS_KUBECONFIG
+    ), "the re-delivered credential must replace the stale one, byte for byte"
+    assert (
+        stat.S_IMODE(target.stat().st_mode) == 0o600
+    ), "a bearer token is owner-only even when the file it replaced was not"
+    assert (
+        target.stat().st_uid == os.getuid()
+    ), "the re-delivered credential must carry the requested ownership"
