@@ -1,0 +1,55 @@
+---
+# Defaults for docker_sandbox_slice — the AGGREGATE resource envelope a Fabro
+# factory host puts around its sandbox containers.
+#
+# WHY AN AGGREGATE ENVELOPE AND NOT PER-RUN LIMITS. The Petri-era candidate
+# engine starts its Docker sandboxes with CpuQuota 0 and Memory 0, i.e. with no
+# per-run limits at all, so nothing bounds how much of the host one run can
+# take. Until the Kubernetes sandbox backend restores per-run limits, the only
+# protection available is a ceiling on the containers TOGETHER, which is what a
+# systemd slice named as the daemon's default `cgroup-parent` gives. This is an
+# INTERIM control with a stated expiry; see this role's HOST_VARS.md, section
+# "Expiry".
+#
+# THE LIMITS ARE FLEET DEFAULTS MEASURED FOR hp-xubuntu, 2026-10-10: 16 CPUs,
+# 30 GB RAM, cgroup v2 with the systemd cgroup driver. A host with materially
+# different capacity overrides them in its host_vars; the three are variables
+# precisely so resizing the envelope is a host_vars edit and not a role edit.
+#
+# WHAT ELSE LANDS IN THE SLICE. `cgroup-parent` is the daemon's DEFAULT parent,
+# so every container the daemon starts without its own `--cgroup-parent` joins
+# this slice — on hp-xubuntu that includes the non-Fabro `sccache-redis` cache
+# (container limit 5 GB). The ceiling below is therefore shared by the sandboxes
+# and that cache, which is deliberate: both are container-layer load on the same
+# host, and the number worth protecting is the host's.
+
+# The slice every sandbox container joins. systemd reads `-` as a HIERARCHY
+# separator, so this unit sits under an implicitly-created `fabro.slice` that
+# carries no limits of its own; the bound is the one this unit declares.
+docker_sandbox_slice_name: fabro-sandbox.slice
+docker_sandbox_slice_unit_dir: /etc/systemd/system
+
+# MEMORY. MemoryHigh is the throttling watermark and MemoryMax the hard ceiling,
+# two numbers rather than one so reclaim pressure arrives before the OOM killer
+# does: a sandbox that crosses 22G is slowed, and only a slice that cannot be
+# reclaimed below 24G loses a process. 24G of 30G leaves 6G for the host, the
+# Fabro servers themselves (which run OUTSIDE this slice) and the page cache.
+docker_sandbox_slice_memory_high: 22G
+docker_sandbox_slice_memory_max: 24G
+
+# CPU. 1400% is 14 of the host's 16 cores, leaving two for the Fabro servers,
+# sshd and the janitor steps. Quoted because a leading `%` is a YAML directive
+# indicator and quoting the whole scalar keeps the reader from having to know
+# that it is only leading `%` that matters.
+docker_sandbox_slice_cpu_quota: "1400%"
+
+# The daemon configuration this role edits, and the unit a restart restarts.
+docker_sandbox_slice_daemon_config: /etc/docker/daemon.json
+docker_sandbox_slice_daemon_service: docker.service
+
+# Where a converge records that the daemon is running WITHOUT the envelope it has
+# just been configured for. A durable file rather than a play-recap message,
+# because the operator who has to open the drained window is not necessarily the
+# one who ran the converge, and a recap line is gone when the terminal scrolls.
+# Only the drained restart clears it.
+docker_sandbox_slice_pending_restart_marker: /var/lib/docker-sandbox-slice/restart-pending

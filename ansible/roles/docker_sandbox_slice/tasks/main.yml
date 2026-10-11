@@ -1,0 +1,262 @@
+---
+# docker_sandbox_slice — bound this host's Fabro sandbox containers inside ONE
+# systemd slice, by naming that slice as the Docker daemon's default
+# `cgroup-parent`.
+#
+# EXECUTION mirror of livespec-orchestrator-beads-fabro bd-ib-otyq6l (plan
+# fabro-currency), work-item livespec-dev-tooling-ig5iwg. Governed by the
+# "Sandbox resource envelope" paragraph of the `## Fabro factory host
+# provisioning` section of SPECIFICATION/non-functional-requirements.md, and
+# exercised by the `## Scenario: converging the Fabro sandbox envelope never
+# restarts dockerd outside a drained window` scenario of
+# SPECIFICATION/scenarios.md.
+#
+# THE ONE RULE THIS ROLE IS ORGANIZED AROUND: a converge NEVER restarts dockerd.
+# `cgroup-parent` is not reloadable — `systemctl reload docker` re-reads only a
+# subset of daemon.json and this key is not in it — so the write below takes
+# effect on the daemon's next start and on nothing else. Restarting dockerd kills
+# every running sandbox container, which on this host means killing every
+# in-flight factory run, so the restart is the OPERATOR'S, taken inside a window
+# they have drained. The converge's whole obligation is to leave the host
+# configured and to RECORD that the running daemon has not loaded it yet.
+#
+# WHY THE RESTART IS A `never`-TAGGED TASK AND NOT A NOTIFIED HANDLER. A handler
+# notified by the daemon.json write would fire on exactly the converge that is
+# forbidden to restart. Gating it as a task the operator selects by tag inverts
+# that: the default is no restart, and the restart is an explicit second
+# invocation. The `when: '<tag>' in ansible_run_tags` beside each `never` tag is
+# NOT belt-and-braces — `roles:`-level tagging in fabro-hosts.yml puts the role's
+# own tag on every task here, and Ansible runs a `never`-tagged task whenever any
+# OTHER tag it carries is selected, so `--tags docker_sandbox_slice` alone would
+# otherwise restart the daemon. The condition is what makes the gate hold.
+
+- name: Refuse an empty value in any field of the sandbox slice
+  # Jinja catches an UNDEFINED variable on its own, but an empty string
+  # substitutes silently — and a slice whose MemoryMax renders as `MemoryMax=`
+  # fails to load, which leaves the daemon pointing at a slice systemd creates
+  # IMPLICITLY, with no limits at all. That failure mode is silent: containers
+  # start, the envelope does not exist.
+  ansible.builtin.assert:
+    that:
+      - docker_sandbox_slice_name | string | length > 0
+      - docker_sandbox_slice_memory_high | string | length > 0
+      - docker_sandbox_slice_memory_max | string | length > 0
+      - docker_sandbox_slice_cpu_quota | string | length > 0
+      - docker_sandbox_slice_daemon_config | string | length > 0
+      - docker_sandbox_slice_daemon_service | string | length > 0
+      - docker_sandbox_slice_pending_restart_marker | string | length > 0
+    fail_msg: >-
+      Every field of the sandbox slice must carry a non-empty value; check this
+      host's host_vars against the role defaults.
+    success_msg: every field of the sandbox slice carries a value
+
+- name: Refuse a slice name systemd will not read as a slice
+  # `cgroup-parent` under the systemd cgroup driver must name a `.slice` unit.
+  # Given anything else the daemon falls back to its own default parent and every
+  # container starts OUTSIDE the envelope — again silently.
+  ansible.builtin.assert:
+    that:
+      - docker_sandbox_slice_name is match('^[a-z0-9-]+\.slice$')
+    fail_msg: >-
+      docker_sandbox_slice_name must be a systemd slice unit name ending in
+      '.slice'; got '{{ docker_sandbox_slice_name }}'.
+    success_msg: "{{ docker_sandbox_slice_name }} is a slice unit name"
+
+- name: Ask the container daemon which cgroup driver it uses
+  # The envelope rests entirely on this: `cgroup-parent` naming a `.slice` is
+  # meaningful to the SYSTEMD driver and not to cgroupfs, where the daemon would
+  # treat the value as a path fragment and quietly place containers somewhere
+  # systemd does not manage. Measured on hp-xubuntu 2026-10-10: systemd.
+  #
+  # check_mode: false because `command` is SKIPPED under --check, which leaves
+  # the register empty and fails the assert below describing a daemon fault that
+  # does not exist. This probe reads and changes nothing, and an operator asking
+  # whether the apply would work is asking exactly this question — the drift read
+  # is `just ansible-drift ansible/fabro-hosts.yml`.
+  #
+  # {% raw %} keeps Go's template braces out of Jinja's hands.
+  ansible.builtin.command:
+    cmd: docker info --format '{% raw %}{{.CgroupDriver}}{% endraw %}'
+  become: true
+  register: docker_sandbox_slice_driver
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse a daemon that is not on the systemd cgroup driver
+  ansible.builtin.assert:
+    that:
+      - docker_sandbox_slice_driver.rc == 0
+      - docker_sandbox_slice_driver.stdout | trim == 'systemd'
+    fail_msg: >-
+      This role bounds containers with a systemd slice, which requires the
+      daemon's systemd cgroup driver. Probe exit status
+      {{ docker_sandbox_slice_driver.rc }} reported
+      '{{ docker_sandbox_slice_driver.stdout | default('') | trim }}'
+      {{ docker_sandbox_slice_driver.stderr | default('') | trim }}
+    success_msg: daemon is on the systemd cgroup driver
+
+- name: Look for the sandbox slice unit already installed on this host
+  # Read BEFORE the template below writes it, so it records what the host had
+  # rather than what this play is about to give it. The arming task reads it, for
+  # the reason given there.
+  ansible.builtin.stat:
+    path: "{{ docker_sandbox_slice_unit_dir }}/{{ docker_sandbox_slice_name }}"
+  become: true
+  register: docker_sandbox_slice_unit_state
+
+- name: Install the Fabro sandbox slice unit
+  ansible.builtin.template:
+    src: fabro-sandbox.slice.j2
+    dest: "{{ docker_sandbox_slice_unit_dir }}/{{ docker_sandbox_slice_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Apply the sandbox slice limits
+  # `daemon_reload` makes systemd read the unit, and STARTING the slice is what
+  # pushes its MemoryHigh / MemoryMax / CPUQuota into the live cgroup — a slice
+  # that is merely installed bounds nothing. Neither action touches dockerd: a
+  # daemon reload re-reads unit files and restarts no service, and the slice is
+  # not a dependency of docker.service.
+  #
+  # THE `when` IS A CHECK-MODE GUARD, NOT A CONDITION ON THE APPLY. Under --check
+  # the template above wrote nothing, so on a host that does not already carry
+  # the unit this module fails with "Could not find the requested service" — the
+  # role reporting a fault it created itself, in exactly the case where the drift
+  # read most needs to finish and say so. Where the unit IS already installed the
+  # task runs normally under --check and reports genuine drift.
+  ansible.builtin.systemd_service:
+    name: "{{ docker_sandbox_slice_name }}"
+    daemon_reload: true
+    state: started
+  become: true
+  when: not ansible_check_mode or docker_sandbox_slice_unit_state.stat.exists
+
+- name: Read this host's container daemon configuration
+  # `failed_when: false` because an ABSENT daemon.json is the normal state of a
+  # host that has never been given one (hp-xubuntu, measured 2026-10-10), and the
+  # next task turns that into an empty mapping. A hard failure here would make
+  # "the host has no daemon.json" indistinguishable from "the host's daemon.json
+  # could not be read", and only the second is a fault.
+  ansible.builtin.slurp:
+    src: "{{ docker_sandbox_slice_daemon_config }}"
+  become: true
+  register: docker_sandbox_slice_daemon_raw
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Hold the daemon configuration this host already carries
+  # The base of the merge below, and the reason `cgroup-parent` can be added
+  # without owning the file: every other key reaches the written file through
+  # THIS fact. An absent file yields `{}`, which merges to a daemon.json holding
+  # the one key this role owns and nothing it invented.
+  ansible.builtin.set_fact:
+    docker_sandbox_slice_existing_config: >-
+      {{ (docker_sandbox_slice_daemon_raw.content | b64decode | from_json)
+         if (docker_sandbox_slice_daemon_raw.content is defined) else {} }}
+
+- name: Hold the cgroup parent that configuration already names
+  # The daemon loads daemon.json at START, so the value the FILE carried before
+  # this converge is the value the RUNNING daemon is using. That is what makes
+  # the comparison below a statement about the daemon rather than about the file.
+  ansible.builtin.set_fact:
+    docker_sandbox_slice_loaded_parent: "{{ docker_sandbox_slice_existing_config['cgroup-parent'] | default('') }}"
+
+- name: Write cgroup-parent into the daemon configuration, preserving every other key
+  # `combine` over the host's OWN parsed configuration is what preserves it:
+  # every key the file held is in the base, and this role adds exactly one. The
+  # alternative shapes all lose something — a template file would have to
+  # enumerate keys this role does not own, and a line-wise edit cannot be
+  # idempotent against a file whose formatting it did not choose.
+  #
+  # This host's daemon also serves the non-Fabro `sccache-redis` cache, so a
+  # dropped key here reconfigures a daemon the role was asked only to give a
+  # default cgroup parent.
+  ansible.builtin.copy:
+    content: "{{ docker_sandbox_slice_existing_config | combine({'cgroup-parent': docker_sandbox_slice_name}) | to_nice_json }}\n"
+    dest: "{{ docker_sandbox_slice_daemon_config }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Create the directory the pending-restart marker lives in
+  # `--check` cannot see past this: with the directory absent the marker below is
+  # reported as a would-be change and fails only on a real apply. Owning it here
+  # is what makes a first apply on a fresh host succeed.
+  ansible.builtin.file:
+    path: "{{ docker_sandbox_slice_pending_restart_marker | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Record that a drained daemon restart is pending
+  # The condition compares the parent the RUNNING daemon loaded against the one
+  # now declared, so the marker means "this daemon is not inside the envelope"
+  # rather than "this converge rewrote a file". Those differ: re-rendering an
+  # already-correct daemon.json whose formatting this role did not choose is a
+  # byte change and NOT a pending restart, and a marker that fired on every
+  # converge would mean nothing by the third one.
+  #
+  # The content is deliberately constant — no timestamp — so a second converge
+  # before the window opens rewrites identical bytes and reports no change.
+  ansible.builtin.copy:
+    content: |
+      The container daemon on this host is running WITHOUT the Fabro sandbox
+      resource envelope. {{ docker_sandbox_slice_daemon_config }} now names
+      {{ docker_sandbox_slice_name }} as the default cgroup-parent, but
+      cgroup-parent is not reloadable, so the setting takes effect only when
+      {{ docker_sandbox_slice_daemon_service }} next starts.
+
+      Restarting the daemon KILLS every running sandbox container. Drain this
+      host's Fabro servers first, then apply the restart with the role's
+      drained-restart tag; see the role's HOST_VARS.md "The drained restart".
+      Nothing but that restart clears this file.
+    dest: "{{ docker_sandbox_slice_pending_restart_marker }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: docker_sandbox_slice_loaded_parent != docker_sandbox_slice_name
+
+- name: Report whether a drained daemon restart is owed
+  # The marker is the durable record; this is the one an operator reading the
+  # play recap sees. Both exist because they reach different people.
+  ansible.builtin.debug:
+    msg: >-
+      {{ docker_sandbox_slice_daemon_service }} is running without
+      {{ docker_sandbox_slice_name }}; a drained restart is pending and recorded
+      at {{ docker_sandbox_slice_pending_restart_marker }}.
+  when: docker_sandbox_slice_loaded_parent != docker_sandbox_slice_name
+
+- name: Restart the container daemon inside a drained window
+  # THE OPERATOR'S TASK, not the converge's. Reached only by naming its tag, and
+  # only inside a window in which this host's Fabro servers carry no active runs:
+  # a restart replaces every container on the daemon, which destroys in-flight
+  # factory runs and discards the sccache-redis cache this host shares.
+  #
+  # Both gates are required. The `never` tag keeps the task out of a plain
+  # converge; the `when` keeps it out of `--tags docker_sandbox_slice`, which
+  # Ansible would otherwise accept as a specific request because `roles:`-level
+  # tagging puts that tag on this task too.
+  ansible.builtin.systemd_service:
+    name: "{{ docker_sandbox_slice_daemon_service }}"
+    state: restarted
+  become: true
+  tags: [never, docker_sandbox_slice_drained_restart]
+  when: "'docker_sandbox_slice_drained_restart' in ansible_run_tags"
+
+- name: Clear the pending-restart marker the drained restart satisfied
+  # The restart above is the ONLY thing that clears the marker, so the record
+  # outlives every converge until the window is actually taken.
+  ansible.builtin.file:
+    path: "{{ docker_sandbox_slice_pending_restart_marker }}"
+    state: absent
+  become: true
+  tags: [never, docker_sandbox_slice_drained_restart]
+  when: "'docker_sandbox_slice_drained_restart' in ansible_run_tags"

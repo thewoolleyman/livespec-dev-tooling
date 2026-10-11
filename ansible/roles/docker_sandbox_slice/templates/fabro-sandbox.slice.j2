@@ -1,0 +1,26 @@
+{#-
+  The systemd slice every Fabro sandbox container on this host joins, because the
+  Docker daemon names it as its default `cgroup-parent`.
+
+  EVERY LIMIT COMES FROM A ROLE VARIABLE AND NONE IS SPELLED HERE. The "Sandbox
+  resource envelope" paragraph of the `## Fabro factory host provisioning` section
+  of SPECIFICATION/non-functional-requirements.md requires the slice's limits to be
+  read from role variables; a number inline here would be an envelope no host could
+  resize from its host_vars, which is the whole purpose of an interim control.
+
+  THE TEMPLATE STAYS A SUBSTITUTION TEMPLATE. No filter, no conditional, no loop —
+  tests/consumer/test_docker_sandbox_slice_scenario.py renders it by substituting
+  `{{ name }}` and nothing else (neither Ansible nor Jinja is importable in that
+  suite), and it fails deliberately if this template leaves that vocabulary rather
+  than letting the renderer quietly disagree with Jinja about what the host gets.
+-#}
+# {{ ansible_managed }}
+[Unit]
+Description=Aggregate resource envelope for this host's Fabro sandbox containers
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/tree/master/ansible/roles/docker_sandbox_slice
+Before=slices.target
+
+[Slice]
+MemoryHigh={{ docker_sandbox_slice_memory_high }}
+MemoryMax={{ docker_sandbox_slice_memory_max }}
+CPUQuota={{ docker_sandbox_slice_cpu_quota }}
