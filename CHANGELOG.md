@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.94.0...v1.95.0) (2026-10-11)
+
+
+### Features
+
+* name the gates credential the delegated gate authenticates with ([1a5bad4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1a5bad4d9ca492565765d8a38cbb13c32940890f))
+
+
+### Bug Fixes
+
+* **ansible:** make the gates credential readable by whoever actually pushes ([30aaaf5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/30aaaf5ecf0c65748306d38e1a776f14d1551d83))
+* delegate a push only from a host that can read the gates credential ([a0f72a8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a0f72a82f57f4584f062407247c1cc651b4bf8a3))
+* run every delegated-gate cluster command through with-gates-kubeconfig ([7b093ff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7b093ffdf79db8e53b36edd3b320940cac98e2e5))
+
 ## [1.94.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.5...v1.94.0) (2026-10-11)
 
 
