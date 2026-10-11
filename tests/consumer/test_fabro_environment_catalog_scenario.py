@@ -869,3 +869,30 @@ def test_every_items2dict_in_the_role_is_handed_a_materialised_list() -> None:
         f"the role must still build a mapping with {_ITEMS2DICT}; this arm guards a trap "
         f"in that filter, and with no occurrence left it guards nothing"
     )
+
+
+def test_the_disposition_is_reported_before_either_write_is_attempted() -> None:
+    """A run says what it is about to do to a catalog before it does it.
+
+    Measured 2026-10-11 by walking the committed task file through ansible-core's own
+    Jinja for an absent environment: the create ran, and the line saying the environment
+    "will be created" printed after it. In the future tense, about a write that had
+    already happened. The same ordering makes a dry run read backwards — the only task
+    `--check` reaches is the report, and a reader scanning a recap top-down would meet
+    the two skipped writes first.
+    """
+    report = _task_index(name=_DISPOSITION_TASK, source=_ENVIRONMENT_TASKS)
+    decision = _task_index(name=_MATCH_TASK, source=_ENVIRONMENT_TASKS)
+    assert decision < report, (
+        "the match decision MUST be taken before the report that reads it; a report "
+        "ahead of its own input would render against whatever the previous loop "
+        "iteration left behind, which on a second declared environment is the first "
+        "one's verdict"
+    )
+    for write in (_CREATE_TASK, _REPLACE_TASK):
+        assert report < _task_index(name=write, source=_ENVIRONMENT_TASKS), (
+            f"{write!r} MUST come after the disposition report. A converge that writes "
+            f"first and narrates afterwards says 'will be created' about a request it has "
+            f"already made, and a dry run — where both writes are skipped and the report "
+            f"is the only thing that runs — reads its own output out of order"
+        )
