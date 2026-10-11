@@ -30,6 +30,46 @@
     # and the supervise step has already stopped and disabled it.
     - fabro_server_service_state == 'running'
 
+- name: Record that this instance's restart is still pending
+  listen: Fabro instance files changed
+  # THE DEFERRAL, WRITTEN DOWN. The debug handler below says the same thing to
+  # whoever is watching the play; this says it to whoever runs the NEXT play,
+  # which is the person who can act on it. Measured on hp-xubuntu 2026-10-11:
+  # without this file the re-run HOST_VARS.md asks for found nothing changed,
+  # notified no handler, and left the candidate instance serving the build it
+  # had before the carrier was installed.
+  #
+  # The content is deliberately constant — no timestamp, no digest — so a
+  # second refusing run before the window opens rewrites identical bytes and
+  # reports no change. A marker that reported changed on every converge would
+  # be indistinguishable from a fresh deferral.
+  ansible.builtin.copy:
+    content: |
+      {{ fabro_server_unit_name }} on this host is running configuration or a
+      Fabro build other than the one its files now describe. An Ansible run
+      changed those files and did NOT restart the instance, because
+      fabro_server_restart_allowed was false.
+
+      Apply the restart by re-running the play for this host with
+      -e fabro_server_restart_allowed=true, after quiescing this instance: the
+      carrying-runs refusal halts the play while the instance has active runs,
+      and the restart kills whatever it is carrying. Nothing but that restart
+      removes this file.
+    dest: "{{ fabro_server_restart_pending_marker }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when:
+    # Only a run that REFUSED the restart records one as owed. A marker written
+    # beside a restart that actually happened is a deferral the next permitting
+    # run would apply against an instance that needs nothing.
+    - not (fabro_server_restart_allowed | bool)
+    # Not owed for a parked instance, for the same reason the debug below is
+    # not: there is no running server left describing a configuration other
+    # than its files, so there is no restart to carry forward.
+    - fabro_server_service_state == 'running'
+
 - name: Say which instance was left needing a restart
   listen: Fabro instance files changed
   # A changed unit file that is not applied is not a no-op — the host now

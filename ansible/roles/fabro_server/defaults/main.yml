@@ -168,6 +168,32 @@ fabro_server_web_verify_attempts: 300
 # quiet server; the preflight then re-checks that it really is quiet.
 fabro_server_restart_allowed: false
 
+# --- where a deferred restart is recorded ----------------------------------
+#
+# THE HANDLER'S MESSAGE IS NOT A RECORD, AND THAT COST A CUTOVER A DAY.
+# Measured on hp-xubuntu 2026-10-11: the apply that installed the v0.382
+# carrier at fabro-server-candidate's binary_path reported that the instance
+# was NOT restarted, and the follow-up run with
+# -e fabro_server_restart_allowed=true then found nothing changed, notified no
+# handler, and left the candidate serving 0.378.0-nightly.0 with 72 hours of
+# uptime. HOST_VARS.md tells the operator to re-run with that flag to pick up a
+# new build; that re-run could not restart anything, because the notification
+# from the first run existed only in the first run's play recap.
+#
+# So the refusal writes a marker here, one file per instance named for its
+# unit, and a later permitting run restarts any instance that has one. The
+# directory is a host-invariant destination like the two below it and is a
+# variable only so a host that cannot use /var/lib can say so; the per-instance
+# FILE NAME is derived from unit_name and is deliberately not configurable,
+# because two instances sharing one marker would make one instance's deferral
+# apply to the other's restart.
+#
+# docker_sandbox_slice carries the same mechanism for the same reason, and its
+# HOST_VARS.md states the reason this one restates: a message in a play recap
+# is gone the moment the terminal scrolls, and the next drift read is where the
+# operator will look.
+fabro_server_restart_pending_dir: /var/lib/fabro-server
+
 # --- settings.toml ---------------------------------------------------------
 #
 # False means the settings template is rendered in permanent check mode and

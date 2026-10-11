@@ -98,6 +98,34 @@ not run Ansible, so it cannot prove that `ansible.builtin.copy` copies or that
 a sibling of `binary_path`, that the rename's `argv` moves exactly that sibling onto
 `binary_path`, that the kept copy's name carries a prefix of the outgoing build's
 sha256, and that the task order puts every refusal before every write.
+
+THE THIRD CONCERN: WHETHER A RESTART THIS RUN REFUSED SURVIVES TO THE RUN THAT MAY
+PERFORM IT. The two concerns above both end at the same place — files on the host have
+changed and the running server has not been restarted — and `fabro_server_restart_allowed`
+false is the normal way to get there. Measured on `hp-xubuntu` 2026-10-11: the apply
+that installed the v0.382 carrier at the candidate's `binary_path` reported that the
+instance was NOT restarted, and the follow-up run with the flag true then found nothing
+changed, notified nothing, and left the candidate serving `0.378.0-nightly.0` with 72
+hours of uptime. The notification does not survive the run that raised it, so the
+re-run `HOST_VARS.md` tells the operator to perform could not apply it.
+
+So the role records a deferred restart per instance on the host, and a later permitting
+run applies it. The arms for that concern read the role's own marker expression, its
+own pending decision and the `when:` of every task and handler involved, and EVALUATE
+them against modelled host states: a marker present and a marker absent, a running
+server executing its declared `binary_path` and one executing something else, a probe
+that could not read the running process at all, and each of those under a permitting
+and a refusing run. The marker path is rendered from the role's `set_fact` rather than
+restated, so a role that names it differently fails here.
+
+CONTROL ARMS FOR THAT CONCERN, PAIRED LIKE THE OTHERS. Every "restarts" arm is paired
+with the state in which the role must restart NOTHING — an instance already executing
+its own `binary_path` with no marker — because a pending decision that is always true
+is a converge that kills a live factory on every permitting run. The unreadable-probe
+state is asserted NOT pending for the same reason: a restart must never rest on a probe
+that failed. And the marker is proven PER INSTANCE by rendering it for two of
+`hp-xubuntu`'s instances and asserting the two paths differ, since one shared marker
+would make the fleet instance's deferral apply to the candidate's restart.
 """
 
 from __future__ import annotations
@@ -150,6 +178,16 @@ _UNIT_INSTALL = "Install the instance's systemd unit"
 _RESTART_HANDLER = "Restart the Fabro instance"
 _FILES_CHANGED = "Fabro instance files changed"
 _REPLACE_FACT = "fabro_server_binary_replace"
+
+# The deferred restart: the two facts the role holds, the tasks that set and read them,
+# and the two handlers that write and clear the marker. Names rather than behaviour —
+# the behaviour is read out of each task below and never restated here.
+_MARKER_FACT = "fabro_server_restart_pending_marker"
+_PENDING_FACT = "fabro_server_restart_pending"
+_MARKER_NAMING_TASK = "Name this instance's restart-pending marker"
+_PENDING_DECISION = "Decide whether this instance owes a restart from before this run"
+_DEFER_HANDLER = "Record that this instance's restart is still pending"
+_NOT_RESTARTED_HANDLER = "Say which instance was left needing a restart"
 
 # The v0.382 carrier build the fabro-currency cutover moves hp's production factory
 # onto: where it is staged on the control node, and the digest it hashes to. Both are
@@ -863,6 +901,68 @@ def _install_scope(
     return scope
 
 
+def _restart_scope(
+    *,
+    instance: Mapping[str, str],
+    marker_present: bool,
+    running_binary: str | None,
+    restart_allowed: bool,
+) -> dict[str, _Value]:
+    """Every name the role's deferred-restart guards read, for one instance and one host state.
+
+    `running_binary=None` models a probe that could not read the running process's
+    `/proc/<pid>/exe` at all — a stopped unit, or a `MainPID` systemd reports as 0.
+    `stat` then omits `lnk_source` rather than reporting an empty one, which is the
+    undefined the role's decision spells `| default(...)` against.
+
+    Neither the marker path nor the pending decision is restated here: both are read
+    out of the role's own `set_fact` and rendered or evaluated, so a role that names
+    the marker differently or decides pendingness differently fails these arms instead
+    of being re-described by them.
+    """
+    scope: dict[str, _Value] = dict(_resolved_facts(instance=instance, source=_INVENTORY))
+    # `false`/`true` as Ansible delivers an `-e` override and a YAML default — strings
+    # a `when:` reaches through `| bool`, which is why the role spells that filter.
+    scope["fabro_server_restart_allowed"] = "true" if restart_allowed else "false"
+    # Not check mode, and the unit already on disk: the state every arm below is about.
+    # The check-mode half of each gate is exercised by the role's existing arms.
+    scope["ansible_check_mode"] = False
+    scope["fabro_server_unit_file.stat.exists"] = True
+    scope["fabro_server_restart_pending_file.stat.exists"] = marker_present
+    scope["fabro_server_running_binary.stat.lnk_source"] = running_binary
+    scope[_MARKER_FACT] = _render_templated(
+        text=_module_argument(
+            body=_task_body(name=_MARKER_NAMING_TASK),
+            module="ansible.builtin.set_fact",
+            argument=_MARKER_FACT,
+        ),
+        scope=scope,
+    )
+    scope[_PENDING_FACT] = _evaluate(
+        expression=_template_expression(
+            value=_module_argument(
+                body=_task_body(name=_PENDING_DECISION),
+                module="ansible.builtin.set_fact",
+                argument=_PENDING_FACT,
+            )
+        ),
+        scope=scope,
+    )
+    return scope
+
+
+def _hp_instances() -> list[dict[str, str]]:
+    """The two `hp-xubuntu` instances the deferred-restart arms model, fleet first.
+
+    Two rather than one because the marker is a PER-INSTANCE record, and a single
+    instance cannot show that: one shared marker would make the fleet instance's
+    deferral apply to the candidate's restart, and every arm below would still pass.
+    """
+    return [
+        _instance_named(unit=unit, source=_INVENTORY) for unit in (_FLEET_UNIT, _CANDIDATE_UNIT)
+    ]
+
+
 def _binary_install_guards() -> dict[str, list[str]]:
     """Every condition the arms below evaluate, keyed by where the role spells it."""
     return {
@@ -1373,3 +1473,57 @@ def test_the_role_documents_the_binary_install_axes_and_the_defaults_they_carry(
             f"default it has. An undocumented axis is one an operator discovers by reading the "
             f"role, which is the drift this document exists to prevent; rows={sorted(rows)}"
         )
+
+
+# --- carrying a deferred restart across runs -------------------------------
+
+
+def test_a_refusing_run_records_this_instances_deferred_restart_on_the_host() -> None:
+    """The first assertion: files changed under a refusing run leave a per-instance marker."""
+    handler = _task_body(name=_DEFER_HANDLER, source=_HANDLERS)
+    assert _task_list_field(body=handler, field="listen") == [_FILES_CHANGED], (
+        f"the marker MUST be written by a handler listening to {_FILES_CHANGED!r}. That "
+        f"notification is the only thing in the role that means 'this instance's files "
+        f"changed during this run'; a task could only guess at it, and a marker written on "
+        f"every converge would mean nothing by the third one"
+    )
+    gates = _task_list_field(body=handler, field="when")
+    markers: list[str] = []
+    for instance in _hp_instances():
+        refusing = _restart_scope(
+            instance=instance, marker_present=False, running_binary=None, restart_allowed=False
+        )
+        assert _holds(conditions=gates, scope=refusing), (
+            f"{instance['unit_name']}: the marker MUST be written when the run REFUSED the "
+            f"restart it was owed. That is the whole defect — measured on hp-xubuntu "
+            f"2026-10-11, the apply that installed the carrier build reported 'NOT "
+            f"restarted' and recorded that nowhere, so the re-run HOST_VARS.md asks for "
+            f"found nothing changed and restarted nothing; when={gates}"
+        )
+        permitting = _restart_scope(
+            instance=instance, marker_present=False, running_binary=None, restart_allowed=True
+        )
+        assert not _holds(conditions=gates, scope=permitting), (
+            f"{instance['unit_name']}: the control arm — a run that APPLIES the restart must "
+            f"not also record one as owed. A marker written beside a restart that happened "
+            f"is a deferral the next run would apply against an instance that needs nothing"
+        )
+        marker = _render_templated(
+            text=_module_argument(body=handler, module="ansible.builtin.copy", argument="dest"),
+            scope=refusing,
+        )
+        assert marker == refusing[_MARKER_FACT], (
+            f"the handler MUST write the marker the role's own set_fact names, not a path "
+            f"spelled a second time: two spellings of one path is a deferral recorded where "
+            f"nothing reads it; dest={marker!r} fact={refusing[_MARKER_FACT]!r}"
+        )
+        assert str(instance["unit_name"]) in marker, (
+            f"the marker MUST be keyed by unit_name, so each instance on the host owns its "
+            f"own record; marker={marker!r}"
+        )
+        markers.append(marker)
+    assert len(set(markers)) == len(markers), (
+        f"the two instances MUST record their deferrals at DIFFERENT paths. One shared "
+        f"marker would make the fleet instance's deferral apply to the candidate's restart, "
+        f"which is a restart of a live factory nobody deferred; markers={markers}"
+    )
