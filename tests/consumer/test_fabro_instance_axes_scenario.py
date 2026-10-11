@@ -193,6 +193,7 @@ _CARRIER_TASK = "Carry this instance's deferred restart into this run"
 _RUNNING_PID_TASK = "Read the main PID of whatever this instance is running now"
 _RUNNING_BINARY_TASK = "Read the file this instance's running server actually executes"
 _CLEAR_HANDLER = "Clear the restart-pending marker this restart satisfied"
+_PENDING_REPORT = "Say that this instance's deferred restart is still pending"
 
 # The v0.382 carrier build the fabro-currency cutover moves hp's production factory
 # onto: where it is staged on the control node, and the digest it hashes to. Both are
@@ -960,6 +961,9 @@ def _restart_scope(
     # The check-mode half of each gate is exercised by the role's existing arms.
     scope["ansible_check_mode"] = False
     scope["fabro_server_unit_file.stat.exists"] = True
+    # DERIVED from the host_vars file's own name rather than stated, so an arm reading a
+    # message that names the host cannot pass while naming the wrong one.
+    scope["inventory_hostname"] = _INVENTORY.stem
     scope["fabro_server_restart_pending_file.stat.exists"] = marker_present
     scope["fabro_server_running_binary.stat.lnk_source"] = running_binary
     scope[_MARKER_FACT] = _render_templated(
@@ -1827,3 +1831,71 @@ def test_restarting_an_instance_removes_its_restart_pending_marker() -> None:
         f"deferral survives every converge until the window is actually taken; the role "
         f"removes it in {[name for name, _ in removers]}"
     )
+
+
+def test_a_refusing_run_keeps_the_marker_and_says_the_restart_is_still_pending() -> None:
+    """The fifth assertion: the record survives a refusing run, and that run says so."""
+    report = _task_body(name=_PENDING_REPORT)
+    assert "listen:" not in report and "notify:" not in report, (
+        f"the report MUST be a TASK, with neither a listen nor a notify. A handler would "
+        f"only run on a converge that changed something, and the run this assertion is "
+        f"about is exactly the one where NOTHING changed — the files were already right and "
+        f"the restart they earned is still owed; body={report!r}"
+    )
+    gates = _task_list_field(body=report, field="when")
+    for instance in _hp_instances():
+        owed = _restart_scope(
+            instance=instance, marker_present=True, running_binary=None, restart_allowed=False
+        )
+        assert _holds(conditions=gates, scope=owed), (
+            f"{instance['unit_name']}: a refusing run against an instance that owes a "
+            f"restart MUST say so. Measured on hp-xubuntu 2026-10-11, the operator's only "
+            f"signal was a drift read that reported nothing changed, which reads as 'this "
+            f"host is converged' — and the candidate was 72 hours into serving the wrong "
+            f"build; when={gates}"
+        )
+        said = _render_templated(
+            text=_module_argument(body=report, module="ansible.builtin.debug", argument="msg"),
+            scope=owed,
+        )
+        assert str(owed[_MARKER_FACT]) in said, (
+            f"{instance['unit_name']}: the report MUST name the marker it is reading, so the "
+            f"operator can see the record rather than take the play's word for it; "
+            f"msg={said!r}"
+        )
+        assert "fabro_server_restart_allowed=true" in said, (
+            f"{instance['unit_name']}: the report MUST name the flag that APPLIES the "
+            f"deferral. A message that says a restart is owed and not how to take it leaves "
+            f"the operator where HOST_VARS.md already left them; msg={said!r}"
+        )
+        settled = _restart_scope(
+            instance=instance,
+            marker_present=False,
+            running_binary=str(owed["fabro_server_binary_path"]),
+            restart_allowed=False,
+        )
+        assert not _holds(conditions=gates, scope=settled), (
+            f"{instance['unit_name']}: the control arm — an instance that owes nothing must "
+            f"not be reported as pending. A report on every refusing run would be read as "
+            f"noise within a week, and then the one that mattered would be too"
+        )
+        permitting = _restart_scope(
+            instance=instance, marker_present=True, running_binary=None, restart_allowed=True
+        )
+        assert not _holds(conditions=gates, scope=permitting), (
+            f"{instance['unit_name']}: the second control arm — a run that is APPLYING the "
+            f"restart must not also report it as still pending. That run's own output is the "
+            f"restart; saying 'still pending' beside it is a contradiction the operator has "
+            f"to resolve by hand"
+        )
+        for name, body in _executable_bodies():
+            if _MARKER_FACT not in body:
+                continue
+            if re.search(r"^    state: absent$", body, re.MULTILINE) is None:
+                continue
+            assert not _holds(conditions=_task_list_field(body=body, field="when"), scope=owed), (
+                f"{instance['unit_name']}: {name!r} would REMOVE the marker on a refusing "
+                f"run. The record must outlive every run that does not apply it — a "
+                f"deferral erased by the converge that declined it is the defect this slice "
+                f"exists to fix, re-expressed"
+            )

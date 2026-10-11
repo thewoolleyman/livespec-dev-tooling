@@ -588,6 +588,37 @@
     # written for the day it comes back, and the supervise step below stops it.
     - fabro_server_service_state == 'running'
 
+- name: Say that this instance's deferred restart is still pending
+  # THE OTHER BRANCH, AND IT IS A TASK RATHER THAN A HANDLER ON PURPOSE. The
+  # handler at the end of this play already names a restart THIS run deferred.
+  # The run this task is for is the opposite shape: nothing changed, because
+  # the files were already right and the restart they earned is still owed. No
+  # handler fires on that run, and a drift read reporting no change reads as
+  # "this host is converged" — which is exactly what hp-xubuntu reported on
+  # 2026-10-11 while its candidate instance was 72 hours into serving the build
+  # the carrier already sitting at its binary_path had replaced.
+  #
+  # It names the marker it read rather than only its own verdict, so the
+  # operator can look at the record; and it names the flag that applies the
+  # deferral, because a message saying a restart is owed and not how to take it
+  # leaves the operator where HOST_VARS.md already left them.
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: a restart is
+      STILL PENDING from an earlier run and this run did not apply it, because
+      fabro_server_restart_allowed is false. The record is
+      {{ fabro_server_restart_pending_marker }}; read it for what was deferred.
+      Quiesce this instance and re-run with
+      -e fabro_server_restart_allowed=true to apply it, or restart the unit by
+      hand — either one clears the record.
+  when:
+    # Mutually exclusive with the carrier above on this first condition, so the
+    # two never both speak: a run that is APPLYING the restart while also
+    # saying "still pending" is a contradiction the operator resolves by hand.
+    - not (fabro_server_restart_allowed | bool)
+    - fabro_server_restart_pending | bool
+    - fabro_server_service_state == 'running'
+
 # --- install ---------------------------------------------------------------
 #
 # THE BINARY GOES FIRST, AND IT GOES IN THREE STEPS. Every refusal above has
