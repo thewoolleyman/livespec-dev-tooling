@@ -508,6 +508,41 @@
     success_msg: this instance has no active runs
   when: not (fabro_server_ps.skipped | default(false))
 
+# --- carry a deferred restart into this run --------------------------------
+#
+# HERE, AND NOT EARLIER, BECAUSE OF WHAT SITS ABOVE. Every refusal has run,
+# including the carrying-runs one — which runs for exactly the runs this task
+# fires on, because its own `when` is keyed on the same flag — so a factory
+# carrying runs has already halted the play. A carrier placed any earlier would
+# hand the restart handler an instance the refusal had not yet examined.
+#
+# It notifies the SAME handler a changed unit file notifies rather than reaching
+# systemd a second way: one notification means "this instance's running server
+# is not the server its files describe", and a deferral carried from an earlier
+# run is that statement exactly. Reusing it is what makes the carried restart
+# obey the handler's existing refusals instead of acquiring a weaker path.
+
+- name: Carry this instance's deferred restart into this run
+  # changed_when IS THE MECHANISM, not decoration: Ansible fires a notify only
+  # for a task that reports changed, and this task writes nothing, so without
+  # it the marker would be read on every run and acted on never — which is the
+  # defect, one layer in.
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: a restart is
+      owed from before this run — a marker at
+      {{ fabro_server_restart_pending_marker }}, or a running server executing
+      a file other than {{ fabro_server_binary_path }}. This run may restart it
+      and the instance is quiet, so the restart handler is notified.
+  changed_when: true
+  notify: Fabro instance files changed
+  when:
+    - fabro_server_restart_allowed | bool
+    - fabro_server_restart_pending | bool
+    # A parked instance is not restarted for a deferral either. Its files were
+    # written for the day it comes back, and the supervise step below stops it.
+    - fabro_server_service_state == 'running'
+
 # --- install ---------------------------------------------------------------
 #
 # THE BINARY GOES FIRST, AND IT GOES IN THREE STEPS. Every refusal above has

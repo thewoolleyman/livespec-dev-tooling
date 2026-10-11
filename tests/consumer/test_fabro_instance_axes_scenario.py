@@ -188,6 +188,7 @@ _MARKER_NAMING_TASK = "Name this instance's restart-pending marker"
 _PENDING_DECISION = "Decide whether this instance owes a restart from before this run"
 _DEFER_HANDLER = "Record that this instance's restart is still pending"
 _NOT_RESTARTED_HANDLER = "Say which instance was left needing a restart"
+_CARRIER_TASK = "Carry this instance's deferred restart into this run"
 
 # The v0.382 carrier build the fabro-currency cutover moves hp's production factory
 # onto: where it is staged on the control node, and the digest it hashes to. Both are
@@ -1526,4 +1527,77 @@ def test_a_refusing_run_records_this_instances_deferred_restart_on_the_host() ->
         f"the two instances MUST record their deferrals at DIFFERENT paths. One shared "
         f"marker would make the fleet instance's deferral apply to the candidate's restart, "
         f"which is a restart of a live factory nobody deferred; markers={markers}"
+    )
+
+
+def test_a_permitting_run_restarts_an_instance_whose_pending_marker_is_present() -> None:
+    """The second assertion: a recorded deferral reaches the restart, past the quiet guard."""
+    carrier = _task_body(name=_CARRIER_TASK)
+    assert _task_list_field(body=carrier, field="notify") == [_FILES_CHANGED], (
+        f"the carried deferral MUST notify {_FILES_CHANGED!r} — the same notification a "
+        f"changed unit file raises. Reusing it is what makes the restart obey the handler's "
+        f"existing refusals instead of acquiring a second, weaker path to systemd"
+    )
+    assert _task_list_field(body=carrier, field="changed_when") == ["true"], (
+        "the carrier MUST report CHANGED unconditionally. Ansible fires a notify only for a "
+        "task that changed, so without this the handler is never reached and the marker is "
+        "read every run and acted on never — which is the defect this slice exists to fix"
+    )
+    gates = _task_list_field(body=carrier, field="when")
+    handler = _task_body(name=_RESTART_HANDLER, source=_HANDLERS)
+    for instance in _hp_instances():
+        recorded = _restart_scope(
+            instance=instance, marker_present=True, running_binary=None, restart_allowed=True
+        )
+        assert recorded[_PENDING_FACT] is True, (
+            f"{instance['unit_name']}: a present marker MUST make this instance pending on "
+            f"its own. The marker is what an earlier refusing run left behind, and reading "
+            f"it is the whole mechanism; pending={recorded[_PENDING_FACT]!r}"
+        )
+        assert _holds(conditions=gates, scope=recorded), (
+            f"{instance['unit_name']}: a permitting run MUST carry a recorded deferral into "
+            f"the restart. Measured on hp-xubuntu 2026-10-11, the run that was told it may "
+            f"restart found nothing changed and notified nothing, so the candidate kept "
+            f"serving the build it had before the carrier was installed; when={gates}"
+        )
+        assert _holds(conditions=_task_list_field(body=handler, field="when"), scope=recorded), (
+            f"{instance['unit_name']}: the restart handler's own gate MUST also hold in that "
+            f"state, or the notify above reaches a handler that declines it and the deferral "
+            f"is carried forward forever"
+        )
+        refusing = _restart_scope(
+            instance=instance, marker_present=True, running_binary=None, restart_allowed=False
+        )
+        assert not _holds(conditions=gates, scope=refusing), (
+            f"{instance['unit_name']}: the control arm — a marker present under a REFUSING "
+            f"run must notify nothing. A carrier that fired regardless of the flag would "
+            f"restart a live factory on an ordinary converge, which is the one thing this "
+            f"role refuses to do"
+        )
+        settled = _restart_scope(
+            instance=instance,
+            marker_present=False,
+            running_binary=str(recorded["fabro_server_binary_path"]),
+            restart_allowed=True,
+        )
+        assert settled[_PENDING_FACT] is False, (
+            f"{instance['unit_name']}: an instance with no marker, already executing its own "
+            f"binary_path, owes NOTHING. A pending decision that is always true is a "
+            f"permitting run that kills a live factory every time it is used"
+        )
+        assert not _holds(conditions=gates, scope=settled), (
+            f"{instance['unit_name']}: ...and the carrier must be skipped for it, so "
+            f"-e fabro_server_restart_allowed=true stays safe to pass on a converged host"
+        )
+    assert _task_index(name=_QUIET_REFUSAL) < _task_index(name=_CARRIER_TASK), (
+        f"{_QUIET_REFUSAL!r} MUST run BEFORE the carrier notifies. 'After the carrying-runs "
+        f"refusal passes' is a statement about task order and nothing else in the role "
+        f"expresses it: a carrier placed earlier would hand the handler a factory the "
+        f"refusal had not yet examined"
+    )
+    probe = _task_list_field(body=_task_body(name=_QUIET_PROBE), field="when")
+    assert any("fabro_server_restart_allowed" in condition for condition in probe), (
+        f"the carrying-runs probe MUST be on the table for exactly the runs this carrier "
+        f"fires on, or the refusal above is ordered before a guard that never ran; "
+        f"when={probe}"
     )
