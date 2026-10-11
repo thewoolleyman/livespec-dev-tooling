@@ -7,12 +7,25 @@
 # `ssh poweredge` issued as root fails; the tool must drop the fetch to
 # GATES_SSH_USER via `sudo -u` while keeping the write under root.
 #
-# HOW IT STAYS OFF THE HOST. `id`, `sudo`, `ssh` and `install` are FAKES on this
-# suite's own PATH. `id` reports a EUID this suite chooses; `sudo` and `ssh` log
-# their argv and emit a fixture kubeconfig on stdout (standing in for the remote
-# `sudo cat`); `install` logs and writes into this suite's scratch dir. No real
-# ssh, sudo, cluster or credential is involved. Every path is inside the scratch
-# dir. Exit 0 iff every test passes; mutates nothing outside the scratch dir.
+# HOW IT STAYS OFF THE HOST. `id`, `sudo` and `ssh` are FAKES on this suite's own
+# PATH: `id` reports a EUID this suite chooses, and `sudo`/`ssh` log their argv
+# and emit a fixture kubeconfig on stdout (standing in for the remote
+# `sudo cat`). No real ssh, sudo, cluster or credential is involved, and every
+# path is inside the scratch dir.
+#
+# THE WRITE ITSELF IS REAL, AND `install` IS A LENS RATHER THAN A FAKE. The write
+# used to be faked too, which is exactly why this suite could not see
+# livespec-dev-tooling-74q6iw: uutils coreutils (what Ubuntu 25.10 and 26.04 ship
+# instead of GNU coreutils, on the VPS and on the node alike) fails `install`
+# with `install: No such file or directory` whenever the DESTINATION already
+# exists, so every refresh after the first one failed while this suite stayed
+# green. `mktemp`, `tee`, `chmod` and `mv` are therefore the REAL binaries here
+# and the write lands on the real filesystem inside the scratch dir, while
+# `install` is a lens that logs its argv and REFUSES an existing destination
+# exactly as uutils' does — so a write path that depends on an `install` able to
+# overwrite fails here, on a GNU host, where the defect is otherwise invisible.
+#
+# Exit 0 iff every test passes; mutates nothing outside the scratch dir.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,14 +74,36 @@ printf '%s' "${FIXTURE_OUT}"
 exit 0
 EOF
 
-# install: log argv; for the file write, consume stdin so the pipe closes.
+# install: the uutils LENS. `-d` (directory creation) is delegated to the real
+# binary untouched — uutils accepts an existing directory there, and the parent
+# step is not what the regression was about. Anything else whose destination
+# already exists is REFUSED with uutils' own message and exit code.
 cat > "${BIN}/install" <<'EOF'
 #!/usr/bin/env bash
 printf 'install %s\n' "$*" >> "${ARGV_LOG}"
-case " $* " in *" /dev/stdin "*) cat > /dev/null ;; esac
-exit 0
+for arg in "$@"; do
+  [ "$arg" = -d ] && exec "${REAL_INSTALL}" "$@"
+done
+dest=""
+for arg in "$@"; do dest="$arg"; done
+if [ -e "$dest" ]; then
+  printf 'install: No such file or directory\n' >&2
+  exit 1
+fi
+exec "${REAL_INSTALL}" "$@"
 EOF
+
+# mktemp / tee / chmod / mv: the REAL binaries behind a logger, so the write the
+# tool performs is a real filesystem write into this suite's scratch dir.
+for tool in mktemp tee chmod mv; do
+  real="$(command -v "$tool")"
+  printf '#!/usr/bin/env bash\nprintf "%s %%s\\n" "$*" >> "${ARGV_LOG}"\nexec %s "$@"\n' \
+    "$tool" "$real" > "${BIN}/${tool}"
+done
 chmod +x "${BIN}"/*
+
+REAL_INSTALL="$(command -v install)"
+export REAL_INSTALL
 
 export FIXTURE_OUT="${FIXTURE}"
 
@@ -117,28 +152,60 @@ else
 fi
 
 # --- D. the write happens under root (the current euid), not as the ssh user -
-# The install of the destination must NOT be wrapped in sudo -u: only the fetch
-# drops privilege. Assert no `sudo -u ... install` line was recorded.
+# Only the FETCH drops privilege: no write command may be wrapped in `sudo -u`.
+# The destination is checked for real, because the write is real now.
+rm -f "${SCRATCH}/dest.kubeconfig"
 run_tool 0 /nonexistent-env
-if grep -qE '^install .* '"${SCRATCH//\//\\/}"'\/dest.kubeconfig' "${ARGV_LOG}" \
-   && ! grep -qE '^sudo -u .* install ' "${ARGV_LOG}"; then
-  ok "D: the destination is written by install directly (root), not via sudo -u"
+DEST_MODE="$(stat -c '%a' "${SCRATCH}/dest.kubeconfig" 2>/dev/null)"
+if [ "${RUN_RC}" -eq 0 ] && [ "${DEST_MODE}" = 600 ] \
+   && [ "$(cat "${SCRATCH}/dest.kubeconfig")" = "${FIXTURE%$'\n'}" ] \
+   && ! grep -qE '^sudo -u .* (tee|mv|chmod|install) ' "${ARGV_LOG}"; then
+  ok "D: the destination is written at 0600 by the current euid, not via sudo -u"
 else
-  no "D: the write path was wrong (argv: $(tr '\n' '|' < "${ARGV_LOG}"))"
+  no "D: the write path was wrong (rc=${RUN_RC}, mode='${DEST_MODE}', argv: $(tr '\n' '|' < "${ARGV_LOG}"))"
 fi
 
 # --- E. a non-kubeconfig fetch refuses to overwrite ------------------------
+# Asserted on the FILE rather than on an absent argv line: what matters is that
+# the good credential already on disk survives a truthful-looking bad answer.
+DEST_BEFORE="$(cat "${SCRATCH}/dest.kubeconfig")"
 export FIXTURE_OUT="not a kubeconfig at all"
 run_tool 0 /nonexistent-env
-if [ "${RUN_RC}" -ne 0 ] && ! grep -qE '^install .* /dev/stdin ' "${ARGV_LOG}"; then
-  ok "E: a fetched non-kubeconfig is refused and nothing is written"
+if [ "${RUN_RC}" -ne 0 ] && [ "$(cat "${SCRATCH}/dest.kubeconfig")" = "${DEST_BEFORE}" ]; then
+  ok "E: a fetched non-kubeconfig is refused and the existing credential is untouched"
 else
-  no "E: a non-kubeconfig fetch was not refused (rc=${RUN_RC})"
+  no "E: a non-kubeconfig fetch was not refused, or it damaged the destination (rc=${RUN_RC})"
 fi
 export FIXTURE_OUT="${FIXTURE}"
 
+# --- F. THE RE-RUN: an EXISTING destination is replaced, not refused -------
+# The defect livespec-dev-tooling-74q6iw fixed, asserted where it lived. The
+# destination is pre-created on purpose and the write path is real, so a tool
+# that reaches for an `install` able to overwrite fails here against the uutils
+# lens — on a GNU host, where the live symptom cannot otherwise be reproduced.
+printf 'stale: the kubeconfig a refresh must replace\n' > "${SCRATCH}/dest.kubeconfig"
+chmod 0644 "${SCRATCH}/dest.kubeconfig"
+run_tool 0 /nonexistent-env
+DEST_MODE="$(stat -c '%a' "${SCRATCH}/dest.kubeconfig" 2>/dev/null)"
+if [ "${RUN_RC}" -eq 0 ] \
+   && [ "$(cat "${SCRATCH}/dest.kubeconfig")" = "${FIXTURE%$'\n'}" ] \
+   && [ "${DEST_MODE}" = 600 ]; then
+  ok "F: a re-run over an existing destination replaces it at 0600 and exits 0"
+else
+  no "F: the re-run over an existing destination failed (rc=${RUN_RC}, mode='${DEST_MODE}')"
+fi
+
+# The rename leaves no temp file behind, and the temp it used was never readable
+# beyond its owner — a 0644 stand-in next to a 0600 credential is the exposure
+# the umask-plus-rename shape exists to prevent.
+if [ -z "$(find "$(dirname "${SCRATCH}/dest.kubeconfig")" -name 'dest.kubeconfig.refresh.*' -print -quit)" ]; then
+  ok "F2: the write left no temp file beside the destination"
+else
+  no "F2: a temp file survived the write"
+fi
+
 if [ "${fail}" -eq 0 ]; then
-  echo "PASS refresh-gates-kubeconfig-exit-tests (5 passed, 0 failed)"
+  echo "PASS refresh-gates-kubeconfig-exit-tests (7 passed, 0 failed)"
   exit 0
 fi
 echo "FAIL refresh-gates-kubeconfig-exit-tests" >&2
