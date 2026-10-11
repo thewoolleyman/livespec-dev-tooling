@@ -43,6 +43,8 @@ _ROLE = _ANSIBLE / "roles" / "fabro_server"
 _TASKS = _ROLE / "tasks" / "main.yml"
 _ENVIRONMENT_TASKS = _ROLE / "tasks" / "environment.yml"
 _HANDLERS = _ROLE / "handlers" / "main.yml"
+_ROLE_DOC = _ROLE / "HOST_VARS.md"
+_INVENTORY = _ANSIBLE / "inventory" / "host_vars" / "hp-xubuntu.yml"
 
 # The Definition of Done's own vocabulary, stated because it states it: the axis an
 # instance mapping gains, and the four fields each declared environment spells.
@@ -83,6 +85,27 @@ _ENVIRONMENT_LOOP_VAR = "fabro_server_environment"
 _API_PATH = "/api/v1/environments"
 _TOKEN_NAME = "FABRO_DEV_TOKEN"
 _SERVER_ENV = "storage/server.env"
+
+# hp-xubuntu's three instances, and the one catalog entry the Definition of Done
+# declares for its cutover candidate. Every value here is the Definition of Done's own:
+# a test that read them out of the file it is checking would assert nothing.
+_CANDIDATE_UNIT = "fabro-server-candidate"
+_FLEET_UNIT = "fabro-server"
+_HOMELAB_UNIT = "fabro-server-mi-homelab"
+_CANDIDATE_ENVIRONMENT = {
+    "id": "livespec-ci",
+    "image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5",
+    "cpu": "4",
+    "memory": "8GB",
+}
+
+# One instance of a host's committed `fabro_server_instances`, and the nested catalog
+# block it may carry. `unit_name` opens every instance mapping in both files, which is
+# what bounds a read to one instance.
+_INSTANCE_OPENER = re.compile(r"^ {2}- unit_name: (?P<unit>\S+)$")
+_ENVIRONMENTS_OPENER = re.compile(r"^ {4}environments:$")
+_ENVIRONMENT_OPENER = re.compile(r"^ {6}- (?P<key>[a-z_0-9]+): (?P<value>.+)$")
+_ENVIRONMENT_FIELD = re.compile(r"^ {8}(?P<key>[a-z_0-9]+): (?P<value>.+)$")
 
 
 def _unquote(*, value: str) -> str:
@@ -628,3 +651,82 @@ def test_the_catalog_write_gates_stay_inside_the_vocabulary_this_test_can_evalua
             )
     with pytest.raises(AssertionError, match="does not model"):
         _truth(condition="fabro_server_environment_a_fact_no_arm_describes", scope=scope)
+
+
+# --- what hp-xubuntu's cutover candidate declares --------------------------
+
+
+def _declared_environments(*, unit: str, source: Path) -> list[dict[str, str]]:
+    """Every environment the named instance of `source` declares, in file order.
+
+    One parser serves both the role's `HOST_VARS.md` — the source the maintainer edits —
+    and `inventory/host_vars/hp-xubuntu.yml`, which is generated from it and kept in
+    lockstep by hand, so the two can be held against each other. Text-sliced for the
+    same reason every other reader here is: no YAML library is importable in this suite.
+
+    Bounded to ONE instance. An unbounded scan would read a sibling instance's catalog
+    into this one's and still pass every assertion below, which is the quietest way for
+    this module to stop testing the instance it names.
+    """
+    parsed: list[dict[str, str]] = []
+    inside = False
+    collecting = False
+    for line in source.read_text(encoding="utf-8").splitlines():
+        opener = _INSTANCE_OPENER.match(line)
+        if opener is not None:
+            inside = opener["unit"] == unit
+            collecting = False
+            continue
+        if not inside or not line.strip() or line.strip().startswith("#"):
+            continue
+        if _ENVIRONMENTS_OPENER.match(line) is not None:
+            collecting = True
+            continue
+        if not collecting:
+            continue
+        entry = _ENVIRONMENT_OPENER.match(line)
+        if entry is not None:
+            parsed.append({entry["key"]: _unquote(value=entry["value"])})
+            continue
+        field = _ENVIRONMENT_FIELD.match(line)
+        if field is None:
+            # Back at the instance's own indentation: the catalog block has closed.
+            collecting = False
+            continue
+        assert parsed, f"{source.name} indents an environment field before any entry begins"
+        parsed[-1][field["key"]] = _unquote(value=field["value"])
+    assert parsed, (
+        f"{source.name} must declare {unit}'s {_AXIS}; without them the factory's own "
+        f"environment is still something somebody has to remember to POST by hand, which "
+        f"is the state the hp-candidate canary failed in"
+    )
+    return parsed
+
+
+def test_the_hp_candidate_declares_the_environment_the_factory_workflow_dispatches_into() -> None:
+    """The fourth assertion, in the document the maintainer edits and the file the play reads."""
+    declared = {
+        source: _declared_environments(unit=_CANDIDATE_UNIT, source=source)
+        for source in (_ROLE_DOC, _INVENTORY)
+    }
+    assert declared[_ROLE_DOC] == declared[_INVENTORY], (
+        f"the role's HOST_VARS.md is the source and the inventory host_vars file is "
+        f"generated from it, with no regeneration recipe — they are kept in lockstep by "
+        f"hand, so a difference is a catalog the play will never write;\n"
+        f"doc={declared[_ROLE_DOC]} inventory={declared[_INVENTORY]}"
+    )
+    for source, environments in declared.items():
+        assert environments == [dict(_CANDIDATE_ENVIRONMENT)], (
+            f"{source.name}: {_CANDIDATE_UNIT} MUST declare exactly the one environment the "
+            f"factory's own workflow dispatches into — id {_CANDIDATE_ENVIRONMENT['id']}, "
+            f"image {_CANDIDATE_ENVIRONMENT['image']}, cpu {_CANDIDATE_ENVIRONMENT['cpu']}, "
+            f"memory {_CANDIDATE_ENVIRONMENT['memory']}. The image tag is the one the "
+            f"orchestrator's implement-work-item workflow.toml pins, and the resource "
+            f"envelope is the one the factory's runs are sized for; the server's seeded "
+            f"default is 2 CPU and 4GB in buildpack-deps:noble, which is what the canary "
+            f"run was prepared in when it failed;\ndeclared={environments}"
+        )
+    for source in (_ROLE_DOC, _INVENTORY):
+        for other in (_FLEET_UNIT, _HOMELAB_UNIT):
+            with pytest.raises(AssertionError, match=f"must declare {other}"):
+                _declared_environments(unit=other, source=source)
