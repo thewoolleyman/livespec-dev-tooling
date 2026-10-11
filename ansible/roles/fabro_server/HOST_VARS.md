@@ -113,12 +113,92 @@ runs from the old build, the new one sits at `binary_path` waiting for the next
 start, and the handler says out loud in the run output that it did not restart.
 Picking up the new build is then an operator's deliberate act: quiesce the
 instance and re-run with `-e fabro_server_restart_allowed=true`, or restart it by
-hand.
+hand. That re-run works because the refusing run RECORDED the deferral on the
+host — see "The deferred restart" below for what it wrote and what the re-run
+does with it.
 
 Rollback is step 4 in reverse and needs no role change: move the `.bak` over
 `binary_path` by hand, or point `binary_source` at the build you want and declare
 its digest. Both the `.incoming` and `.bak` siblings are left on the host
 deliberately; nothing in the role reaps them.
+
+## The deferred restart
+
+A run that changes an instance's files with `fabro_server_restart_allowed` false
+does not restart the server, and it does not drop the restart either: it writes a
+**restart-pending marker** for that instance on the host. A later run with the
+flag true reads the marker, re-checks the carrying-runs refusal, restarts the
+instance, and removes it.
+
+This section exists because the paragraph above used to end at "re-run with
+`-e fabro_server_restart_allowed=true`" and that instruction did not work.
+Measured on `hp-xubuntu` 2026-10-11 (work-item `livespec-dev-tooling-vmeiv6`):
+pass 1, with the flag false, installed the v0.382 carrier at the candidate
+instance's `binary_path`, changed its unit, and reported that
+`fabro-server-candidate` was not restarted. Pass 2, with the flag true against
+that instance alone, passed the carrying-runs refusal ("this instance has no
+active runs"), changed nothing, never notified the restart handler, and left the
+candidate serving `0.378.0-nightly.0` with 72 hours of uptime. **Nothing
+errored.** A handler notification lives only inside the run that raised it, so
+pass 2 arrived with nothing to act on — and its output was indistinguishable
+from a converged host's.
+
+### Where the record lives
+
+`fabro_server_restart_pending_dir` defaults to
+`/var/lib/fabro-server/restart-pending`, and the role resolves one file inside it
+per instance as `fabro_server_restart_pending_marker`, named for the instance's
+`unit_name`. `unit_name` is the identifier the role already refuses to let two
+instances share, so two instances on one host can never collide on one marker.
+`/var/lib` rather than `/run` because the record must survive a reboot: a reboot
+starts each instance from its new unit file, which silently resolves some
+deferrals and not others, and a record a reboot forgot would leave no way to tell
+which.
+
+Read the host's standing deferrals directly — this is a plain file, and
+inspecting it before opening a quiesced window is how you tell a standing
+deferral from a converged instance:
+
+```bash
+ls -l /var/lib/fabro-server/restart-pending/
+cat /var/lib/fabro-server/restart-pending/fabro-server-candidate
+```
+
+The file's contents name the instance, the binary path it is waiting on, and the
+invocation that applies it. The bytes are deliberately CONSTANT for an instance —
+no timestamp, no list of what changed — so two consecutive refused runs write
+identical bytes and the second reports no change. One standing deferral reads as
+one fact rather than as a fresh event per converge; what changed on a given run
+is in that run's output, not in the file.
+
+### Which runs write it, and which run applies it
+
+| run | what happens to the marker |
+|---|---|
+| files change, `fabro_server_restart_allowed` false | written, and the run says the restart is still pending |
+| nothing changes, flag false, marker present | kept — rewritten identically, reported as still pending |
+| flag true, marker present (or the running server executes a file other than `binary_path`) | the instance is restarted and the marker is **removed** |
+| instance parked (`service_state: stopped`) | nothing; a parked instance has no running server to be out of date |
+
+The third row is the one that makes the first two worth doing, and it is reached
+two ways. The marker is the record of a restart an earlier run refused. The
+running-binary check is the independent, self-healing half: the role reads
+`/proc/<pid>/exe` of the supervised process BEFORE it installs anything, and a
+link target that is not exactly `binary_path` — including the
+`<path> (deleted)` the kernel reports once a new build has been renamed over
+that path — means the running server is not the one version control names. That
+catches a drifted instance even if its marker was never written or was removed
+by hand.
+
+Both halves fail toward NOT restarting. An unreadable `/proc/<pid>/exe`, or a
+unit reporting pid 0, is treated as carrying nothing: a restart that really was
+owed is re-detected on the next run from the marker, whereas a restart invented
+from an unreadable probe would kill the runs a live factory is carrying and
+nothing would re-create them.
+
+Nothing but the restart removes the marker. There is no flag, tag or override
+that clears it without restarting — a deferral that could be dismissed is a
+deferral that would be, which is the failure this whole section exists to end.
 
 ## `host_vars/hp-xubuntu.yml`
 
@@ -264,6 +344,13 @@ verifier's own 60.
 two are per-run decisions an operator makes with `-e`, not standing
 configuration; making either a committed host variable would turn a
 deliberate act into a default.
+
+`fabro_server_restart_pending_dir` is not a host variable either, for close to
+the opposite reason: it is where the role records a restart it refused, and an
+operator free to relocate it per host could split one host's deferrals across
+two directories — or, after changing it, leave standing deferrals at the old
+path where no later run would look for them. See "The deferred restart" above
+for the record's shape and lifecycle.
 
 ## The `ansible_managed` banner
 

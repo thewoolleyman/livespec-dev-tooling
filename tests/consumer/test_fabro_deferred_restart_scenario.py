@@ -87,6 +87,7 @@ _CARRY_TASK = "Claim a restart this instance carried over from an earlier run"
 _DECIDE_TASK = "Decide whether this instance carries a restart into this run"
 _MARKER_PROBE = "Look for a restart this instance deferred on an earlier run"
 _DEFERRED_FACT = "fabro_server_restart_deferred"
+_DOC_HEADING = "## The deferred restart"
 
 
 def _unquote(*, value: str) -> str:
@@ -317,6 +318,31 @@ def _every_entry() -> list[tuple[str, str]]:
     return [*_tasks_of(source=_TASKS), *_tasks_of(source=_HANDLERS)]
 
 
+def _doc_section(*, heading: str) -> str:
+    """One `##` section of the role's HOST_VARS.md, up to the next `##`."""
+    text = _ROLE_DOC.read_text(encoding="utf-8")
+    start = text.find(f"{heading}\n")
+    assert start >= 0, (
+        f"the role's HOST_VARS.md must carry a {heading!r} section. This document is the "
+        f"operator's interface to the role, and a mechanism that only exists in the task "
+        f"comments is one the person opening a quiesced window never reads"
+    )
+    remainder = text.find("\n## ", start + len(heading))
+    return text[start:] if remainder < 0 else text[start:remainder]
+
+
+def _prose(*, section: str) -> str:
+    """One document section with markdown emphasis removed, for phrase matching.
+
+    The arms below look for PHRASES an operator has to be able to read, and in correct
+    markdown a variable name inside a phrase is backticked — so `fabro_server_restart_allowed`
+    false carries a backtick in the middle of the phrase the arm is looking for. Matching
+    the raw bytes would make those arms pass only for prose that omitted the formatting the
+    rest of this document uses, which is a test dictating typography rather than content.
+    """
+    return section.replace("`", "").replace("**", "")
+
+
 def _marker_clearing_entries() -> list[tuple[str, str]]:
     """Every entry that removes this instance's restart-pending marker."""
     return [
@@ -463,3 +489,80 @@ def test_the_restart_gates_stay_inside_the_vocabulary_this_test_can_evaluate() -
         "the evaluator's own control: the dotted-register-with-default form the clear "
         "handler uses must be one it parses, or the arm above passes by not parsing it"
     )
+
+
+def test_the_role_document_states_how_a_deferred_restart_is_recorded_and_applied() -> None:
+    """The third assertion: the operator learns the mechanism from the document."""
+    section = _doc_section(heading=_DOC_HEADING)
+    assert len(section.split()) > 60, (
+        f"{_DOC_HEADING!r} must carry the procedure it names, not a stub. The operator "
+        f"reading it is the one holding a quiesced window open, and the previous version of "
+        f"this document told them to re-run with the flag true WITHOUT saying that the first "
+        f"run had recorded nothing — which is how the measured failure stayed invisible;\n"
+        f"section={section!r}"
+    )
+    prose = _prose(section=section)
+    directory = _role_defaults()[_MARKER_DIRECTORY_VARIABLE]
+    for named in (_MARKER_DIRECTORY_VARIABLE, directory, _MARKER_VARIABLE):
+        assert named in prose, (
+            f"the section must name {named!r}: a deferral the operator cannot LOCATE is one "
+            f"they cannot inspect, and inspecting it is how they tell a standing deferral "
+            f"from a converged instance before they open a window"
+        )
+    assert f"-e {_RESTART_FLAG}=true" in prose, (
+        "the section must spell the invocation that APPLIES a deferred restart. 'How a "
+        "later run applies it' is half of what this section owes, and the half the "
+        "measured failure turned on"
+    )
+    assert f"{_RESTART_FLAG} false" in prose or f"{_RESTART_FLAG} is false" in prose, (
+        "the control arm: the section must state the RECORDING half too — which runs write "
+        "the marker. A section that only documented the applying run would leave the "
+        "operator unable to tell whether a deferral had been recorded at all"
+    )
+    assert any(word in prose for word in ("removes", "removed", "deletes", "deleted")), (
+        f"the section must say that applying the restart REMOVES the record. Without that, "
+        f"an operator who finds the file has no way to know whether it is current or a "
+        f"leftover from a restart that already happened;\nsection={section!r}"
+    )
+    document = _ROLE_DOC.read_text(encoding="utf-8")
+    for name, value in sorted(_role_defaults().items()):
+        if not name.startswith("fabro_server_restart"):
+            continue
+        assert f"`{name}`" in document, (
+            f"{name} is a restart-policy variable the role reads and the document does not "
+            f"name. An undocumented variable is one an operator discovers by reading the "
+            f"role, which is the drift this document exists to prevent"
+        )
+        assert value in document, (
+            f"the document must name what {name} defaults to; the role defaults it to "
+            f"{value!r}, which the document does not mention"
+        )
+
+
+def test_the_evaluator_refuses_an_unmodelled_name_and_honours_a_registers_default() -> None:
+    """The evaluator's own contract, on the one path no committed role gate exercises.
+
+    Every name the role's gates read today IS modelled by `_host_state`, so `_value`'s
+    fallback branch is never taken by the arms above. It still has to be right, because it
+    is what decides the real host condition the clear handler's `| default(false)` exists
+    for: a run in which the restart handler NEVER RAN, and whose register therefore holds
+    nothing. The answer must be "do not clear the marker".
+    """
+    absent: Mapping[str, object] = {}
+    assert (
+        _truth(condition="fabro_server_restart_applied.changed | default(false)", scope=absent)
+        is False
+    ), (
+        "with no record of a restart at all, the clear handler's gate MUST read false — the "
+        "marker survives. Reading true would delete a standing deferral on the strength of a "
+        "register that was never written"
+    )
+    assert (
+        _truth(condition="fabro_server_restart_applied.changed | default(true)", scope=absent)
+        is True
+    ), (
+        "the paired arm, proving the one above is reading the role's default rather than "
+        "returning false for every absent name"
+    )
+    with pytest.raises(AssertionError, match="does not model"):
+        _truth(condition="fabro_server_a_fact_no_arm_describes", scope=absent)
