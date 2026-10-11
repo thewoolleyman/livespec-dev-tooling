@@ -55,11 +55,11 @@
 #   cached credential.
 #
 # SECRET DISCIPLINE: the value is never echoed, logged, or placed on argv. It
-# flows into `install` and into `cmp` over STDIN (the `/dev/stdin` source
-# operand and `cmp`'s `-` operand); `printf` is a bash BUILTIN, so the value
-# never becomes a command line anything can read out of /proc. Presence is
-# probed with `printenv NAME | wc -c` — a byte COUNT, never the value. `set -x`
-# is NEVER used.
+# flows into `tee` and into `cmp` over STDIN (`tee`'s stdin and `cmp`'s `-`
+# operand); `printf` is a bash BUILTIN, so the value never becomes a command
+# line anything can read out of /proc. Presence is probed with
+# `printenv NAME | wc -c` — a byte COUNT, never the value. `set -x` is NEVER
+# used.
 #
 # Usage: seed-k3s-agent-join-token.sh --dry-run PROFILE
 #        with-github-ci-runners-env.sh -- seed-k3s-agent-join-token.sh PROFILE
@@ -186,8 +186,8 @@ print_plan() {
       "$TARGET_DIR" "$K3S_CONFIG_DIR" ;;
   esac
   printf 'mode:     %s %s:%s\n' "$TARGET_MODE" "$TARGET_OWNER" "$TARGET_GROUP"
-  printf 'write:    sudo install -m %s -o %s -g %s /dev/stdin %s   (the token arrives on STDIN, never on argv)\n' \
-    "$TARGET_MODE" "$TARGET_OWNER" "$TARGET_GROUP" "$TARGET"
+  printf 'write:    sudo tee %s.seed.XXXXXX (umask 077), then chown %s:%s, chmod %s, mv -f over %s   (the token arrives on STDIN, never on argv)\n' \
+    "$TARGET" "$TARGET_OWNER" "$TARGET_GROUP" "$TARGET_MODE" "$TARGET"
   printf 'skip:     an existing %s whose bytes already equal the injected value is REPORTED, not rewritten\n' "$TARGET"
 }
 
@@ -265,12 +265,30 @@ if sudo test -e "$TARGET" && printf '%s' "${!TOKEN_VAR}" | sudo cmp -s - "$TARGE
 fi
 
 # ---------------------------------------------------------------------------
-# 4. The write. ${!TOKEN_VAR} is bash INDIRECT expansion into the `printf`
-# BUILTIN, so the token reaches `install` only over the pipe `/dev/stdin`
-# names; `install -m/-o/-g` sets the mode and ownership as it creates the file,
-# so the token is never momentarily readable beyond its owner.
+# 4. The write: A TEMP FILE AND A RENAME, NOT `install /dev/stdin "$TARGET"`.
+#
+# uutils coreutils — what Ubuntu 25.10 and 26.04 ship INSTEAD of GNU coreutils,
+# and what the pool's nodes run — fails `install` with `install: No such file or
+# directory` (exit 1) whenever the DESTINATION operand already exists. So this
+# step worked on a fresh node and failed on every RE-SEED, which contradicts the
+# rebuild recipe's "re-runnable against a node already in its declared state"
+# rule and is exactly the shape a rotation takes. Measured 2026-10-11 on uutils
+# 0.2.2 (Ubuntu 25.10) and 0.8.0 (Ubuntu 26.04): absent destination exit 0,
+# existing destination exit 1 (livespec-dev-tooling-74q6iw).
+#
+# A temp file in the TARGET's own directory, created under `umask 077` so it is
+# never readable beyond its owner for even an instant, then given the requested
+# ownership and mode and RENAMED over the target: atomic, independent of which
+# coreutils the node carries, and the token still reaches the file only over
+# STDIN. ${!TOKEN_VAR} is bash INDIRECT expansion into the `printf` BUILTIN, so
+# it never becomes a command line; `tee`'s only argument is the temp path. A
+# `gnu`-prefixed binary is NOT the fix: it is not guaranteed on every host.
 # ---------------------------------------------------------------------------
-printf '%s' "${!TOKEN_VAR}" | sudo install -m "$TARGET_MODE" -o "$TARGET_OWNER" -g "$TARGET_GROUP" /dev/stdin "$TARGET"
+TMP_TARGET="$(sudo sh -c 'umask 077 && mktemp "$1.seed.XXXXXX"' seed-write "$TARGET")"
+printf '%s' "${!TOKEN_VAR}" | sudo tee "$TMP_TARGET" > /dev/null
+sudo chown "${TARGET_OWNER}:${TARGET_GROUP}" "$TMP_TARGET"
+sudo chmod "$TARGET_MODE" "$TMP_TARGET"
+sudo mv -f "$TMP_TARGET" "$TARGET"
 
 printf '\nseeded: %s -> %s (%s %s:%s)\n' "$TOKEN_VAR" "$TARGET" "$TARGET_MODE" "$TARGET_OWNER" "$TARGET_GROUP"
 printf 'Next: sudo %s/provision-k3s.sh %s (see ../README.md).\n' "$K3S_DIR" "$PROFILE_PATH"
