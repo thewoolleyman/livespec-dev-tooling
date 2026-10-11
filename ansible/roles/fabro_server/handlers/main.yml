@@ -30,6 +30,58 @@
     # and the supervise step has already stopped and disabled it.
     - fabro_server_service_state == 'running'
 
+- name: Record that this instance's restart is deferred
+  listen: Fabro instance files changed
+  # THE DURABLE HALF OF THE REFUSAL, and the reason the handler below is no
+  # longer the whole story. A message in the play recap reaches the operator
+  # watching THIS run; it reaches nothing at all on the next one, and the next
+  # one is where the deferral has to be readable — HOST_VARS.md tells the
+  # operator to re-run with fabro_server_restart_allowed true, and that run can
+  # only act on what the host still holds.
+  #
+  # The content is deliberately CONSTANT for an instance — no timestamp, no
+  # list of what changed — exactly as docker_sandbox_slice's marker is. Two
+  # consecutive refused runs then write identical bytes, so the second reports
+  # no change and the marker reads as one standing deferral rather than as a
+  # fresh event per converge. What changed on which run belongs in the recap
+  # message below, which is per-run by nature; a marker that churned would be
+  # a marker nobody could diff.
+  ansible.builtin.copy:
+    content: |
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }} OWES A RESTART.
+
+      Files this role manages for this instance — its systemd unit, its OTLP
+      drop-in, its settings.toml, or the Fabro binary at
+      {{ fabro_server_binary_path }} — describe a server that is not the one
+      currently running. The run that changed them had
+      fabro_server_restart_allowed false, so nothing was restarted and the
+      instance keeps serving its current runs under the OLD configuration.
+
+      To apply it: re-run this role against this instance with
+      -e fabro_server_restart_allowed=true, inside a window in which the
+      instance carries no active runs. That run re-checks the carrying-runs
+      refusal, restarts the instance, and deletes this file.
+
+      Nothing else deletes it. Every further run with
+      fabro_server_restart_allowed false rewrites these same bytes and leaves
+      the deferral standing, so this file is present for exactly as long as
+      the restart is owed.
+    dest: "{{ fabro_server_restart_pending_marker }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when:
+    # The mirror image of the restart above: this is the record of the restart
+    # that did NOT happen, so it is owed on exactly the runs the restart is
+    # refused on. A marker written on a run that restarted would be a marker
+    # that means nothing by the second converge.
+    - not (fabro_server_restart_allowed | bool)
+    # Not owed for a parked instance, for the same reason the restart is not:
+    # there is no running server describing a configuration other than its
+    # files, so there is no drift to carry forward.
+    - fabro_server_service_state == 'running'
+
 - name: Say which instance was left needing a restart
   listen: Fabro instance files changed
   # A changed unit file that is not applied is not a no-op — the host now
