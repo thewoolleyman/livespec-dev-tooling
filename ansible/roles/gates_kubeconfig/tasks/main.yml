@@ -82,17 +82,48 @@
     mode: "0755"
   become: true
 
-- name: Install the refresh tool's ssh-identity env-file
+- name: Create the group that may read the gates credential
+  # A DEDICATED group, never an existing one. The credential is a bearer token
+  # for the gates namespace, so widening it to a group the host already uses for
+  # something else would hand that token to every present and future member of
+  # that group. `system: true` keeps the GID out of the human range.
+  ansible.builtin.group:
+    name: "{{ gates_kubeconfig_group }}"
+    system: true
+    state: present
+  become: true
+
+- name: Put this host's login user in the gate-client group
+  # The login user is who PUSHES, so it is the identity that has to be able to
+  # READ the credential — the same account whose tailnet ssh key the refresh
+  # fetch drops to. Before this, the credential was root:root 0600 while pushes
+  # ran as `ubuntu`, so the gate client could not read the file it was supposed
+  # to authenticate with (plan research/005 section 8).
+  #
+  # `append: true` is load-bearing: this role owns ONE of that user's groups,
+  # not the set. A bare `groups:` would silently REMOVE every other membership
+  # the account holds — `sudo` among them on an Ubuntu cloud image, which is
+  # also what the wrapper's `sudo -n refresh-gates-kubeconfig` depends on.
+  ansible.builtin.user:
+    name: "{{ gates_kubeconfig_ssh_user }}"
+    groups: "{{ gates_kubeconfig_group }}"
+    append: true
+  become: true
+
+- name: Install the refresh tool's ssh-identity and group env-file
   # The runtime refresh tool runs as root at gate time, and root has no tailnet
   # identity, so it drops the ssh FETCH to gates_kubeconfig_ssh_user via sudo -u.
-  # That name is a pool fact, delivered here rather than baked into the shipped
-  # script. Not no_log and mode 0644 on purpose: it carries a username, never a
-  # secret — the credential itself is the 0600 file below.
+  # It also has to reproduce the credential's OWNERSHIP when it replaces the
+  # file, so the gate-client group rides the same env-file. Both are pool facts,
+  # delivered here rather than baked into the shipped script. Not no_log and mode
+  # 0644 on purpose: it carries a username and a group name, never a secret —
+  # the credential itself is the 0640 file below.
   ansible.builtin.copy:
     content: |
       # Written by the gates_kubeconfig Ansible role. Read by
       # refresh-gates-kubeconfig at runtime. Carries no secret.
       GATES_SSH_USER={{ gates_kubeconfig_ssh_user }}
+      GATES_GROUP={{ gates_kubeconfig_group }}
     dest: "{{ gates_kubeconfig_ssh_env }}"
     owner: root
     group: root
@@ -102,11 +133,17 @@
 - name: Install the gates kubeconfig
   # no_log because the content is a bearer token. It must never reach a diff,
   # a log line, or a terminal.
+  #
+  # ROOT-OWNED, GATE-CLIENT-GROUP-READABLE, 0640 — never world-readable, and
+  # never root-only either. Root-only is what shipped first and it made the
+  # credential unusable from the VPS: the pushing user is `ubuntu`, not root, so
+  # the gate client could not read the file at all. The WRITE stays root's; a
+  # group member reads the token and cannot replace it.
   ansible.builtin.copy:
     content: "{{ gates_kubeconfig_rendered.content | b64decode }}"
     dest: "{{ gates_kubeconfig_dest }}"
     owner: root
-    group: root
-    mode: "0600"
+    group: "{{ gates_kubeconfig_group }}"
+    mode: "0640"
   become: true
   no_log: true
