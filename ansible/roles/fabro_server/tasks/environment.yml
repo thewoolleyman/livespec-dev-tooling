@@ -213,34 +213,6 @@
       - revision
   check_mode: false
 
-- name: Create this environment in the instance's catalog
-  # The collection endpoint, which is the one that accepts an id. `--fail-with-body`
-  # HERE, unlike on the reads, because every status but success is a fault worth
-  # stopping the play for — and the body carries the server's own reason, which
-  # is why these tasks are not hidden behind `no_log`.
-  #
-  # Ansible skips a `shell` task under `--check`, which is exactly the behaviour
-  # wanted: a dry run must not write a live factory's catalog. The reads above
-  # carry `check_mode: false` and so still run, which is what lets a drift report
-  # answer for a catalog it really inspected.
-  ansible.builtin.shell:
-    cmd: |
-      set -euo pipefail
-      printf 'Authorization: Bearer %s\n' \
-        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
-        curl --silent --show-error --fail-with-body --header @- \
-          --header 'Content-Type: application/json' --request POST \
-          --data-binary "${FABRO_ENVIRONMENT_BODY}" "${FABRO_ENVIRONMENT_URL}"
-  become: true
-  environment:
-    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
-    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}"
-    FABRO_ENVIRONMENT_BODY: >-
-      {{ fabro_server_environment_settings
-      | combine({'id': fabro_server_environment.id}) | to_json }}
-  changed_when: true
-  when: not (fabro_server_environment_present | bool)
-
 - name: Decide whether the catalog already matches what version control declares
   # FIELD BY FIELD, and only on the fields version control DECLARES. Comparing
   # whole settings would report drift for every field the server defaults or
@@ -279,6 +251,34 @@
       Declared image {{ fabro_server_environment.image }}, cpu
       {{ fabro_server_environment.cpu }}, memory
       {{ fabro_server_environment.memory }}.
+
+- name: Create this environment in the instance's catalog
+  # The collection endpoint, which is the one that accepts an id. `--fail-with-body`
+  # HERE, unlike on the reads, because every status but success is a fault worth
+  # stopping the play for — and the body carries the server's own reason, which
+  # is why these tasks are not hidden behind `no_log`.
+  #
+  # Ansible skips a `shell` task under `--check`, which is exactly the behaviour
+  # wanted: a dry run must not write a live factory's catalog. The reads above
+  # carry `check_mode: false` and so still run, which is what lets a drift report
+  # answer for a catalog it really inspected.
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --fail-with-body --header @- \
+          --header 'Content-Type: application/json' --request POST \
+          --data-binary "${FABRO_ENVIRONMENT_BODY}" "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}"
+    FABRO_ENVIRONMENT_BODY: >-
+      {{ fabro_server_environment_settings
+      | combine({'id': fabro_server_environment.id}) | to_json }}
+  changed_when: true
+  when: not (fabro_server_environment_present | bool)
 
 - name: Replace this environment in the instance's catalog
   # The per-environment endpoint, and the ONLY write this role makes to an
