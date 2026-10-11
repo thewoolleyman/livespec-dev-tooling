@@ -89,6 +89,9 @@ _SERVER_ENV = "storage/server.env"
 _DOC_HEADING = "## The sandbox environment catalog"
 _ORCHESTRATOR_REPO = "livespec-orchestrator-beads-fabro"
 _WORKFLOW_FILE = "workflow.toml"
+# The filter pair that carries the measured trap below.
+_ITEMS2DICT = "items2dict"
+_LIST_FILTER = "list"
 
 # hp-xubuntu's three instances, and the one catalog entry the Definition of Done
 # declares for its cutover candidate. Every value here is the Definition of Done's own:
@@ -823,4 +826,46 @@ def test_the_role_document_states_the_catalog_axis_and_where_its_image_tag_comes
         f"the optional-axis table must carry a {_AXIS!r} row too — that table is where an "
         f"operator looks for 'what may an instance mapping say', and a section further "
         f"down the document does not answer that question"
+    )
+
+
+# --- the derivation has to be one Ansible can actually evaluate ------------
+
+
+def test_every_items2dict_in_the_role_is_handed_a_materialised_list() -> None:
+    """A measured defect, kept out: `items2dict` REFUSES a generator.
+
+    Measured 2026-10-11 by rendering the role's own settings expression through
+    ansible-core 2.21.4's filter plugins: `dict2items | rejectattr(...) | items2dict`
+    raises `AnsibleTypeError: items2dict requires a list, got <class 'generator'>
+    instead`, because `rejectattr` is Jinja's own filter and yields a generator while
+    `items2dict` type-checks its input. The whole derivation is therefore unevaluable,
+    and nothing else in this suite could see it: every other arm reads the expression as
+    TEXT, and the playbook's `--syntax-check` passes because the fault is in the
+    template's runtime types rather than in its shape.
+
+    The arm is written as a claim about EVERY `items2dict` in the role rather than about
+    the one line that was wrong, because the trap belongs to the filter and not to this
+    slice: the next derivation that filters a `dict2items` hits it identically.
+    """
+    piped = 0
+    for source in (_TASKS, _ENVIRONMENT_TASKS, _HANDLERS):
+        # Collapsed to one line first: a folded expression puts `| items2dict` on a line
+        # of its own, so a per-line reader would see an empty upstream and report every
+        # occurrence as wrong for the wrong reason — which it did, before this.
+        collapsed = " ".join(source.read_text(encoding="utf-8").split())
+        for match in re.finditer(rf"\| {_ITEMS2DICT}", collapsed):
+            piped += 1
+            upstream = collapsed[: match.start()].rstrip()
+            assert upstream.endswith(f"| {_LIST_FILTER}"), (
+                f"{source.name} pipes into {_ITEMS2DICT} from "
+                f"{upstream.rsplit('|', 1)[-1].strip()!r}. `items2dict` type-checks its "
+                f"input and REFUSES a generator, which is what Jinja's own `select`, "
+                f"`reject`, `selectattr` and `rejectattr` all return — so the expression "
+                f"does not merely read oddly, it raises at converge time. Materialise it "
+                f"with `| {_LIST_FILTER}` first;\nupstream={upstream[-120:]!r}"
+            )
+    assert piped, (
+        f"the role must still build a mapping with {_ITEMS2DICT}; this arm guards a trap "
+        f"in that filter, and with no occurrence left it guards nothing"
     )
