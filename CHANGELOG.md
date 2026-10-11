@@ -58,6 +58,23 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.94.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.5...v1.94.0) (2026-10-11)
+
+
+### Features
+
+* **ansible:** accept a sandbox environment catalog on a fabro_server instance ([f544e68](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f544e6831637b19023a4ad548deb40f2ce946165))
+* **ansible:** create a declared sandbox environment through the instance's API ([5065b76](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5065b76579810e5a76c27a25aba398dbec21ab78))
+* **ansible:** declare hp-xubuntu's candidate sandbox environment in version control ([74ee36f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/74ee36fab338eccaac1bff50716d5294db2bd6fc))
+* **ansible:** leave a sandbox environment alone when the catalog already matches ([11b6b7c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/11b6b7cf86fdc5f8cf3dd38651d5219ef3b9642f))
+
+
+### Bug Fixes
+
+* **ansible:** materialise the environment settings before items2dict ([fe5b38b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fe5b38b8938db315048d2753ba29e63f1817c97c))
+* **ansible:** report a sandbox environment's disposition before writing it ([60f2db5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/60f2db56775710ee9ee2da93af28f6f4e16d4aed))
+* **ansible:** run each catalog request under a shell that has pipefail ([f05fb95](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f05fb95b6feb5b2a0e35929fd71a35390cb2d0fb))
+
 ## [1.93.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.93.4...v1.93.5) (2026-10-11)
 
 
