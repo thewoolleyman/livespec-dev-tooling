@@ -53,7 +53,7 @@ fabro_server_instances: []
 #   github_app_id       which factory bot this instance publishes as
 #   otel_dropin         present | absent | unmanaged; see below
 #
-# Five further axes are OPTIONAL and default, because omitting one cannot
+# Six further axes are OPTIONAL and default, because omitting one cannot
 # make two instances collide — it only preserves prior behaviour:
 #
 #   binary_path         the Fabro binary this instance's unit starts.
@@ -105,6 +105,31 @@ fabro_server_instances: []
 #                       is carry one the operator has already staged, which
 #                       is what makes a by-hand copy to a factory host
 #                       unnecessary rather than merely discouraged.
+#
+#   environments        the instance's sandbox environment CATALOG: a list of
+#                       entries, each spelling an id, a docker image, a cpu
+#                       count and a memory size. Defaults to the empty list,
+#                       which leaves whatever the instance's server holds
+#                       exactly as it finds it.
+#
+#                       This axis is unlike every other one here, because a
+#                       sandbox environment is not a file this role renders.
+#                       On this engine it is SERVER-MANAGED state: it lives in
+#                       the instance's own store, is written through
+#                       GET/POST /api/v1/environments and
+#                       GET/PUT /api/v1/environments/{id}, and a workflow.toml
+#                       [environments.*] table is never selected. So the only
+#                       way version control reaches a catalog is a request the
+#                       converge makes, authenticated with the FABRO_DEV_TOKEN
+#                       the instance's own server.env already carries.
+#
+#                       Measured 2026-10-11: hp's fabro-server-candidate held
+#                       only the server's seeded `default` environment
+#                       (buildpack-deps:noble, 2 CPU, 4GB), so the canary run
+#                       dispatched to it was prepared in that image and failed
+#                       with `mise: not found`. The axis is how the factory's
+#                       own environment stops being something somebody has to
+#                       remember to POST by hand.
 #
 #   service_state       running (default) | stopped. `stopped` means the
 #                       instance's unit, drop-in, settings.toml and state
