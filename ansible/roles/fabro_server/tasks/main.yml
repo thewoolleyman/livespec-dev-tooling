@@ -439,6 +439,104 @@
     fabro_server_restart_pending_marker: "{{ fabro_server_restart_pending_dir }}/{{ fabro_server_unit_name }}"
   check_mode: false
 
+- name: Look for a restart this instance deferred on an earlier run
+  # The read half of the marker. `check_mode: false` because it is read-only
+  # and a dry run that could not see a standing deferral would report this
+  # instance as converged when it is not.
+  ansible.builtin.stat:
+    path: "{{ fabro_server_restart_pending_marker }}"
+  become: true
+  register: fabro_server_restart_marker
+  check_mode: false
+
+- name: Read the main PID of the server this instance is already running
+  # The INCUMBENT process, read BEFORE the install section below replaces
+  # anything. That ordering is the whole point: once the rename has happened,
+  # the question "is the running server the one binary_path names" can no
+  # longer be asked of this run — the path already holds the new build.
+  #
+  # Deliberately distinct from the MainPID read in the verify section at the
+  # end of this file, which reads the pid AFTER any restart. Reusing one read
+  # for both would answer one of the two questions wrongly.
+  ansible.builtin.command:
+    argv: [systemctl, show, -p, MainPID, --value, "{{ fabro_server_unit_name }}.service"]
+  become: true
+  register: fabro_server_incumbent_pid
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the file the running server actually executes
+  # /proc/<pid>/exe, read as a LINK rather than followed, because the link's
+  # own text is the evidence. systemd started the process from a path; if the
+  # role has since renamed a new build over that path, the kernel reports the
+  # target as "<path> (deleted)" — which is not equal to binary_path, and that
+  # inequality is precisely "the running server executes a file other than
+  # binary_path". If instead the server was started from some OTHER path (hp's
+  # candidate was, before it had a binary_path of its own), the target is that
+  # other path and the inequality says so just as plainly. One comparison
+  # covers both, which is why this is a link read and not a digest compare.
+  ansible.builtin.stat:
+    path: "/proc/{{ fabro_server_incumbent_pid.stdout | trim }}/exe"
+    follow: false
+  become: true
+  register: fabro_server_incumbent_exe
+  check_mode: false
+  when: fabro_server_incumbent_pid.stdout | default('') | trim not in ['', '0']
+
+- name: Decide whether this instance carries a restart into this run
+  # ONE place answers "does this instance owe a restart that THIS run did not
+  # itself cause", and the claim below plus the handlers all read it.
+  #
+  # Both defaults fail toward NOT restarting, which is the only safe direction
+  # for a gate whose true branch kills a live factory. An unreadable
+  # /proc/<pid>/exe — the task above skipped because the unit reported pid 0,
+  # or a process that exited between the two reads — defaults the comparison
+  # to binary_path itself, so it compares equal and the instance is reported
+  # as carrying nothing. A restart that really was owed is then re-detected on
+  # the next run from the marker, which outlives the ambiguity; a restart
+  # INVENTED from an unreadable probe would kill runs on a converged host, and
+  # nothing would re-create what it destroyed.
+  ansible.builtin.set_fact:
+    fabro_server_restart_deferred: "{{ fabro_server_restart_marker.stat.exists }}"
+    fabro_server_binary_stale: >-
+      {{ (fabro_server_incumbent_exe.stat.lnk_target | default(fabro_server_binary_path))
+      != fabro_server_binary_path }}
+  check_mode: false
+
+- name: Claim a restart this instance carried over from an earlier run
+  # THE TASK THAT MAKES A DEFERRAL REDEEMABLE. Handlers run only when
+  # something notifies them, and on the run the operator makes to APPLY a
+  # deferred restart nothing changes — the files were already written by the
+  # run that deferred it. So without this task the whole handler group is
+  # unreachable on exactly the run that is supposed to act. That is the defect
+  # measured on hp-xubuntu 2026-10-11: pass 2 with the flag true cleared the
+  # carrying-runs refusal, changed nothing, notified nothing, and restarted
+  # nothing, while reporting success.
+  #
+  # `changed_when` on a debug task is the mechanism Ansible gives for raising
+  # a notification from a COMPUTED condition rather than from a file write.
+  # The message is not decoration: it is the only per-run account of WHY the
+  # instance owes a restart, which the marker deliberately does not carry.
+  #
+  # Note what this task does NOT do. It does not restart, and it does not
+  # decide whether a restart is allowed. It raises the same event a changed
+  # file raises, and the handlers then apply exactly the same gates —
+  # including the carrying-runs refusal immediately below, which runs before
+  # any handler does.
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }} carries a
+      restart into this run.
+      {{ 'An earlier run recorded one at ' ~ fabro_server_restart_pending_marker ~ '.'
+         if fabro_server_restart_deferred | bool else '' }}
+      {{ 'The running server executes '
+         ~ (fabro_server_incumbent_exe.stat.lnk_target | default('an unreadable path'))
+         ~ ' rather than ' ~ fabro_server_binary_path ~ '.'
+         if fabro_server_binary_stale | bool else '' }}
+  changed_when: fabro_server_restart_deferred | bool or fabro_server_binary_stale | bool
+  notify: Fabro instance files changed
+
 - name: Ask this instance whether any Fabro run is active
   # install.sh's require_quiet_server, and it runs only when a restart is
   # actually on the table. FABRO_SERVER pins the probe to THIS instance; the

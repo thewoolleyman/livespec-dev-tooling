@@ -74,10 +74,19 @@ _RESTART_FLAG = "fabro_server_restart_allowed"
 _MARKER_VARIABLE = "fabro_server_restart_pending_marker"
 _MARKER_DIRECTORY_VARIABLE = "fabro_server_restart_pending_dir"
 
-# Read out of the role, never restated: the event a changed file raises, and the handler
-# that records the restart it could not perform.
+# Read out of the role, never restated: the event a changed file raises, and the five
+# entries that decide what happens to this instance's restart. Naming them here rather
+# than inline is what makes a rename fail LOUDLY in `_named` instead of quietly turning an
+# arm into a no-op.
 _FILES_CHANGED = "Fabro instance files changed"
 _RECORD_HANDLER = "Record that this instance's restart is deferred"
+_REPORT_HANDLER = "Say which instance was left needing a restart"
+_RESTART_HANDLER = "Restart the Fabro instance"
+_CLEAR_HANDLER = "Clear the restart-pending marker this restart satisfied"
+_CARRY_TASK = "Claim a restart this instance carried over from an earlier run"
+_DECIDE_TASK = "Decide whether this instance carries a restart into this run"
+_MARKER_PROBE = "Look for a restart this instance deferred on an earlier run"
+_DEFERRED_FACT = "fabro_server_restart_deferred"
 
 
 def _unquote(*, value: str) -> str:
@@ -266,20 +275,55 @@ def _fires(*, body: str, field: str, scope: Mapping[str, object]) -> bool:
     return all(_truth(condition=condition, scope=scope) for condition in conditions)
 
 
-def _host_state(*, restart_allowed: bool) -> dict[str, object]:
+def _host_state(
+    *,
+    restart_allowed: bool,
+    deferred: bool = False,
+    stale: bool = False,
+    restarted: bool = False,
+) -> dict[str, object]:
     """A running, already-installed instance, with the restart flag as given.
 
-    The two values that are not the flag are pinned to the uninteresting case on purpose:
-    the instance is `running` (a parked instance has no server to restart and is a
-    separate disposition) and its unit file is already on disk under a real apply, which
-    is what the role's check-mode guard reads.
+    The two values that are neither the flag nor a named argument are pinned to the
+    uninteresting case on purpose: the instance is `running` (a parked instance has no
+    server to restart and is a separate disposition) and its unit file is already on disk
+    under a real apply, which is what the role's check-mode guard reads.
+
+    `deferred` is an earlier run's marker still on the host; `stale` is a running server
+    executing a file other than its `binary_path`; `restarted` is this run having actually
+    performed the restart. The defaults describe a CONVERGED instance — no marker, the
+    right binary, nothing restarted — which is the control every arm below needs, because
+    the expensive mistake in this mechanism is not failing to restart but restarting a live
+    factory on a run where nothing was owed.
     """
     return {
         _RESTART_FLAG: restart_allowed,
         "fabro_server_service_state": "running",
         "ansible_check_mode": False,
         "fabro_server_unit_file.stat.exists": True,
+        "fabro_server_restart_deferred": deferred,
+        "fabro_server_binary_stale": stale,
+        "fabro_server_restart_applied.changed": restarted,
     }
+
+
+def _every_entry() -> list[tuple[str, str]]:
+    """Every entry the role can run — its tasks AND its handlers.
+
+    Handlers are included because a handler that deletes the marker is a path to losing
+    the deferral exactly as a task is, and the arms below ask whether ANY path does so on
+    a run that did not restart.
+    """
+    return [*_tasks_of(source=_TASKS), *_tasks_of(source=_HANDLERS)]
+
+
+def _marker_clearing_entries() -> list[tuple[str, str]]:
+    """Every entry that removes this instance's restart-pending marker."""
+    return [
+        (name, body)
+        for name, body in _every_entry()
+        if f"{{{{ {_MARKER_VARIABLE} }}}}" in body and "state: absent" in body
+    ]
 
 
 # --- the assertions --------------------------------------------------------
@@ -320,4 +364,102 @@ def test_a_run_that_may_not_restart_records_the_instances_pending_restart() -> N
         f"under {marker}: a message in a play recap is gone the moment the terminal "
         f"scrolls, and the next run is where the deferral has to be readable;\n"
         f"handler={handler!r}"
+    )
+
+
+def test_a_refused_rerun_keeps_the_marker_and_reports_the_restart_still_pending() -> None:
+    """The second assertion: the deferral survives every run that does not apply it."""
+    claim = _named(name=_CARRY_TASK, source=_TASKS)
+    assert _conditions(body=claim, field="notify") == [_FILES_CHANGED], (
+        f"the carried-over claim MUST notify {_FILES_CHANGED!r}. This is the whole mechanism: "
+        f"on a run where nothing on disk changed, NO task notifies, so the handler group is "
+        f"never reached and the standing deferral is neither applied nor reported. A marker "
+        f"nothing reads is a marker that may as well not exist"
+    )
+    assert _fires(
+        body=claim, field="changed_when", scope=_host_state(restart_allowed=False, deferred=True)
+    ), (
+        f"an earlier run's marker MUST raise {_FILES_CHANGED!r} on this run even though this "
+        f"run changed nothing; that is what carries the deferral ACROSS runs rather than "
+        f"losing it with the handler queue that recorded it"
+    )
+    assert not _fires(body=claim, field="changed_when", scope=_host_state(restart_allowed=True)), (
+        "the control arm, and the expensive one: on a CONVERGED instance — no marker, the "
+        "running server already executing its binary_path — the claim MUST NOT fire. A claim "
+        "that fired unconditionally would notify the restart handler on every run, so a run "
+        "with the flag true would restart a live factory that owed nothing"
+    )
+    report = _named(name=_REPORT_HANDLER, source=_HANDLERS)
+    assert _fires(
+        body=report, field="when", scope=_host_state(restart_allowed=False, deferred=True)
+    ), (
+        f"a run with {_RESTART_FLAG} false MUST say the restart is still pending;\n"
+        f"when={_conditions(body=report, field='when')}"
+    )
+    assert _MARKER_VARIABLE in report, (
+        f"the report MUST name {_MARKER_VARIABLE} so the operator reading the recap learns "
+        f"WHERE the deferral is recorded; a message that says a restart is owed without "
+        f"saying what holds that fact leaves the next run's behaviour unexplained;\n"
+        f"handler={report!r}"
+    )
+    clearing = _marker_clearing_entries()
+    assert clearing, (
+        "the control arm: at least one entry MUST remove the marker. A role with no path "
+        "that clears it would satisfy 'a refused run keeps the marker' trivially, and would "
+        "leave every instance permanently owing a restart it had already had"
+    )
+    for name, body in clearing:
+        assert not _fires(
+            body=body, field="when", scope=_host_state(restart_allowed=False, deferred=True)
+        ), (
+            f"{name!r} removes the marker on a run with {_RESTART_FLAG} false. That run "
+            f"restarted nothing, so deleting the record DROPS the deferral silently — the "
+            f"exact failure this work-item exists to fix, reintroduced one layer down;\n"
+            f"when={_conditions(body=body, field='when')}"
+        )
+    recorded = _named(name=_RECORD_HANDLER, source=_HANDLERS)
+    for varying in ("ansible_date_time", "now(", "lookup("):
+        assert varying not in recorded, (
+            f"the marker's content carries {varying!r}, so its bytes differ between two "
+            f"refused runs. Ansible would then report the marker as CHANGED on every "
+            f"converge, which is the opposite of 'keeps an existing marker': a standing "
+            f"deferral would read as a fresh event each run and mean nothing by the third"
+        )
+    derivation = _named(name=_DECIDE_TASK, source=_TASKS)
+    assert f"{_DEFERRED_FACT}:" in derivation and "stat.exists" in derivation, (
+        f"the role MUST derive {_DEFERRED_FACT} from a stat of the marker file itself. The "
+        f"arms above model that fact directly, so they are only evaluating the real host "
+        f"condition while the role reads it from the marker's own existence;\n"
+        f"task={derivation!r}"
+    )
+    stat_of_marker = _named(name=_MARKER_PROBE, source=_TASKS)
+    assert f"{{{{ {_MARKER_VARIABLE} }}}}" in stat_of_marker, (
+        f"the probe feeding {_DEFERRED_FACT} MUST stat {_MARKER_VARIABLE}, not some other "
+        f"path: a deferral read from the wrong file is a gate evaluated against a host "
+        f"state nobody wrote;\ntask={stat_of_marker!r}"
+    )
+
+
+def test_the_restart_gates_stay_inside_the_vocabulary_this_test_can_evaluate() -> None:
+    """The control on the evaluator: every gate the arms read must actually be evaluated."""
+    scope = _host_state(restart_allowed=False, deferred=True, stale=True, restarted=True)
+    gated = (
+        (_TASKS, _CARRY_TASK, "changed_when"),
+        (_HANDLERS, _RESTART_HANDLER, "when"),
+        (_HANDLERS, _RECORD_HANDLER, "when"),
+        (_HANDLERS, _REPORT_HANDLER, "when"),
+        (_HANDLERS, _CLEAR_HANDLER, "when"),
+    )
+    for source, name, field in gated:
+        body = _named(name=name, source=source)
+        conditions = _conditions(body=body, field=field)
+        assert conditions, (
+            f"{name!r} must carry a {field!r} this reader can see; an unread gate reads as "
+            f"firing unconditionally, which for a restart means killing a live factory"
+        )
+        for condition in conditions:
+            _truth(condition=condition, scope=scope)
+    assert _REFERENCE.fullmatch("fabro_server_restart_applied.changed | default(false)"), (
+        "the evaluator's own control: the dotted-register-with-default form the clear "
+        "handler uses must be one it parses, or the arm above passes by not parsing it"
     )

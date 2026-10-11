@@ -18,6 +18,11 @@
     state: restarted
     daemon_reload: true
   become: true
+  # Registered so the handler below can clear the marker on the strength of
+  # THIS handler's own result rather than by re-deriving its conditions. Two
+  # copies of a restart gate is precisely the drift that would let the marker
+  # be deleted on a run that did not restart.
+  register: fabro_server_restart_applied
   when:
     # Both halves matter. The first is the live-factory refusal; the second is
     # the check-mode guard, because under `--check` the unit file this handler
@@ -29,6 +34,26 @@
     # files-changed notify: its files are written for the day it comes back,
     # and the supervise step has already stopped and disabled it.
     - fabro_server_service_state == 'running'
+
+- name: Clear the restart-pending marker this restart satisfied
+  listen: Fabro instance files changed
+  # The restart above is the ONLY thing that clears the marker, so a deferral
+  # outlives every run that does not apply it — which is the property that
+  # makes the marker worth writing at all.
+  #
+  # Gated on the restart's own `changed`, NOT on a second copy of its
+  # conditions and NOT on `skipped`. `changed` is unambiguous in both
+  # directions: a handler that restarted reports true, and one skipped by its
+  # `when` reports false. `skipped` is not — it is ABSENT on a task that ran,
+  # so any `default()` for it has to be wrong in one of the two cases, and the
+  # case it would be wrong in is "the restart happened", where the marker
+  # would survive a restart that had already satisfied it and leave the
+  # instance permanently owing one.
+  ansible.builtin.file:
+    path: "{{ fabro_server_restart_pending_marker }}"
+    state: absent
+  become: true
+  when: fabro_server_restart_applied.changed | default(false)
 
 - name: Record that this instance's restart is deferred
   listen: Fabro instance files changed
@@ -90,12 +115,15 @@
   # exists to end.
   ansible.builtin.debug:
     msg: >-
-      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: files changed
-      but the running server was NOT restarted, because
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }}: this instance's
+      restart is STILL PENDING and was NOT performed, because
       fabro_server_restart_allowed is false. The instance keeps serving its
       current runs under the OLD configuration until someone restarts it.
-      Quiesce the instance and re-run with -e fabro_server_restart_allowed=true,
-      or restart it by hand.
+      The deferral is recorded at {{ fabro_server_restart_pending_marker }} and
+      is kept by every further run with the flag false, so it is not lost with
+      this run. Quiesce the instance and re-run with
+      -e fabro_server_restart_allowed=true, which reads that file, re-checks
+      the carrying-runs refusal, restarts the instance and removes it.
   when:
     - not (fabro_server_restart_allowed | bool)
     # Not owed for a parked instance: there is no running server left
