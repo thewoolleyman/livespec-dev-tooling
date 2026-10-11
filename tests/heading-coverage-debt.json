@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Delegated pre-push gate",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "first_seen": "2026-10-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an opted-in push from a host that cannot read the gates kubeconfig gates locally",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "first_seen": "2026-10-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an opted-in push from an eligible host completes on a green cluster verdict",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "first_seen": "2026-10-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an opted-in push is refused when no verdict arrives",
+    "work_item": "livespec-dev-tooling-pj7q4m",
+    "first_seen": "2026-10-11"
+  }
+]
