@@ -7,8 +7,10 @@ this file exists so the role can be reviewed without touching
 `ansible/inventory/legacy.yml`, which another agent owns. Merge each block
 below into that host's `host_vars` entry.
 
-The four instances here are the four `hosts/*.env` files: two hosts, two
-instances each. Nothing else in the role needs configuring.
+Four of the five instances here are the four `hosts/*.env` files: two hosts, two
+instances each. The fifth is `hp-xubuntu`'s `fabro-server-candidate`, which never
+had a values file — it was hand-installed for the fabro-currency cutover and is
+declared here so the play owns it. Nothing else in the role needs configuring.
 
 ## Targeting
 
@@ -44,6 +46,28 @@ The role installs one instance per invocation, so the play loops it:
 
 `include_role` rather than a `roles:` entry, because the role has to run once
 per instance and a `roles:` entry runs once per host.
+
+## Optional per-instance axes
+
+Every other key of an instance mapping must be spelled out — the role refuses a
+mapping that misses one, because an instance that inherited `unit_name`,
+`home_dir` or `port` would silently share the fleet server's state. These three
+are the exception, and they are safe to default for one reason: omitting one
+cannot make two instances collide. It only keeps the behaviour the instance had
+before the axis existed.
+
+| axis | default | what naming it does |
+|---|---|---|
+| `binary_path` | `fabro_server_host_home` + `/.fabro/bin/fabro` | the Fabro binary this instance's unit starts. Naming one runs a **different build** from the instance's siblings on the same host, which is what a cutover rehearsal is. The role never builds it; the preflight stats whatever this axis resolves to, so a declared-but-absent binary is refused before any file is written. |
+| `home_env` | `fabro_server_host_home` | the unit's `Environment=HOME`. Independent of `home_dir`: `home_dir` is the state root the server is POINTED at with `--storage-dir` and `--config`, while this is the `HOME` its process and its CLI resolve `~/.fabro` against. |
+| `service_state` | `running` | `stopped` parks the instance in version control — unit, drop-in, `settings.toml` and state directory all KEPT on the host, the unit stopped and disabled, the restart handler never fired for it and the running-server verification skipped. Bring it back by flipping the word and re-applying. Refused while the instance is carrying runs, by the quiet-server guard that gates a restart. |
+
+An instance that omits `binary_path` and `home_env` renders a unit **byte-identical**
+to the unit this role rendered before the two axes existed — asserted against a
+captured pre-axis unit by
+`tests/consumer/test_fabro_instance_axes_scenario.py`. That is the property that
+makes them safe to add: declaring a second instance that needs its own build
+does not rewrite the live fleet factory's unit as a side effect.
 
 ## `host_vars/hp-xubuntu.yml`
 
@@ -92,6 +116,40 @@ fabro_server_instances:
     # disables the unit, never restarts it, and skips the running-server
     # verification for it. vps's mi-homelab instance is untouched by this.
     service_state: stopped
+
+  # The fabro-currency cutover candidate. Hand-installed on 2026-10-08 and
+  # reported by every drift read since, because the role could not express an
+  # instance that runs its own build: expressing it here is the fix, not a
+  # second exception. It carries the Petri-era build production moves onto,
+  # beside the fleet instance above still carrying the current one, and
+  # publishes as the SAME fleet App — it is the fleet factory, pre-cutover,
+  # not a second project.
+  - unit_name: fabro-server-candidate
+    home_dir: /home/cwoolley/.fabro-candidate
+    port: 32278
+    canonical_host: hp-xubuntu.perch-rudd.ts.net:32278
+    cli_target_url: http://127.0.0.1:32278
+    # Chosen deliberately and small, with the fleet instance's 15 in view: the
+    # host's 16 cores are already over-subscribed by that instance, and this
+    # one carries rehearsal dispatches rather than the fleet's traffic. Raise
+    # it AT the cutover, when the fleet instance's number comes down.
+    max_concurrent_runs: 2
+    github_app_id: "3668528"
+    # A decision, not a default: this instance becomes hp's production factory
+    # at the cutover, and both instances above export, so a candidate that did
+    # not would blind the factory telemetry for exactly the window in which it
+    # is being proven. Setting `present` ADDS the drop-in if the hand-install
+    # left none — read the drift report before applying, as the play requires.
+    otel_dropin: present
+    # Its own build, beside its own state root — the two axes this instance
+    # exists to exercise. HOME is the state root rather than the account home,
+    # which is how it was hand-installed; the role never builds the binary, and
+    # its preflight refuses the host if this path is absent or not executable.
+    binary_path: /home/cwoolley/.fabro-candidate/bin/fabro
+    home_env: /home/cwoolley/.fabro-candidate
+    # Spelled rather than defaulted: this instance is deliberately RUNNING, and
+    # the word is what the cutover flips on the fleet instance instead.
+    service_state: running
 ```
 
 ## `host_vars/vps.yml`
@@ -180,6 +238,16 @@ Measured, not predicted: the role was run against **both** live hosts with
 Every one of those seven changes is listed below and every one is drift the
 role finds rather than drift it introduces.
 
+**That measurement predates `fabro-server-candidate` and says nothing about
+it.** The candidate instance was hand-installed on 2026-10-08, after the dry run
+above, so its first `just ansible-drift ansible/fabro-hosts.yml` is unmeasured
+and its result is NOT recorded here. Read that drift report before applying: the
+candidate's hand-installed unit, its `settings.toml` and whether it carries the
+OTLP drop-in are all unknown from version control, and its `binary_path` is the
+path declared for it rather than one this repository has observed — the role's
+preflight refuses the host, before writing anything, if no executable binary is
+there. Record the measured result here once it exists.
+
 ### `vps` / `fabro-server` — the pre-parameterization unit (2 changes)
 
 Its installed unit predates the whole template. The render adds the
@@ -230,8 +298,10 @@ appearing.
 
 Per instance, unless noted:
 
-1. The built Fabro binary at `<host_home>/.fabro/bin/fabro`, **shared by
-   every instance on the host**.
+1. The built Fabro binary the instance's `binary_path` resolves to, which is
+   `<host_home>/.fabro/bin/fabro` — **shared by every instance that does not
+   name one** — and otherwise the instance's own build. The preflight stats
+   whichever path the axis resolves to; the role never builds or downloads it.
 2. `<home_dir>/storage/server.env`, mode 0600, carrying a generated
    `SESSION_SECRET` and `FABRO_DEV_TOKEN`. Fabro generates it.
 3. The GitHub App private key in that instance's own Fabro vault:

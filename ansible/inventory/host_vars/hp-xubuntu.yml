@@ -60,6 +60,39 @@ fabro_server_instances:
     # disables the unit, never restarts it, and skips the running-server
     # verification for it. vps's mi-homelab instance is untouched by this.
     service_state: stopped
+  # The fabro-currency cutover candidate. Hand-installed on 2026-10-08 and
+  # reported by every drift read since, because the role could not express an
+  # instance that runs its own build: expressing it here is the fix, not a
+  # second exception. It carries the Petri-era build production moves onto,
+  # beside the fleet instance above still carrying the current one, and
+  # publishes as the SAME fleet App — it is the fleet factory, pre-cutover,
+  # not a second project.
+  - unit_name: fabro-server-candidate
+    home_dir: /home/cwoolley/.fabro-candidate
+    port: 32278
+    canonical_host: hp-xubuntu.perch-rudd.ts.net:32278
+    cli_target_url: http://127.0.0.1:32278
+    # Chosen deliberately and small, with the fleet instance's 15 in view: the
+    # host's 16 cores are already over-subscribed by that instance, and this
+    # one carries rehearsal dispatches rather than the fleet's traffic. Raise
+    # it AT the cutover, when the fleet instance's number comes down.
+    max_concurrent_runs: 2
+    github_app_id: "3668528"
+    # A decision, not a default: this instance becomes hp's production factory
+    # at the cutover, and both instances above export, so a candidate that did
+    # not would blind the factory telemetry for exactly the window in which it
+    # is being proven. Setting `present` ADDS the drop-in if the hand-install
+    # left none — read the drift report before applying, as the play requires.
+    otel_dropin: present
+    # Its own build, beside its own state root — the two axes this instance
+    # exists to exercise. HOME is the state root rather than the account home,
+    # which is how it was hand-installed; the role never builds the binary, and
+    # its preflight refuses the host if this path is absent or not executable.
+    binary_path: /home/cwoolley/.fabro-candidate/bin/fabro
+    home_env: /home/cwoolley/.fabro-candidate
+    # Spelled rather than defaulted: this instance is deliberately RUNNING, and
+    # the word is what the cutover flips on the fleet instance instead.
+    service_state: running
 
 # --- sccache_redis ---
 sccache_redis_bind_addr: 172.17.0.1

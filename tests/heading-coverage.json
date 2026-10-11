@@ -582,17 +582,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Fabro factory host provisioning",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-finosf",
-    "reason": "Spec-first debt: a real unit-tier test is owed, asserting over the committed ansible/fabro-hosts.yml play and the fabro_server role that the uniqueness preflight refuses a repeated unit_name, home_dir or port and that an instance omitting binary_path and home_env renders its unit unchanged. livespec-dev-tooling-finosf owns landing it with the per-instance axes."
+    "test": "tests.consumer.test_fabro_instance_axes_scenario.test_the_uniqueness_preflight_accepts_the_hosts_list_and_refuses_each_repeated_axis",
+    "reason": "The spec-first debt livespec-dev-tooling-finosf owed is landed: the mapped test derives the axes the role's uniqueness preflight guards from the role itself, holds that set against the axes this section's \"One instance per mapping\" paragraph names, accepts hp-xubuntu's committed instance list and refuses a list repeating each guarded axis in turn. Companion arms in the same module prove the optional-axis half of the same paragraph — `test_an_instance_that_omits_both_axes_renders_the_unit_the_role_rendered_before_them` for the unchanged render and `test_the_role_documents_every_optional_axis_with_the_default_it_carries` for \"Documented beside the values\". The \"Sandbox resource envelope\" paragraph's own coverage is owed by livespec-dev-tooling-ig5iwg with the role that implements it; this mapping does not claim that arm is proved."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Fabro instance that names its own binary and home renders a unit that runs them",
-    "test": "TODO",
-    "work_item": "livespec-dev-tooling-finosf",
-    "reason": "Spec-first debt: a real integration-tier test is owed that renders the fabro_server unit template for one instance without and one with binary_path and home_env and asserts the byte-identical default, the ExecStart binary, Environment=HOME and the uniqueness preflight. livespec-dev-tooling-finosf owns landing it."
+    "test": "tests.consumer.test_fabro_instance_axes_scenario.test_an_instance_that_names_its_own_binary_and_home_renders_a_unit_that_runs_them",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule): the module renders the committed fabro_server unit template with the facts the committed role resolves from the committed host_vars. The mapped arm proves the second Then — the named binary is what ExecStart runs and the named home is Environment=HOME, with the shared binary and the host home asserted GONE from those lines. Its siblings prove the first Then against a captured pre-axis unit and the third against the role's own uniqueness preflight."
   },
   {
     "spec_root": "SPECIFICATION",

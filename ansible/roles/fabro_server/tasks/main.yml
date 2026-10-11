@@ -64,6 +64,14 @@
     # make two instances share state — it only keeps the behaviour every
     # instance had before the axis existed.
     fabro_server_service_state: "{{ fabro_server_instance.service_state | default('running') }}"
+    # OPTIONAL for the same reason, and defaulting to exactly what the template
+    # used to spell inline: the Fabro binary the unit starts, and the HOME it
+    # runs with. An instance that names neither renders the bytes the template
+    # rendered before these axes existed. An instance that names both — hp's
+    # cutover candidate, carrying its own build against its own state root —
+    # needs no second role and no hand-installed unit.
+    fabro_server_binary_path: "{{ fabro_server_instance.binary_path | default(fabro_server_host_home ~ '/.fabro/bin/fabro') }}"
+    fabro_server_home_env: "{{ fabro_server_instance.home_env | default(fabro_server_host_home) }}"
 
 - name: Refuse an instance mapping that does not spell every axis
   # render-unit.sh exited 3 naming the one variable a values file had missed.
@@ -146,9 +154,13 @@
 # `--check` drift report would skip its own preconditions and report on a host
 # it never actually inspected.
 
-- name: Look for the Fabro binary this host's instances share
+- name: Look for the Fabro binary this instance starts
+  # The instance's OWN binary, which is the host's shared one unless the
+  # instance named another. Probing the shared path for an instance that names
+  # its own would clear the preflight against a build the unit never starts —
+  # a check that passes by reading the wrong file.
   ansible.builtin.stat:
-    path: "{{ fabro_server_host_home }}/.fabro/bin/fabro"
+    path: "{{ fabro_server_binary_path }}"
   become: true
   register: fabro_server_binary
   check_mode: false
@@ -159,15 +171,17 @@
       - fabro_server_binary.stat.exists
       - fabro_server_binary.stat.executable
     fail_msg: >-
-      {{ fabro_server_host_home }}/.fabro/bin/fabro is missing or not
-      executable. This role never builds or downloads it. Build it in the
-      pinned factory-integration worktree — `cargo clean --release -p
-      fabro-spa` then `cargo dev build --release -p fabro-cli`, the targeted
-      clean being required because Cargo will not otherwise refresh the
-      gitignored SPA assets — and replace the binary atomically per the
-      livespec-orchestrator-beads-fabro runbook. The binary is shared by every
-      instance on the host; only its state is per-instance.
-    success_msg: the shared Fabro binary is present and executable
+      {{ fabro_server_binary_path }} is missing or not executable. This role
+      never builds or downloads it. Build it in the pinned
+      factory-integration worktree — `cargo clean --release -p fabro-spa`
+      then `cargo dev build --release -p fabro-cli`, the targeted clean being
+      required because Cargo will not otherwise refresh the gitignored SPA
+      assets — and replace the binary atomically per the
+      livespec-orchestrator-beads-fabro runbook. Every instance that does not
+      name its own binary_path shares the host's
+      {{ fabro_server_host_home }}/.fabro/bin/fabro; only its state is
+      per-instance.
+    success_msg: this instance's Fabro binary is present and executable
 
 - name: Look for the checkout this instance runs in
   ansible.builtin.stat:
@@ -311,22 +325,25 @@
       unsupervised Fabro daemon predating systemd management. Stop it by hand
       before re-running: read .pid from
       {{ fabro_server_home_dir }}/storage/server.json, confirm
-      `readlink -f /proc/<pid>/exe` resolves under
-      {{ fabro_server_host_home }}/.fabro/bin/, then send it SIGTERM and wait
-      for it to exit. This role does not kill processes.
+      `readlink -f /proc/<pid>/exe` resolves to this instance's
+      {{ fabro_server_binary_path }}, then send it SIGTERM and wait for it to
+      exit. This role does not kill processes.
     success_msg: nothing unsupervised is holding this instance's port
 
 - name: Ask this instance whether any Fabro run is active
   # install.sh's require_quiet_server, and it runs only when a restart is
   # actually on the table. FABRO_SERVER pins the probe to THIS instance; the
   # CLI's default target is whatever settings.toml names, which on a
-  # two-instance host is the other server half the time.
+  # two-instance host is the other server half the time. The instance's own
+  # binary and HOME, not the host's: a cutover candidate's server speaks to
+  # its own build's CLI, and a probe that cannot read `ps` would clear the
+  # quiet-server guard against a factory that is carrying runs.
   ansible.builtin.command:
-    argv: ["{{ fabro_server_host_home }}/.fabro/bin/fabro", --json, ps]
+    argv: ["{{ fabro_server_binary_path }}", --json, ps]
   become: true
   become_user: "{{ fabro_server_host_user }}"
   environment:
-    HOME: "{{ fabro_server_host_home }}"
+    HOME: "{{ fabro_server_home_env }}"
     FABRO_SERVER: "http://127.0.0.1:{{ fabro_server_port }}"
   register: fabro_server_ps
   changed_when: false
