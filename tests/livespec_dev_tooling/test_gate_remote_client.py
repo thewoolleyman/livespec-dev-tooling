@@ -35,6 +35,7 @@ import pytest
 from returns.pipeline import is_successful
 from returns.result import Failure, Success
 
+from livespec_dev_tooling.gate_credential import GATES_WRAPPER
 from livespec_dev_tooling.gate_remote_client import GateRunRequest, run_gate
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandNotRun,
@@ -212,7 +213,41 @@ def test_the_rendered_job_is_submitted_to_the_cluster_on_stdin() -> None:
     _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
     submit = cluster.only(kind="submit-job")
     assert submit.stdin == _MANIFEST
-    assert submit.argv == ("kubectl", "--namespace", "gates", "create", "--filename", "-")
+    assert submit.argv == (
+        GATES_WRAPPER,
+        "kubectl",
+        "--namespace",
+        "gates",
+        "create",
+        "--filename",
+        "-",
+    )
+
+
+def test_every_cluster_command_runs_through_the_credential_wrapper() -> None:
+    """The INVARIANT, asserted over the whole run rather than one command at a time.
+
+    Each cluster argv is asserted whole elsewhere; this says why none of them may
+    be spelled any other way. A bare `kubectl` authenticates with whatever
+    `KUBECONFIG` the pushing user's shell carries — on the VPS login user, none
+    at all — and, worse, never reaches the wrapper's refresh-on-rejection path,
+    so the FIRST call after a control-plane boot fails 401 with nothing to fix
+    it. Neither symptom names the missing prefix, and a client that wrapped two
+    of its three cluster commands would look entirely healthy until the gate ran
+    on a host whose token had just been recreated.
+
+    The `git` steps are deliberately NOT wrapped: the mirror is reached over ssh
+    with the pushing user's own tailnet identity, which the gates credential has
+    nothing to do with.
+    """
+    cluster = _StubCluster()
+    _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+
+    cluster_calls = [call for call in cluster.calls if "kubectl" in call.argv]
+    assert [call.kind for call in cluster_calls] == ["submit-job", "get-job", "stream-logs"]
+    assert all(call.argv[0] == GATES_WRAPPER for call in cluster_calls)
+    assert not [call for call in cluster.calls if call.argv[0] == "kubectl"]
+    assert all(call.argv[0] == "git" for call in cluster.calls if call not in cluster_calls)
 
 
 def test_the_terminal_state_is_awaited_before_the_logs_are_streamed() -> None:
@@ -246,6 +281,7 @@ def test_the_logs_are_streamed_rather_than_captured() -> None:
     logs = cluster.only(kind="stream-logs")
     assert logs.stream is True
     assert logs.argv == (
+        GATES_WRAPPER,
         "kubectl",
         "--namespace",
         "gates",
