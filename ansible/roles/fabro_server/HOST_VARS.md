@@ -288,6 +288,22 @@ fabro_server_instances:
     # carrying-runs refusal gates it even when it is true.
     binary_source: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
     binary_sha256: effe9d03c859e8072934947ce598980ea337065df17e737867685a1508514799
+    # The sandbox environment the factory's own runs are prepared in. Measured
+    # 2026-10-11: this instance's catalog held only the server's seeded `default`
+    # entry — buildpack-deps:noble, 2 CPU, 4GB — so the canary run dispatched to
+    # it was prepared in that image and failed at run preparation with
+    # `mise: not found`. The image tag FOLLOWS THE ORCHESTRATOR WORKFLOW PIN:
+    # `.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml` in
+    # livespec-orchestrator-beads-fabro, today python-agent-v1.93.5. Bump the
+    # two together — a tag here that the workflow does not pin is an
+    # environment the factory never dispatches into. The envelope is the one
+    # the factory's runs are sized for, against the fleet instance's 15 slots
+    # and this instance's 2.
+    environments:
+      - id: livespec-ci
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
+        cpu: 4
+        memory: 8GB
     # Spelled rather than defaulted: this instance is deliberately RUNNING, and
     # the word is what the cutover flips on the fleet instance instead.
     service_state: running

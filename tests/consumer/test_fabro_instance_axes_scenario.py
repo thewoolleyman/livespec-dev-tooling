@@ -228,6 +228,10 @@ WantedBy=multi-user.target
 # the quietest way for these readers to stop reading the mapping they are given.
 _LIST_ENTRY = re.compile(r"^ {2}- (?P<key>[a-z_0-9]+): (?P<value>.+)$")
 _MAPPING_ENTRY = re.compile(r"^ {4}(?P<key>[a-z_0-9]+): (?P<value>.+)$")
+# A STRUCTURAL axis: a key at the instance's own indentation with nothing after the
+# colon, and the deeper-indented lines that are its value. See `_nested_axis`.
+_NESTED_AXIS_OPENER = re.compile(r"^ {4}(?P<axis>[a-z_0-9]+):$")
+_NESTED_AXIS_LINE = re.compile(r"^ {5,}\S")
 _HOST_SCALAR = re.compile(r"^(?P<name>fabro_server_host_[a-z]+): (?P<value>\S+)$", re.MULTILINE)
 _ROLE_DEFAULT = re.compile(r"^(?P<name>fabro_server_[a-z_]+): (?P<value>\S+)$", re.MULTILINE)
 _SET_FACT_ENTRY = re.compile(
@@ -346,9 +350,23 @@ def _instances(*, source: Path) -> list[dict[str, str]]:
     One parser serves both the role's `HOST_VARS.md` (the source the maintainer
     edits) and `inventory/host_vars/hp-xubuntu.yml` (generated from it, kept in
     lockstep by hand), so the two can be held against each other.
+
+    SCOPED TO AN INSTANCE'S SCALAR AXES, deliberately. Every axis this module is
+    about — `unit_name`, `home_dir`, `port`, `binary_path`, `home_env` and the
+    binary-install pair — is one `key: value` line, and each either reaches the
+    rendered unit or is proved distinct by the uniqueness preflight. An instance
+    may ALSO carry a structural axis whose value is a nested block: `environments`,
+    the sandbox environment catalog, which is server-managed state rather than
+    anything the unit renders. `_nested_axis` passes over exactly those lines,
+    because the module that owns that question —
+    `tests/consumer/test_fabro_environment_catalog_scenario.py` — parses them in
+    full and holds the two files against each other there. What stays strict is
+    everything at the instance's OWN indentation: a scalar line this reader cannot
+    read is still a mapping nothing here checks, and still fails.
     """
     parsed: list[dict[str, str]] = []
     collecting = False
+    nesting: str | None = None
     for line in _host_block(source=source).splitlines():
         if line.rstrip() == "fabro_server_instances:":
             collecting = True
@@ -358,6 +376,9 @@ def _instances(*, source: Path) -> list[dict[str, str]]:
         if not line.strip():
             continue
         if line.strip().startswith("#"):
+            continue
+        nesting = _nested_axis(line=line, nesting=nesting)
+        if nesting is not None:
             continue
         opening = _LIST_ENTRY.match(line)
         if opening is not None:
@@ -373,6 +394,22 @@ def _instances(*, source: Path) -> list[dict[str, str]]:
         parsed[-1][entry["key"]] = _unquote(value=entry["value"])
     assert parsed, f"{source.name} must declare this host's fabro_server_instances"
     return parsed
+
+
+def _nested_axis(*, line: str, nesting: str | None) -> str | None:
+    """The structural axis `line` belongs to, or None if it is one of the instance's own.
+
+    A key at the instance's own indentation with nothing after the colon OPENS a nested
+    axis; every line indented deeper belongs to it; the first line back at the instance's
+    indentation closes it. Returning the axis NAME rather than a bare flag is what lets
+    the caller skip a block without losing which axis it skipped.
+    """
+    opener = _NESTED_AXIS_OPENER.match(line)
+    if opener is not None:
+        return opener["axis"]
+    if nesting is not None and _NESTED_AXIS_LINE.match(line) is not None:
+        return nesting
+    return None
 
 
 def _instance_named(*, unit: str, source: Path) -> dict[str, str]:
