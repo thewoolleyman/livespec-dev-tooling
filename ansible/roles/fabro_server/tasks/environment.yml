@@ -192,13 +192,21 @@
   # settings — the id in the create body and in the replace path, the revision
   # in the replace request's If-Match header — and a request body that repeated
   # either is refused as carrying an unknown field.
+  #
+  # The `| list` is LOAD-BEARING rather than decoration: `rejectattr` is Jinja's
+  # own filter and yields a GENERATOR, while `items2dict` type-checks its input
+  # and raises "items2dict requires a list, got <class 'generator'> instead" —
+  # so without it this whole derivation, and the catalog write with it, does not
+  # evaluate. Measured 2026-10-11 against ansible-core 2.21.4's filter plugins.
+  # The playbook's own --syntax-check cannot see it: the fault is in the
+  # template's runtime types rather than in its shape.
   ansible.builtin.set_fact:
     fabro_server_environment_settings: >-
       {{ fabro_server_environment_base
       | combine({'image': fabro_server_environment_image,
       'resources': fabro_server_environment_resources})
       | dict2items | rejectattr('key', 'in', _fabro_server_environment_response_only)
-      | items2dict }}
+      | list | items2dict }}
   vars:
     _fabro_server_environment_response_only:
       - id
