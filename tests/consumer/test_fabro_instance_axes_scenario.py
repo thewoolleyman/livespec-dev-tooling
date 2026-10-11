@@ -189,6 +189,8 @@ _PENDING_DECISION = "Decide whether this instance owes a restart from before thi
 _DEFER_HANDLER = "Record that this instance's restart is still pending"
 _NOT_RESTARTED_HANDLER = "Say which instance was left needing a restart"
 _CARRIER_TASK = "Carry this instance's deferred restart into this run"
+_RUNNING_PID_TASK = "Read the main PID of whatever this instance is running now"
+_RUNNING_BINARY_TASK = "Read the file this instance's running server actually executes"
 
 # The v0.382 carrier build the fabro-currency cutover moves hp's production factory
 # onto: where it is staged on the control node, and the digest it hashes to. Both are
@@ -644,6 +646,33 @@ def _module_argument_list(*, body: str, module: str, argument: str) -> list[str]
         _unquote(value=line.strip().removeprefix("- "))
         for line in _module_block(body=body, module=module, argument=argument)
     ]
+
+
+_FLOW_SEQUENCE = re.compile(r"\A\[(?P<items>[^\]]*)\]\Z")
+
+
+def _argv_items(*, body: str) -> list[str]:
+    """One `command` task's `argv`, whether the role spells it as a block or inline.
+
+    The role uses BOTH forms, and they mean the same thing to Ansible: a `- ` item per
+    line where the argv carries a long templated path, and the single-line
+    `[systemctl, show, …]` flow sequence for its short systemd reads. A reader that
+    understood only the block form would take a whole flow argv as ONE opaque string and
+    then assert about a value no host receives.
+
+    The flow form is split on `, ` rather than parsed as YAML, which is sound only
+    because no argv in this role carries a comma INSIDE an item. The assert below is the
+    control on that: a spelling this split mangled reads as one item or an empty one and
+    fails HERE, rather than quietly satisfying an assertion about the wrong string.
+    """
+    items = _module_argument_list(body=body, module="ansible.builtin.command", argument="argv")
+    flow = _FLOW_SEQUENCE.fullmatch(items[0]) if len(items) == 1 else None
+    parsed = items if flow is None else [_unquote(value=item) for item in flow["items"].split(", ")]
+    assert len(parsed) > 1 and all(parsed), (
+        f"a command's argv must read as two or more non-empty words; this one read as "
+        f"{parsed}, which means the reader above mangled a spelling the role really uses"
+    )
+    return parsed
 
 
 # --- evaluating the role's own guards --------------------------------------
@@ -1601,3 +1630,102 @@ def test_a_permitting_run_restarts_an_instance_whose_pending_marker_is_present()
         f"fires on, or the refusal above is ordered before a guard that never ran; "
         f"when={probe}"
     )
+
+
+def test_a_permitting_run_restarts_an_instance_executing_a_file_other_than_its_binary() -> None:
+    """The third assertion: a running server on the wrong file is pending without a marker.
+
+    THE BEHAVIOURAL ARM COMES FIRST, deliberately. Read the role's own pending decision
+    before reading the probe tasks that feed it, so a role that carries the probes and
+    does not CONSULT them fails on the verdict rather than on a task name — and so this
+    arm's own Red proved the behaviour unimplemented rather than merely unnamed.
+    """
+    gates = _task_list_field(body=_task_body(name=_CARRIER_TASK), field="when")
+    handler_gates = _task_list_field(
+        body=_task_body(name=_RESTART_HANDLER, source=_HANDLERS), field="when"
+    )
+    for instance in _hp_instances():
+        declared = str(
+            _restart_scope(
+                instance=instance, marker_present=False, running_binary=None, restart_allowed=True
+            )["fabro_server_binary_path"]
+        )
+        stale = _restart_scope(
+            instance=instance,
+            marker_present=False,
+            running_binary=f"{declared}.a1b2c3d4e5f6.bak",
+            restart_allowed=True,
+        )
+        assert stale[_PENDING_FACT] is True, (
+            f"{instance['unit_name']}: a server executing a file other than its own "
+            f"binary_path MUST be pending WITHOUT a marker. That is the state nobody "
+            f"recorded — a binary replaced out of band, or a marker removed by hand — and "
+            f"it is exactly hp-xubuntu's candidate on 2026-10-11, running the pre-carrier "
+            f"build with the carrier already at binary_path"
+        )
+        assert _holds(conditions=gates, scope=stale) and _holds(
+            conditions=handler_gates, scope=stale
+        ), (
+            f"{instance['unit_name']}: ...and a permitting run MUST carry it through to the "
+            f"restart handler; when={gates}"
+        )
+        current = _restart_scope(
+            instance=instance,
+            marker_present=False,
+            running_binary=declared,
+            restart_allowed=True,
+        )
+        assert current[_PENDING_FACT] is False and not _holds(conditions=gates, scope=current), (
+            f"{instance['unit_name']}: the control arm — a server already executing its own "
+            f"binary_path owes nothing. A comparison that read this as pending would restart "
+            f"a converged live factory on every permitting run"
+        )
+        unreadable = _restart_scope(
+            instance=instance, marker_present=False, running_binary=None, restart_allowed=True
+        )
+        assert unreadable[_PENDING_FACT] is False and not _holds(
+            conditions=gates, scope=unreadable
+        ), (
+            f"{instance['unit_name']}: the second control arm — a probe that could not read "
+            f"the running process at all (a stopped unit, a MainPID of 0, an unreadable "
+            f"/proc entry) MUST mean 'nothing owed'. Restarting a live factory on the "
+            f"strength of a probe that FAILED is the one outcome worse than leaving a "
+            f"deferral unapplied"
+        )
+        assert (
+            _restart_scope(
+                instance=instance, marker_present=True, running_binary=None, restart_allowed=True
+            )[_PENDING_FACT]
+            is True
+        ), (
+            f"{instance['unit_name']}: ...and that fail-open must not reach the MARKER term: "
+            f"a deferral that WAS recorded still survives a probe that failed"
+        )
+    argv = _argv_items(body=_task_body(name=_RUNNING_PID_TASK))
+    assert argv[:1] == ["systemctl"] and any("fabro_server_unit_name" in item for item in argv), (
+        f"the PID MUST be read for THIS instance's own unit. A PID read for any other unit "
+        f"would answer about a sibling server on the same host, and on hp-xubuntu that "
+        f"sibling is the live fleet factory; argv={argv}"
+    )
+    probe = _task_body(name=_RUNNING_BINARY_TASK)
+    probed = _module_argument(body=probe, module="ansible.builtin.stat", argument="path")
+    assert "/exe" in probed and "fabro_server_running_pid" in probed, (
+        f"the executed file MUST be read from /proc/<MainPID>/exe — what the KERNEL knows "
+        f"the running process was exec'd from. Nothing a digest comparison can say about a "
+        f"file on disk substitutes for it: a rename within a directory leaves the inode a "
+        f"running process execs untouched, so a replaced binary changes the disk and not "
+        f"the process; path={probed!r}"
+    )
+    assert _module_argument(body=probe, module="ansible.builtin.stat", argument="follow") == (
+        "false"
+    ), (
+        "the stat MUST NOT follow the link: the wanted answer is lnk_source, the path "
+        "/proc/<pid>/exe POINTS AT, and a followed stat reports the link's target metadata "
+        "while losing the name the comparison is about"
+    )
+    for writer in (_STAGE_TASK, _RENAME_TASK, _UNIT_INSTALL, _LIBEXEC_TASK):
+        assert _task_index(name=_RUNNING_BINARY_TASK) < _task_index(name=writer), (
+            f"the running-binary probe MUST read the host BEFORE {writer!r} writes to it. "
+            f"Taken afterwards it would answer about the server this run produced rather "
+            f"than the one it inherited, which is the comparison that is being made"
+        )

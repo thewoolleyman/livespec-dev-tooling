@@ -419,13 +419,58 @@
   register: fabro_server_restart_pending_file
   check_mode: false
 
+- name: Read the main PID of whatever this instance is running now
+  # The same read the verification at the end of this file performs, taken
+  # again HERE because the two answer different questions. That one asks what
+  # the server this run produced is doing; this one asks what the server this
+  # run INHERITED is executing, and the restart below is the thing that makes
+  # the two differ.
+  #
+  # failed_when false because a unit systemd does not know is not an error in
+  # this section: an instance that does not exist yet has no running binary to
+  # compare, and the task below is skipped rather than the play halted.
+  ansible.builtin.command:
+    argv: [systemctl, show, -p, MainPID, --value, "{{ fabro_server_unit_name }}.service"]
+  become: true
+  register: fabro_server_running_pid
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the file this instance's running server actually executes
+  # follow: false, so stat reports the SYMLINK rather than resolving it: the
+  # answer wanted is lnk_source, the path /proc/<pid>/exe points at, which is
+  # the file the kernel knows the running process was exec'd from. That is a
+  # stronger statement than any digest comparison can make about a running
+  # process, and it is the one a binary replacement cannot change — a rename
+  # within a directory leaves the inode a running process execs untouched, so
+  # a server started from the pre-replacement build still names the old file.
+  ansible.builtin.stat:
+    path: "/proc/{{ fabro_server_running_pid.stdout | trim }}/exe"
+    follow: false
+  become: true
+  register: fabro_server_running_binary
+  check_mode: false
+  when: fabro_server_running_pid.stdout | default('') | trim not in ['', '0']
+
 - name: Decide whether this instance owes a restart from before this run
   # ONE place answers "does this instance need restarting for a reason that
-  # predates this run", and every task that acts on it reads it here. Today the
-  # only such reason is the marker an earlier REFUSING run left behind.
+  # predates this run", and the three tasks that act on it all read it. The two
+  # terms are not redundant: the marker is what a REFUSED restart left behind,
+  # while the running-binary comparison catches the state nobody recorded —
+  # a binary replaced out of band, or a marker removed by hand.
+  #
+  # `| default(fabro_server_binary_path)` makes an UNREADABLE probe mean
+  # "nothing owed" rather than "owed", and that direction is deliberate: a
+  # stopped unit, a MainPID of 0, or a /proc entry root cannot read all land
+  # there, and restarting a live factory on the strength of a probe that failed
+  # is the one outcome worse than leaving a deferral unapplied. The marker term
+  # is unaffected, so a deferral that WAS recorded still survives a failed probe.
   ansible.builtin.set_fact:
     fabro_server_restart_pending: >-
-      {{ fabro_server_restart_pending_file.stat.exists }}
+      {{ fabro_server_restart_pending_file.stat.exists
+      or (fabro_server_running_binary.stat.lnk_source | default(fabro_server_binary_path))
+      != fabro_server_binary_path }}
   check_mode: false
 
 - name: Ask the instance's own health endpoint whether something is serving its port
