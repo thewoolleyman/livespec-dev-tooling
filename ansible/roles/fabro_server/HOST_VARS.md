@@ -51,14 +51,16 @@ per instance and a `roles:` entry runs once per host.
 
 Every other key of an instance mapping must be spelled out — the role refuses a
 mapping that misses one, because an instance that inherited `unit_name`,
-`home_dir` or `port` would silently share the fleet server's state. These three
+`home_dir` or `port` would silently share the fleet server's state. These five
 are the exception, and they are safe to default for one reason: omitting one
 cannot make two instances collide. It only keeps the behaviour the instance had
 before the axis existed.
 
 | axis | default | what naming it does |
 |---|---|---|
-| `binary_path` | `fabro_server_host_home` + `/.fabro/bin/fabro` | the Fabro binary this instance's unit starts. Naming one runs a **different build** from the instance's siblings on the same host, which is what a cutover rehearsal is. The role never builds it; the preflight stats whatever this axis resolves to, so a declared-but-absent binary is refused before any file is written. |
+| `binary_path` | `fabro_server_host_home` + `/.fabro/bin/fabro` | the Fabro binary this instance's unit starts. Naming one runs a **different build** from the instance's siblings on the same host, which is what a cutover rehearsal is. The role never builds it; the preflight stats whatever this axis resolves to, so a declared-but-absent binary is refused before any file is written — unless `binary_source` below tells the role to install one. |
+| `binary_source` | empty — the role leaves whatever is at `binary_path` alone | an **absolute control-node path** holding the build this instance should run. Declared, the role installs that file at `binary_path`; omitted, the instance's binary is out-of-band state the role only ever reads. |
+| `binary_sha256` | empty — the role leaves whatever is at `binary_path` alone | the sha256 `binary_source` must hash to. Declared together with `binary_source` or not at all; the role refuses the pair half-spelled, and refuses a source that does not hash to this digest **before** it reads the factory host. |
 | `home_env` | `fabro_server_host_home` | the unit's `Environment=HOME`. Independent of `home_dir`: `home_dir` is the state root the server is POINTED at with `--storage-dir` and `--config`, while this is the `HOME` its process and its CLI resolve `~/.fabro` against. |
 | `service_state` | `running` | `stopped` parks the instance in version control — unit, drop-in, `settings.toml` and state directory all KEPT on the host, the unit stopped and disabled, the restart handler never fired for it and the running-server verification skipped. Bring it back by flipping the word and re-applying. Refused while the instance is carrying runs, by the quiet-server guard that gates a restart. |
 
@@ -68,6 +70,55 @@ captured pre-axis unit by
 `tests/consumer/test_fabro_instance_axes_scenario.py`. That is the property that
 makes them safe to add: declaring a second instance that needs its own build
 does not rewrite the live fleet factory's unit as a side effect.
+
+### How the binary install actually behaves
+
+`binary_source` and `binary_sha256` are the axes that let the play express a
+build placement. They do not make the role a builder: it still never compiles or
+downloads anything. What it will do is **carry a build the operator has already
+staged on the control node**, which is what makes a by-hand `scp` to a factory
+host unnecessary rather than merely discouraged.
+
+For an instance that declares the pair, one apply does this and only this:
+
+1. Reads the control-node file's sha256, **on the control node**, and refuses
+   the run if the file is absent or hashes to anything but `binary_sha256`.
+   Nothing on the factory host has been read at this point, let alone written.
+2. Compares `binary_sha256` against the digest of whatever the host holds at
+   `binary_path`. Equal means the host already runs that build and steps 3–5 are
+   all skipped — a converged host reports no change.
+3. Stages a copy at `<binary_path>.incoming`, owned by the instance's service
+   user with mode `0755`.
+4. Keeps the outgoing binary at `<binary_path>.<first-12-of-its-sha256>.bak`, so
+   a rollback can name the build it is returning to. Skipped on a first install,
+   where there is nothing to keep.
+5. Renames the staged copy onto `binary_path` — `rename(2)` within one
+   directory, so the binary is either the old build or the new one and never a
+   half-written file. `binary_path` is what a running server's `ExecStart` named
+   and what `Restart=always` re-execs, which is why nothing is ever written to it
+   directly.
+
+A replacement notifies the same `Fabro instance files changed` handler a changed
+unit file does, so it obeys the same two refusals: the handler does nothing
+unless `fabro_server_restart_allowed` is set, and whenever that flag IS set the
+carrying-runs preflight has already halted the play if the instance is carrying
+runs.
+
+**Replacing a binary therefore never interrupts a live factory.** Note the one
+case the two refusals do not cover and why it is still safe: with the default
+`fabro_server_restart_allowed` false, the carrying-runs probe is skipped
+entirely, so the binary is replaced under a busy factory. `rename(2)` does not
+touch the inode a running process already execs — the server keeps serving its
+runs from the old build, the new one sits at `binary_path` waiting for the next
+start, and the handler says out loud in the run output that it did not restart.
+Picking up the new build is then an operator's deliberate act: quiesce the
+instance and re-run with `-e fabro_server_restart_allowed=true`, or restart it by
+hand.
+
+Rollback is step 4 in reverse and needs no role change: move the `.bak` over
+`binary_path` by hand, or point `binary_source` at the build you want and declare
+its digest. Both the `.incoming` and `.bak` siblings are left on the host
+deliberately; nothing in the role reaps them.
 
 ## `host_vars/hp-xubuntu.yml`
 
@@ -143,10 +194,19 @@ fabro_server_instances:
     otel_dropin: present
     # Its own build, beside its own state root — the two axes this instance
     # exists to exercise. HOME is the state root rather than the account home,
-    # which is how it was hand-installed; the role never builds the binary, and
-    # its preflight refuses the host if this path is absent or not executable.
+    # which is how it was hand-installed.
     binary_path: /home/cwoolley/.fabro-candidate/bin/fabro
     home_env: /home/cwoolley/.fabro-candidate
+    # The v0.382 carrier build, staged on the control node (vps) and carried
+    # from there. Measured 2026-10-11: the host's candidate instance was
+    # running fabro 0.378.0-nightly.0 (64b9d88), so the first apply after this
+    # lands REPLACES that binary. The digest is the gate — the source path is
+    # inside a mutable state tree, so a declaration without one would install
+    # whatever is there on the day it runs. The replacement does not restart
+    # the instance: fabro_server_restart_allowed is false by default and the
+    # carrying-runs refusal gates it even when it is true.
+    binary_source: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
+    binary_sha256: effe9d03c859e8072934947ce598980ea337065df17e737867685a1508514799
     # Spelled rather than defaulted: this instance is deliberately RUNNING, and
     # the word is what the cutover flips on the fleet instance instead.
     service_state: running
