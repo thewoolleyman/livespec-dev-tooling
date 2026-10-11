@@ -1065,3 +1065,71 @@
   when:
     - not ansible_check_mode
     - not (fabro_server_running_cwd.skipped | default(false))
+
+# --- the instance's sandbox environment catalog ----------------------------
+#
+# LAST in the file, after the unit is installed, any restart has been flushed
+# and the console has verified, because every task in the included file speaks
+# to the RUNNING SERVER rather than to the filesystem. An instance that declares
+# no environments reaches none of it.
+
+- name: Resolve this instance's environments API
+  # Its own task rather than a line in "Resolve this instance's axes", because it
+  # is not an axis: nothing in host_vars names it and no instance may override
+  # it. THIS INSTANCE'S OWN LOOPBACK PORT is the whole content of the fact — the
+  # catalog of a host that runs several servers belongs to exactly one of them,
+  # and a request sent to whichever server the CLI's default target names would
+  # write the wrong instance's catalog.
+  ansible.builtin.set_fact:
+    fabro_server_environments_url: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/environments"
+  check_mode: false
+
+- name: Ask this instance's health endpoint again before reading its catalog
+  # The health read at the top of this file predates the install, the restart and
+  # the verification above. Writing a catalog is an API call, so the question
+  # that gates it is whether the server is answering NOW — which on a first apply
+  # it is, and was not when the earlier read ran.
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/health"
+    timeout: 2
+  register: fabro_server_catalog_health
+  failed_when: false
+  changed_when: false
+  check_mode: false
+  when:
+    - fabro_server_environments | length > 0
+    - fabro_server_service_state == 'running'
+
+- name: Create or update each sandbox environment this instance declares
+  # `loop_var` rather than Ansible's `item`, because the included file is read by
+  # an operator who cannot see this loop from there, and because `item` inside a
+  # nested include is the classic way one loop's value is read as another's.
+  ansible.builtin.include_tasks: environment.yml
+  loop: "{{ fabro_server_environments }}"
+  loop_control:
+    loop_var: fabro_server_environment
+    label: "{{ fabro_server_environment.id }}"
+  when:
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Note that this instance's declared environments were not reached
+  # A SILENT SKIP IS THE ONE OUTCOME THIS SECTION MUST NOT HAVE. The catalog work
+  # is gated on a server that answers, and under `--check` against an instance
+  # whose unit this role has not installed yet there is none — so the gate is
+  # right and the silence is not. Naming it keeps a drift report that could not
+  # read a catalog distinguishable from one that read it and found it converged.
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }} declares
+      {{ fabro_server_environments | length }} sandbox environment(s), and its
+      server did not answer
+      http://127.0.0.1:{{ fabro_server_port }}/api/v1/health, so its catalog was
+      neither read nor written. On a dry run against an instance this role has
+      not installed yet that is expected; on an apply it means the server is
+      down, and the environments the factory dispatches into are whatever its
+      store already holds.
+  when:
+    - fabro_server_environments | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) != 200
