@@ -275,7 +275,7 @@ def gate_remote_request(
         return Failure(named.failure())
     repo = named.unwrap()
     checkout_name = repo_root.name
-    job_name = f"gate-{checkout_name}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
+    job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
     render_argv = [
         str(renderer),
         "--repo-root",
