@@ -120,6 +120,14 @@ _WORKFLOW_FILE = "workflow.toml"
 # The filter pair that carries the measured trap below.
 _ITEMS2DICT = "items2dict"
 _LIST_FILTER = "list"
+# The shell option every request in this slice opens with, and the only interpreter in
+# this tree that HAS it. Both are stated rather than read: the point of the arm below is
+# that a task using the former must name the latter, so deriving either from the file
+# under test would assert nothing.
+_PIPEFAIL = "pipefail"
+_SHELL_EXECUTABLE_KEY = "executable"
+_PIPEFAIL_SHELL = "/bin/bash"
+_DEFAULT_SHELL = "/bin/sh"
 
 # hp-xubuntu's three instances, and the one catalog entry the Definition of Done
 # declares for its cutover candidate. Every value here is the Definition of Done's own:
@@ -924,3 +932,61 @@ def test_the_disposition_is_reported_before_either_write_is_attempted() -> None:
             f"already made, and a dry run — where both writes are skipped and the report "
             f"is the only thing that runs — reads its own output out of order"
         )
+
+
+def test_every_pipefail_shell_task_in_the_role_names_a_shell_that_has_pipefail() -> None:
+    """A measured defect, kept out: `pipefail` under Ansible's DEFAULT shell exits 2.
+
+    Measured 2026-10-11 by driving the committed catalog tail against a loopback stand-in
+    for the instance's server: the run failed at the FIRST task of `environment.yml` with
+    `rc: 2` and `stderr: "/bin/sh: 1: set: Illegal option -o pipefail"`, and the request
+    log for the whole run held nothing but the health probes — no catalog read, no create,
+    no replace. Ansible's `ansible_shell_executable` defaults to `/bin/sh`, nothing in
+    this tree overrides it, and on a Debian-family host — which hp-xubuntu is — `/bin/sh`
+    is dash, which has no `-o pipefail` and fails on the `set` line itself. So EVERY
+    request this slice makes was unreachable on the target host.
+
+    Nothing else in this suite could see it, which is the reason for the arm: every other
+    arm reads the command TEXT and finds the pipe, the credential read and the curl flags
+    all correct — they are — and `ansible-playbook --syntax-check` passes, because the
+    fault is in which interpreter runs a correct script. `just check` passed 79/79 over a
+    role whose catalog tasks could not run.
+
+    Written as a claim about EVERY shell task in the role rather than about the four this
+    slice added, because the trap belongs to the module default and not to this slice: the
+    next shell task that opens with `set -o pipefail` hits it identically. It is also this
+    tree's existing convention — `roles/node_status_credential/tasks/main.yml` and
+    `roles/agent_node_password/tasks/reconcile_agent.yml` are the other inline-shell tasks
+    under `ansible/`, and both pair `set -o pipefail` with `executable: /bin/bash`.
+
+    BOTH halves are asserted of every shell task, unconditionally and with no filter,
+    because for THIS role they are one property. `_api_calls` records why `shell` is
+    reached for at all: the credential has to be read out of the instance's own
+    `server.env` on the host and piped into curl, and a pipe is the whole difference
+    between `shell` and `command`. A shell task here therefore has a pipe, a pipe whose
+    upstream failure is swallowed is the bug `pipefail` exists to stop, and `pipefail`
+    needs an interpreter that has it. A future task that wants `shell` without a pipe
+    fails here and should: on this role's own reasoning it wanted `command`.
+    """
+    for name, body in _api_calls().items():
+        assert _PIPEFAIL in body, (
+            f"{name!r} runs a shell command without `set -o {_PIPEFAIL}`. This role uses "
+            f"`shell` rather than `command` only because a request's credential is piped "
+            f"into curl, and a pipe that reports its LAST command's status hides a failed "
+            f"`sed` — which is a request sent with an empty bearer token. Open with "
+            f"`set -euo {_PIPEFAIL}`, or use `command` if this task needs no pipe;"
+            f"\nbody={body!r}"
+        )
+        assert f"{_SHELL_EXECUTABLE_KEY}: {_PIPEFAIL_SHELL}" in body, (
+            f"{name!r} opens its command with `set -o {_PIPEFAIL}` and does not pass "
+            f"`{_SHELL_EXECUTABLE_KEY}: {_PIPEFAIL_SHELL}`. Ansible runs a `shell` task "
+            f"under `ansible_shell_executable`, which defaults to {_DEFAULT_SHELL} — dash "
+            f"on every Debian-family factory host, including hp-xubuntu — and dash has no "
+            f"`-o {_PIPEFAIL}`, so the task exits 2 on its own first line before reaching "
+            f"the catalog at all. Name the interpreter that has the option;"
+            f"\nbody={body!r}"
+        )
+    assert _api_calls(), (
+        "the role must still reach its API with a shell request; this arm guards the "
+        "interpreter those requests need, and with none left it guards nothing"
+    )

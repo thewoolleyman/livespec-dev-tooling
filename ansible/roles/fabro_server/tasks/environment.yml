@@ -39,6 +39,17 @@
 # The token's own character set is why the `sed` below needs no unquoting: a dev
 # token is `fabro_dev_` plus 64 hex characters, and Fabro's env-file writer quotes
 # a value only when it falls outside `[A-Za-z0-9_\-./+=]`.
+#
+# WHY EVERY REQUEST BELOW NAMES ITS INTERPRETER. Each one opens `set -euo pipefail`,
+# because the credential is piped into curl and a failure in the `sed` that reads it
+# must not be swallowed by the pipe's exit status. `pipefail` is a bash option:
+# Ansible's `ansible_shell_executable` defaults to `/bin/sh`, which on every
+# Debian-family factory host — hp-xubuntu included — is dash, and dash exits 2 on
+# the `set` line itself. Measured 2026-10-11 against the delivered file: the run
+# failed at the first task here with `/bin/sh: 1: set: Illegal option -o pipefail`,
+# having made no catalog request at all, and `--syntax-check` passed it. So each
+# task names `/bin/bash`, which is the convention the other two inline-shell tasks
+# under `ansible/` already follow.
 
 - name: Read what this instance's catalog holds for this environment
   # TWO VALUES OUT OF ONE REQUEST: the body on stdout, and the status code on a
@@ -47,6 +58,7 @@
   # is the create case — and a curl that exited non-zero on it would turn the
   # normal first converge into a failed run.
   ansible.builtin.shell:
+    executable: /bin/bash
     cmd: |
       set -euo pipefail
       printf 'Authorization: Bearer %s\n' \
@@ -106,6 +118,7 @@
   # base would be declaring a second environment, which the axis already
   # expresses.
   ansible.builtin.shell:
+    executable: /bin/bash
     cmd: |
       set -euo pipefail
       printf 'Authorization: Bearer %s\n' \
@@ -263,6 +276,7 @@
   # carry `check_mode: false` and so still run, which is what lets a drift report
   # answer for a catalog it really inspected.
   ansible.builtin.shell:
+    executable: /bin/bash
     cmd: |
       set -euo pipefail
       printf 'Authorization: Bearer %s\n' \
@@ -288,6 +302,7 @@
   # server refuses rather than overwriting a change it cannot see. The header is
   # required, so there is no form of this request that skips the check.
   ansible.builtin.shell:
+    executable: /bin/bash
     cmd: |
       set -euo pipefail
       printf 'Authorization: Bearer %s\n' \
