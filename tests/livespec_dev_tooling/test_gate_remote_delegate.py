@@ -64,6 +64,19 @@ def _write_pyproject(*, repo_root: Path, body: str) -> None:
     _ = (repo_root / "pyproject.toml").write_text(body, encoding="utf-8")
 
 
+def _a_readable_credential(*, root: Path) -> Path:
+    """A stand-in gates kubeconfig this user can read — never a real credential.
+
+    Eligibility is asserted on PRESENCE-AND-READABILITY rather than on a
+    permission bit because this suite runs as root in the factory sandbox, where
+    a mode-0000 fixture is still perfectly readable: a bit-based fixture would
+    answer one way under root and the other under a login user.
+    """
+    credential = root / "gates.kubeconfig"
+    _ = credential.write_text("kind: Config\napiVersion: v1\n", encoding="utf-8")
+    return credential
+
+
 def test_the_switch_is_off_when_nothing_declares_it(*, tmp_path: Path) -> None:
     """No `pyproject.toml` at all is the default every repository is at."""
     assert delegated_gate_enabled(repo_root=tmp_path) is False
@@ -418,15 +431,73 @@ def test_enabled_exits_non_zero_for_a_repository_that_has_not_opted_in(
 def test_enabled_exits_zero_for_a_repository_that_has(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The same probe, on the far side of the opt-in."""
+    """The same probe, on the far side of the opt-in — from an ELIGIBLE host.
+
+    The credential has to be there for the answer to be yes, which is the half
+    the switch alone never said: `delegated_gate` travels with the code and
+    describes no host.
+    """
     _write_pyproject(
         repo_root=tmp_path,
         body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
     )
+    monkeypatch.setenv("GATES_KUBECONFIG", str(_a_readable_credential(root=tmp_path)))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
 
     assert main() == 0
+
+
+def test_an_opted_in_repository_on_a_host_without_the_credential_gates_locally(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The host-eligibility rule, from the two things the recipe reads.
+
+    THE EXIT CODE IS THE FALL-THROUGH. The recipe branches on it and on nothing
+    else, so a non-zero answer here IS "run the local `just check` aggregate",
+    and the paired recipe test above proves that branch invokes
+    `just hook_gate=1 check` and submits no gate Job.
+
+    THE LINE IS THE OTHER HALF, and it is why this is not simply the switch-off
+    path. Without it a push from a sandbox or a fresh laptop in an opted-in
+    repository would silently run a different gate than the maintainer
+    configured — silently being the whole problem, because a locally-gated push
+    and a cluster-gated one look identical afterwards.
+
+    Before this, an opted-in repository delegated from EVERY host that cloned
+    it: the push then failed closed on a host with no credential, blocking the
+    factory with no statement of why.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
+    )
+    monkeypatch.setenv("GATES_KUBECONFIG", str(tmp_path / "absent.kubeconfig"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    code = main()
+
+    assert code == 1
+    assert "gating locally" in capsys.readouterr().err
+
+
+def test_a_repository_that_has_not_opted_in_says_nothing_about_the_credential(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The default repository's probe stays SILENT, credential or no credential.
+
+    Every repository is here today, so this is the path a push actually takes:
+    the host's eligibility is not its business and must not be narrated at it.
+    """
+    monkeypatch.setenv("GATES_KUBECONFIG", str(tmp_path / "absent.kubeconfig"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    code = main()
+
+    assert code == 1
+    assert capsys.readouterr().err == ""
 
 
 def test_run_exits_zero_only_on_a_verdict_that_authorises_the_push(
