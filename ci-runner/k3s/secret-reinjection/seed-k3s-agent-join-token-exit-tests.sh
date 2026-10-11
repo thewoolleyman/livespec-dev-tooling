@@ -11,8 +11,11 @@
 #      exits 0 with the variable UNSET, and executes nothing;
 #   B. a live run writes the fixture value byte for byte, mode 0600, and the
 #      token never reaches an argv;
-#   C. an immediate second run REPORTS the file unchanged and runs no `install`
-#      at all;
+#   C. an immediate second run REPORTS the file unchanged and reaches for no
+#      write command at all, while a RE-SEED over an existing target (a rotated
+#      value, and a target whose mode was widened by hand) rewrites it at the
+#      requested mode and ownership and exits 0 — the uutils `install` refusal
+#      this case now stands against (livespec-dev-tooling-74q6iw);
 #   D. the refusals: the variable unset, the variable set but EMPTY, a profile
 #      whose CLUSTER_ROLE is not `agent`, and a CLUSTER_TOKEN_FILE whose parent
 #      directory does not exist AND is not the k3s configuration directory —
@@ -32,13 +35,17 @@
 # TRIPWIRES for `sudo` and `install`, so "executed nothing" is asserted rather
 # than assumed. Cases B, C and F's live runs need the write to really happen,
 # so they run against a PATH carrying a FAKE `sudo` that logs the command and
-# then runs it AS THE INVOKING USER, rewriting `install`'s `-o root -g root` to
-# this user's own names — emulating the ONE privilege the real sudo supplies.
+# then runs it AS THE INVOKING USER, rewriting every request for root ownership
+# (`install`'s `-o root -g root`, and `chown`'s `root:root`) to this user's own
+# names — emulating the ONE privilege the real sudo supplies.
 # The suite therefore never NEEDS root, and that rewrite is the reason: it
 # passes unchanged as an unprivileged user, where the rewrite is what carries
-# the write, and as root, where it is a no-op. Every directory §F creates is
-# under this suite's own scratch root; no `/etc` on this machine is read or
-# written.
+# the write, and as root, where it is a no-op. That working PATH ALSO carries a
+# uutils `install` LENS: the write is real, but an `install` able to overwrite an
+# existing destination is deliberately not available to it, which is what makes
+# §C's re-seed cases able to see the defect on a GNU host. Every directory §F
+# creates is under this suite's own scratch root; no `/etc` on this machine is
+# read or written.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
 set -uo pipefail
@@ -87,10 +94,12 @@ for tool in sudo install; do
 done
 
 # The working PATH: a `sudo` that records what it was asked to do and then does
-# it as this (unprivileged) user, with `install`'s root ownership flags
-# rewritten to this user's own. That rewrite is the whole of the privilege the
-# real sudo would have supplied; the mode, the source operand and the target
-# are the script's own and are passed through untouched.
+# it as this (unprivileged) user, with every request for ROOT OWNERSHIP rewritten
+# to this user's own names — `install`'s `-o`/`-g` flags and, since the write
+# became a temp-file-plus-rename, a bare `root:root` operand (`chown`'s). That
+# rewrite is the whole of the privilege the real sudo would have supplied; the
+# mode, the stdin and the target are the script's own and are passed through
+# untouched.
 WORKBIN="${TMPROOT}/workbin"
 mkdir -p "$WORKBIN"
 cat > "${WORKBIN}/sudo" <<'FAKE_SUDO'
@@ -101,12 +110,38 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -o) args+=(-o "$(id -un)"); shift 2 ;;
     -g) args+=(-g "$(id -gn)"); shift 2 ;;
+    root:root) args+=("$(id -un):$(id -gn)"); shift ;;
     *) args+=("$1"); shift ;;
   esac
 done
 exec "${args[@]}"
 FAKE_SUDO
 chmod +x "${WORKBIN}/sudo"
+
+# `install` on the working PATH is the uutils LENS, not the host's binary. uutils
+# coreutils — what Ubuntu 25.10 and 26.04 ship instead of GNU coreutils, and what
+# this pool's nodes run — fails `install` whenever the DESTINATION already
+# exists, which is why every RE-SEED failed while this suite stayed green on a
+# GNU host (livespec-dev-tooling-74q6iw). `-d` is delegated untouched: uutils
+# accepts an existing directory there, and §F's parent creation is not what the
+# regression was about. Everything else the write reaches for — mktemp, tee,
+# chown, chmod, mv — is the host's own binary, so §B, §C and §F write for real.
+REAL_INSTALL="$(command -v install)"
+export REAL_INSTALL
+cat > "${WORKBIN}/install" <<'UUTILS_INSTALL'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" = -d ] && exec "${REAL_INSTALL}" "$@"
+done
+dest=""
+for arg in "$@"; do dest="$arg"; done
+if [ -e "$dest" ]; then
+  printf 'install: No such file or directory\n' >&2
+  exit 1
+fi
+exec "${REAL_INSTALL}" "$@"
+UUTILS_INSTALL
+chmod +x "${WORKBIN}/install"
 
 # run_seed BIN ARGS... -> stdout+stderr in REPLY_OUT, code in REPLY_RC.
 # The token variable is NOT exported here; each case decides.
@@ -210,10 +245,12 @@ else
   no "B3  the target is mode 0600 (got '${TARGET_MODE_SEEN}')"
 fi
 
-if grep -qF -- "-o root -g root" "$SUDO_LOG" && grep -qF -- "/dev/stdin ${TARGET}" "$SUDO_LOG"; then
-  ok "B4  the write went through sudo install -o root -g root, reading /dev/stdin"
+if grep -qE "^sudo tee ${TARGET}\.seed\." "$SUDO_LOG" \
+   && grep -qF -- "chown root:root ${TARGET}.seed." "$SUDO_LOG" \
+   && grep -qE "^sudo mv -f ${TARGET}\.seed\.[A-Za-z0-9]+ ${TARGET}$" "$SUDO_LOG"; then
+  ok "B4  the write went through sudo tee + chown root:root + mv -f over the target"
 else
-  no "B4  the write went through sudo install -o root -g root, reading /dev/stdin"
+  no "B4  the write went through sudo tee + chown root:root + mv -f over the target"
   cat "$SUDO_LOG"
 fi
 
@@ -244,11 +281,11 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if grep -q '^sudo install ' "$SUDO_LOG"; then
-  no "C2  the second run ran no install at all"
+if grep -qE '^sudo (tee|mv|chown|chmod) ' "$SUDO_LOG"; then
+  no "C2  the second run reached for no write command at all"
   cat "$SUDO_LOG"
 else
-  ok "C2  the second run ran no install at all"
+  ok "C2  the second run reached for no write command at all"
 fi
 
 if [ "$(cat "$TARGET")" = "$FIXTURE_TOKEN" ]; then
@@ -258,12 +295,39 @@ else
 fi
 
 # A CHANGED value is written: the skip is byte-identity, not mere existence.
+# This is also THE RE-SEED CASE the uutils lens judges — the target already
+# exists here, which is the state in which `install /dev/stdin "$TARGET"` exited
+# 1 on every node the pool actually runs (livespec-dev-tooling-74q6iw).
 export "${TOKEN_VAR}=${FIXTURE_TOKEN}-rotated"
 run_seed "$WORKBIN" "$AGENT_PROFILE"
 if [ "$REPLY_RC" -eq 0 ] && [ "$(cat "$TARGET")" = "${FIXTURE_TOKEN}-rotated" ]; then
-  ok "C4  a rotated value IS written — the skip is byte-identity, not existence"
+  ok "C4  a rotated value IS written over an EXISTING target — the skip is byte-identity, not existence"
 else
-  no "C4  a rotated value IS written — the skip is byte-identity, not existence (rc=${REPLY_RC})"
+  no "C4  a rotated value IS written over an EXISTING target — the skip is byte-identity, not existence (rc=${REPLY_RC})"
+fi
+
+# A target whose mode was widened by hand comes back at the REQUESTED mode and
+# ownership, not at whatever it happened to carry. The rename is what makes that
+# true: the mode is set on the temp file, so the replaced file's old mode cannot
+# survive the write.
+chmod 0644 "$TARGET"
+printf 'a hand-edited token at a hand-widened mode' > "$TARGET"
+: > "$SUDO_LOG"
+run_seed "$WORKBIN" "$AGENT_PROFILE"
+TARGET_MODE_SEEN="$(stat -c '%a' "$TARGET" 2>/dev/null)"
+if [ "$REPLY_RC" -eq 0 ] && [ "$(cat "$TARGET")" = "${FIXTURE_TOKEN}-rotated" ] \
+   && [ "$TARGET_MODE_SEEN" = 600 ] \
+   && [ "$(stat -c '%U:%G' "$TARGET")" = "$(id -un):$(id -gn)" ]; then
+  ok "C5  a re-seed over an existing 0644 target rewrites it at 0600 with the requested ownership"
+else
+  no "C5  a re-seed over an existing 0644 target rewrites it at 0600 with the requested ownership (rc=${REPLY_RC}, mode='${TARGET_MODE_SEEN}')"
+fi
+
+# Whatever the write did, it left no temp file holding the token beside it.
+if [ -z "$(find "$TARGET_DIR" -name "$(basename "$TARGET").seed.*" -print -quit)" ]; then
+  ok "C6  the write left no temp file beside the target"
+else
+  no "C6  a temp file holding the token survived the write"
 fi
 export "${TOKEN_VAR}=${FIXTURE_TOKEN}"
 

@@ -40,9 +40,19 @@ from pathlib import Path
 __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_K3S = _REPO_ROOT / "ci-runner" / "k3s"
 _REFRESH_GATES = (
     _REPO_ROOT / "ansible" / "roles" / "gates_kubeconfig" / "files" / "refresh-gates-kubeconfig"
 )
+_SEED_JOIN_TOKEN = _K3S / "secret-reinjection" / "seed-k3s-agent-join-token.sh"
+# The COMMITTED second node's profile. Every value the seed scripts read is that
+# node's own data; only the destination path is redirected, because the
+# committed value names a file on THAT node holding a cluster credential.
+_AGENT_PROFILE = _K3S / "phase0-bare-metal" / "profiles" / "gmktec-xubuntu.env"
+
+# Shaped like a k3s join token so the assertions read like the real thing. It is
+# not one, and this file is the only place it lives.
+_FIXTURE_JOIN_TOKEN = "K10fixturenotasecret::server:0123456789abcdef"
 
 # A syntactically-valid kubeconfig carrying the two markers
 # `refresh-gates-kubeconfig` requires before it writes anything. Never a real
@@ -223,3 +233,62 @@ def test_refresh_gates_kubeconfig_rewrites_an_existing_destination_when_run_as_r
     ), "the fetched kubeconfig must REPLACE the stale one"
     assert stat.S_IMODE(dest.stat().st_mode) == 0o600, "the refreshed file must be owner-only"
     assert dest.stat().st_uid == os.getuid(), "the refreshed file must belong to the writing euid"
+
+
+def _redirected_profile(*, tmp_path: Path, key: str, value: Path) -> Path:
+    """The committed agent profile with one destination key pointed at `value`.
+
+    Every other value is the committed one, so what the script is proven against
+    is the node's own data rather than a fixture derived from it.
+    """
+    rewritten = [
+        f"{key}={value}" if line.startswith(f"{key}=") else line
+        for line in _AGENT_PROFILE.read_text(encoding="utf-8").splitlines()
+    ]
+    path = tmp_path / f"{key.lower().replace('_', '-')}-redirected.env"
+    _ = path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+    return path
+
+
+def test_seed_k3s_agent_join_token_rewrites_an_existing_target(*, tmp_path: Path) -> None:
+    """Definition of Done 2: a re-run rewrites the target, owner/group/mode, exit 0.
+
+    The target is pre-created with DIFFERENT bytes, because the script's own
+    idempotence skip (byte-identical content is reported, not rewritten) would
+    otherwise never reach the write at all — and the write is what the uutils
+    lens judges. A re-seed after a rotation is exactly this shape, and it is what
+    the runner-pool rebuild recipe's "re-runnable against a node already in its
+    declared state" rule requires.
+    """
+    bin_dir = _write_path_bin(tmp_path=tmp_path)
+    target = tmp_path / "etc" / "rancher" / "k3s" / "agent-join-token"
+    target.parent.mkdir(parents=True)
+    _ = target.write_text("the join token a rotation replaces", encoding="utf-8")
+    target.chmod(0o644)
+    profile = _redirected_profile(tmp_path=tmp_path, key="CLUSTER_TOKEN_FILE", value=target)
+
+    result = _run(
+        script=_SEED_JOIN_TOKEN,
+        args=[str(profile)],
+        bin_dir=bin_dir,
+        env={
+            "ARGV_LOG": str(tmp_path / "argv.log"),
+            "K3S_AGENT_JOIN_TOKEN_CI_RUNNER": _FIXTURE_JOIN_TOKEN,
+        },
+    )
+
+    assert result.returncode == 0, (
+        "re-seeding an EXISTING target must exit 0; under an `install` that "
+        f"refuses an existing destination it did not: rc={result.returncode}\n"
+        f"{result.stdout}\n{result.stderr}"
+    )
+    assert (
+        target.read_text(encoding="utf-8") == _FIXTURE_JOIN_TOKEN
+    ), "the rotated token must replace the stale one, byte for byte"
+    assert (
+        stat.S_IMODE(target.stat().st_mode) == 0o600
+    ), "the re-seeded token must be owner-only, even when the file it replaced was not"
+    assert target.stat().st_uid == os.getuid(), (
+        "the re-seeded token must carry the requested ownership (root:root on a "
+        "node; this suite's own user behind the sudo/chown shims)"
+    )
