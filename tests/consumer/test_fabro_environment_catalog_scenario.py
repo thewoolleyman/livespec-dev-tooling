@@ -45,6 +45,7 @@ _ENVIRONMENT_TASKS = _ROLE / "tasks" / "environment.yml"
 _HANDLERS = _ROLE / "handlers" / "main.yml"
 _ROLE_DOC = _ROLE / "HOST_VARS.md"
 _INVENTORY = _ANSIBLE / "inventory" / "host_vars" / "hp-xubuntu.yml"
+_DEFAULTS = _ROLE / "defaults" / "main.yml"
 
 # The Definition of Done's own vocabulary, stated because it states it: the axis an
 # instance mapping gains, and the four fields each declared environment spells.
@@ -85,6 +86,9 @@ _ENVIRONMENT_LOOP_VAR = "fabro_server_environment"
 _API_PATH = "/api/v1/environments"
 _TOKEN_NAME = "FABRO_DEV_TOKEN"
 _SERVER_ENV = "storage/server.env"
+_DOC_HEADING = "## The sandbox environment catalog"
+_ORCHESTRATOR_REPO = "livespec-orchestrator-beads-fabro"
+_WORKFLOW_FILE = "workflow.toml"
 
 # hp-xubuntu's three instances, and the one catalog entry the Definition of Done
 # declares for its cutover candidate. Every value here is the Definition of Done's own:
@@ -192,6 +196,7 @@ _NOT = "not "
 # the next without a YAML parser.
 _SET_FACT_KEY = re.compile(r"^ {4}(?P<fact>[A-Za-z_][A-Za-z_0-9]*): (?P<value>.*)$")
 _FOLDED_LINE = re.compile(r"^ {6,}(?P<text>\S.*)$")
+_ROLE_DEFAULT = re.compile(r"^(?P<name>fabro_server_[a-z_0-9]+): (?P<value>\S+)$", re.MULTILINE)
 # The YAML block indicators a folded value opens with. They are syntax, not part of
 # the expression the role evaluates, so the reader drops them.
 _BLOCK_SCALARS = frozenset({">", ">-", "|", "|-"})
@@ -730,3 +735,92 @@ def test_the_hp_candidate_declares_the_environment_the_factory_workflow_dispatch
         for other in (_FLEET_UNIT, _HOMELAB_UNIT):
             with pytest.raises(AssertionError, match=f"must declare {other}"):
                 _declared_environments(unit=other, source=source)
+
+
+# --- what the operator learns from the role's own document -----------------
+
+
+def _doc_section(*, heading: str) -> str:
+    """One `##` section of the role's HOST_VARS.md, up to the next `##`."""
+    text = _ROLE_DOC.read_text(encoding="utf-8")
+    start = text.find(f"{heading}\n")
+    assert start >= 0, (
+        f"the role's HOST_VARS.md must carry a {heading!r} section. This document is the "
+        f"operator's interface to the role, and a mechanism that exists only in the task "
+        f"comments is one the person bumping a sandbox image tag never reads"
+    )
+    remainder = text.find("\n## ", start + len(heading))
+    return text[start:] if remainder < 0 else text[start:remainder]
+
+
+def _prose(*, section: str) -> str:
+    """One document section with markdown emphasis removed, for phrase matching.
+
+    The arms below look for names an operator has to be able to read, and in correct
+    markdown a variable or a path inside a sentence is backticked — so matching the raw
+    bytes would make them pass only for prose that omitted the formatting the rest of
+    this document uses, which is a test dictating typography rather than content.
+    """
+    return section.replace("`", "").replace("**", "")
+
+
+def _catalog_defaults() -> dict[str, str]:
+    """Every role default the catalog mechanism reads, and the value it carries."""
+    declared = {
+        match["name"]: _unquote(value=match["value"])
+        for match in _ROLE_DEFAULT.finditer(_DEFAULTS.read_text(encoding="utf-8"))
+        if match["name"].startswith("fabro_server_environment")
+    }
+    assert declared, (
+        "the role must declare the catalog mechanism's own variables in defaults/main.yml, "
+        "for the same reason it declares every other one there: a variable an operator "
+        "discovers by reading tasks/ is the drift HOST_VARS.md exists to prevent"
+    )
+    return declared
+
+
+def test_the_role_document_states_the_catalog_axis_and_where_its_image_tag_comes_from() -> None:
+    """The fifth assertion: the axis, and that the image tag follows the workflow pin."""
+    section = _doc_section(heading=_DOC_HEADING)
+    assert len(section.split()) > 120, (
+        f"{_DOC_HEADING!r} must carry the mechanism it names, not a stub. The operator "
+        f"reading it is the one bumping a sandbox image tag or adding a second "
+        f"environment, and what they need is not in the role's task comments;\n"
+        f"section={section!r}"
+    )
+    prose = _prose(section=section)
+    for named in (_AXIS, *_FIELDS, _API_PATH, _TOKEN_NAME, _SERVER_ENV):
+        assert named in prose, (
+            f"the section must name {named!r}: it is part of either the shape an operator "
+            f"writes or the mechanism that carries it to the server, and a mechanism "
+            f"documented by omission is one they reconstruct by reading the role"
+        )
+    for pinned in (_ORCHESTRATOR_REPO, _WORKFLOW_FILE, "pin"):
+        assert pinned in prose, (
+            f"the section must state that the declared image tag FOLLOWS {pinned!r}. A tag "
+            f"declared here that the orchestrator's workflow does not pin is an "
+            f"environment the factory never dispatches into — the two have to be bumped "
+            f"together, and nothing but this document says so"
+        )
+    for disposition in ("created", "replaced"):
+        assert disposition in prose, (
+            f"the section must say when an environment is {disposition}. The three "
+            f"dispositions — already matching, absent, present with other settings — are "
+            f"what an operator reads a drift report against"
+        )
+    document = _ROLE_DOC.read_text(encoding="utf-8")
+    for name, value in sorted(_catalog_defaults().items()):
+        assert f"`{name}`" in document, (
+            f"{name} is a catalog variable the role reads and the document does not name. "
+            f"An undocumented variable is one an operator discovers by reading the role, "
+            f"which is the drift this document exists to prevent"
+        )
+        assert value in document, (
+            f"the document must name what {name} defaults to; the role defaults it to "
+            f"{value!r}, which the document does not mention"
+        )
+    assert f"| `{_AXIS}` |" in document, (
+        f"the optional-axis table must carry a {_AXIS!r} row too — that table is where an "
+        f"operator looks for 'what may an instance mapping say', and a section further "
+        f"down the document does not answer that question"
+    )

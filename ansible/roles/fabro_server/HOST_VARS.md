@@ -123,6 +123,131 @@ Rollback is step 4 in reverse and needs no role change: move the `.bak` over
 its digest. Both the `.incoming` and `.bak` siblings are left on the host
 deliberately; nothing in the role reaps them.
 
+## The sandbox environment catalog
+
+The `environments` axis is the one per-instance axis that is **not a file this role
+renders**. A Fabro sandbox environment is server-managed state: it lives in the
+instance's own store, is read and written through
+`GET`/`POST /api/v1/environments` and `GET`/`PUT /api/v1/environments/{id}`, and a
+`workflow.toml` `[environments.*]` table is never selected on this engine. So the
+only way version control reaches a catalog is a request the converge makes.
+
+This section exists because the alternative was somebody remembering to POST one.
+Measured on `hp-xubuntu` 2026-10-11 (work-item `livespec-dev-tooling-fe62lh`): the
+`fabro-server-candidate` canary run passed its start node and failed at run
+preparation with `mise: not found`, because the instance's catalog held only the
+server's seeded `default` entry — `buildpack-deps:noble`, 2 CPU, 4GB — and the
+factory's own `livespec-ci` environment did not exist there at all. **Nothing
+errored on the server.** A run placed in the wrong environment is a run that looks
+dispatched and cannot work.
+
+### What a declaration says
+
+Four fields, all required, each refused before the host is read:
+
+```yaml
+    environments:
+      - id: livespec-ci
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
+        cpu: 4
+        memory: 8GB
+```
+
+`id` is the key the catalog is keyed by — two declarations on one instance may not
+share one. `image` is a docker image. `cpu` is an integer above zero. `memory` is
+an integer followed by one of `B`, `KB`, `MB`, `GB`, `TB`, `KiB`, `MiB`, `GiB`,
+`TiB`.
+
+**Declare the memory size the way Fabro renders it.** Fabro stores a size and
+re-renders it in the largest decimal unit that divides it exactly, so `8GB`
+round-trips as `8GB` and compares equal on every later run. A value spelled some
+other way for the same size — `8000MB`, or a binary unit — converges on the first
+run and is then reported as changed on every run after it, because the string the
+catalog returns is no longer the string version control declares.
+
+### The image tag follows the orchestrator workflow pin
+
+The `image` of the factory's own environment is **not an independent choice**. It
+must be the tag that
+`livespec-orchestrator-beads-fabro`'s
+`.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml` pins — today
+`python-agent-v1.93.5`. Bump the two together. A tag declared here that the
+workflow does not pin is an environment the factory never dispatches into, and a
+tag the workflow pins that no instance declares is the canary failure above.
+
+### Which runs write, and which run writes nothing
+
+Per declared environment, one `GET /api/v1/environments/{id}` decides everything:
+
+| what the catalog holds | what the converge does |
+|---|---|
+| the declared image, cpu and memory | nothing — **no change is reported for that environment** |
+| the id, with other settings | `PUT /api/v1/environments/{id}` with the `If-Match` revision the read returned; the environment is **replaced** |
+| no entry for that id (404) | `POST /api/v1/environments`; the environment is **created** |
+| nothing — the server does not answer | neither, and the run says so by name rather than skipping silently |
+
+The comparison is **field by field, on the declared fields only**. A whole-settings
+comparison would report drift for everything the server defaults or normalises,
+which would make a converged instance report a change forever — and a converge
+that always writes is a converge whose report says nothing.
+
+Both writes carry the server's own concurrency check where it has one: the replace
+sends `If-Match` with the revision that same read returned, so a change made
+between the read and the write is refused rather than overwritten. The header is
+required by the API, so there is no form of that request that skips it.
+
+### The body is DERIVED from the catalog, not spelled in the role
+
+A create or replace request requires **every** field the server's build knows and
+refuses **any** field it does not. This repository cannot know which fields a given
+factory host's Fabro build has — `hp-xubuntu` runs two instances on two different
+builds on purpose, which is what the cutover rehearsal IS. So the request body is
+the catalog entry **the server itself returned**, with the declared image and
+resource envelope combined onto it, and `id` and `revision` dropped because the API
+carries both outside the settings.
+
+That has a second property worth as much as the first: a converge never resets a
+field version control does not declare. An environment's network policy, its
+labels and its `env` map survive a converge untouched.
+
+For an environment the catalog already holds, that entry is its own base. For one
+it does not, `fabro_server_environment_template_id` names the entry to derive
+from — `default`, the environment every Fabro server seeds, so a factory host
+always has one. It is a role default rather than a per-instance axis because an
+instance that needed a different base would be declaring a second environment,
+which the axis already expresses. If neither the declared id nor that entry is in
+the catalog, the role refuses and writes nothing.
+
+### The credential, and why these tasks are not hidden
+
+The API authenticates with the instance's `FABRO_DEV_TOKEN`, which Fabro generates
+into `<home_dir>/storage/server.env` at mode 0600 — the file the role's preflight
+already requires. Every request reads it **in the host-side shell** and pipes it to
+curl as a whole header line on standard input (`--header @-`). Ansible therefore
+never holds the value: it is in no variable, no `set_fact`, no message and no
+module argument, so there is nothing for `-v` output or an invocation record to
+carry. Because the header arrives on stdin rather than as an argument, it is not in
+the host's process table either.
+
+That is also why these tasks carry no `no_log`. There is no value in them to hide,
+and hiding them would hide the API's own error body — which is the entire
+diagnostic for a refused write.
+
+### Reading a catalog by hand
+
+The same two requests the role makes, for an operator checking a host:
+
+```bash
+# on the factory host, as root
+token=$(sed -n 's/^FABRO_DEV_TOKEN=//p' /home/cwoolley/.fabro-candidate/storage/server.env | tail -n 1)
+printf 'Authorization: Bearer %s\n' "$token" | curl -sS -H @- http://127.0.0.1:32278/api/v1/environments
+printf 'Authorization: Bearer %s\n' "$token" | curl -sS -H @- http://127.0.0.1:32278/api/v1/environments/livespec-ci
+```
+
+A dry run (`just ansible-drift ansible/fabro-hosts.yml`) reports each declared
+environment's disposition without writing: the reads run under `--check`, and the
+two writes are `shell` tasks, which Ansible skips there.
+
 ## The deferred restart
 
 A run that changes an instance's files with `fabro_server_restart_allowed` false
