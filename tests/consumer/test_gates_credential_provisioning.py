@@ -88,6 +88,11 @@ _REJECTION_OPENAPI = (
     + _SERVER_WORDING
 )
 
+# A stand-in for the Job manifest the gate client pipes to `kubectl create
+# --filename -`. Its CONTENT is irrelevant and its DELIVERY is the whole point:
+# it arrives on stdin, and stdin is a pipe that can be read exactly once.
+_FIXTURE_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: gate-fixture\n"
+
 
 # --- reading the committed role -------------------------------------------
 
@@ -232,6 +237,7 @@ def _run_wrapper(
     rejection: str = _REJECTION,
     verb: tuple[str, ...] = ("get", "jobs"),
     capture_lag: str | None = None,
+    stdin: str = "",
 ) -> tuple[int, list[str]]:
     """Run the shipped wrapper against a faked host; return its code and every argv.
 
@@ -243,6 +249,12 @@ def _run_wrapper(
     `rejection` and `verb` are parameters rather than constants because kubectl
     renders ONE refused credential in several different texts, and which text a
     caller meets depends on the verb it ran: the arms below pin the real ones.
+
+    `stdin` is piped to the wrapper, and the fake kubectl READS IT when the argv
+    names stdin as an input (`-`), exactly as the real one does for
+    `--filename -` — recording what each attempt received under `stdin/`. A fake
+    that ignored stdin would report a retry as healthy whether or not the retried
+    command could still see the manifest, which is the submit the gate depends on.
 
     `capture_lag` puts a `tee` on the scratch PATH that is SLOW TO START, which
     is a LENS rather than a fake — the same technique the sibling refresh suite
@@ -256,6 +268,8 @@ def _run_wrapper(
     log = tmp_path / "argv.log"
     attempts = tmp_path / "attempts"
     _ = attempts.write_text("", encoding="utf-8")
+    stdin_dir = tmp_path / "stdin"
+    stdin_dir.mkdir()
     _fake(bin_dir=bin_dir, name="id", body='[ "${1:-}" = -u ] && printf "%s\\n" "${FAKE_EUID}"\n')
     _fake(
         bin_dir=bin_dir,
@@ -269,6 +283,7 @@ def _run_wrapper(
             'printf "kubectl %s\\n" "$*" >> "${ARGV_LOG}"\n'
             'printf "x" >> "${ATTEMPTS}"\n'
             'attempt="$(wc -c < "${ATTEMPTS}" | tr -d " ")"\n'
+            'case " $* " in *" - "*) cat > "${STDIN_DIR}/${attempt}" ;; esac\n'
             'code="$(printf "%s" "${COMMAND_EXITS}" | cut -d, -f"${attempt}")"\n'
             '[ "${code}" = 0 ] || printf "%s\\n" "${REJECTION}" >&2\n'
             'exit "${code}"\n'
@@ -301,6 +316,7 @@ def _run_wrapper(
             extra={
                 "ARGV_LOG": str(log),
                 "ATTEMPTS": str(attempts),
+                "STDIN_DIR": str(stdin_dir),
                 "COMMAND_EXITS": ",".join(str(code) for code in command_exits),
                 "REJECTION": rejection,
                 "FAKE_EUID": euid,
@@ -309,12 +325,25 @@ def _run_wrapper(
                 "GATES_KUBECONFIG": str(tmp_path / "gates.kubeconfig"),
             },
         ),
+        # `input` rather than an inherited fd, so stdin is a pipe that reaches EOF
+        # on every arm: a wrapper handed the suite runner's own stdin would be
+        # read against whatever that happened to be, which is the kind of luck
+        # this file's other arms were written to remove.
+        input=stdin,
         capture_output=True,
         text=True,
         check=False,
     )
     invoked = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
     return completed.returncode, invoked
+
+
+def _manifests_seen(*, tmp_path: Path) -> list[str]:
+    """What each attempt of the wrapped command actually read from stdin, in order."""
+    return [
+        path.read_text(encoding="utf-8")
+        for path in sorted((tmp_path / "stdin").iterdir(), key=lambda path: int(path.name))
+    ]
 
 
 def test_a_rejected_credential_is_refreshed_once_through_sudo_and_the_command_retried(
@@ -395,6 +424,36 @@ def test_a_refusal_dressed_as_a_schema_error_is_refreshed_once_and_retried(
     assert code == 0
     assert [line.split(" ")[0] for line in invoked] == ["kubectl", "sudo", "kubectl"]
     assert invoked[0].endswith(f"--namespace gates {verb} --filename -")
+
+
+def test_the_retry_of_a_stdin_fed_submit_resubmits_the_same_manifest(*, tmp_path: Path) -> None:
+    """The retry carries the MANIFEST, not just the argv — the submit is piped.
+
+    This is the failure the verb arms above cannot see. The gate client submits
+    its Job as `kubectl create --filename -` with the manifest on stdin, ONCE,
+    and stdin is a pipe that can be read exactly once: the rejected first attempt
+    drains it, so a retry that merely re-runs the same argv reads EOF and dies
+    with `error: no objects passed to create`. The credential would be refreshed
+    and the submit would STILL not have happened — a push refused with no verdict
+    after the repair, which is the shape the Definition of Done rules out when it
+    requires the FIRST delegated push after a reboot to complete on a verdict.
+
+    So both attempts are asserted to have received the same bytes, and the fake
+    kubectl reads stdin when the argv names it, exactly as the real one does. An
+    argv-only assertion passes against a wrapper that resubmits nothing.
+    """
+    code, invoked = _run_wrapper(
+        tmp_path=tmp_path,
+        euid="1000",
+        command_exits=(1, 0),
+        rejection=_REJECTION_OPENAPI,
+        verb=("create", "--filename", "-"),
+        stdin=_FIXTURE_MANIFEST,
+    )
+
+    assert code == 0
+    assert [line.split(" ")[0] for line in invoked] == ["kubectl", "sudo", "kubectl"]
+    assert _manifests_seen(tmp_path=tmp_path) == [_FIXTURE_MANIFEST, _FIXTURE_MANIFEST]
 
 
 def test_a_root_caller_refreshes_without_sudo(*, tmp_path: Path) -> None:
