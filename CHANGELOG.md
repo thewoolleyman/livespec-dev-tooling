@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.1...v1.95.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **gate:** collect the gate refs without re-entering the pre-push hook ([223f24f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/223f24f83794ccf79bfb47b821375704dab6e0fa))
+* **gate:** disable the pushing repo's hooks for the mirror push ([8668103](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8668103b116f26f206805e4983edb96ac6652442))
+
 ## [1.95.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.0...v1.95.1) (2026-10-12)
 
 
