@@ -31,12 +31,14 @@ fabro_server_instances:
     port: 32276
     canonical_host: hp-xubuntu.perch-rudd.ts.net:32276
     cli_target_url: http://127.0.0.1:32276
-    # 15 = the core count minus one, reserved for the server, janitor steps
-    # and host overhead. A maintainer instruction of 2026-08-21, not a copy of
-    # vps's 10: hp earns a higher over-subscription factor (3.75x against
-    # vps's 2.2x) by being a dedicated factory host at load 1.36, where vps is
-    # a shared box carrying dozens of user sessions.
-    max_concurrent_runs: 15
+    # 10, lowered from 15 by maintainer instruction on 2026-10-12: at 15
+    # (13 running) hp's 15-minute load average measured 42.6 on 16 cores,
+    # about 3.3 load per run, because every run executes the full check
+    # aggregate in its janitor, in the publish_draft pre-push and in hook-gated
+    # checkpoint commits. The interim goal is a 15-minute load average at or
+    # under 150% of the cores (24); step lower if 10 does not reach it.
+    # Restored only once runs delegate to the cluster (plan fabro-currency).
+    max_concurrent_runs: 10
     github_app_id: "3668528"
     # Live on the host since 2026-08-21.
     otel_dropin: present
