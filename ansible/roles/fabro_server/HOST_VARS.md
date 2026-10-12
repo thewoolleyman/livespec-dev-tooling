@@ -600,3 +600,13 @@ Per instance, unless noted:
    `tailscale-admin` repository. The role cannot see it at all — see the note
    in `tasks/main.yml`.
 5. `<home_dir>/settings.toml`, unless `fabro_server_manage_settings` is set.
+
+## `fabro_server_interrupt_runs_allowed` (per-invocation only)
+
+Default `false`. With `fabro_server_restart_allowed=true` (or `service_state: stopped`),
+setting `-e fabro_server_interrupt_runs_allowed=true` waives the carrying-runs refusal:
+the play still probes and reports how many runs are active, then restarts or stops the
+instance anyway, killing them. It exists because a busy factory never becomes quiet
+during a play (other sessions' dispatchers keep admitting runs), so without it the role
+had no way to stop or restart a busy instance, and the fleet host guard forbids doing it
+by hand. Never put it in host_vars.
