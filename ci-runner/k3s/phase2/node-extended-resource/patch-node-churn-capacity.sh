@@ -112,10 +112,38 @@ log "1. Wait (bounded) for node ${NODE_NAME} to register in the API, then patch 
 # `nodes` resource and would 403 on an agent, timing this loop out and never
 # reaching the patch below. The status-subresource GET returns the whole Node
 # object, so the readiness check and the verify jsonpath both still resolve.
+#
+# THE PROBE KEEPS THE API SERVER'S ANSWER, and that is the fix for
+# livespec-dev-tooling-yj25uj. The probe used to be `>/dev/null 2>&1`, which
+# discards the one answer that is NOT a late registration: the server REFUSING
+# the credential. A poweredge-xubuntu reboot empties the tmpfs k3s datastore
+# (../datastore-tmpfs/), re-creating every ServiceAccount and re-minting every
+# token Secret, so an agent's previously-delivered node-status kubeconfig carries
+# a token the fresh API server has never seen and every call answers "the server
+# has asked for the client to provide credentials". Discarded, that read as "not
+# registered": measured 2026-10-12 04:01Z-04:26Z, gmktec-xubuntu was Ready and
+# registered while this unit printed "waiting for node gmktec-xubuntu to
+# register..." to its timeout every five minutes and the node advertised no
+# churn-slot capacity at all, so Kueue's quota was denominated in a resource no
+# node offered. A rejected credential is now told apart from a missing node and
+# reported as itself.
+#
+# MATCHED ON THE MESSAGE, not on the exit status alone: a non-zero probe can mean
+# many things, and only one of them is a credential being refused. Same wording
+# set the gates wrapper matches (ansible/roles/gates_kubeconfig/files/with-gates-kubeconfig),
+# because it is the same API server rendering it through the same kubectl.
+CREDENTIAL_REJECTED_RE='Unauthorized|asked for the client to provide credentials|You must be logged in|401'
+probe_stderr="$(mktemp)"
+trap 'rm -f "$probe_stderr"' EXIT
+
 NODE_WAIT_TIMEOUT="${NODE_WAIT_TIMEOUT:-120}"
 deadline=$(( $(date +%s) + NODE_WAIT_TIMEOUT ))
 while :; do
-  kubectl get --subresource=status node "$NODE_NAME" >/dev/null 2>&1 && break
+  kubectl get --subresource=status node "$NODE_NAME" >/dev/null 2>"$probe_stderr" && break
+  if grep -qiE "$CREDENTIAL_REJECTED_RE" "$probe_stderr"; then
+    cat "$probe_stderr" >&2
+    die "the API server REJECTED the node-status credential ${KUBECONFIG} for node ${NODE_NAME}. This is a rejected CREDENTIAL, not an unregistered node -- waiting for the node to register would never end, because the node is already there. Re-mint and re-deliver the credential (../node-status-credential/README.md)."
+  fi
   [ "$(date +%s)" -ge "$deadline" ] && die "node ${NODE_NAME} did not register in the API within ${NODE_WAIT_TIMEOUT}s"
   echo "waiting for node ${NODE_NAME} to register..."
   sleep 3
