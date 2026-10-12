@@ -1,0 +1,99 @@
+---
+# Defaults for sandbox_storage — the SECOND disk a Fabro factory host keeps its
+# swap and its container stores on, so the root disk no longer carries the
+# sandbox churn as well as the OS and the Fabro servers.
+#
+# MEASURED ON hp-xubuntu, 2026-10-12, under factory load (livespec-dev-tooling
+# work-item smrzsj): one SATA SSD (sda) carried /, /swap.img, /data, and — by
+# two hand-written fstab bind lines no role managed — /var/lib/docker and
+# /var/lib/containerd. The 8 GB swap file was 100% full. The second SATA SSD
+# (sdc, 4 TB) sat idle under a Steam library the maintainer confirmed may be
+# wiped. This role declares that disk's layout and brings the two bind lines
+# under management.
+#
+# THE DEVICE IS PER-HOST AND EMPTY HERE ON PURPOSE. A disk is named by its
+# /dev/disk/by-id path, which carries the model and serial, so the one value
+# that can destroy data is a value a host_vars file has to spell in full; an
+# empty default is refused before anything is read.
+sandbox_storage_device: ""
+
+# THE TWO PARTITIONS, by GPT position and by the label each filesystem carries.
+# Mounted BY LABEL, not by device name, for the reason storage_layout's
+# ci-tiers.fstab records: a SATA enumeration order is not a stable name, and a
+# label survives a media swap that keeps the data.
+sandbox_storage_swap_label: sandbox-swap
+sandbox_storage_fs_label: sandbox-containers
+# The swap partition is sized to the host's RAM (hp-xubuntu: 30 GiB usable of
+# 32 GB), an sgdisk size suffix. The filesystem takes the rest of the disk.
+sandbox_storage_swap_size: 32GiB
+# Above the swap file's default -1, so the kernel fills the partition first and
+# the old file becomes the overflow rather than the other way round.
+sandbox_storage_swap_priority: 10
+
+# Where the filesystem is mounted, and the two store directories on it that
+# the bind targets are laid over.
+sandbox_storage_mount: /srv/sandbox-storage
+sandbox_storage_containerd_src: "{{ sandbox_storage_mount }}/containerd"
+sandbox_storage_docker_src: "{{ sandbox_storage_mount }}/docker"
+sandbox_storage_containerd_dir: /var/lib/containerd
+sandbox_storage_docker_dir: /var/lib/docker
+
+# THE FSTAB LINES THIS ROLE OWNS, byte-exact. Keyed on the mountpoint (the
+# bind lines and the filesystem line) or on the source (the swap line, whose
+# mountpoint is `none` and shared with the swap file this role does not own),
+# so an existing but DIFFERENT line for the same key — hp's hand-written
+# `/data/containerd /var/lib/containerd none bind 0 0` — is replaced rather
+# than duplicated.
+sandbox_storage_fstab:
+  - line: "LABEL={{ sandbox_storage_swap_label }} none swap sw,pri={{ sandbox_storage_swap_priority }} 0 0"
+    key: "^LABEL={{ sandbox_storage_swap_label }}\\s"
+  - line: "LABEL={{ sandbox_storage_fs_label }} {{ sandbox_storage_mount }} ext4 defaults,noatime 0 2"
+    key: "^[^#]\\S*\\s+{{ sandbox_storage_mount | regex_escape }}\\s"
+  - line: "{{ sandbox_storage_containerd_src }} {{ sandbox_storage_containerd_dir }} none bind 0 0"
+    key: "^[^#]\\S*\\s+{{ sandbox_storage_containerd_dir | regex_escape }}\\s"
+  - line: "{{ sandbox_storage_docker_src }} {{ sandbox_storage_docker_dir }} none bind 0 0"
+    key: "^[^#]\\S*\\s+{{ sandbox_storage_docker_dir | regex_escape }}\\s"
+
+# The units that must not start on an empty bind target. Each gets a drop-in
+# carrying RequiresMountsFor= its own store, the k3s nodes' pattern
+# (storage_layout's 10-requires-storage-mounts.conf): a missing mount fails the
+# unit loudly instead of letting the daemon rebuild an empty store on the root
+# filesystem and run the host's churn there.
+sandbox_storage_units:
+  - unit: containerd.service
+    path: "{{ sandbox_storage_containerd_dir }}"
+  - unit: docker.service
+    path: "{{ sandbox_storage_docker_dir }}"
+sandbox_storage_dropin_name: 10-requires-sandbox-storage.conf
+
+# The one entry that says a containerd directory IS a store (storage_layout's
+# marker, same reasoning): containerd creates its metadata database before
+# anything can use the store, so its presence on the new disk means the copy
+# landed. Docker's root has no single such file; any entry but lost+found
+# counts.
+sandbox_storage_containerd_store_marker: io.containerd.metadata.v1.bolt
+
+# ALL THREE OFF BY DEFAULT, AND DELIBERATELY SO. Each authorises ONE run to do
+# a thing a routine converge must never reach:
+#
+#   allow_format        — zap the device's partition table and format both
+#                         partitions. Reached only when NEITHER label resolves
+#                         anywhere on the host, so a prepared disk is never
+#                         re-formatted even with the flag set. Stops nothing.
+#   allow_preseed       — copy the LIVE stores onto the new disk at idle IO
+#                         priority while the daemons keep running. The copy is
+#                         not consistent and is never served; it exists so the
+#                         cutover's copy is an incremental of minutes rather
+#                         than a full copy of hours. Stops nothing.
+#   allow_live_migration — stop docker and containerd, copy the live stores
+#                         onto the new disk, and move the binds. Stopping the
+#                         daemons ends every in-flight sandbox run on the host.
+#
+# Pass each as -e on the apply that is meant to do it. A run that reaches a
+# pending store move without allow_live_migration DEFERS it — writes nothing
+# that would point a daemon at the new disk, reports what is owed, and still
+# completes the parts that are safe (the swap, the filesystem mount, the
+# preseed when authorised) — rather than failing.
+sandbox_storage_allow_format: false
+sandbox_storage_allow_preseed: false
+sandbox_storage_allow_live_migration: false

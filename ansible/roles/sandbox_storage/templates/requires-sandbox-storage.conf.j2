@@ -1,0 +1,9 @@
+# Managed by Ansible (role: sandbox_storage). Local edits are overwritten.
+#
+# {{ item.unit }} must not start unless its store is mounted from the sandbox
+# storage disk. Without this, a boot on which the disk or its bind is missing
+# starts the daemon on an EMPTY directory on the root filesystem: it rebuilds
+# a store there, runs the host's churn on the disk this layout exists to
+# relieve, and nothing errors. With it, the unit fails by dependency, loudly.
+[Unit]
+RequiresMountsFor={{ item.path }}
