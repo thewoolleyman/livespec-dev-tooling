@@ -70,6 +70,13 @@
       # agent's; CHURN_KUBECONFIG_FILE is non-empty; and it is NOT the server's
       # admin kubeconfig (writing the narrow credential under that name would make
       # cluster-admin and this indistinguishable by path).
+      #
+      # CLUSTER_JOIN_ADDRESS is asserted as a PROFILE-SHAPE check and nothing more.
+      # It used to be the `server:` this role's own template wrote, which is half
+      # of why the role and the server's boot converge rendered the same credential
+      # differently; the rendered address is now
+      # node_status_credential_api_server, co-maintained with the converge's. A
+      # profile that names no join address is still not an agent profile.
       ansible.builtin.assert:
         that:
           - node_status_credential_node == inventory_hostname
@@ -86,11 +93,12 @@
 
     - name: Probe whether the API server still accepts the delivered node-status credential
       # THE ONE TASK IN THIS ROLE A DRIFT REPORT CAN LEARN ANYTHING FROM, and it
-      # is a READ. Everything that re-mints and re-delivers this credential is a
-      # command, a shell, or a template guarded on their results: under `--check`
-      # the mint below is SKIPPED (ansible cannot know whether running a shell
-      # would mutate anything), the token read then comes back empty, and the
-      # render and the delivery skip on their non-empty-token guard. So
+      # is a READ. Everything that re-mints and re-renders this credential is a
+      # command, a shell or a script guarded on their results: under `--check`
+      # the mint and the render below are SKIPPED (ansible cannot know whether
+      # running them would mutate anything), so on a not-yet-converged agent the
+      # server holds no rendering to read and the delivery skips on its
+      # non-empty-content guard. So
       # `just ansible-drift ansible/ci-pool.yml` reported `changed=0` over an
       # agent whose credential nothing accepted — measured 2026-10-12 at 04:26Z
       # on gmktec-xubuntu (livespec-dev-tooling-ewjby3), while the node
@@ -159,138 +167,105 @@
         'created' in node_status_credential_rbac_apply.stdout
         or 'configured' in node_status_credential_rbac_apply.stdout
 
-    - name: Wait for the token controller to populate the SA token Secret
-      # Created by the apply above, so on a cold API server it is empty for a
-      # moment; a single read would render a kubeconfig that authenticates as
-      # nobody. check_mode:false so the drift report still proves the read path
-      # rather than skipping it and rendering an empty credential.
-      ansible.builtin.command:
+    - name: Render the node-status kubeconfig
+      # ONE RENDERER, and it is the one the SERVER's boot converge already runs
+      # (../../../ci-runner/k3s/phase2/reconstruct/render-sa-kubeconfig.sh, called
+      # from converge-ci-stack.sh step 10d). This task used to be a `set_fact`
+      # carrying a SECOND template of the same credential — cluster `ci-runner`,
+      # users before contexts, indented lists, and the agent profile's
+      # CLUSTER_JOIN_ADDRESS as the `server:` — beside the converge's cluster
+      # `k3s`, contexts before users, unindented lists and tailnet address. Its
+      # comment claimed to mirror provision-node-status-credential.sh "exactly"
+      # and mirrored nothing the pool actually ran.
+      #
+      # THE DIVERGENCE MADE A CLEAN DRIFT REPORT IMPOSSIBLE. After every
+      # poweredge-xubuntu reboot the agent's five-minute timer pulls the SERVER's
+      # rendering (./files/refresh-node-status-kubeconfig), so the agent holds the
+      # converge's bytes; the delivery below is idempotent by CONTENT, so it then
+      # reported a change although the credential was the same one. Measured
+      # 2026-10-12 after the 11:58Z reboot: /etc/rancher/k3s/node-status-kubeconfig
+      # on gmktec-xubuntu and /etc/ci-runner/node-status-gmktec-xubuntu.kubeconfig
+      # on poweredge-xubuntu had the same sha256 and
+      # `just ansible-drift ansible/ci-pool.yml` still reported
+      # `gmktec-xubuntu changed=1` on that one task (livespec-dev-tooling-psqaav).
+      #
+      # SO THE ROLE RENDERS NOTHING ITSELF. It runs the converge's renderer on the
+      # SERVER, into the SAME path that converge renders to, and delivers THOSE
+      # bytes below. `ansible.builtin.script` rather than a copied-then-run file:
+      # the script is transferred for this invocation and nothing of it is left
+      # behind to go stale against the committed copy.
+      #
+      # THE RENDERER IS ALSO THE ONE CLUSTER-CA READ NOW. It reads the token
+      # Secret's `ca.crt` with the jsonpath escaped (the defect f7dc420f fixed in
+      # this role's own copy of that read) and FATALs rather than writing an empty
+      # `certificate-authority-data` — the refusal the removed "Refuse an empty
+      # cluster CA" assert stated. The kube-root-ca.crt ConfigMap fallback added
+      # with that fix was defensive cover for the jsonpath defect and was never
+      # reached: the measured Secret carries ca.crt, and the converge has rendered
+      # through this single CA source on every boot since.
+      ansible.builtin.script:
         cmd: >-
-          kubectl -n {{ node_status_credential_namespace }} get secret
-          {{ node_status_credential_sa }} -o jsonpath={.data.token}
+          {{ node_status_credential_renderer }}
+          --namespace {{ node_status_credential_namespace }}
+          --secret {{ node_status_credential_sa }}
+          --user {{ node_status_credential_sa }}
+          --dest {{ node_status_credential_render_path }}
+          --server {{ node_status_credential_api_server }}
+          --group root
+          --mode 0600
       delegate_to: "{{ node_status_credential_server_host }}"
       become: true
       environment:
         KUBECONFIG: "{{ node_status_credential_admin_kubeconfig }}"
-      register: node_status_credential_token_b64
-      until: node_status_credential_token_b64.stdout | length > 0
-      retries: "{{ node_status_credential_token_retries }}"
-      delay: "{{ node_status_credential_token_delay }}"
+      # NOT a change of its own. The render re-derives the file from the cluster's
+      # live state on every apply, so it writes unconditionally and cannot know
+      # whether the BYTES moved; the change an operator can act on is whether the
+      # agent's delivered credential differs, which the content-idempotent copy
+      # below reports exactly. Reporting this task as changed on every apply would
+      # leave the role permanently dirty, and the drift report's whole value is
+      # that a clean run means something.
+      changed_when: false
+
+    - name: Read the server's rendering of this agent's node-status kubeconfig
+      # The gates credential's shape (../../gates_kubeconfig/tasks/main.yml): the
+      # read happens on the SERVER under its own become, the write on the AGENT
+      # under ours, so no ssh identity straddles two accounts. Delivering THESE
+      # bytes rather than re-templating them is what makes the agent's copy and
+      # the server's byte-identical by construction instead of by agreement
+      # between two renderers.
+      #
+      # check_mode:false so the drift report reads the server's current rendering
+      # rather than skipping it and reporting the delivery against nothing, and
+      # failed_when:false because an absent render is the not-yet-converged state
+      # this role creates — under `--check` the render above is skipped (a script
+      # task cannot run in check mode), so on a first drift report there is no
+      # file to read and the delivery must skip rather than crash the play.
+      ansible.builtin.slurp:
+        src: "{{ node_status_credential_render_path }}"
+      delegate_to: "{{ node_status_credential_server_host }}"
+      become: true
+      register: node_status_credential_rendered
       changed_when: false
       check_mode: false
-      # Does NOT fail the run when the Secret is still absent: under `--check`
-      # (ansible-drift) the RBAC-apply above is skipped (command tasks skip in
-      # check mode), so on a not-yet-converged agent there is no Secret to read.
-      # The render and delivery below guard on a non-empty token, so drift reports
-      # the RBAC apply as a would-be change rather than crashing here.
       failed_when: false
       no_log: true
 
-    - name: Read the cluster CA from the SA token Secret
-      # argv form, NOT a `cmd:` string: the command module shlex-splits a string,
-      # which strips the backslash and hands kubectl `{.data.ca.crt}` (key `crt`
-      # under key `ca`) — an empty read on a Secret whose ca.crt is populated. That
-      # was the 2026-10-10 apply failure on gmktec-xubuntu (livespec-lfie5z).
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - -n
-          - "{{ node_status_credential_namespace }}"
-          - get
-          - secret
-          - "{{ node_status_credential_sa }}"
-          - -o
-          - 'jsonpath={.data.ca\.crt}'
-      delegate_to: "{{ node_status_credential_server_host }}"
-      become: true
-      environment:
-        KUBECONFIG: "{{ node_status_credential_admin_kubeconfig }}"
-      register: node_status_credential_ca_b64
-      changed_when: false
-      check_mode: false
-      when: node_status_credential_token_b64.stdout | default('') | length > 0
-
-    - name: Fall back to the namespace's kube-root-ca.crt ConfigMap for the cluster CA
-      # Since Kubernetes 1.21 kube-controller-manager publishes kube-root-ca.crt into every
-      # namespace as the CA source for projected ServiceAccount tokens. A token Secret's
-      # ca.crt is a legacy token-controller field that may be absent, so it is only tried first.
-      ansible.builtin.command:
-        argv:
-          - kubectl
-          - -n
-          - "{{ node_status_credential_namespace }}"
-          - get
-          - configmap
-          - kube-root-ca.crt
-          - -o
-          - 'jsonpath={.data.ca\.crt}'
-      delegate_to: "{{ node_status_credential_server_host }}"
-      become: true
-      environment:
-        KUBECONFIG: "{{ node_status_credential_admin_kubeconfig }}"
-      register: node_status_credential_ca_configmap
-      changed_when: false
-      check_mode: false
-      # An absent ConfigMap leaves stdout empty and the refusal below reports it.
-      failed_when: false
-      when:
-        - node_status_credential_token_b64.stdout | default('') | length > 0
-        - node_status_credential_ca_b64.stdout | default('') | length == 0
-
-    - name: Select the cluster CA (base64, as certificate-authority-data wants)
-      # The Secret's ca.crt is already base64; the ConfigMap holds PEM text.
-      ansible.builtin.set_fact:
-        node_status_credential_ca_data: >-
-          {{ node_status_credential_ca_b64.stdout
-             if node_status_credential_ca_b64.stdout | default('') | length > 0
-             else (node_status_credential_ca_configmap.stdout | default('') | b64encode
-                   if node_status_credential_ca_configmap.stdout | default('') | length > 0
-                   else '') }}
-      when: node_status_credential_token_b64.stdout | default('') | length > 0
-
-    - name: Refuse an empty cluster CA
-      # Mirrors provision-node-status-credential.sh's refusal: a Secret with a
-      # token but no CA would render `certificate-authority-data:` empty — a
-      # kubeconfig that looks right and trusts nothing. Fail rather than deliver it.
+    - name: Refuse a server rendering that is not a kubeconfig
+      # The refresh tool's refusal and the gates role's, restated where the
+      # playbook delivers: a truthful-looking but malformed answer is worse than a
+      # failure, because it would overwrite a good credential with a useless one
+      # and the next rejection would be unrecoverable rather than self-healing.
       ansible.builtin.assert:
         that:
-          - node_status_credential_ca_data | default('') | length > 0
+          - "'kind: Config' in (node_status_credential_rendered.content | b64decode)"
+          - "'server:' in (node_status_credential_rendered.content | b64decode)"
         fail_msg: >-
-          neither the SA token Secret {{ node_status_credential_namespace }}/{{ node_status_credential_sa }}
-          nor the ConfigMap {{ node_status_credential_namespace }}/kube-root-ca.crt
-          carries a ca.crt — refusing to render a kubeconfig with an empty
-          certificate-authority-data
-        success_msg: "cluster CA present for {{ node_status_credential_sa }}"
-      when: node_status_credential_token_b64.stdout | default('') | length > 0
-
-    - name: Render the node-status kubeconfig
-      # Mirrors provision-node-status-credential.sh's rendered kubeconfig exactly
-      # (cluster `ci-runner`, context `<sa>@ci-runner`). The token is the decoded
-      # JWT; certificate-authority-data stays base64 as the kubeconfig format
-      # wants. The API server is the address the AGENT joins on, from its own
-      # profile — never the admin file's loopback `server:`. no_log: the result
-      # carries the bearer token.
-      ansible.builtin.set_fact:
-        node_status_credential_kubeconfig: |
-          apiVersion: v1
-          kind: Config
-          clusters:
-            - name: ci-runner
-              cluster:
-                server: {{ node_status_credential_api }}
-                certificate-authority-data: {{ node_status_credential_ca_data }}
-          users:
-            - name: {{ node_status_credential_sa }}
-              user:
-                token: {{ node_status_credential_token_b64.stdout | b64decode }}
-          contexts:
-            - name: {{ node_status_credential_sa }}@ci-runner
-              context:
-                cluster: ci-runner
-                user: {{ node_status_credential_sa }}
-          current-context: {{ node_status_credential_sa }}@ci-runner
-      no_log: true
-      when: node_status_credential_token_b64.stdout | default('') | length > 0
+          {{ node_status_credential_server_host }}:{{ node_status_credential_render_path }}
+          is not a kubeconfig — refusing to overwrite {{ node_status_credential_target }}
+        success_msg: >-
+          {{ node_status_credential_server_host }} holds a kubeconfig for
+          {{ node_status_credential_sa }}
+      when: node_status_credential_rendered.content | default('') | length > 0
 
     - name: Check the delivery parent directory on the agent
       ansible.builtin.stat:
@@ -326,17 +301,21 @@
       when: not node_status_credential_parent.stat.exists
 
     - name: Deliver the node-status kubeconfig to the agent
-      # 0600 root:root, the same mode the seed script writes. no_log: bearer token.
-      # Idempotent by content — a byte-identical file reports no change.
+      # 0600 root:root, the same mode the seed script writes, the renderer gives
+      # its own output on the server, and the refresh tool reproduces on a pull —
+      # so no path to this file ever widens what another wrote. no_log: bearer
+      # token. Idempotent by content, which is now a property worth having: the
+      # bytes are the SERVER's rendering verbatim, so an agent whose five-minute
+      # timer already pulled them reports no change.
       ansible.builtin.copy:
-        content: "{{ node_status_credential_kubeconfig }}"
+        content: "{{ node_status_credential_rendered.content | b64decode }}"
         dest: "{{ node_status_credential_target }}"
         owner: root
         group: root
         mode: "0600"
       become: true
       no_log: true
-      when: node_status_credential_token_b64.stdout | default('') | length > 0
+      when: node_status_credential_rendered.content | default('') | length > 0
 
     - name: Create the credential-tooling directory on the agent
       # Explicit, because --check cannot see past a missing parent: with the
@@ -375,13 +354,18 @@
       # NOT no_log, and mode 0644 on purpose: this file carries node names, a
       # hostname, two paths and a login account, and never a secret. The credential
       # itself is the 0600 file above.
+      #
+      # NODE_STATUS_REMOTE_KUBECONFIG is the SAME variable the render above writes
+      # to and the read above slurps, not a second spelling of that path: the
+      # runtime pull and the playbook delivery fetch the one file, so a drift
+      # between them cannot be introduced by editing one of two literals.
       ansible.builtin.copy:
         content: |
           # Written by the node_status_credential Ansible role. Read by
           # refresh-node-status-kubeconfig at runtime. Carries no secret.
           NODE_STATUS_NODE_NAME={{ node_status_credential_node }}
           NODE_STATUS_REMOTE_HOST={{ node_status_credential_server_host }}
-          NODE_STATUS_REMOTE_KUBECONFIG={{ node_status_credential_render_dir }}/node-status-{{ node_status_credential_node }}.kubeconfig
+          NODE_STATUS_REMOTE_KUBECONFIG={{ node_status_credential_render_path }}
           NODE_STATUS_KUBECONFIG={{ node_status_credential_target }}
           NODE_STATUS_SSH_USER={{ node_status_credential_ssh_user }}
         dest: "{{ node_status_credential_refresh_env }}"
