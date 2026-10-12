@@ -67,12 +67,26 @@ _FIXTURE_KUBECONFIG = "kind: Config\napiVersion: v1\nclusters:\n- cluster:\n    
 # credential refresh is the right response to.
 _REJECTION = "error: You must be logged in to the server (Unauthorized)"
 
-# The SAME rejection in the API server's OWN wording, which carries none of the
-# words the first one does: no `Unauthorized`, no `401`, no "You must be logged
-# in". This is the message apimachinery attaches to an unauthenticated response,
-# so it is the message — rather than any one of kubectl's framings of it — that a
-# credential refresh is the right response to.
-_REJECTION_SERVER_WORDING = "error: the server has asked for the client to provide credentials"
+# The message the API SERVER itself attaches to an unauthenticated response,
+# carrying none of the words the rendering above does: no `Unauthorized`, no
+# `401`, no "You must be logged in". The two renderings below are built FROM it
+# rather than spelled out, because that is the whole point — one refusal, and it
+# is the message rather than any one framing of it that a refresh answers.
+_SERVER_WORDING = "the server has asked for the client to provide credentials"
+
+# How a refused credential reaches a caller that only READ from the cluster.
+_REJECTION_SERVER_WORDING = f"error: {_SERVER_WORDING}"
+
+# How the same refusal reaches `apply` and `create`, and the text MEASURED on
+# 2026-10-12 (gate run 20261012T050516Z-1838408). Both verbs validate the
+# manifest before sending it, which needs the server's OpenAPI document — so the
+# credential is refused during that DOWNLOAD and the failure arrives dressed as a
+# schema-validation error, with the server's wording buried mid-line and the
+# words every earlier pattern keyed on absent.
+_REJECTION_OPENAPI = (
+    'error validating "STDIN": error validating data: failed to download openapi: '
+    + _SERVER_WORDING
+)
 
 
 # --- reading the committed role -------------------------------------------
@@ -329,6 +343,37 @@ def test_the_servers_own_credential_wording_is_refreshed_once_and_retried(
     assert code == 0
     assert [line.split(" ")[0] for line in invoked] == ["kubectl", "sudo", "kubectl"]
     assert invoked[1].startswith("sudo -n ")
+
+
+@pytest.mark.parametrize("verb", ["apply", "create"])
+def test_a_refusal_dressed_as_a_schema_error_is_refreshed_once_and_retried(
+    *, tmp_path: Path, verb: str
+) -> None:
+    """The REAL failure of 2026-10-12, which reached the wrapper looking like bad YAML.
+
+    `create` is the verb the gate client submits its Job with and `apply` is the
+    verb every operator reaches for, and both validate before they send: the
+    credential is refused while kubectl downloads the OpenAPI document, so the
+    message the wrapper has to recognise arrives wrapped in a validation error
+    about `"STDIN"`. Nothing in it says `Unauthorized`, so the shipped wrapper
+    read a credential refusal as a malformed manifest, refreshed nothing, and the
+    push was refused with no verdict.
+
+    Both verbs are run rather than just the one measured, because the wrapper is
+    verb-blind by construction and a test that pinned only `create` would let a
+    future narrowing keyed on the submit path through.
+    """
+    code, invoked = _run_wrapper(
+        tmp_path=tmp_path,
+        euid="1000",
+        command_exits=(1, 0),
+        rejection=_REJECTION_OPENAPI,
+        verb=(verb, "--filename", "-"),
+    )
+
+    assert code == 0
+    assert [line.split(" ")[0] for line in invoked] == ["kubectl", "sudo", "kubectl"]
+    assert invoked[0].endswith(f"--namespace gates {verb} --filename -")
 
 
 def test_a_root_caller_refreshes_without_sudo(*, tmp_path: Path) -> None:
