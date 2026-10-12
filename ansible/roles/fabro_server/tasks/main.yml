@@ -672,7 +672,21 @@
       and defers the restart; for a stop (service_state: stopped) there is no
       deferral — the instance stays running until it is quiet.
     success_msg: this instance has no active runs
-  when: not (fabro_server_ps.skipped | default(false))
+  when:
+    - not (fabro_server_ps.skipped | default(false))
+    # The operator's explicit, per-invocation acceptance of run loss; see
+    # fabro_server_interrupt_runs_allowed in defaults/main.yml.
+    - not (fabro_server_interrupt_runs_allowed | bool)
+
+- name: Report the runs an accepted interruption will kill
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} is carrying
+      {{ fabro_server_ps.stdout | from_json | length }} active run(s); the
+      operator set fabro_server_interrupt_runs_allowed, so they are killed.
+  when:
+    - not (fabro_server_ps.skipped | default(false))
+    - fabro_server_interrupt_runs_allowed | bool
 
 # --- install ---------------------------------------------------------------
 #
