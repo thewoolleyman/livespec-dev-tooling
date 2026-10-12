@@ -13,15 +13,35 @@
 #
 # Each patch file carries its own why (the 2026-09-01 incident, the sizing).
 #
-# PINNED VERSION: the URL below is co-maintained with KUEUE_VERSION in
-# ../../reconstruct/converge-ci-stack.sh (which asserts the two agree before
-# applying), ../../../install-kueue.sh, and README.md "Pinned versions". Bump
-# them together — and re-diff manager-config-patch.yaml against the new
-# upstream ConfigMap body, which it must carry in full.
+# WHY THE UPSTREAM MANIFEST IS VENDORED AND NOT NAMED BY ITS RELEASE URL
+# (2026-10-12, item livespec-dev-tooling-tb2az6): this overlay is rendered at the
+# earliest, least-attended moment in the host's life — by the boot converge, on a
+# machine whose datastore is empty and whose cluster has no Kueue yet. Named by
+# URL, that render reached github.com, and the whole fleet's CI capacity rode on
+# the fetch answering. On the 11:58Z unattended reboot it did not: GitHub's edge
+# answered HTTP 504 for the release-download path from this host (ten of ten
+# tries against one edge address, while another edge and an unrelated VPS got
+# the normal 302), kustomize reported it as the misleading `URL is a git
+# repository`, and the converge died at step 4 in 35 s. The unit was oneshot
+# with no restart, so the cluster sat with no Kueue, no ARC and no runners until
+# an operator re-ran the converge by hand. Holding the bytes on the host is what
+# makes a boot independent of anyone else's uptime; the release asset is
+# immutable, so vendoring loses nothing a URL gave us.
+#
+# PINNED VERSION: the vendored filename below carries the release, and is
+# co-maintained with KUEUE_VERSION in ../../reconstruct/converge-ci-stack.sh
+# (which asserts the two agree, and that the file is present, before applying),
+# ../../../install-kueue.sh, and README.md "Pinned versions". Bump them together
+# — re-fetch the release asset under its new name, refresh the .sha256 beside
+# it, and re-diff manager-config-patch.yaml against the new upstream ConfigMap
+# body, which it must carry in full. The .sha256 records the provenance of bytes
+# this repository does not author; tests/livespec_dev_tooling/
+# test_ci_runner_k3s_boot_converge_offline_kueue.py verifies it, so a local edit
+# to the vendored release cannot pass unnoticed.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - https://github.com/kubernetes-sigs/kueue/releases/download/v0.19.1/manifests.yaml
+  - upstream-manifests-v0.19.1.yaml
 patches:
   - path: deployment-ha-patch.yaml
   - path: manager-config-patch.yaml

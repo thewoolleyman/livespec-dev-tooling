@@ -68,9 +68,9 @@
 # installers and README.md "Pinned versions" — keep in lockstep:
 #   ARC controller + scale set chart : 0.14.2  (../../install-arc.sh)
 #   Kueue                            : v0.19.1 (../../install-kueue.sh, and the
-#                                       release URL pinned in
-#                                       ../kueue/core/kustomization.yaml — step 4
-#                                       asserts it agrees with KUEUE_VERSION)
+#                                       vendored upstream manifest's filename in
+#                                       ../kueue/core/ — step 4 asserts it agrees
+#                                       with KUEUE_VERSION and is present)
 #
 # Requires: kubectl + helm on PATH (both at /usr/local/bin on the live host,
 # which is in systemd's default PATH), and KUBECONFIG pointed at the k3s
@@ -384,11 +384,29 @@ log "4. Install/upgrade Kueue core (${KUEUE_VERSION}) with the fleet HA overlay,
 # leader-election tolerances; each patch file carries its why). One apply of
 # the MERGED set, rather than upstream-then-patch, is what keeps a warm converge
 # a no-op: two applies would flip the ConfigMap back and forth on every run.
-# The overlay pins the release URL itself; assert it agrees with KUEUE_VERSION
-# so the two cannot drift apart silently.
+#
+# THE OVERLAY RENDERS FROM LOCAL BYTES, NOT FROM A RELEASE URL (2026-10-12, item
+# livespec-dev-tooling-tb2az6). It used to name the upstream manifest by its
+# github.com download URL, which put a fetch from someone else's edge on the
+# path of the one step that must survive an unattended reboot. On the 11:58Z
+# reboot that edge answered HTTP 504 and this converge died here in 35 s,
+# leaving the cluster with no Kueue, no ARC and no runners — no CI for the whole
+# fleet — until an operator re-ran it by hand. The release asset is now vendored
+# beside the overlay (../kueue/core/upstream-manifests-<version>.yaml) and the
+# ci_converge_unit role's kueue/core/*.yaml glob carries it onto the host.
+#
+# The overlay pins the release in that filename; assert BOTH that it agrees with
+# KUEUE_VERSION (so the two cannot drift apart silently — the guard the URL form
+# used to give) and that the file is actually present, because an installed tree
+# predating the vendoring would otherwise reach kustomize and fail with its
+# misleading `URL is a git repository`/`accumulating resources` wording rather
+# than with the one sentence that names the remedy.
 KUEUE_CORE_DIR="${KUEUE_DIR}/core"
-grep -q "kueue/releases/download/${KUEUE_VERSION}/manifests.yaml" "${KUEUE_CORE_DIR}/kustomization.yaml" \
-  || { echo "FATAL: ${KUEUE_CORE_DIR}/kustomization.yaml does not pin ${KUEUE_VERSION}; bump KUEUE_VERSION and the overlay together" >&2; exit 1; }
+KUEUE_UPSTREAM_MANIFEST="upstream-manifests-${KUEUE_VERSION}.yaml"
+grep -q "^  - ${KUEUE_UPSTREAM_MANIFEST}\$" "${KUEUE_CORE_DIR}/kustomization.yaml" \
+  || { echo "FATAL: ${KUEUE_CORE_DIR}/kustomization.yaml does not pin ${KUEUE_VERSION} (expected a resources entry naming ${KUEUE_UPSTREAM_MANIFEST}); bump KUEUE_VERSION and the overlay together" >&2; exit 1; }
+[ -f "${KUEUE_CORE_DIR}/${KUEUE_UPSTREAM_MANIFEST}" ] \
+  || { echo "FATAL: ${KUEUE_CORE_DIR}/${KUEUE_UPSTREAM_MANIFEST} is missing, so the Kueue core overlay cannot render; re-run the ci_converge_unit Ansible role to refresh the installed tree" >&2; exit 1; }
 # The manager reads its ConfigMap once, at start, so a CHANGED config needs a
 # rollout — but an UNCHANGED one must not restart anything (warm converge is a
 # no-op), and a boot from an empty datastore needs no restart either (the
