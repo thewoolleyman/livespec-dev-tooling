@@ -8,6 +8,38 @@ k3s_config_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
 # phase0-bare-metal profile; the inventory is where that fact lives now.
 k3s_config_cluster_role: "{{ cluster_role }}"
 k3s_config_dest: /etc/rancher/k3s/config.yaml
+# The node's committed phase0 profile — the ONE source of its taints. Read on
+# the CONTROLLER, because the profile lives in this repository and not on the
+# node. Deliberately the same path AND the same read as ../../node_taints,
+# which reconciles the LIVE taint: two different reads of one profile is how a
+# retired taint came back on gmktec (livespec-dev-tooling-yapwva).
+k3s_config_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+k3s_config_profile: "{{ k3s_config_profiles_dir }}/{{ inventory_hostname }}.env"
+# k3s merges every file in this directory over config.yaml above, on every
+# start. The per-node taint is RENDERED here rather than committed into the
+# shared phase2 config.agent.yaml which every agent receives: a taint belongs to
+# ONE node, and the rebuild recipe forbids a procedure that embeds a value
+# belonging to one node.
+k3s_config_drop_in_dir: /etc/rancher/k3s/config.yaml.d
+k3s_config_node_taint_drop_in: /etc/rancher/k3s/config.yaml.d/10-node-taint.yaml
+# The unit get.k3s.io writes from INSTALL_K3S_EXEC, and the expression that
+# takes `--node-taint` back out of its ExecStart.
+#
+# WHY THE EXPRESSION IS A VARIABLE AND A PLAIN SCALAR. `ansible.builtin.replace`
+# compiles it with re.MULTILINE and nothing else, so the repo's own test applies
+# these exact bytes to a unit in get.k3s.io's shape and proves what a converge
+# does. A quoted scalar would process escapes on the way in, and a test that had
+# to un-escape it would be free to un-escape it differently.
+#
+# WHAT IT MATCHES. The installer's `quote_indent` emits one TAB-indented
+# single-quoted argument per line with a trailing ` \`, so a flag and its value
+# are two consecutive lines; the pair is matched and removed together, once per
+# declared record. `(?!--)` on the value is the guard that matters: without it a
+# malformed `--node-taint` with no value would consume the NEXT flag's line and
+# leave that flag's value behind as a bare positional argument — a node that
+# registers unlabelled and silently stops matching every phase2 nodeSelector.
+k3s_config_agent_unit: /etc/systemd/system/k3s-agent.service
+k3s_config_agent_unit_node_taint_regexp: ^[ \t]*'?--node-taint'?[ \t]*\\?\n[ \t]*'?(?!--)[^'\s]+'?[ \t]*\\?\n
 # A SERVER path. An agent deploys no packaged component, so it gets neither the
 # directory nor the marker — and any marker an earlier server-config run left on
 # it is removed.
