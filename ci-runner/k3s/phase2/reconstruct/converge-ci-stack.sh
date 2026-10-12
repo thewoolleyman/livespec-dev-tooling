@@ -138,6 +138,20 @@ done
 
 ARC_CHART_VERSION="0.14.2"   # co-maintained with ../../install-arc.sh + README
 KUEUE_VERSION="v0.19.1"      # co-maintained with ../../install-kueue.sh
+# The two ARC charts, INSTALLED FROM THE ARTIFACT TREE rather than pulled from
+# the upstream OCI registry (2026-10-12, item livespec-dev-tooling-tb2az6).
+# Steps 6 and 7 used to `helm upgrade --install` straight from ghcr.io, which
+# put two registry pulls on the path of an unattended boot — the same class of
+# dependency as step 4's old Kueue release URL, and the same consequence when it
+# fails: no controller, no listeners, no CI for the whole fleet until an
+# operator re-runs this by hand. The ci_converge_unit Ansible role now `helm
+# pull`s both pinned charts into arc/charts/ at APPLY time, when an operator is
+# present and a failure is loud, and the artifact tree is ordinary disk that
+# survives the reboot the tmpfs datastore does not. Co-maintained with that
+# role's ci_converge_unit_arc_chart_version and ci_converge_unit_arc_charts.
+ARC_CHARTS_DIR="${ARC_DIR}/charts"
+ARC_CONTROLLER_CHART="${ARC_CHARTS_DIR}/gha-runner-scale-set-controller-${ARC_CHART_VERSION}.tgz"
+ARC_SCALE_SET_CHART="${ARC_CHARTS_DIR}/gha-runner-scale-set-${ARC_CHART_VERSION}.tgz"
 CONTROLLER_NAMESPACE="arc-systems"
 RUNNERS_NAMESPACE="arc-runners"
 PROBE_KUBECONFIG="${CI_KUEUE_PROBE_KUBECONFIG:-/etc/ci-runner/kueue-webhook-probe.kubeconfig}"
@@ -475,24 +489,36 @@ log "6. Install/upgrade the ARC controller (idempotent via helm upgrade --instal
 # Inlined from install-arc.sh step 1 rather than invoked, because install-arc.sh
 # is not decomposed into a controller-only entry point and its step 2 applies
 # the SUPERSEDED phase-1 values-host-unique.yaml (see the SCALE_SETS note).
+#
+# No --version: a chart TARBALL carries its version intrinsically, and passing
+# the flag beside a local path makes helm reject the pair. The tarball's NAME
+# carries ARC_CHART_VERSION, so the pin is still asserted — by the guard below,
+# which fails with the remedy rather than letting helm report an absent file in
+# wording that names neither the pull nor the role that performs it.
+[ -f "${ARC_CONTROLLER_CHART}" ] \
+  || { echo "FATAL: ${ARC_CONTROLLER_CHART} is missing; re-run the ci_converge_unit Ansible role to pull the pinned ARC charts into the artifact tree" >&2; exit 1; }
 helm upgrade --install arc \
   --namespace "$CONTROLLER_NAMESPACE" --create-namespace \
-  --version "$ARC_CHART_VERSION" \
-  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+  "$ARC_CONTROLLER_CHART"
 kubectl -n "$CONTROLLER_NAMESPACE" rollout status deployment \
   -l app.kubernetes.io/name=gha-rs-controller --timeout=120s
 
 # ---------------------------------------------------------------------------
 log "7. Install/upgrade all ${#SCALE_SETS[@]} runner scale sets from phase-2 values files"
+# Asserted ONCE, before the loop: all eleven releases install the SAME chart
+# tarball, so re-checking it per release would say nothing new — and a chart
+# nobody pulled means no runners at all, which is worth failing on before the
+# first helm call rather than eleven times over.
+[ -f "${ARC_SCALE_SET_CHART}" ] \
+  || { echo "FATAL: ${ARC_SCALE_SET_CHART} is missing; re-run the ci_converge_unit Ansible role to pull the pinned ARC charts into the artifact tree" >&2; exit 1; }
 for release in $(printf '%s\n' "${!SCALE_SETS[@]}" | sort); do
   values_file="${ARC_DIR}/${SCALE_SETS[$release]}"
   [ -f "$values_file" ] || { echo "FATAL: values file not found: ${values_file}"; exit 1; }
   log "7.${release}: helm upgrade --install ${release}"
   helm upgrade --install "$release" \
     --namespace "$RUNNERS_NAMESPACE" --create-namespace \
-    --version "$ARC_CHART_VERSION" \
     -f "$values_file" \
-    oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+    "$ARC_SCALE_SET_CHART"
 done
 
 # ---------------------------------------------------------------------------
