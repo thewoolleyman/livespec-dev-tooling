@@ -31,6 +31,10 @@
       tags: [host_tools]
     - role: sccache_redis
       tags: [sccache_redis]
+    # The per-uid keyring ceilings the 1Password env wrapper cache needs; this
+    # host runs with-livespec-env.sh and was at the kernel defaults.
+    - role: keyring_quota
+      tags: [keyring_quota]
     # The aggregate resource envelope around this host's sandbox containers,
     # interim until the Kubernetes sandbox backend restores per-run limits. Its
     # own tag converges the envelope and restarts NOTHING; the separate
