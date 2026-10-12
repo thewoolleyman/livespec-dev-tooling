@@ -24,6 +24,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 EX_LOCKED = 73
 EX_COPIED = 75
@@ -66,6 +67,66 @@ def publish_copied(record, role, data):
     finally:
         os.close(dfd)
 
+PARALLEL = 8
+
+
+def cutover_copy(source, dest):
+    """Mirror SOURCE onto DEST: parallel per-subtree rsyncs, then one full pass.
+
+    No -c. Measured on hp 2026-10-12: a single-threaded checksum pass over a
+    containerd store of small files ran at ~1,100 reads/s (~10 MB/s) on the
+    DRAM-less destination, putting the window at hours. Size+mtime is the
+    comparison instead; the in-place-mutation case -c guarded against is
+    confined to the writable layers of containers ended by this very cutover
+    (blobs and image layers are immutable and content-addressed, and the bolt
+    metadata DB changes size and mtime when written). Maintainer decision,
+    2026-10-12.
+
+    Phase 1 runs up to PARALLEL rsyncs over the depth-2 subdirectories, where
+    nearly all of a store's bytes live (snapshots/<n>, overlay2/<id>, ...).
+    Phase 2 is one rsync over the whole store: by then every subtree is in
+    place, so it is mostly a stat scan, and it carries what phase 1 did not —
+    files at depth 1 and 2, deletions above the units, and hardlinks that
+    cross unit boundaries (-H links only within one rsync process).
+    """
+    units = []
+    for top in sorted(os.listdir(source)):
+        top_path = os.path.join(source, top)
+        if os.path.isdir(top_path) and not os.path.islink(top_path):
+            for sub in sorted(os.listdir(top_path)):
+                sub_path = os.path.join(top_path, sub)
+                if os.path.isdir(sub_path) and not os.path.islink(sub_path):
+                    units.append(os.path.join(top, sub))
+    print(f"phase 1: {len(units)} subtrees, {PARALLEL} at a time", flush=True)
+    running = []
+    failed = []
+    for unit in units:
+        os.makedirs(os.path.dirname(os.path.join(dest, unit)), exist_ok=True)
+        while len(running) >= PARALLEL:
+            running = reap(running, failed)
+        running.append((unit, subprocess.Popen(
+            ["rsync", "-aHAX", "--delete",
+             os.path.join(source, unit) + "/", os.path.join(dest, unit) + "/"])))
+    while running:
+        running = reap(running, failed)
+    if failed:
+        print(f"phase 1 failed for: {failed}", file=sys.stderr)
+        return 1
+    print("phase 2: full pass", flush=True)
+    return subprocess.call(["rsync", "-aHAX", "--delete", source + "/", dest + "/"])
+
+
+def reap(running, failed):
+    """Wait for one of RUNNING to finish; return the rest."""
+    while True:
+        for i, (unit, proc) in enumerate(running):
+            rc = proc.poll()
+            if rc is not None:
+                if rc != 0:
+                    failed.append((unit, rc))
+                return running[:i] + running[i + 1:]
+        time.sleep(0.2)
+
 
 def main(argv):
     if len(argv) not in (7, 8) or argv[1] not in ("preseed", "cutover"):
@@ -100,8 +161,7 @@ def main(argv):
         rc = subprocess.call(cmd)
         return rc if rc in (0, 24) else rc
 
-    cmd = ["rsync", "-aHAXc", "--delete", source.rstrip("/") + "/", dest.rstrip("/") + "/"]
-    rc = subprocess.call(cmd)
+    rc = cutover_copy(source.rstrip("/"), dest.rstrip("/"))
     if rc != 0:
         return rc
     # Re-read under the same lock before publishing: the entry must still be

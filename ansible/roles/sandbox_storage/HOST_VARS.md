@@ -113,9 +113,9 @@ the partition it resolved, never by presence alone.
      are a refusal), and no line of the mount table references either store's
      subtree — a container's overlay under `/run/containerd` would;
    - copies each uncopied store through the copy helper
-     (`/usr/local/libexec/sandbox-storage-copy`, `rsync -aHAXc --delete`,
-     checksummed because the preseed ran against a live store: budget tens of
-     minutes for the two full reads) and publishes that store `copied: true`
+     (`/usr/local/libexec/sandbox-storage-copy`: up to 8 parallel
+     `rsync -aHAX --delete` over the depth-2 subtrees, then one full pass;
+     size+mtime comparison, not `-c`, which ran at ~10 MB/s on hp) and publishes that store `copied: true`
      atomically INSIDE the same lock acquisition, so no preseed can write it
      afterwards;
    - unmounts the old binds, snapshots fstab, writes the two bind lines, mounts
