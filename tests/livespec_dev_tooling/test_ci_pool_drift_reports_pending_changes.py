@@ -97,6 +97,23 @@ _CREDENTIAL_REFUSAL = (
 # a status against them is asserting what the operator sees.
 _TAINT_PROBE_TASK = "Probe the live node-role/ci taint against the profile"
 _TAINT_REMOVAL_TASK = "Remove the node-role/ci taint the profile no longer declares"
+_CREDENTIAL_PROBE_TASK = (
+    "Probe whether the API server still accepts the delivered node-status credential"
+)
+_CREDENTIAL_RENDER_TASK = "Render the node-status kubeconfig"
+_CREDENTIAL_DELIVERY_TASK = "Deliver the node-status kubeconfig to the agent"
+
+# A stand-in ed25519 host public key. The `node_status_credential` role refuses a
+# host key that does not read back as one, so the fixture has to offer something
+# shaped like one; these bytes authenticate nothing and reach no `known_hosts`
+# outside `tmp_path`.
+_HOST_KEY_LINE = (
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIStandInHostKeyForThisTestOnly root@stand-in\n"
+)
+
+# Set in the stand-in kubectl's environment to make the node-status probe
+# SUCCEED — the converged agent, whose credential the API server accepts.
+_CREDENTIAL_ACCEPTED_ENV = "KUBECTL_CREDENTIAL_ACCEPTED"
 
 # A stand-in `sudo` that drops its option flags and its `-u <user>` and execs the
 # rest. The roles' reads carry `become: true` because the files they read are
@@ -127,6 +144,10 @@ case "$*" in
     printf '{_TAINT_KEY}'
     exit 0 ;;
   *'get --subresource=status node'*)
+    if [ -n "${{{_CREDENTIAL_ACCEPTED_ENV}:-}}" ]; then
+      printf 'NAME STATUS\\nstand-in Ready\\n'
+      exit 0
+    fi
     printf '%s\\n' '{_CREDENTIAL_REFUSAL}' >&2
     exit 1 ;;
   *'jsonpath={{.data.token}}'*)
@@ -214,7 +235,7 @@ def _write_play(*, scratch: _Scratch, role: str, host: str, host_vars: dict[str,
     return inventory
 
 
-def _drift_environment(*, scratch: _Scratch) -> dict[str, str]:
+def _drift_environment(*, scratch: _Scratch, credential_accepted: bool) -> dict[str, str]:
     """The child's environment, built rather than inherited wholesale.
 
     `COVERAGE_PROCESS_START` and `COV_CORE_*` are scrubbed so the ansible
@@ -244,10 +265,19 @@ def _drift_environment(*, scratch: _Scratch) -> dict[str, str]:
             "ANSIBLE_INTERPRETER_PYTHON": "auto_silent",
         }
     )
+    if credential_accepted:
+        env[_CREDENTIAL_ACCEPTED_ENV] = "1"
     return env
 
 
-def _run_drift(*, scratch: _Scratch, role: str, host: str, host_vars: dict[str, str]) -> str:
+def _run_drift(
+    *,
+    scratch: _Scratch,
+    role: str,
+    host: str,
+    host_vars: dict[str, str],
+    credential_accepted: bool = False,
+) -> str:
     """Run `--check --diff` over one role and return the callback output."""
     inventory = _write_play(scratch=scratch, role=role, host=host, host_vars=host_vars)
     completed = subprocess.run(
@@ -263,7 +293,7 @@ def _run_drift(*, scratch: _Scratch, role: str, host: str, host_vars: dict[str, 
             str(scratch.root / "play.yml"),
         ],
         cwd=scratch.root,
-        env=_drift_environment(scratch=scratch),
+        env=_drift_environment(scratch=scratch, credential_accepted=credential_accepted),
         capture_output=True,
         text=True,
         timeout=_DRIFT_TIMEOUT_SECONDS,
@@ -372,4 +402,107 @@ def test_drift_reports_a_node_whose_live_taint_its_profile_no_longer_declares(
     assert _status_of(statuses=statuses, task=_TAINT_PROBE_TASK) == "changed"
     assert _status_of(statuses=statuses, task=_TAINT_REMOVAL_TASK) == "skipping"
     assert _recap_changed(output=output, host=host) == 1
+    _assert_only_read(scratch=scratch)
+
+
+def _agent_host_vars(*, scratch: _Scratch, host: str) -> dict[str, str]:
+    """An agent-shaped `node_status_credential` fixture, entirely under the scratch root.
+
+    Every path the role would reach on a real agent — the delivered credential,
+    the runtime refresh tool and its env-file, the server's host key, the ssh
+    user's `known_hosts` — is redirected into `tmp_path`, and the directories the
+    role expects to find rather than create are created here. What is NOT
+    redirected is the role's logic: the profile is a real profile, the mint is
+    the real `ansible.builtin.shell`, and the guards are the committed ones.
+    """
+    delivered = scratch.root / "etc" / "rancher" / "k3s" / "node-status-kubeconfig"
+    delivered.parent.mkdir(parents=True)
+    tooling = scratch.root / "etc" / "ci-runner"
+    tooling.mkdir(parents=True)
+    ssh_dir = scratch.root / "home" / ".ssh"
+    ssh_dir.mkdir(parents=True)
+    host_key = scratch.root / "ssh_host_ed25519_key.pub"
+    host_key.write_text(_HOST_KEY_LINE, encoding="utf-8")
+    profile = scratch.root / f"{host}.env"
+    profile.write_text(
+        f"NODE_NAME={host}\n"
+        f"CLUSTER_ROLE=agent\n"
+        f"CLUSTER_JOIN_ADDRESS=https://198.51.100.1:6443\n"
+        f"CHURN_KUBECONFIG_FILE={delivered}\n",
+        encoding="utf-8",
+    )
+    return {
+        "cluster_role": "agent",
+        "node_status_credential_profile": str(profile),
+        "node_status_credential_server_host": host,
+        # One attempt, no delay: the token Secret's absence is this fixture's
+        # live state, not a cold API server to wait out.
+        "node_status_credential_token_retries": "1",
+        "node_status_credential_token_delay": "0",
+        "node_status_credential_refresh_bin": str(scratch.bin_dir / "refresh-node-status"),
+        "node_status_credential_refresh_env": str(tooling / "node-status-refresh.env"),
+        "node_status_credential_server_host_key": str(host_key),
+        "node_status_credential_known_hosts": str(ssh_dir / "known_hosts"),
+        # The stand-in `sudo` ignores `-u`, so this names the account the
+        # role's become_user and its env-file record, not a real login.
+        "node_status_credential_ssh_user": "root",
+    }
+
+
+def test_drift_reports_an_agent_whose_delivered_node_status_credential_is_refused(
+    *, scratch: _Scratch
+) -> None:
+    """The second Definition-of-Done assertion, and the one `--check` could see least.
+
+    The stand-in `kubectl` refuses the agent's delivered credential with the API
+    server's own wording, and answers the ServiceAccount token read as a
+    reboot-emptied datastore does: with nothing. So the mint is skipped (it is an
+    `ansible.builtin.shell`), the token read comes back empty, and the render and
+    the delivery skip on their non-empty-token guard — the exact state in which
+    the report said `changed=0` over an agent whose credential nothing accepted.
+
+    The render and the delivery are asserted SKIPPED on purpose. The Definition
+    of Done asks for the agent to be reported as changed *rather than* for those
+    two to stop skipping, and they cannot stop: the credential they would write
+    does not exist until the cluster-side mint the drift report must not perform.
+    So the report has to come from the probe or from nowhere.
+    """
+    host = "drift-probe-agent"
+    output = _run_drift(
+        scratch=scratch,
+        role="node_status_credential",
+        host=host,
+        host_vars=_agent_host_vars(scratch=scratch, host=host),
+    )
+    statuses = _task_statuses(output=output, host=host)
+
+    assert _status_of(statuses=statuses, task=_CREDENTIAL_PROBE_TASK) == "changed"
+    assert _status_of(statuses=statuses, task=_CREDENTIAL_RENDER_TASK) == "skipping"
+    assert _status_of(statuses=statuses, task=_CREDENTIAL_DELIVERY_TASK) == "skipping"
+    _assert_only_read(scratch=scratch)
+
+
+def test_drift_reports_no_change_for_an_agent_whose_credential_the_api_server_accepts(
+    *, scratch: _Scratch
+) -> None:
+    """The other half of the same probe: a clean run must keep meaning something.
+
+    A probe that reported a change on every non-zero exit — or on every run —
+    would replace a report that was silent about real drift with one that is
+    noisy about none, and an operator cannot read either. So the probe is keyed
+    on the API server's REFUSAL wording, exactly as the runtime
+    `patch-node-churn-capacity.sh` keys its own retry: a credential the server
+    accepts is the converged state, and the converged state reports `ok`.
+    """
+    host = "drift-probe-agent"
+    output = _run_drift(
+        scratch=scratch,
+        role="node_status_credential",
+        host=host,
+        host_vars=_agent_host_vars(scratch=scratch, host=host),
+        credential_accepted=True,
+    )
+    statuses = _task_statuses(output=output, host=host)
+
+    assert _status_of(statuses=statuses, task=_CREDENTIAL_PROBE_TASK) == "ok"
     _assert_only_read(scratch=scratch)

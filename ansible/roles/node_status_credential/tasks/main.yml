@@ -84,6 +84,54 @@
           {{ node_status_credential_admin_kubeconfig }}
         success_msg: "{{ inventory_hostname }}: node-status credential target {{ node_status_credential_target }}"
 
+    - name: Probe whether the API server still accepts the delivered node-status credential
+      # THE ONE TASK IN THIS ROLE A DRIFT REPORT CAN LEARN ANYTHING FROM, and it
+      # is a READ. Everything that re-mints and re-delivers this credential is a
+      # command, a shell, or a template guarded on their results: under `--check`
+      # the mint below is SKIPPED (ansible cannot know whether running a shell
+      # would mutate anything), the token read then comes back empty, and the
+      # render and the delivery skip on their non-empty-token guard. So
+      # `just ansible-drift ansible/ci-pool.yml` reported `changed=0` over an
+      # agent whose credential nothing accepted — measured 2026-10-12 at 04:26Z
+      # on gmktec-xubuntu (livespec-dev-tooling-ewjby3), while the node
+      # advertised no churn-slot capacity at all. Nothing in the play was wrong;
+      # nothing in it could speak.
+      #
+      # `check_mode: false` so the read runs during the report rather than being
+      # skipped with the writes it reports for, and `failed_when: false` because a
+      # refused credential is the state this role REPAIRS — aborting here would
+      # stop the play before the repair it is reporting.
+      #
+      # THE SAME READ THE RUNTIME MAKES, so the report and the reapply timer
+      # agree about what "accepted" means: `get --subresource=status`, never a
+      # bare `get node`. The grant reaches `nodes/status` only — deliberately, so
+      # it cannot touch `spec` and untaint the node — so a bare read 403s even
+      # with a credential the server accepts. See
+      # ../../../ci-runner/k3s/phase2/node-extended-resource/patch-node-churn-capacity.sh.
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - --subresource=status
+          - node
+          - "{{ node_status_credential_node }}"
+      environment:
+        KUBECONFIG: "{{ node_status_credential_target }}"
+      become: true
+      register: node_status_credential_probe
+      check_mode: false
+      failed_when: false
+      # MATCHED ON THE MESSAGE, not on the exit status alone, and on the same
+      # wording set the runtime patch script matches: a non-zero probe can mean
+      # many things and only one of them is the credential being refused. An
+      # unreachable API server or a node still registering is not a change this
+      # role would make on an apply, and a probe that reported one would replace
+      # a report silent about real drift with one noisy about none.
+      changed_when: >-
+        node_status_credential_probe.rc != 0
+        and (node_status_credential_probe.stderr
+        | regex_search(node_status_credential_rejected_pattern, ignorecase=True)) is not none
+
     - name: Select the ServiceAccount and its token Secret name
       ansible.builtin.set_fact:
         node_status_credential_sa: "{{ node_status_credential_sa_prefix }}{{ node_status_credential_node }}"
