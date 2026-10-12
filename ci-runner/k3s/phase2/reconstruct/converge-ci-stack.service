@@ -39,16 +39,46 @@
 # RemainAfterExit — a converged cluster needs no held state, and leaving it
 # inactive-dead after a clean exit is correct. Re-run manually any time with
 # `systemctl start converge-ci-stack.service` (idempotent).
+#
+# WHY IT RESTARTS ITSELF (2026-10-12, item livespec-dev-tooling-tb2az6): this
+# unit is the ONLY thing between an unattended reboot and a cluster with no
+# Kueue, no ARC and no runner scale sets, and it carried systemd's default
+# Restart=no — so ONE failed run was final. It went inactive-dead, nothing
+# retried, and every repository in the fleet had no CI until a human noticed.
+# That happened: the 11:58Z reboot's converge failed at step 4 in 35 s on a
+# transient HTTP 504 from GitHub's edge; a hand-started run at 12:01Z failed the
+# same way and one at 12:02Z got through. The retry that would have recovered
+# the cluster unattended was a minute away and nothing was there to perform it.
+# ../kueue/core/ and the converge's steps 6/7 no longer fetch anything at boot,
+# which removes THAT trigger; this is the general case for whatever the next
+# transient turns out to be.
+#
+# Restart=on-failure is the ONE restart mode a Type=oneshot unit may carry —
+# systemd rejects `always` and `on-success` for oneshot, and rightly: a converge
+# that succeeded and exited must stay exited. RestartSec gives whatever the run
+# tripped on time to settle rather than re-entering it immediately.
+#
+# StartLimitIntervalSec/StartLimitBurst are in [Unit] because that is where
+# systemd reads them, and the window is GENEROUS because the converge
+# legitimately runs for minutes: counted against the 10s default window a
+# second attempt could never be spent, which would leave the unit exactly as
+# unrecoverable as Restart=no. It is still BOUNDED — ten attempts an hour, not
+# unlimited — so a PERMANENT defect ends as a failed unit an operator can read
+# instead of an invisible restart loop that hides the cause.
 [Unit]
 Description=Converge the CI cluster stack (provisioner + Kueue + queues + ARC + scale sets) on the k3s host
 After=k3s.service reapply-node-extended-resource.service inject-github-app-secret.service
 Requires=k3s.service
 Wants=reapply-node-extended-resource.service inject-github-app-secret.service
+StartLimitIntervalSec=3600
+StartLimitBurst=10
 
 [Service]
 Type=oneshot
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 ExecStart=/usr/local/lib/ci-runner-k3s/converge-ci-stack.sh
+Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
