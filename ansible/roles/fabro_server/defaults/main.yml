@@ -193,6 +193,23 @@ fabro_server_web_verify_attempts: 300
 # quiet server; the preflight then re-checks that it really is quiet.
 fabro_server_restart_allowed: false
 
+# --- an attended stop or restart that ACCEPTS run loss ---------------------
+#
+# The carrying-runs refusal below protects in-flight work, and on a busy factory
+# it can never pass: other sessions' dispatchers admit new runs during the
+# play's preflight, so "re-run when the instance is quiet" does not converge.
+# Measured on hp-xubuntu 2026-10-12: three attended restarts in a row refused
+# with 2-3 runs admitted after the instance had been emptied. Without this key
+# the role had no way to stop or restart a busy instance at all, and the fleet
+# host guard forbids doing it by hand.
+#
+# Setting this true, together with fabro_server_restart_allowed (or
+# service_state: stopped), is the operator's explicit acceptance that every run
+# the instance is carrying is killed. The probe still runs and reports the
+# count; only the refusal is waived. Never set it in host_vars: it is a
+# per-invocation decision (-e fabro_server_interrupt_runs_allowed=true).
+fabro_server_interrupt_runs_allowed: false
+
 # --- where a refused restart is REMEMBERED ---------------------------------
 #
 # A REFUSAL THAT CANNOT BE REDEEMED IS NOT A DEFERRAL. The comment above says a
