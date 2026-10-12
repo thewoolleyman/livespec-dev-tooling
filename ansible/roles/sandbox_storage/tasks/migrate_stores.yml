@@ -693,17 +693,19 @@
 - name: Copy each uncopied store onto the sandbox storage disk, and publish it as copied
   # With the daemons stopped and masked, no shim alive and nothing in the
   # mount table referencing the store, so the copy is of a consistent thing.
-  # Through the copy helper, which runs `rsync -aHAXc --delete` (-aHAX:
-  # hardlinks, ACLs, xattrs; -c: checksum every file, because the preseed ran
-  # against a live store and a page written in place keeps its size and its
-  # second of mtime; --delete: the destination is this role's own and must
-  # end an exact mirror) and then publishes `copied: true` for that store —
+  # Through the copy helper, which mirrors the store with up to 8 parallel
+  # `rsync -aHAX --delete` processes over its depth-2 subtrees and then one
+  # full pass (deletions, top-level files, cross-subtree hardlinks), comparing
+  # size and mtime — NOT -c: a single-threaded checksum pass ran at ~10 MB/s
+  # on hp and would have held the window for hours (maintainer decision,
+  # 2026-10-12; see the helper's docstring for why the risk -c covered is
+  # confined to the writable layers of the containers this cutover ends) —
+  # and then publishes `copied: true` for that store —
   # atomically, and INSIDE THE SAME LOCK ACQUISITION as the copy (Codex review
   # 5, finding 1). Any preseed that gets the lock afterwards reads the
   # published record and leaves the store alone. Exit 73 (lock held by a
   # preseed mid-write) and 76 (untrustworthy record) refuse; the daemons stay
-  # masked and a re-run resumes. Budget: the checksum reads both copies in
-  # full (~190 GB each on hp), so the window is tens of minutes.
+  # masked and a re-run resumes.
   ansible.builtin.command: >-
     {{ sandbox_storage_copy_helper }} cutover
     {{ sandbox_storage_mount }}/{{ sandbox_storage_lock }}
