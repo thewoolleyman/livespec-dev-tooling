@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.6...v1.95.7) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ansible:** trust the control-plane host key for the node-status credential pull ([14e282d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/14e282d960cd0e592a367b1a0cbd0c3e297ee19e))
+
 ## [1.95.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.5...v1.95.6) (2026-10-12)
 
 
