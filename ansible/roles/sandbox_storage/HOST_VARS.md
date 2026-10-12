@@ -28,7 +28,7 @@ to its RAM, and brings the two bind lines under management.
 | `sandbox_storage_containerd_dir` | `/var/lib/containerd` | containerd's bind target |
 | `sandbox_storage_docker_dir` | `/var/lib/docker` | docker's bind target |
 | `sandbox_storage_dropin_name` | `10-requires-sandbox-storage.conf` | the `RequiresMountsFor=` drop-in each daemon gets |
-| `sandbox_storage_preseed_bwlimit` | `40m` | the preseed's read ceiling on the source disk (`rsync --bwlimit`); `ionice -c3` is a no-op under `mq-deadline`, so this is the real control |
+| `sandbox_storage_preseed_bwlimit` | `40m` | the preseed's transfer cap (`rsync --bwlimit`; caps file-data throughput, not the metadata scan); `ionice -c3` is a no-op under `mq-deadline`, so this is the real control |
 | `sandbox_storage_sources_record` | `.sandbox-storage-sources.json` | file on the new disk recording the old stores' paths, written before the cutover unmounts anything; an interrupted cutover resumes from it |
 | `sandbox_storage_fstab_snapshot` | `/etc/fstab.pre-sandbox-storage` | the one named pre-cutover fstab copy the rollback restores |
 | `sandbox_storage_allow_format` | `false` | **per-run opt-in**: partition and format an unprepared disk (stops nothing) |
@@ -71,7 +71,13 @@ the partition it resolved, never by presence alone.
    DEFERRED by the role: it reports `DEFERRED: …` and touches no daemon, no
    bind and no drop-in. Re-running later with only `allow_preseed` refreshes
    the copy incrementally.
-3. **Drain, then move.** Stopping docker and containerd ends every in-flight
+3. **Drain, then move — NOT YET RATIFIED.** The role currently REFUSES
+   `sandbox_storage_allow_live_migration` (see the refusal task at the top of
+   the cutover section of `tasks/migrate_stores.yml`): the second adversarial
+   review of 2026-10-12 passed steps 1–2 and found the cutover's quiescence
+   check and its recovery from an interrupted run to carry data-loss paths.
+   The follow-up work-item that fixes them removes the refusal; until it
+   lands, the procedure below is the DESIGN, not an operation. Stopping docker and containerd ends every in-flight
    sandbox run on the host (the Dispatcher records them as failed), so stop
    dispatching to each instance in this host's `fabro_server_instances` and
    wait for its active runs (`HOME=<home_env> <binary_path> --json ps`). Do NOT
@@ -120,8 +126,10 @@ those first or accept their loss.
    lines as two separate commands: `mount /var/lib/containerd` and
    `mount /var/lib/docker`. Start `containerd.service`, `docker.socket`,
    `docker.service`.
-4. `swapoff LABEL=sandbox-swap` and drop its fstab line only if the swap is
-   also being retired; the disk's partitions may then be wiped by hand.
+4. Only if the disk is being retired altogether: `swapoff LABEL=sandbox-swap`,
+   `umount /srv/sandbox-storage`, drop the swap and filesystem fstab lines,
+   and `systemctl daemon-reload`; the disk's partitions may then be wiped by
+   hand.
 
 ## Expiry
 

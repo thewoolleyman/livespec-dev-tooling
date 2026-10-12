@@ -222,6 +222,28 @@
 
 # --- the cutover: everything below runs only when authorised -----------------
 
+- name: Refuse the cutover until its recovery and quiescence paths are ratified
+  # FAILS CLOSED, ON PURPOSE. The second adversarial review (Codex gpt-6-astra,
+  # 2026-10-12) passed phase A — the format, the swap, the preseed — and found
+  # phase B NOT READY: a surviving shim can hold a rootfs mount under
+  # /run/containerd that the submount guard below does not see; a missing bind
+  # after a successful cutover reclassifies an authoritative new store as
+  # pending and would --delete it from the stale old copy; the recorded source
+  # is a path, not a verified filesystem identity. Each is a data-loss path, so
+  # the flag that reaches them is refused here until the follow-up item that
+  # fixes them lands and removes this task. Nothing above this line stops a
+  # daemon or touches a bind.
+  ansible.builtin.assert:
+    that:
+      - not (sandbox_storage_allow_live_migration | bool)
+    fail_msg: >-
+      sandbox_storage_allow_live_migration is not yet ratified for use: the cutover's
+      recovery and quiescence paths carry known data-loss defects (see this task's
+      comment and the follow-up work-item named in HOST_VARS.md). The swap and the
+      preseed are live; the store move waits for that fix.
+    success_msg: the cutover is not requested
+  when: not ansible_check_mode
+
 - name: Record the old stores on the new disk before anything is unmounted
   # The record an interrupted cutover is resumed from. Written before the
   # daemons are stopped, so no interruption can leave the role without it.

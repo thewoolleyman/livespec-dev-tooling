@@ -281,6 +281,25 @@
     - sandbox_storage_prepared | bool
     - sandbox_storage_swap_devices[0] not in (sandbox_storage_swapon.stdout_lines | map('split') | map('first') | list)
 
+- name: Report a swap partition active at the wrong priority, under --check
+  # The assertion below is skipped under --check (it reads the post-activation
+  # state), so this is what makes a wrong priority visible on a drift read.
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: {{ sandbox_storage_swap_devices[0] }} is active at priority
+      '{{ sandbox_storage_swap_check_prio }}', not {{ sandbox_storage_swap_priority }};
+      swapoff it by hand and re-run to activate it at the declared priority
+  vars:
+    sandbox_storage_swap_check_prio: >-
+      {{ sandbox_storage_swapon.stdout_lines | map('split')
+         | selectattr(0, 'equalto', sandbox_storage_swap_devices[0])
+         | map(attribute=1) | first | default('') }}
+  when:
+    - ansible_check_mode
+    - sandbox_storage_prepared | bool
+    - sandbox_storage_swap_check_prio | length > 0
+    - sandbox_storage_swap_check_prio != sandbox_storage_swap_priority | string
+
 - name: Re-read the active swap devices
   ansible.builtin.command: swapon --show=NAME,PRIO --noheadings --raw
   register: sandbox_storage_swapon_after
@@ -341,9 +360,12 @@
     storage_layout_mount_target: "{{ sandbox_storage_mount }}"
   when: sandbox_storage_prepared | bool
 
-- name: Read which device serves the filesystem mountpoint
-  # A read; rc 1 when nothing is mounted there (a --check on a fresh host).
-  ansible.builtin.command: findmnt -rno SOURCE --nofsroot {{ sandbox_storage_mount }}
+- name: Read which device and subtree serve the filesystem mountpoint
+  # "DEVICE FSROOT"; rc 1 when nothing is mounted there (a --check on a fresh
+  # host). FSROOT too, not SOURCE alone: a bind of a SUBDIRECTORY of the right
+  # partition onto the mountpoint has the right device and the wrong root, and
+  # the stores would land beneath the wrong subtree.
+  ansible.builtin.command: findmnt -rno SOURCE,FSROOT --nofsroot {{ sandbox_storage_mount }}
   register: sandbox_storage_mount_source
   changed_when: false
   failed_when: false
@@ -351,19 +373,20 @@
   become: true
   when: sandbox_storage_prepared | bool
 
-- name: Refuse a filesystem mountpoint served from anything but the sandbox storage partition
+- name: Refuse a filesystem mountpoint served from anything but the sandbox storage partition's root
   # The mount helper accepts ANY existing mount at the target. A stray bind
   # from / or /data there would take the preseed's 190 GB onto the disk this
   # role exists to relieve, and the final presence check would pass.
   ansible.builtin.assert:
     that:
       - sandbox_storage_mount_source.rc == 0
-      - sandbox_storage_mount_source.stdout | trim == sandbox_storage_fs_devices[0]
+      - (sandbox_storage_mount_source.stdout | split)[0] == sandbox_storage_fs_devices[0]
+      - (sandbox_storage_mount_source.stdout | split)[1] == '/'
     fail_msg: >-
       {{ sandbox_storage_mount }} is served from
       '{{ sandbox_storage_mount_source.stdout | default('') | trim }}', not from
-      {{ sandbox_storage_fs_devices[0] }}; unmount whatever is there by hand and re-run
-    success_msg: "{{ sandbox_storage_mount }} is served from {{ sandbox_storage_fs_devices[0] }}"
+      {{ sandbox_storage_fs_devices[0] }} /; unmount whatever is there by hand and re-run
+    success_msg: "{{ sandbox_storage_mount }} is served from {{ sandbox_storage_fs_devices[0] }} /"
   when:
     - sandbox_storage_prepared | bool
     - not ansible_check_mode or sandbox_storage_mount_source.rc == 0
