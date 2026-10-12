@@ -1,0 +1,164 @@
+#!/usr/bin/python3
+# Run by Ansible (role: sandbox_storage, reclaim_old_stores.yml); not installed.
+#
+# Is anything on this host still using an OLD store copy? Prints one JSON
+# object {"uuid": ..., "count": N, "refs": [...]} and exits 0 when the scan
+# completed; exits 2, printing why, when it could not see everything — the
+# caller refuses on either a nonzero count or a nonzero exit (fail closed).
+#
+# A reference is any of:
+#   bind     a mount, in ANY mount namespace, served from the old filesystem
+#            at or below the old source's subtree of it;
+#   overlay  an overlay mount whose lower/upper/work dirs name a path under
+#            the old source;
+#   open     a process whose root, cwd, open fd or mapped file is on the old
+#            filesystem under the old source (a host-namespace path) — or on
+#            the old filesystem AT ALL, for a process in another namespace,
+#            whose paths cannot be compared to the host's;
+#   survivor a process in a container cgroup that started before the
+#            cutover;
+#   private  an overlay in a non-host mount namespace that names a store
+#            alias (/var/lib/{containerd,docker}) or the old source and
+#            whose SUPERBLOCK (mountinfo's major:minor) the host namespace
+#            does not also carry. An old container's overlay names the same
+#            alias strings a new one does — even identical options, if the
+#            same container was restarted from the copied store — so only
+#            the superblock tells a propagated copy of a host overlay from a
+#            retained old one, and process age proves nothing (a holder can
+#            fork and exit). Host-namespace overlays are exempt: the cutover
+#            published `copied: true` only after verifying no mount under
+#            either store survived, so every one since was made by daemons
+#            serving the new disk. (Codex reviews 6-8, 2026-10-12.)
+#
+#
+# A mount namespace held alive with NO process inside it — an nsfs bind
+# mount (snapd keeps /run/snapd/ns/<snap>.mnt on desktop hosts) or an open
+# fd — is read through its pin with nsenter and held to the same bind,
+# overlay and private rules; one that cannot be read is a reference
+# ("pinned"), so the scan still fails closed (Codex review 9).
+#
+# A namespace is marked seen only after its mountinfo was read, so a
+# representative process that exits mid-scan does not hide its namespace; a
+# process that vanished is skipped, and any OTHER read error is a failure.
+#
+# usage: sandbox-storage-old-refs OLD_SOURCE CUTOVER_RECORD ALIAS...
+
+import json
+import os
+import subprocess
+import sys
+
+CONTAINER_CGROUP_MARKERS = ("docker", "containerd", "kubepods", "fabro-sandbox")
+
+
+def unescape(field):
+    return field.encode().decode("unicode_escape")
+
+
+def under(path, root):
+    root = root.rstrip("/") or "/"
+    return path == root or path.startswith(root + "/") or root == "/"
+
+
+def main():
+    src = os.path.realpath(sys.argv[1])
+    cutover = os.stat(sys.argv[2]).st_mtime
+    store_paths = [src] + sys.argv[3:]
+    dev = os.stat(src).st_dev
+    majmin = f"{os.major(dev)}:{os.minor(dev)}"
+    majmin_hex = f"{os.major(dev):02x}:{os.minor(dev):02x}"
+    out = subprocess.run(["findmnt", "-rno", "FSROOT,TARGET,UUID", "-T", src],
+                         check=True, capture_output=True, text=True).stdout.split()
+    fsroot, target, uuid = out[0], out[1], (out[2] if len(out) > 2 else "")
+    rel = src[len(target):] if target != "/" else src
+    sub = (fsroot.rstrip("/") + rel) or "/"
+
+    with open("/proc/stat") as f:
+        btime = next(int(l.split()[1]) for l in f if l.startswith("btime "))
+    ticks = os.sysconf("SC_CLK_TCK")
+    host_ns = os.readlink("/proc/1/ns/mnt")
+    with open("/proc/1/mountinfo") as f:
+        host_overlays = {line.split()[2] for line in f
+                         if line.partition(" - ")[2].startswith("overlay ")}
+
+    refs, seen, pins = [], set(), {}
+
+    def scan(ns, lines, pid):
+        seen.add(ns)
+        for line in lines:
+            left, _, right = line.partition(" - ")
+            lf, rf = left.split(), right.split()
+            root = unescape(lf[3])
+            if lf[2] == majmin and under(root, sub):
+                refs.append(f"bind {ns} {unescape(lf[4])} <- {root}")
+            if rf and rf[0] == "nsfs" and root.startswith("mnt:[") and pid:
+                pins.setdefault(root, f"/proc/{pid}/root{unescape(lf[4])}")
+            if rf and rf[0] == "overlay" and len(rf) > 2:
+                for opt in rf[2].split(","):
+                    key, _, val = opt.partition("=")
+                    if key in ("lowerdir", "upperdir", "workdir"):
+                        for p in val.split(":"):
+                            if p and under(unescape(p), src):
+                                refs.append(f"overlay {ns} {unescape(lf[4])} {key}={p}")
+                            if (p and ns != host_ns and lf[2] not in host_overlays
+                                    and any(under(unescape(p), a) for a in store_paths)):
+                                refs.append(f"private {ns} {unescape(lf[4])} {key}={p}")
+
+    vanished = (FileNotFoundError, ProcessLookupError)
+
+    for pid in sorted((p for p in os.listdir("/proc") if p.isdigit()), key=int):
+        base = f"/proc/{pid}"
+        try:
+            ns = os.readlink(f"{base}/ns/mnt")
+            if ns not in seen:
+                with open(f"{base}/mountinfo") as f:
+                    lines = f.read().splitlines()
+                scan(ns, lines, pid)
+            in_host = ns == host_ns
+            with open(f"{base}/stat") as f:
+                started = btime + int(f.read().rsplit(")", 1)[1].split()[19]) / ticks
+            with open(f"{base}/cgroup") as f:
+                cgroup = f.read()
+            if started < cutover and any(m in cgroup for m in CONTAINER_CGROUP_MARKERS):
+                refs.append(f"survivor pid {pid} started before the cutover in {cgroup.strip()}")
+            links = ["root", "cwd"]
+            links += [f"fd/{n}" for n in os.listdir(f"{base}/fd")]
+            for link in links:
+                try:
+                    path = os.readlink(f"{base}/{link}")
+                    if path.startswith("mnt:["):
+                        pins.setdefault(path, f"{base}/{link}")
+                        continue
+                    if os.stat(f"{base}/{link}").st_dev != dev:
+                        continue
+                except vanished:
+                    continue
+                if not in_host or under(path, src):
+                    refs.append(f"open pid {pid} {link} -> {path}")
+            with open(f"{base}/maps") as f:
+                for line in f:
+                    mf = line.split(maxsplit=5)
+                    if len(mf) == 6 and mf[3] == majmin_hex and (not in_host or under(mf[5].strip(), src)):
+                        refs.append(f"open pid {pid} maps {mf[5].strip()}")
+                        break
+        except vanished:
+            continue
+        except OSError as e:
+            print(f"cannot read {base}: {e}; the scan is incomplete", file=sys.stderr)
+            return 2
+
+    while set(pins) - seen:
+        ns = sorted(set(pins) - seen)[0]
+        read = subprocess.run(["nsenter", f"--mount={pins[ns]}", "cat", "/proc/self/mountinfo"],
+                              capture_output=True, text=True)
+        if read.returncode != 0 or not read.stdout:
+            refs.append(f"pinned {ns} at {pins[ns]} could not be read: {read.stderr.strip()}")
+            seen.add(ns)
+            continue
+        scan(ns, read.stdout.splitlines(), None)
+    print(json.dumps({"uuid": uuid, "count": len(refs), "refs": refs[:20]}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
