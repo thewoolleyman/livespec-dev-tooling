@@ -5,7 +5,7 @@ world is its `GateCommandRunner` seam, so a canned runner is the whole host and
 the whole cluster. No process is spawned, no mirror is pushed to, no manifest
 reaches an API server, and no ref is created anywhere.
 
-TWO PROPERTIES ARE LOAD-BEARING and each is here because its absence would be
+THREE PROPERTIES ARE LOAD-BEARING and each is here because its absence would be
 SILENT.
 
 The first is the ref cleanup. One gated push creates one ref, and nothing in the
@@ -15,7 +15,17 @@ behind. So the deletion is asserted on the success path, on a step that failed,
 on a step that RAISED, and on the wait giving up — an orphan ref raises no error
 anywhere and is visible only as unbounded growth weeks later.
 
-The second is that this slice does NOT adjudicate. A `Failed` gate comes back
+The second is that a gate reached FROM a repository's `pre-push` hook — the only
+way it is ever reached — must not start another one. git runs that hook for every
+push, the client's own mirror pushes included, so a push spelled with hooks live
+re-enters the hook, which delegates again, which pushes again, unbounded. Nothing
+errors at any level, so the symptom is a HANG and then a refusal that names the
+timeout rather than the cause: measured on the VPS 2026-10-12, 48 minutes and
+NO_VERDICT. `_PrePushHookedHost` below is that hook, emulated around the canned
+cluster, so the re-entry is a COUNT this suite can read rather than a wall-clock
+mystery on a host.
+
+The third is that this slice does NOT adjudicate. A `Failed` gate comes back
 here as an ordinary SUCCESS carrying the terminal state it read, because
 deciding pass from fail — and writing the green token on a pass — is S7b's job.
 A client that quietly folded "the Job failed" into its own failure track would
@@ -164,6 +174,120 @@ class _StubCluster:
         if len(self._states) > 1:
             return self._states.pop(0)
         return self._states[0]
+
+
+# How many times the emulated hook below may re-enter the gate. The real thing is
+# UNBOUNDED, and an unbounded recursion inside a test is a hang or a
+# `RecursionError` rather than a failed assertion — what has to be readable here
+# is the COUNT, so the emulation fires once and then stands down.
+_HOOK_REENTRY_LIMIT = 1
+
+# The one spelling that makes git run no hook for a push. Written out rather than
+# imported from the client: it is the client's own private constant, and a test
+# that imported it would assert the client agrees with itself.
+_HOOKS_DISABLED = "core.hooksPath=/dev/null"
+
+
+def _fires_the_pre_push_hook(*, argv: tuple[str, ...]) -> bool:
+    """Whether git would run the repository's `pre-push` hook for this argv.
+
+    git runs it for EVERY push, a `--delete` push included, unless the invocation
+    points `core.hooksPath` at somewhere that holds no hook. Measured with git
+    2.43.0 against a real hook and a real bare remote: a plain push fires it, a
+    plain `--delete` push fires it, and neither fires when the invocation carries
+    `-c core.hooksPath=/dev/null`.
+    """
+    return argv[0] == "git" and "push" in argv and _HOOKS_DISABLED not in argv
+
+
+class _PrePushHookedHost:
+    """The pushing repository's OWN `pre-push` hook, wrapped around the cluster.
+
+    A delegated gate is only ever reached FROM this hook: `check-pre-push.sh`
+    misses the green token and runs the client. So every push the client makes is
+    a push made from inside the hook, and git's hook dispatch — not the client —
+    is what decides whether that push starts a second gate. This stub is that
+    dispatch, which is otherwise invisible at the seam: the runner answers the
+    push exactly as the canned cluster would, and THEN, if git would have run the
+    hook, runs the gate again, which is what the hook does.
+
+    `nested_gates` is the whole measurement. Zero means a gate run from a hook
+    started no second gate; anything else is the recursion, counted instead of
+    waited out.
+    """
+
+    def __init__(self, *, cluster: _StubCluster) -> None:
+        self.cluster = cluster
+        self.nested_gates = 0
+
+    def __call__(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        stdin: str | None = None,
+        stream: bool = False,
+    ) -> GateCommandOutcome:
+        outcome = self.cluster(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
+        if _fires_the_pre_push_hook(argv=tuple(argv)) and self.nested_gates < _HOOK_REENTRY_LIMIT:
+            self.nested_gates += 1
+            _ = run_gate(request=_REQUEST, runner=self, sleeper=self.cluster.sleep)
+        return outcome
+
+
+def test_a_gate_run_from_a_pre_push_hook_publishes_its_refs_exactly_once() -> None:
+    """The recursion, asserted as a count rather than waited out as a hang.
+
+    Every push this client makes is made from inside the hook that started it, so
+    a push that leaves hooks enabled delegates AGAIN: the hook has no way to tell
+    the gate's own transport apart from a user's push, and neither level errors.
+    Measured on the VPS 2026-10-12 after livespec-dev-tooling-qdqrau — a worktree
+    push hung 48 minutes and was refused NO_VERDICT, and `GIT_TRACE` on a manual
+    mirror push shows git starting `.git/hooks/pre-push` for the gates-mirror
+    remote. The 2026-09-10 R4 proof called the client directly rather than from a
+    hook, which is exactly why it could not see this.
+
+    BOTH mirror pushes are covered by the publish count. The collection push is a
+    push too, and git fires `pre-push` for a `--delete` just as it does for a
+    publish, so a client that disabled hooks on only one of them still re-enters
+    the gate — and the nested gate publishes a second time, which is what the
+    count here reads.
+    """
+    cluster = _StubCluster()
+    host = _PrePushHookedHost(cluster=cluster)
+
+    outcome = run_gate(request=_REQUEST, runner=host, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert host.nested_gates == 0
+    assert cluster.kinds.count("push-ref") == 1
+    assert cluster.kinds.count("delete-ref") == 1
+
+
+def test_the_emulated_hook_does_re_enter_the_gate_for_a_push_that_leaves_hooks_live() -> None:
+    """The CONTROL — an instrument that cannot see the defect proves nothing.
+
+    The zero above is read off `_PrePushHookedHost`, so a host that never
+    re-entered would report the fixed shape for a client that still recursed, and
+    the measurement would be a tautology. This drives that host with the spelling
+    the client used BEFORE the fix — a plain `git push` of the gate refs — and
+    asserts it starts a gate, which is what makes the zero a measurement.
+
+    One push in, TWO pushes out: the one driven here and the one the gate it
+    started made. That is the recursion in miniature, bounded at one re-entry
+    rather than run to the hang it is on a host.
+    """
+    cluster = _StubCluster()
+    host = _PrePushHookedHost(cluster=cluster)
+
+    outcome = host(
+        argv=["git", "push", "--atomic", _MIRROR, f"HEAD:refs/gates/{_TREE}"],
+        cwd=_REQUEST.repo_root,
+    )
+
+    assert is_successful(outcome)
+    assert host.nested_gates == 1
+    assert cluster.kinds.count("push-ref") == 2
 
 
 def test_the_tree_under_test_is_pushed_to_the_mirror_at_a_ref_named_for_its_tree_hash() -> None:
@@ -348,12 +472,18 @@ def test_the_gate_ref_is_deleted_on_the_success_path() -> None:
     BOTH refs the push created are collected. The `.base` companion is the same
     kind of litter as the tree ref and grows at the same rate, so a delete that
     named only the tree ref would halve the collection while looking complete.
+
+    The collection runs HOOKLESS for the same reason the publish does: git fires
+    `pre-push` for a `--delete` push too, so a collection spelled with hooks live
+    re-enters the hook that started this gate and delegates another one.
     """
     cluster = _StubCluster()
     _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
     assert cluster.kinds[-1] == "delete-ref"
     assert cluster.only(kind="delete-ref").argv == (
         "git",
+        "-c",
+        "core.hooksPath=/dev/null",
         "push",
         "--delete",
         _MIRROR,
