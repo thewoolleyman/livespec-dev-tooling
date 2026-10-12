@@ -140,7 +140,12 @@ the partition it resolved, never by presence alone.
    drift read is clean.
 6. Reclaim the old copies only after that dispatch has passed. On
    `hp-xubuntu` they are `/data/containerd` and `/data/docker`, and
-   `/swap.img` stays as the low-priority second swap.
+   `/swap.img` stays as the low-priority second swap. Reclaim is its own
+   opt-in run, and stops nothing: `just ansible-apply ansible/fabro-hosts.yml
+   --limit <host> --tags sandbox_storage -e sandbox_storage_allow_reclaim=true`.
+   It re-checks the binds, the daemons and every mount namespace before it
+   deletes, and it also deletes `/etc/fstab.pre-sandbox-storage` and any
+   `sandbox_storage_reclaim_extra_paths`. After it, the rollback below is gone.
 
 ## Rollback
 

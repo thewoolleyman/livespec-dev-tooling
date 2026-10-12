@@ -671,3 +671,9 @@
   when:
     - sandbox_storage_prepared | bool
     - not ansible_check_mode
+
+- name: Retire the old store copies
+  ansible.builtin.include_tasks: reclaim_old_stores.yml
+  when:
+    - sandbox_storage_allow_reclaim | bool
+    - sandbox_storage_serving | bool

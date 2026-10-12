@@ -160,3 +160,14 @@ sandbox_storage_allow_format: false
 sandbox_storage_allow_preseed: false
 sandbox_storage_allow_live_migration: false
 sandbox_storage_allow_run_loss: false
+
+# Retire the OLD store copies once the cutover has served a dispatch to a
+# terminal verdict (HOST_VARS.md "Cutover" step 6). Off by default: it deletes
+# the rollback. tasks/reclaim_old_stores.yml re-checks, on the run itself,
+# that both binds are served from the new partition, both daemons are active
+# and nothing in any mount namespace is served from an old source. A re-run
+# with the sources gone is a no-op.
+sandbox_storage_allow_reclaim: false
+# Further host paths the reclaim removes with the old stores — a host's
+# by-hand scratch from its move. Absolute paths; empty by default.
+sandbox_storage_reclaim_extra_paths: []

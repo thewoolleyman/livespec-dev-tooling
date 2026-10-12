@@ -140,6 +140,13 @@ sandbox_storage_device: /dev/disk/by-id/ata-Fanxiang_S101_4TB_FX233090446
 # is freshly formatted, the space is free, and the kernel's bookkeeping for
 # 160 GB of swap is about 40 MB of RAM.
 sandbox_storage_swap_size: 160GiB
+# The scratch of the by-hand fpsync copy the maintainer authorised during the
+# 2026-10-12 cutover; removed by the reclaim with the old stores.
+sandbox_storage_reclaim_extra_paths:
+  - /var/tmp/fpsync-containerd
+  - /var/tmp/fpsync-containerd.log
+  - /var/tmp/fpsync-docker
+  - /var/tmp/fpsync-docker.log
 
 # --- sccache_redis ---
 sccache_redis_bind_addr: 172.17.0.1
