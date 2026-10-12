@@ -4,19 +4,38 @@
 # because it stops both daemons, which ends every in-flight sandbox run on the
 # host; the Dispatcher records those as failed.
 #
-# WHAT "ALREADY MOVED" MEANS. A bind target is converged when its fstab line
-# names the store directory on the new disk AND that directory holds a store.
-# Anything else is pending: an fstab line naming somewhere else (hp's
-# hand-written /data/* binds), no line at all (the target directory itself is
-# the store, on the root filesystem), or a line already pointing at the new
-# disk over a directory that holds nothing (a converge that died between the
-# line and the copy). All three are served by the same copy, which rsyncs
-# THROUGH the bind target: whatever is mounted or stored there is what the
-# daemons were reading, so it is what moves.
+# WHAT "ALREADY MOVED" MEANS. A bind target is converged when ALL of: its
+# fstab line names the store directory on the new disk, the target is
+# ACTUALLY mounted from the sandbox storage partition at that subtree
+# (findmnt, not fstab — an fstab line is a plan, a mount is a fact), and the
+# directory holds a store. Anything else is pending.
 #
-# rsync and never --delete, so a repeat copies only what changed and nothing
-# is destroyed; the old store stays where it was until an operator reclaims
-# it after a dispatch has passed on the new layout.
+# WHERE THE COPY READS FROM — never an unverified bind target. The source is
+# the directory the fstab line DECLARED before this role rewrote it (hp's
+# /data/containerd, /data/docker), or, once the line has been rewritten by a
+# run that was then interrupted, the same directory read back from the record
+# this role wrote onto the new disk before it unmounted anything. Reading
+# through the target instead would, on exactly that interrupted retry, find
+# the empty root-filesystem directory the old bind used to cover and mirror
+# it over the completed copy with --delete (Codex review, 2026-10-12).
+#
+# The SOURCE is never deleted from: both copies read the old store and write
+# this role's own directory on the new disk, so a wrong verdict costs disk
+# rather than data, and the old store stays where it was until an operator
+# reclaims it after a dispatch has passed on the new layout.
+
+- name: Read which device and subtree serve each bind target today
+  # "DEVICE FSROOT", e.g. "/dev/sda3 /containerd" for hp's old bind; rc 1
+  # when the target is a plain directory (the root-filesystem case).
+  ansible.builtin.command: findmnt -rno SOURCE,FSROOT --nofsroot {{ item.dir }}
+  register: sandbox_storage_target_mounts
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  loop: "{{ sandbox_storage_bind_targets }}"
+  loop_control:
+    label: "{{ item.dir }}"
 
 - name: Read whether the new containerd directory already holds a store
   ansible.builtin.stat:
@@ -35,26 +54,69 @@
   become: true
   failed_when: false
 
+- name: Read the original sources an earlier cutover recorded
+  # Absent on every run before the first cutover; that is normal.
+  ansible.builtin.slurp:
+    src: "{{ sandbox_storage_mount }}/{{ sandbox_storage_sources_record }}"
+  register: sandbox_storage_sources_raw
+  become: true
+  failed_when: false
+
+- name: Hold the recorded sources
+  ansible.builtin.set_fact:
+    sandbox_storage_recorded_sources: >-
+      {{ (sandbox_storage_sources_raw.content | b64decode | from_json)
+         if (sandbox_storage_sources_raw.content is defined) else {} }}
+
 - name: Classify each store's migration state
+  # `copy_from` is the verified old store, resolved by the three cases above:
+  # a declared source other than the new directory; the recorded source when
+  # the line already names the new directory; the target directory itself
+  # when fstab names nothing AND nothing is mounted there. Empty means no
+  # source could be verified, which refuses below.
   ansible.builtin.set_fact:
     sandbox_storage_migrations:
       - role: containerd
         dir: "{{ sandbox_storage_containerd_dir }}"
         src: "{{ sandbox_storage_containerd_src }}"
-        converged: >-
-          {{ sandbox_storage_containerd_declared == sandbox_storage_containerd_src
-             and sandbox_storage_containerd_store.stat.exists }}
+        mounted_from_new: >-
+          {{ sandbox_storage_target_mounts.results[0].rc == 0
+             and (sandbox_storage_target_mounts.results[0].stdout | split)[0] == sandbox_storage_fs_devices[0]
+             and (sandbox_storage_target_mounts.results[0].stdout | split)[1] == sandbox_storage_bind_targets[0].subtree }}
+        holds_store: "{{ sandbox_storage_containerd_store.stat.exists }}"
+        copy_from: >-
+          {{ sandbox_storage_containerd_declared
+             if (sandbox_storage_containerd_declared | length > 0
+                 and sandbox_storage_containerd_declared != sandbox_storage_containerd_src)
+             else ((sandbox_storage_recorded_sources.containerd | default(''))
+                   if sandbox_storage_containerd_declared == sandbox_storage_containerd_src
+                   else (sandbox_storage_containerd_dir
+                         if sandbox_storage_target_mounts.results[0].rc != 0 else '')) }}
       - role: docker
         dir: "{{ sandbox_storage_docker_dir }}"
         src: "{{ sandbox_storage_docker_src }}"
-        converged: >-
-          {{ sandbox_storage_docker_declared == sandbox_storage_docker_src
-             and (sandbox_storage_docker_entries.matched | default(0) | int) > 0 }}
+        mounted_from_new: >-
+          {{ sandbox_storage_target_mounts.results[1].rc == 0
+             and (sandbox_storage_target_mounts.results[1].stdout | split)[0] == sandbox_storage_fs_devices[0]
+             and (sandbox_storage_target_mounts.results[1].stdout | split)[1] == sandbox_storage_bind_targets[1].subtree }}
+        holds_store: "{{ (sandbox_storage_docker_entries.matched | default(0) | int) > 0 }}"
+        copy_from: >-
+          {{ sandbox_storage_docker_declared
+             if (sandbox_storage_docker_declared | length > 0
+                 and sandbox_storage_docker_declared != sandbox_storage_docker_src)
+             else ((sandbox_storage_recorded_sources.docker | default(''))
+                   if sandbox_storage_docker_declared == sandbox_storage_docker_src
+                   else (sandbox_storage_docker_dir
+                         if sandbox_storage_target_mounts.results[1].rc != 0 else '')) }}
 
 - name: Select the stores that must move
   ansible.builtin.set_fact:
     sandbox_storage_pending_migrations: >-
-      {{ sandbox_storage_migrations | rejectattr('converged', 'truthy') | list }}
+      {{ sandbox_storage_migrations
+         | rejectattr('mounted_from_new', 'truthy') | list
+         + (sandbox_storage_migrations
+            | selectattr('mounted_from_new', 'truthy')
+            | rejectattr('holds_store', 'truthy') | list) }}
 
 - name: Report a pending store move, under --check
   ansible.builtin.debug:
@@ -73,8 +135,7 @@
   # are all gated on this fact in main.yml, so a deferring run leaves the
   # daemons exactly as found — old binds, old lines, running — while the parts
   # that are safe to do live (the swap, the filesystem mount, the preseed
-  # below) still complete. A failing assert here would also have failed the
-  # swap activation that follows it, for no reason.
+  # below) still complete.
   ansible.builtin.set_fact:
     sandbox_storage_migration_deferred: >-
       {{ sandbox_storage_pending_migrations | length > 0
@@ -92,26 +153,123 @@
     - not ansible_check_mode
     - sandbox_storage_migration_deferred | bool
 
+- name: Refuse a pending store whose old copy cannot be identified
+  # Fails closed for both the preseed and the cutover: a copy from a guessed
+  # source is the one thing worse than no copy.
+  ansible.builtin.assert:
+    that:
+      - item.copy_from | length > 0
+    fail_msg: >-
+      {{ item.dir }}: no verified source for the {{ item.role }} store — fstab names
+      '{{ sandbox_storage_containerd_declared if item.role == 'containerd' else sandbox_storage_docker_declared }}'
+      and {{ sandbox_storage_mount }}/{{ sandbox_storage_sources_record }} records nothing
+      for it, while something is mounted on the target. Identify the old store by hand
+      and record it there as JSON ({"{{ item.role }}": "<path>"}) before re-running.
+    success_msg: "{{ item.dir }}: old store is {{ item.copy_from }}"
+  loop: "{{ sandbox_storage_pending_migrations }}"
+  loop_control:
+    label: "{{ item.dir }}"
+  when:
+    - not ansible_check_mode
+    - not (sandbox_storage_migration_deferred | bool) or (sandbox_storage_allow_preseed | bool)
+
+- name: Read each old store
+  ansible.builtin.stat:
+    path: "{{ item.copy_from }}"
+  register: sandbox_storage_copy_sources
+  become: true
+  loop: "{{ sandbox_storage_pending_migrations }}"
+  loop_control:
+    label: "{{ item.copy_from | default('-', true) }}"
+  when:
+    - not ansible_check_mode
+    - not (sandbox_storage_migration_deferred | bool) or (sandbox_storage_allow_preseed | bool)
+
+- name: Refuse an old store that is not a directory
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+    fail_msg: "{{ item.item.copy_from }} is not a directory; the {{ item.item.role }} store cannot be read from it"
+    success_msg: "{{ item.item.copy_from }} is a directory"
+  loop: "{{ sandbox_storage_copy_sources.results | default([]) | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.copy_from }}"
+
 - name: Preseed each pending store onto the sandbox storage disk while the daemons run
-  # The LIVE copy, authorised separately and taken at idle IO priority so the
-  # factory's own reads win every contention on the source disk. It is not a
-  # consistent store and nothing is ever pointed at it; it is the bulk of the
-  # bytes, moved outside the window, so the cutover's rsync below has only the
-  # delta to carry. rsync exits 24 when a file vanished between its scan and
-  # its copy, which on a live store is routine and not a failure.
+  # The LIVE copy, authorised separately and capped (--bwlimit; see defaults
+  # for why ionice alone is not enough) so the factory's own reads keep the
+  # source disk. It is not a consistent store and nothing is ever pointed at
+  # it; it is the bulk of the bytes, moved outside the window, so the
+  # cutover's checksum pass below has little to transfer. rsync exits 24 when
+  # a file vanished between its scan and its copy, which on a live store is
+  # routine and not a failure.
   # noqa: command-instead-of-module — see the cutover copy below.
-  ansible.builtin.command: ionice -c3 nice -n19 rsync -aHAX {{ item.dir }}/ {{ item.src }}/
+  ansible.builtin.command: >-
+    ionice -c3 nice -n19 rsync -aHAX --bwlimit={{ sandbox_storage_preseed_bwlimit }}
+    {{ item.copy_from }}/ {{ item.src }}/
   become: true
   register: sandbox_storage_preseed
   loop: "{{ sandbox_storage_pending_migrations }}"
   loop_control:
-    label: "{{ item.dir }}"
+    label: "{{ item.copy_from }} -> {{ item.src }}"
   changed_when: true
   failed_when: sandbox_storage_preseed.rc not in [0, 24]
   when:
     - not ansible_check_mode
     - sandbox_storage_migration_deferred | bool
     - sandbox_storage_allow_preseed | bool
+
+# --- the cutover: everything below runs only when authorised -----------------
+
+- name: Record the old stores on the new disk before anything is unmounted
+  # The record an interrupted cutover is resumed from. Written before the
+  # daemons are stopped, so no interruption can leave the role without it.
+  ansible.builtin.copy:
+    content: "{{ sandbox_storage_recorded_sources | combine(sandbox_storage_new_sources) | to_nice_json }}\n"
+    dest: "{{ sandbox_storage_mount }}/{{ sandbox_storage_sources_record }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  vars:
+    sandbox_storage_new_sources: >-
+      {{ dict(sandbox_storage_pending_migrations | map(attribute='role')
+              | zip(sandbox_storage_pending_migrations | map(attribute='copy_from'))) }}
+  when:
+    - not ansible_check_mode
+    - sandbox_storage_pending_migrations | length > 0
+    - not sandbox_storage_migration_deferred | bool
+
+- name: Read the containers the daemon is carrying
+  # rc != 0 (daemon already down from an interrupted cutover) reads as none.
+  ansible.builtin.command: docker ps -q
+  register: sandbox_storage_running_containers
+  changed_when: false
+  failed_when: false
+  become: true
+  when:
+    - not ansible_check_mode
+    - sandbox_storage_pending_migrations | length > 0
+    - not sandbox_storage_migration_deferred | bool
+
+- name: Refuse to stop daemons that are carrying containers
+  # The drained window is the operator's to open; this is the check that it
+  # was. sandbox_storage_allow_run_loss is the explicit "I accept losing these
+  # runs" the work-item allows for, and nothing else gets past this.
+  ansible.builtin.assert:
+    that:
+      - (sandbox_storage_running_containers.stdout_lines | default([]) | length == 0)
+        or (sandbox_storage_allow_run_loss | bool)
+    fail_msg: >-
+      docker is carrying {{ sandbox_storage_running_containers.stdout_lines | length }}
+      container(s); stopping it ends them. Drain the host's Fabro instances first, or
+      re-run with -e sandbox_storage_allow_run_loss=true to accept the loss.
+    success_msg: no containers would be ended by the daemon stop
+  when:
+    - not ansible_check_mode
+    - sandbox_storage_pending_migrations | length > 0
+    - not sandbox_storage_migration_deferred | bool
 
 - name: Stop the container daemons for the copy
   # Socket first: a stopped docker.service with its socket still listening is
@@ -130,29 +288,61 @@
     - sandbox_storage_pending_migrations | length > 0
     - not sandbox_storage_migration_deferred | bool
 
-- name: Record that this run stopped the daemons
-  ansible.builtin.set_fact:
-    sandbox_storage_daemons_stopped: true
-  when:
-    - not ansible_check_mode
-    - sandbox_storage_pending_migrations | length > 0
-    - not sandbox_storage_migration_deferred | bool
-
-- name: Copy each store onto the sandbox storage disk
-  # Through the bind target, with the daemons stopped, so the copy is of a
-  # consistent store. -aHAX: hardlinks, ACLs and xattrs, none of which a
-  # containerd or overlayfs store can do without. --delete HERE and only
-  # here: the destination is this role's own directory, and after a preseed
-  # it holds layers and blobs the live store has since removed; the cutover
-  # copy must leave an exact mirror, not a union, or the daemons start over
-  # orphans their metadata does not name.
-  # noqa: command-instead-of-module — synchronize is ansible.posix and drives
-  # a controller-to-host transfer; `copy` with remote_src loses the three.
-  ansible.builtin.command: rsync -aHAX --delete {{ item.dir }}/ {{ item.src }}/
+- name: Count what is still mounted beneath each bind target
+  # Both daemons are KillMode=process, so a shim that outlived the stop can
+  # still hold an overlay mount beneath the TARGET (the path the daemons
+  # use), whether or not the target is itself a mountpoint. Counted from the
+  # whole mount table rather than `findmnt -R`, which cannot start from a
+  # target that is a plain directory.
+  ansible.builtin.shell: |
+    set -o pipefail
+    findmnt -rno TARGET | awk -v p="{{ item.dir }}/" 'index($0, p) == 1 { n++ } END { print n + 0 }'
+  args:
+    executable: /bin/bash
+  register: sandbox_storage_store_submounts
+  changed_when: false
   become: true
   loop: "{{ sandbox_storage_pending_migrations }}"
   loop_control:
     label: "{{ item.dir }}"
+  when:
+    - not ansible_check_mode
+    - not sandbox_storage_migration_deferred | bool
+
+- name: Refuse a store that is still mounted beneath after the daemon stop
+  # A copy taken over a live overlay is not a copy of a consistent thing, and
+  # a recursive unmount is not a drain. The daemons are down at this point;
+  # wait for the shims to exit (or end them) and re-run — the record above
+  # makes the retry resume from the right source.
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim == '0'
+    fail_msg: >-
+      {{ item.stdout | trim }} mount(s) remain beneath {{ item.item.dir }} after the
+      daemon stop; a container outlived the stop. Wait for it to exit and re-run.
+    success_msg: "nothing is mounted beneath {{ item.item.dir }}"
+  loop: "{{ sandbox_storage_store_submounts.results | default([]) | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.dir }}"
+
+- name: Copy each store onto the sandbox storage disk
+  # With the daemons stopped and nothing mounted beneath, so the copy is of a
+  # consistent store. -aHAX: hardlinks, ACLs and xattrs, none of which a
+  # containerd or overlayfs store can do without. -c: CHECKSUM every file,
+  # because the preseed ran against a live store and a database page written
+  # in place keeps its size and its second of mtime, which is all rsync's
+  # default comparison reads. --delete HERE and only here: the destination is
+  # this role's own directory, and after a preseed it holds layers and blobs
+  # the live store has since removed; the cutover must leave an exact mirror.
+  # Budget: the checksum reads both copies in full (~190 GB each on hp), so
+  # the window is tens of minutes, not the minutes a timestamp pass would be.
+  # noqa: command-instead-of-module — synchronize is ansible.posix and drives
+  # a controller-to-host transfer; `copy` with remote_src loses the three.
+  ansible.builtin.command: rsync -aHAXc --delete {{ item.copy_from }}/ {{ item.src }}/
+  become: true
+  loop: "{{ sandbox_storage_pending_migrations }}"
+  loop_control:
+    label: "{{ item.copy_from }} -> {{ item.src }}"
   changed_when: true
   when:
     - not ansible_check_mode

@@ -21,8 +21,10 @@ sandbox_storage_device: ""
 # Mounted BY LABEL, not by device name, for the reason storage_layout's
 # ci-tiers.fstab records: a SATA enumeration order is not a stable name, and a
 # label survives a media swap that keeps the data.
+# AT MOST 16 BYTES EACH: ext4 stores no more and mke2fs truncates a longer
+# label silently, which the role refuses before any destructive command.
 sandbox_storage_swap_label: sandbox-swap
-sandbox_storage_fs_label: sandbox-containers
+sandbox_storage_fs_label: sandbox-stores
 # The swap partition is sized to the host's RAM (hp-xubuntu: 30 GiB usable of
 # 32 GB), an sgdisk size suffix. The filesystem takes the rest of the disk.
 sandbox_storage_swap_size: 32GiB
@@ -44,15 +46,53 @@ sandbox_storage_docker_dir: /var/lib/docker
 # so an existing but DIFFERENT line for the same key — hp's hand-written
 # `/data/containerd /var/lib/containerd none bind 0 0` — is replaced rather
 # than duplicated.
+#
+# `nofail` ON EVERY LINE, AND THAT IS THE SAFETY, NOT A WEAKENING OF IT. This
+# is a headless factory host. Without nofail a dead or unplugged second disk
+# at boot fails local-fs.target and drops the machine into emergency mode with
+# no ssh — a bricked host for a disk that carries nothing the OS needs. With
+# nofail the boot completes, the filesystem and the binds simply fail, and the
+# RequiresMountsFor= drop-ins below are what make docker and containerd fail
+# LOUDLY by dependency instead of starting on an empty root-filesystem
+# directory. The bind lines need it too: a bind whose source is under a
+# nofail mount inherits nothing and would fail the boot on its own.
+#
+# The keys tolerate leading whitespace, as fstab(5) does: an indented existing
+# line for a managed mountpoint would otherwise escape both the duplicate
+# refusal and the replacement, and `mount <target>` could then pick the old
+# line over the new one (Codex review, 2026-10-12).
 sandbox_storage_fstab:
-  - line: "LABEL={{ sandbox_storage_swap_label }} none swap sw,pri={{ sandbox_storage_swap_priority }} 0 0"
-    key: "^LABEL={{ sandbox_storage_swap_label }}\\s"
-  - line: "LABEL={{ sandbox_storage_fs_label }} {{ sandbox_storage_mount }} ext4 defaults,noatime 0 2"
-    key: "^[^#]\\S*\\s+{{ sandbox_storage_mount | regex_escape }}\\s"
-  - line: "{{ sandbox_storage_containerd_src }} {{ sandbox_storage_containerd_dir }} none bind 0 0"
-    key: "^[^#]\\S*\\s+{{ sandbox_storage_containerd_dir | regex_escape }}\\s"
-  - line: "{{ sandbox_storage_docker_src }} {{ sandbox_storage_docker_dir }} none bind 0 0"
-    key: "^[^#]\\S*\\s+{{ sandbox_storage_docker_dir | regex_escape }}\\s"
+  - line: "LABEL={{ sandbox_storage_swap_label }} none swap sw,nofail,pri={{ sandbox_storage_swap_priority }} 0 0"
+    key: "^\\s*LABEL={{ sandbox_storage_swap_label }}\\s"
+  - line: "LABEL={{ sandbox_storage_fs_label }} {{ sandbox_storage_mount }} ext4 defaults,noatime,nofail 0 2"
+    key: "^\\s*[^#\\s]\\S*\\s+{{ sandbox_storage_mount | regex_escape }}\\s"
+  - line: "{{ sandbox_storage_containerd_src }} {{ sandbox_storage_containerd_dir }} none bind,nofail 0 0"
+    key: "^\\s*[^#\\s]\\S*\\s+{{ sandbox_storage_containerd_dir | regex_escape }}\\s"
+  - line: "{{ sandbox_storage_docker_src }} {{ sandbox_storage_docker_dir }} none bind,nofail 0 0"
+    key: "^\\s*[^#\\s]\\S*\\s+{{ sandbox_storage_docker_dir | regex_escape }}\\s"
+
+# The two bind targets with the subtree of the filesystem each must be served
+# from — what `findmnt` reports as FSROOT — so a mount can be verified by
+# device and subtree rather than by presence.
+sandbox_storage_bind_targets:
+  - dir: "{{ sandbox_storage_containerd_dir }}"
+    subtree: "{{ sandbox_storage_containerd_src | regex_replace('^' ~ (sandbox_storage_mount | regex_escape), '') }}"
+  - dir: "{{ sandbox_storage_docker_dir }}"
+    subtree: "{{ sandbox_storage_docker_src | regex_replace('^' ~ (sandbox_storage_mount | regex_escape), '') }}"
+
+# Where the cutover records the old stores' paths, on the new disk, before it
+# unmounts anything — the file an interrupted cutover resumes from. And the
+# one named pre-cutover snapshot of fstab the rollback restores.
+sandbox_storage_sources_record: .sandbox-storage-sources.json
+sandbox_storage_fstab_snapshot: /etc/fstab.pre-sandbox-storage
+
+# The preseed's read ceiling on the SOURCE disk, rsync's --bwlimit form.
+# `ionice -c3` is also passed but is a no-op under mq-deadline, Ubuntu's
+# default scheduler for a SATA SSD (only bfq honours IO classes), so the
+# bandwidth cap is the control that actually keeps the live copy from
+# competing with the factory's own reads. 40 MB/s against a disk measured at
+# ~150 MB/s sequential under load; ~190 GB takes about 80 minutes.
+sandbox_storage_preseed_bwlimit: 40m
 
 # The units that must not start on an empty bind target. Each gets a drop-in
 # carrying RequiresMountsFor= its own store, the k3s nodes' pattern
@@ -85,9 +125,13 @@ sandbox_storage_containerd_store_marker: io.containerd.metadata.v1.bolt
 #                         not consistent and is never served; it exists so the
 #                         cutover's copy is an incremental of minutes rather
 #                         than a full copy of hours. Stops nothing.
-#   allow_live_migration — stop docker and containerd, copy the live stores
-#                         onto the new disk, and move the binds. Stopping the
-#                         daemons ends every in-flight sandbox run on the host.
+#   allow_live_migration — stop docker and containerd, copy the stores onto
+#                         the new disk (checksummed), and move the binds. The
+#                         run REFUSES while docker carries any container
+#                         unless allow_run_loss is also set.
+#   allow_run_loss      — with allow_live_migration: accept ending whatever
+#                         containers are running. The work-item allows for
+#                         that choice; this is where it is spelled.
 #
 # Pass each as -e on the apply that is meant to do it. A run that reaches a
 # pending store move without allow_live_migration DEFERS it — writes nothing
@@ -97,3 +141,4 @@ sandbox_storage_containerd_store_marker: io.containerd.metadata.v1.bolt
 sandbox_storage_allow_format: false
 sandbox_storage_allow_preseed: false
 sandbox_storage_allow_live_migration: false
+sandbox_storage_allow_run_loss: false
