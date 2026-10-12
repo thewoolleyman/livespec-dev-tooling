@@ -36,3 +36,15 @@ node_status_credential_render_dir: /etc/ci-runner
 # baked into the tool; it is the account ansible/inventory/legacy.yml reaches
 # these nodes as.
 node_status_credential_ssh_user: cwoolley
+# The SERVER's ssh HOST key, named as a path on the server rather than as bytes
+# committed here: the trust then follows the machine's own key instead of a copy
+# that goes stale the first time the key is rotated. ed25519 because it is the
+# host key every OpenSSH in this pool offers and the type the agent's client
+# prefers, so it is the one a connection will actually be authenticated with.
+node_status_credential_server_host_key: /etc/ssh/ssh_host_ed25519_key.pub
+node_status_credential_server_host_key_type: ssh-ed25519
+# The ssh user's OWN known_hosts — the refresh tool fetches as that account, so
+# root's trust store is the one file that cannot help it. `~<user>` rather than a
+# bare `~`: the module expands it through the password database, so the path is
+# that user's home whoever's HOME the become plugin happened to export.
+node_status_credential_known_hosts: "~{{ node_status_credential_ssh_user }}/.ssh/known_hosts"

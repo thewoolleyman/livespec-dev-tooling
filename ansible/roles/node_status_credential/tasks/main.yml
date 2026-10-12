@@ -341,3 +341,98 @@
         group: root
         mode: "0644"
       become: true
+
+    # THE FETCH ALSO NEEDS THE SERVER TO BE AUTHENTICATED, and nothing provisioned
+    # that. The tasks below close the gap livespec-dev-tooling-cehlmt
+    # measured on 2026-10-12: on gmktec-xubuntu, as cwoolley, the ssh key and the
+    # sudo grant were both in place and `ssh -o BatchMode=yes poweredge-xubuntu`
+    # still died with "Host key verification failed". The refresh runs under
+    # BatchMode from a root systemd unit mid-timer-fire, so an unknown host key is
+    # not a prompt to answer — it is a failure, and it would arrive on the first
+    # poweredge reboot after this credential was delivered, which is exactly when
+    # the refresh is the repair.
+
+    - name: Read the control-plane node's ssh host key on the server itself
+      # DELEGATED, so what becomes trust is the SERVER's own key rather than
+      # whatever answered to its name during the apply. The control node already
+      # authenticates to both machines, so this read inherits that authentication.
+      # The alternative an agent could perform unaided is trust-on-first-use
+      # (`ssh-keyscan`, or the client's `StrictHostKeyChecking=accept-new`), which
+      # believes the first answer it gets and therefore authenticates nothing on
+      # the one run that matters.
+      #
+      # NO become: an ssh host PUBLIC key is world-readable by design, and asking
+      # for privilege a read does not need is how a role acquires a sudo
+      # dependency it never had. `changed_when: false` because a read that reports
+      # itself as a change leaves the role permanently dirty, and the drift
+      # report's whole value is that a clean run means something.
+      ansible.builtin.slurp:
+        src: "{{ node_status_credential_server_host_key }}"
+      delegate_to: "{{ node_status_credential_server_host }}"
+      register: node_status_credential_server_host_key_read
+      changed_when: false
+
+    - name: Select the server's host-key line
+      # Decoded once here rather than in both the refusal and the trust below: two
+      # spellings of one decode are two places for the `| trim` to go missing, and
+      # a key field carrying a trailing newline is an entry ssh cannot match.
+      ansible.builtin.set_fact:
+        node_status_credential_host_key: >-
+          {{ node_status_credential_server_host_key_read.content | default('') | b64decode | trim }}
+
+    - name: Refuse a host key that is not an ed25519 public key
+      # The empty-CA refusal above, pointed at the other thing this role must not
+      # deliver silently. A known_hosts line whose key field is empty or
+      # wrong-typed is an entry ssh declines to match, so the agent would still
+      # fail host-key verification — after a converge that reported success.
+      ansible.builtin.assert:
+        that:
+          - node_status_credential_host_key | length > 0
+          - >-
+            node_status_credential_host_key.split(' ') | first
+            == node_status_credential_server_host_key_type
+        fail_msg: >-
+          {{ node_status_credential_server_host }}:{{ node_status_credential_server_host_key }}
+          did not read back as a {{ node_status_credential_server_host_key_type }} public key —
+          refusing to install a known_hosts entry ssh cannot match
+        success_msg: >-
+          {{ node_status_credential_server_host }} offers a
+          {{ node_status_credential_server_host_key_type }} host key
+
+    - name: Create the ssh user's ssh directory on the agent
+      # Explicit, for the reason the credential-tooling directory above is
+      # explicit and one more: the known_hosts module stages its replacement
+      # inside the DESTINATION's own directory and renames it over the
+      # destination, so an absent ~/.ssh fails the apply rather than being
+      # created. 0700 because ssh ignores the contents of a group- or
+      # world-writable ~/.ssh, which would install trust the client declines to
+      # read.
+      ansible.builtin.file:
+        path: "{{ node_status_credential_known_hosts | dirname }}"
+        state: directory
+        mode: "0700"
+      become: true
+      become_user: "{{ node_status_credential_ssh_user }}"
+
+    - name: Trust the control-plane node's host key for the refresh tool's ssh user
+      # THE SSH USER's known_hosts, never root's: the tool runs as root and drops
+      # the fetch to this account via `sudo -u`, so root's trust store is the one
+      # file that cannot help it.
+      #
+      # Under the host NAME, because that is the literal the shipped tool passes
+      # to ssh and known_hosts is matched on the name given rather than on
+      # anything it resolves to. `key:` opens with that same name because a
+      # known_hosts line's FIRST FIELD is the host it authenticates; the module
+      # requires the two to agree, and a mismatch installs an entry ssh will never
+      # consult.
+      #
+      # Idempotent by content — the module reconciles the entry rather than
+      # appending one, so a re-apply against an unchanged server key reports no
+      # change. An appended line would accumulate a duplicate on every apply.
+      ansible.builtin.known_hosts:
+        name: "{{ node_status_credential_server_host }}"
+        key: "{{ node_status_credential_server_host }} {{ node_status_credential_host_key }}"
+        path: "{{ node_status_credential_known_hosts }}"
+        state: present
+      become: true
+      become_user: "{{ node_status_credential_ssh_user }}"
