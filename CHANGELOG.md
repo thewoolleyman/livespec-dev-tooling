@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.4...v1.95.5) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ansible:** raise keyring_quota to 1 MiB and apply it to hp-xubuntu ([b75ba0d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b75ba0d0c4532ffeb906ba5aa9b032d81ff5e38e))
+
 ## [1.95.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.3...v1.95.4) (2026-10-12)
 
 
