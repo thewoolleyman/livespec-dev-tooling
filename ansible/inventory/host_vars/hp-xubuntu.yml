@@ -31,14 +31,16 @@ fabro_server_instances:
     port: 32276
     canonical_host: hp-xubuntu.perch-rudd.ts.net:32276
     cli_target_url: http://127.0.0.1:32276
-    # 10, lowered from 15 by maintainer instruction on 2026-10-12: at 15
-    # (13 running) hp's 15-minute load average measured 42.6 on 16 cores,
-    # about 3.3 load per run, because every run executes the full check
-    # aggregate in its janitor, in the publish_draft pre-push and in hook-gated
-    # checkpoint commits. The interim goal is a 15-minute load average at or
-    # under 150% of the cores (24); step lower if 10 does not reach it.
-    # Restored only once runs delegate to the cluster (plan fabro-currency).
-    max_concurrent_runs: 10
+    # 7, lowered again on 2026-10-12 under the maintainer's instruction to hold
+    # hp's 15-minute load average at or under 150% of the cores (24). At 15
+    # (13 running) the load measured 42.6 rising past 59; at 10 it settled
+    # toward 31 within 30 minutes of the restart (17:35Z: 34.0/31.3/21.4 with
+    # 10 running, 99% CPU busy, 23 runnable, CPU pressure some avg300 50%),
+    # about 3.1 load per run, because every run executes the full check
+    # aggregate in its janitor, its publish_draft pre-push and its hook-gated
+    # checkpoint commits. 7 runs projects to about 22. Restored only once
+    # runs delegate to the cluster (plan fabro-currency, bd-ib-9zg1).
+    max_concurrent_runs: 7
     github_app_id: "3668528"
     # Live on the host since 2026-08-21.
     otel_dropin: present
