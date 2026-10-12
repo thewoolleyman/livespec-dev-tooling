@@ -67,6 +67,13 @@ _FIXTURE_KUBECONFIG = "kind: Config\napiVersion: v1\nclusters:\n- cluster:\n    
 # credential refresh is the right response to.
 _REJECTION = "error: You must be logged in to the server (Unauthorized)"
 
+# The SAME rejection in the API server's OWN wording, which carries none of the
+# words the first one does: no `Unauthorized`, no `401`, no "You must be logged
+# in". This is the message apimachinery attaches to an unauthenticated response,
+# so it is the message — rather than any one of kubectl's framings of it — that a
+# credential refresh is the right response to.
+_REJECTION_SERVER_WORDING = "error: the server has asked for the client to provide credentials"
+
 
 # --- reading the committed role -------------------------------------------
 
@@ -204,7 +211,12 @@ def _env_with(*, bin_dir: Path, extra: dict[str, str]) -> dict[str, str]:
 
 
 def _run_wrapper(
-    *, tmp_path: Path, euid: str, command_exits: tuple[int, ...]
+    *,
+    tmp_path: Path,
+    euid: str,
+    command_exits: tuple[int, ...],
+    rejection: str = _REJECTION,
+    verb: tuple[str, ...] = ("get", "jobs"),
 ) -> tuple[int, list[str]]:
     """Run the shipped wrapper against a faked host; return its code and every argv.
 
@@ -212,6 +224,10 @@ def _run_wrapper(
     credential the API server rejects and then accepts, which is exactly a token
     recreated by a control-plane boot and refreshed. The rejection is written to
     the command's STDERR, because that is where the wrapper recognises it.
+
+    `rejection` and `verb` are parameters rather than constants because kubectl
+    renders ONE refused credential in several different texts, and which text a
+    caller meets depends on the verb it ran: the arms below pin the real ones.
     """
     bin_dir = _scratch_path(tmp_path=tmp_path)
     log = tmp_path / "argv.log"
@@ -244,7 +260,7 @@ def _run_wrapper(
     )
     refresh.chmod(0o755)
     completed = subprocess.run(
-        ["bash", str(_WRAPPER), "kubectl", "--namespace", "gates", "get", "jobs"],
+        ["bash", str(_WRAPPER), "kubectl", "--namespace", "gates", *verb],
         cwd=str(tmp_path),
         env=_env_with(
             bin_dir=bin_dir,
@@ -252,7 +268,7 @@ def _run_wrapper(
                 "ARGV_LOG": str(log),
                 "ATTEMPTS": str(attempts),
                 "COMMAND_EXITS": ",".join(str(code) for code in command_exits),
-                "REJECTION": _REJECTION,
+                "REJECTION": rejection,
                 "FAKE_EUID": euid,
                 "GATES_REFRESH_BIN": str(refresh),
                 "GATES_KUBECONFIG": str(tmp_path / "gates.kubeconfig"),
@@ -287,6 +303,32 @@ def test_a_rejected_credential_is_refreshed_once_through_sudo_and_the_command_re
     assert [line.split(" ")[0] for line in invoked] == ["kubectl", "sudo", "kubectl"]
     assert invoked[1].startswith("sudo -n ")
     assert invoked[1].endswith("refresh-gates-kubeconfig")
+
+
+def test_the_servers_own_credential_wording_is_refreshed_once_and_retried(
+    *, tmp_path: Path
+) -> None:
+    """The refusal recognised by the MESSAGE, not by one of kubectl's framings of it.
+
+    The arm above pins the framing the wrapper shipped matching — kubectl's
+    `(Unauthorized)` rendering — and matching only that was the defect: after the
+    control-plane reboot of 2026-10-12 the first delegated push met the API
+    server's own wording instead, which carries no `Unauthorized`, no `401` and
+    no "You must be logged in", so no refresh ran, the push was refused with no
+    verdict, and `/etc/ci-runner/gates.kubeconfig` was still the stale file
+    afterwards. One credential rejection has several renderings and a wrapper
+    that knows one of them repairs the host only by luck.
+    """
+    code, invoked = _run_wrapper(
+        tmp_path=tmp_path,
+        euid="1000",
+        command_exits=(1, 0),
+        rejection=_REJECTION_SERVER_WORDING,
+    )
+
+    assert code == 0
+    assert [line.split(" ")[0] for line in invoked] == ["kubectl", "sudo", "kubectl"]
+    assert invoked[1].startswith("sudo -n ")
 
 
 def test_a_root_caller_refreshes_without_sudo(*, tmp_path: Path) -> None:
