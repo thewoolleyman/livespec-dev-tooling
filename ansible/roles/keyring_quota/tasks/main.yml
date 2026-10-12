@@ -1,11 +1,12 @@
 ---
 # keyring_quota — the per-uid kernel keyring ceilings the 1Password env
-# wrappers need on the vps host.
+# wrappers need on vps (dev-host.yml) and hp-xubuntu (fabro-hosts.yml).
 #
 # Replaces vps-info services/keyring-quota/install.sh. ROOT-SCOPE: it writes
 # into /etc/sysctl.d and changes kernel tunables; the shell installer refuses
 # unless EUID is 0. The ceilings it raises are per-NON-ROOT-uid, so the effect
-# lands on the `ubuntu` account even though the work is done as root.
+# lands on the wrapper-running account (`ubuntu` on vps, `cwoolley` on
+# hp-xubuntu) even though the work is done as root.
 #
 # CONFIG-ONLY SERVICE. There is no unit here and none is enabled: the drop-in
 # is read by systemd-sysctl at boot, which this role does not own. What it

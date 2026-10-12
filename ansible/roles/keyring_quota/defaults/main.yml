@@ -7,5 +7,5 @@ keyring_quota_sysctl_bin: /usr/sbin/sysctl
 # the values in files/99-keyring-quota.conf, which is where the measurements
 # behind them are recorded — so the first task asserts the two agree rather
 # than letting them drift into disagreement unnoticed.
-keyring_quota_maxbytes: 131072
+keyring_quota_maxbytes: 1048576
 keyring_quota_maxkeys: 1000
