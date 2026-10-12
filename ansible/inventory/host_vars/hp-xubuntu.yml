@@ -126,6 +126,16 @@ fabro_server_instances:
 # (Windows) and /dev/sdb (the USB backup disk), neither of which may ever be
 # touched, and a /dev/sdX name is one SATA re-enumeration away from either.
 sandbox_storage_device: /dev/disk/by-id/ata-Fanxiang_S101_4TB_FX233090446
+# Sized to the summed per-container SWAP ALLOWANCE, not to RAM — maintainer
+# direction of 2026-10-12 after sandboxes were OOM-killed with the 8 GB
+# /swap.img full (one run lost ~5 h). Measured on the host: every sandbox runs
+# with Memory=8 GB, MemorySwap=16 GB, so each may use 8 GB of swap; the fleet
+# instance admits 15 concurrent runs (15 x 8 = 120 GB), and the candidate
+# instance's petri containers carry no memory limit at all, so headroom is
+# added on top. Unlikely to be used all at once, and that is fine: the volume
+# is freshly formatted, the space is free, and the kernel's bookkeeping for
+# 160 GB of swap is about 40 MB of RAM.
+sandbox_storage_swap_size: 160GiB
 
 # --- sccache_redis ---
 sccache_redis_bind_addr: 172.17.0.1

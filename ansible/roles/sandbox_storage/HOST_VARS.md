@@ -37,8 +37,12 @@ to its RAM, and brings the two bind lines under management.
 | `sandbox_storage_allow_run_loss` | `false` | **per-run opt-in**, with the above: accept ending the containers docker is carrying |
 
 ```yaml
-# hp-xubuntu — the one value that varies; every other value is the role default.
+# hp-xubuntu — the device, and a swap sized to the sandboxes' summed swap
+# allowance (15 concurrent x 8 GB, plus headroom for the candidate instance's
+# unlimited petri containers) rather than to RAM; every other value is the
+# role default.
 sandbox_storage_device: /dev/disk/by-id/ata-Fanxiang_S101_4TB_FX233090446
+sandbox_storage_swap_size: 160GiB
 ```
 
 ## The procedure
