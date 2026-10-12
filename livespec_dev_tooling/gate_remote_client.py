@@ -48,9 +48,12 @@ directly rather than from a hook, which is why it could not see this at all.
 
 The push is internal TRANSPORT of the tree being gated rather than a user push,
 so `core.hooksPath=/dev/null` is set for that one git invocation and the user's
-own push keeps its hooks. The prefix is built in `_mirror_push`, the one place a
-mirror push is built, exactly as `_kubectl` is the one place a cluster command is
-built: a hookless push is not a property a step can be spelled without.
+own push keeps its hooks. BOTH pushes here are spelled that way — the publish and
+the collection — because git fires the hook for a `--delete` too, and a client
+that disabled hooks on only one of them recurses one step later instead. The
+prefix is therefore built in `_mirror_push`, the one place a mirror push is built,
+exactly as `_kubectl` is the one place a cluster command is built: a hookless
+push is not a property a step can be spelled without.
 
 THE REF DELETION IS THE PART THAT FAILS SILENTLY. One gated push creates those
 two refs and nothing in the protocol removes them, so this client is the FIRST
@@ -285,10 +288,15 @@ def _delete_gate_ref(
     kind of litter as the tree ref and accumulates at the same rate, so naming
     only the tree ref would halve the collection while looking complete — and
     the shortfall is invisible until the mirror's namespace is measured.
+
+    THROUGH `_mirror_push` for the same reason the publish is: a `--delete` is a
+    push, and git fires `pre-push` for it too, so a collection spelled with hooks
+    live re-enters the hook that started this gate and delegates another one.
+    Fixing the publish alone leaves the recursion in place one step later, where
+    it is harder to see — the tree has already been gated by then.
     """
     argv = [
-        "git",
-        "push",
+        *_mirror_push(),
         "--delete",
         request.mirror_url,
         f"refs/gates/{tree_hash}",
