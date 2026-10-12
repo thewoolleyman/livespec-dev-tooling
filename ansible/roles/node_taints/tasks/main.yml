@@ -10,6 +10,14 @@
 # reconciles the live `node-role/ci` taint to the profile, so the hand step is
 # gone and the open/closed state of a node is a fact of its committed profile.
 #
+# THE LIVE TAINT ONLY — ../k3s_config OWNS THE ONE THE NODE STARTS WITH. This
+# role reconciles what a REGISTERED node carries now; it cannot reach what the
+# node will apply at its NEXT registration, which is why a control-plane reboot
+# re-tainted gmktec from a stale `k3s-agent.service` after this role had already
+# removed the live taint (livespec-dev-tooling-yapwva). ../k3s_config renders the
+# start configuration from this same profile with this same read; the two must
+# never disagree about what the profile said.
+#
 # SCOPE — the `node-role/ci` key ONLY. It never reads, adds or removes any other
 # taint on the node; taints this role does not own are the node's own business.
 # Idempotent: it changes the live taint only when it actually differs from the

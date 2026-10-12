@@ -1,8 +1,17 @@
 ---
-# k3s_config — this node's /etc/rancher/k3s/config.yaml, selected by its
-# cluster role, plus the server's packaged-manifest skip marker.
+# k3s_config — this node's k3s START CONFIGURATION: the shared
+# /etc/rancher/k3s/config.yaml selected by its cluster role, the per-node
+# node-taint drop-in rendered from its committed profile, and the server's
+# packaged-manifest skip marker.
 #
 # Replaces ci-runner/k3s/phase2/k3s-config/install-k3s-config.sh.
+#
+# THE AGENT'S NODE TAINTS ARE PART OF THAT CONFIGURATION, and this role owns
+# them because they are START state. ../node_taints owns the LIVE taint on a
+# registered node — a different fact, reconciled through kubectl — and the two
+# read the same profile with the same expression on purpose. See the
+# node-taint tasks below for the defect that split them
+# (livespec-dev-tooling-yapwva).
 #
 # WHY TWO SOURCE FILES AND NOT ONE TEMPLATE WITH CONDITIONAL KEYS. config.yaml
 # carries three keys an agent does not merely ignore: `disable`, which names a
@@ -48,6 +57,94 @@
     mode: "0600"
   become: true
   notify: Settle the agent k3s runtime
+
+- name: Read this agent's profile NODE_TAINTS
+  # The SAME read as ../../node_taints' first task, filter chain included, and
+  # that identity is load-bearing: that role reconciles the taint the node
+  # carries NOW, this one renders the taint the node STARTS with, and the two
+  # must never disagree about what the profile said. regex_findall | first, NOT
+  # regex_search(..., '\1'): with a group argument regex_search returns a LIST.
+  # A missing or empty NODE_TAINTS yields '' — the OPEN state, not an error.
+  ansible.builtin.set_fact:
+    k3s_config_node_taints_declared: >-
+      {{ lookup('ansible.builtin.file', k3s_config_profile)
+      | regex_findall('^NODE_TAINTS=(.*)$', multiline=True) | first | default('') }}
+  when: k3s_config_cluster_role == 'agent'
+
+- name: Derive the node-taint records this agent starts with
+  # A NODE_TAINTS value is space-separated `key=value:Effect` records, so
+  # `.split()` on whitespace IS the record list, and `to_json` renders it as the
+  # YAML flow sequence k3s reads. The empty profile yields `[]`.
+  ansible.builtin.set_fact:
+    k3s_config_node_taint_records: "{{ k3s_config_node_taints_declared.split() | to_json }}"
+  when: k3s_config_cluster_role == 'agent'
+
+- name: Create the k3s configuration drop-in directory on the agent
+  # Explicit for the same reason as the parent above: --check cannot see past a
+  # missing parent, so the render below would report a would-be change and then
+  # fail only on a real apply.
+  ansible.builtin.file:
+    path: "{{ k3s_config_drop_in_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: k3s_config_cluster_role == 'agent'
+
+- name: Render this agent's node taints from its committed profile
+  # THE POINT OF THIS ROLE'S NODE-TAINT HALF. `provision-k3s.sh` writes every
+  # NODE_TAINTS record into the k3s install command, so the taint lands in
+  # k3s-agent.service's ExecStart at JOIN TIME and goes stale the day the
+  # profile changes. k3s applies a taint at REGISTRATION, and a control-plane
+  # reboot recreates the cluster's objects, so the agent re-registers off that
+  # stale unit: poweredge-xubuntu rebooted 2026-10-12 03:56Z and gmktec-xubuntu
+  # was still `node-role/ci=pending` at 04:24Z with `NODE_TAINTS=` committed
+  # since R5 (livespec-dev-tooling-yapwva). Rendering the records into a file
+  # k3s reads on every start — and stripping the flag out of the unit below —
+  # makes the profile the only source. TAKES EFFECT ON THE NEXT k3s START, like
+  # everything else here; nothing in this role restarts k3s-agent.
+  ansible.builtin.template:
+    src: node-taint.yaml.j2
+    dest: "{{ k3s_config_node_taint_drop_in }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  when: k3s_config_cluster_role == 'agent'
+  notify: Settle the agent k3s runtime
+
+- name: Drop --node-taint out of the agent unit's start command
+  # THE STALE CARRIER, REMOVED. The rendered file above is only an opinion while
+  # the unit still carries a `--node-taint` from join time; k3s would still
+  # apply what ExecStart names at the next registration. This takes the argument
+  # pair out, so the profile is the single source. See the expression's own
+  # comment in ../defaults/main.yml for what it matches and why its value guard
+  # is load-bearing.
+  #
+  # `replace` and not `lineinfile`: the flag and its value are two consecutive
+  # lines that must go TOGETHER, and a line-wise edit that removed one of them
+  # would leave the other as a bare positional argument.
+  ansible.builtin.replace:
+    path: "{{ k3s_config_agent_unit }}"
+    regexp: "{{ k3s_config_agent_unit_node_taint_regexp }}"
+    replace: ""
+  become: true
+  register: k3s_config_agent_unit_taint_strip
+  when: k3s_config_cluster_role == 'agent'
+
+- name: Make systemd re-read the agent unit this pass rewrote
+  # daemon_reload ONLY. No `state:` — this role must never restart k3s-agent,
+  # which would kill every CI job running on the node; the stripped unit takes
+  # effect at the next start, exactly like the config file above. Reached only
+  # when the strip actually edited something, so a converged node reloads
+  # nothing.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when:
+    - k3s_config_cluster_role == 'agent'
+    - k3s_config_agent_unit_taint_strip.changed
 
 - name: Create the packaged-manifest directory on the server
   # 0700 as the shell installed it. This is under /var/lib/rancher/k3s/server/
