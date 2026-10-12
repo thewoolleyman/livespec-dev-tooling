@@ -1,0 +1,199 @@
+---
+# Retire the OLD store copies a completed cutover left behind — HOST_VARS.md
+# "Cutover" step 6. Reached only with sandbox_storage_allow_reclaim, and only
+# on a run that is serving the daemons from the new disk. Deleting the old
+# copies ends the rollback in HOST_VARS.md for good, so every precondition is
+# re-established on THIS run rather than trusted from the cutover's:
+#
+#   - the record marks both stores copied, and names absolute old sources
+#     that are neither the new disk, nor a bind target, nor a top-level path;
+#   - both bind targets are served from their stores on the new partition;
+#   - both daemons are active on that layout;
+#   - each old source still lives on the filesystem the record names, and NO
+#     mount in ANY mount namespace on the host is served from inside it.
+#
+# An old source already gone is skipped, so a re-run is a no-op.
+
+- name: Read the cutover's record
+  ansible.builtin.slurp:
+    src: "{{ sandbox_storage_mount }}/{{ sandbox_storage_sources_record }}"
+  register: sandbox_storage_reclaim_record_raw
+  become: true
+
+- name: Hold the record's old sources
+  ansible.builtin.set_fact:
+    sandbox_storage_reclaim_record: "{{ sandbox_storage_reclaim_record_raw.content | b64decode | from_json }}"
+
+- name: Refuse to reclaim a store the record does not mark copied, or a source that is not an old store
+  ansible.builtin.assert:
+    that:
+      - sandbox_storage_reclaim_record[item] is defined
+      - sandbox_storage_reclaim_record[item].copied is defined
+      - sandbox_storage_reclaim_record[item].copied is boolean
+      - sandbox_storage_reclaim_record[item].copied
+      - sandbox_storage_reclaim_record[item].source is match('^/[^/]+/[^/]')
+      - sandbox_storage_reclaim_record[item].source is not match('^' ~ (sandbox_storage_mount | regex_escape) ~ '(/|$)')
+      - sandbox_storage_reclaim_record[item].source not in [sandbox_storage_containerd_dir, sandbox_storage_docker_dir]
+      - sandbox_storage_reclaim_record[item].uuid | default('') | length > 0
+    fail_msg: >-
+      the record's '{{ item }}' entry ({{ sandbox_storage_reclaim_record[item] | default({}) | to_json }})
+      does not name a completed copy from an old store; nothing is deleted
+    success_msg: "old {{ item }} store: {{ sandbox_storage_reclaim_record[item].source }}"
+  loop: [containerd, docker]
+
+- name: Read which device and subtree serve each bind target, before reclaiming
+  ansible.builtin.command: findmnt -rno SOURCE,FSROOT --nofsroot {{ item.dir }}
+  register: sandbox_storage_reclaim_binds
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  loop: "{{ sandbox_storage_bind_targets }}"
+  loop_control:
+    label: "{{ item.dir }}"
+
+- name: Refuse to reclaim while a bind target is served from anything but the new partition
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - (item.stdout | split)[0] == sandbox_storage_fs_devices[0]
+      - (item.stdout | split)[1] == item.item.subtree
+    fail_msg: "{{ item.item.dir }} is served from '{{ item.stdout }}'; the old stores are kept"
+    success_msg: "{{ item.item.dir }} is served from {{ item.stdout }}"
+  loop: "{{ sandbox_storage_reclaim_binds.results }}"
+  loop_control:
+    label: "{{ item.item.dir }}"
+
+- name: Read whether the container daemons are active
+  # noqa: command-instead-of-module — one-unit reads, as migrate_stores.yml.
+  ansible.builtin.command: systemctl is-active {{ item }}
+  register: sandbox_storage_reclaim_daemons
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  loop:
+    - containerd.service
+    - docker.service
+
+- name: Refuse to reclaim while a container daemon is not running on the new layout
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim == 'active'
+    fail_msg: "{{ item.item }} is '{{ item.stdout | trim }}'; the old stores are kept"
+    success_msg: "{{ item.item }} is active"
+  loop: "{{ sandbox_storage_reclaim_daemons.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check which old sources still exist
+  ansible.builtin.stat:
+    path: "{{ sandbox_storage_reclaim_record[item].source }}"
+  register: sandbox_storage_reclaim_sources
+  become: true
+  loop: [containerd, docker]
+
+- name: Count the mounts, in every mount namespace, served from inside each old source
+  # Prints "<UUID> <count>". The UUID is that of the filesystem the old source
+  # lives on now; the count is every mountinfo line, across the distinct mount
+  # namespaces of all processes, whose device is that filesystem's and whose
+  # root lies at or below the old source's subtree of it. Docker's container
+  # namespaces are included on purpose: a container that outlived the cutover
+  # would still hold a lower dir from the old store.
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import os, subprocess, sys
+        src = os.path.realpath(sys.argv[1])
+        out = subprocess.run(["findmnt", "-rno", "MAJ:MIN,FSROOT,TARGET,UUID", "-T", src],
+                             check=True, capture_output=True, text=True).stdout.split()
+        majmin, fsroot, target, uuid = out[0], out[1], out[2], (out[3] if len(out) > 3 else "")
+        rel = src[len(target):] if target != "/" else src
+        sub = (fsroot.rstrip("/") + rel) or "/"
+        seen, count = set(), 0
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                ns = os.readlink(f"/proc/{pid}/ns/mnt")
+                if ns in seen:
+                    continue
+                seen.add(ns)
+                lines = open(f"/proc/{pid}/mountinfo").read().splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                f = line.split()
+                root = f[3].encode().decode("unicode_escape")
+                if f[2] == majmin and (root == sub or root.startswith(sub.rstrip("/") + "/")):
+                    count += 1
+        print(uuid, count)
+      - "{{ sandbox_storage_reclaim_record[item.item].source }}"
+  register: sandbox_storage_reclaim_refs
+  changed_when: false
+  check_mode: false
+  become: true
+  loop: "{{ sandbox_storage_reclaim_sources.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+
+- name: Refuse to reclaim an old source that moved filesystems or that something still mounts
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | split)[0] == sandbox_storage_reclaim_record[item.item.item].uuid
+      - (item.stdout | split)[1] | int == 0
+    fail_msg: >-
+      {{ sandbox_storage_reclaim_record[item.item.item].source }} reads '{{ item.stdout }}'
+      (UUID, mounts served from it); expected UUID
+      {{ sandbox_storage_reclaim_record[item.item.item].uuid }} and 0. Nothing is deleted.
+    success_msg: "{{ sandbox_storage_reclaim_record[item.item.item].source }} is unreferenced"
+  loop: "{{ sandbox_storage_reclaim_refs.results | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.item }}"
+
+- name: Report the old sources a --check run would delete
+  ansible.builtin.debug:
+    msg: "would delete {{ sandbox_storage_reclaim_record[item.item].source }}"
+  loop: "{{ sandbox_storage_reclaim_sources.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - ansible_check_mode
+    - item.stat.exists
+
+- name: Delete each old source
+  # At idle priority and confined to its own filesystem. Async because ~190 GB
+  # of small files outlasts ssh's patience; the play waits for it.
+  ansible.builtin.command:
+    argv:
+      - ionice
+      - -c3
+      - nice
+      - -n19
+      - rm
+      - -rf
+      - --one-file-system
+      - --
+      - "{{ sandbox_storage_reclaim_record[item.item].source }}"
+  async: 21600
+  poll: 30
+  changed_when: true
+  become: true
+  loop: "{{ sandbox_storage_reclaim_sources.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - not ansible_check_mode
+    - item.stat.exists
+
+- name: Delete the host's other leftovers of the move
+  # The pre-cutover fstab snapshot names the old binds, which no longer
+  # exist: restoring it now would mount nothing and, without nofail, fail the
+  # boot. Plus whatever host_vars lists (hp's fpsync scratch).
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop: "{{ [sandbox_storage_fstab_snapshot] + sandbox_storage_reclaim_extra_paths }}"
