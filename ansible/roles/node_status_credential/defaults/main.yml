@@ -19,3 +19,20 @@ node_status_credential_k3s_config_dir: /etc/rancher/k3s
 # The SA token Secret is populated asynchronously by the token controller.
 node_status_credential_token_retries: 30
 node_status_credential_token_delay: 2
+# The runtime refresh tool (livespec-dev-tooling-yj25uj) and where it reads its
+# pool facts from. Both must agree with the fallbacks the shipped script carries,
+# or an un-provisioned host and a converged one would pull from different places.
+node_status_credential_refresh_bin: /usr/local/bin/refresh-node-status-kubeconfig
+node_status_credential_refresh_env: /etc/ci-runner/node-status-refresh.env
+# Where the SERVER's boot converge re-renders each agent's credential, and so the
+# directory the refresh tool pulls from. Co-maintained with
+# ci-runner/k3s/phase2/reconstruct/converge-ci-stack.sh step 10d; it is the same
+# directory that host renders the gates credential into.
+node_status_credential_render_dir: /etc/ci-runner
+# The AGENT-side login user whose ssh identity reaches the control-plane node.
+# The refresh tool runs as root under the reapply unit, and root on a pool node
+# has no tailnet ssh identity, so it drops the FETCH to this user via `sudo -u`
+# (the WRITE stays root). A pool fact, delivered in the env-file rather than
+# baked into the tool; it is the account ansible/inventory/legacy.yml reaches
+# these nodes as.
+node_status_credential_ssh_user: cwoolley

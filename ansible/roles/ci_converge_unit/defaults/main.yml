@@ -20,6 +20,7 @@ ci_converge_unit_directories:
   - sccache
   - observability
   - gates
+  - node-status-credential
 # The named members of the installed tree, with the mode each is installed
 # under. The three GLOBS the shell uses — arc/values-*.yaml minus the EXAMPLE
 # template, kueue/core/*.yaml, kueue/cluster-queue-*.yaml — are resolved at run
@@ -116,6 +117,16 @@ ci_converge_unit_files:
   - src: gates/render-gate-job.sh
     dest: gates/render-gate-job.sh
     mode: "0755"
+  # The per-node node-status RBAC template the boot converge's step 10d re-applies
+  # for each AGENT node (livespec-dev-tooling-yj25uj). The converge runs from this
+  # installed tree with no checkout present, so a template it reads relative to
+  # itself MUST be here: without it every agent's churn-slot timer stays on a
+  # credential the post-reboot API server rejects, which is exactly the
+  # silent-at-reboot loss the registry-mirror note above records. Shipped, never
+  # executed — it carries NODE_NAME_PLACEHOLDER and the converge substitutes it.
+  - src: node-status-credential/node-status-patch-rbac.yaml
+    dest: node-status-credential/node-status-patch-rbac.yaml
+    mode: "0644"
 # The reapply unit converge step 1b needs. Its absence is a WARNING, not a
 # failure: a converge without it still builds the cluster stack and says so.
 ci_converge_unit_reapply_service: reapply-node-extended-resource.service

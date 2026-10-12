@@ -119,6 +119,17 @@ if [ -d "${ARTIFACT_DIR}/gates" ]; then
 else
   GATES_DIR="$(cd "${ARTIFACT_DIR}/../gates" && pwd)"        # repo layout
 fi
+# The per-node node-status RBAC template step 10d re-applies for each AGENT
+# (livespec-dev-tooling-yj25uj). Resolved like GATES_DIR, and NOT added to the
+# required-directory loop below: an older installed tree predating the
+# ci_converge_unit entry for it has no such directory, and a boot converge that
+# refused to run at all because an agent's credential could not be re-minted
+# would take the whole cluster stack down with it. Step 10d reports its absence.
+if [ -d "${ARTIFACT_DIR}/node-status-credential" ]; then
+  NODE_STATUS_DIR="${ARTIFACT_DIR}/node-status-credential"
+else
+  NODE_STATUS_DIR=""
+fi
 RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
 for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR"; do
   [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
@@ -138,6 +149,18 @@ PROBE_KUBECONFIG="${CI_KUEUE_PROBE_KUBECONFIG:-/etc/ci-runner/kueue-webhook-prob
 # is R4.S8's job (livespec-sab5gn.1); converge only renders it.
 GATES_KUBECONFIG="${CI_GATES_KUBECONFIG:-/etc/ci-runner/gates.kubeconfig}"
 GATES_SERVER="${CI_GATES_SERVER:-https://poweredge-xubuntu.perch-rudd.ts.net:6443}"
+# Each AGENT node's scoped node-status credential (step 10d,
+# livespec-dev-tooling-yj25uj). Rendered HERE, one file per agent, and CONSUMED on
+# that agent — so, like the gates credential above and for the same reason, it
+# names the TAILNET address the API server holds a SAN for
+# (../k3s-config/config.yaml `tls-san`) rather than a loopback that would name the
+# reader's own machine. The directory is co-maintained with the
+# node_status_credential role's `node_status_credential_render_dir`, which is
+# where that agent's refresh-node-status-kubeconfig pulls from.
+NODE_STATUS_RENDER_DIR="${CI_NODE_STATUS_RENDER_DIR:-/etc/ci-runner}"
+NODE_STATUS_SERVER="${CI_NODE_STATUS_SERVER:-${GATES_SERVER}}"
+NODE_STATUS_NAMESPACE="ci-runner-node-status"
+NODE_STATUS_SA_PREFIX="node-status-patcher-"
 
 # Live release -> phase-2 values file. The SINGLE source of truth in this
 # script for what gets applied; co-maintained with phase2/README.md
@@ -664,6 +687,73 @@ log "10c. Converge the gate source path (bare mirrors on the ci-cache tier + the
 # passing them, so it must not take the rest of the boot converge down with it.
 if ! GATES_VALUES_DIR="${ARC_DIR}" "${GATES_DIR}/converge-gates-mirror.sh"; then
   echo "WARN: converge-gates-mirror.sh failed (see above; an unmounted ci-cache tier refuses by design) — continuing; delegated gates fail closed at their fetch until it is re-run"
+fi
+
+# ---------------------------------------------------------------------------
+log "10d. Re-mint every AGENT node's node-status credential and re-render its kubeconfig"
+# livespec-dev-tooling-yj25uj. Same tmpfs-datastore reasoning as steps 10 and
+# 10b, with one difference that made it the harder failure: the credential is
+# consumed on ANOTHER machine. An agent has no admin kubeconfig — k3s writes one
+# only on a server — so its churn-slot reapply timer authenticates with the
+# narrow get/patch-on-one-node's-status credential ../node-status-credential/
+# mints. A reboot wipes that ServiceAccount and its token Secret, and nothing the
+# agent holds can recreate them: the grant deliberately reaches nothing but one
+# node's status. So the agent's credential was REJECTED after every boot, its
+# reapply unit read the rejection as an unregistered node and waited for a node
+# that was already there, and the node advertised NO churn-slot capacity while
+# every ClusterQueue applied in step 5 stayed denominated in it. Measured
+# 2026-10-12 04:01Z-04:26Z on gmktec-xubuntu. The repair was an operator's
+# `just ansible-apply ansible/ci-pool.yml`; this step is the half that removes
+# the operator, and ../node-extended-resource/patch-node-churn-capacity.sh plus
+# the agent's refresh-node-status-kubeconfig are the other half (it pulls what
+# this renders, once, on a rejection).
+#
+# AGENTS ONLY, SELECTED BY THE ABSENCE OF THE CONTROL-PLANE LABEL. A server
+# authenticates as k3s's own admin file and must never be handed a narrow
+# credential beside its unrestricted one — that would be a second long-lived
+# token on the machine holding the first, the refusal both
+# ../../secret-reinjection/seed-node-status-kubeconfig.sh and the
+# node_status_credential role already state. Note this does NOT re-derive any
+# node's CAPACITY: each node's churn-slot number stays a fact of its own profile
+# and its own timer (step 1b's scoping note). This step only restores the
+# credential that timer authenticates with.
+#
+# WARN rather than fail, per node: an agent whose credential cannot be re-minted
+# costs that node's capacity, and failing here would skip nothing useful while
+# leaving the rest of the stack unbuilt.
+if [ -z "$NODE_STATUS_DIR" ]; then
+  echo "WARN: no node-status-credential/ artifact dir beside this converge, so no agent's node-status credential can be re-minted — every agent's churn-slot timer will keep failing on a rejected credential after this boot. Re-install the boot tree with the ci_converge_unit Ansible role (just ansible-apply ansible/ci-pool.yml)"
+else
+  node_status_rbac="${NODE_STATUS_DIR}/node-status-patch-rbac.yaml"
+  if [ ! -f "$node_status_rbac" ]; then
+    echo "WARN: ${node_status_rbac} not found — skipping the agent node-status re-mint"
+  else
+    install -d -m 0755 "$NODE_STATUS_RENDER_DIR"
+    # `-l '!label'` is a label-ABSENCE selector, which is how an agent is named
+    # without this script carrying a roster of node names.
+    agent_nodes="$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+    if [ -z "$agent_nodes" ]; then
+      echo "no agent nodes in this cluster — nothing to re-mint (the server's own timer uses its admin kubeconfig)"
+    fi
+    for node in $agent_nodes; do
+      echo "-- re-minting the node-status credential for agent ${node}"
+      if ! sed "s/NODE_NAME_PLACEHOLDER/${node}/g" "$node_status_rbac" \
+        | kubectl apply --dry-run=client -o yaml -f - | kubectl apply -f -; then
+        echo "WARN: could not apply the node-status RBAC for ${node} — its churn-slot timer stays on a rejected credential"
+        continue
+      fi
+      if ! "${RENDER_SA_KUBECONFIG}" \
+        --namespace "$NODE_STATUS_NAMESPACE" \
+        --secret "${NODE_STATUS_SA_PREFIX}${node}" \
+        --user "${NODE_STATUS_SA_PREFIX}${node}" \
+        --dest "${NODE_STATUS_RENDER_DIR}/node-status-${node}.kubeconfig" \
+        --server "$NODE_STATUS_SERVER" \
+        --group root --mode 0600; then
+        echo "WARN: could not render ${NODE_STATUS_RENDER_DIR}/node-status-${node}.kubeconfig — ${node}'s refresh will find nothing to pull"
+      fi
+    done
+  fi
 fi
 
 # ---------------------------------------------------------------------------

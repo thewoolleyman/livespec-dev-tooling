@@ -34,6 +34,7 @@ Work-item: livespec-dev-tooling-yj25uj. Plan: livespec `k3s-on-gmktec-for-vps-us
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -46,6 +47,34 @@ _K3S = _REPO_ROOT / "ci-runner" / "k3s"
 _PATCH_SCRIPT = _K3S / "phase2" / "node-extended-resource" / "patch-node-churn-capacity.sh"
 _ROLE = _REPO_ROOT / "ansible" / "roles" / "node_status_credential"
 _REFRESH_TOOL = _ROLE / "files" / "refresh-node-status-kubeconfig"
+_ROLE_TASKS = _ROLE / "tasks" / "main.yml"
+_ROLE_DEFAULTS = _ROLE / "defaults" / "main.yml"
+_BOOT_CONVERGE = _K3S / "phase2" / "reconstruct" / "converge-ci-stack.sh"
+_CONVERGE_UNIT_DEFAULTS = (
+    _REPO_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml"
+)
+_RBAC_TEMPLATE_NAME = "node-status-patch-rbac.yaml"
+# The same template as a phase2-relative path, which is the form the
+# `ci_converge_unit` role's installed-file set uses.
+_RBAC_TEMPLATE_SOURCE = f"node-status-credential/{_RBAC_TEMPLATE_NAME}"
+_NODE_STATUS_NAMESPACE = "ci-runner-node-status"
+
+# The ONE path the two halves must agree on: the control-plane node renders each
+# agent's credential into this DIRECTORY under this FILENAME shape, and that
+# agent's refresh tool pulls from exactly there. A disagreement is a pull that
+# fetches nothing — silently, because an empty fetch fails closed and leaves the
+# stale file in place — so both spellings are asserted against these constants
+# rather than against each other's text. Asserted as the two parts they are: each
+# side composes the path from a variable (the render directory on one, the node
+# name on both), so neither carries the whole thing as one literal.
+_REMOTE_CREDENTIAL_DIR = "/etc/ci-runner"
+_REMOTE_CREDENTIAL_PREFIX = "node-status-"
+_REMOTE_CREDENTIAL_SUFFIX = ".kubeconfig"
+
+# Kubernetes' own label for a control-plane node, used as its ABSENCE: the server
+# authenticates as k3s's admin file and must never be handed a narrow credential
+# of its own, so the re-mint selects every node that is not the control plane.
+_NOT_CONTROL_PLANE = "'!node-role.kubernetes.io/control-plane'"
 # The COMMITTED agent profile. Every value the patch script reads is that node's
 # own data; only the credential path is redirected, because the committed value
 # names a file on THAT node holding a cluster credential.
@@ -154,10 +183,15 @@ def _run_patch(
             "REFRESH_EXIT": str(refresh_exit),
             "NODE_STATUS_REFRESH_BIN": str(refresh),
             "KUBECONFIG": str(kubeconfig),
-            # Long enough that the bounded wait takes a few turns before giving
-            # up, so the registration-wait line a late node earns is actually
-            # emitted; short enough that the suite does not wait on it.
-            "NODE_WAIT_TIMEOUT": "1",
+            # Long enough that the bounded wait takes several turns before giving
+            # up, so the registration-wait line a late node earns is emitted on
+            # every host rather than on a fast one: at 1s, `date`'s one-second
+            # clock could tick between the deadline and the first check and the
+            # script would give up before printing anything, which is a flake that
+            # looks exactly like the defect under test. Short enough that the one
+            # test taking this path does not wait on it; a rejected credential
+            # leaves on its first probe and never reaches the deadline.
+            "NODE_WAIT_TIMEOUT": "3",
         }
     )
     completed = subprocess.run(
@@ -410,3 +444,145 @@ def test_the_refresh_tool_refuses_to_overwrite_a_credential_with_a_non_kubeconfi
 
     assert code != 0
     assert dest.read_text(encoding="utf-8") == stale
+
+
+# --- the chain that makes the repair unattended ---------------------------
+#
+# Read rather than applied, exactly as `tests/consumer/test_gates_credential_provisioning.py`
+# reads its role. These are claims about what a CONVERGE does — which host
+# re-mints the credential, where it lands, and which tool is installed to pull
+# it — and applying them needs the VPS, the control-plane node, an agent and a
+# real bearer token, and would still prove it of ONE pool rather than of every
+# converge.
+
+
+def _role_tasks() -> str:
+    return _ROLE_TASKS.read_text(encoding="utf-8")
+
+
+def _converge() -> str:
+    return _BOOT_CONVERGE.read_text(encoding="utf-8")
+
+
+def test_the_role_installs_the_refresh_tool_on_the_agent() -> None:
+    """A repair path the agent does not carry is a repair path an operator performs.
+
+    The tool is installed by the same role that delivers the credential, agent-only
+    and executable, for the reason the `gates_kubeconfig` role installs
+    `refresh-gates-kubeconfig` beside the credential it refreshes: the role owns
+    the tool's INSTALLATION, not its behaviour.
+    """
+    tasks = _role_tasks()
+    # Matched on `src:` rather than on the tool's name anywhere in the block: the
+    # env-file task's own comment names the tool too (it says what reads it), so a
+    # name-anywhere match finds two tasks and proves neither.
+    installing = [
+        block for block in tasks.split("\n    - name: ") if f"src: {_REFRESH_TOOL.name}" in block
+    ]
+
+    assert tasks.count("node_status_credential_cluster_role == 'agent'") == 1
+    assert len(installing) == 1
+    assert 'mode: "0755"' in installing[0]
+
+
+def test_the_role_tells_the_refresh_tool_which_node_and_which_server_it_pulls_from() -> None:
+    """Pool facts reach the shipped tool in an env-file, never baked into it.
+
+    The node's name, the host that renders its credential, the path that render
+    lands at and the path this node reads are all per-node or per-pool data — the
+    same delivery the gates refresh tool's ssh identity takes. Baked into the
+    script, a second pool node would need a second script.
+    """
+    tasks = _role_tasks()
+
+    for variable in (
+        "NODE_STATUS_NODE_NAME",
+        "NODE_STATUS_REMOTE_HOST",
+        "NODE_STATUS_REMOTE_KUBECONFIG",
+        "NODE_STATUS_KUBECONFIG",
+        "NODE_STATUS_SSH_USER",
+    ):
+        assert f"{variable}=" in tasks
+
+
+def test_the_refresh_tool_and_the_role_name_the_same_control_plane_node() -> None:
+    """An un-provisioned host must fail against the right name, not an empty string.
+
+    The shipped script's fallback and the role's default are two spellings of one
+    pool fact, and a disagreement would make a converged node and an
+    un-provisioned one pull from different hosts.
+    """
+    shipped = re.search(
+        r'^REMOTE_HOST="\$\{NODE_STATUS_REMOTE_HOST:-(?P<host>[^}"]+)\}"$',
+        _REFRESH_TOOL.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    declared = re.search(
+        r"^node_status_credential_server_host: (?P<host>\S+)$",
+        _ROLE_DEFAULTS.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+
+    assert shipped is not None
+    assert declared is not None
+    assert shipped["host"] == declared["host"]
+
+
+def test_the_boot_converge_remints_every_agent_nodes_node_status_rbac() -> None:
+    """The re-mint is the half no agent can perform, so the server does it at boot.
+
+    A reboot empties the tmpfs datastore, so the per-node ServiceAccount and its
+    token Secret are GONE — not stale. No credential the agent holds can recreate
+    them, and that is deliberate (the grant cannot reach anything but one node's
+    status). Until the boot converge re-applied this RBAC, an agent's refresh had
+    nothing current to fetch and the repair needed an operator's `ansible-apply`.
+    """
+    converge = _converge()
+
+    assert _RBAC_TEMPLATE_NAME in converge
+    assert "NODE_NAME_PLACEHOLDER" in converge
+    assert _NODE_STATUS_NAMESPACE in converge
+
+
+def test_the_boot_converge_remints_for_agents_only_and_never_for_itself() -> None:
+    """A server must not be handed a narrow credential beside its unrestricted one.
+
+    It authenticates as k3s's own admin kubeconfig, so a per-node token for it
+    would be a second long-lived credential on the machine that already holds the
+    first — the refusal `seed-node-status-kubeconfig.sh` and the
+    `node_status_credential` role both state, restated where the unattended path
+    would otherwise quietly widen it.
+    """
+    assert _NOT_CONTROL_PLANE in _converge()
+
+
+def test_the_boot_converge_renders_each_credential_where_its_agent_pulls_from() -> None:
+    """The coupling that makes the pull work, asserted on both halves at once.
+
+    The render's destination and the refresh tool's source are one path. If they
+    drift the fetch returns nothing, the tool fails closed on a stale file, and the
+    symptom is the ORIGINAL defect again — a node that never advertises capacity —
+    with nothing naming the mismatch.
+    """
+    converge = _converge()
+    shipped = _REFRESH_TOOL.read_text(encoding="utf-8")
+
+    for half in (converge, shipped):
+        assert _REMOTE_CREDENTIAL_DIR in half
+        assert _REMOTE_CREDENTIAL_PREFIX in half
+        assert _REMOTE_CREDENTIAL_SUFFIX in half
+
+
+def test_the_ci_converge_unit_role_installs_the_node_status_rbac_template() -> None:
+    """A manifest the boot converge applies but the role does not install is lost.
+
+    The boot converge runs from `/usr/local/lib/ci-runner-k3s/` on the host, with
+    no checkout present, so a template it reads relative to itself must be in the
+    installed tree. This is the same invariant
+    `test_ci_runner_k3s_boot_converge_reachability.py` holds for apply-bearing
+    converge SCRIPTS; a template is reached by neither of its two walks.
+    """
+    defaults = _CONVERGE_UNIT_DEFAULTS.read_text(encoding="utf-8")
+
+    assert f"- src: {_RBAC_TEMPLATE_SOURCE}" in defaults
+    assert "  - node-status-credential\n" in defaults
