@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.5...v1.95.6) (2026-10-12)
+
+
+### Bug Fixes
+
+* **pre-push:** skip the gate when a push only deletes refs ([055e870](https://github.com/thewoolleyman/livespec-dev-tooling/commit/055e870f45e9c1548c5335eade65629543a8944e))
+
 ## [1.95.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.4...v1.95.5) (2026-10-12)
 
 
