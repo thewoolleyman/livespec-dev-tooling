@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.0...v1.95.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **gate:** name the gate Job after the repository, not the checkout ([d1aad17](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d1aad1784e12d76bc89a141974d4068a42f0c9bb))
+* **gate:** name the gate mirror after the repository, not the checkout ([cf8a649](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cf8a6494085f7399a76429bd49d63043136cb2d7))
+* **gate:** pass the repository, not the checkout, as the renderer's --repo ([82325c2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/82325c249bfe364081ad9d91808cf5951b4178fd))
+
 ## [1.95.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.94.0...v1.95.0) (2026-10-11)
 
 
