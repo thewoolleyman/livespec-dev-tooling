@@ -36,6 +36,22 @@ into `refs/remotes/origin/master`. The push is `--atomic` so a tree ref without
 its base cannot exist; the tree hash still names the tree, the served ref, this
 Job and the token.
 
+THE MIRROR PUSHES RUN WITH THE PUSHING REPOSITORY'S HOOKS DISABLED, and that is
+what keeps this client from calling itself. git runs `pre-push` for EVERY push,
+the mirror push included, and the only way this client is ever reached is FROM a
+repository's own `pre-push` hook — so a push spelled with hooks live re-enters
+that hook, which delegates again, which pushes again. The recursion is unbounded
+and presents as a HANG rather than an error, because every level is doing exactly
+what it was asked to do: measured on the VPS 2026-10-12, a worktree push sat 48
+minutes and was refused NO_VERDICT. The 2026-09-10 proof called this client
+directly rather than from a hook, which is why it could not see this at all.
+
+The push is internal TRANSPORT of the tree being gated rather than a user push,
+so `core.hooksPath=/dev/null` is set for that one git invocation and the user's
+own push keeps its hooks. The prefix is built in `_mirror_push`, the one place a
+mirror push is built, exactly as `_kubectl` is the one place a cluster command is
+built: a hookless push is not a property a step can be spelled without.
+
 THE REF DELETION IS THE PART THAT FAILS SILENTLY. One gated push creates those
 two refs and nothing in the protocol removes them, so this client is the FIRST
 collector and `prune-gate-refs.sh` on the mirror host is the second — that sweep
@@ -102,6 +118,11 @@ GATE_RANGE_BASE_REF = "origin/master"
 # is a fetch that finds nothing, at gate time, on the cluster — so a test holds
 # this constant and that refspec together.
 GATE_BASE_REF_SUFFIX = ".base"
+
+# The hooks directory a mirror push runs with. `/dev/null` is not a DIRECTORY,
+# so git finds no hook file beneath it and runs none — measured with git 2.43.0:
+# a plain push fires `pre-push`, this form does not.
+_NO_HOOKS_PATH = "/dev/null"
 
 _READ_TREE_STEP = "read-tree-hash"
 _PUSH_STEP = "push-gate-ref"
@@ -176,8 +197,7 @@ def run_gate(
         return Failure(tree.failure())
     tree_hash = tree.unwrap()
     push_argv = [
-        "git",
-        "push",
+        *_mirror_push(),
         # `--atomic` is what makes the two refs ONE FACT. The mirror is created
         # empty and holds only what a gate push puts there, so the diff base is
         # not something the pod can find on its own; a partial push would land
@@ -206,6 +226,23 @@ def run_gate(
     if isinstance(deleted, Failure):
         return Failure(deleted.failure())
     return gated
+
+
+def _mirror_push() -> list[str]:
+    """The HOOKLESS `git push` prefix every mirror push here shares.
+
+    The hooks are disabled because this client is reached from a repository's own
+    `pre-push` hook, and git fires that hook for every push — so a mirror push
+    spelled with hooks live re-enters the hook, which delegates again, which
+    pushes again, unbounded. It hangs rather than erroring: measured on the VPS
+    2026-10-12, a worktree push sat 48 minutes and was refused NO_VERDICT.
+
+    Built HERE, where a mirror push is built, so no step can be spelled without
+    it — the same reason `_kubectl` below is the only place a cluster command is
+    assembled. Only THIS invocation is hookless; the user's own push, which is
+    the one a `pre-push` hook exists to gate, is untouched.
+    """
+    return ["git", "-c", f"core.hooksPath={_NO_HOOKS_PATH}", "push"]
 
 
 def _kubectl(*, request: GateRunRequest) -> list[str]:
