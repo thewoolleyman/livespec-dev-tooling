@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.10...v1.95.11) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ansible:** render the agent node-status kubeconfig with the converge's one renderer ([3988365](https://github.com/thewoolleyman/livespec-dev-tooling/commit/398836530c24a6c75c34a28533f4bf9b3c1e2a50))
+
 ## [1.95.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.9...v1.95.10) (2026-10-12)
 
 
