@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.11...v1.95.12) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ci-runner:** install the boot converge's ARC charts from the host ([c1e2256](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c1e2256413ddd4a47b213358bf77a0864d7d661e))
+* **ci-runner:** let a failed boot converge restart itself ([f4cef53](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f4cef5330f5b7e48536c34b4a4007e97ab285c11))
+* **ci-runner:** render the boot converge's Kueue overlay with no internet ([caded92](https://github.com/thewoolleyman/livespec-dev-tooling/commit/caded924ca0d2592c5ab478197bb9f136879bcaa))
+
 ## [1.95.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.10...v1.95.11) (2026-10-12)
 
 
