@@ -174,6 +174,8 @@ def test_the_tree_under_test_is_pushed_to_the_mirror_at_a_ref_named_for_its_tree
     assert cluster.only(kind="read-tree").argv == ("git", "rev-parse", "HEAD^{tree}")
     assert cluster.only(kind="push-ref").argv == (
         "git",
+        "-c",
+        "core.hooksPath=/dev/null",
         "push",
         "--atomic",
         _MIRROR,
@@ -181,6 +183,37 @@ def test_the_tree_under_test_is_pushed_to_the_mirror_at_a_ref_named_for_its_tree
         f"origin/master:refs/gates/{_TREE}.base",
     )
     assert outcome.unwrap().tree_hash == _TREE
+
+
+def test_the_mirror_push_runs_with_the_pushing_repositorys_hooks_disabled() -> None:
+    """The mirror push is internal TRANSPORT, so it must fire no `pre-push` hook.
+
+    git runs `pre-push` for EVERY push, and the only way this client is ever
+    reached is from a repository's own `pre-push` hook: so a mirror push spelled
+    with hooks live re-enters that hook, which delegates again, which pushes
+    again — unbounded recursion that presents as a HANG rather than an error,
+    because each level is doing exactly what it was asked to do. Measured on the
+    VPS 2026-10-12: a worktree push sat 48 minutes and was refused NO_VERDICT,
+    and `GIT_TRACE` on a manual mirror push shows git starting
+    `.git/hooks/pre-push` for the gates-mirror remote.
+
+    `core.hooksPath=/dev/null` is what suppresses it: `/dev/null` is not a
+    directory, so git finds no hook file under it and runs none. Measured with
+    git 2.43.0 — a plain push fires the hook, the `-c` form does not, and
+    neither does a `--delete` push spelled the same way (a plain `--delete`
+    DOES fire it, which is why the collection below is spelled identically).
+
+    Asserted on the SPELLING because the recursion is invisible in the push's
+    effect: the refs land either way, and what differs is only what else runs.
+    """
+    cluster = _StubCluster()
+    _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+    assert cluster.only(kind="push-ref").argv[:4] == (
+        "git",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "push",
+    )
 
 
 def test_the_diff_base_rides_the_same_atomic_push_as_the_tree_under_test() -> None:

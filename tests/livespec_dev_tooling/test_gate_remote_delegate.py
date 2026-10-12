@@ -536,11 +536,14 @@ def test_a_complete_gate_over_the_pushed_tree_authorises_the_push(*, tmp_path: P
     # The push carries the mirror URL and BOTH refspecs — the tree under test
     # and the `.base` companion the pod fetches as its diff base — so the tail
     # is read rather than a fixed slice, which `--atomic` would have shifted.
+    # The push is found by "a git that pushes" rather than by a fixed prefix,
+    # because the client sets `core.hooksPath` on that invocation: a `git push`
+    # from inside a `pre-push` hook fires that same hook and delegates again.
     assert (
         f"{GATE_MIRROR_ROOT}/widget.git",
         f"HEAD:refs/gates/{_TREE}",
         f"origin/master:refs/gates/{_TREE}.base",
-    ) == (next(argv for argv in runner.argvs if argv[:2] == ("git", "push"))[-3:])
+    ) == (next(argv for argv in runner.argvs if argv[0] == "git" and "push" in argv)[-3:])
     # Two polls: the run waited through a Job that had not been admitted yet
     # rather than reading a verdict off the first answer it got.
     assert len([argv for argv in runner.argvs if "get" in argv]) == 2
