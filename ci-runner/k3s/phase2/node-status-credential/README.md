@@ -127,12 +127,50 @@ with-github-ci-runners-env.sh -- \
 It lands at the path that node's `CHURN_KUBECONFIG_FILE` names, mode `0600
 root:root`.
 
+## After a control-plane reboot: the credential repairs itself
+
+The control-plane node's k3s datastore is a tmpfs
+(`../datastore-tmpfs/`), so **at every poweredge boot the ServiceAccount and its
+token Secret are GONE** — not stale — and a previously delivered kubeconfig
+carries a token the fresh API server has never seen. Every call then answers
+`the server has asked for the client to provide credentials`.
+
+That used to cost the pool an agent's whole capacity, silently. Measured
+2026-10-12 04:01Z–04:26Z (`livespec-dev-tooling-yj25uj`): `gmktec-xubuntu` was
+`Ready` and registered while its churn-slot reapply unit read the rejection as an
+unregistered node and printed `waiting for node gmktec-xubuntu to register...` to
+its timeout every five minutes. The node advertised **no**
+`ci-runner.io/churn-slot` at all while every ClusterQueue stayed denominated in
+it, and the documented repair was an operator's `just ansible-apply`.
+
+It is now unattended, in two halves — neither of which an operator drives:
+
+| Half | Where | What it does |
+| --- | --- | --- |
+| **Re-mint + re-render** | `../reconstruct/converge-ci-stack.sh` step 10d, on the server at boot | Re-applies this directory's RBAC for every node that is **not** the control plane, and re-renders that node's kubeconfig to `/etc/ci-runner/node-status-<node>.kubeconfig`. The half no agent can perform: the grant deliberately reaches nothing but one node's status. |
+| **Pull on rejection** | `ansible/roles/node_status_credential/files/refresh-node-status-kubeconfig`, on the agent | Pulls that render over ssh (`sudo cat`, nothing else) and replaces the local credential atomically at `0600 root:root`. `../node-extended-resource/patch-node-churn-capacity.sh` invokes it **once** on a rejection and retries; a second rejection is reported as itself. |
+
+This is the shape the VPS gates credential already used
+(`ansible/roles/gates_kubeconfig/files/with-gates-kubeconfig` and
+`refresh-gates-kubeconfig`), reused rather than reinvented: a credential repaired
+by a second, differently-shaped mechanism is a second mechanism to audit.
+
+The agent's refresh **fails closed**. If it cannot fetch, it writes nothing and
+leaves the existing file alone, so an unreachable server costs that node's
+capacity and never a wrong credential. It needs the agent's login user to reach
+the control-plane node over the tailnet with key-based ssh and `sudo` there; a
+node without that fails the refresh loudly rather than silently.
+
 ## Rotation
 
 `kubectl delete secret node-status-patcher-<node> -n ci-runner-node-status`,
-re-run the provisioner, replace the 1Password value, re-run the seed. Nothing
-here rotates on its own: a credential that rotated itself on an unattended timer
-would need a second credential to do it with.
+re-run the provisioner, replace the 1Password value, re-run the seed — or simply
+re-apply the `node_status_credential` role, which does all four.
+
+Nothing here rotates on a schedule of its own. The refresh above is not a
+rotation: it re-fetches a credential the server minted, on the one event that
+invalidates it, through an ssh identity the node already holds — it mints
+nothing, and it needs no credential this directory issues.
 
 ## Tests
 
@@ -141,4 +179,8 @@ ci-runner/k3s/phase2/node-status-credential/provision-node-status-credential-exi
 ci-runner/k3s/secret-reinjection/seed-node-status-kubeconfig-exit-tests.sh
 ```
 
-Neither needs a cluster, root, or a real credential.
+Neither needs a cluster, root, or a real credential. The unattended repair above
+is covered by
+`tests/livespec_dev_tooling/test_node_status_credential_pull_on_rejection.py`,
+which runs both shipped scripts against a faked host in the suite the `just
+check` aggregate actually runs.
