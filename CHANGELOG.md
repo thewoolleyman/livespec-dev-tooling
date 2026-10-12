@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.3...v1.95.4) (2026-10-12)
+
+
+### Bug Fixes
+
+* **gate:** recognise the server's own credential rejection wording ([21d5419](https://github.com/thewoolleyman/livespec-dev-tooling/commit/21d5419cb6a79926d4220207a4adb116c5f9ab6d))
+* **gate:** refresh when a refused credential arrives as a schema error ([8814ee9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8814ee903f74a69d643a69495a2ab43bf3c63dfb))
+* **gate:** resubmit the manifest when a refused submit is retried ([de74938](https://github.com/thewoolleyman/livespec-dev-tooling/commit/de749385f34d2edf84887b356bb4a90c3ff2369b))
+* **gate:** wait for the stderr capture the rejection is matched against ([cc1a5d4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cc1a5d483bfd1d94bd6ab25011d6c173c88b4ca6))
+
 ## [1.95.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.2...v1.95.3) (2026-10-12)
 
 
