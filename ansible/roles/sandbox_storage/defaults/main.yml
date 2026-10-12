@@ -85,11 +85,22 @@ sandbox_storage_bind_targets:
   - dir: "{{ sandbox_storage_docker_dir }}"
     subtree: "{{ sandbox_storage_docker_src | regex_replace('^' ~ (sandbox_storage_mount | regex_escape), '') }}"
 
-# Where the cutover records the old stores' paths, on the new disk, before it
-# unmounts anything — the file an interrupted cutover resumes from. And the
-# one named pre-cutover snapshot of fstab the rollback restores.
+# Where the cutover records, per store, the verified old source, its
+# filesystem UUID and whether the copy completed — on the new disk, before it
+# stops anything, updated per store under the copy lock as each copy completes. An interrupted cutover resumes from
+# it, and a store it marks copied is re-bound and never recopied. And the one
+# named pre-cutover snapshot of fstab the rollback restores.
 sandbox_storage_sources_record: .sandbox-storage-sources.json
 sandbox_storage_fstab_snapshot: /etc/fstab.pre-sandbox-storage
+# The host-side flock every copy onto the new disk takes — preseed and cutover
+# alike — so no two writers ever share the destination, and a preseed that a
+# still-running earlier play launches after the cutover re-reads the record
+# under the lock and leaves a completed store alone.
+sandbox_storage_lock: .sandbox-storage.lock
+# The one program every copy onto the new disk runs through (files/
+# sandbox-storage-copy): it holds the lock above across the record read,
+# the copy and, for the cutover, the publication of `copied: true`.
+sandbox_storage_copy_helper: /usr/local/libexec/sandbox-storage-copy
 
 # The preseed's read ceiling on the SOURCE disk, rsync's --bwlimit form.
 # `ionice -c3` is also passed but is a no-op under mq-deadline, Ubuntu's
@@ -135,8 +146,10 @@ sandbox_storage_containerd_store_marker: io.containerd.metadata.v1.bolt
 #                         run REFUSES while docker carries any container
 #                         unless allow_run_loss is also set.
 #   allow_run_loss      — with allow_live_migration: accept ending whatever
-#                         containers are running. The work-item allows for
-#                         that choice; this is where it is spelled.
+#                         containers are running, INCLUDING ending the shims
+#                         that outlive the daemon stop (TERM, then KILL). The
+#                         work-item allows for that choice; this is where it
+#                         is spelled. Without it a survivor is a refusal.
 #
 # Pass each as -e on the apply that is meant to do it. A run that reaches a
 # pending store move without allow_live_migration DEFERS it — writes nothing
