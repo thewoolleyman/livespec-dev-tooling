@@ -17,13 +17,29 @@
 # resourceNames), not `delete`. This role renders and applies that file
 # unchanged; it adds no verb, resource or node.
 #
-# KNOWN LIMITATION — poweredge's k3s datastore is tmpfs
+# THE BOOT STALENESS IS NOW SELF-HEALING, and this role installs the half that
+# heals it. poweredge's k3s datastore is tmpfs
 # (ci-runner/k3s/phase2/datastore-tmpfs/), so at EVERY poweredge boot the
 # ServiceAccount and its token Secret are recreated and a previously delivered
-# kubeconfig goes stale (401) until this role is re-applied. Re-apply IS the
-# re-seed path. A pull-on-401 on the agent (like refresh-gates-kubeconfig) is a
-# FOLLOW-UP, not this role. Until then, re-run `just ansible-apply ansible/ci-pool.yml`
-# after a poweredge reboot.
+# kubeconfig is REJECTED ("the server has asked for the client to provide
+# credentials"). That used to need an operator: re-applying this role WAS the
+# re-seed path, and the follow-up this comment promised is
+# livespec-dev-tooling-yj25uj. It landed as two halves, neither of which an
+# operator drives:
+#
+#   * the control-plane node's boot converge
+#     (ci-runner/k3s/phase2/reconstruct/converge-ci-stack.sh step 10d) re-applies
+#     every agent's per-node RBAC and re-renders that agent's kubeconfig to
+#     /etc/ci-runner/node-status-<node>.kubeconfig — the half no agent can
+#     perform, because the grant deliberately reaches nothing but one node's
+#     status;
+#   * ./files/refresh-node-status-kubeconfig, installed on the agent below, pulls
+#     that render, and ci-runner/k3s/phase2/node-extended-resource/patch-node-churn-capacity.sh
+#     invokes it ONCE on a rejection and retries — the gates credential's
+#     pull-on-rejection pattern (../../gates_kubeconfig/files/with-gates-kubeconfig).
+#
+# Re-applying this role is still the ROTATION path and still the first install;
+# it is no longer the reboot repair.
 #
 # AGENT-ONLY. A server patches node status through its own admin kubeconfig and
 # needs no narrow credential; minting one for it would be a second long-lived
@@ -273,3 +289,55 @@
       become: true
       no_log: true
       when: node_status_credential_token_b64.stdout | default('') | length > 0
+
+    - name: Create the credential-tooling directory on the agent
+      # Explicit, because --check cannot see past a missing parent: with the
+      # directory absent the env-file copy below would be reported as a would-be
+      # change and fail only on a real apply. The gates_kubeconfig role creates its
+      # own for the same reason.
+      ansible.builtin.file:
+        path: "{{ node_status_credential_refresh_env | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+
+    - name: Install the node-status credential refresh tool on the agent
+      # This stays shell because it is a RUNTIME tool, not provisioning: the churn
+      # -slot patch script invokes it on a rejection in the middle of a timer fire,
+      # long after any playbook has exited. The role owns its installation; it does
+      # not own its behaviour. Exactly what gates_kubeconfig does with
+      # refresh-gates-kubeconfig.
+      ansible.builtin.copy:
+        src: refresh-node-status-kubeconfig
+        dest: "{{ node_status_credential_refresh_bin }}"
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+
+    - name: Install the refresh tool's pool-facts env-file
+      # The node's own name, the host that renders its credential, the path that
+      # render lands at and the path this node reads are per-node or per-pool DATA,
+      # delivered here rather than baked into the shipped script — the same
+      # delivery the gates refresh tool's ssh identity takes. Baked in, a second
+      # pool node would need a second script.
+      #
+      # NOT no_log, and mode 0644 on purpose: this file carries node names, a
+      # hostname, two paths and a login account, and never a secret. The credential
+      # itself is the 0600 file above.
+      ansible.builtin.copy:
+        content: |
+          # Written by the node_status_credential Ansible role. Read by
+          # refresh-node-status-kubeconfig at runtime. Carries no secret.
+          NODE_STATUS_NODE_NAME={{ node_status_credential_node }}
+          NODE_STATUS_REMOTE_HOST={{ node_status_credential_server_host }}
+          NODE_STATUS_REMOTE_KUBECONFIG={{ node_status_credential_render_dir }}/node-status-{{ node_status_credential_node }}.kubeconfig
+          NODE_STATUS_KUBECONFIG={{ node_status_credential_target }}
+          NODE_STATUS_SSH_USER={{ node_status_credential_ssh_user }}
+        dest: "{{ node_status_credential_refresh_env }}"
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
