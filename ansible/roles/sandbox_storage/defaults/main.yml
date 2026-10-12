@@ -25,8 +25,13 @@ sandbox_storage_device: ""
 # label silently, which the role refuses before any destructive command.
 sandbox_storage_swap_label: sandbox-swap
 sandbox_storage_fs_label: sandbox-stores
-# The swap partition is sized to the host's RAM (hp-xubuntu: 30 GiB usable of
-# 32 GB), an sgdisk size suffix. The filesystem takes the rest of the disk.
+# The swap partition's size, an sgdisk size suffix; the filesystem takes the
+# rest of the disk. The fleet default is the host's RAM; a factory host whose
+# sandboxes carry a per-container swap allowance (docker MemorySwap above
+# Memory) sizes it in host_vars to max concurrent runs x that allowance, so
+# that the allowance the containers are GIVEN is swap they can actually GET —
+# hp-xubuntu was OOM-killing sandboxes against a full 8 GB file while each
+# was nominally allowed 8 GB more (2026-10-12).
 sandbox_storage_swap_size: 32GiB
 # Above the swap file's default -1, so the kernel fills the partition first and
 # the old file becomes the overflow rather than the other way round.
