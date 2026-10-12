@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.7...v1.95.8) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ansible:** render the agent's node taint from its profile at every k3s start ([13bfe5b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/13bfe5b1176793831f4b5562078ed698cf6f64c0))
+
 ## [1.95.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.6...v1.95.7) (2026-10-12)
 
 
