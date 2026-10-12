@@ -34,7 +34,23 @@
     node_taints_desired_ci: >-
       {{ node_taints_declared | regex_findall('(node-role/ci=[^\s]+)') | first | default('') }}
 
-- name: Read the live taint keys on this node
+- name: Probe the live node-role/ci taint against the profile
+  # THIS TASK IS THE WHOLE REASON THE DRIFT REPORT MEANS ANYTHING, and it is a
+  # READ. Both reconciling tasks below are `ansible.builtin.command`, which
+  # ansible SKIPS under `--check` because it cannot know whether running them
+  # would mutate anything — so before this probe carried a computed
+  # `changed_when`, `just ansible-drift ansible/ci-pool.yml` printed `skipping`
+  # over a real pending change and reported `changed=0`. Measured 2026-10-12 at
+  # 04:26Z with gmktec-xubuntu still tainted `node-role/ci=pending` against an
+  # empty NODE_TAINTS (livespec-dev-tooling-ewjby3). The report was not wrong
+  # about any single task; it was silent about the whole change, which is worse,
+  # because §"Runner-pool node rebuild recipe" requires an operator to read it
+  # before an apply.
+  #
+  # So the read and the write are SEPARATE: this probe compares the live state
+  # against the declared one and reports the pending reconcile, in check mode and
+  # on an apply alike, and the commands below still perform it only on an apply.
+  #
   # argv:, NOT cmd: — a `cmd:` string is shlex-tokenized, which STRIPS the quotes
   # inside a jsonpath filter and hands kubectl a broken expression. As an argv
   # list each element is one arg with no shell parsing, so the jsonpath survives
@@ -54,8 +70,20 @@
   environment:
     KUBECONFIG: "{{ node_taints_admin_kubeconfig }}"
   register: node_taints_live
-  changed_when: false
+  # `check_mode: false` so the read happens during the drift report rather than
+  # being skipped with the writes it is reporting for.
   check_mode: false
+  # THE PENDING RECONCILE, as a predicate over the live keys and the profile: the
+  # key is present but undeclared (the removal below), or declared but absent
+  # (the addition below) — an exclusive-or, which is exactly the union of the two
+  # `when:` blocks that follow, so this probe cannot report a change neither of
+  # them would make. `rc == 0` guards it: an unregistered node (the swallowed
+  # `(NotFound)` above) has no live taints to compare, and a reconcile it cannot
+  # perform must not be reported as one.
+  changed_when: >-
+    node_taints_live.rc == 0
+    and ((node_taints_key in node_taints_live.stdout.split())
+    != (node_taints_desired_ci | length > 0))
   # A node not yet registered in the API (a fresh join still converging through
   # this play) returns kubectl's exact `Error from server (NotFound): nodes
   # "<name>" not found` — that is not a failure to abort the play on; any OTHER
@@ -79,7 +107,8 @@
   # The R5 open case: profile declares no node-role/ci taint but the live node
   # still carries it. The trailing `-` is kubectl's remove syntax. Membership is
   # tested over the split keys (exact match, never a substring), and only when the
-  # node was actually read.
+  # node was actually read. Under `--check` this skips, and the probe above is
+  # what reports the removal as pending; the write happens only on an apply.
   ansible.builtin.command:
     cmd: kubectl taint nodes {{ inventory_hostname }} {{ node_taints_key }}-
   delegate_to: "{{ node_taints_server_host }}"
