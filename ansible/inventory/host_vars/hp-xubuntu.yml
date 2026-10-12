@@ -119,6 +119,14 @@ fabro_server_instances:
     # the word is what the cutover flips on the fleet instance instead.
     service_state: running
 
+# --- sandbox_storage ---
+# The former Steam disk (Fanxiang S101 4 TB SATA SSD, was NTFS "4TB SSD"),
+# wiped with the maintainer's confirmation on 2026-10-12 (work-item smrzsj).
+# By-id so the name carries the serial: this host also has /dev/nvme0n1
+# (Windows) and /dev/sdb (the USB backup disk), neither of which may ever be
+# touched, and a /dev/sdX name is one SATA re-enumeration away from either.
+sandbox_storage_device: /dev/disk/by-id/ata-Fanxiang_S101_4TB_FX233090446
+
 # --- sccache_redis ---
 sccache_redis_bind_addr: 172.17.0.1
 sccache_redis_port: 6379

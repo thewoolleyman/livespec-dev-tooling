@@ -42,6 +42,13 @@
     # inside a drained window. See the role's HOST_VARS.md.
     - role: docker_sandbox_slice
       tags: [docker_sandbox_slice]
+    # The second disk this host's swap and container stores live on, so the
+    # root disk no longer carries the sandbox churn too. Formatting the disk
+    # and moving the live stores are each one opt-in run (-e flags named in
+    # the role's HOST_VARS.md); a plain converge never formats and never stops
+    # docker or containerd.
+    - role: sandbox_storage
+      tags: [sandbox_storage]
   tasks:
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:

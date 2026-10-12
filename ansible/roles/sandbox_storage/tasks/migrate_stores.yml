@@ -1,0 +1,178 @@
+---
+# The one-time move of a host's live docker and containerd stores onto the
+# sandbox storage disk. Gated behind sandbox_storage_allow_live_migration
+# because it stops both daemons, which ends every in-flight sandbox run on the
+# host; the Dispatcher records those as failed.
+#
+# WHAT "ALREADY MOVED" MEANS. A bind target is converged when its fstab line
+# names the store directory on the new disk AND that directory holds a store.
+# Anything else is pending: an fstab line naming somewhere else (hp's
+# hand-written /data/* binds), no line at all (the target directory itself is
+# the store, on the root filesystem), or a line already pointing at the new
+# disk over a directory that holds nothing (a converge that died between the
+# line and the copy). All three are served by the same copy, which rsyncs
+# THROUGH the bind target: whatever is mounted or stored there is what the
+# daemons were reading, so it is what moves.
+#
+# rsync and never --delete, so a repeat copies only what changed and nothing
+# is destroyed; the old store stays where it was until an operator reclaims
+# it after a dispatch has passed on the new layout.
+
+- name: Read whether the new containerd directory already holds a store
+  ansible.builtin.stat:
+    path: "{{ sandbox_storage_containerd_src }}/{{ sandbox_storage_containerd_store_marker }}"
+  register: sandbox_storage_containerd_store
+  become: true
+
+- name: Read what the new docker directory holds
+  ansible.builtin.find:
+    paths: "{{ sandbox_storage_docker_src }}"
+    file_type: any
+    hidden: true
+    excludes:
+      - lost+found
+  register: sandbox_storage_docker_entries
+  become: true
+  failed_when: false
+
+- name: Classify each store's migration state
+  ansible.builtin.set_fact:
+    sandbox_storage_migrations:
+      - role: containerd
+        dir: "{{ sandbox_storage_containerd_dir }}"
+        src: "{{ sandbox_storage_containerd_src }}"
+        converged: >-
+          {{ sandbox_storage_containerd_declared == sandbox_storage_containerd_src
+             and sandbox_storage_containerd_store.stat.exists }}
+      - role: docker
+        dir: "{{ sandbox_storage_docker_dir }}"
+        src: "{{ sandbox_storage_docker_src }}"
+        converged: >-
+          {{ sandbox_storage_docker_declared == sandbox_storage_docker_src
+             and (sandbox_storage_docker_entries.matched | default(0) | int) > 0 }}
+
+- name: Select the stores that must move
+  ansible.builtin.set_fact:
+    sandbox_storage_pending_migrations: >-
+      {{ sandbox_storage_migrations | rejectattr('converged', 'truthy') | list }}
+
+- name: Report a pending store move, under --check
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: {{ sandbox_storage_pending_migrations | map(attribute='dir') | join(', ') }}
+      {{ 'is' if sandbox_storage_pending_migrations | length == 1 else 'are' }} not yet served
+      from {{ sandbox_storage_mount }}; a real run with
+      -e sandbox_storage_allow_live_migration=true would stop docker and containerd,
+      copy the stores and move the binds
+  when:
+    - ansible_check_mode
+    - sandbox_storage_pending_migrations | length > 0
+
+- name: Decide whether the store move is deferred to a later, authorised run
+  # DEFERRED, NOT REFUSED. The bind lines, the drop-ins and the daemon start
+  # are all gated on this fact in main.yml, so a deferring run leaves the
+  # daemons exactly as found — old binds, old lines, running — while the parts
+  # that are safe to do live (the swap, the filesystem mount, the preseed
+  # below) still complete. A failing assert here would also have failed the
+  # swap activation that follows it, for no reason.
+  ansible.builtin.set_fact:
+    sandbox_storage_migration_deferred: >-
+      {{ sandbox_storage_pending_migrations | length > 0
+         and not (sandbox_storage_allow_live_migration | bool) }}
+
+- name: Report a store move this run was not authorised to make
+  ansible.builtin.debug:
+    msg: >-
+      DEFERRED: {{ sandbox_storage_pending_migrations | map(attribute='dir') | join(', ') }}
+      must move onto {{ sandbox_storage_mount }}, which stops docker and containerd and
+      ends every in-flight sandbox run on this host. The binds, the drop-ins and the
+      daemons are left as found. Re-run inside a drained window with
+      -e sandbox_storage_allow_live_migration=true to make the move.
+  when:
+    - not ansible_check_mode
+    - sandbox_storage_migration_deferred | bool
+
+- name: Preseed each pending store onto the sandbox storage disk while the daemons run
+  # The LIVE copy, authorised separately and taken at idle IO priority so the
+  # factory's own reads win every contention on the source disk. It is not a
+  # consistent store and nothing is ever pointed at it; it is the bulk of the
+  # bytes, moved outside the window, so the cutover's rsync below has only the
+  # delta to carry. rsync exits 24 when a file vanished between its scan and
+  # its copy, which on a live store is routine and not a failure.
+  # noqa: command-instead-of-module — see the cutover copy below.
+  ansible.builtin.command: ionice -c3 nice -n19 rsync -aHAX {{ item.dir }}/ {{ item.src }}/
+  become: true
+  register: sandbox_storage_preseed
+  loop: "{{ sandbox_storage_pending_migrations }}"
+  loop_control:
+    label: "{{ item.dir }}"
+  changed_when: true
+  failed_when: sandbox_storage_preseed.rc not in [0, 24]
+  when:
+    - not ansible_check_mode
+    - sandbox_storage_migration_deferred | bool
+    - sandbox_storage_allow_preseed | bool
+
+- name: Stop the container daemons for the copy
+  # Socket first: a stopped docker.service with its socket still listening is
+  # restarted by the first client that connects, mid-copy. The order is the
+  # reverse of the start in main.yml.
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+  become: true
+  loop:
+    - docker.socket
+    - docker.service
+    - containerd.service
+  when:
+    - not ansible_check_mode
+    - sandbox_storage_pending_migrations | length > 0
+    - not sandbox_storage_migration_deferred | bool
+
+- name: Record that this run stopped the daemons
+  ansible.builtin.set_fact:
+    sandbox_storage_daemons_stopped: true
+  when:
+    - not ansible_check_mode
+    - sandbox_storage_pending_migrations | length > 0
+    - not sandbox_storage_migration_deferred | bool
+
+- name: Copy each store onto the sandbox storage disk
+  # Through the bind target, with the daemons stopped, so the copy is of a
+  # consistent store. -aHAX: hardlinks, ACLs and xattrs, none of which a
+  # containerd or overlayfs store can do without. --delete HERE and only
+  # here: the destination is this role's own directory, and after a preseed
+  # it holds layers and blobs the live store has since removed; the cutover
+  # copy must leave an exact mirror, not a union, or the daemons start over
+  # orphans their metadata does not name.
+  # noqa: command-instead-of-module — synchronize is ansible.posix and drives
+  # a controller-to-host transfer; `copy` with remote_src loses the three.
+  ansible.builtin.command: rsync -aHAX --delete {{ item.dir }}/ {{ item.src }}/
+  become: true
+  loop: "{{ sandbox_storage_pending_migrations }}"
+  loop_control:
+    label: "{{ item.dir }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not sandbox_storage_migration_deferred | bool
+
+- name: Unmount the old bind from each moved target
+  # A bind can be STACKED (storage_layout's mount_target.yml records how), so
+  # one umount is not necessarily enough; loop until the target is no longer a
+  # mountpoint. A target that was never bound (the root-filesystem case) is
+  # left alone: its content stays beneath the new bind, hidden but intact,
+  # for the operator to reclaim.
+  # noqa: command-instead-of-module
+  ansible.builtin.shell: |
+    set -e
+    while mountpoint -q {{ item.dir }}; do umount {{ item.dir }}; done
+  become: true
+  loop: "{{ sandbox_storage_pending_migrations }}"
+  loop_control:
+    label: "{{ item.dir }}"
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not sandbox_storage_migration_deferred | bool
