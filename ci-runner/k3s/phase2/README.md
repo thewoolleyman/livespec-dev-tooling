@@ -386,8 +386,11 @@ kustomize apply, a rollout restart only when the manager's config actually
 changed, then rollout + CRD-established wait) **and a wait for its mutating
 webhook to have a ready endpoint** → `kueue/resource-flavor.yaml` and every
 `kueue/cluster-queue-*.yaml` → ARC controller (`helm upgrade --install`,
-chart `0.14.2`) → all eleven runner scale sets from `arc/values-*.yaml` (each
-`helm upgrade --install`, chart `0.14.2`) → **the listener assertion**
+chart `0.14.2` from the `arc/charts/` tarball the `ci_converge_unit` role pulled
+at apply time, **not** from the upstream registry — same 2026-10-12 reason as
+the vendored Kueue manifest; the converge fail-closes naming the role when the
+tarball is absent) → all eleven runner scale sets from `arc/values-*.yaml` (each
+`helm upgrade --install`, the same local chart `0.14.2`) → **the listener assertion**
 (every `AutoscalingListener` must reference its scale set's CURRENT
 `EphemeralRunnerSet`; a stale one is deleted so the controller recreates it,
 then re-verified — see "Why 'N listeners Running' is not the proof" below)

@@ -74,6 +74,27 @@
   become: true
   loop: "{{ ci_converge_unit_glob_files | sort }}"
 
+- name: Pull the pinned ARC Helm charts into the installed artifact tree
+  # The ONE member of the installed set that is FETCHED rather than copied out of
+  # this repository — see the defaults' note on why the charts are pulled at apply
+  # time rather than vendored or left to the boot converge. `creates:` is what
+  # makes it idempotent: a routine re-apply with the pinned tarball already on
+  # the host skips the network entirely, so this stays as cheap as the copies
+  # above and an apply on a host with no route to the registry still converges.
+  ansible.builtin.command:
+    argv:
+      - "{{ ci_converge_unit_helm_bin }}"
+      - pull
+      - "{{ ci_converge_unit_arc_chart_registry }}/{{ item }}"
+      - --version
+      - "{{ ci_converge_unit_arc_chart_version }}"
+      - --destination
+      - "{{ ci_converge_unit_lib_dir }}/arc/charts"
+    creates: >-
+      {{ ci_converge_unit_lib_dir }}/arc/charts/{{ item }}-{{ ci_converge_unit_arc_chart_version }}.tgz
+  become: true
+  loop: "{{ ci_converge_unit_arc_charts }}"
+
 - name: Copy the Kueue webhook probe's RBAC manifest
   # The ONE member of the installed set that comes from outside phase2/.
   ansible.builtin.copy:

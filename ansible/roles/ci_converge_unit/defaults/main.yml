@@ -10,6 +10,7 @@ ci_converge_unit_service: converge-ci-stack.service
 ci_converge_unit_directories:
   - ""
   - arc
+  - arc/charts
   - kueue
   - kueue/core
   - local-path-provisioner
@@ -127,6 +128,32 @@ ci_converge_unit_files:
   - src: node-status-credential/node-status-patch-rbac.yaml
     dest: node-status-credential/node-status-patch-rbac.yaml
     mode: "0644"
+# The two ARC Helm charts the boot converge installs, PULLED HERE at apply time
+# instead of fetched from the upstream OCI registry at boot (2026-10-12, item
+# livespec-dev-tooling-tb2az6).
+#
+# WHY APPLY TIME AND NOT BOOT TIME: converge steps 6 and 7 used to `helm upgrade
+# --install` straight from ghcr.io, so two pulls from someone else's registry sat
+# on the path of an unattended reboot of the fleet's only k3s server. A transient
+# failure of either left the cluster with no ARC controller and no listeners —
+# no CI for the whole fleet — and the oneshot unit never retried. Pulling here
+# moves the network dependency to a moment when an operator is present and the
+# failure is loud, and `/usr/local/lib/ci-runner-k3s/` is ordinary disk that
+# survives the reboot the tmpfs datastore does not.
+#
+# WHY PULLED AND NOT VENDORED, unlike the Kueue release manifest beside the
+# overlay: these are upstream chart BINARIES. The host is where they are needed
+# and the host keeps them; the repository stays the source of truth for the
+# VERSION, which is exactly what this pin is.
+ci_converge_unit_helm_bin: /usr/local/bin/helm
+ci_converge_unit_arc_chart_registry: oci://ghcr.io/actions/actions-runner-controller-charts
+# Co-maintained with ARC_CHART_VERSION in reconstruct/converge-ci-stack.sh, which
+# resolves the tarball names from it and FAIL-CLOSES on a chart this role never
+# pulled. Bump them together.
+ci_converge_unit_arc_chart_version: "0.14.2"
+ci_converge_unit_arc_charts:
+  - gha-runner-scale-set-controller
+  - gha-runner-scale-set
 # The reapply unit converge step 1b needs. Its absence is a WARNING, not a
 # failure: a converge without it still builds the cluster stack and says so.
 ci_converge_unit_reapply_service: reapply-node-extended-resource.service
