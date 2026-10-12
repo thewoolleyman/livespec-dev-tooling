@@ -19,6 +19,15 @@ node_status_credential_k3s_config_dir: /etc/rancher/k3s
 # The SA token Secret is populated asynchronously by the token controller.
 node_status_credential_token_retries: 30
 node_status_credential_token_delay: 2
+# The API server's own wordings for a REFUSED credential, as the drift-report
+# probe recognises them. Co-maintained with
+# ci-runner/k3s/phase2/node-extended-resource/patch-node-churn-capacity.sh's
+# CREDENTIAL_REJECTED_RE (and with ../../gates_kubeconfig/files/with-gates-kubeconfig,
+# which matches the same framings for the other credential): it is one API
+# server rendering through one kubectl, and a report that recognised a different
+# set would disagree with the runtime about whether the credential works.
+node_status_credential_rejected_pattern: >-
+  Unauthorized|asked for the client to provide credentials|You must be logged in|401
 # The runtime refresh tool (livespec-dev-tooling-yj25uj) and where it reads its
 # pool facts from. Both must agree with the fallbacks the shipped script carries,
 # or an un-provisioned host and a converged one would pull from different places.
