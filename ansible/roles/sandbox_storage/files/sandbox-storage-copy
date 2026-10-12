@@ -1,0 +1,122 @@
+#!/usr/bin/python3
+# Managed by Ansible (role: sandbox_storage). Local edits are overwritten.
+#
+# The ONE writer of a store onto the sandbox storage disk. Every copy — the
+# live preseed and the cutover's checksummed copy — goes through this script,
+# which holds the host-side lock for the WHOLE of: reading the record, the
+# copy, and (cutover only) publishing `copied: true`. A copy and its
+# publication are therefore one critical section, and no other copy can start
+# between them (Codex review 5, finding 1).
+#
+# The record is read FAIL-CLOSED. Three outcomes, and only one permits a copy:
+#   absent file, or entry absent / copied false  -> copy
+#   entry copied true                            -> exit 75, copy nothing
+#   unreadable, malformed, or copied not a bool  -> exit 76, copy nothing
+#
+# Exit codes: 0 copied; 24 (preseed only) rsync saw vanished files, routine on
+# a live store; 73 the lock is held by another copy; 75 already copied; 76 the
+# record cannot be trusted; anything else is rsync's own failure.
+#
+# usage: sandbox-storage-copy {preseed|cutover} LOCK RECORD ROLE SOURCE DEST [BWLIMIT]
+
+import fcntl
+import json
+import os
+import subprocess
+import sys
+
+EX_LOCKED = 73
+EX_COPIED = 75
+EX_UNTRUSTED = 76
+
+
+def read_entry(record, role):
+    """Return (copied, data); raise ValueError on anything untrustworthy."""
+    if not os.path.exists(record):
+        return False, {}
+    with open(record, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        raise ValueError("record is not a JSON object")
+    entry = data.get(role)
+    if entry is None:
+        return False, data
+    if not isinstance(entry, dict) or not isinstance(entry.get("copied"), bool):
+        raise ValueError(f"entry {role!r} is malformed: {entry!r}")
+    return entry["copied"], data
+
+
+def publish_copied(record, role, data):
+    """Mark ROLE copied, atomically: temp file, fsync, rename, fsync dir."""
+    entry = data.get(role)
+    if not isinstance(entry, dict):
+        raise ValueError(f"cutover without a record entry for {role!r}")
+    entry["copied"] = True
+    tmp = record + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=4, sort_keys=True)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, record)
+    dfd = os.open(os.path.dirname(record) or ".", os.O_RDONLY)
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
+
+
+def main(argv):
+    if len(argv) not in (7, 8) or argv[1] not in ("preseed", "cutover"):
+        print(__doc__ or "bad usage", file=sys.stderr)
+        return 64
+    mode, lock, record, role, source, dest = argv[1:7]
+    bwlimit = argv[7] if len(argv) == 8 else ""
+
+    lock_fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(f"{lock} is held by another copy", file=sys.stderr)
+        return EX_LOCKED
+
+    # From here to exit the lock is held: the record read, the copy and the
+    # publication cannot interleave with any other copy.
+    try:
+        copied, data = read_entry(record, role)
+    except (OSError, ValueError) as exc:
+        print(f"refusing to copy {role}: record {record} cannot be trusted: {exc}", file=sys.stderr)
+        return EX_UNTRUSTED
+    if copied:
+        print(f"{role} is already recorded as copied; nothing to do")
+        return EX_COPIED
+
+    if mode == "preseed":
+        cmd = ["ionice", "-c3", "nice", "-n19", "rsync", "-aHAX"]
+        if bwlimit:
+            cmd.append(f"--bwlimit={bwlimit}")
+        cmd += [source.rstrip("/") + "/", dest.rstrip("/") + "/"]
+        rc = subprocess.call(cmd)
+        return rc if rc in (0, 24) else rc
+
+    cmd = ["rsync", "-aHAXc", "--delete", source.rstrip("/") + "/", dest.rstrip("/") + "/"]
+    rc = subprocess.call(cmd)
+    if rc != 0:
+        return rc
+    # Re-read under the same lock before publishing: the entry must still be
+    # the uncopied one this run wrote.
+    try:
+        copied, data = read_entry(record, role)
+        if copied:
+            raise ValueError(f"{role} became copied during this copy")
+        publish_copied(record, role, data)
+    except (OSError, ValueError) as exc:
+        print(f"copy of {role} completed but could not be published: {exc}", file=sys.stderr)
+        return EX_UNTRUSTED
+    print(f"{role} copied and published")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

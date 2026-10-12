@@ -543,6 +543,40 @@
     - sandbox_storage_serving | bool
     - not ansible_check_mode
 
+- name: Read whether each bound target holds a store
+  # Through the TARGET, after the bind, with the same tests the new directory
+  # was held to: containerd's metadata database, any entry for docker. A bind
+  # verified by device and subtree can still be a bind over nothing if the
+  # directory was recreated empty; the daemons must not start on that.
+  ansible.builtin.find:
+    paths: "{{ item.dir }}"
+    file_type: any
+    hidden: true
+    patterns: "{{ [sandbox_storage_containerd_store_marker] if item.dir == sandbox_storage_containerd_dir else [] }}"
+    excludes:
+      - lost+found
+  register: sandbox_storage_target_entries
+  become: true
+  failed_when: false
+  loop: "{{ sandbox_storage_bind_targets }}"
+  loop_control:
+    label: "{{ item.dir }}"
+  when:
+    - sandbox_storage_serving | bool
+    - not ansible_check_mode
+
+- name: Refuse to serve a daemon from a bound target that holds no store
+  ansible.builtin.assert:
+    that:
+      - (item.matched | default(0) | int) > 0
+    fail_msg: >-
+      {{ item.item.dir }} is bound from the new disk but holds no store; the daemons stay
+      masked and stopped. Inspect {{ sandbox_storage_mount }} by hand before re-running.
+    success_msg: "{{ item.item.dir }} holds a store"
+  loop: "{{ sandbox_storage_target_entries.results | default([]) | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.dir }}"
+
 - name: Create each daemon's drop-in directory
   # Explicit, because --check cannot see past a missing parent.
   ansible.builtin.file:
@@ -573,6 +607,24 @@
 
 - name: Publish the drop-ins before any daemon is started
   ansible.builtin.meta: flush_handlers
+
+- name: Unmask the container daemons now that the new layout is verified
+  # The counterpart of the cutover's mask (migrate_stores.yml): reached only
+  # once both binds are mounted from the new partition at the right subtree
+  # AND hold stores, with the drop-ins published. On a host that was never
+  # masked this is a no-op. Not under --check: unmasking is a real change to
+  # the units' state on disk.
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: false
+  become: true
+  loop:
+    - containerd.service
+    - docker.socket
+    - docker.service
+  when:
+    - sandbox_storage_serving | bool
+    - not ansible_check_mode
 
 - name: Ensure the container daemons are running on the new layout
   # Declarative, not "the ones THIS run stopped": a cutover interrupted after
