@@ -9,8 +9,10 @@
 #     that are neither the new disk, nor a bind target, nor a top-level path;
 #   - both bind targets are served from their stores on the new partition;
 #   - both daemons are active on that layout;
-#   - each old source still lives on the filesystem the record names, and NO
-#     mount in ANY mount namespace on the host is served from inside it.
+#   - each old source still lives on the filesystem the record names, and
+#     nothing on the host uses it: no bind or overlay in any mount namespace,
+#     no open file or mapping, no container process older than the cutover
+#     (files/sandbox-storage-old-refs).
 #
 # An old source already gone is skipped, so a re-run is a no-op.
 
@@ -92,44 +94,20 @@
   become: true
   loop: [containerd, docker]
 
-- name: Count the mounts, in every mount namespace, served from inside each old source
-  # Prints "<UUID> <count>". The UUID is that of the filesystem the old source
-  # lives on now; the count is every mountinfo line, across the distinct mount
-  # namespaces of all processes, whose device is that filesystem's and whose
-  # root lies at or below the old source's subtree of it. Docker's container
-  # namespaces are included on purpose: a container that outlived the cutover
-  # would still hold a lower dir from the old store.
-  ansible.builtin.command:
-    argv:
-      - python3
-      - -c
-      - |
-        import os, subprocess, sys
-        src = os.path.realpath(sys.argv[1])
-        out = subprocess.run(["findmnt", "-rno", "MAJ:MIN,FSROOT,TARGET,UUID", "-T", src],
-                             check=True, capture_output=True, text=True).stdout.split()
-        majmin, fsroot, target, uuid = out[0], out[1], out[2], (out[3] if len(out) > 3 else "")
-        rel = src[len(target):] if target != "/" else src
-        sub = (fsroot.rstrip("/") + rel) or "/"
-        seen, count = set(), 0
-        for pid in os.listdir("/proc"):
-            if not pid.isdigit():
-                continue
-            try:
-                ns = os.readlink(f"/proc/{pid}/ns/mnt")
-                if ns in seen:
-                    continue
-                seen.add(ns)
-                lines = open(f"/proc/{pid}/mountinfo").read().splitlines()
-            except OSError:
-                continue
-            for line in lines:
-                f = line.split()
-                root = f[3].encode().decode("unicode_escape")
-                if f[2] == majmin and (root == sub or root.startswith(sub.rstrip("/") + "/")):
-                    count += 1
-        print(uuid, count)
-      - "{{ sandbox_storage_reclaim_record[item.item].source }}"
+- name: Find anything on the host still using each old source
+  # files/sandbox-storage-old-refs: binds and overlays in every mount
+  # namespace, open files and mappings, and container processes older than
+  # the cutover (an old container's overlay names the same paths a new one
+  # does). Prints {"uuid", "count", "refs"}; exits 2 when it could not see
+  # everything, which fails this task — the scan fails closed.
+  ansible.builtin.script:
+    cmd: >-
+      sandbox-storage-old-refs
+      {{ sandbox_storage_reclaim_record[item.item].source | quote }}
+      {{ (sandbox_storage_mount ~ '/' ~ sandbox_storage_sources_record) | quote }}
+      {{ sandbox_storage_containerd_dir | quote }}
+      {{ sandbox_storage_docker_dir | quote }}
+    executable: python3
   register: sandbox_storage_reclaim_refs
   changed_when: false
   check_mode: false
@@ -142,12 +120,12 @@
 - name: Refuse to reclaim an old source that moved filesystems or that something still mounts
   ansible.builtin.assert:
     that:
-      - (item.stdout | split)[0] == sandbox_storage_reclaim_record[item.item.item].uuid
-      - (item.stdout | split)[1] | int == 0
+      - (item.stdout | from_json).uuid == sandbox_storage_reclaim_record[item.item.item].uuid
+      - (item.stdout | from_json).count | int == 0
     fail_msg: >-
-      {{ sandbox_storage_reclaim_record[item.item.item].source }} reads '{{ item.stdout }}'
-      (UUID, mounts served from it); expected UUID
-      {{ sandbox_storage_reclaim_record[item.item.item].uuid }} and 0. Nothing is deleted.
+      {{ sandbox_storage_reclaim_record[item.item.item].source }} reads {{ item.stdout | trim }};
+      expected UUID {{ sandbox_storage_reclaim_record[item.item.item].uuid }} and no
+      references. Nothing is deleted.
     success_msg: "{{ sandbox_storage_reclaim_record[item.item.item].source }} is unreferenced"
   loop: "{{ sandbox_storage_reclaim_refs.results | rejectattr('skipped', 'defined') | list }}"
   loop_control:
