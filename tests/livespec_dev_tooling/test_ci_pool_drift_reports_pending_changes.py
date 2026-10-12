@@ -435,10 +435,12 @@ def _agent_host_vars(*, scratch: _Scratch, host: str) -> dict[str, str]:
         "cluster_role": "agent",
         "node_status_credential_profile": str(profile),
         "node_status_credential_server_host": host,
-        # One attempt, no delay: the token Secret's absence is this fixture's
-        # live state, not a cold API server to wait out.
-        "node_status_credential_token_retries": "1",
-        "node_status_credential_token_delay": "0",
+        # The SERVER's render directory, redirected so the slurp that reads the
+        # rendering reaches `tmp_path` and never the host's own `/etc/ci-runner`.
+        # It stays EMPTY: the render that would populate it is an
+        # `ansible.builtin.script`, which check mode skips, so the drift report
+        # finds no rendering — the not-yet-converged state this fixture is in.
+        "node_status_credential_render_dir": str(tooling),
         "node_status_credential_refresh_bin": str(scratch.bin_dir / "refresh-node-status"),
         "node_status_credential_refresh_env": str(tooling / "node-status-refresh.env"),
         "node_status_credential_server_host_key": str(host_key),

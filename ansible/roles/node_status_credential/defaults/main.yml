@@ -16,9 +16,26 @@ node_status_credential_rbac_template: >-
 # delivered kubeconfig, exactly as seed-node-status-kubeconfig.sh's rule. Any
 # other missing parent is refused rather than manufactured.
 node_status_credential_k3s_config_dir: /etc/rancher/k3s
-# The SA token Secret is populated asynchronously by the token controller.
-node_status_credential_token_retries: 30
-node_status_credential_token_delay: 2
+# THE ONE RENDERER of an agent's node-status kubeconfig, and the one the SERVER's
+# boot converge already runs (converge-ci-stack.sh step 10d). This role runs it
+# on the server rather than templating a second copy of the same credential; see
+# the "Render the node-status kubeconfig" task for what that divergence cost
+# (livespec-dev-tooling-psqaav). Its token wait is also why this role no longer
+# retries the SA token Secret read itself: the renderer waits up to 60 s for the
+# token controller to populate it.
+node_status_credential_renderer: >-
+  {{ node_status_credential_phase2_dir }}/reconstruct/render-sa-kubeconfig.sh
+# The API-server address the rendered credential names, CO-MAINTAINED with
+# converge-ci-stack.sh's NODE_STATUS_SERVER (which defaults to its GATES_SERVER).
+# The two callers of one renderer must pass one address or the agent's credential
+# flips endpoint between an apply and a boot, and the delivery below — idempotent
+# by content — reports a change every time it flips. It is the TAILNET name the
+# API server holds a `tls-san` for (../../../ci-runner/k3s/phase2/k3s-config/config.yaml),
+# which is the address the pool's agent has been authenticating with since the
+# boot converge began rendering this file; NOT a loopback, which would name the
+# reader's own machine, and not the profile's CLUSTER_JOIN_ADDRESS, which the
+# server-side converge cannot know.
+node_status_credential_api_server: https://poweredge-xubuntu.perch-rudd.ts.net:6443
 # The API server's own wordings for a REFUSED credential, as the drift-report
 # probe recognises them. Co-maintained with
 # ci-runner/k3s/phase2/node-extended-resource/patch-node-churn-capacity.sh's
@@ -38,6 +55,12 @@ node_status_credential_refresh_env: /etc/ci-runner/node-status-refresh.env
 # ci-runner/k3s/phase2/reconstruct/converge-ci-stack.sh step 10d; it is the same
 # directory that host renders the gates credential into.
 node_status_credential_render_dir: /etc/ci-runner
+# That directory and the converge's own filename shape, as the ONE path this role
+# renders to, slurps from, and hands the runtime refresh tool in its env-file. One
+# variable rather than three compositions of the same parts: a disagreement
+# between them is a pull that fetches nothing, and it fails closed and silent.
+node_status_credential_render_path: >-
+  {{ node_status_credential_render_dir }}/node-status-{{ node_status_credential_node }}.kubeconfig
 # The AGENT-side login user whose ssh identity reaches the control-plane node.
 # The refresh tool runs as root under the reapply unit, and root on a pool node
 # has no tailnet ssh identity, so it drops the FETCH to this user via `sudo -u`

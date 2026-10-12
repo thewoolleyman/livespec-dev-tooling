@@ -61,6 +61,12 @@ _KNOWN_HOSTS_VARIABLE = "node_status_credential_known_hosts"
 # The fact the delegated read is decoded into, and so the second field of the
 # `known_hosts` line the role composes.
 _HOST_KEY_FACT = "node_status_credential_host_key"
+# What that read REGISTERS, which is how it is told apart from the role's other
+# `ansible.builtin.slurp` — the one that reads the server's rendering of the
+# agent's node-status kubeconfig. The register name is the discriminator rather
+# than the task's prose name because it is what the tasks downstream actually
+# read.
+_HOST_KEY_READ_REGISTER = "node_status_credential_server_host_key_read"
 
 # OpenSSH's own path for the host's ed25519 public key, and the key type its
 # first field carries. Both are stated here because the Definition of Done states
@@ -109,11 +115,25 @@ def _tasks() -> list[tuple[str, str]]:
     ]
 
 
-def _task_using(*, module: str) -> str:
-    """The one task in the block that invokes `module`."""
-    matching = [body for _name, body in _tasks() if f"{module}:" in body]
+def _task_using(*, module: str, registering: str | None = None) -> str:
+    """The one task in the block that invokes `module` — and registers `registering`.
+
+    `registering` is REQUIRED wherever the role invokes a module more than once,
+    and it is the `register:` variable rather than the task's prose name because
+    that variable is what the tasks downstream of it read: a selector keyed on it
+    cannot silently start reading a different task than the role's own
+    consumers do. `ansible.builtin.slurp` became ambiguous when the role stopped
+    templating the agent kubeconfig and began reading the SERVER's rendering of
+    it through the same module (livespec-dev-tooling-psqaav).
+    """
+    matching = [
+        body
+        for _name, body in _tasks()
+        if f"{module}:" in body and (registering is None or f"register: {registering}" in body)
+    ]
     assert len(matching) == 1, (
-        f"the role must carry exactly one task invoking `{module}`; found "
+        f"the role must carry exactly one task invoking `{module}`"
+        f"{'' if registering is None else f' and registering `{registering}`'}; found "
         f"{len(matching)}, so this test is reading the wrong one or none at all"
     )
     return matching[0]
@@ -182,7 +202,7 @@ def test_the_trusted_key_is_read_from_the_server_itself_and_not_accepted_on_firs
     trust-on-first-use, which believes whatever answers to the name on the first
     connection and therefore authenticates nothing on the one run that matters.
     """
-    read = _task_using(module="ansible.builtin.slurp")
+    read = _task_using(module="ansible.builtin.slurp", registering=_HOST_KEY_READ_REGISTER)
 
     assert f'src: "{{{{ {_HOST_KEY_PATH_VARIABLE} }}}}"' in read
     assert f'delegate_to: "{{{{ {_SERVER_HOST_VARIABLE} }}}}"' in read
@@ -203,7 +223,7 @@ def test_a_reapply_with_an_unchanged_server_key_changes_nothing() -> None:
     permanently dirty — the drift report's value is that a clean run means
     something.
     """
-    read = _task_using(module="ansible.builtin.slurp")
+    read = _task_using(module="ansible.builtin.slurp", registering=_HOST_KEY_READ_REGISTER)
     effective = _effective(source=_ROLE_TASKS)
 
     assert "changed_when: false" in read
