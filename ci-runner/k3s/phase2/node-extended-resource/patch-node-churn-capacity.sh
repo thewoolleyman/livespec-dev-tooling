@@ -133,6 +133,21 @@ log "1. Wait (bounded) for node ${NODE_NAME} to register in the API, then patch 
 # set the gates wrapper matches (ansible/roles/gates_kubeconfig/files/with-gates-kubeconfig),
 # because it is the same API server rendering it through the same kubectl.
 CREDENTIAL_REJECTED_RE='Unauthorized|asked for the client to provide credentials|You must be logged in|401'
+# AND IT IS REPAIRED WITHOUT AN OPERATOR, ONCE. A rejection after a control-plane
+# reboot is the EXPECTED case, not an exceptional one, so the agent re-fetches its
+# credential from the server and retries rather than leaving the pool without
+# churn-slot capacity until someone notices. That is the gates credential's
+# pull-on-rejection pattern; the tool is the node_status_credential role's
+# refresh-node-status-kubeconfig, installed beside this script.
+#
+# ONCE, deliberately. A retry loop would turn a genuinely revoked credential into
+# an unbounded ssh hammer against the control-plane node. One refresh tells the
+# expected case (a token re-minted by a boot) apart from the real one (the
+# credential is gone, or the RBAC changed), and the second rejection is reported
+# as itself. A SERVER is never refreshed: it authenticates as k3s's own admin
+# file, which no re-mint replaces and which this script must never rewrite.
+CREDENTIAL_REFRESH_BIN="${NODE_STATUS_REFRESH_BIN:-/usr/local/bin/refresh-node-status-kubeconfig}"
+credential_refreshed=0
 probe_stderr="$(mktemp)"
 trap 'rm -f "$probe_stderr"' EXIT
 
@@ -142,7 +157,14 @@ while :; do
   kubectl get --subresource=status node "$NODE_NAME" >/dev/null 2>"$probe_stderr" && break
   if grep -qiE "$CREDENTIAL_REJECTED_RE" "$probe_stderr"; then
     cat "$probe_stderr" >&2
-    die "the API server REJECTED the node-status credential ${KUBECONFIG} for node ${NODE_NAME}. This is a rejected CREDENTIAL, not an unregistered node -- waiting for the node to register would never end, because the node is already there. Re-mint and re-deliver the credential (../node-status-credential/README.md)."
+    echo "${SCRIPT_NAME}: the API server REJECTED the node-status credential ${KUBECONFIG} for node ${NODE_NAME} -- a rejected CREDENTIAL, not an unregistered node (the node is already there, so waiting for it to register would never end)." >&2
+    [ "$credential_refreshed" -eq 0 ] || die "the API server REJECTED the node-status credential ${KUBECONFIG} for node ${NODE_NAME} AGAIN after one refresh. The credential is revoked or its RBAC changed -- re-mint it cluster-side (../node-status-credential/README.md); a second refresh would only hammer the control-plane node."
+    [ "$ROLE" = agent ] || die "the API server REJECTED the node-status credential ${KUBECONFIG} for node ${NODE_NAME}, which is a '${ROLE}'. A server authenticates as k3s's own admin kubeconfig and there is nothing to re-fetch -- investigate the API server, not the credential."
+    [ -x "$CREDENTIAL_REFRESH_BIN" ] || die "the API server REJECTED the node-status credential ${KUBECONFIG} for node ${NODE_NAME} and no refresh tool is executable at ${CREDENTIAL_REFRESH_BIN}, so it cannot be re-fetched here. Install it with the node_status_credential Ansible role (just ansible-apply ansible/ci-pool.yml)."
+    credential_refreshed=1
+    echo "${SCRIPT_NAME}: re-fetching it once via ${CREDENTIAL_REFRESH_BIN}, then retrying" >&2
+    "$CREDENTIAL_REFRESH_BIN" || die "refresh FAILED (see above): ${CREDENTIAL_REFRESH_BIN} could not re-fetch the node-status credential for ${NODE_NAME}, so the rejection stands and ${KUBECONFIG} is unchanged."
+    continue
   fi
   [ "$(date +%s)" -ge "$deadline" ] && die "node ${NODE_NAME} did not register in the API within ${NODE_WAIT_TIMEOUT}s"
   echo "waiting for node ${NODE_NAME} to register..."
