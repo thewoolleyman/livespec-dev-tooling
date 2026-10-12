@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.8...v1.95.9) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ansible:** report a pending node-role/ci taint reconcile under --check ([446b291](https://github.com/thewoolleyman/livespec-dev-tooling/commit/446b291da7dd3e2eeb50e9ebe9355b6661aa9c6e))
+* **ansible:** report a refused node-status credential under --check ([1380633](https://github.com/thewoolleyman/livespec-dev-tooling/commit/138063349e3054988b37c0aa2a164c15c97b15d1))
+
 ## [1.95.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.7...v1.95.8) (2026-10-12)
 
 
