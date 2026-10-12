@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.9...v1.95.10) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ansible:** let an attended restart or stop accept run loss on a busy Fabro instance ([f7a57e2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f7a57e260532db60ac59ef2930648c0bcb88170a))
+
 ## [1.95.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.8...v1.95.9) (2026-10-12)
 
 
