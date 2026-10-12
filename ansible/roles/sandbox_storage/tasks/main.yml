@@ -10,6 +10,12 @@
 # that holds content the new disk does not carry. storage_layout is the model
 # for all three refusals, and for the LABEL-keyed, lineinfile-managed fstab.
 #
+# EVERY MOUNT IS VERIFIED BY DEVICE, NOT BY PRESENCE. The reused mount helper
+# accepts whatever is mounted at a target, so after each mount this role reads
+# `findmnt` and refuses a target served from anything but the partition it
+# resolved — a preseed onto a stray bind from / would otherwise fill the root
+# disk and report success (Codex review, 2026-10-12).
+#
 # WHY lineinfile AND NOT A MOUNT MODULE: the mount module lives in
 # ansible.posix, which this tree does not carry. Mounting reuses
 # storage_layout's mount_target.yml, which reads the target FIRST because a
@@ -27,6 +33,26 @@
       (model and serial) in this host's host_vars; got
       '{{ sandbox_storage_device }}'.
     success_msg: "sandbox storage device: {{ sandbox_storage_device }}"
+
+- name: Refuse a label a filesystem cannot carry
+  # ext4 stores at most 16 bytes of label and mke2fs TRUNCATES a longer one
+  # silently; the post-format label check would then fail on a disk that had
+  # already been wiped, and a retry would find one label and refuse. Caught by
+  # the Codex review before any disk was touched (this role's first default
+  # was 18 bytes). Checked here, before any destructive command, and under
+  # --check too.
+  ansible.builtin.assert:
+    that:
+      - item | length > 0
+      - item | length <= 16
+      - item is match('^[A-Za-z0-9._-]+$')
+    fail_msg: >-
+      '{{ item }}' is not a usable filesystem label: at most 16 ASCII bytes of
+      [A-Za-z0-9._-]
+    success_msg: "'{{ item }}' is a usable label"
+  loop:
+    - "{{ sandbox_storage_swap_label }}"
+    - "{{ sandbox_storage_fs_label }}"
 
 - name: Resolve the device's kernel name
   # by-id is the stable name a host_vars file spells; the kernel name is what
@@ -163,15 +189,17 @@
   # a bind target whose fstab source is not the declared store directory is a
   # target whose store still lives somewhere else. Empty when fstab carries no
   # line for the target at all, which the migration reads as "the target
-  # directory itself holds the store, on the root filesystem".
+  # directory itself holds the store, on the root filesystem". The pattern
+  # tolerates leading whitespace, as fstab(5) does; the role's own keys in
+  # defaults use the same shape, so parsing and replacement agree.
   ansible.builtin.set_fact:
     sandbox_storage_containerd_declared: >-
       {{ (sandbox_storage_fstab_lines
-          | select('match', '^[^#]\S*\s+' ~ (sandbox_storage_containerd_dir | regex_escape) ~ '\s')
+          | select('match', '^\s*[^#\s]\S*\s+' ~ (sandbox_storage_containerd_dir | regex_escape) ~ '\s')
           | map('split') | map('first') | list | first | default('')) }}
     sandbox_storage_docker_declared: >-
       {{ (sandbox_storage_fstab_lines
-          | select('match', '^[^#]\S*\s+' ~ (sandbox_storage_docker_dir | regex_escape) ~ '\s')
+          | select('match', '^\s*[^#\s]\S*\s+' ~ (sandbox_storage_docker_dir | regex_escape) ~ '\s')
           | map('split') | map('first') | list | first | default('')) }}
   vars:
     sandbox_storage_fstab_lines: "{{ (sandbox_storage_fstab_content.content | b64decode).splitlines() }}"
@@ -217,6 +245,74 @@
 - name: Publish the changed fstab as mount units before mounting from it
   ansible.builtin.meta: flush_handlers
 
+# --- swap: FIRST among the live changes, because it is the one that helps a
+# loaded host today and the preseed below can run for an hour ----------------
+
+- name: Read which swap devices are active, and at what priority
+  # A read, under --check too. --raw gives "NAME PRIO" per line.
+  ansible.builtin.command: swapon --show=NAME,PRIO --noheadings --raw
+  register: sandbox_storage_swapon
+  changed_when: false
+  check_mode: false
+  become: true
+  when: sandbox_storage_prepared | bool
+
+- name: Activate the swap partition at the declared priority
+  # `swapon LABEL=` does NOT read the fstab line's pri=; it takes only its own
+  # options, so the priority is passed here explicitly or the partition lands
+  # BELOW the swap file it is meant to replace (Codex review, 2026-10-12).
+  # noqa: command-instead-of-module — no swap module in ansible-core.
+  ansible.builtin.command: >-
+    swapon --priority {{ sandbox_storage_swap_priority }} LABEL={{ sandbox_storage_swap_label }}
+  become: true
+  changed_when: true
+  when:
+    - sandbox_storage_prepared | bool
+    - sandbox_storage_swap_devices[0] not in (sandbox_storage_swapon.stdout_lines | map('split') | map('first') | list)
+
+- name: Report an inactive swap partition, under --check
+  ansible.builtin.debug:
+    msg: >-
+      DRIFT: {{ sandbox_storage_swap_devices[0] }} (LABEL={{ sandbox_storage_swap_label }})
+      is not an active swap device; a real run would activate it at priority
+      {{ sandbox_storage_swap_priority }}
+  when:
+    - ansible_check_mode
+    - sandbox_storage_prepared | bool
+    - sandbox_storage_swap_devices[0] not in (sandbox_storage_swapon.stdout_lines | map('split') | map('first') | list)
+
+- name: Re-read the active swap devices
+  ansible.builtin.command: swapon --show=NAME,PRIO --noheadings --raw
+  register: sandbox_storage_swapon_after
+  changed_when: false
+  become: true
+  when:
+    - sandbox_storage_prepared | bool
+    - not ansible_check_mode
+
+- name: Refuse a swap partition that is not active at the declared priority
+  # A partition activated by an earlier hand `swapon`, or by the fstab line at
+  # boot, carries whatever priority THAT gave it; the role's number is the one
+  # that puts it above the swap file, so a mismatch is drift to fix by hand
+  # (`swapoff` it and re-run), never something to leave reported as fine.
+  ansible.builtin.assert:
+    that:
+      - sandbox_storage_swap_active_prio == sandbox_storage_swap_priority | string
+    fail_msg: >-
+      {{ sandbox_storage_swap_devices[0] }} is active at priority
+      '{{ sandbox_storage_swap_active_prio }}', not {{ sandbox_storage_swap_priority }}
+    success_msg: "{{ sandbox_storage_swap_devices[0] }} is active at priority {{ sandbox_storage_swap_priority }}"
+  vars:
+    sandbox_storage_swap_active_prio: >-
+      {{ sandbox_storage_swapon_after.stdout_lines | map('split')
+         | selectattr(0, 'equalto', sandbox_storage_swap_devices[0])
+         | map(attribute=1) | first | default('') }}
+  when:
+    - sandbox_storage_prepared | bool
+    - not ansible_check_mode
+
+# --- the filesystem ----------------------------------------------------------
+
 - name: Check whether the filesystem mountpoint exists
   ansible.builtin.stat:
     path: "{{ sandbox_storage_mount }}"
@@ -245,6 +341,41 @@
     storage_layout_mount_target: "{{ sandbox_storage_mount }}"
   when: sandbox_storage_prepared | bool
 
+- name: Read which device serves the filesystem mountpoint
+  # A read; rc 1 when nothing is mounted there (a --check on a fresh host).
+  ansible.builtin.command: findmnt -rno SOURCE --nofsroot {{ sandbox_storage_mount }}
+  register: sandbox_storage_mount_source
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  when: sandbox_storage_prepared | bool
+
+- name: Refuse a filesystem mountpoint served from anything but the sandbox storage partition
+  # The mount helper accepts ANY existing mount at the target. A stray bind
+  # from / or /data there would take the preseed's 190 GB onto the disk this
+  # role exists to relieve, and the final presence check would pass.
+  ansible.builtin.assert:
+    that:
+      - sandbox_storage_mount_source.rc == 0
+      - sandbox_storage_mount_source.stdout | trim == sandbox_storage_fs_devices[0]
+    fail_msg: >-
+      {{ sandbox_storage_mount }} is served from
+      '{{ sandbox_storage_mount_source.stdout | default('') | trim }}', not from
+      {{ sandbox_storage_fs_devices[0] }}; unmount whatever is there by hand and re-run
+    success_msg: "{{ sandbox_storage_mount }} is served from {{ sandbox_storage_fs_devices[0] }}"
+  when:
+    - sandbox_storage_prepared | bool
+    - not ansible_check_mode or sandbox_storage_mount_source.rc == 0
+
+- name: Report an unmounted filesystem, under --check
+  ansible.builtin.debug:
+    msg: "DRIFT: {{ sandbox_storage_mount }} is not mounted; a real run would mount it from its fstab line"
+  when:
+    - ansible_check_mode
+    - sandbox_storage_prepared | bool
+    - sandbox_storage_mount_source.rc != 0
+
 - name: Check which store directories exist on the filesystem
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -253,11 +384,16 @@
   loop:
     - "{{ sandbox_storage_containerd_src }}"
     - "{{ sandbox_storage_docker_src }}"
-  when: sandbox_storage_prepared | bool
+  when:
+    - sandbox_storage_prepared | bool
+    - sandbox_storage_mount_source.rc == 0
 
 - name: Create the store directories on the filesystem
   # Created only when absent, 0700 as both daemons create their own roots;
-  # the migration's rsync then carries the live store's own mode over.
+  # the migration's rsync then carries the live store's own mode over. Only
+  # once the mountpoint is VERIFIED served from the partition: a directory
+  # created under an unmounted mountpoint lands on / and is hidden by the
+  # mount that follows.
   ansible.builtin.file:
     path: "{{ item.item }}"
     state: directory
@@ -270,22 +406,47 @@
     label: "{{ item.item }}"
   when:
     - sandbox_storage_prepared | bool
-    - not ansible_check_mode or sandbox_storage_mount_dir.stat.exists
+    - sandbox_storage_mount_source.rc == 0
     - not item.stat.exists
+
+# --- the stores --------------------------------------------------------------
 
 - name: Move the live stores onto the sandbox storage disk
   ansible.builtin.include_tasks: migrate_stores.yml
-  when: sandbox_storage_prepared | bool
+  when:
+    - sandbox_storage_prepared | bool
+    - sandbox_storage_mount_source.rc == 0
 
 - name: Hold whether this run serves the daemons from the new disk
   # True once the stores are on the disk (moved by this run or an earlier one)
-  # and false while the move is deferred. Everything that would point a daemon
-  # at the new disk — the bind lines, the binds, the drop-ins — is gated on it,
-  # so a deferring run leaves the daemons exactly as found.
+  # and false while the move is deferred or the filesystem is not mounted.
+  # Everything that would point a daemon at the new disk — the bind lines, the
+  # binds, the drop-ins, the daemon start — is gated on it, so a deferring run
+  # leaves the daemons exactly as found.
   ansible.builtin.set_fact:
     sandbox_storage_serving: >-
       {{ sandbox_storage_prepared | bool
-         and not (sandbox_storage_migration_deferred | default(false) | bool) }}
+         and sandbox_storage_mount_source.rc == 0
+         and not (sandbox_storage_migration_deferred | default(true) | bool) }}
+
+- name: Keep a pre-cutover copy of fstab beside it
+  # ONE named snapshot taken before the first bind line is rewritten, for the
+  # rollback in HOST_VARS.md. lineinfile's own `backup` writes a timestamped
+  # copy per edit, and the latest of those can already carry one migrated
+  # line — an operator rolling back from it would restore half a cutover.
+  # `force: false` keeps the first snapshot across re-runs.
+  ansible.builtin.copy:
+    src: /etc/fstab
+    dest: "{{ sandbox_storage_fstab_snapshot }}"
+    remote_src: true
+    force: false
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when:
+    - sandbox_storage_serving | bool
+    - sandbox_storage_pending_migrations | default([]) | length > 0
 
 - name: Ensure the two bind fstab lines
   # AFTER the migration decision, never before: a bind laid over a directory
@@ -325,6 +486,40 @@
     storage_layout_mount_target: "{{ sandbox_storage_docker_dir }}"
   when: sandbox_storage_serving | bool
 
+- name: Read which device and subtree serve each bind target
+  # "DEVICE FSROOT" per target, e.g. "/dev/sdc2 /containerd"; rc 1 when the
+  # target is not a mountpoint.
+  ansible.builtin.command: findmnt -rno SOURCE,FSROOT --nofsroot {{ item.dir }}
+  register: sandbox_storage_bind_sources
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  loop: "{{ sandbox_storage_bind_targets }}"
+  loop_control:
+    label: "{{ item.dir }}"
+  when: sandbox_storage_serving | bool
+
+- name: Refuse a bind target served from anything but its store on the sandbox storage partition
+  # The presence check at the end of this role cannot tell the new bind from
+  # the old one; this can. A target still served from /data after the cutover
+  # is the cutover having silently not happened.
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - (item.stdout | split)[0] == sandbox_storage_fs_devices[0]
+      - (item.stdout | split)[1] == item.item.subtree
+    fail_msg: >-
+      {{ item.item.dir }} is served from '{{ item.stdout | default('') }}', not from
+      {{ sandbox_storage_fs_devices[0] }} {{ item.item.subtree }}
+    success_msg: "{{ item.item.dir }} is served from {{ sandbox_storage_fs_devices[0] }} {{ item.item.subtree }}"
+  loop: "{{ sandbox_storage_bind_sources.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.dir }}"
+  when:
+    - sandbox_storage_serving | bool
+    - not ansible_check_mode
+
 - name: Create each daemon's drop-in directory
   # Explicit, because --check cannot see past a missing parent.
   ansible.builtin.file:
@@ -356,10 +551,14 @@
 - name: Publish the drop-ins before any daemon is started
   ansible.builtin.meta: flush_handlers
 
-- name: Start the daemons the migration stopped
-  # Only when THIS run stopped them; a converge that moved nothing touches no
-  # daemon. Socket first, so the daemon starts as the socket's unit and not as
-  # a socket-activated stray; containerd before docker, as docker's After=.
+- name: Ensure the container daemons are running on the new layout
+  # Declarative, not "the ones THIS run stopped": a cutover interrupted after
+  # the binds moved but before the start would otherwise leave the daemons
+  # down on every later run, the transient fact that remembered the stop gone
+  # with the run that set it. Socket first, so the daemon starts as the
+  # socket's unit and not as a socket-activated stray; containerd before
+  # docker, as docker's After=. Reached only when serving: a deferring run
+  # touches no daemon.
   ansible.builtin.systemd_service:
     name: "{{ item }}"
     state: started
@@ -368,37 +567,7 @@
     - containerd.service
     - docker.socket
     - docker.service
-  when:
-    - sandbox_storage_prepared | bool
-    - sandbox_storage_daemons_stopped | default(false) | bool
-
-- name: Read which swap devices are active
-  # A read, under --check too: `swapon --show` with no device changes nothing.
-  ansible.builtin.command: swapon --show=NAME --noheadings
-  register: sandbox_storage_swapon
-  changed_when: false
-  check_mode: false
-  become: true
-  when: sandbox_storage_prepared | bool
-
-- name: Activate the swap partition
-  # noqa: command-instead-of-module — no swap module in ansible-core.
-  ansible.builtin.command: swapon LABEL={{ sandbox_storage_swap_label }}
-  become: true
-  changed_when: true
-  when:
-    - sandbox_storage_prepared | bool
-    - sandbox_storage_swap_devices[0] not in sandbox_storage_swapon.stdout_lines
-
-- name: Report an inactive swap partition, under --check
-  ansible.builtin.debug:
-    msg: >-
-      DRIFT: {{ sandbox_storage_swap_devices[0] }} (LABEL={{ sandbox_storage_swap_label }})
-      is not an active swap device; a real run would activate it
-  when:
-    - ansible_check_mode
-    - sandbox_storage_prepared | bool
-    - sandbox_storage_swap_devices[0] not in sandbox_storage_swapon.stdout_lines
+  when: sandbox_storage_serving | bool
 
 - name: Re-read the host's mount table
   # The play's facts were gathered before this role mounted anything.

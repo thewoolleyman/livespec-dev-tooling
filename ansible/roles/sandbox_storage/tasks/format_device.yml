@@ -32,14 +32,25 @@
          | map(attribute='mount') | join(', ') }}. Unmount it by hand first.
     success_msg: "nothing is mounted from {{ sandbox_storage_device_real }}"
 
-- name: Wipe the partition table and write the two partitions
-  # --zap-all clears both GPT and MBR structures; the two -n/-t/-c triples lay
-  # out swap (type 8200) sized by the role and the filesystem (8300) over the
-  # rest. One invocation, so a failure leaves no half-written table behind for
-  # the label probe to half-recognise.
+- name: Wipe the partition table
+  # TWO sgdisk calls, not one: `--zap-all` destroys the GPT and MBR structures
+  # AND THEN EXITS (sgdisk(8)), so partition options on the same command line
+  # are never applied. A single combined call would leave a blank disk and a
+  # role that then fails waiting for -part1.
   # noqa: command-instead-of-module — no partition module in ansible-core.
+  ansible.builtin.command: sgdisk --zap-all {{ sandbox_storage_device }}
+  become: true
+  changed_when: true
+  when: not ansible_check_mode
+
+- name: Write the two partitions
+  # Swap (type 8200) sized by the role, then the filesystem (8300) over the
+  # rest, on sgdisk's default 1 MiB alignment. One invocation for the two, so
+  # a failure leaves no half-written table behind for the label probe to
+  # half-recognise.
+  # noqa: command-instead-of-module
   ansible.builtin.command: >-
-    sgdisk --zap-all
+    sgdisk
     --new=1:0:+{{ sandbox_storage_swap_size }} --typecode=1:8200 --change-name=1:{{ sandbox_storage_swap_label }}
     --new=2:0:0 --typecode=2:8300 --change-name=2:{{ sandbox_storage_fs_label }}
     {{ sandbox_storage_device }}
