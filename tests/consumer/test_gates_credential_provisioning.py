@@ -231,6 +231,7 @@ def _run_wrapper(
     command_exits: tuple[int, ...],
     rejection: str = _REJECTION,
     verb: tuple[str, ...] = ("get", "jobs"),
+    capture_lag: str | None = None,
 ) -> tuple[int, list[str]]:
     """Run the shipped wrapper against a faked host; return its code and every argv.
 
@@ -242,6 +243,14 @@ def _run_wrapper(
     `rejection` and `verb` are parameters rather than constants because kubectl
     renders ONE refused credential in several different texts, and which text a
     caller meets depends on the verb it ran: the arms below pin the real ones.
+
+    `capture_lag` puts a `tee` on the scratch PATH that is SLOW TO START, which
+    is a LENS rather than a fake — the same technique the sibling refresh suite
+    uses on `install`. It does nothing a real `tee` may not do; it only removes
+    the wrapper's luck. The wrapper has to READ what `tee` captured before it can
+    recognise a rejection, so a capture the wrapper never waited for is a
+    rejection it cannot see — a defect that is invisible on an idle host and
+    fires under load, which is where the gate actually runs.
     """
     bin_dir = _scratch_path(tmp_path=tmp_path)
     log = tmp_path / "argv.log"
@@ -265,6 +274,17 @@ def _run_wrapper(
             'exit "${code}"\n'
         ),
     )
+    if capture_lag is not None:
+        _fake(
+            bin_dir=bin_dir,
+            name="tee",
+            body=(
+                'sleep "${TEE_LAG}"\n'
+                'captured="$(cat)"\n'
+                'printf "%s\\n" "${captured}" > "$1"\n'
+                'printf "%s\\n" "${captured}"\n'
+            ),
+        )
     # The refresh itself is NOT the subject here, so it is a fake that logs and
     # succeeds: this test is about whether the wrapper reaches it, and how.
     refresh = tmp_path / "refresh-gates-kubeconfig"
@@ -284,6 +304,7 @@ def _run_wrapper(
                 "COMMAND_EXITS": ",".join(str(code) for code in command_exits),
                 "REJECTION": rejection,
                 "FAKE_EUID": euid,
+                "TEE_LAG": capture_lag or "0",
                 "GATES_REFRESH_BIN": str(refresh),
                 "GATES_KUBECONFIG": str(tmp_path / "gates.kubeconfig"),
             },
@@ -387,6 +408,30 @@ def test_a_root_caller_refreshes_without_sudo(*, tmp_path: Path) -> None:
 
     assert code == 0
     assert [line.split(" ")[0] for line in invoked] == ["kubectl", "refresh", "kubectl"]
+
+
+def test_a_rejection_the_capture_was_slow_to_record_is_still_refreshed(*, tmp_path: Path) -> None:
+    """The wrapper WAITS for the capture it matches on, instead of racing it.
+
+    Recognising the message is only half of it: the wrapper reads the rejection
+    out of a file something else is writing, and an unwaited-for capture is
+    EMPTY, which matches no pattern at all. So the defect this suite's other arms
+    describe as "the pattern missed" has a twin that no pattern can fix — and it
+    presents identically, as a push refused with no verdict and a credential
+    nobody refreshed.
+
+    Pinned with a `tee` that is slow to START (see `_run_wrapper`) rather than by
+    reading the wrapper's redirection syntax, because the claim is about ORDER,
+    not about spelling. Found by this very suite on 2026-10-12: the arms above
+    passed alone and one of them failed in the full concurrent aggregate, which
+    is the signature of a test that was passing on scheduling luck.
+    """
+    code, invoked = _run_wrapper(
+        tmp_path=tmp_path, euid="1000", command_exits=(1, 0), capture_lag="0.3"
+    )
+
+    assert code == 0
+    assert [line.split(" ")[0] for line in invoked] == ["kubectl", "sudo", "kubectl"]
 
 
 def test_a_command_the_server_accepts_is_never_refreshed(*, tmp_path: Path) -> None:
