@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.2...v1.95.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* **ci-runner:** re-mint every agent's node-status credential at boot ([0f6375d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f6375d584598315b4e93506ed14e8b4eb113526))
+* **ci-runner:** refresh a rejected node-status credential once, then retry ([5e78a56](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5e78a5621202c24c2afa9f14e43fa5d5b9b19e82))
+* **ci-runner:** tell a rejected node-status credential from a missing node ([927d497](https://github.com/thewoolleyman/livespec-dev-tooling/commit/927d497c0f3b7a4258b052750f68b52c5666503c))
+
 ## [1.95.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.1...v1.95.2) (2026-10-12)
 
 
