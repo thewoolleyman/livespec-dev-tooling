@@ -1,0 +1,211 @@
+# DERIVATION — the `factory` namespace's quota and egress targets
+
+Every number in `./factory-namespace.yaml` is derived here, beside the manifest
+it governs, the way `../kueue/DERIVATION.md` sits beside the queues. Two things
+in that file cannot be read off anything else, and both are load-bearing:
+
+- **The ResourceQuota is the ONLY bound on what factory runs take from the CI
+  pool.** Maintainer ruling of 2026-10-13 (livespec plan
+  `factory-worker-nodes-gitops`, epic `livespec-sqvj7p`, research/001 ruling 3):
+  `poweredge-xubuntu` stays untainted and runs factory pods too, Kueue is NOT in
+  the factory path, and the churn-slot derivation is not re-done. There is no
+  second gate behind this one, and an absent or over-large quota raises nothing
+  — it just admits.
+- **The NetworkPolicy's egress targets were READ, not recalled.** The work-item
+  requires the endpoints to come from the live Fabro instance configuration on
+  `hp-xubuntu` rather than from memory. Where each one was read is recorded
+  below, with what the read returned.
+
+Work-item `livespec-dev-tooling-f5e6vl`. Applied at every boot by
+`../reconstruct/converge-ci-stack.sh` step 10e; installed onto the host by the
+`ci_converge_unit` Ansible role.
+
+## The node capacities this is sized against
+
+Measured live on 2026-10-13 and recorded in the plan's research/001 ("What
+exists today", "hp-xubuntu as measured on 2026-10-13"). The quota is
+NAMESPACE-WIDE — it bounds the factory's total across the pool, not any one
+node — so all three nodes are in view.
+
+| Node | Role | Capacity | What already claims it |
+|---|---|---|---|
+| `poweredge-xubuntu` | k3s server; runs the whole CI pool | **72 CPUs**, **377 GB** | `ADMISSION_CAPACITY_C=32` churn slots; `../kueue/DERIVATION.md` records that its 72 threads saturate at 35–46 running jobs |
+| `gmktec-xubuntu` | k3s agent | **32 threads**, **62 GB** | `ADMISSION_CAPACITY_C=12`; `gates-cq` already holds 15 cpu / 24 Gi of the ~50 GiB available to pods (the rest is the firmware iGPU carveout its phase0 profile records as off-limits) |
+| `hp-xubuntu` | the Fabro server host, joining factory-only | **16 CPUs**, **30 GB** | the `fabro-sandbox.slice` Docker budget (MemoryHigh 22G, MemoryMax 24G, CPUQuota 1400%) plus both Fabro servers outside it |
+
+**hp is PLUMBING today, and the quota does not pretend otherwise.** Honest
+arithmetic on a 30 GB host whose Docker slice may take 24 GB leaves hp about
+**3 GiB** and under one CPU allocatable to pods while the slice runs at its
+current size (plan research/001, "The coexistence budget as currently known").
+Not one factory pod at the envelope below fits on hp until the backend plan's
+cutover steps the slice down. That is a SCHEDULING fact, and this quota is an
+ADMISSION bound — the distinction `../kueue/DERIVATION.md` draws as "The
+physical cap is the scheduler, not Kueue" and "Admission is not scheduling".
+Sizing the quota down to what hp can hold today would cap the whole namespace at
+hp's temporary floor; sizing it to hp's eventual capacity would be a number
+nothing has measured. It is sized against what the POOL can give up, and the
+scheduler refuses what no node can hold.
+
+## The quota
+
+**Per-run envelope — 4 cpu / 8GB, and it is committed rather than estimated.**
+`ansible/inventory/host_vars/hp-xubuntu.yml` declares the sandbox environment
+the factory's own runs are prepared in, for the `fabro-server-candidate`
+instance:
+
+```yaml
+environments:
+  - id: livespec-ci
+    image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
+    cpu: 4
+    memory: 8GB
+```
+
+That is the only committed statement of a factory run's size in the fleet, so it
+is the unit this quota counts. It is also what the Docker slice's own numbers
+corroborate: 24 GB across the fleet instance's 10 admitted runs is ~2.4 GB of
+RESIDENT memory per run, well inside an 8GB envelope — the envelope is the
+sizing figure, not the measured working set.
+
+**Concurrency target — 3, a deliberate first value.** The same reasoning
+`../kueue/DERIVATION.md` applies to the gates quota ("The two numbers: 15 cpu
+and 24 Gi"): enough that a run and a re-dispatch do not serialize, small enough
+to leave the envelope to the workload that already owns the box. It is NOT hp's
+`max_concurrent_runs: 10`: that number is the Docker factory's cap on a host
+with its own 16 cores, while this quota's capacity comes out of a CI pool whose
+own derivation already spends poweredge at saturation.
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | 3 runs x 4 cpu | **12** |
+| `requests.memory` | 3 runs x 8 Gi | **24Gi** |
+| `limits.cpu` | 3 runs x 4 cpu | **12** |
+| `limits.memory` | 24Gi + one run's headroom | **32Gi** |
+| `pods` | 3 runs x (1 sandbox + 1 in-flight replacement) | **6** |
+
+`limits.memory` is deliberately NOT `3 x 8Gi`. At 32Gi **cpu binds first at
+exactly three runs**, which is the intended behaviour, and a run whose peak RSS
+overshoots degrades throughput instead of blocking admission outright — the same
+choice, for the same reason, as the gates quota's 24 Gi against an 18 Gi
+estimate.
+
+**Checked against each node.** 12 cpu is 17% of poweredge's 72 and leaves 60
+threads for a pool that saturates at 35–46 jobs; 24Gi is 6.4% of its 377 GB. On
+gmktec, 12 cpu / 24Gi fits what is left after `gates-cq`'s 15 cpu / 24 Gi inside
+the ~50 GiB pod envelope only if gates are idle — which is correct, because
+nothing pins factory pods to gmktec and the scheduler, not this quota, decides.
+On hp nothing fits yet, as above.
+
+**THIS IS A FIRST VALUE TO CONFIRM BY SOAK, NOT A MEASUREMENT.** What a soak
+must settle: a factory run's actual peak cpu and RSS inside a pod (the Docker
+numbers above are a different cgroup shape), whether 3 concurrent runs is what
+the pool can absorb beside CI, and whether `cpu` remains the right binding term.
+Revise the table when it does, and record the measurement rather than replacing
+one estimate with another.
+
+## The egress targets
+
+The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows
+exactly three egress classes. It is a real bound rather than decoration:
+`../k3s-config/config.yaml` passes no `--disable-network-policy`, so k3s's
+bundled NetworkPolicy controller enforces it.
+
+### 1. Cluster DNS — `53` UDP and `53` TCP to CoreDNS in `kube-system`
+
+Named by namespace plus CoreDNS's own `k8s-app: kube-dns` label, never by the
+Service address, which is not a committable literal across a rebuild.
+
+Read where a pod's resolver actually comes from, not assumed: inside a live hp
+Docker sandbox on 2026-10-13, `/etc/resolv.conf` names `nameserver 192.168.1.1`
+with `search perch-rudd.ts.net` — the HOST's LAN resolver, because a Docker
+sandbox shares the host's resolution path. A pod does not: it resolves through
+CoreDNS, which forwards upstream itself. So the LAN resolver is deliberately NOT
+an egress target here; granting it would widen the policy onto the homelab LAN
+to buy a path pods never take.
+
+### 2. The tailnet — `100.64.0.0/10`, all ports
+
+ONE rule covers both tailnet endpoints, and the absent port list is a
+measurement rather than laziness.
+
+**The telemetry receiver.** Read from the live Fabro instance configuration on
+hp as the work-item requires — specifically from the environment a dispatch
+projects into its sandbox, measured inside an hp sandbox on 2026-10-13:
+
+```text
+LIVESPEC_SANDBOX_OTEL_ENDPOINT=http://100.89.189.118:35129
+```
+
+`POST /v1/traces` to it answered HTTP 200 from inside that sandbox. Both halves
+of that value are derived at dispatch time, which is why no port literal belongs
+in the manifest: the orchestrator's `_dispatcher_otel_endpoint` binds the
+**dispatcher's own tailnet address** for a remote-factory dispatch (so the
+sandbox exports back over the tailnet from either end), and the port is the
+receiver's **ephemeral bound port** for that dispatcher process. A port literal
+here would read tight and fail closed at the next dispatch. The committed
+drop-in `ansible/roles/fabro_server/files/otel.conf` names
+`http://172.17.0.1:4318` instead — the docker bridge gateway, which is the
+SAME-HOST case and names "whatever host reads it", so it is correct for a Docker
+sandbox beside its dispatcher and unreachable from a pod anywhere else.
+
+Note this is NOT the CI lane's receiver. `../arc/hook-pod-template.yaml` posts a
+runner pod's cache and build spans to the host collector's keyless `otlp/pods`
+listener on each node's own cni0 gateway at port 4319, derived in the pod. That
+listener's cni0-only bind IS its access control and it serves CI jobs; factory
+runs export to their dispatcher over the tailnet.
+
+**The beads Dolt tenant.** `.beads/config.yaml` commits the connection as
+`dolt.server-host: 127.0.0.1` / `dolt.server-port: 3307` (mirrored by
+`.livespec.jsonc`'s impl-plugin `connection` block). Probed from inside an hp
+sandbox on 2026-10-13, TCP to `127.0.0.1:3307`, `172.17.0.1:3307` and
+`100.89.189.118:3307` was REFUSED in all three cases — a Docker sandbox does not
+reach the tenant today; the dispatcher does, host-side, through the
+`with-livespec-env.sh` credential wrapper. So a committed per-endpoint literal
+for the tenant would be a guess at where a FUTURE pod reaches a server that
+listens on loopback on whichever tailnet member hosts it. The tailnet rule is
+the honest shape, and proving the reach per node is the plan's own verify child
+(`livespec-dev-tooling-sszvvw`).
+
+Why the whole `100.64.0.0/10` and not a host address: that is Tailscale's CGNAT
+range, so one CIDR names every tailnet member — poweredge is `100.78.140.72`
+(`../k3s-config/config.yaml`'s `tls-san`), hp is `100.68.193.50` (plan
+research/001), and the dispatcher measured above is a third. Pinning the
+current three would break at the next member and is not a tighter bound in any
+way that matters: every address in the range is already a machine the fleet
+authenticates onto a private tailnet.
+
+### 3. The sandbox image registry — TCP `443` off-site
+
+`ghcr.io` and its CDN, whose addresses are not committable literals either. Read
+from the same `environments` entry quoted above: the image is
+`ghcr.io/thewoolleyman/livespec-fabro-sandbox`, pinned by the orchestrator's
+`implement-work-item` workflow.
+
+Expressed as `0.0.0.0/0` with everything private excepted —
+`10.0.0.0/8`, `100.64.0.0/10` (rule 2 owns the tailnet),
+`127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12` and `192.168.0.0/16` — so the
+rule reaches off-site and never the homelab LAN, the pod CIDR, a node address or
+the link-local metadata range.
+
+**The image PULL itself is not what this rule serves.** A kubelet pulls a pod's
+image before the pod exists, and a NetworkPolicy governs pod traffic only, so no
+rule here can grant or deny it; on this pool the pull also goes through the ghcr
+pull-through mirror each node's `registries.yaml` points at
+(`../warm-cache/registry-mirror/`). The rule is for the pod's OWN off-site
+traffic — a tool inside the sandbox fetching from the registry, and the same 443
+every package index the sandbox's toolchain reads lives behind.
+
+## What is deliberately NOT here
+
+- **No Kueue anything.** Nothing in this namespace is denominated in
+  `ci-runner.io/churn-slot` and nothing admits through a ClusterQueue, per the
+  2026-10-13 ruling. The ten per-repo `nominalQuota` values still sum to exactly
+  `C = 44` and this namespace does not appear in that apportionment.
+- **No node selector and no toleration.** Which nodes a factory pod may land on
+  is the backend plugin's design child to decide
+  (livespec-orchestrator-beads-fabro plan `kubernetes-sandbox-backend`, epic
+  `bd-ib-nmuyjc`), and a selector committed here would be this repository
+  guessing at it.
+- **No grant on secrets and nothing cluster-scoped.** See
+  `./factory-rbac.yaml`'s header; the Role's rules are asserted by
+  `tests/livespec_dev_tooling/test_ci_runner_k3s_factory_namespace.py`.

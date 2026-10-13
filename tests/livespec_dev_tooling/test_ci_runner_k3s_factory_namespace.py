@@ -57,6 +57,30 @@ _EXPECTED_POD_VERBS: dict[tuple[str, str], frozenset[str]] = {
 }
 _JOBS_RULE_KEY = ("batch", "jobs")
 _CLUSTER_SCOPED_KINDS = frozenset({"ClusterRole", "ClusterRoleBinding"})
+# The live node capacities the quota must be sized against, each as the plan's
+# own research note spells it, plus the pod-allocatable figure hp is left with
+# while the Docker sandbox slice runs. A quota derived without naming these is
+# a number somebody picked.
+_NODE_CAPACITY_FACTS = (
+    "poweredge-xubuntu",
+    "72 CPUs",
+    "377 GB",
+    "gmktec-xubuntu",
+    "32 threads",
+    "62 GB",
+    "hp-xubuntu",
+    "16 CPUs",
+    "30 GB",
+    "3 GiB",
+)
+# Where each egress target was READ, never recalled: the Fabro instance
+# configuration on hp for the sandbox image and the telemetry receiver, and the
+# committed beads pointer for the Dolt tenant.
+_ENDPOINT_SOURCES = (
+    "ansible/inventory/host_vars/hp-xubuntu.yml",
+    "LIVESPEC_SANDBOX_OTEL_ENDPOINT",
+    ".beads/config.yaml",
+)
 _MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 _SA_TOKEN_TYPE = "kubernetes.io/service-account-token"
 _SA_NAME_ANNOTATION = "kubernetes.io/service-account.name"
@@ -297,4 +321,60 @@ def test_the_ci_converge_unit_role_installs_the_factory_manifests() -> None:
     assert "factory" in directories, (
         "the role must create the installed `factory` directory in ci_converge_unit_directories; "
         "--check cannot see past a missing parent, so a drift read would pass and the apply fail"
+    )
+
+
+def _quota_hard_values(*, document: str) -> tuple[str, ...]:
+    """Every value of the ResourceQuota's `hard:` map, as written."""
+    hard = re.search(r"(?ms)^  hard:\n(?P<body>(?:^    \S.*\n?)+)", document)
+    assert hard is not None, "the ResourceQuota declares no `hard:` map"
+    return tuple(
+        match.group(1).strip("\"'")
+        for match in re.finditer(r"(?m)^    \S+:[ \t]*(\S+)[ \t]*$", hard.group("body"))
+    )
+
+
+def _egress_targets(*, document: str) -> tuple[str, ...]:
+    """Every CIDR and port the NetworkPolicy's egress rules name."""
+    cidrs = re.findall(r"(?m)^\s*(?:cidr:|- )(\d+\.\d+\.\d+\.\d+/\d+)\s*$", document)
+    ports = re.findall(r"(?m)^\s*port:\s*(\S+)\s*$", document)
+    return tuple(cidrs) + tuple(ports)
+
+
+def test_the_quota_limits_and_egress_targets_are_derived_in_a_committed_note() -> None:
+    notes = sorted(_FACTORY_DIR.glob("*.md"))
+    assert len(notes) == 1, (
+        "the factory artifact directory must carry exactly ONE committed derivation note beside "
+        f"the manifests, the way ../kueue/DERIVATION.md sits beside the queues; found {notes}"
+    )
+    derivation = notes[0].read_text(encoding="utf-8")
+    by_kind = {kind: document for kind, _, document in _objects()}
+    undrilled = [
+        value
+        for value in _quota_hard_values(document=by_kind["ResourceQuota"])
+        if value not in derivation
+    ]
+    assert not undrilled, (
+        f"{notes[0].name} does not derive these ResourceQuota values: {undrilled}. The quota is "
+        "the ONLY bound on what factory runs take from the CI pool on poweredge, so an "
+        "underived number is the whole safety story resting on a guess"
+    )
+    unexplained = [
+        target
+        for target in _egress_targets(document=by_kind["NetworkPolicy"])
+        if target not in derivation
+    ]
+    assert (
+        not unexplained
+    ), f"{notes[0].name} does not name these NetworkPolicy egress targets: {unexplained}"
+    missing_capacities = [fact for fact in _NODE_CAPACITY_FACTS if fact not in derivation]
+    assert not missing_capacities, (
+        f"{notes[0].name} must size the quota against the LIVE node capacities and name them; "
+        f"these are absent: {missing_capacities}"
+    )
+    missing_sources = [source for source in _ENDPOINT_SOURCES if source not in derivation]
+    assert not missing_sources, (
+        f"{notes[0].name} must name where each egress endpoint was READ — the brief requires the "
+        "Fabro instance configuration on hp rather than a value recalled from memory; these "
+        f"sources are absent: {missing_sources}"
     )
