@@ -119,6 +119,19 @@ if [ -d "${ARTIFACT_DIR}/gates" ]; then
 else
   GATES_DIR="$(cd "${ARTIFACT_DIR}/../gates" && pwd)"        # repo layout
 fi
+# The `factory` namespace's own artifacts (livespec-dev-tooling-f5e6vl),
+# resolved exactly like GATES_DIR because the two steps have the same shape: a
+# directory of manifests the boot converge applies into a datastore that is
+# empty at boot. Added to the required-directory loop below: unlike the
+# node-status template, an absent factory tree is not an older-install
+# compatibility case — this directory and the step that applies it land
+# together, so its absence means the installed tree is wrong and saying so
+# loudly beats building a stack whose factory namespace silently never appears.
+if [ -d "${ARTIFACT_DIR}/factory" ]; then
+  FACTORY_DIR="${ARTIFACT_DIR}/factory"                      # installed layout
+else
+  FACTORY_DIR="$(cd "${ARTIFACT_DIR}/../factory" && pwd)"    # repo layout
+fi
 # The per-node node-status RBAC template step 10d re-applies for each AGENT
 # (livespec-dev-tooling-yj25uj). Resolved like GATES_DIR, and NOT added to the
 # required-directory loop below: an older installed tree predating the
@@ -131,7 +144,7 @@ else
   NODE_STATUS_DIR=""
 fi
 RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
-for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR"; do
+for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR" "$FACTORY_DIR"; do
   [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
 done
 [ -x "$RENDER_SA_KUBECONFIG" ] || { echo "FATAL: ${RENDER_SA_KUBECONFIG} not found or not executable" >&2; exit 1; }
@@ -801,6 +814,34 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+log "10e. Re-apply the factory namespace, its quota, its egress policy and its launcher identity"
+# livespec-dev-tooling-f5e6vl. The whole DIRECTORY, in filename order, so the
+# Namespace in ../factory/factory-namespace.yaml exists before the namespaced
+# objects in ../factory/factory-rbac.yaml are applied — the same reason the
+# gates step is ordered after step 5 rather than beside step 10.
+#
+# Same tmpfs-datastore reasoning as steps 10 and 10b, and the ResourceQuota is
+# why this one matters beyond the credential: the maintainer ruled on 2026-10-13
+# that the namespace quota is the ONLY bound on what factory runs take from the
+# CI pool on poweredge (livespec plan factory-worker-nodes-gitops, epic
+# livespec-sqvj7p). A boot that rebuilt the namespace without its quota would
+# leave factory pods unbounded against the pool they share the box with, and the
+# absence of a quota raises nothing — it just admits. ../factory/DERIVATION.md
+# derives every number and every egress target.
+#
+# ORDERED AFTER the Kueue step (5) and the gates steps (10b, 10c) as the item
+# requires, and before the informational reads below. Kueue is NOT in the
+# factory path — nothing here is denominated in ci-runner.io/churn-slot and
+# nothing admits through a ClusterQueue — so the ordering is about keeping every
+# namespaced, credential-shaped converge together, not about a dependency.
+#
+# NOT a WARN like the mirror converges: unlike a cache that degrades, a factory
+# namespace that failed to apply means the sandbox backend's pods have nowhere
+# bounded to run, and `kubectl apply` here touches only committed manifests with
+# no host precondition to fail on.
+kubectl apply -f "${FACTORY_DIR}"
+
+# ---------------------------------------------------------------------------
 log "11. Verify (informational — non-fatal reads of the converged state)"
 kubectl -n kube-system get deployment local-path-provisioner
 kubectl -n "$CONTROLLER_NAMESPACE" get deployment -l app.kubernetes.io/name=gha-rs-controller
@@ -813,4 +854,4 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy and launcher identity."
