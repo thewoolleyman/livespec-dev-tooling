@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.95.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.12...v1.95.13) (2026-10-13)
+
+
+### Bug Fixes
+
+* **checks:** plan_next_action_typed grades the proof, review, archive and await ref forms ([2dd458f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2dd458f526dee91c82fd1ee9ebc6f7131860a524))
+* **checks:** plan_next_action_typed knows the contract's eight next-action kinds ([b08e40d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b08e40ddec1fc5fca9eae82f3e122b8876977989))
+
 ## [1.95.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.11...v1.95.12) (2026-10-12)
 
 
