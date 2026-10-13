@@ -971,6 +971,44 @@ def test_typed_pointer_accepts_the_eight_contract_kinds() -> None:
     ]
 
 
+def test_typed_pointer_grades_the_ref_form_of_each_new_kind() -> None:
+    """Each new kind's ref form is graded, not merely required to be present.
+
+    v124 gives `proof` and `await` ENUMERATED ref forms and makes the epic id the
+    ref of `review` and `archive`, so a pointer carrying the right kind with an
+    unusable ref is a typing error — otherwise the widened kind set would buy a
+    plan session a dispatchable-looking pointer nothing can dispatch.
+    """
+    next_action = _load(name="_plan_record_next_action")
+
+    for kind, ref in (
+        ("proof", f"verify:{_EPIC}"),
+        ("await", f"epic:{_EPIC}"),
+        ("await", "run:01M4S4YPHW5MA0Q3HDTEX09XVN"),
+        ("await", "gate:20261013T004912Z-13217"),
+    ):
+        well_formed = next_action.NextAction(kind=kind, ref=ref, text="Do the thing.")
+        assert next_action.typing_violations(action=well_formed, epic=_epic_record()) == []
+    for kind, ref, expected in (
+        (
+            "proof",
+            _EPIC,
+            f"next_action kind 'proof' carries ref {_EPIC!r}, which names none of "
+            "('capture:', 'verify:')",
+        ),
+        ("review", "", "next_action kind 'review' carries an empty ref"),
+        ("archive", "", "next_action kind 'archive' carries an empty ref"),
+        (
+            "await",
+            _WORK_ITEM,
+            f"next_action kind 'await' carries ref {_WORK_ITEM!r}, which names none of "
+            "('item:', 'epic:', 'run:', 'gate:')",
+        ),
+    ):
+        malformed = next_action.NextAction(kind=kind, ref=ref, text="Do the thing.")
+        assert next_action.typing_violations(action=malformed, epic=_epic_record()) == [expected]
+
+
 def test_timeline_findings_skip_a_record_without_an_id(*, tmp_path: Path) -> None:
     """A record with no id cannot be reported against, so it leaves the population.
 
