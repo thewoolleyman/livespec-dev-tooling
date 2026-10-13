@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.96.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.13...v1.96.0) (2026-10-13)
+
+
+### Features
+
+* **ansible:** a committed way to reboot the k3s CI server ([3037b3d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3037b3dd4c59d71b83e5bf5f8cd08638dc4ff365))
+
 ## [1.95.13](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.12...v1.95.13) (2026-10-13)
 
 
