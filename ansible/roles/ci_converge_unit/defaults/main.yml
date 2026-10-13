@@ -21,6 +21,7 @@ ci_converge_unit_directories:
   - sccache
   - observability
   - gates
+  - factory
   - node-status-credential
 # The named members of the installed tree, with the mode each is installed
 # under. The three GLOBS the shell uses — arc/values-*.yaml minus the EXAMPLE
@@ -118,6 +119,18 @@ ci_converge_unit_files:
   - src: gates/render-gate-job.sh
     dest: gates/render-gate-job.sh
     mode: "0755"
+  # The `factory` namespace's artifacts, applied as a DIRECTORY by the boot
+  # converge's step 10e (livespec-dev-tooling-f5e6vl). Both files must be here:
+  # the step applies the whole directory, so an installed tree carrying only one
+  # of them would apply a Namespace with no quota — and an absent quota raises
+  # nothing, it just admits, which is the one bound the maintainer's 2026-10-13
+  # ruling leaves on what factory runs take from the CI pool.
+  - src: factory/factory-namespace.yaml
+    dest: factory/factory-namespace.yaml
+    mode: "0644"
+  - src: factory/factory-rbac.yaml
+    dest: factory/factory-rbac.yaml
+    mode: "0644"
   # The per-node node-status RBAC template the boot converge's step 10d re-applies
   # for each AGENT node (livespec-dev-tooling-yj25uj). The converge runs from this
   # installed tree with no checkout present, so a template it reads relative to

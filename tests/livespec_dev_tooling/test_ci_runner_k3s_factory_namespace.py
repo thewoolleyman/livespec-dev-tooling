@@ -29,6 +29,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PHASE2 = _REPO_ROOT / "ci-runner" / "k3s" / "phase2"
 _FACTORY_DIR = _PHASE2 / "factory"
 _GATES_RBAC = _PHASE2 / "gates" / "gates-rbac.yaml"
+_BOOT_CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
+# The role that installs the boot tree onto the host; the boot converge can
+# only apply what this role has already put there.
+_ROLE_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml"
 
 # The seven objects the work-item's Definition of Done names, as KINDS: the
 # names are this repository's to choose, the kinds are not.
@@ -234,4 +238,63 @@ def test_the_factory_role_grants_the_pod_lifecycle_the_gates_job_verbs_and_no_se
         "the RoleBinding's roleRef must name a Role; a RoleBinding to a ClusterRole grants that "
         "ClusterRole's rules in this namespace, which is the cluster-scoped grant this item "
         "forbids wearing a namespaced hat"
+    )
+
+
+def test_the_boot_converge_applies_the_factory_directory_after_kueue_and_gates() -> None:
+    body = _BOOT_CONVERGE.read_text(encoding="utf-8")
+    # Resolved in BOTH layouts the way the gates step is: the installed tree
+    # (/usr/local/lib/ci-runner-k3s, artifacts beside the script) and the repo
+    # checkout (phase2/, artifacts one level up).
+    assert '[ -d "${ARTIFACT_DIR}/factory" ]' in body, (
+        "converge-ci-stack.sh must resolve FACTORY_DIR for the INSTALLED layout, the branch "
+        "GATES_DIR already carries; without it a boot converge on the host finds nothing to apply"
+    )
+    assert '"${ARTIFACT_DIR}/../factory"' in body, (
+        "converge-ci-stack.sh must resolve FACTORY_DIR for the REPO layout too, so one script "
+        "works from the checkout and from the install location"
+    )
+    apply_at = body.find('kubectl apply -f "${FACTORY_DIR}"')
+    assert apply_at != -1, (
+        "converge-ci-stack.sh must apply the whole factory DIRECTORY — the namespace and its "
+        "bounds, the identity and its token request, in filename order — or the objects are "
+        "gone at the next boot of the tmpfs datastore"
+    )
+    step_log = re.search(r'(?m)^log "(?P<step>10e\.[^"]*)"$', body)
+    assert step_log is not None, (
+        "the factory apply must be a NUMBERED converge step (10e), so the boot journal names it "
+        "like every other step rather than hiding it inside another one"
+    )
+    assert step_log.start() < apply_at, "step 10e's log line must precede its own apply"
+    # Step 5's own first apply. The per-repo queues after it are reached by a
+    # glob rather than by name, so this is the step's only stable anchor.
+    kueue_at = body.find('kubectl apply -f "${KUEUE_DIR}/resource-flavor.yaml"')
+    gates_at = body.find('kubectl apply -f "${GATES_DIR}/gates-rbac.yaml"')
+    assert -1 < kueue_at < apply_at, (
+        "the factory step must come after the Kueue step; a converge ordered before it would "
+        "race the queues the rest of the pool is denominated in"
+    )
+    assert -1 < gates_at < apply_at, (
+        "the factory step must come after the gates step, which is where everything namespaced "
+        "and credential-shaped already lives"
+    )
+
+
+def test_the_ci_converge_unit_role_installs_the_factory_manifests() -> None:
+    text = _ROLE_DEFAULTS.read_text(encoding="utf-8")
+    sources = set(re.findall(r"^\s*- src:\s*(\S+)\s*$", text, re.MULTILINE))
+    missing = [
+        path.relative_to(_PHASE2).as_posix()
+        for path in _manifests()
+        if path.relative_to(_PHASE2).as_posix() not in sources
+    ]
+    assert not missing, (
+        "the ci_converge_unit role does not install these factory manifests onto the host, so "
+        "the boot converge's step 10e would find an absent directory and the namespace would be "
+        f"lost at every reboot — silently, exactly as the ghcr mirror was on 2026-09-09: {missing}"
+    )
+    directories = set(re.findall(r"^\s*- (\S+)\s*$", text, re.MULTILINE))
+    assert "factory" in directories, (
+        "the role must create the installed `factory` directory in ci_converge_unit_directories; "
+        "--check cannot see past a missing parent, so a drift read would pass and the apply fail"
     )
