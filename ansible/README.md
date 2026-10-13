@@ -67,6 +67,21 @@ source of truth for how the tool is invoked.
 | `gates-kubeconfig.yml` | `vps` | `vps-info` `services/gates-kubeconfig/` |
 | `fabro-hosts.yml` | `hp-xubuntu`, `vps` | `fabro-hosts` `services/` |
 | `dev-host.yml` | `vps` | `vps-info` `services/` |
+| `reboot-ci-server.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could reboot a pool node |
+
+`reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
+the only play here that reboots a host. It is an ordinary
+`just ansible-apply ansible/reboot-ci-server.yml -e
+ci_server_reboot_confirm=poweredge-xubuntu`, and without that confirmation
+variable — naming the host's own inventory entry — it reads nothing, changes
+nothing and exits 0, on an apply and under `--check` alike. That variable, not
+omission from a sweep's argument list, is what keeps it out of every other
+apply and every drift report. It waits for an idle `arc-runners` pool over two
+consecutive reads and REFUSES rather than forcing a reboot through a busy one,
+and it runs nothing after the reboot, because the unattended recovery is the
+property a reboot drill exists to prove. See
+`../ci-runner/k3s/README.md` §"Rebooting the k3s server" and
+`livespec-dev-tooling-a3uvyu`.
 
 `ci-pool.yml` is the k3s pool's node-local provisioning — the roles
 `install-node.sh` drove, in that step order, role-aware by each node's

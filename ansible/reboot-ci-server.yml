@@ -1,0 +1,197 @@
+---
+# reboot-ci-server.yml — the ONE sanctioned way to reboot the k3s CI server, and
+# the only committed artifact in this tree that reboots a fleet host.
+#
+# WHY IT EXISTS (livespec-dev-tooling-a3uvyu). The livespec plan livespec-sab5gn
+# proves its recovery assertions by an UNATTENDED reboot of the k3s server, and
+# its replays need further reboots, which the maintainer approved 2026-10-12.
+# The Driver's `fleet_host_guard.py` correctly refuses `ssh poweredge-xubuntu
+# 'sudo -n systemctl reboot'` as a hand change to a fleet host — a verifier
+# session was blocked at exactly that step on 2026-10-12T23:11Z — and the
+# guard's own direction is that a need the committed automation cannot meet is a
+# gap in the playbooks to fix. This playbook is that gap closed: the reboot is
+# now an apply of committed source from the control node, like every other
+# change to these hosts, instead of a hand command the guard has to refuse.
+#
+# THE FENCE IS A VARIABLE, NOT OMISSION FROM A LIST. This play is reachable by
+# `just ansible-apply ansible/reboot-ci-server.yml` and by nothing else that
+# matters: without `ci_server_reboot_confirm=<this host's inventory name>` it
+# reads nothing, changes nothing and exits 0. That is deliberate and it is the
+# whole safety model. A playbook kept safe by being left out of a sweep's
+# argument list is one edit away from being swept; a playbook kept safe by a
+# confirmation variable cannot be reached by a bare apply, by a drift report, by
+# a fleet-wide converge, or by a typo — including a typo that names the OTHER
+# pool node, since the confirmation must equal the host's own inventory name and
+# the host must be the pool's `server`.
+#
+# NOTHING RUNS AFTER THE REBOOT, BY DESIGN. The boot converge
+# (`converge-ci-stack.service`) and the agents' timers must recover the cluster
+# unattended — that is the property the drill exists to prove. A post-reboot
+# task here would be an operator command on the recovery path and would VOID
+# that proof, so the reboot is the last task in this file and no handler, no
+# `post_tasks` and no follow-up play may be added below it. `ansible.builtin.reboot`
+# returns once the host answers again, which is the only confirmation this play
+# is allowed to want.
+#
+# WHY THE IDLE GATE IS TWO READS. The pool's runner pods are job executions: a
+# reboot taken while one is running takes the fleet's gating CI down mid-job,
+# and that is not undoable by a later task. One read can land in the gap between
+# two queued jobs, so the gate wants the pool quiet over an interval, not at an
+# instant. The pair is retried within a bounded window, and a pool that never
+# goes quiet ends in a REFUSAL rather than in a reboot.
+#
+# Operator-facing description: `ci-runner/k3s/README.md` §"Rebooting the k3s
+# server". Node-provisioning contract: `SPECIFICATION/non-functional-requirements.md`
+# §"Runner-pool node rebuild recipe".
+
+- name: Reboot the k3s CI server once its runner pool is idle
+  hosts: ci_pool
+  # NO FACT GATHERING. Nothing in this play reads a fact, and the one artifact
+  # that reboots the fleet's control plane should ask the host for as little as
+  # it can — an unconfirmed run then genuinely touches the host with zero
+  # commands rather than with a setup module's worth.
+  gather_facts: false
+  vars:
+    # The runner pool whose idleness gates the reboot: ARC's runner pods live
+    # here, one per job execution.
+    ci_server_reboot_runner_namespace: arc-runners
+    # Read on the server itself, under its admin kubeconfig — the same read
+    # shape the `node_taints` role uses.
+    ci_server_reboot_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    # The gap between the two reads of a pair, and between one attempt at the
+    # pair and the next.
+    ci_server_reboot_idle_interval: 60
+    # ADDITIONAL attempts: ansible's `retries` is on top of the first run, so 15
+    # means 16 attempts and — with the 60 s interval above spent twice per
+    # attempt — a bounded wait of roughly 31 minutes before the refusal.
+    ci_server_reboot_idle_retries: 15
+    # Generous: this node debootstraps nothing at boot but it does rebuild the
+    # cluster from an empty tmpfs datastore, and a reboot that answers ssh late
+    # must read as slow, not as lost.
+    ci_server_reboot_timeout: 1800
+    # THE FENCE ITSELF. Both halves are required: the confirmation must name
+    # THIS host (so a sweep, a bare apply and a typo all reach nothing), and the
+    # host must be the pool's control plane (so a confirmation that names the
+    # agent by mistake cannot reboot it through the server's playbook).
+    ci_server_reboot_requested: >-
+      {{ ci_server_reboot_confirm | default('') == inventory_hostname
+         and cluster_role | default('') == 'server' }}
+  tasks:
+    - name: Report a run that carries no reboot confirmation for this host
+      # The refusal an operator meets most often, and it has to be LEGIBLE: a
+      # play that silently did nothing reads exactly like a play whose reboot
+      # silently failed. So the unconfirmed path SAYS what it did not do and
+      # prints the invocation that would.
+      ansible.builtin.debug:
+        msg: >-
+          Not rebooting {{ inventory_hostname }}: this run does not carry
+          `ci_server_reboot_confirm={{ inventory_hostname }}` (it carries
+          `{{ ci_server_reboot_confirm | default('<unset>') }}`), or this host
+          is not the pool's server (cluster_role
+          `{{ cluster_role | default('<unset>') }}`). Nothing was read and
+          nothing was changed. To reboot this host, run from the control node
+          with the runner pool idle: just ansible-apply
+          ansible/reboot-ci-server.yml -e
+          ci_server_reboot_confirm={{ inventory_hostname }}
+      when: not (ci_server_reboot_requested | bool)
+
+    - name: Hold the reboot until the runner pool reads idle twice
+      when: ci_server_reboot_requested | bool
+      block:
+        - name: Wait for two consecutive idle reads of the runner pool
+          # ONE TASK, because "idle on two consecutive reads" is ONE claim: the
+          # pair is retried as a unit, so an attempt whose first read was quiet
+          # and whose second was not can never contribute its quiet half to a
+          # later attempt's verdict.
+          #
+          # `shell` rather than `command`, and bash rather than sh: the two
+          # reads, the interval between them and the fail-closed error handling
+          # below are shell constructs, and `set -o pipefail` needs bash.
+          ansible.builtin.shell:
+            executable: /bin/bash
+            # FAIL CLOSED ON A READ THAT DID NOT HAPPEN. `local pods` and the
+            # assignment are SEPARATE statements on purpose: `local
+            # pods="$(...)"` would return the status of `local`, masking a
+            # kubectl that failed, and a masked failure here reads as an empty
+            # pod list — which reads as an idle pool, which reboots the control
+            # plane because nothing could tell us it was busy. Split, the
+            # substitution's status reaches `set -e` and the whole read fails.
+            #
+            # The `|| true` applies to grep ALONE, whose exit 1 means "no busy
+            # pods" — the idle answer, not an error.
+            #
+            # A pod is BUSY unless it has finished. `.status.phase` is the API's
+            # word (`Succeeded`); `Completed` is the word kubectl's STATUS
+            # column shows for the same pod, and it is matched too so this read
+            # keeps meaning the same thing if it is ever pointed at that column.
+            cmd: |
+              set -euo pipefail
+              busy_pods() {
+                local pods
+                pods="$(kubectl get pods \
+                  --namespace '{{ ci_server_reboot_runner_namespace }}' \
+                  --output 'jsonpath={range .items[*]}{.metadata.name}={.status.phase}{"\n"}{end}')"
+                printf '%s\n' "${pods}" \
+                  | { grep -v -E '^$|=(Succeeded|Completed)$' || true; }
+              }
+              first="$(busy_pods)"
+              sleep '{{ ci_server_reboot_idle_interval }}'
+              second="$(busy_pods)"
+              printf '%s\n%s\n' "${first}" "${second}" \
+                | { grep -v -E '^$' || true; }
+          become: true
+          environment:
+            KUBECONFIG: "{{ ci_server_reboot_admin_kubeconfig }}"
+          register: ci_server_reboot_pool_reads
+          # The gate is a READ, so it runs under `--check` too: a drift report
+          # of this playbook — given the confirmation — should say whether the
+          # pool would let the reboot through, not skip the question. It mutates
+          # nothing; the reboot below is what check mode withholds.
+          check_mode: false
+          changed_when: false
+          # THE PREDICATE, STATED IN BOTH SENSES, deliberately. `until` governs
+          # the LOOP: a busy pool and a read that failed outright both keep
+          # retrying inside the bounded window, so a transient kubectl error
+          # does not spend the drill. `failed_when` owns the VERDICT, so the
+          # window running out is THIS play's refusal rather than an internal of
+          # ansible's retry loop — which marks an exhausted loop failed only
+          # when `retries > 1`, and a reboot must never ride on that detail.
+          until: >-
+            ci_server_reboot_pool_reads.rc == 0
+            and ci_server_reboot_pool_reads.stdout == ''
+          failed_when: >-
+            ci_server_reboot_pool_reads.rc != 0
+            or ci_server_reboot_pool_reads.stdout != ''
+          retries: "{{ ci_server_reboot_idle_retries }}"
+          delay: "{{ ci_server_reboot_idle_interval }}"
+      rescue:
+        # A rescue that SUCCEEDED would mark the block handled and let the
+        # reboot below run — the exact opposite of what this one is for. It
+        # fails, so the host leaves the play failed and every task after it is
+        # unreachable.
+        - name: Refuse to reboot a host whose runner pool never went idle
+          ansible.builtin.fail:
+            msg: >-
+              Refusing to reboot {{ inventory_hostname }}: the
+              {{ ci_server_reboot_runner_namespace }} runner pool did not read
+              idle on two consecutive reads
+              {{ ci_server_reboot_idle_interval }}s apart, over
+              {{ ci_server_reboot_idle_retries | int + 1 }} attempts. Busy
+              runner pods on the last read:
+              {{ ci_server_reboot_pool_reads.stdout_lines | default([]) | join(', ') }}
+              (last read rc
+              {{ ci_server_reboot_pool_reads.rc | default('unknown') }},
+              stderr `{{ ci_server_reboot_pool_reads.stderr | default('') }}`).
+              Nothing was rebooted and nothing on this host was changed; re-run
+              this playbook once the pool is idle.
+
+    - name: Reboot the confirmed host and run nothing afterwards
+      # THE LAST TASK IN THIS FILE, AND IT MUST STAY THAT WAY. See the header:
+      # the unattended recovery is the property the drill proves, so the boot
+      # converge and the agents' timers get the host back with no operator
+      # command on the path. Nothing may be appended below — no verification
+      # task, no handler, no second play.
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ ci_server_reboot_timeout }}"
+        msg: Approved CI-server reboot drill via ansible/reboot-ci-server.yml
+      when: ci_server_reboot_requested | bool
