@@ -194,4 +194,15 @@
       ansible.builtin.reboot:
         reboot_timeout: "{{ ci_server_reboot_timeout }}"
         msg: Approved CI-server reboot drill via ansible/reboot-ci-server.yml
+      # ESCALATED, LIKE THE IDLE READ ABOVE, AND FOR THE SAME REASON: the play
+      # connects as the pool's unprivileged login user, and scheduling a
+      # shutdown is root's. Without it this task — the one the whole playbook
+      # exists for — is refused by the host with `Failed to schedule shutdown:
+      # Access denied as the requested operation requires interactive
+      # authentication`, which is exactly how the first confirmed run ended on
+      # poweredge-xubuntu at 2026-10-13T02:39:00Z: ok=1 changed=0 failed=1 and
+      # the host's boot_id unchanged (livespec-dev-tooling-rh6io2). This is a
+      # DIRECTIVE of the last task, not something appended after it, so the
+      # rule above stands untouched.
+      become: true
       when: ci_server_reboot_requested | bool
