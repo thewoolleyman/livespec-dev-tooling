@@ -1,0 +1,116 @@
+# factory-namespace.yaml — the `factory` Namespace and the two bounds that are
+# its whole safety story: a ResourceQuota and a NetworkPolicy
+# (livespec-dev-tooling-f5e6vl, livespec plan factory-worker-nodes-gitops, epic
+# livespec-sqvj7p).
+#
+# WHY THIS EXISTS AS SOURCE. The k3s datastore on poweredge-xubuntu is a tmpfs
+# (../datastore-tmpfs/), EMPTY on every boot, so a Namespace created by hand is
+# present right up to the first reboot and then gone with no error anywhere —
+# the silent-at-reboot loss ../warm-cache/registry-mirror/ paid for on
+# 2026-09-09. ../reconstruct/converge-ci-stack.sh applies this directory at
+# every boot (step 10e), exactly as it applies ../gates/gates-rbac.yaml, and
+# the `ci_converge_unit` Ansible role puts these files on the host so that step
+# has something to read.
+#
+# THE QUOTA IS THE ONLY BOUND ON WHAT FACTORY RUNS TAKE FROM THE CI POOL.
+# Maintainer ruling of 2026-10-13 (plan research/001, ruling 3): poweredge
+# stays untainted and runs factory pods too, Kueue is NOT in the factory path,
+# and the churn-slot derivation is not re-done. So there is no second gate
+# behind this one. Every number below, and every egress target, is derived in
+# ./DERIVATION.md against the live node capacities and the measured endpoints —
+# read that file before changing one of them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: factory
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: f5e6vl
+---
+# ./DERIVATION.md "The quota" — 3 concurrent runs at the 4 cpu / 8GB envelope
+# hp's own `fabro_server_instances[].environments[livespec-ci]` declares, with
+# memory carrying one run's headroom so CPU binds first at exactly three runs
+# (the shape ../kueue/DERIVATION.md "The two numbers: 15 cpu and 24 Gi" already
+# uses for the gates quota, and for the same reason: an over-running pod should
+# degrade throughput, not block admission outright).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: factory-runs
+  namespace: factory
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: f5e6vl
+spec:
+  hard:
+    requests.cpu: "12"
+    requests.memory: 24Gi
+    limits.cpu: "12"
+    limits.memory: 32Gi
+    pods: "6"
+---
+# ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
+# to cluster DNS, the tailnet (the beads Dolt tenant and the telemetry
+# receiver), and TCP 443 off-site for the sandbox image registry. Enforced by
+# k3s's bundled NetworkPolicy controller: ../k3s-config/config.yaml passes no
+# `--disable-network-policy`, so this object is a bound rather than decoration.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: factory-egress
+  namespace: factory
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: f5e6vl
+spec:
+  # Every pod in the namespace, so a pod the backend plugin adds later is
+  # covered by construction rather than by remembering to label it.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  # An EXPLICIT empty list rather than an omitted key: both deny all ingress,
+  # and the empty list says so to a reader.
+  ingress: []
+  egress:
+    # Cluster DNS. Named by the kube-system namespace plus CoreDNS's own
+    # `k8s-app: kube-dns` label rather than by the Service address, which is
+    # not a committable literal across a rebuild.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The tailnet: the beads Dolt tenant and the factory telemetry receiver.
+    # NO port list, and that is a measurement rather than laziness — the
+    # receiver's port is the dispatcher's own EPHEMERAL bound port (35129 in
+    # the run that authored this file), so any port literal here would be a
+    # bound that reads tight and fails closed at the next dispatch.
+    # ./DERIVATION.md records both endpoints and where they were read.
+    - to:
+        - ipBlock:
+            cidr: 100.64.0.0/10
+    # The sandbox image registry (ghcr.io and its CDN), whose addresses are
+    # likewise not committable literals. Everything RFC1918, the tailnet
+    # (covered above), link-local and loopback is excepted, so this rule
+    # reaches off-site and never the homelab LAN, the pod CIDR or a node.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
