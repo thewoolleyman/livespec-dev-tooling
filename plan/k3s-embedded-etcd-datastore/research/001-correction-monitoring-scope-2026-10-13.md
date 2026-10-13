@@ -1,0 +1,3 @@
+# 001 — Correction to note 000's monitoring scope (2026-10-13)
+
+Note 000 says R7's "remaining obligation is R6's monitoring rewrite". That is incomplete. The archived plan's independent completeness review (evidence id k3s-on-gmktec-completeness-2026-10-13) found a second R7 obligation that plan dropped: gmktec-xubuntu has no telemetry collector on its own pod-network gateway (livespec-dev-tooling-xnie), so cache telemetry from CI jobs on gmktec has been lost since it joined the pool on 2026-10-10. That obligation is not this plan's: it is carried by the livespec-dev-tooling plan `gmktec-pool-member-obligations` (epic livespec-dev-tooling-frei6s). This plan's monitoring scope stays the datastore-health rewrite away from the SQLite-era `Slow SQL` signature.
