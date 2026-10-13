@@ -34,6 +34,14 @@
 #           NODE_TAINTS taint, and carries the same k3s-role=arc-runner-host
 #           label so the phase2 node pins still resolve.
 #
+# TWO ARGUMENTS BOTH ROLES DERIVE FROM THE PROFILE, because both are facts about
+# the NODE rather than about its cluster role: the FACTORY node label when
+# FACTORY_NODE is true (every pool node carries it, server included, because the
+# kubernetes-sandbox-backend selects factory capacity on it and the untainted
+# server is one), and --data-dir when NODE_DATA_DIR names one (a node with no
+# role-labelled `ci-containerd` tier to bind its containerd store onto puts the
+# store on the volume its profile names instead).
+#
 # --dry-run PRINTS THE PLAN AND EXECUTES NOTHING: no installer is invoked, no
 # k3s is downloaded, no root check is made. The plan carries the EXACT install
 # command for the node's role, built from the same two variables the executor
@@ -96,6 +104,23 @@ NODE_LABEL="k3s-role=arc-runner-host"
 # (step 2b) rather than via --node-label, because --node-label applies only on
 # a FRESH install and this script must be re-runnable on a provisioned node.
 TIER_CARRIER_LABEL="ci-runner.io/cache-tier-carrier=true"
+# The FACTORY role label, rendered from the node's own FACTORY_NODE key, and the
+# third distinct thing a node can be in this pool. NODE_LABEL above is the
+# RUNNER role; TIER_CARRIER_LABEL is "the node whose disks the pool's hostPath
+# singletons live on"; this one is "the node the kubernetes-sandbox-backend may
+# place a Fabro sandbox pod on". ALL THREE pool nodes carry it — poweredge stays
+# untainted, so the factory nodes are not "the tainted ones" and no existing
+# label or taint can stand in for this one (maintainer ruling 2026-10-13,
+# livespec epic livespec-sqvj7p).
+#
+# Set via --node-label like NODE_LABEL, so it applies on a FRESH install, and
+# reconciled on every apply by ansible/roles/node_labels — because k3s applies
+# --node-label at REGISTRATION only, which is exactly how a retired taint
+# survived a control-plane reboot on gmktec (livespec-dev-tooling-yapwva). The
+# install command and that role must spell it identically; the repository test
+# tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py holds the
+# two to agreement rather than trusting them to it.
+FACTORY_NODE_LABEL="ci-runner.io/factory=true"
 # The tier whose presence PROVES this node is the carrier (phase2/
 # storage-layout/): the label is only set when it is actually mounted here.
 CACHE_TIER_MOUNT="${CI_CACHE_TIER_MOUNT:-/var/cache/ci-runner}"
@@ -155,6 +180,36 @@ ROLE="${CFG[CLUSTER_ROLE]}"
 # ---------------------------------------------------------------------------
 INSTALL_EXEC=""
 
+# append_profile_node_args ARRAY-NAME — the arguments both roles derive from the
+# SAME profile keys, appended to the named exec-argument array.
+#
+# Factored out rather than written twice because both of them are facts about
+# the NODE and not about its cluster role: the factory label is on all three
+# pool nodes including the server, and a data directory is wherever that node's
+# storage says it is. A second copy of either derivation is a second answer the
+# day one of them is edited.
+append_profile_node_args() {
+  local -n args="$1"
+
+  # The FACTORY role label, when the profile declares the node one. Rendered
+  # from the key rather than appended unconditionally, so a node that is not a
+  # factory host joins without it and the selector means something.
+  if [ "${CFG[FACTORY_NODE]}" = true ]; then
+    args+=(--node-label "$FACTORY_NODE_LABEL")
+  fi
+
+  # Where k3s keeps THIS node's data — the bundled containerd's store above
+  # all. Empty on a node that takes k3s's default and binds its containerd store
+  # onto the `ci-containerd` tier instead (ansible/roles/storage_layout); stated
+  # on a node that carries no tier and puts the store on its own large volume.
+  # A build-time fact, which is why it rides the install command beside
+  # --server and --token-file: moving a populated data directory is a rebuild,
+  # not a converge, so there is nothing here for a converge to keep in step.
+  if [ -n "${CFG[NODE_DATA_DIR]}" ]; then
+    args+=(--data-dir "${CFG[NODE_DATA_DIR]}")
+  fi
+}
+
 build_server_exec() {
   # --disable traefik/servicelb: this node carries no ingress traffic and no
   # LoadBalancer services are needed for the ARC + Kueue control plane.
@@ -162,7 +217,9 @@ build_server_exec() {
   # without colliding with the existing GitHub Actions runner labels (which
   # live on the runner registration, not the Kubernetes node — see
   # arc/values-host-unique.yaml).
-  INSTALL_EXEC="server --disable traefik --disable servicelb --node-label ${NODE_LABEL}"
+  local -a exec_args=(server --disable traefik --disable servicelb --node-label "$NODE_LABEL")
+  append_profile_node_args exec_args
+  INSTALL_EXEC="${exec_args[*]}"
 }
 
 # node_ip_of ADDRESS — the bare address k3s wants from the profile's
@@ -218,6 +275,8 @@ build_agent_exec() {
   # The RUNNER role label, so the phase2 node pins resolve on this node too.
   # Like the server's, it applies only on a FRESH install.
   exec_args+=(--node-label "$NODE_LABEL")
+
+  append_profile_node_args exec_args
 
   INSTALL_EXEC="${exec_args[*]}"
 }
