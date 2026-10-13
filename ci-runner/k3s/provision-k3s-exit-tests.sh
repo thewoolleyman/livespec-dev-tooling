@@ -112,11 +112,19 @@ agent_profile "$AGENT_PROFILE"
 # anything derived from the script under test: its whole job is to fail if a
 # future edit reorders a step, drops one, or changes a single flag of the
 # install the single-node runbook ran.
+#
+# ONE FLAG HAS BEEN ADDED TO IT DELIBERATELY, which is the only way this file
+# may change. `--node-label ci-runner.io/factory=true` landed with
+# livespec-dev-tooling-7we6po: all three pool nodes carry the FACTORY label the
+# kubernetes-sandbox-backend selects on, and this node — the UNTAINTED server —
+# is one of them, which is why the label could not be expressed as "the tainted
+# nodes". It is rendered from this node's own FACTORY_NODE key, so the literal
+# below changes if and only if that key does.
 # ---------------------------------------------------------------------------
 read -r -d '' EXPECTED_SERVER_PLAN <<'EOF'
 RUN  [server] 0. Install the fleet's k3s server config BEFORE the first k3s start
 RUN  [server] 1. Install k3s v1.36.2+k3s1 (idempotent — skip if already at this version)
-     + curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION='v1.36.2+k3s1' INSTALL_K3S_EXEC='server --disable traefik --disable servicelb --node-label k3s-role=arc-runner-host' sh -s -
+     + curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION='v1.36.2+k3s1' INSTALL_K3S_EXEC='server --disable traefik --disable servicelb --node-label k3s-role=arc-runner-host --node-label ci-runner.io/factory=true' sh -s -
 RUN  [server] 1b. Install helm v3.21.4 (idempotent — skip if already at this version)
 RUN  [server] 2. Wait for the node to report Ready
 RUN  [server] 2b. Label this node as the cache-tier carrier (idempotent)
@@ -448,6 +456,139 @@ if [ -s "$TRIPWIRE" ]; then
   cat "$TRIPWIRE"
 else
   ok "E7  section E executed no host-mutating command"
+fi
+
+# ---------------------------------------------------------------------------
+# F. The COMMITTED THIRD node's profile: hp-xubuntu, a FACTORY-ONLY agent.
+#
+# Sections B and E proved the agent branch and the second node's data. This one
+# proves the THIRD node, which is a different SHAPE of agent rather than another
+# instance of the second: it carries none of the pool's CI storage tiers, it is
+# CLOSED to CI by its own profile, it carries the FACTORY label, and it puts
+# k3s's data directory on its own large volume because it has no
+# `ci-containerd` tier to bind a store onto (livespec-dev-tooling-7we6po).
+#
+# The same ONE substitution as §E, for the same reason, and asserted the same
+# way: the committed CLUSTER_TOKEN_FILE names a cluster credential this tree
+# does not carry, and provision-k3s.sh refuses an absent token file in
+# `--dry-run` too.
+# ---------------------------------------------------------------------------
+printf '\n== F. the committed hp-xubuntu profile: a factory-only agent ==\n'
+
+HP_COMMITTED="${HERE}/phase0-bare-metal/profiles/hp-xubuntu.env"
+HP_TOKEN="${TMPROOT}/hp-join-token"
+printf 'K10deadbeef::server:notasecret\n' > "$HP_TOKEN"
+chmod 0600 "$HP_TOKEN"
+
+HP_PROFILE="${TMPROOT}/hp-with-scratch-token.env"
+sed "s#^CLUSTER_TOKEN_FILE=.*#CLUSTER_TOKEN_FILE=${HP_TOKEN}#" \
+  "$HP_COMMITTED" > "$HP_PROFILE"
+
+hp_substituted="$(diff "$HP_COMMITTED" "$HP_PROFILE" | grep -c '^[<>]')"
+if grep -qxF 'CLUSTER_TOKEN_FILE=/etc/rancher/k3s/agent-join-token' "$HP_COMMITTED" \
+   && [ "$hp_substituted" -eq 2 ]; then
+  ok "F1  the committed profile names the node's own token path, and only that line is substituted"
+else
+  no "F1  the committed profile names the node's own token path, and only that line is substituted (${hp_substituted} line(s) differ)"
+fi
+
+run_plan --dry-run "$HP_PROFILE"
+HP_OUT="$REPLY_OUT"
+HP_RC="$REPLY_RC"
+HP_COMMAND="$(printf '%s\n' "$HP_OUT" | grep '^     + ' | sed -e 's/^     + //')"
+
+if [ "$HP_RC" -eq 0 ]; then
+  ok "F2  --dry-run against the committed hp profile exits 0"
+else
+  no "F2  --dry-run against the committed hp profile exits 0 (rc=${HP_RC})"
+  printf '%s\n' "$HP_OUT"
+fi
+
+for header in 'node:     hp-xubuntu' 'role:     agent' \
+              'join:     https://192.168.1.200:6443'; do
+  if printf '%s\n' "$HP_OUT" | grep -qxF "$header"; then
+    ok "F3  the plan header states: ${header}"
+  else
+    no "F3  the plan header states: ${header}"
+  fi
+done
+
+# The install line itself. `--node-ip` is PINNED because this host's wired
+# `enp11s0` and its wireless `wlp10s0` are BOTH on 192.168.1.0/24, so a node
+# that registered on the wireless address would be one the cluster cannot reach
+# it on. The taint's VALUE is `factory` rather than the `pending` gmktec joined
+# with: this node is not waiting to be opened, it is closed because it is a
+# factory host, which is the reason an operator reading the node needs.
+for fragment in \
+  "INSTALL_K3S_VERSION='v1.36.2+k3s1'" \
+  "agent --server https://192.168.1.200:6443" \
+  "--token-file ${HP_TOKEN}" \
+  "--node-ip 192.168.1.4" \
+  "--node-taint node-role/ci=factory:NoSchedule" \
+  "--node-label k3s-role=arc-runner-host" \
+  "--node-label ci-runner.io/factory=true" \
+  "--data-dir /srv/sandbox-storage/k3s"
+do
+  if printf '%s\n' "$HP_COMMAND" | grep -qF -- "$fragment"; then
+    ok "F4  the hp agent install line carries: ${fragment}"
+  else
+    no "F4  the hp agent install line carries: ${fragment} (got: ${HP_COMMAND})"
+  fi
+done
+
+if printf '%s\n' "$HP_COMMAND" | grep -qF -- '192.168.1.4/24'; then
+  no "F5  the install line pins the bare address, not the netplan CIDR"
+else
+  ok "F5  the install line pins the bare address, not the netplan CIDR"
+fi
+
+# The FACTORY label is on all three nodes, and it comes from the PROFILE. The
+# second assertion is the one that matters: without it the label could be a
+# literal the script appends unconditionally, and FACTORY_NODE would be
+# decoration.
+if printf '%s\n' "$GMKTEC_COMMAND" | grep -qF -- '--node-label ci-runner.io/factory=true' \
+   && printf '%s\n' "$SERVER_PLAN" | grep -qF -- '--node-label ci-runner.io/factory=true'; then
+  ok "F6  every committed pool profile plans the factory label, the server included"
+else
+  no "F6  every committed pool profile plans the factory label, the server included"
+fi
+
+NOT_FACTORY="${TMPROOT}/hp-not-a-factory.env"
+sed 's/^FACTORY_NODE=true$/FACTORY_NODE=false/' "$HP_PROFILE" > "$NOT_FACTORY"
+run_plan --dry-run "$NOT_FACTORY"
+if [ "$REPLY_RC" -eq 0 ] && ! printf '%s\n' "$REPLY_OUT" | grep -qF -- 'ci-runner.io/factory'; then
+  ok "F7  a profile declaring FACTORY_NODE=false plans NO factory label"
+else
+  no "F7  a profile declaring FACTORY_NODE=false plans NO factory label (rc=${REPLY_RC})"
+fi
+
+# The five server-only steps are the server's on this node too — the posture
+# that closes it to CI changes what it CARRIES, never which steps are the
+# server's.
+hp_skips="$(printf '%s\n' "$HP_OUT" | grep -c '^SKIP \[agent\] ')"
+if [ "$hp_skips" -eq 5 ]; then
+  ok "F8  the committed profile skips the five steps that are the server's"
+else
+  no "F8  the committed profile skips the five steps that are the server's (${hp_skips} skipped)"
+fi
+
+# The three ways this profile says "taking nothing", read straight out of the
+# committed file. profile.sh REFUSES the profile if any one of them is missing,
+# so a node is opened to CI only by an edit that satisfies all three at once.
+for declared in 'CLUSTER_ROLE=agent' 'ADMISSION_CAPACITY_C=0' \
+                'CI_NODE_FACILITIES=none' 'NODE_TAINTS=node-role/ci=factory:NoSchedule'; do
+  if grep -qxF "$declared" "$HP_COMMITTED"; then
+    ok "F9  the committed profile declares: ${declared}"
+  else
+    no "F9  the committed profile declares: ${declared}"
+  fi
+done
+
+if [ -s "$TRIPWIRE" ]; then
+  no "F10 section F executed no host-mutating command"
+  cat "$TRIPWIRE"
+else
+  ok "F10 section F executed no host-mutating command"
 fi
 
 # ---------------------------------------------------------------------------

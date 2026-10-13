@@ -124,6 +124,33 @@ PROFILE_REQUIRED_KEYS=(
 #                         have. See
 #                         ../../phase2/node-status-credential/README.md for the
 #                         credential this path receives and who mints it.
+#   CI_NODE_FACILITIES    `full` — the node carries the three LABEL-keyed CI
+#                         storage tiers and the facilities a CI JOB executes
+#                         against (the fleet-patched ARC container hook, the
+#                         pool-provided sccache binary, its cache telemetry).
+#                         `none` — the node joins the pool but executes no CI
+#                         job, so it declares no physical volume, no volume
+#                         group, no logical volume and no tier, and the stages
+#                         and roles that build or feed them self-gate off.
+#                         `full` is the default because it is what both nodes
+#                         written before the key existed are.
+#   FACTORY_NODE          `true` renders this node's FACTORY node label, which
+#                         the kubernetes-sandbox-backend selects factory
+#                         capacity on. `false` is the default — the behaviour
+#                         before the key existed.
+#   NODE_DATA_DIR         the directory k3s keeps THIS node's data in
+#                         (`--data-dir`): the bundled containerd's store, the
+#                         kubelet root and the local-path root. Empty for a node
+#                         that takes k3s's own default of /var/lib/rancher/k3s,
+#                         which is every node whose containerd store is a BIND
+#                         onto a role-labelled tier instead.
+#   KUBELET_ARGS          space-separated kubelet arguments belonging to THIS
+#                         node, APPENDED to the fleet's shared list rather than
+#                         replacing it. Empty for a node that needs none. This
+#                         is where a node's coexistence reservations live —
+#                         system-reserved, kube-reserved, eviction-hard — because
+#                         they are measured against the OTHER workloads on that
+#                         one machine and so belong to no other node.
 # `-g` on purpose: a stage that sources this file from inside a function (the
 # exit tests read a profile that way) would otherwise get a table scoped to
 # that function.
@@ -133,7 +160,18 @@ declare -gA PROFILE_KEY_DEFAULTS=(
   [CLUSTER_TOKEN_FILE]=""
   [NODE_TAINTS]=""
   [CHURN_KUBECONFIG_FILE]=""
+  [CI_NODE_FACILITIES]=full
+  [FACTORY_NODE]=false
+  [NODE_DATA_DIR]=""
+  [KUBELET_ARGS]=""
 )
+
+# The ONE taint key the pool's scheduling gate uses, and the same string
+# ansible/roles/node_taints/defaults/main.yml declares. Named here because
+# `CI_NODE_FACILITIES=none` is refused without it: a node that carries none of
+# the CI facilities must also be CLOSED to CI scheduling, and the two halves of
+# "taking nothing" are checked against each other rather than left to agree.
+PROFILE_CI_TAINT_KEY="node-role/ci"
 
 # An ext4 label holds 16 bytes, an XFS label 12, a FAT label 11 and a swap
 # label 15; a longer name is silently TRUNCATED by mkfs, which is how a live
@@ -214,7 +252,18 @@ profile_load() {
     CLUSTER_TOKEN_FILE
     NODE_TAINTS
     CHURN_KUBECONFIG_FILE
+    NODE_DATA_DIR
+    KUBELET_ARGS
   )
+  # A node declaring NO CI facilities declares no storage for them either, and
+  # the four keys below are the storage it would otherwise declare: the
+  # partition label of the physical volume, the volume group over it, the
+  # logical volumes in it and the role tiers on them. They are permitted empty
+  # here and REQUIRED empty further down — a node cannot name a tier it has
+  # said it does not carry.
+  if [ "${CFG[CI_NODE_FACILITIES]}" = "none" ]; then
+    may_be_empty+=(PV_PARTLABEL VOLUME_GROUPS LOGICAL_VOLUMES ROLE_TIERS)
+  fi
   if [ "${CFG[CONTROLLER_KIND]}" = "none" ]; then
     may_be_empty+=(CONTROLLER_CLI CONTROLLER_ID VD_ENCLOSURE VD_SLOTS VD_RAID_LEVEL VD_STRIP_KIB VD_CACHE_POLICY)
   fi
@@ -260,6 +309,50 @@ profile_load() {
   esac
   # shellcheck disable=SC2034  # read by the stages that source this file
   read -r -a PRESERVED_DEVICES <<< "${CFG[PRESERVED_PARTITIONS]}"
+
+  # -------------------------------------------------------------------------
+  # The two enumerated postures, and what each one obliges
+  #
+  # Both are refusals rather than comments because both describe a profile that
+  # PARSES and then means something the stages cannot honour. A typo in either
+  # enum would otherwise be read as its default: `CI_NODE_FACILTIES=none`
+  # (misspelt) is an unknown key and is already caught, but
+  # `CI_NODE_FACILITIES=non` would not be, and the node would quietly be built
+  # as a tier carrier.
+  # -------------------------------------------------------------------------
+  case "${CFG[FACTORY_NODE]}" in
+    true | false) ;;
+    *) die "${PROFILE_PATH}: FACTORY_NODE must be 'true' or 'false', got '${CFG[FACTORY_NODE]}'" ;;
+  esac
+
+  case "${CFG[CI_NODE_FACILITIES]}" in
+    full)
+      # Nothing to oblige: the three storage keys are required non-empty
+      # already, which IS the `full` shape.
+      ;;
+    none)
+      # TAKING NOTHING, SAID THREE WAYS, AND CHECKED AGAINST ITSELF. A node that
+      # carries none of the CI facilities must also declare no storage for them,
+      # admit no churn slot, and be CLOSED to CI scheduling. Each of the three
+      # is independently editable, so a node is opened to CI only by a profile
+      # edit that satisfies all of them at once — which is the property that
+      # makes "opening this node later is a profile edit plus an apply" true
+      # rather than hopeful.
+      local key
+      for key in PV_PARTLABEL VOLUME_GROUPS LOGICAL_VOLUMES ROLE_TIERS; do
+        if [ -n "${CFG[$key]}" ]; then
+          die "${PROFILE_PATH}: CI_NODE_FACILITIES=none declares no CI storage tier, so '${key}' must be empty; it names '${CFG[$key]}'. Set CI_NODE_FACILITIES=full if this node really does carry the pool's tiers."
+        fi
+      done
+      if [ "${CFG[ADMISSION_CAPACITY_C]}" != "0" ]; then
+        die "${PROFILE_PATH}: CI_NODE_FACILITIES=none executes no CI job, so ADMISSION_CAPACITY_C must be 0; it is '${CFG[ADMISSION_CAPACITY_C]}'. A node advertising churn slots it has no facilities to serve admits work it cannot run."
+      fi
+      case " ${CFG[NODE_TAINTS]} " in
+        *" ${PROFILE_CI_TAINT_KEY}="*) ;;
+        *) die "${PROFILE_PATH}: CI_NODE_FACILITIES=none must also be CLOSED to CI scheduling, so NODE_TAINTS must carry a ${PROFILE_CI_TAINT_KEY}=<value>:<Effect> record; it is '${CFG[NODE_TAINTS]}'. ADMISSION_CAPACITY_C=0 stops Kueue's admission; the taint is what stops the scheduler." ;;
+      esac ;;
+    *) die "${PROFILE_PATH}: CI_NODE_FACILITIES must be 'full' or 'none', got '${CFG[CI_NODE_FACILITIES]}'" ;;
+  esac
 
   # CLUSTER_ROLE selects the node-local step plan (now the ansible/ci-pool.yml roles,
   # applied with `just ansible-apply`; it was ../phase2/install-node.sh before R5/9btv); an agent
