@@ -7,6 +7,10 @@ object carrying exactly `kind`, `ref` and `text`, beside a non-empty
 `last_session` naming who wrote it and when. `kind` is one of `impl`,
 `spec-op`, `proof`, `review`, `archive`, `await`, `human` or `none`; `impl` and
 `spec-op` MUST carry a ref (they are dispatchable action ids), `none` MUST NOT.
+The four kinds the contract's v124 revision added carry refs of their own
+shapes: `proof` names `capture:<epic-id>` or `verify:<epic-id>`, `await` names
+`item:<id>`, `epic:<id>`, `run:<fabro-run-id>` or `gate:<gate-run-id>`, and
+`review` and `archive` name the epic id.
 
 An ABSENT pointer and an ILL-TYPED one are different answers here, unlike in the
 resume path that reads the same metadata. A resume collapses them — both mean
@@ -46,7 +50,14 @@ NEXT_ACTION_KINDS: tuple[str, ...] = (
     "none",
 )
 
-_REF_REQUIRED_KINDS = frozenset({"impl", "spec-op"})
+_REF_REQUIRED_KINDS = frozenset({"impl", "spec-op", "review", "archive"})
+# The kinds whose ref is an ENUMERATED form rather than a bare id. An empty ref
+# names none of them, so these kinds stay out of `_REF_REQUIRED_KINDS`: the form
+# rule already reports emptiness, and listing them twice would report it twice.
+_REF_PREFIXES: dict[str, tuple[str, ...]] = {
+    "proof": ("capture:", "verify:"),
+    "await": ("item:", "epic:", "run:", "gate:"),
+}
 _NONE_KIND = "none"
 
 
@@ -79,6 +90,12 @@ def typing_violations(*, action: NextAction, epic: dict[str, object]) -> list[st
         violations.append(f"next_action kind {action.kind!r} is not one of {NEXT_ACTION_KINDS}")
     if action.kind in _REF_REQUIRED_KINDS and action.ref == "":
         violations.append(f"next_action kind {action.kind!r} carries an empty ref")
+    prefixes = _REF_PREFIXES.get(action.kind)
+    if prefixes is not None and not action.ref.startswith(prefixes):
+        violations.append(
+            f"next_action kind {action.kind!r} carries ref {action.ref!r}, "
+            f"which names none of {prefixes}"
+        )
     if action.kind == _NONE_KIND and action.ref != "":
         violations.append("next_action kind 'none' carries a ref")
     if action.text == "":
