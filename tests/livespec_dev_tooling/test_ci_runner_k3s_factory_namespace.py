@@ -162,10 +162,16 @@ def _role_rules(*, document: str) -> dict[tuple[str, str], frozenset[str]]:
 
 def _gates_role_rules() -> dict[tuple[str, str], frozenset[str]]:
     """The gates Role's rules, read from the gates manifest itself."""
-    for document in _documents(path=_GATES_RBAC):
-        if _top_level(document=document, key="kind") == "Role":
-            return _role_rules(document=document)
-    raise AssertionError(f"{_GATES_RBAC} declares no Role to compare the factory Role against")
+    roles = [
+        _role_rules(document=document)
+        for document in _documents(path=_GATES_RBAC)
+        if _top_level(document=document, key="kind") == "Role"
+    ]
+    assert len(roles) == 1, (
+        f"{_GATES_RBAC.name} must declare exactly ONE Role for the factory Role's batch-jobs "
+        f"verbs to be compared against the real file rather than a restatement; found {len(roles)}"
+    )
+    return roles[0]
 
 
 def _objects() -> tuple[tuple[str, str, str], ...]:
