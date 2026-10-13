@@ -28,6 +28,7 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PHASE2 = _REPO_ROOT / "ci-runner" / "k3s" / "phase2"
 _FACTORY_DIR = _PHASE2 / "factory"
+_GATES_RBAC = _PHASE2 / "gates" / "gates-rbac.yaml"
 
 # The seven objects the work-item's Definition of Done names, as KINDS: the
 # names are this repository's to choose, the kinds are not.
@@ -41,6 +42,17 @@ _EXPECTED_KINDS = (
     "ServiceAccount",
 )
 _NAMESPACE_NAME = "factory"
+# The pod-lifecycle grants a sandbox needs, each the Definition of Done's own
+# wording. `delete` is the one verb the gates credential deliberately lacks: a
+# gate Job is reaped by its own ttlSecondsAfterFinished, while the backend owns
+# its sandboxes' whole lifetime.
+_EXPECTED_POD_VERBS: dict[tuple[str, str], frozenset[str]] = {
+    ("", "pods"): frozenset({"create", "get", "list", "watch", "delete"}),
+    ("", "pods/log"): frozenset({"get"}),
+    ("", "pods/exec"): frozenset({"create"}),
+}
+_JOBS_RULE_KEY = ("batch", "jobs")
+_CLUSTER_SCOPED_KINDS = frozenset({"ClusterRole", "ClusterRoleBinding"})
 _MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 _SA_TOKEN_TYPE = "kubernetes.io/service-account-token"
 _SA_NAME_ANNOTATION = "kubernetes.io/service-account.name"
@@ -89,6 +101,43 @@ def _at_indent(*, block: str, key: str, indent: int) -> str:
     pattern = rf"(?m)^{' ' * indent}{re.escape(key)}:[ \t]*(\S.*?)[ \t]*$"
     match = re.search(pattern, block)
     return match.group(1) if match else ""
+
+
+def _flow_list(*, raw: str) -> tuple[str, ...]:
+    """The members of a YAML flow sequence such as `["create", "get"]`."""
+    return tuple(member.strip().strip("\"'") for member in raw.split(",") if member.strip())
+
+
+def _role_rules(*, document: str) -> dict[tuple[str, str], frozenset[str]]:
+    """A Role document's rules, keyed by `(apiGroup, resource)`.
+
+    Both this file's Role and `../gates/gates-rbac.yaml`'s are authored in flow
+    style with one resource per rule, which is what lets one pattern read both
+    and makes the gates comparison a read of the real file rather than a
+    restatement of it here.
+    """
+    pattern = (
+        r"-\s*apiGroups:\s*\[(?P<groups>[^\]]*)\]\s*\n"
+        r"\s*resources:\s*\[(?P<resources>[^\]]*)\]\s*\n"
+        r"\s*verbs:\s*\[(?P<verbs>[^\]]*)\]"
+    )
+    rules: dict[tuple[str, str], frozenset[str]] = {}
+    for match in re.finditer(pattern, document):
+        groups = _flow_list(raw=match.group("groups"))
+        resources = _flow_list(raw=match.group("resources"))
+        verbs = frozenset(_flow_list(raw=match.group("verbs")))
+        for group in groups:
+            for resource in resources:
+                rules[(group, resource)] = verbs
+    return rules
+
+
+def _gates_role_rules() -> dict[tuple[str, str], frozenset[str]]:
+    """The gates Role's rules, read from the gates manifest itself."""
+    for document in _documents(path=_GATES_RBAC):
+        if _top_level(document=document, key="kind") == "Role":
+            return _role_rules(document=document)
+    raise AssertionError(f"{_GATES_RBAC} declares no Role to compare the factory Role against")
 
 
 def _objects() -> tuple[tuple[str, str, str], ...]:
@@ -148,4 +197,41 @@ def test_the_factory_manifests_declare_exactly_the_seven_labelled_objects() -> N
         f"Secret {secret_name!r} annotates {_SA_NAME_ANNOTATION}={annotated!r}, which is not the "
         f"declared ServiceAccount {by_kind['ServiceAccount'][0]!r}; an unannotated token Secret "
         "is never populated and the rendered kubeconfig carries nothing"
+    )
+
+
+def test_the_factory_role_grants_the_pod_lifecycle_the_gates_job_verbs_and_no_secrets() -> None:
+    by_kind = {kind: document for kind, _, document in _objects()}
+    rules = _role_rules(document=by_kind["Role"])
+    for key, expected in _EXPECTED_POD_VERBS.items():
+        granted = rules.get(key)
+        assert granted == expected, (
+            f"the factory Role grants {sorted(granted) if granted else None} on "
+            f"{key[1]!r} in apiGroup {key[0]!r}; the sandbox lifecycle needs exactly "
+            f"{sorted(expected)}"
+        )
+    gates_job_verbs = _gates_role_rules()[_JOBS_RULE_KEY]
+    assert rules.get(_JOBS_RULE_KEY) == gates_job_verbs, (
+        f"the factory Role grants {sorted(rules.get(_JOBS_RULE_KEY) or ())} on batch jobs; it "
+        f"must grant the same verbs the gates Role grants, {sorted(gates_job_verbs)}, read from "
+        f"{_GATES_RBAC.relative_to(_REPO_ROOT)}"
+    )
+    on_secrets = sorted(key for key in rules if key[1].split("/")[0] == "secrets")
+    assert not on_secrets, (
+        f"the factory Role grants {on_secrets} — nothing on secrets, ever: the dispatcher "
+        "projects a sandbox's credentials into it, so a grant here only widens what a leaked "
+        "token reaches"
+    )
+    cluster_scoped = sorted(
+        f"{kind} {name!r}" for kind, name, _ in _objects() if kind in _CLUSTER_SCOPED_KINDS
+    )
+    assert (
+        not cluster_scoped
+    ), f"the factory artifacts declare {cluster_scoped}; nothing here may be cluster-scoped"
+    role_binding = by_kind["RoleBinding"]
+    role_ref = _top_level_block(document=role_binding, key="roleRef")
+    assert _at_indent(block=role_ref, key="kind", indent=2) == "Role", (
+        "the RoleBinding's roleRef must name a Role; a RoleBinding to a ClusterRole grants that "
+        "ClusterRole's rules in this namespace, which is the cluster-scoped grant this item "
+        "forbids wearing a namespaced hat"
     )
