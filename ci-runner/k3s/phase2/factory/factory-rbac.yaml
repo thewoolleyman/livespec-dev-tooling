@@ -1,0 +1,100 @@
+# factory-rbac.yaml — the scoped cluster credential the Kubernetes sandbox
+# backend uses to launch, watch, exec into and reap factory sandbox pods in the
+# `factory` Namespace (livespec-dev-tooling-f5e6vl, livespec plan
+# factory-worker-nodes-gitops, epic livespec-sqvj7p).
+#
+# THE SIBLING OF ../gates/gates-rbac.yaml, and deliberately the same shape: a
+# ServiceAccount, its least-privilege Role + RoleBinding, and a static-token
+# Secret REQUEST. The driver host (hp-xubuntu, where the Fabro servers run)
+# holds a kubeconfig carrying a bearer TOKEN, so that kubeconfig is NEVER
+# committed. This manifest is the non-secret half, captured as source so the
+# credential is recreatable (the fleet's live-must-equal-source rule).
+# Applying it reproduces the live objects; the ServiceAccount-token controller
+# then POPULATES the Secret's data (token, ca.crt) — those populated bytes are
+# the secret and are deliberately absent here. Rendering hp's kubeconfig from
+# that Secret is livespec-dev-tooling-sqobqv's job, not this manifest's.
+#
+# THE NAMESPACE IS DECLARED IN ./factory-namespace.yaml, not here — the reverse
+# of the gates split, where the namespace already belonged to a Kueue manifest.
+# Kueue is NOT in the factory path (maintainer ruling 2026-10-13: the namespace
+# ResourceQuota is the only bound), so the namespace has exactly one committed
+# source of truth and it sits beside this file. `kubectl apply -f <dir>` walks
+# a directory in filename order, so `factory-namespace.yaml` is applied before
+# `factory-rbac.yaml` and the namespace always exists by the time these objects
+# land.
+#
+# LEAST PRIVILEGE, and every grant is here because a sandbox lifecycle needs
+# it: create / get / list / watch / DELETE on `pods` (the backend owns its
+# sandboxes' whole lifetime, unlike a gate Job which is reaped by the Job
+# controller's own ttlSecondsAfterFinished), `get` on `pods/log` as the output
+# channel, `create` on `pods/exec` because a sandbox is driven by exec rather
+# than by its command line, and the SAME verbs on batch `jobs` the gates Role
+# grants. DELIBERATELY ABSENT: anything cluster-scoped (this is a Role, bound
+# by a RoleBinding to a Role — never a ClusterRole) and ANY verb on `secrets`.
+# The sandbox's own credentials are projected into it by the dispatcher, so a
+# grant on secrets would buy nothing and widen the blast radius of a leaked
+# token to every secret in the namespace.
+#
+# A WIDENING IS A PR, NOT A HAND PATCH. The kubernetes-sandbox-backend plugin
+# (livespec-orchestrator-beads-fabro plan kubernetes-sandbox-backend, epic
+# bd-ib-nmuyjc) may need more as its design child lands; it widens this file
+# and re-converges, because a verb added live is gone at the next boot.
+#
+# APPLIED ON EVERY BOOT by ../reconstruct/converge-ci-stack.sh step 10e. WHY AT
+# BOOT: the k3s datastore is tmpfs and EMPTY on every boot
+# (../datastore-tmpfs/), so this ServiceAccount and its token Secret are WIPED
+# at each boot; a kubeconfig rendered once then carries a token the fresh API
+# server has never seen and every call fails `Unauthorized` — the measured
+# failure ../../observability/kueue-webhook-probe-rbac.yaml's header records
+# from 2026-09-02. The factory credential therefore EXPIRES AT EVERY poweredge
+# REBOOT.
+#
+# To re-apply by hand between boots:
+#   sudo systemctl start converge-ci-stack.service   (idempotent)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sandbox-launcher
+  namespace: factory
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: f5e6vl
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sandbox-launcher
+  namespace: factory
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: f5e6vl
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sandbox-launcher
+  namespace: factory
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: f5e6vl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sandbox-launcher
+subjects:
+  - kind: ServiceAccount
+    name: sandbox-launcher
+    namespace: factory
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sandbox-launcher-token
+  namespace: factory
+  annotations:
+    kubernetes.io/service-account.name: sandbox-launcher
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: f5e6vl
+type: kubernetes.io/service-account-token
