@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.96.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.0...v1.96.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **ansible:** the confirmed reboot must run with privilege escalation ([98f15b5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/98f15b5b7fb96180e4a82785b36b3d3a7a2df6fa))
+
 ## [1.96.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.95.13...v1.96.0) (2026-10-13)
 
 
