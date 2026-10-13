@@ -937,6 +937,40 @@ def test_typed_pointer_parsing_and_prose_comparison() -> None:
     assert next_action.typing_violations(action=human, epic=_epic_record()) == []
 
 
+def test_typed_pointer_accepts_the_eight_contract_kinds() -> None:
+    """The kind set is the orchestrator contract's eight, and nothing outside them.
+
+    `livespec-orchestrator-beads-fabro` `SPECIFICATION/contracts.md` v124 widened
+    the typed `next_action` kinds from four to eight, so a plan session writing
+    `proof`, `review`, `archive` or `await` is conforming and must not be reported
+    as a typing error — while a kind outside the eight still must be.
+    """
+    next_action = _load(name="_plan_record_next_action")
+
+    assert next_action.NEXT_ACTION_KINDS == (
+        "impl",
+        "spec-op",
+        "proof",
+        "review",
+        "archive",
+        "await",
+        "human",
+        "none",
+    )
+    for kind, ref in (
+        ("proof", f"capture:{_EPIC}"),
+        ("review", _EPIC),
+        ("archive", _EPIC),
+        ("await", f"item:{_WORK_ITEM}"),
+    ):
+        action = next_action.NextAction(kind=kind, ref=ref, text="Do the thing.")
+        assert next_action.typing_violations(action=action, epic=_epic_record()) == []
+    unknown = next_action.NextAction(kind="ponder", ref=_EPIC, text="Do the thing.")
+    assert next_action.typing_violations(action=unknown, epic=_epic_record()) == [
+        f"next_action kind 'ponder' is not one of {next_action.NEXT_ACTION_KINDS}"
+    ]
+
+
 def test_timeline_findings_skip_a_record_without_an_id(*, tmp_path: Path) -> None:
     """A record with no id cannot be reported against, so it leaves the population.
 
