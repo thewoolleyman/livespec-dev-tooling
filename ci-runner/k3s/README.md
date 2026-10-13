@@ -299,6 +299,44 @@ across repos. Whoever picks up `.16` should design the per-repo cutover
 around that constraint from the start, rather than discovering it after
 attempting a shared scale set.
 
+## Rebooting the k3s server — `ansible/reboot-ci-server.yml`, and nothing else
+
+`just ansible-apply ansible/reboot-ci-server.yml -e
+ci_server_reboot_confirm=poweredge-xubuntu`, run from the control node `vps`, is
+the ONE sanctioned way to reboot the pool's control-plane node. It is a
+committed apply like every other change to these hosts, which is why it exists:
+`ssh poweredge-xubuntu 'sudo -n systemctl reboot'` is a hand change to a fleet
+host, the Driver's fleet-host guard refuses it, and the guard is right — a need
+the committed automation cannot meet is a gap in the playbooks
+(`livespec-dev-tooling-a3uvyu`).
+
+Three properties of that playbook are what make it safe to leave in the tree,
+and all three are asserted by `tests/livespec_dev_tooling/test_reboot_ci_server_playbook.py`
+rather than described only here:
+
+- **The confirmation variable is the fence.** Without
+  `ci_server_reboot_confirm` naming the host's own inventory entry — and with
+  that host being the pool's `server` — the play reads nothing, changes nothing
+  and exits 0, on an apply and under `--check` alike. So a bare apply, a
+  fleet-wide converge, a drift report and a typo that names the agent all reach
+  nothing. The playbook is NOT kept out of a sweep by being absent from an
+  argument list.
+- **It waits for an idle runner pool, and refuses rather than forcing.** The
+  reboot is held until `arc-runners` shows no unfinished pod on two consecutive
+  reads a minute apart, retried inside a bounded window of about half an hour. A
+  pool that never goes quiet ends the run with a refusal naming the busy pods —
+  a reboot taken mid-job takes the fleet's gating CI down with it and is not
+  undoable by anything later in the play.
+- **Nothing runs after the reboot.** The boot converge
+  (`phase2/reconstruct/converge-ci-stack.service`) and the agents' timers bring
+  the cluster back unattended; that is the property a reboot drill exists to
+  prove, and an operator command on the recovery path would void the proof. The
+  reboot is the last task in the file and must stay that way.
+
+Rebooting the node is not a repair step for a diverged node: that is
+`just ansible-drift ansible/ci-pool.yml` read, then `just ansible-apply
+ansible/ci-pool.yml` (step 4 of the rebuild sequence above).
+
 ## k3s uninstall procedure — what `k3s-uninstall.sh` actually does at v1.36.2+k3s1
 
 k3s does not ship a static uninstall script; `install.sh` (fetched
