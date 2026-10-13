@@ -5,8 +5,8 @@ The pointer concern, held apart from the verdicts that report it
 `next_action` and `last_session` metadata, an open plan epic's pointer is an
 object carrying exactly `kind`, `ref` and `text`, beside a non-empty
 `last_session` naming who wrote it and when. `kind` is one of `impl`,
-`spec-op`, `human` or `none`; `impl` and `spec-op` MUST carry a ref (they are
-dispatchable action ids), `none` MUST NOT.
+`spec-op`, `proof`, `review`, `archive`, `await`, `human` or `none`; `impl` and
+`spec-op` MUST carry a ref (they are dispatchable action ids), `none` MUST NOT.
 
 An ABSENT pointer and an ILL-TYPED one are different answers here, unlike in the
 resume path that reads the same metadata. A resume collapses them — both mean
@@ -35,7 +35,16 @@ __all__: list[str] = [
     "typing_violations",
 ]
 
-NEXT_ACTION_KINDS: tuple[str, ...] = ("impl", "spec-op", "human", "none")
+NEXT_ACTION_KINDS: tuple[str, ...] = (
+    "impl",
+    "spec-op",
+    "proof",
+    "review",
+    "archive",
+    "await",
+    "human",
+    "none",
+)
 
 _REF_REQUIRED_KINDS = frozenset({"impl", "spec-op"})
 _NONE_KIND = "none"
