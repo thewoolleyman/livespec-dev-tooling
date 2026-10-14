@@ -1,0 +1,44 @@
+---
+# fpart — the bulk tree-copy tool, fpart and the fpsync driver it ships.
+#
+# Work-item livespec-dev-tooling-xpeeku. A standard tool on every fleet host,
+# so it is installed by its own role and reached from both playbooks that
+# between them cover the legacy inventory (ci-pool.yml and dev-host.yml),
+# rather than bolted onto host_tools or host_tools_ci, which each cover only
+# part of it.
+#
+# WHY. On 2026-10-12 the hp-xubuntu sandbox_storage cutover
+# (livespec-dev-tooling-smrzsj) ran a single-threaded rsync over containerd's
+# millions of small files at ~1,100-3,000 stat/s, and a hand-rolled depth-2
+# parallel split collapsed to one unit because containerd keeps every snapshot
+# under one depth-2 directory. fpsync splits a tree into chunks balanced by
+# file count and size and runs N rsyncs over them. When and how to use it is
+# .ai/bulk-data-copies.md; this role only puts it on PATH.
+#
+# hp-xubuntu already carried the package, installed by hand during that
+# cutover; this role is its repository realization and is a no-op there.
+
+- name: Install fpart and fpsync
+  # `present`, never `latest`: the tool's version is the distribution's
+  # business, and the installed version is recorded on the work item instead.
+  ansible.builtin.package:
+    name: "{{ fpart_package }}"
+    state: present
+  become: true
+
+- name: Run both tools from PATH
+  # Proves the bare names resolve and execute, not only that a package is
+  # recorded. fpsync has no version flag (1.7.0 rejects -V as "Illegal
+  # option"); `-h` exits 0 and prints the version on its first line. TERM is
+  # set because fpsync calls tput at startup and warns on every call without it.
+  #
+  # Skipped under --check: on a host the check run has not installed the
+  # package on, there is nothing to execute yet.
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  environment:
+    TERM: dumb
+  changed_when: false
+  loop:
+    - fpart -V
+    - fpsync -h

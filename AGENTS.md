@@ -103,6 +103,13 @@ The files:
   the receiver that scrubs those spans is the DISPATCHING PROJECT's installed
   orchestrator plugin build, installs are per project, and a running
   dispatcher loop keeps its build until restarted (paid for 2026-09-07).
+- Read `.ai/bulk-data-copies.md` before copying, migrating, or moving a data
+  tree between disks or hosts on any fleet machine — a container store, a
+  volume, a cache tier, a disk-to-disk move — and before reaching for `rsync`,
+  `cp -a`, or a hand-rolled parallel split to do it. `fpsync` is the standard
+  tool: measure the file count and layout first, pass `-lptgoD -HAX
+  --numeric-ids` (it rejects `-a`), log progress, and checksum only AFTER the
+  copy against a quiet source (paid for on hp-xubuntu, 2026-10-12).
 
 ## Backlog drive — this repo has no foreman seat
 
