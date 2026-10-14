@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.97.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.97.0...v1.97.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **checks:** red_green_replay misroutes a staged .fabro implementation ([f8bef08](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f8bef08fb080ba21873a9de60d2eebea5dbc4cfd))
+
 ## [1.97.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.3...v1.97.0) (2026-10-14)
 
 
