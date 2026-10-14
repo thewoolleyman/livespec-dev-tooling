@@ -343,6 +343,34 @@ def test_reconcile_protection_sets_strict_off_admins_and_matrix() -> None:
     assert parsed["restrictions"] is None
 
 
+def test_reconcile_protection_puts_required_linear_history_enabled() -> None:
+    """The PUT body carries `required_linear_history: true`.
+
+    GitHub's protection PUT REPLACES the whole protection object, so a key
+    the body omits is not left alone — it reverts to its API default, and
+    `required_linear_history` defaults to OFF. A body carrying only the
+    four keys this reconciler used to send therefore turned linear history
+    OFF on every repo it wired, silently: nothing errors, and the operator
+    reads "branch protection set". Measured 2026-10-14, livespec-overseer
+    read FALSE while its three siblings read TRUE.
+    """
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    table = {
+        _TREE_ARGS: _CI_TREE,
+        _CI_ARGS: GhResult(returncode=0, stdout=_CI_YML, stderr=""),
+        _PROTECTION_PUT: ok(payload={}),
+    }
+
+    outcome = reconcile_branch_protection(
+        ctx=make_context(table=table, calls=calls), member=_MEMBER
+    )
+
+    assert isinstance(outcome, RowPass)
+    body = next(stdin for args, stdin in calls if args == _PROTECTION_PUT)
+    assert body is not None
+    assert json.loads(body).get("required_linear_history") is True
+
+
 def test_reconcile_protection_without_matrix_is_finding() -> None:
     """WITHOUT A MATRIX, which the old empty table did not actually arrange.
 
