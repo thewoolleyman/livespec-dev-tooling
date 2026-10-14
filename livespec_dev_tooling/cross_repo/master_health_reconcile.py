@@ -50,6 +50,7 @@ from livespec_dev_tooling.cross_repo.master_health_episode import (
 from livespec_dev_tooling.cross_repo.master_health_state import (
     ReconcileConfig,
     ReconcileState,
+    RevertPullRequest,
 )
 from livespec_dev_tooling.cross_repo.master_health_verdict import (
     VERDICT_FLAKE,
@@ -129,6 +130,37 @@ def episode_key(*, state: ReconcileState, config: ReconcileConfig) -> str | None
     return f"{config.target_branch}@{block[0].sha}"
 
 
+def _revert_in_flight_step(
+    *, revert: RevertPullRequest, config: ReconcileConfig, key: str | None
+) -> ReconcileStep:
+    """Decide what is owed to a revert pull request that is already open.
+
+    Split from the table below because it is a genuinely different question —
+    "what is owed to this revert" rather than "what is owed to this red
+    branch" — and because it is the half that grows: every further rule about
+    holding, releasing or escalating a revert belongs here, where the revert
+    is in scope and the branch's verdict is not.
+    """
+    if revert.fix_forward_claim is not None:
+        return ReconcileStep(
+            kind=STEP_NONE,
+            target_branch=config.target_branch,
+            reason=(
+                "a fix-forward claim holds this revert; judging the claim's "
+                "progress is not this reconciler's decision"
+            ),
+            revert_pull_request=revert.number,
+            episode_key=key,
+        )
+    return ReconcileStep(
+        kind=STEP_RELEASE_REVERT,
+        target_branch=config.target_branch,
+        reason="revert CI is green and nothing is claimed; release it to merge",
+        revert_pull_request=revert.number,
+        episode_key=key,
+    )
+
+
 def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> ReconcileStep:
     """Choose this run's single step from recorded forge truth and config.
 
@@ -160,6 +192,14 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
             ),
             episode_key=key,
         )
+
+    # A revert already in flight OWNS the decision, and outranks the re-run
+    # step: its existence means this episode is already past classification,
+    # so re-running the culprit's jobs again would answer a question that has
+    # been answered.
+    revert = state.revert_pull_request
+    if revert is not None:
+        return _revert_in_flight_step(revert=revert, config=config, key=key)
 
     if verdict == VERDICT_UNCLASSIFIED:
         return ReconcileStep(
