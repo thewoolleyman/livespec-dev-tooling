@@ -48,6 +48,7 @@ from livespec_dev_tooling.cross_repo.master_health_episode import (
     red_block,
 )
 from livespec_dev_tooling.cross_repo.master_health_state import (
+    CI_SUCCESS,
     ReconcileConfig,
     ReconcileState,
     RevertPullRequest,
@@ -152,6 +153,24 @@ def _revert_in_flight_step(
             revert_pull_request=revert.number,
             episode_key=key,
         )
+    # Only an explicit success reads as mergeable. A FAILING revert CI is
+    # evidence that reverting does not restore green — the breakage is not the
+    # culprit's, or the revert itself conflicts — and merging it would add a
+    # second broken commit to an already-broken branch. A PENDING one has not
+    # spoken yet, and reading silence as permission would race the revert's own
+    # CI and defeat the hold.
+    if revert.ci_conclusion != CI_SUCCESS:
+        return ReconcileStep(
+            kind=STEP_NEEDS_ATTENTION,
+            target_branch=config.target_branch,
+            reason=(
+                f"revert CI is {revert.ci_conclusion}, not green; merge nothing "
+                "and raise the episode for a human"
+            ),
+            revert_pull_request=revert.number,
+            episode_key=key,
+        )
+
     return ReconcileStep(
         kind=STEP_RELEASE_REVERT,
         target_branch=config.target_branch,
