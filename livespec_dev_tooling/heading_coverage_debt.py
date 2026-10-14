@@ -25,14 +25,23 @@ register can only ever restate what is already there — so the ONLY way to
 change it is to change the registry, which is exactly what the check
 compares it against.
 
-FIRST-SEEN IS READ FROM GIT, NOT DECLARED. `first_seen` is the committer
-date (`%cs`, `YYYY-MM-DD`) of the earliest commit whose
+FIRST-SEEN IS READ FROM GIT, NOT DECLARED. `first_seen` is the UTC calendar
+date (`YYYY-MM-DD`) of the committer timestamp of the earliest commit whose
 `tests/heading-coverage.json` blob already carried the row as a `TODO`. It
 is evidence rather than an assertion, which is what lets the release-tier
 age bound (charter D5, a sibling work-item) rest on it. A key git history
 cannot place — a row added in the working tree, or a registry with no
 history yet — falls back to the caller-supplied `today`, so generation never
 invents a date that looks measured.
+
+...AND THE BASIS IS UTC, NOT THE COMMIT'S OWN TIMEZONE. The recorded date and
+the committer-timestamp evidence the check next door judges it against are
+both UTC calendar dates, because the committed tier judges a tree the forge may
+have re-stamped. `%cs` renders the committer date in the COMMIT'S OWN timezone,
+so one instant carried two calendar dates and a rebase-merge — which rewrites
+exactly that field — could flip a verdict with no change to the tree; it did,
+in livespec-orchestrator-beads-fabro on 2026-10-14. `first_seen_dates` now
+reads `%cI` and normalizes, and `_utc_calendar_date` carries the measurement.
 
 ...AND ONCE RECORDED IT IS PRESERVED, NEVER RE-DERIVED. v067 of this
 repository's `SPECIFICATION/non-functional-requirements.md` adds the other
