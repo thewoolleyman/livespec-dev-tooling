@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.96.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.2...v1.96.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **fleet:** fleet conformance fails a member with linear history off ([69edb90](https://github.com/thewoolleyman/livespec-dev-tooling/commit/69edb9073102805bf7110821b76565a770ae4b87))
+* **fleet:** wire-fleet-member PUTs required_linear_history: true ([0a8e8d9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a8e8d997b36b4b7ebda3da8c9eb76dfcafe1500))
+
 ## [1.96.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.1...v1.96.2) (2026-10-14)
 
 
