@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.97.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.3...v1.97.0) (2026-10-14)
+
+
+### Features
+
+* **master-health:** classify flake, infra and unrelated red away from revert ([813f6f7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/813f6f7949d1ac0138cda42394e5c99b5a6a5243))
+* **master-health:** escalate a classified non-regression instead of reverting ([e0f7710](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e0f77105988568978de91137d4ceeecafe61ca5a))
+* **master-health:** name the culprit as the earliest red whose parent was green ([faa84e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/faa84e9d58762b79c4fdab95c25f609781bd16cf))
+* **master-health:** never merge a revert whose own CI is not green ([3ed231f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3ed231f4f204925f4d0d2fff304197a57dc35cca))
+* **master-health:** open the culprit's revert, held, on a still-red re-run ([b3833d4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b3833d4f46a444628f9fb3bb65def04afcb70875))
+* **master-health:** recorded-state vocabulary the reconciler decides over ([5848876](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5848876be93b9de448388763b97b10d5a7ceaac3))
+* **master-health:** release a green, unclaimed revert and hold a claimed one ([2bd84a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2bd84a63b2caa0d7ac25440a4869350d7a1fd0ab))
+* **master-health:** take each step once, keyed on forge state not a lock ([85ac771](https://github.com/thewoolleyman/livespec-dev-tooling/commit/85ac771b13620d8f1d502217959265ad850e613b))
+
 ## [1.96.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.2...v1.96.3) (2026-10-14)
 
 
