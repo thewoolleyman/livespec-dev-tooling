@@ -72,6 +72,11 @@ _FIRST_SEEN_MODULE_PATH = (
 
 _SCOPE_VAR = "LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF"
 
+# The RELEASE lever, which arms the age bound beside the date directions rather
+# than gating them. Read here only by the arm that drives the committed-tier
+# date verdict in both tiers, to show the one evidence read they share.
+_FAIL_VAR = "LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST"
+
 _REGISTRY_RELPATH = "tests/heading-coverage.json"
 _REGISTER_RELPATH = "tests/heading-coverage-debt.json"
 
@@ -938,6 +943,64 @@ def test_a_committed_first_seen_later_than_the_earliest_todo_commit_fails(
     assert "2026-01-02" in result.combined, (
         f"the refusal must report the committer-date evidence it judged against, "
         f"or the author cannot tell which date is wrong; output={result.combined!r}"
+    )
+
+
+@pytest.mark.usefixtures("z_rendering_git")
+@pytest.mark.parametrize("release_lever", [None, "1"], ids=["committed-tier", "release-tier"])
+def test_a_committed_first_seen_later_than_the_earliest_todo_commit_fails_on_a_z_host(
+    *,
+    release_lever: str | None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The SAME inflation, refused on a host whose git renders UTC offsets as `Z`.
+
+    git 2.51 renders a `+00:00` committer offset as a trailing `Z` under `%cI`,
+    and Python 3.10's `fromisoformat` rejects that spelling — so on a git>=2.51
+    host this check did not convict the inflation and did not acquit it either:
+    the shared evidence read raised, which a consumer with registered debt
+    meets as a crashed gate rather than as a verdict (measured 2026-10-14 on
+    hp-xubuntu; this repository's own run only survived it by sitting at zero
+    debt, which skips the history walk entirely).
+
+    BOTH TIERS ARE DRIVEN because they share that one read. The release lever
+    arms the age bound beside this direction rather than gating it, so the
+    release tier is the committed tier PLUS the age bound — and a crash in the
+    evidence takes the date verdict out of both at once.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        committed_at="2026-01-02T00:00:00+00:00",
+    )
+    _stage(tmp_path=tmp_path, register=[_entry(heading="## A", first_seen="2026-05-10")])
+    _commit_staged(
+        tmp_path=tmp_path,
+        committed_at="2026-05-10T00:00:00+00:00",
+        message="record the register with an inflated first-seen date",
+    )
+    if release_lever is None:
+        monkeypatch.delenv(_FAIL_VAR, raising=False)
+    else:
+        monkeypatch.setenv(_FAIL_VAR, release_lever)
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a committed first-seen date later than the earliest TODO commit must be "
+        f"refused on a `Z`-rendering host too; got returncode={result.returncode} "
+        f"output={result.combined!r}"
+    )
+    assert "first_seen_after_earliest_todo_commit" in result.combined, (
+        f"the refusal must name the history-evidence direction rather than die in it; "
+        f"output={result.combined!r}"
+    )
+    assert "## A" in result.combined
+    assert "2026-01-02" in result.combined, (
+        f"the refusal must report the committer-date evidence it judged against, on the "
+        f"UTC calendar and whichever way git spelled the offset; output={result.combined!r}"
     )
 
 
