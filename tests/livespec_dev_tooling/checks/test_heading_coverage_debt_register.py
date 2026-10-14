@@ -48,6 +48,7 @@ recipe or workflow passes `-m`, so nothing is filtered in or out by it.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import subprocess
@@ -65,6 +66,9 @@ pytestmark = pytest.mark.integration
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MODULE_PATH = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "heading_coverage_debt_register.py"
+_FIRST_SEEN_MODULE_PATH = (
+    _REPO_ROOT / "livespec_dev_tooling" / "checks" / "_heading_coverage_first_seen.py"
+)
 
 _SCOPE_VAR = "LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF"
 
@@ -125,6 +129,28 @@ _OWNER = "livespec-dev-tooling-own"
 _BASELINE_AT = "2026-03-04T00:00:00+00:00"
 _BASELINE_DATE = "2026-03-04"
 _LANDING_AT = "2026-03-05T00:00:00+00:00"
+
+# ONE INSTANT, RECORDED TWO WAYS — the rebase-merge defect measured on
+# 2026-10-14 in livespec-orchestrator-beads-fabro. PR 2917's head (5f9cace1)
+# carried committer date 2026-10-14T00:44:17Z and passed CI with a register row
+# dated 2026-10-14; GitHub's rebase-merge re-stamped the UNCHANGED TREE as
+# 35fea321 with the web-flow committer's Pacific offset, and the evidence read —
+# `%cs`, the committer date in the COMMIT'S OWN timezone — turned that instant
+# into 2026-10-13. The row's 2026-10-14 was then "later than the committer
+# date", master CI failed with `first_seen_after_earliest_todo_commit`, and every
+# dispatch in that repository was refused by the green-master gate until a
+# fix-forward landed. Any spec PR that adds a `TODO` row and merges between
+# 00:00Z and 07:00Z reaches this in any rebase-merge repository of the fleet.
+#
+# The fixture instant is deliberately NOT the measured one: these arms assert on
+# the DATE STRING the check reports, and structlog stamps every finding with the
+# wall clock, so a fixture dated today would be satisfied by that stamp rather
+# than by the evidence under test.
+_REBASE_INSTANT_UTC = "2026-05-07T00:44:17+00:00"
+_REBASE_INSTANT_PACIFIC = "2026-05-06T17:44:17-07:00"
+_REBASE_INSTANT_UTC_DATE = "2026-05-07"
+_REBASE_INSTANT_LOCAL_DATE = "2026-05-06"
+_AFTER_THE_REBASE_INSTANT = "2026-05-08"
 
 
 def _governed_resolved_row(
@@ -244,6 +270,44 @@ def _git(*, cwd: Path, args: list[str], committed_at: str | None = None) -> None
         check=True,
         env=env,
     )
+
+
+def _head_tree_sha(*, cwd: Path) -> str:
+    """The tree object `HEAD` points at — the IDENTITY of what was committed.
+
+    A rebase-merge rewrites commit METADATA and carries the tree across
+    untouched, so the arm proving the verdict survives one has to show that the
+    tree really did not move. Without it that arm would prove only that two
+    different commits happen to agree, which is a weaker claim than the
+    invariant it exists to pin.
+    """
+    # S603/S607: argv is a fixed list of literal git args; bare `git` is the
+    # canonical invocation per system PATH; no untrusted shell input.
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"HOME": str(cwd), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/usr/bin:/bin"},
+    )
+    return completed.stdout.strip()
+
+
+def _module_docstring(*, path: Path) -> str:
+    """The module docstring of the Python source at `path`, whitespace-normalized.
+
+    PARSED rather than imported: `_heading_coverage_first_seen` is a PRIVATE
+    sibling of the check under test, so importing it here to read `__doc__`
+    would be exactly the cross-module private import pyright strict
+    (`reportPrivateUsage`) and the `private_calls` check both refuse. Reading
+    the docstring node keeps the assertion about the DOCSTRING rather than
+    about the file's text, so a matching phrase in a comment elsewhere cannot
+    satisfy it.
+    """
+    docstring = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+    assert docstring is not None, f"{path} must carry a module docstring"
+    return " ".join(docstring.split())
 
 
 def _write(*, tmp_path: Path, relpath: str, entries: object) -> None:
@@ -998,6 +1062,165 @@ def test_a_resolved_repository_needs_no_history_evidence(
         f"got returncode={result.returncode} output={result.combined!r}"
     )
     assert "first_seen_evidence_unavailable" not in result.combined
+
+
+@pytest.mark.parametrize(
+    "committed_at",
+    [_REBASE_INSTANT_UTC, _REBASE_INSTANT_PACIFIC],
+    ids=["committed-in-utc", "committed-at-a-pacific-offset"],
+)
+def test_a_committed_first_seen_equal_to_the_utc_committer_date_passes_at_any_offset(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    committed_at: str,
+) -> None:
+    """SCENARIO: the committed tier reads its evidence on ONE timezone basis — UTC.
+
+    The two parameters are the SAME INSTANT: `2026-05-07T00:44:17+00:00` and
+    `2026-05-06T17:44:17-07:00` differ only in the offset the committer's clock
+    was set to. The register records that instant's UTC calendar date, which is
+    what mechanical regeneration produced for it, so both must pass.
+
+    The Pacific arm is the defect: read in the commit's own timezone the instant
+    is 2026-05-06, the recorded 2026-05-07 is then "later than the committer
+    date", and the check convicts a row no author got wrong.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        register=[_entry(heading="## A", first_seen=_REBASE_INSTANT_UTC_DATE)],
+        committed_at=committed_at,
+    )
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, (
+        f"a first-seen date equal to the UTC calendar date of the earliest carrying "
+        f"commit must pass whatever offset that commit was recorded at; got "
+        f"returncode={result.returncode} output={result.combined!r}"
+    )
+    assert "first_seen_after_earliest_todo_commit" not in result.combined
+
+
+def test_the_committed_verdict_survives_a_rebase_merge_that_rewrites_the_committer_zone(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: the same tree earns the same verdict before and after a rebase-merge.
+
+    This is the defect END TO END rather than as a date comparison. The PR head
+    is committed in UTC and passes; the forge's rebase-merge then re-stamps the
+    IDENTICAL TREE under the web-flow committer's Pacific offset, which is the
+    only thing that changes — asserted here on the tree object, not assumed.
+
+    A gate whose verdict moves with that re-stamp is not a gate on the tree at
+    all: it certifies a PR and then reddens master for the same bytes, and in
+    livespec-orchestrator-beads-fabro on 2026-10-14 it did, taking every
+    dispatch in that repository down with it until a fix-forward landed.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        register=[_entry(heading="## A", first_seen=_REBASE_INSTANT_UTC_DATE)],
+        committed_at=_REBASE_INSTANT_UTC,
+    )
+    pr_head_tree = _head_tree_sha(cwd=tmp_path)
+    pr_head = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    _git(
+        cwd=tmp_path,
+        args=["commit", "-q", "--amend", "--no-edit"],
+        committed_at=_REBASE_INSTANT_PACIFIC,
+    )
+
+    assert _head_tree_sha(cwd=tmp_path) == pr_head_tree, (
+        "the fixture must change the committer timezone ALONE; a moved tree would "
+        "make the comparison below prove nothing about rebase-merge invariance"
+    )
+    rebased = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert pr_head.returncode == 0, (
+        f"the PR head must pass, or the arm proves invariance of a refusal rather "
+        f"than of a pass; got returncode={pr_head.returncode} "
+        f"output={pr_head.combined!r}"
+    )
+    assert rebased.returncode == pr_head.returncode, (
+        f"the rebase-merged commit of an unchanged tree must earn the PR head's "
+        f"verdict; got {rebased.returncode} after the rebase and "
+        f"{pr_head.returncode} before it, output={rebased.combined!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "committed_at",
+    [_REBASE_INSTANT_UTC, _REBASE_INSTANT_PACIFIC],
+    ids=["committed-in-utc", "committed-at-a-pacific-offset"],
+)
+def test_a_committed_first_seen_after_the_utc_committer_date_fails_at_any_offset(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    committed_at: str,
+) -> None:
+    """CONTROL: normalizing the basis to UTC removes no conviction the clause owes.
+
+    A date genuinely later than the instant's UTC calendar date is still
+    inflation, and is still refused by name, at either offset — otherwise the
+    invariance proved above would have been bought by making the direction
+    blind.
+
+    The reported `evidence` is asserted to BE the UTC date rather than the
+    commit's local one, which is also what makes the Pacific arm a real
+    discriminator: read in the commit's own zone this row is refused too, just
+    while naming a date one day earlier than the one it was judged against.
+    """
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_todo(heading="## A")],
+        register=[_entry(heading="## A", first_seen=_AFTER_THE_REBASE_INSTANT)],
+        committed_at=committed_at,
+    )
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a first-seen date later than the UTC calendar date of the earliest "
+        f"carrying commit must be refused; got returncode={result.returncode} "
+        f"output={result.combined!r}"
+    )
+    assert "first_seen_after_earliest_todo_commit" in result.combined, (
+        f"the refusal must name the history-evidence direction; " f"output={result.combined!r}"
+    )
+    assert _REBASE_INSTANT_UTC_DATE in result.combined, (
+        f"the refusal must report the UTC calendar date it judged against, or the "
+        f"evidence it names is not the evidence it used; output={result.combined!r}"
+    )
+    assert _REBASE_INSTANT_LOCAL_DATE not in result.combined, (
+        f"the refusal must not report the committer's LOCAL calendar date as the "
+        f"evidence; output={result.combined!r}"
+    )
+
+
+def test_the_first_seen_directions_record_the_utc_comparison_basis() -> None:
+    """The sibling that owns both date tiers states the basis its evidence is read on.
+
+    Not housekeeping: the timezone basis IS the invariant this mechanism turned
+    out to rest on, and the module's own account of its evidence ("the committer
+    date of the earliest commit") was silent on it — which is precisely how the
+    `%cs` read survived review. A reader who cannot tell which basis the two
+    sides are compared on cannot tell whether the verdict survives a
+    rebase-merge, and the next reader reaching for a committer date has nothing
+    to hold the invariant against.
+    """
+    doc = _module_docstring(path=_FIRST_SEEN_MODULE_PATH)
+
+    assert "UTC calendar date" in doc, (
+        f"`_heading_coverage_first_seen`'s module docstring must state that "
+        f"`first_seen` and the committer-date evidence are compared as UTC calendar "
+        f"dates; got {doc!r}"
+    )
 
 
 def test_a_new_todo_for_a_governed_heading_fails_against_an_empty_committed_register(

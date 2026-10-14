@@ -35,6 +35,21 @@ on different evidence because only one of them has evidence to rest on:
 Neither tier runs the other's comparison. An author is judged on what they can
 answer for; a landed tree is judged on what the repository can prove.
 
+BOTH SIDES ARE UTC CALENDAR DATES, AND THAT IS THE WHOLE OF THE INVARIANT. A
+recorded `first_seen` and the committer-timestamp evidence it is judged against
+are compared as UTC calendar dates: `heading_coverage_debt.first_seen_dates`
+reads `%cI` and normalizes the instant to UTC, and mechanical regeneration
+authors the recorded date off that same answer. The basis is load-bearing
+rather than incidental, because the committed tier judges a tree the forge may
+have re-stamped. Until 2026-10-14 the evidence was read as `%cs` — the
+committer date in the COMMIT'S OWN timezone — so one instant carried two
+calendar dates and the verdict moved with the committer's offset: in
+livespec-orchestrator-beads-fabro a PR committed at 2026-10-14T00:44:17Z passed
+with a row dated 2026-10-14, the rebase-merge re-stamped the unchanged tree
+under a Pacific offset, and `first_seen_after_earliest_todo_commit` turned
+master red on the date that PR had just certified. A gate whose verdict a
+timezone rewrite can flip is not a gate on the tree at all.
+
 ONLY LATER IS FORBIDDEN — EARLIER IS LEGITIMATE AND ORDINARY. A row authored
 in a working tree is dated the day it was authored and committed a day or more
 after, so a correct recorded date PRECEDES its committer-date evidence; that
