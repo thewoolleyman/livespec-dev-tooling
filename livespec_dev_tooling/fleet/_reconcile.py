@@ -194,10 +194,20 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
                 "matrix targets); set branch protection manually"
             )
         )
+    # EVERY key the fleet mandates has to appear here, because this PUT
+    # REPLACES the whole protection object: a key the body omits is not
+    # left alone, it reverts to GitHub's API default. That is how
+    # `required_linear_history` — required TRUE by livespec
+    # non-functional-requirements section "Commit and merge discipline",
+    # and defaulting to OFF — was turned off on every repo this wired,
+    # silently, since nothing errors and the operator reads "branch
+    # protection set" (measured 2026-10-14: livespec-overseer FALSE while
+    # its three siblings read TRUE).
     body = json.dumps(
         {
             "required_status_checks": {"strict": False, "contexts": sorted(matrix)},
             "enforce_admins": True,
+            "required_linear_history": True,
             "required_pull_request_reviews": None,
             "restrictions": None,
         }
@@ -215,7 +225,12 @@ def reconcile_branch_protection(*, ctx: FleetContext, member: FleetMember) -> Ro
     )
     if failure is not None:
         return failure
-    return RowPass(note="branch protection set (strict=off + enforce_admins + ci matrix checks)")
+    return RowPass(
+        note=(
+            "branch protection set (strict=off + enforce_admins + "
+            "required_linear_history + ci matrix checks)"
+        )
+    )
 
 
 def reconcile_merge_settings(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
