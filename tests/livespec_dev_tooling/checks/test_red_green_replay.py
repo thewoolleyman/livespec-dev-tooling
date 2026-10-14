@@ -16,9 +16,10 @@ file path):
 3. tests-only `.py` staged + pytest PASSES ⇒ `feat:`/`fix:` keeps the
    loud `test-passed-at-red` reject (the author DECLARED a behavior
    change, so their test must fail first) UNLESS a non-`.py`
-   implementation (`.sh`, `.just`, `.yml`/`.yaml`, a justfile) is
-   staged beside the test, which the `.py`-only impl bucket cannot
-   see (work-item livespec-dev-tooling-9yrr); any other prefix is a
+   implementation (`.sh`, `.just`, `.yml`/`.yaml`, `.fabro`, a
+   justfile) is staged beside the test, which the `.py`-only impl
+   bucket cannot see (work-item livespec-dev-tooling-9yrr, extended to
+   `.fabro` by livespec-dev-tooling-cri37n); any other prefix is a
    test-only cleanup and takes the green-verified leg;
 4. product impl `.py` staged with `TDD-Red-*` trailers WITHOUT
    `TDD-Green-*` trailers at HEAD (a genuine amend-in-progress;
@@ -3549,6 +3550,217 @@ def test_fix_staging_shell_fixture_under_tests_still_rejects_at_red(
     assert (
         "test-passed-at-red" in result.stderr
     ), f"expected the unchanged test-passed-at-red rejection; got stderr={result.stderr!r}"
+
+
+_FABRO_IMPL_PATH = ".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro"
+_FABRO_IMPL_BODY = 'node "implement" {\n  prompt = "implement the work item"\n}\n'
+
+
+def test_fix_staging_fabro_impl_beside_passing_test_takes_suite_green_leg(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A `fix:` whose implementation is a `.fabro` workflow may ship WITH its test.
+
+    `workflow.fabro` is the Fabro workflow DEFINITION the dispatcher
+    renders for every run — a shipped product artifact a test can pin,
+    exactly as `.github/workflows/*.yml` is. It is not `.py`, so it
+    entered neither bucket and the staging presented as TESTS-ONLY;
+    every orchestrator `workflow.fabro` fix therefore died at implement
+    (work-item livespec-dev-tooling-cri37n). The acceptance is the same
+    one `.sh` and `.just` earned: the `test-passed-at-red` premise is
+    false when implementation IS staged beside the test, so the commit
+    takes the green-verified leg and its FULL-suite run.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            _FABRO_IMPL_PATH: _FABRO_IMPL_BODY,
+            "tests/test_implement_workflow.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        tmp_path=tmp_path,
+        subject="fix(workflow): stop the implement node dropping its run id\n",
+    )
+
+    assert result.returncode == 0, (
+        f"a fix: pairing a .fabro implementation with its test must be accepted; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert "test-passed-at-red" not in result.stderr, (
+        f"test-passed-at-red MUST NOT fire when a .fabro implementation is staged; "
+        f"got stderr={result.stderr!r}"
+    )
+    assert "multi-test-file" not in result.stderr.lower(), (
+        f"multi-test-file MUST NOT fire when a .fabro implementation is staged; "
+        f"got stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"the commit must take the green-verified leg and record its evidence; "
+        f"got final_msg={final_msg!r}"
+    )
+
+
+def test_fix_staging_fabro_impl_beside_two_passing_tests_takes_suite_green_leg(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Two staged test files beside a `.fabro` implementation are NOT `multi-test-file`.
+
+    The per-file Red rule is a property of the RED leg's singular
+    `TDD-Red-Test-File-Checksum:` field, so it must not be charged to a
+    staging that never reaches that leg. This is the exact shape the
+    measured run (hp 01M4WAZA4CK5ANK4WQQYV6VA5D) died on: its Green
+    amendment staged its test files plus `workflow.fabro` and was
+    refused `multi-test-file: Red mode is per-file`. With the `.fabro`
+    recognized as implementation the staging is green-verified instead,
+    which runs the FULL suite over BOTH test files.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            _FABRO_IMPL_PATH: _FABRO_IMPL_BODY,
+            "tests/test_implement_workflow.py": _PASSING_TEST_BODY,
+            "tests/test_implement_workflow_nodes.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        tmp_path=tmp_path,
+        subject="fix(workflow): carry the run id through every implement node\n",
+    )
+
+    assert result.returncode == 0, (
+        f"two test files beside a .fabro implementation must be accepted; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert "multi-test-file" not in result.stderr.lower(), (
+        f"multi-test-file belongs to the Red leg, which a staged .fabro implementation "
+        f"never reaches; got stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, (
+        f"the commit must take the green-verified leg and record its evidence; "
+        f"got final_msg={final_msg!r}"
+    )
+
+
+def test_fix_staging_two_test_files_with_no_implementation_still_rejects_multi_test_file(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Discrimination leg: no implementation of ANY suffix still owes a per-file Red.
+
+    The acceptance above narrows `multi-test-file` by routing a staging
+    that carries implementation away from the Red leg — it does NOT
+    retire the diagnostic. A `fix:` staging two test files and nothing
+    else declares a behavior change with no implementation at all, so
+    the Red leg is still the right leg and its per-file rule still
+    convicts, with the verbatim diagnostic.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            "tests/test_implement_workflow.py": _PASSING_TEST_BODY,
+            "tests/test_implement_workflow_nodes.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, _msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        tmp_path=tmp_path,
+        subject="fix(workflow): carry the run id through every implement node\n",
+    )
+
+    assert result.returncode != 0, (
+        f"two test files with no implementation must still reject; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert "multi-test-file: Red mode is per-file (one test file per commit)" in result.stderr, (
+        f"expected the verbatim multi-test-file diagnostic; " f"got stderr={result.stderr!r}"
+    )
+
+
+def test_fix_staging_fabro_fixture_under_tests_still_rejects_at_red(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A `.fabro` under `tests/` is test material, not implementation.
+
+    The same `tests/`-scoped discrimination the `.sh` fixture case
+    pins: a workflow FIXTURE committed under the tests tree is part of
+    the test being authored, so the implementation it exercises is
+    still unstaged and the `test-passed-at-red` premise holds.
+    """
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            "tests/fixtures/sample_workflow.fabro": _FABRO_IMPL_BODY,
+            "tests/test_fabro_workflow_parser.py": _PASSING_TEST_BODY,
+        },
+    )
+
+    result, _msg_path = _run_commit_msg_hook(
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        tmp_path=tmp_path,
+        subject="fix(checks): parse fabro workflow fixtures\n",
+    )
+
+    assert result.returncode != 0, (
+        f"a fixture under tests/ is not implementation; the fix: subject must still "
+        f"reject; got returncode={result.returncode} stderr={result.stderr!r}"
+    )
+    assert (
+        "test-passed-at-red" in result.stderr
+    ), f"expected the unchanged test-passed-at-red rejection; got stderr={result.stderr!r}"
+
+
+def test_no_arg_range_commit_touching_only_fabro_and_tests_exits_zero(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The commit-RANGE validator must agree with the hook about `.fabro`.
+
+    The acceptance is deliberately consulted at exactly ONE place, so
+    the impl BUCKET stays `.py`-only and the range validator is NOT
+    widened: `_commit_violates` filters to product `.py`, so a commit
+    whose tree touches only a `.fabro` and test files carries no
+    evidence to require and passes without conviction. Pinning it keeps
+    a later widening of the bucket from retroactively reddening exactly
+    the commits this item unblocks.
+    """
+    _init_range_repo(tmp_path=tmp_path)
+    fabro_path = tmp_path / _FABRO_IMPL_PATH
+    fabro_path.parent.mkdir(parents=True, exist_ok=True)
+    fabro_path.write_text(_FABRO_IMPL_BODY, encoding="utf-8")
+    (tmp_path / "tests").mkdir(exist_ok=True)
+    (tmp_path / "tests" / "test_implement_workflow.py").write_text(
+        _PASSING_TEST_BODY, encoding="utf-8"
+    )
+    _commit_all(tmp_path=tmp_path, message="fix(workflow): carry the run id")
+
+    result = _run_no_arg(monkeypatch=monkeypatch, capsys=capsys, tmp_path=tmp_path)
+
+    assert result.returncode == 0, (
+        f"a range commit touching only a .fabro and test files must not be convicted; "
+        f"got returncode={result.returncode} stderr={result.stderr!r}"
+    )
 
 
 def test_main_renders_the_consumer_config_parse_failure(
