@@ -52,8 +52,11 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
     ReconcileState,
 )
 from livespec_dev_tooling.cross_repo.master_health_verdict import (
+    VERDICT_FLAKE,
     VERDICT_GREEN,
+    VERDICT_INFRA,
     VERDICT_UNCLASSIFIED,
+    VERDICT_UNRELATED,
     red_verdict,
 )
 
@@ -141,6 +144,21 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
             kind=STEP_NONE,
             target_branch=config.target_branch,
             reason="branch is green; nothing to heal",
+        )
+
+    # Matched BEFORE any branch that can release a revert — see this module's
+    # docstring. A revert may already be open and green here; escalating anyway
+    # is the point, because the red this revert was opened for has since been
+    # classified as something no revert fixes.
+    if verdict in (VERDICT_FLAKE, VERDICT_INFRA, VERDICT_UNRELATED):
+        return ReconcileStep(
+            kind=STEP_NEEDS_ATTENTION,
+            target_branch=config.target_branch,
+            reason=(
+                f"red classified as {verdict}, which no revert fixes; "
+                "raise the episode for a human and merge nothing"
+            ),
+            episode_key=key,
         )
 
     if verdict == VERDICT_UNCLASSIFIED:
