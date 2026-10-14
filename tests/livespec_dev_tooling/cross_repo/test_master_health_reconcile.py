@@ -26,6 +26,7 @@ from livespec_dev_tooling.cross_repo.master_health_reconcile import (
 )
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_FAILURE,
+    CI_PENDING,
     CI_SUCCESS,
     RERUN_NOT_ATTEMPTED,
     RERUN_PASSED,
@@ -270,3 +271,47 @@ def test_a_fix_forward_claim_holds_the_revert_rather_than_releasing_it() -> None
 
     assert step.kind == STEP_NONE
     assert "claim" in step.reason
+
+
+def test_a_revert_whose_own_ci_is_red_is_not_merged_and_escalates() -> None:
+    """The acceptance assertion: a red revert CI is never merged.
+
+    A revert whose own CI fails is evidence that reverting does NOT restore
+    green — the branch is broken by something the culprit did not introduce, or
+    the revert itself conflicts. Merging it would add a second broken commit to
+    an already-broken branch, so the only safe step is to hand the episode to
+    a human.
+    """
+    red_revert = RevertPullRequest(
+        number=3001,
+        reverts_pull_request=2917,
+        ci_conclusion=CI_FAILURE,
+        auto_merge_armed=False,
+        fix_forward_claim=None,
+    )
+
+    step = reconcile_step(state=_still_red_with_revert(revert=red_revert), config=_CONFIG)
+
+    assert step.kind == STEP_NEEDS_ATTENTION
+    assert step.revert_pull_request == 3001
+    assert step.episode_key == "master@35fea321"
+
+
+def test_a_revert_whose_ci_has_not_concluded_is_not_merged_either() -> None:
+    """Pending is not green, and must not be read as permission to merge.
+
+    This is the same distinction the state vocabulary draws for the branch
+    itself: only an explicit success reads as green. Treating "no conclusion
+    yet" as mergeable would race the revert's own CI and defeat the hold.
+    """
+    pending_revert = RevertPullRequest(
+        number=3001,
+        reverts_pull_request=2917,
+        ci_conclusion=CI_PENDING,
+        auto_merge_armed=False,
+        fix_forward_claim=None,
+    )
+
+    step = reconcile_step(state=_still_red_with_revert(revert=pending_revert), config=_CONFIG)
+
+    assert step.kind == STEP_NEEDS_ATTENTION
