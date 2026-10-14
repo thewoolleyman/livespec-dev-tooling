@@ -63,7 +63,7 @@ source of truth for how the tool is invoked.
 
 | Playbook | Hosts | Migrated from |
 |---|---|---|
-| `ci-pool.yml` | `poweredge-xubuntu`, `gmktec-xubuntu` | `ci-runner/k3s/phase2/install-node.sh` |
+| `ci-pool.yml` | `poweredge-xubuntu`, `gmktec-xubuntu`, `hp-xubuntu` | `ci-runner/k3s/phase2/install-node.sh` |
 | `gates-kubeconfig.yml` | `vps` | `vps-info` `services/gates-kubeconfig/` |
 | `fabro-hosts.yml` | `hp-xubuntu`, `vps` | `fabro-hosts` `services/` |
 | `dev-host.yml` | `vps` | `vps-info` `services/` |
@@ -93,6 +93,27 @@ stale k3s node-password secret (`agent_node_password`). Until it landed, no
 playbook targeted `ci_pool`, so `poweredge-xubuntu` and `gmktec-xubuntu`
 drifted unreached
 (`livespec-dev-tooling-9btv`).
+
+It also carries the FACTORY label's declarative reconcile (`node_labels`), which
+sits beside `node_taints` and for the same reason: k3s applies `--node-label` at
+node REGISTRATION only, so the label `provision-k3s.sh` registers at join is gone
+the next time the cluster's objects are re-created. Every `ci_pool` node runs it,
+the SERVER included — `poweredge-xubuntu` is a factory node and is untainted,
+which is why "the factory nodes" could not be spelled as "the tainted ones".
+
+**Two gating axes, not one.** `cluster_role` answers "server or agent".
+`hp-xubuntu` is the first node for which that is not the whole question: it is a
+Fabro FACTORY host that joins the pool as a full agent and executes **no CI
+job**, carrying none of the pool's CI storage tiers. That posture is read from
+the node's own committed phase0 profile (`CI_NODE_FACILITIES`, whose `none` the
+profile parser refuses unless the profile *also* declares no tier,
+`ADMISSION_CAPACITY_C=0` and a `node-role/ci` taint), and the four roles whose
+whole subject is a CI tier or a CI job's execution environment —
+`storage_layout`, `sccache_binary`, `cache_telemetry`, `container_hook` — are
+gated on it with a `when:` in this one play rather than in a second play. Read
+`ci-pool.yml`'s header for the three roles a closed node still runs and why each
+one, and `tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py`
+for the test that resolves the whole answer from the inventory and the profiles.
 
 `ci_converge_unit` only ENABLES `converge-ci-stack.service` for the next boot; to
 apply a committed change to the cluster stack now, pass `-e

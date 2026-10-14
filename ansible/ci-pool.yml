@@ -1,6 +1,7 @@
 ---
-# The k3s CI pool's node-local provisioning — poweredge-xubuntu (server) and
-# gmktec-xubuntu (agent). Migrated from ci-runner/k3s/phase2/install-node.sh.
+# The k3s CI pool's node-local provisioning — poweredge-xubuntu (server),
+# gmktec-xubuntu (agent) and hp-xubuntu (a FACTORY-ONLY agent). Migrated from
+# ci-runner/k3s/phase2/install-node.sh.
 #
 # WHY THIS PLAYBOOK EXISTS (livespec-dev-tooling-9btv). Phase 3 of the Ansible
 # migration built the k3s-node roles and the `ci_pool` inventory group but NO
@@ -47,10 +48,61 @@
 #     before it advertises the churn-slot capacity it can actually serve.
 # credential -> capacity -> taint: that is the safe opening order, and it is why
 # these two sit where they do rather than at the ends of the list.
+#
+# A THIRD AXIS OF GATING, ADDED FOR hp-xubuntu (livespec-dev-tooling-7we6po).
+# `cluster_role` answers "server or agent". It cannot answer "does this node
+# execute CI jobs at all", and hp-xubuntu is the first node for which the two
+# differ: it is a full AGENT that carries none of the pool's CI storage tiers
+# and runs no runner pod, because it is a Fabro FACTORY host first. That posture
+# is read from the node's own committed profile — `CI_NODE_FACILITIES`, whose
+# `none` the parser refuses unless the profile ALSO declares no tier,
+# ADMISSION_CAPACITY_C=0 and a node-role/ci taint — and the four roles whose
+# whole subject is a CI tier or a CI job's execution environment are gated on
+# it below.
+#
+# THE GATES LIVE HERE, IN THE ONE PLAY, rather than in a second play or a
+# self-gate inside each role (maintainer ruling 2026-10-13). §"Runner-pool node
+# rebuild recipe" requires ONE procedure, and a reader asking "what does this
+# node get" must be able to answer it from this file plus that node's profile.
+# `tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py` resolves
+# exactly that, from exactly those two inputs.
+#
+# THREE ROLES THAT A CLOSED NODE STILL RUNS, decided explicitly rather than by
+# omission, because each one looks skippable and is not:
+#   * apparmor_profile loads the `ci-runner-workflow` profile into the KERNEL. It
+#     reads no tier and needs no job. hp is a full agent and the
+#     kubernetes-sandbox-backend will place pods on it (that is what the factory
+#     label is for); a pod that names a confinement profile the node has not
+#     loaded fails to start for a reason nothing in the pod explains.
+#   * node_status_credential mints and delivers the scoped node-status
+#     kubeconfig. It runs at capacity 0 because an ADVERTISED zero and an ABSENT
+#     resource are different facts: a ClusterQueue naming a resource no node
+#     advertises reports an inactive flavor, where one summing an advertised 0
+#     reports the quota it actually has. Closed has to be a positive statement
+#     the server can read.
+#   * node_extended_resource stamps that 0 and re-stamps it every five minutes,
+#     because an extended resource set with `kubectl patch node
+#     --subresource=status` is NOT persisted by kubelet. It also refuses a
+#     non-numeric capacity, so 0 is a declared measurement here and not a
+#     default.
+# Running all three is also what makes "opening hp to CI later is a profile edit
+# plus an apply" true: nothing has to be minted, loaded or installed first.
 
 - name: K3s CI pool node-local provisioning
   hosts: ci_pool
   gather_facts: true
+  vars:
+    # The node's own committed profile, and the ONE posture fact read out of it.
+    # Read on the CONTROLLER, because the profile lives in this repository and
+    # the target has no checkout — the same `lookup` + `regex_findall | first`
+    # chain every role in this tree reads a profile with. The default is the
+    # parser's own (`full`), so a profile written before the key existed
+    # resolves to the posture it already has rather than to an error.
+    ci_pool_profile: >-
+      {{ playbook_dir }}/../ci-runner/k3s/phase0-bare-metal/profiles/{{ inventory_hostname }}.env
+    ci_pool_ci_node_facilities: >-
+      {{ lookup('ansible.builtin.file', ci_pool_profile)
+      | regex_findall('^CI_NODE_FACILITIES=(.*)$', multiline=True) | first | default('full') }}
   roles:
     # 1/10 — k3s config (server or agent); self-gated.
     - role: k3s_config
@@ -67,9 +119,14 @@
     # 2/10 — inotify + keyring sysctls (one role covers both).
     - role: node_sysctl
       tags: [node_sysctl]
-    # 2b/10 — storage layout (mount the LABEL-ed tiers; no-op when live).
+    # 2b/10 — storage layout (mount the LABEL-ed tiers; no-op when live). Gated:
+    # this role's whole subject is the three LABEL-keyed tiers and the two binds
+    # onto them, and it REFUSES an apply at its first label resolution on a node
+    # that carries none — which is the honest refusal, and the reason a
+    # factory-only node must not reach it at all.
     - role: storage_layout
       tags: [storage_layout]
+      when: ci_pool_ci_node_facilities == 'full'
     # 2c/10 — iDRAC cooling (PowerEdge hardware; server-only, STEP_SKIP).
     - role: host_thermal
       tags: [host_thermal]
@@ -93,6 +150,14 @@
     # opened for scheduling only once it advertises its capacity.
     - role: node_taints
       tags: [node_taints]
+    # Beside it, and for the same reason it exists: k3s applies --node-label at
+    # REGISTRATION only, so the FACTORY label provision-k3s.sh registers at join
+    # is gone the next time the cluster's objects are re-created. This reconciles
+    # it to the profile's FACTORY_NODE on every apply. EVERY ci_pool node runs it,
+    # the server included — poweredge is a factory node AND untainted, which is
+    # exactly why the label could not be expressed as "the tainted ones".
+    - role: node_labels
+      tags: [node_labels]
     # 5/10 — wedged-runner sweep; self-gated.
     - role: wedged_runner
       tags: [wedged_runner]
@@ -107,14 +172,22 @@
     - role: secret_reinjection
       tags: [secret_reinjection]
       when: cluster_role == 'server'
-    # 7b/10 — pool-provided sccache binary + its cache telemetry.
+    # 7b/10 — pool-provided sccache binary + its cache telemetry. Gated: both
+    # install into the directory arc/hook-pod-template.yaml mounts READ-ONLY into
+    # every JOB container, and cache_telemetry's spans are about the cache tiers.
+    # A node that runs no job has nothing on the other end of either.
     - role: sccache_binary
       tags: [sccache_binary]
+      when: ci_pool_ci_node_facilities == 'full'
     - role: cache_telemetry
       tags: [cache_telemetry]
-    # 7c/10 — fleet-patched ARC container hook + externals extraction.
+      when: ci_pool_ci_node_facilities == 'full'
+    # 7c/10 — fleet-patched ARC container hook + externals extraction. Gated: it
+    # extracts the runner image's externals under the local-path root for ARC's
+    # container hook, which only a node running RUNNER pods uses.
     - role: container_hook
       tags: [container_hook]
+      when: ci_pool_ci_node_facilities == 'full'
     # 8/10 — reconstruct-on-boot converge unit (server-only, STEP_SKIP).
     - role: ci_converge_unit
       tags: [ci_converge_unit]
