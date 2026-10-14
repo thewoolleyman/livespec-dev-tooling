@@ -417,6 +417,28 @@ def test_a_z_rendered_utc_offset_dates_identically_to_an_explicit_plus_zero_offs
     ), "the two renderings name the same instant, so they must not yield two dates"
 
 
+@pytest.mark.usefixtures("z_rendering_git")
+def test_first_seen_dates_are_read_from_the_earliest_carrying_commit_on_a_z_host(
+    *, tmp_path: Path
+) -> None:
+    """The SAME history, read on a host whose git renders UTC offsets as `Z`.
+
+    The fixture commits are made at `+00:00`, exactly as every other arm here
+    makes them — what the shim changes is only the SPELLING the host's git
+    hands the read. The expected dates are therefore the `+00:00` arm's dates
+    to the character: one instant owes one calendar date, and which git version
+    printed it is a fact about the observer.
+    """
+    _seed_repo(tmp_path=tmp_path)
+
+    dates = _MODULE.first_seen_dates(cwd=tmp_path)
+
+    assert dates == {
+        ("SPECIFICATION", "spec.md", "## Heading A"): "2026-01-02",
+        ("SPECIFICATION", "spec.md", "## Heading B"): "2026-03-04",
+    }, f"a `Z`-rendering git must place the same dates a `+00:00` one does; got {dates!r}"
+
+
 def test_generate_register_dates_a_new_key_on_the_utc_calendar_and_preserves_recorded(
     *, tmp_path: Path
 ) -> None:
@@ -766,3 +788,41 @@ def test_main_refuses_to_overwrite_the_register_from_an_unreadable_registry(
     assert register.read_bytes() == before
     combined = capsys.readouterr()
     assert "rows-file-not-an-array" in combined.out + combined.err
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures("z_rendering_git")
+def test_both_generator_entry_points_complete_on_live_debt_on_a_z_host(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both generator entry points regenerate the register on a `Z`-rendering host.
+
+    `generate_register` and `main()` are driven separately because the crash
+    measured on 2026-10-14 reached `main()` THROUGH the history walk: the
+    register could not be regenerated at all on that host, so
+    `python -m livespec_dev_tooling.heading_coverage_debt` — the only sanctioned
+    way to author the file — was unavailable rather than merely wrong.
+
+    The dates are asserted, not just the completion, because completing is not
+    the whole of the requirement: a read that recovered from the rendering by
+    discarding the offset would complete and then date the instant on the
+    committer's clock instead of on the UTC calendar.
+    """
+    _seed_repo(tmp_path=tmp_path)
+
+    generated = _MODULE.generate_register(cwd=tmp_path, today="2026-09-09")
+
+    assert isinstance(generated, IOSuccess)
+    assert [row["first_seen"] for row in unsafe_perform_io(generated.unwrap())] == [
+        "2026-01-02",
+        "2026-03-04",
+    ]
+    monkeypatch.chdir(tmp_path)
+
+    assert _MODULE.main() == 0
+
+    register = tmp_path / "tests" / "heading-coverage-debt.json"
+    assert [row["first_seen"] for row in json.loads(register.read_text(encoding="utf-8"))] == [
+        "2026-01-02",
+        "2026-03-04",
+    ]

@@ -15,10 +15,16 @@ inherits the stale global config then writes to the closed buffer and raises
 the affected fleet tests pass in isolation but fail after a polluting test runs
 first. Resetting structlog's defaults at each test's teardown removes the
 cross-test leakage.
+
+Also hosts `z_rendering_git`, the GIT-VERSION double described on that fixture:
+a shim that makes any test observe the `%cI` rendering git 2.51 introduced,
+whatever git the host happens to carry.
 """
 
 from __future__ import annotations
 
+import os
+import shutil
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -39,3 +45,42 @@ def _reset_structlog_global_config() -> Iterator[None]:
     """Reset structlog's process-global config after each test (isolation)."""
     yield
     structlog.reset_defaults()
+
+
+# Real git does all the work; only the rendering of a full ISO instant's UTC
+# offset is rewritten. The anchor on the time-of-day group is what keeps the
+# rewrite to a `%cI`-shaped field rather than to any `+00:00` a blob read
+# happens to end a line with.
+_Z_RENDERING_GIT_SHIM = r"""#!/bin/sh
+"{git}" "$@" | sed -e 's/\(T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\)+00:00$/\1Z/'
+"""
+
+
+@pytest.fixture
+def z_rendering_git(
+    *, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prepend a `git` shim that renders a `+00:00` committer offset as a trailing `Z`.
+
+    A GIT-VERSION DOUBLE, NOT A GIT DOUBLE. git 2.51 changed how `%cI` spells a
+    UTC offset: measured 2026-10-14 on hp-xubuntu (git 2.51.0), `%cI` prints
+    `2026-01-02T00:00:00Z` where `%ci` still prints `+0000`, while every older
+    git — including the Fabro sandbox image's 2.43 — prints `+00:00`.
+    `datetime.fromisoformat` only began accepting that suffix in Python 3.11
+    and this repository pins 3.10.16, so on a git>=2.51 host every
+    committer-instant read of the heading-coverage debt register raised
+    `ValueError`: 14 suite tests failed and the register generator crashed
+    outright, while CI stayed green on a runner image carrying an older git.
+
+    That split is the reason this fixture exists rather than a `+00:00` fixture
+    commit and a host upgrade. A defect reachable on one fleet host and
+    UNPROVABLE on another is how this one reached master; a test that observes
+    the newer rendering on any host is the thing that was missing.
+    """
+    real_git = shutil.which("git")
+    assert real_git is not None, "the suite requires a real `git` on PATH"
+    shim_dir = tmp_path_factory.mktemp("z-rendering-git")
+    shim = shim_dir / "git"
+    _ = shim.write_text(_Z_RENDERING_GIT_SHIM.format(git=real_git), encoding="utf-8")
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
