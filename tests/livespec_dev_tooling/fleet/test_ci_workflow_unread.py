@@ -61,6 +61,7 @@ _REAL_CI = "jobs:\n  ci-green:\n    name: ci-green\n"
 # phantom is decided solely by the ci.yml reading, which is the variable.
 _PROTECTION = {
     "enforce_admins": {"enabled": True},
+    "required_linear_history": {"enabled": True},
     "required_status_checks": {"strict": False, "contexts": ["ci-green"]},
 }
 

@@ -186,6 +186,16 @@ def _protection_problems(
     enforce = payload.get("enforce_admins")
     if not (isinstance(enforce, dict) and cast("dict[str, object]", enforce).get("enabled")):
         problems.append("enforce_admins is not enabled")
+    # Read with the same shape and the same absence rule as `enforce_admins`
+    # directly above. Absence is a PROBLEM, not a can't-read: reaching this
+    # comparison means the whole protection object read, so the flag is not
+    # being withheld by a missing scope, and a protection object that does
+    # not say linear history is on is not one that has it on. Nothing read
+    # the flag until now, which is why `wire-fleet-member`'s whole-object
+    # PUT turning it off (`_reconcile.py`) went unreported fleet-wide.
+    linear = payload.get("required_linear_history")
+    if not (isinstance(linear, dict) and cast("dict[str, object]", linear).get("enabled")):
+        problems.append("required_linear_history is not enabled")
     checks = payload.get("required_status_checks")
     if not isinstance(checks, dict):
         problems.append("required_status_checks is absent")
@@ -246,7 +256,9 @@ def assert_branch_protection(*, ctx: FleetContext, member: FleetMember) -> RowOu
     makes a member whose default branch is not `master` read as
     unprotected-or-unreadable whatever its real configuration.
 
-    Aligned means: `enforce_admins`, `strict` OFF, a non-empty
+    Aligned means: `enforce_admins`, `required_linear_history` (per
+    livespec non-functional-requirements section "Commit and merge
+    discipline"), `strict` OFF, a non-empty
     required-check set, and every required check matched by a ci.yml
     matrix leg, a top-level ci.yml job, OR a job in any other
     `.github/workflows/*` file triggered by `pull_request`/
