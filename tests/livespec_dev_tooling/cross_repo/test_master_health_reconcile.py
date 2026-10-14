@@ -315,3 +315,57 @@ def test_a_revert_whose_ci_has_not_concluded_is_not_merged_either() -> None:
     step = reconcile_step(state=_still_red_with_revert(revert=pending_revert), config=_CONFIG)
 
     assert step.kind == STEP_NEEDS_ATTENTION
+
+
+def test_two_runs_against_one_state_decide_the_same_step() -> None:
+    """Determinism is the first half of "takes the next step once".
+
+    A duplicate run is harmless only if it cannot reach a DIFFERENT conclusion
+    from the same truth. With no clock, no randomness and no stored cursor in
+    the decision path, the step is a function of its inputs — asserted here so
+    a future input that breaks it fails loudly.
+    """
+    state = _incident_state()
+
+    assert reconcile_step(state=state, config=_CONFIG) == reconcile_step(
+        state=state, config=_CONFIG
+    )
+
+
+def test_once_the_revert_exists_no_further_run_opens_a_second_one() -> None:
+    """The acceptance assertion: a duplicate run never opens a second revert.
+
+    This replays the state as it stands AFTER the open step has been applied —
+    the revert is now in flight — and asserts the table no longer offers the
+    open step. Nothing is deduplicated and no lock is held: the forge state the
+    first run produced is itself what makes the second run decide differently,
+    which is why a missed or duplicated run cannot wedge the loop.
+    """
+    after_open = _still_red_with_revert(revert=_green_revert())
+
+    step = reconcile_step(state=after_open, config=_CONFIG)
+
+    assert step.kind != STEP_OPEN_REVERT
+    assert step.culprit_pull_request is None
+
+
+def test_a_revert_already_armed_for_merge_is_not_released_a_second_time() -> None:
+    """The same idempotence for the RELEASE step as for the open step.
+
+    Without this the reconciler would re-release on every tick for the whole
+    window between arming auto-merge and the merge actually landing — which at
+    the plan's measured p90 master-CI duration of 10.5 minutes is many ticks of
+    a 5-minute schedule, each one a redundant write.
+    """
+    armed = RevertPullRequest(
+        number=3001,
+        reverts_pull_request=2917,
+        ci_conclusion=CI_SUCCESS,
+        auto_merge_armed=True,
+        fix_forward_claim=None,
+    )
+
+    step = reconcile_step(state=_still_red_with_revert(revert=armed), config=_CONFIG)
+
+    assert step.kind == STEP_NONE
+    assert step.revert_pull_request == 3001
