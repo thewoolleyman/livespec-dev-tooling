@@ -157,7 +157,17 @@ _RANGE_BASE = "origin/master"
 # at exactly ONE place, the premise behind that guard; the impl BUCKET stays
 # `.py`-only, since widening it would also widen the commit-RANGE validator and
 # could retroactively redden open branches.
-_NON_PYTHON_IMPL_SUFFIXES = (".sh", ".just", ".yml", ".yaml")
+#
+# `.fabro` joined them for the same reason and a louder cost: a `workflow.fabro`
+# is the Fabro workflow DEFINITION the dispatcher renders for every run — a
+# shipped product artifact a test can pin, exactly as `.github/workflows/*.yml`
+# is — and with it unrecognized NO leg was reachable for a fix to one. Measured
+# 2026-10-14: hp run 01M4WAZA4CK5ANK4WQQYV6VA5D died at implement when its Green
+# amendment staged its test files beside
+# `.claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro` and was
+# refused `multi-test-file`, and three sibling items editing the same file were
+# blocked behind it (work-item livespec-dev-tooling-cri37n).
+_NON_PYTHON_IMPL_SUFFIXES = (".sh", ".just", ".yml", ".yaml", ".fabro")
 _JUSTFILE_NAMES = ("justfile", "Justfile")
 
 
@@ -225,12 +235,14 @@ def _stages_non_python_implementation(*, paths: list[str]) -> bool:
 
     `test-passed-at-red` exists to catch an author who DECLARED a
     behavior change (`feat:`/`fix:`) while staging NO implementation at
-    all. When shell, just, or yaml implementation IS staged beside the
-    test, that premise is false and no Red leg is reachable to satisfy
-    it honestly: the test cannot be made to fail against a change
-    already staged next to it. The commit takes the green-verified leg
-    instead, which runs the FULL suite — strictly MORE verification
-    than the Red leg's single staged file.
+    all. When shell, just, yaml, or Fabro-workflow implementation IS
+    staged beside the test, that premise is false and no Red leg is
+    reachable to satisfy it honestly: the test cannot be made to fail
+    against a change already staged next to it. The commit takes the
+    green-verified leg instead, which runs the FULL suite — strictly
+    MORE verification than the Red leg's single staged file. That also
+    retires `multi-test-file` for such a staging, since the per-file
+    rule is a property of the Red leg the staging never reaches.
 
     A DISCRIMINATION, not "any non-`.py` file counts": documentation and
     data suffixes do not qualify, so a README beside a passing test
