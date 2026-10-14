@@ -390,27 +390,58 @@ def head_rows(*, cwd: Path, path: Path) -> IOResult[list[dict[str, object]], Hea
     return IOSuccess(rows)
 
 
+def _utc_calendar_date(*, committed_at: str) -> str:
+    """A strict-ISO committer timestamp read as the UTC calendar date of its instant.
+
+    ONE TIMEZONE BASIS, AND IT IS NOT THE COMMIT'S OWN. `%cs` renders the
+    committer date in the commit's own timezone, so one instant yields two
+    different calendar dates depending on the offset the committer's clock was
+    set to — and a rebase-merge rewrites exactly that field. Measured 2026-10-14
+    in livespec-orchestrator-beads-fabro: a PR whose commits carried
+    2026-10-14T00:44:17Z passed with a register row dated 2026-10-14, the forge's
+    rebase-merge re-stamped the UNCHANGED TREE under the web-flow committer's
+    Pacific offset, the read turned that instant into 2026-10-13, and the
+    committed tier convicted the date the PR had just certified. Every dispatch
+    in that repository was refused by the green-master gate until a fix-forward
+    landed, and any spec PR merging between 00:00Z and 07:00Z reaches it in any
+    rebase-merge repository of the fleet.
+
+    Normalizing to UTC makes the verdict a property of the TREE and the INSTANT
+    rather than of whoever's clock recorded it. A timestamp that will not parse
+    is a BUG in this invocation rather than an expected error, so it raises
+    rather than riding a Result rail: `git log --format=%cI` emits a strict ISO
+    8601 offset on every line it prints, and a caller that reached here with
+    anything else has already read something that is not a git log.
+    """
+    return datetime.fromisoformat(committed_at).astimezone(timezone.utc).date().isoformat()
+
+
 def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
-    """Key → committer date of the earliest commit whose registry carried it as `TODO`.
+    """Key → UTC calendar date of the earliest commit whose registry carried it as `TODO`.
 
     Walks `git log --reverse` over the live registry path only — the file has a
     short history (21 commits when this landed), so the per-commit blob read is
     cheap and exact. A key absent from the result was never a `TODO` in any
     committed blob; the caller supplies the fallback date rather than this
     function inventing one.
+
+    The committer timestamp is read as `%cI` and normalized to UTC rather than
+    taken as `%cs`, so the date this returns survives a rebase-merge — see
+    `_utc_calendar_date` for the defect that bought the distinction.
     """
     log = _git_stdout(
         cwd=cwd,
-        args=["log", "--reverse", "--format=%H %cs", "--", COVERAGE_PATH.as_posix()],
+        args=["log", "--reverse", "--format=%H %cI", "--", COVERAGE_PATH.as_posix()],
     )
     dates: dict[tuple[str, str, str], str] = {}
     for line in log.splitlines():
         revision, _, committed_at = line.partition(" ")
+        committed_on = _utc_calendar_date(committed_at=committed_at)
         blob = _git_stdout(cwd=cwd, args=["show", f"{revision}:{COVERAGE_PATH.as_posix()}"])
         for row in todo_rows(rows=_rows_from_text(text=blob) or []):
             key = register_key(row=row)
             if key is not None and key not in dates:
-                dates[key] = committed_at
+                dates[key] = committed_on
     return dates
 
 
