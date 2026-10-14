@@ -219,11 +219,13 @@ def test_app_installation_unreadable_skips() -> None:
 def _protection_payload(
     *,
     enforce: bool = True,
+    linear: bool = True,
     strict: bool = False,
     contexts: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "enforce_admins": {"enabled": enforce},
+        "required_linear_history": {"enabled": linear},
         "required_status_checks": {
             "strict": strict,
             "contexts": contexts if contexts is not None else ["check-lint", "check-types"],
@@ -315,6 +317,35 @@ def test_branch_protection_enforce_admins_disabled_is_finding() -> None:
     outcome = assert_branch_protection(ctx=ctx, member=_MEMBER)
     assert isinstance(outcome, RowFinding)
     assert "enforce_admins" in outcome.message
+
+
+def test_branch_protection_linear_history_disabled_is_finding() -> None:
+    """A member whose protection has `required_linear_history` OFF fails the row.
+
+    livespec non-functional-requirements section "Commit and merge
+    discipline" requires `required_linear_history: true`. Nothing read the
+    flag before, so the one measurable consequence of the reconciler's
+    whole-object PUT omitting it — a wired repo silently losing linear
+    history — was invisible to the fleet conformance run (measured
+    2026-10-14: livespec-overseer FALSE, its three siblings TRUE).
+
+    An ABSENT key is the same finding as an explicitly disabled one, for
+    the reason `enforce_admins` already treats absence that way: reaching
+    this comparison means the whole protection object READ, so the flag is
+    not withheld by a missing scope, and a protection object that does not
+    say linear history is on is not one that has it on.
+    """
+    for payload in (
+        _protection_payload(linear=False),
+        {
+            "enforce_admins": {"enabled": True},
+            "required_status_checks": {"strict": False, "contexts": ["check-lint"]},
+        },
+    ):
+        outcome = assert_branch_protection(ctx=_protection_ctx(payload=payload), member=_MEMBER)
+
+        assert isinstance(outcome, RowFinding)
+        assert "required_linear_history is not enabled" in outcome.message
 
 
 def test_branch_protection_missing_required_status_checks_is_finding() -> None:

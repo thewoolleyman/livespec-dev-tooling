@@ -37,13 +37,15 @@ ALIGNED_PROTECTION_STRICT: bool = False
 def aligned_protection_payload(*, contexts: list[str] | None = None) -> dict[str, object]:
     """Return the aligned master branch-protection payload.
 
-    `enforce_admins` enabled, `required_status_checks` carrying the
+    `enforce_admins` and `required_linear_history` enabled,
+    `required_status_checks` carrying the
     shared `ALIGNED_PROTECTION_STRICT` flag and the given required-check
     `contexts` (default a single `check-a`, matching the fleet fixtures'
     one-job ci.yml matrix).
     """
     return {
         "enforce_admins": {"enabled": True},
+        "required_linear_history": {"enabled": True},
         "required_status_checks": {
             "strict": ALIGNED_PROTECTION_STRICT,
             "contexts": contexts if contexts is not None else ["check-a"],

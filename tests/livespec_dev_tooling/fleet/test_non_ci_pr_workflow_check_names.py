@@ -94,6 +94,7 @@ def _context(
     tree = {"tree": [{"path": p, "mode": "100644"} for p in tree_paths], "truncated": False}
     protection = {
         "enforce_admins": {"enabled": True},
+        "required_linear_history": {"enabled": True},
         "required_status_checks": {"strict": False, "contexts": contexts},
     }
     table = {
