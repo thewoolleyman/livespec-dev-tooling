@@ -77,6 +77,14 @@ _RESOLVED: dict[str, object] = {
     "test": "tests.consumer.test_thing.test_it",
 }
 
+# A committer timestamp whose LOCAL calendar date (2026-05-06) is the day BEFORE
+# its UTC one — the shape every rebase-merge repository of the fleet produces
+# whenever the forge's web-flow committer re-stamps a tree between 00:00Z and
+# 07:00Z. The evidence this register rests on is the UTC date, so that it
+# survives the re-stamp (livespec-orchestrator-beads-fabro, measured 2026-10-14).
+_PACIFIC_INSTANT = "2026-05-06T17:44:17-07:00"
+_PACIFIC_INSTANT_UTC_DATE = "2026-05-07"
+
 
 def _load_module() -> ModuleType:
     """Import the module fresh from its file path.
@@ -346,6 +354,92 @@ def test_first_seen_dates_are_read_from_the_earliest_carrying_commit(*, tmp_path
 def test_first_seen_dates_are_empty_where_there_is_no_history(*, tmp_path: Path) -> None:
     """A tree git cannot read places no key; the caller supplies the fallback."""
     assert _MODULE.first_seen_dates(cwd=tmp_path) == {}
+
+
+def test_first_seen_dates_read_the_committer_timestamp_as_a_utc_calendar_date(
+    *, tmp_path: Path
+) -> None:
+    """The evidence is ONE timezone basis, and it is not the commit's own.
+
+    `%cs` renders the committer date in the commit's own timezone, so this
+    instant reads as 2026-05-06 there and 2026-05-07 in UTC. Both halves of the
+    mechanism — the date the generator records and the date the committed tier
+    judges against — read this function, so a basis that moves with the
+    committer's offset makes the ratchet's verdict move with it too.
+    """
+    _init_repo(tmp_path=tmp_path)
+    _commit_registry(tmp_path=tmp_path, entries=[_TODO_A], committed_at=_PACIFIC_INSTANT)
+
+    dates = _MODULE.first_seen_dates(cwd=tmp_path)
+
+    assert dates == {
+        ("SPECIFICATION", "spec.md", "## Heading A"): _PACIFIC_INSTANT_UTC_DATE
+    }, f"the committer timestamp must be dated on the UTC calendar; got {dates!r}"
+
+
+def test_generate_register_dates_a_new_key_on_the_utc_calendar_and_preserves_recorded(
+    *, tmp_path: Path
+) -> None:
+    """A genuinely new key is dated in UTC; an already-recorded date is untouched.
+
+    The two halves are one assertion because they are the generator's whole
+    asymmetry, and the UTC basis only matters for the half that DERIVES. Row A
+    carries a recorded date and must keep it to the character — even though the
+    git evidence is now a different day than it would have been read as — while
+    row B, which the register does not yet carry, takes the UTC calendar date
+    of the earliest commit whose registry blob carried it as a `TODO`.
+    """
+    _init_repo(tmp_path=tmp_path)
+    _commit_registry(tmp_path=tmp_path, entries=[_TODO_A, _TODO_B], committed_at=_PACIFIC_INSTANT)
+    _write_register(
+        tmp_path=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Heading A",
+                "work_item": "livespec-dev-tooling-aaa",
+                "first_seen": "2026-04-01",
+            }
+        ],
+    )
+
+    generated = _MODULE.generate_register(cwd=tmp_path, today="2026-09-09")
+
+    assert isinstance(generated, IOSuccess)
+    assert unsafe_perform_io(generated.unwrap()) == [
+        {
+            "spec_root": "SPECIFICATION",
+            "spec_file": "spec.md",
+            "heading": "## Heading A",
+            "work_item": "livespec-dev-tooling-aaa",
+            "first_seen": "2026-04-01",
+        },
+        {
+            "spec_root": "SPECIFICATION",
+            "spec_file": "spec.md",
+            "heading": "## Heading B",
+            "work_item": "livespec-dev-tooling-bbb",
+            "first_seen": _PACIFIC_INSTANT_UTC_DATE,
+        },
+    ]
+
+
+def test_the_module_docstring_records_the_utc_first_seen_basis() -> None:
+    """The register's own account of its evidence names the basis it is read on.
+
+    This file's docstring is where `first_seen` is explained as EVIDENCE rather
+    than an assertion, and for as long as it described that evidence only as
+    "the committer date" the `%cs` read looked like a faithful implementation of
+    it. Naming the basis is what lets the next reader see that a committer date
+    in the commit's OWN timezone is not the thing this register rests on.
+    """
+    doc = " ".join((_MODULE.__doc__ or "").split())
+
+    assert "UTC calendar date" in doc, (
+        f"the module docstring must state that `first_seen` and the committer-date "
+        f"evidence are compared as UTC calendar dates; got {doc!r}"
+    )
 
 
 def test_generate_register_carries_key_owner_and_git_derived_first_seen(*, tmp_path: Path) -> None:
