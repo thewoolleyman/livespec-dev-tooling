@@ -1,0 +1,5 @@
+---
+# The distribution package that ships both fpart and fpsync. One package, one
+# variable, so a host on a distribution that names it differently overrides it
+# here rather than forking the role.
+fpart_package: fpart

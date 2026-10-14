@@ -14,7 +14,7 @@
 # because this host carries services with very different interruption costs --
 # a timer is free to restart, the editor backend is not -- and because a
 # failure in one role's package step must not be able to withhold the other
-# seventeen.
+# eighteen.
 - name: Dev host services
   hosts: vps
   gather_facts: true
@@ -35,6 +35,8 @@
       tags: [claude_desktop]
     - role: btop_loop
       tags: [btop_loop]
+    - role: fpart
+      tags: [fpart]
     - role: code_serve_web
       tags: [code_serve_web]
     - role: code_pwa_proxy

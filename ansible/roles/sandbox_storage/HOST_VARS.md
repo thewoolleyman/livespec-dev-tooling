@@ -13,6 +13,13 @@ second SATA SSD (`sdc`, Fanxiang S101 4 TB) sat idle under a re-downloadable
 Steam library. This role declares that disk's layout, gives the host swap equal
 to its RAM, and brings the two bind lines under management.
 
+**Copying a store by hand.** Any copy of these stores outside this role's
+procedure — a manual migration, a recovery, a move to another disk or host —
+follows [`.ai/bulk-data-copies.md`](../../../.ai/bulk-data-copies.md):
+`fpsync` (installed by the `fpart` role), with the file count and layout
+measured first and checksums only after the copy. The copy helper below is not
+yet fpsync-based; that switch is a separate follow-up.
+
 ## The variables
 
 | variable | default | what it is |
