@@ -27,10 +27,12 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_FAILURE,
     CI_SUCCESS,
     RERUN_NOT_ATTEMPTED,
+    RERUN_PASSED,
     RERUN_STILL_RED,
     MasterCommit,
     ReconcileConfig,
     ReconcileState,
+    RevertPullRequest,
 )
 
 _LINT_FAILURE = "check-lint failed"
@@ -143,3 +145,80 @@ def test_a_regression_whose_culprit_has_no_pull_request_escalates_instead() -> N
     assert step.kind == STEP_NEEDS_ATTENTION
     assert step.episode_key == "master@35fea321"
     assert NEEDS_ATTENTION_LABEL == "master-health-needs-attention"
+
+
+def _green_revert(*, number: int = 3001, claim: str | None = None) -> RevertPullRequest:
+    return RevertPullRequest(
+        number=number,
+        reverts_pull_request=2917,
+        ci_conclusion=CI_SUCCESS,
+        auto_merge_armed=False,
+        fix_forward_claim=claim,
+    )
+
+
+def test_a_flake_verdict_escalates_and_never_releases_an_open_green_revert() -> None:
+    """The load-bearing ORDER test: classification outranks the open revert.
+
+    A revert pull request is already open and its own CI is green, which is
+    exactly the state the release branch acts on — so if the non-regression
+    classes were matched AFTER that branch, this state would MERGE a revert for
+    a failure the re-run already exonerated. Asserting the step here is
+    asserting the shape of the table, not just one verdict's mapping.
+    """
+    state = ReconcileState(
+        head_sha="35fea321",
+        commits=_incident_state().commits,
+        rerun_outcome=RERUN_PASSED,
+        revert_pull_request=_green_revert(),
+        open_needs_attention_episodes=(),
+        unrelated_failure_signatures=(),
+    )
+
+    step = reconcile_step(state=state, config=_CONFIG)
+
+    assert step.kind == STEP_NEEDS_ATTENTION
+    assert step.episode_key == "master@35fea321"
+
+
+def test_an_infrastructure_outage_escalates_rather_than_reverting() -> None:
+    """No revert of any commit fixes a runner pool that has no runners."""
+    state = ReconcileState(
+        head_sha="35fea321",
+        commits=(
+            _commit(sha="parent0", parent_sha="root", conclusion=CI_SUCCESS),
+            _commit(
+                sha="35fea321",
+                parent_sha="parent0",
+                conclusion=CI_FAILURE,
+                pull_request=2917,
+                signature="No runner matching the specified labels was found",
+            ),
+        ),
+        rerun_outcome=RERUN_STILL_RED,
+        revert_pull_request=None,
+        open_needs_attention_episodes=(),
+        unrelated_failure_signatures=(),
+    )
+
+    step = reconcile_step(state=state, config=_CONFIG)
+
+    assert step.kind == STEP_NEEDS_ATTENTION
+    assert step.culprit_pull_request is None
+
+
+def test_a_failure_seen_on_an_unrelated_commit_escalates_rather_than_reverting() -> None:
+    """The culprit did not introduce it, so reverting the culprit cannot fix it."""
+    state = ReconcileState(
+        head_sha="35fea321",
+        commits=_incident_state().commits,
+        rerun_outcome=RERUN_STILL_RED,
+        revert_pull_request=None,
+        open_needs_attention_episodes=(),
+        unrelated_failure_signatures=(_LINT_FAILURE,),
+    )
+
+    step = reconcile_step(state=state, config=_CONFIG)
+
+    assert step.kind == STEP_NEEDS_ATTENTION
+    assert step.episode_key == "master@35fea321"
