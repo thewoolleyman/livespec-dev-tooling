@@ -19,7 +19,10 @@ fires on the thing the reconciler depends on.
 
 from __future__ import annotations
 
+import importlib
 import re
+from pathlib import Path
+from typing import Protocol, cast
 
 from livespec_dev_tooling.fleet._reconciler_shim import (
     REUSABLE_RECONCILER_WORKFLOW,
@@ -30,6 +33,7 @@ __all__: list[str] = []
 
 
 _OWNER = "acme"
+_FLEET_PACKAGE = Path(__file__).resolve().parents[3] / "livespec_dev_tooling" / "fleet"
 
 # GitHub's own floor for a `schedule:` trigger is five minutes, so "a schedule
 # no coarser than five minutes" IS `*/5`. The assertion below is written as an
@@ -42,6 +46,16 @@ _COARSEST_RECONCILE_MINUTES = 5
 _CRON = re.compile(r"- cron: '(?P<expression>[^']+)'")
 _EVERY_N_MINUTES = re.compile(r"^\*/(?P<step>\d+)$")
 _EVENT = re.compile(r"^  (?P<event>\w+):")
+_RUNS_ON = re.compile(r"^\s*runs-on: (?P<label>\S+)$", re.MULTILINE)
+_CALL_SECRET = re.compile(r"^      (?P<secret>[A-Z_]+):")
+
+# The pinned action that mints the fleet App installation token, and the
+# expression that proves the minted token is the one the reconcile step
+# actually carries. Minting a token and then leaving the step on
+# `github.token` is a live failure mode: the workflow looks authenticated and
+# behaves as though it is not.
+_APP_TOKEN_ACTION = "uses: actions/create-github-app-token@v3"
+_MINTED_TOKEN = "${{ steps.app-token.outputs.token }}"
 
 
 def _shim() -> str:
@@ -148,3 +162,112 @@ def test_the_shim_calls_the_reusable_reconciler_workflow_in_the_owners_dev_tooli
 
     assert f"uses: {_OWNER}/livespec-dev-tooling/{REUSABLE_RECONCILER_WORKFLOW}@" in shim
     assert "secrets: inherit" in shim
+
+
+class _ReusableReconcilerModule(Protocol):
+    """The surface `_reusable_reconciler` publishes to this test module."""
+
+    def reusable_reconciler_workflow(self) -> str: ...
+
+
+def _reusable() -> str:
+    """The canonical reusable reconciler workflow body.
+
+    Resolved through `importlib` behind a genuine assertion on the module's
+    PATH, following the sibling `test_charters._charters_module` precedent: a
+    top-level import of a module a slice has not written yet dies at COLLECTION
+    with zero assertions run, which is a Red that proves only unimportability.
+    """
+    module_path = _FLEET_PACKAGE / "_reusable_reconciler.py"
+    assert module_path.is_file(), (
+        "the canonical reusable reconciler workflow body must live in the fleet "
+        "package: a factory branch cannot write .github/workflows/, so holding "
+        "the bytes here is what keeps their properties assertable before the "
+        "workflow file itself lands maintainer-side"
+    )
+    module = cast(
+        "_ReusableReconcilerModule",
+        importlib.import_module("livespec_dev_tooling.fleet._reusable_reconciler"),
+    )
+    return module.reusable_reconciler_workflow()
+
+
+def _declared_call_secrets(*, source: str) -> dict[str, str]:
+    """Each secret the `workflow_call` wire declares, mapped to its own body.
+
+    Scoped to the region between the `workflow_call` secrets key and `jobs:`,
+    so a `with:` key elsewhere in the file cannot be mistaken for a declared
+    secret.
+    """
+    region = source.split("\n    secrets:\n", 1)[1].split("\njobs:", 1)[0]
+    declared: dict[str, str] = {}
+    name = ""
+    for line in region.splitlines():
+        match = _CALL_SECRET.match(line)
+        if match is None:
+            declared[name] = f"{declared[name]}{line}\n"
+            continue
+        name = match.group("secret")
+        declared[name] = ""
+    return declared
+
+
+def test_the_reusable_reconciler_runs_on_github_hosted_runners() -> None:
+    """Hosted capacity is a CORRECTNESS requirement here, not a cost preference.
+
+    The reconciler exists to heal a red master, and "the self-hosted k3s runner
+    pool is down" is one of the failures that reddens one. A reconciler queued
+    against the broken pool cannot run at the exact moment it is most needed,
+    and the episode then sits red with its own healer stuck in the queue behind
+    the outage. Asserted over EVERY `runs-on:` in the file so a later job added
+    to this workflow cannot quietly reintroduce the dependency.
+    """
+    source = _reusable()
+    labels = _RUNS_ON.findall(source)
+
+    assert labels, "the reusable reconciler must declare where it runs"
+    assert set(labels) == {
+        "ubuntu-latest"
+    }, f"every job must run on GitHub-hosted capacity; found runs-on={labels}"
+    assert "self-hosted" not in source
+    assert "CI_RUNNER_LABELS" not in source, (
+        "reading the self-hosted routing variable would reintroduce exactly the "
+        "pool dependency this workflow is placed outside of"
+    )
+
+
+def test_the_reusable_reconciler_authenticates_with_the_fleet_github_app_token() -> None:
+    """`GITHUB_TOKEN` cannot work here, so the App token is load-bearing.
+
+    A pull request created with the default `GITHUB_TOKEN` does NOT trigger
+    workflow runs. The reconciler releases a revert on the evidence of the
+    revert's OWN CI being green, so under `GITHUB_TOKEN` that CI never starts,
+    the evidence never arrives, and the self-healing path stalls on every
+    episode — silently, because a revert waiting on a run that will never exist
+    looks exactly like a revert waiting on a slow run.
+    """
+    source = _reusable()
+
+    assert _APP_TOKEN_ACTION in source
+    declared = _declared_call_secrets(source=source)
+    for secret in ("APP_ID", "APP_PRIVATE_KEY"):
+        assert secret in declared, secret
+        assert "required: true" in declared[secret], secret
+        assert f"secrets.{secret}" in source, secret
+    assert _MINTED_TOKEN in source, (
+        "the reconcile step must carry the MINTED token; a step left on "
+        "`github.token` mints the App token and then does not use it"
+    )
+    assert "GH_TOKEN: ${{ github.token }}" not in source
+
+
+def test_the_reusable_reconciler_is_callable_at_the_path_the_shim_names() -> None:
+    """The `uses:` path IS the identifier, so the trigger and the wire must agree.
+
+    A reusable workflow that loses its `workflow_call` trigger still EXISTS at
+    the path a consumer's `uses:` names, so the reference resolves and then
+    fails at run time with nothing in this repository going red.
+    """
+    assert "\non:\n  workflow_call:\n" in _reusable()
+    assert REUSABLE_RECONCILER_WORKFLOW.endswith("/reusable-master-health-reconcile.yml")
+    assert f"uses: {_OWNER}/livespec-dev-tooling/{REUSABLE_RECONCILER_WORKFLOW}@" in _shim()
