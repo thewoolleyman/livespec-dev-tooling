@@ -61,7 +61,7 @@ computed by whatever it delegates to: `check-heading-coverage-debt-register` rea
 ## Every check in the inventory that reads commit metadata
 
 Checks absent from this table reach no git commit object at all. The inventory holds 67 canonical slugs (measured
-from `canonical_check_slugs()` at this commit) plus two `workflow_checks/` members; 58 of the 67, and every helper
+from `canonical_check_slugs()` at this commit) plus two `workflow_checks/` members; 57 of the 67, and every helper
 they delegate to, read only the filesystem, the consumer config, the ledger (`bd`), or the forge API. The table is
 the complete remainder, and it also carries `check-shipped-path-release-guard`, which is wired into `just check` and
 into lefthook's commit-msg hook but is NOT a canonical slug (its module is `shipped_path_release_guard_check.py`, a
@@ -71,6 +71,7 @@ audit.
 | Check (slug) | Reads | Field class | Verdict moves under a replay? | Repair / carrier |
 | --- | --- | --- | --- | --- |
 | `check-heading-coverage-debt-register` | `git log --format=%H %cI` over `tests/heading-coverage.json`, then `git show <rev>:<path>` | commit SHA; committer date | **NO, repaired.** Was `%cs` and DID move — this is the incident. | Repaired: reads `%cI` and normalizes the instant to UTC in `heading_coverage_debt._utc_calendar_date`. Carried by **livespec-dev-tooling-a6gq5n** under plan `fleet-heading-coverage-convergence` (epic livespec-dev-tooling-0bse) — a cross-plan carrier, NOT re-fixed here. Both reads are now registered in `INVARIANCE_PROOFS` with their arguments. |
+| `check-heading-coverage` | `git show HEAD:tests/heading-coverage.json`, via `judged_reason_findings` → `baseline_fingerprints` → `head_rows` → `head_text`; reached only when `LIVESPEC_SCOPE_HEADING_COVERAGE_REASONS_TO_HEAD_DIFF` arms the staged-scope narrowing | tree blob addressed through the `HEAD` commit | NO | No repair needed. `HEAD` is a HANDLE; the VALUE read is the registry BLOB at that commit, which is tree content and therefore preserved by a replay. It reaches NO pretty-format specifier — measured by intercepting `subprocess.run` across a full run of the check, whose complete git surface is that one `show`. The `%H %cI` read in the same MODULE (`heading_coverage_debt.first_seen_dates`, `heading_coverage_debt.py:467`) is NOT on this call path: only `check-heading-coverage-debt-register` reaches it, through `_heading_coverage_first_seen`. Carrier for the module's reads stays **livespec-dev-tooling-a6gq5n**. |
 | `check-red-green-replay` | `git rev-list --no-merges origin/master..HEAD`; `git rev-parse HEAD`; `git diff-tree ... <sha>`; `git log -1 --format=%B <sha>` | commit SHA; commit message | NO | No repair needed. Every SHA is a HANDLE — it enumerates the range and addresses trees and messages; the one SHA that becomes a VALUE (`current_head_sha()`) is written into a `TDD-Green-Parent-Reflog` trailer as evidence and is read by no verdict (the only other mention is a remedy-hint string). Trailer TIMESTAMPS (`TDD-Red-Captured-At`, `TDD-Green-Verified-At`) are checked for KEY PRESENCE only and are never compared against a committer date. |
 | `check-red-green-replay` (server-side-revert exemption, `_red_green_replay_revert.py`) | `git verify-commit --raw <sha>` against pinned web-flow keys; `git log -1 --format=%B <sha>`; `git rev-list --parents -n 1 <sha>`; `git merge-base --is-ancestor`; `git diff --quiet <reverted>^ <sha> -- <paths>` | commit SIGNATURE; message; ancestry; TREE CONTENT | NO for the three fields. | No repair needed. The reverted SHA is read from the PRESERVED message and `<reverted>^` is an ancestor of master either way; the decisive comparison is a byte diff of product paths, which is tree content. ⚠️ The signature arm is sensitive to WHO created the commit (row seven), not to SHA/date/timezone: a replay of a web-flow revert is itself web-flow signed, so the exemption holds — but a mechanism that re-created such a commit WITHOUT web-flow signing would lose it. Outside this assertion; recorded for child C1, which relies on this exemption. |
 | `check-commit-pairs-source-and-test` | `git log -1 --format=%B`; `git diff --cached --name-only` | commit message; staged paths | NO | No repair needed. |
@@ -115,6 +116,14 @@ audit.
 
 A proof that outlives its read is reported STALE and fails the arming test, so the registry cannot quietly become an
 exemption list. The registry holds exactly two entries today, both for `heading_coverage_debt.py`.
+
+Each entry is keyed by MODULE and specifier, never by check, and that asymmetry is load-bearing in both directions.
+It is what makes the guard sound — one proof covers every call path through that module, so a new importer cannot
+reach a registered read without a proof — and it is why a module-level conviction does NOT by itself place a check in
+the table above: the table names the field a check actually reads, so a module flagged in a check's IMPORT CLOSURE
+must be resolved to a CALL PATH before the row is written. `check-heading-coverage` is the live case: it imports
+`heading_coverage_debt` and so inherits that module's `%H`/`%cI` convictions in a closure walk, while its own call
+path reaches only `head_rows`' `git show`.
 
 The guard deliberately does NOT ship as a canonical check slug: a module under `checks/` becomes a slug, and a slug
 obliges every consumer to wire it into `just check` and its CI matrix. The shared check inventory ships from this
