@@ -85,6 +85,18 @@ _RESOLVED: dict[str, object] = {
 _PACIFIC_INSTANT = "2026-05-06T17:44:17-07:00"
 _PACIFIC_INSTANT_UTC_DATE = "2026-05-07"
 
+# ONE UTC INSTANT, SPELLED THE TWO WAYS THE FLEET'S GIT VERSIONS RENDER IT.
+# git 2.51 renders a `+00:00` committer offset as a trailing `Z` under `%cI`
+# (measured 2026-10-14 on hp-xubuntu, git 2.51.0, where `%ci` still said
+# `+0000`); every older git, including the Fabro sandbox image's 2.43, spells
+# it `+00:00`. `datetime.fromisoformat` accepts the `Z` form only from Python
+# 3.11 and this repository pins 3.10.16, so the first spelling raised while the
+# second parsed — the crash that took the register generator and 14 suite tests
+# down on every git>=2.51 host while CI's older git stayed green.
+_UTC_INSTANT_AS_Z = "2026-01-02T00:00:00Z"
+_UTC_INSTANT_AS_OFFSET = "2026-01-02T00:00:00+00:00"
+_UTC_INSTANT_DATE = "2026-01-02"
+
 
 def _load_module() -> ModuleType:
     """Import the module fresh from its file path.
@@ -375,6 +387,34 @@ def test_first_seen_dates_read_the_committer_timestamp_as_a_utc_calendar_date(
     assert dates == {
         ("SPECIFICATION", "spec.md", "## Heading A"): _PACIFIC_INSTANT_UTC_DATE
     }, f"the committer timestamp must be dated on the UTC calendar; got {dates!r}"
+
+
+def test_a_z_rendered_utc_offset_dates_identically_to_an_explicit_plus_zero_offset() -> None:
+    """ONE INSTANT, ONE DATE — however the host's git chose to spell its offset.
+
+    Both spellings are fed DIRECTLY to the read rather than through a fixture
+    commit, because the rendering is a property of the HOST'S GIT VERSION and
+    not of the commit: git 2.43 cannot produce the `Z` form at all, so an arm
+    that could only observe it through `git log` would assert nothing on an
+    older host — which is exactly how a defect that fails every git>=2.51 host
+    reached master behind a green CI.
+
+    A read that raises here is not a wrong date but NO date: the register
+    generator crashed outright on such a host, and the committed-tier verdict
+    was neither given nor refused.
+    """
+    assert hasattr(_MODULE, "_utc_calendar_date")
+    read = _MODULE._utc_calendar_date  # noqa: SLF001  — internal helper under test
+
+    from_z = read(committed_at=_UTC_INSTANT_AS_Z)
+
+    assert from_z == _UTC_INSTANT_DATE, (
+        f"a `Z`-rendered UTC offset must read as that instant's UTC calendar date; "
+        f"got {from_z!r}"
+    )
+    assert from_z == read(
+        committed_at=_UTC_INSTANT_AS_OFFSET
+    ), "the two renderings name the same instant, so they must not yield two dates"
 
 
 def test_generate_register_dates_a_new_key_on_the_utc_calendar_and_preserves_recorded(

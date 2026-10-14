@@ -421,8 +421,32 @@ def _utc_calendar_date(*, committed_at: str) -> str:
     rather than riding a Result rail: `git log --format=%cI` emits a strict ISO
     8601 offset on every line it prints, and a caller that reached here with
     anything else has already read something that is not a git log.
+
+    ...AND `%cI` SPELLS A UTC OFFSET TWO WAYS, DEPENDING ON THE HOST'S GIT.
+    `Z` and `+00:00` are both strict ISO 8601, which is why the paragraph above
+    was true and this read still crashed: git 2.51 renders a `+00:00` committer
+    offset as a trailing `Z` (measured 2026-10-14 on hp-xubuntu, git 2.51.0 —
+    `%cI` gave `2026-01-02T00:00:00Z` while `%ci` still gave `+0000`), and
+    `datetime.fromisoformat` accepts that suffix only from Python 3.11 while
+    this repository pins 3.10.16. Every read on such a host raised `ValueError`
+    instead of dating the instant: `first_seen_dates` and both generator entry
+    points crashed, 14 suite tests failed with them, and the committed and
+    release tiers next door could neither convict an inflated date nor acquit
+    one — a crashed gate rather than a verdict. CI never saw it, because the
+    runner image carries an older git that still prints `+00:00`.
+
+    So the suffix is normalized before parsing rather than left to the
+    interpreter. The point is not merely to accept `Z`: it is that the date a
+    verdict rests on must not depend on which git version printed the offset,
+    any more than it may depend on which timezone the committer's clock was set
+    to. Both are facts about the OBSERVER, and this function exists to keep
+    them out of the answer.
     """
-    return datetime.fromisoformat(committed_at).astimezone(timezone.utc).date().isoformat()
+    # `fromisoformat` is left to parse the offset itself in every other case;
+    # only the one spelling it cannot read on 3.10 is rewritten, and into the
+    # exact offset `Z` abbreviates.
+    instant = f"{committed_at[:-1]}+00:00" if committed_at.endswith("Z") else committed_at
+    return datetime.fromisoformat(instant).astimezone(timezone.utc).date().isoformat()
 
 
 def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
