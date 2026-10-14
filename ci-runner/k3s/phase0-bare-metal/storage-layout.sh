@@ -42,6 +42,15 @@
 # declared state the whole run changes nothing and reports "already in the
 # declared state".
 #
+# ONE POSTURE THIS STAGE HAS NOTHING TO DO FOR. A profile declaring
+# `CI_NODE_FACILITIES=none` carries none of the pool's CI storage tiers — the
+# shared parser refuses it unless the volume groups, logical volumes, role tiers
+# and the PV partition label are ALL empty — so this stage announces that and
+# exits 0 having touched nothing, not even the package manager. The
+# PRESERVED_PARTITIONS guard is unaffected and stays armed for the day the
+# profile declares a tier. See the gate further down for the two wrong
+# behaviours it replaced.
+#
 # DESTRUCTIVE ONLY ON CONSENT. A stage is destructive when — and only when —
 # the thing it is about to write over currently holds something: an existing
 # virtual disk, a disk that already carries partitions, a device that already
@@ -277,7 +286,11 @@ tool_package() {
 fs_type_of() { probe blkid -p -s TYPE -o value "$1"; }
 fs_label_of() { probe blkid -p -s LABEL -o value "$1"; }
 
-if [ "$DRY_RUN" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
+# A node declaring NO CI storage has nothing for this stage to write, so it
+# needs no root either — which is why this condition carries the posture and not
+# only the mode. Without it a `none` profile would be refused unprivileged for a
+# run that would have changed nothing.
+if [ "$DRY_RUN" -eq 0 ] && [ "${CFG[CI_NODE_FACILITIES]}" != "none" ] && [ "$(id -u)" -ne 0 ]; then
   die "must run as root (it writes partition tables, volume groups and filesystems). Use --dry-run to see the plan unprivileged."
 fi
 
@@ -291,6 +304,51 @@ if [ "$DRY_RUN" -eq 1 ]; then
   note "mode:     DRY RUN — every '+ ' line is printed and executed by nothing"
 else
   note "mode:     LIVE"
+fi
+
+# ---------------------------------------------------------------------------
+# The ONE posture this stage has nothing to do for
+#
+# A node whose profile declares CI_NODE_FACILITIES=none carries none of the
+# pool's CI storage tiers, so it declares no PV partition label, no volume
+# group, no logical volume and no tier — ../profile.sh REFUSES any of those
+# carrying a value under that posture, so this is the profile's own statement
+# and not an inference from four empty lists.
+#
+# WHY A SELF-GATE AND NOT A REFUSAL. Stage 1 IS in this node's rebuild
+# sequence; it simply has nothing to write there, and "re-runnable against a
+# node already in its profile's declared state, changing nothing" is the
+# property the rebuild recipe in
+# ../../../SPECIFICATION/non-functional-requirements.md requires of every stage.
+# A node in its declared state with nothing declared is converged. Stage 2 is
+# different and REFUSES (profile_require_root_volume), because it would
+# debootstrap over an operating system rather than do nothing.
+#
+# WHY IT EXITS HERE RATHER THAN LETTING THE STAGES NO-OP. Four of the seven
+# would, but stage 1 would not: the tool set is derived from the plan and the
+# partition/LVM tools are added unconditionally, so a `none` profile printed an
+# `apt-get install gdisk parted lvm2` for tools nothing would ever reach — an
+# install planned on a factory host to satisfy a layout it does not have. And
+# stage 3 read the empty PV_PARTLABEL as "already carries a partition labelled",
+# which is an accidental pass whose wording means nothing. Both were measured on
+# hp-xubuntu's committed profile on 2026-10-13, before this gate existed.
+#
+# PRESERVED_PARTITIONS IS UNAFFECTED AND STILL THE STANDING REFUSAL. It guards
+# every mutating command this script issues, and the day this node's profile
+# declares tiers the plan runs in full with that guard armed — which is what
+# ./storage-layout-exit-tests.sh §J proves, by running this stage against
+# hp's own preserved list with a tier declared onto each protected partition.
+# ---------------------------------------------------------------------------
+if [ "${CFG[CI_NODE_FACILITIES]}" = "none" ]; then
+  stage "no CI storage declared — this stage has nothing to do on ${CFG[NODE_NAME]}"
+  note "CI_NODE_FACILITIES=none: this node joins the pool and executes no CI job, so it"
+  note "declares no physical volume, no volume group, no logical volume and no role tier."
+  note "Nothing here is written, no tool is installed, and no device is touched."
+  note "PRESERVED_PARTITIONS remains the standing refusal for the day it declares tiers:"
+  note "  ${CFG[PRESERVED_PARTITIONS]}"
+  note ""
+  note "DONE. 0 command(s) printed, none executed. Next: ../provision-k3s.sh ${PROFILE_PATH}"
+  exit 0
 fi
 
 # ---------------------------------------------------------------------------

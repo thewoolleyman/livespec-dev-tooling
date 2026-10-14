@@ -1310,13 +1310,141 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
+echo "== J. The COMMITTED third node's profile: hp-xubuntu declares NO CI storage =="
+# ---------------------------------------------------------------------------
+# Sections F and G proved the free-space plan and the second node's data. This
+# node is a third SHAPE rather than a third instance: `CI_NODE_FACILITIES=none`
+# says it joins the pool and executes no CI job, so it declares no physical
+# volume, no volume group, no logical volume and no tier, and this stage has
+# nothing to write on it (livespec-dev-tooling-7we6po).
+#
+# TWO THINGS ARE ASSERTED, and the second is the one that matters. That the
+# converged node plans NOTHING — before the posture self-gate existed this
+# profile planned an `apt-get install gdisk parted lvm2` for tools nothing would
+# reach, and read its empty PV_PARTLABEL as "already carries a partition
+# labelled", an accidental pass whose wording means nothing. And that the
+# PRESERVATION guard is still armed for the day the profile DOES declare a tier:
+# each case below takes hp's own committed PRESERVED_PARTITIONS and points a
+# volume group's physical volume at one of the four partitions whose loss would
+# take the host or the factory down — the root, the ESP, the 160 GiB sandbox swap
+# and the 3.6 TiB sandbox store at /srv/sandbox-storage.
+HP="${HERE}/profiles/hp-xubuntu.env"
+
+run_layout "$BARE" --dry-run "$HP"
+HP_OUT="$REPLY_OUT"
+HP_PLANNED="$(printf '%s\n' "$HP_OUT" | grep -c '^+ ' || true)"
+if [ "$REPLY_RC" -eq 0 ] && [ "$HP_PLANNED" -eq 0 ]; then
+  ok "J1  the committed hp profile plans NOT ONE mutating command"
+else
+  no "J1  the committed hp profile plans NOT ONE mutating command (rc=${REPLY_RC}, ${HP_PLANNED} planned)"
+  printf '%s\n' "$HP_OUT"
+fi
+
+# A stage that printed nothing would be indistinguishable from one that failed
+# to read the profile, so the no-op has to SAY why it is one, naming the key.
+if printf '%s' "$HP_OUT" | grep -qF 'CI_NODE_FACILITIES=none' \
+   && printf '%s' "$HP_OUT" | grep -qF 'PRESERVED_PARTITIONS remains the standing refusal'; then
+  ok "J2  the no-op names the key it is a no-op for, and that preservation is still armed"
+else
+  no "J2  the no-op names the key it is a no-op for, and that preservation is still armed"
+  printf '%s\n' "$HP_OUT"
+fi
+
+# hp_clobbering PARTITION — hp's committed profile with the posture flipped to
+# `full` and ONE volume group's physical volume pointed at PARTITION. Every other
+# value, PRESERVED_PARTITIONS included, is the committed one, so the refusal that
+# fires is this node's own. The posture MUST flip: the parser refuses a declared
+# tier under `none`, which is exactly what that posture is for.
+hp_clobbering() {  # hp_clobbering PARTITION -> path in REPLY_PROFILE
+  REPLY_PROFILE="${TMPROOT}/hp-clobber-$(printf '%s' "$1" | tr '/' '-').env"
+  sed -e 's#^CI_NODE_FACILITIES=.*#CI_NODE_FACILITIES=full#' \
+      -e 's#^PV_PARTLABEL=.*#PV_PARTLABEL=lvm#' \
+      -e "s#^VOLUME_GROUPS=.*#VOLUME_GROUPS=nvmea:${1}#" \
+      -e 's#^LOGICAL_VOLUMES=.*#LOGICAL_VOLUMES=nvmea:ci-cache:10GiB:ext4:ci-cache#' \
+      -e 's#^ROLE_TIERS=.*#ROLE_TIERS=ci-cache:nvmea#' \
+      "$HP" > "$REPLY_PROFILE"
+}
+
+for protected in /dev/sda1 /dev/sda2 /dev/sdc1 /dev/sdc2; do
+  hp_clobbering "$protected"
+  run_layout "$BARE" --dry-run "$REPLY_PROFILE"
+  if [ "$REPLY_RC" -ne 0 ] \
+     && printf '%s' "$REPLY_OUT" | grep -qF 'REFUSED' \
+     && printf '%s' "$REPLY_OUT" | grep -qF "$protected" \
+     && printf '%s' "$REPLY_OUT" | grep -qF 'PRESERVED_PARTITIONS'; then
+    ok "J3  a step naming ${protected} is refused, naming that partition and the key"
+  else
+    no "J3  a step naming ${protected} is refused, naming that partition and the key (rc=${REPLY_RC})"
+    printf '%s\n' "$REPLY_OUT"
+  fi
+
+  # Preservation outranks consent, and the WORDING has to say so: a refusal
+  # advising `--i-consent-to-destroy=/dev/sdc2` would be advice that the key can
+  # be overridden, which is the one thing it promises it cannot.
+  run_layout "$BARE" --dry-run "--i-consent-to-destroy=${protected}" "$REPLY_PROFILE"
+  if [ "$REPLY_RC" -ne 0 ] \
+     && printf '%s' "$REPLY_OUT" | grep -qF 'no --i-consent-to-destroy unlocks it'; then
+    ok "J4  --i-consent-to-destroy does not unlock ${protected}, and the refusal says so"
+  else
+    no "J4  --i-consent-to-destroy does not unlock ${protected}, and the refusal says so (rc=${REPLY_RC})"
+    printf '%s\n' "$REPLY_OUT"
+  fi
+done
+
+# The three ways the committed profile says "taking nothing", and the parser's
+# refusal of each one taken away. The values are read from the file rather than
+# restated, and the refusals are what make the posture a statement rather than
+# three coincidences that happen to agree today.
+for declared in 'CI_NODE_FACILITIES=none' 'ADMISSION_CAPACITY_C=0' \
+                'CLUSTER_ROLE=agent' 'NODE_TAINTS=node-role/ci=factory:NoSchedule'; do
+  if grep -qxF "$declared" "$HP"; then
+    ok "J5  the committed profile declares: ${declared}"
+  else
+    no "J5  the committed profile declares: ${declared}"
+  fi
+done
+
+p="${TMPROOT}/hp-advertising-capacity.env"
+sed 's#^ADMISSION_CAPACITY_C=.*#ADMISSION_CAPACITY_C=12#' "$HP" > "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'ADMISSION_CAPACITY_C must be 0'; then
+  ok "J6  a closed node advertising churn slots is refused"
+else
+  no "J6  a closed node advertising churn slots is refused (rc=${REPLY_RC})"
+fi
+
+p="${TMPROOT}/hp-untainted.env"
+sed 's#^NODE_TAINTS=.*#NODE_TAINTS=#' "$HP" > "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] && printf '%s' "$REPLY_OUT" | grep -qF 'must carry a node-role/ci='; then
+  ok "J7  a closed node with no node-role/ci taint is refused"
+else
+  no "J7  a closed node with no node-role/ci taint is refused (rc=${REPLY_RC})"
+fi
+
+p="${TMPROOT}/hp-misspelt-posture.env"
+sed 's#^CI_NODE_FACILITIES=.*#CI_NODE_FACILITIES=non#' "$HP" > "$p"
+run_layout "$BARE" --dry-run "$p"
+if [ "$REPLY_RC" -ne 0 ] \
+   && printf '%s' "$REPLY_OUT" | grep -qF "CI_NODE_FACILITIES must be 'full' or 'none', got 'non'"; then
+  ok "J8  a posture value the parser does not know is refused as a POSTURE, not as an empty key"
+else
+  no "J8  a posture value the parser does not know is refused as a POSTURE, not as an empty key (rc=${REPLY_RC})"
+  printf '%s\n' "$REPLY_OUT"
+fi
+
+# ---------------------------------------------------------------------------
+echo
 echo "== I. Still nothing ran =="
 # ---------------------------------------------------------------------------
-# D1 asserted this before section F existed; F, G and H drive several more dry
-# runs, including three that plan a partition and two that plan a package
-# install, so the tripwire is read again after them.
+# D1 asserted this before section F existed; F, G, H and J drive several more
+# dry runs, including three that plan a partition, two that plan a package
+# install and eight that are refused mid-plan, so the tripwire is read again
+# after them. A refusal is the case where a leaked execution would be worst: it
+# means a step reached the guard, and a guard that printed its refusal AFTER
+# running the command would be no guard at all.
 if [ ! -s "$TRIPWIRE" ]; then
-  ok "I1  no mutating command ran in any dry run, sections F, G and H included"
+  ok "I1  no mutating command ran in any dry run, sections F, G, H and J included"
 else
   no "I1  a dry run EXECUTED a mutating command:"
   cat "$TRIPWIRE"

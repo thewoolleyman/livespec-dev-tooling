@@ -240,6 +240,29 @@ profile_load() {
     fi
   done
 
+  # -------------------------------------------------------------------------
+  # The two enumerated POSTURES, validated FIRST
+  #
+  # Before the emptiness rules, because CI_NODE_FACILITIES SELECTS them: under
+  # `none` four storage keys become permissibly empty, and an unrecognised value
+  # falls through to `full`, where those same four keys are required non-empty.
+  # So a misspelt posture used to be reported as an empty PV_PARTLABEL — a
+  # message about the wrong key, pointing an operator at the wrong edit.
+  # Measured on 2026-10-13 with `CI_NODE_FACILITIES=non`, which is exactly the
+  # typo the enum exists to catch (the key misspelt is caught as an unknown key;
+  # the VALUE misspelt was not). Validating the enums here reports the posture
+  # as the posture, and the emptiness rules below then run against a value the
+  # parser has already agreed to.
+  # -------------------------------------------------------------------------
+  case "${CFG[FACTORY_NODE]}" in
+    true | false) ;;
+    *) die "${PROFILE_PATH}: FACTORY_NODE must be 'true' or 'false', got '${CFG[FACTORY_NODE]}'" ;;
+  esac
+  case "${CFG[CI_NODE_FACILITIES]}" in
+    full | none) ;;
+    *) die "${PROFILE_PATH}: CI_NODE_FACILITIES must be 'full' or 'none', got '${CFG[CI_NODE_FACILITIES]}'" ;;
+  esac
+
   # Emptiness. CLUSTER_JOIN_ADDRESS is empty for a node that forms its own
   # cluster; SWAP_LABEL is empty for a node with no swap volume; the controller
   # and virtual-disk keys are empty for a node that has no storage controller;
@@ -311,20 +334,13 @@ profile_load() {
   read -r -a PRESERVED_DEVICES <<< "${CFG[PRESERVED_PARTITIONS]}"
 
   # -------------------------------------------------------------------------
-  # The two enumerated postures, and what each one obliges
+  # What the `none` posture OBLIGES
   #
-  # Both are refusals rather than comments because both describe a profile that
-  # PARSES and then means something the stages cannot honour. A typo in either
-  # enum would otherwise be read as its default: `CI_NODE_FACILTIES=none`
-  # (misspelt) is an unknown key and is already caught, but
-  # `CI_NODE_FACILITIES=non` would not be, and the node would quietly be built
-  # as a tier carrier.
+  # The enums themselves were validated above, before the emptiness rules they
+  # select. What is left here is the part that has to run after the records are
+  # in hand: a profile that PARSES and then means something the stages cannot
+  # honour.
   # -------------------------------------------------------------------------
-  case "${CFG[FACTORY_NODE]}" in
-    true | false) ;;
-    *) die "${PROFILE_PATH}: FACTORY_NODE must be 'true' or 'false', got '${CFG[FACTORY_NODE]}'" ;;
-  esac
-
   case "${CFG[CI_NODE_FACILITIES]}" in
     full)
       # Nothing to oblige: the three storage keys are required non-empty
@@ -351,7 +367,9 @@ profile_load() {
         *" ${PROFILE_CI_TAINT_KEY}="*) ;;
         *) die "${PROFILE_PATH}: CI_NODE_FACILITIES=none must also be CLOSED to CI scheduling, so NODE_TAINTS must carry a ${PROFILE_CI_TAINT_KEY}=<value>:<Effect> record; it is '${CFG[NODE_TAINTS]}'. ADMISSION_CAPACITY_C=0 stops Kueue's admission; the taint is what stops the scheduler." ;;
       esac ;;
-    *) die "${PROFILE_PATH}: CI_NODE_FACILITIES must be 'full' or 'none', got '${CFG[CI_NODE_FACILITIES]}'" ;;
+    # No third arm: the enum was validated above, before the emptiness rules it
+    # selects, so an unrecognised value has already been refused by name and
+    # cannot reach here.
   esac
 
   # CLUSTER_ROLE selects the node-local step plan (now the ansible/ci-pool.yml roles,
