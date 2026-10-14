@@ -19,14 +19,29 @@ fires on the thing the reconciler depends on.
 
 from __future__ import annotations
 
+import base64
 import importlib
+import json
 import re
 from pathlib import Path
 from typing import Protocol, cast
 
+from test_reconcile import make_context, ok
+
+from livespec_dev_tooling.fleet._context import FleetMember, GhResult, RowPass
+from livespec_dev_tooling.fleet._reconcile_shims import (
+    SHIM_BRANCH,
+    reconcile_shim_workflows,
+)
 from livespec_dev_tooling.fleet._reconciler_shim import (
+    RECONCILER_WORKFLOW,
     REUSABLE_RECONCILER_WORKFLOW,
     reconciler_shim_content,
+)
+from livespec_dev_tooling.fleet._rows_files import (
+    BUMP_PIN_WORKFLOW,
+    PIN_FRESHNESS_WORKFLOW,
+    RELEASE_DISPATCH_WORKFLOW,
 )
 
 __all__: list[str] = []
@@ -271,3 +286,112 @@ def test_the_reusable_reconciler_is_callable_at_the_path_the_shim_names() -> Non
     assert "\non:\n  workflow_call:\n" in _reusable()
     assert REUSABLE_RECONCILER_WORKFLOW.endswith("/reusable-master-health-reconcile.yml")
     assert f"uses: {_OWNER}/livespec-dev-tooling/{REUSABLE_RECONCILER_WORKFLOW}@" in _shim()
+
+
+_MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
+_REPO = "repos/acme/widget"
+_TREE: tuple[str, ...] = ("api", f"{_REPO}/git/trees/master?recursive=1")
+_BRANCH_PROBE: tuple[str, ...] = ("api", f"{_REPO}/git/ref/heads/{SHIM_BRANCH}")
+_MASTER_REF: tuple[str, ...] = ("api", f"{_REPO}/git/ref/heads/master")
+_REFS_POST: tuple[str, ...] = ("api", f"{_REPO}/git/refs", "--method", "POST", "--input", "-")
+_PULLS_POST: tuple[str, ...] = ("api", f"{_REPO}/pulls", "--method", "POST", "--input", "-")
+_RECEIVING_SHIMS = [BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW]
+
+
+def _put(*, path: str) -> tuple[str, ...]:
+    return ("api", f"{_REPO}/contents/{path}", "--method", "PUT", "--input", "-")
+
+
+def _shim_table(*, present: list[str]) -> dict[tuple[str, ...], GhResult]:
+    """A canned forge for `widget` whose master tree carries exactly `present`.
+
+    Every shim PUT is canned so a missing write shows up as an UNWRITTEN path
+    in the recorded calls rather than as a reconcile failure — the two are
+    different findings, and only the first is what these assertions are about.
+    """
+    entries = [{"path": path, "mode": "100644"} for path in present]
+    table: dict[tuple[str, ...], GhResult] = {
+        _TREE: ok(payload={"tree": entries, "truncated": False}),
+        _BRANCH_PROBE: GhResult(returncode=1, stdout="", stderr="Not Found"),
+        _MASTER_REF: ok(payload={"object": {"sha": "abc123"}}),
+        _REFS_POST: ok(payload={}),
+        _PULLS_POST: ok(payload={"number": 11}),
+    }
+    for path in [*_RECEIVING_SHIMS, RECONCILER_WORKFLOW]:
+        table[_put(path=path)] = ok(payload={})
+    return table
+
+
+def _written(*, calls: list[tuple[tuple[str, ...], str | None]], path: str) -> str:
+    """The decoded content `calls` wrote to `path`; EMPTY when nothing did.
+
+    Empty-on-absence rather than `None`-on-absence so the helper carries no
+    branch of its own. A canonical shim body is never empty, so `assert
+    _written(...)` separates "wrote nothing" from "wrote something" without an
+    `if` whose other arm only one of these two tests could ever reach — and an
+    arm no test reaches is an uncovered line in a helper written to prove
+    coverage of someone else's.
+    """
+    bodies = [stdin for args, stdin in calls if args == _put(path=path) and stdin is not None]
+    return "".join(base64.b64decode(json.loads(body)["content"]).decode("utf-8") for body in bodies)
+
+
+def test_wire_fleet_member_writes_the_canonical_reconciler_shim_when_it_is_missing() -> None:
+    """A member lacking the shim gets the canonical bytes, not an approximation.
+
+    Asserted as BYTE EQUALITY against `reconciler_shim_content` rather than as
+    a spot-check on a trigger line, because the conformance row that judges the
+    installed shim compares against those same bytes: a reconcile that writes
+    something merely similar would install a shim its own row then reports as
+    drifted, on every member, forever.
+    """
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    ctx = make_context(table=_shim_table(present=_RECEIVING_SHIMS), calls=calls)
+
+    outcome = reconcile_shim_workflows(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowPass), outcome
+    written = _written(calls=calls, path=RECONCILER_WORKFLOW)
+    assert written, (
+        "wire-fleet-member wrote no reconciler shim at all — the shim is not in "
+        "the canonical set the reconcile provisions"
+    )
+    assert written == reconciler_shim_content(owner="acme")
+
+
+def test_a_second_wire_run_after_the_shim_landed_leaves_the_member_unchanged() -> None:
+    """Idempotency ACROSS runs, which is the property an operator relies on.
+
+    The first run is asserted to have written the shim before the second run's
+    silence is read as idempotency: without that guard the second half passes
+    just as well against a reconcile that never provisions the shim at all, and
+    a vacuous idempotency proof is worse than none because it reads as one.
+
+    Each run gets a FRESH context, so the quiet comes from the forge state the
+    first run produced rather than from the per-run once-marker — the marker
+    only dedupes within a single wire invocation.
+    """
+    first_calls: list[tuple[tuple[str, ...], str | None]] = []
+    first = reconcile_shim_workflows(
+        ctx=make_context(table=_shim_table(present=_RECEIVING_SHIMS), calls=first_calls),
+        member=_MEMBER,
+    )
+
+    assert isinstance(first, RowPass), first
+    assert _written(calls=first_calls, path=RECONCILER_WORKFLOW), (
+        "the first run must write the reconciler shim, or the second run's "
+        "quiet is proving nothing"
+    )
+
+    second_calls: list[tuple[tuple[str, ...], str | None]] = []
+    second = reconcile_shim_workflows(
+        ctx=make_context(
+            table=_shim_table(present=[*_RECEIVING_SHIMS, RECONCILER_WORKFLOW]),
+            calls=second_calls,
+        ),
+        member=_MEMBER,
+    )
+
+    assert isinstance(second, RowPass), second
+    writes = [args for args, _stdin in second_calls if "--method" in args]
+    assert writes == [], f"a second run must leave the repository unchanged; it issued {writes}"

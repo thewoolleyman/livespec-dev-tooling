@@ -34,6 +34,10 @@ from livespec_dev_tooling.fleet._context import (
 )
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._reconcile import _gh_failed
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    RECONCILER_WORKFLOW,
+    reconciler_shim_content,
+)
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
     PIN_FRESHNESS_WORKFLOW,
@@ -49,7 +53,17 @@ __all__: list[str] = [
 
 SHIM_BRANCH = "wire-fleet-member/shim-workflows"
 
-_SHIM_WORKFLOWS = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
+# The canonical set this reconcile provisions. The three pin-and-bump shims
+# came first; the master-health reconciler shim joins them rather than taking
+# a provisioning path of its own, so a member missing both kinds still receives
+# ONE pull request — the once-marker in `reconcile_shim_workflows` dedupes per
+# MEMBER, not per shim family, and a second mechanism would defeat it.
+_SHIM_WORKFLOWS = (
+    BUMP_PIN_WORKFLOW,
+    PIN_FRESHNESS_WORKFLOW,
+    RELEASE_DISPATCH_WORKFLOW,
+    RECONCILER_WORKFLOW,
+)
 
 # Canonical shim bodies, mirroring livespec-dev-tooling's own committed
 # shims (the reusable workflows these `uses:` lines target live in this
@@ -128,7 +142,16 @@ _SHIM_BODIES = {
 
 
 def shim_content(*, path: str, ctx: FleetContext, member: FleetMember) -> str:
-    """Render the canonical shim body for `path` against the member."""
+    """Render the canonical shim body for `path` against the member.
+
+    The reconciler shim's body is NOT held in `_SHIM_BODIES` beside the three
+    pin-and-bump bodies: it is owned by `_reconciler_shim`, because the
+    obligation row that judges an INSTALLED reconciler shim compares it against
+    the same renderer. One source of truth is what keeps the reconcile from
+    writing bytes its own row then reports as drifted.
+    """
+    if path == RECONCILER_WORKFLOW:
+        return reconciler_shim_content(owner=ctx.owner)
     return _SHIM_BODIES[path].format(owner=ctx.owner, repo=member.repo)
 
 
@@ -173,7 +196,11 @@ def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str])
             return put_failure
     pr_body = json.dumps(
         {
-            "title": "chore(fleet): add missing pin-and-bump shim workflows",
+            # Not "pin-and-bump shim workflows" any more: the canonical set
+            # also carries the master-health reconciler shim, and a title that
+            # names only one family misdescribes half the pull requests it
+            # opens.
+            "title": "chore(fleet): add missing fleet shim workflows",
             "head": SHIM_BRANCH,
             "base": base_ref,
             "body": (
