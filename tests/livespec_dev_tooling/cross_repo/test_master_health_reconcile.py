@@ -20,6 +20,7 @@ from livespec_dev_tooling.cross_repo.master_health_reconcile import (
     STEP_NEEDS_ATTENTION,
     STEP_NONE,
     STEP_OPEN_REVERT,
+    STEP_RELEASE_REVERT,
     STEP_RERUN_FAILED_JOBS,
     reconcile_step,
 )
@@ -222,3 +223,50 @@ def test_a_failure_seen_on_an_unrelated_commit_escalates_rather_than_reverting()
 
     assert step.kind == STEP_NEEDS_ATTENTION
     assert step.episode_key == "master@35fea321"
+
+
+def _still_red_with_revert(*, revert: RevertPullRequest) -> ReconcileState:
+    """Master still red, the revert open but not yet landed — the real shape.
+
+    The branch stays red until the revert actually merges, so this is the state
+    every release decision is made in, not an artificial one.
+    """
+    return ReconcileState(
+        head_sha="35fea321",
+        commits=_incident_state().commits,
+        rerun_outcome=RERUN_STILL_RED,
+        revert_pull_request=revert,
+        open_needs_attention_episodes=(),
+        unrelated_failure_signatures=(),
+    )
+
+
+def test_a_held_revert_with_green_ci_and_no_claim_is_released_to_merge() -> None:
+    """The acceptance assertion: green revert CI, nothing claimed, so release it.
+
+    This is the step that actually returns the branch to green, and it names
+    the revert pull request it releases so the caller arms auto-merge on that
+    pull request rather than on whatever it last looked at.
+    """
+    step = reconcile_step(state=_still_red_with_revert(revert=_green_revert()), config=_CONFIG)
+
+    assert step.kind == STEP_RELEASE_REVERT
+    assert step.revert_pull_request == 3001
+    assert step.auto_merge_held is False
+
+
+def test_a_fix_forward_claim_holds_the_revert_rather_than_releasing_it() -> None:
+    """A claim suspends the release, and C1 judges the claim no further.
+
+    Whether a claimed fix-forward is making PROGRESS is child C2's decision
+    with calibrated step durations behind it. C1 must therefore do the one
+    thing that is safe without that calibration: hold, and take no step. A
+    reconciler that released through a claim would make C2 unimplementable,
+    because the revert would already have landed.
+    """
+    claimed = _green_revert(claim="fix-forward: #3100")
+
+    step = reconcile_step(state=_still_red_with_revert(revert=claimed), config=_CONFIG)
+
+    assert step.kind == STEP_NONE
+    assert "claim" in step.reason
