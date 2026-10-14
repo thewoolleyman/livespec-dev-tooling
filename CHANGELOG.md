@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.96.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.1...v1.96.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **heading-coverage:** date a new register key on the UTC calendar ([babcd94](https://github.com/thewoolleyman/livespec-dev-tooling/commit/babcd942ed436177326312cf53c5ddcb2364bef0))
+* **heading-coverage:** judge first-seen evidence on a UTC calendar basis ([0dd5a62](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0dd5a62d9b652f0537e6b6eba2e7a3ed0bed1ce4))
+
 ## [1.96.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.96.0...v1.96.1) (2026-10-13)
 
 
