@@ -1,0 +1,25 @@
+---
+node_labels_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+node_labels_profile: "{{ node_labels_profiles_dir }}/{{ inventory_hostname }}.env"
+# Reconciled on the server, under its admin kubeconfig — the same delegate_to
+# shape ../node_taints, node_status_credential and gates_kubeconfig use. An
+# agent holds no credential that may label a node.
+node_labels_server_host: poweredge-xubuntu
+node_labels_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+# This role manages exactly ONE label — the FACTORY role. Never anything else on
+# the node: `k3s-role=arc-runner-host` is set by the install command and is the
+# RUNNER role, and `ci-runner.io/cache-tier-carrier` is set by
+# provision-k3s.sh's own step 2b only when the tier is actually mounted. Labels
+# this role does not own are the node's own business.
+#
+# THE KEY AND THE VALUE ARE SEPARATE SCALARS because kubectl spells them
+# differently in the two directions it needs them: `key=value` to set, bare
+# `key-` to remove, and `jsonpath={.metadata.labels.<key>}` to read. Composing
+# them here once is what keeps the three spellings from being three facts.
+#
+# ci-runner/k3s/provision-k3s.sh registers the SAME `key=value` at join time
+# (its FACTORY_NODE_LABEL constant) and the repository test
+# tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py holds the
+# two to agreement, rather than trusting them to it.
+node_labels_factory_key: ci-runner.io/factory
+node_labels_factory_value: "true"

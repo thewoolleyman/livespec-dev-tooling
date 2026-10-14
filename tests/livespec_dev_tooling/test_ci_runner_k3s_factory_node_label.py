@@ -7,9 +7,11 @@ pool as a FULL agent but CLOSED TO CI by its committed profile — a
 churn-slot quota stays 44 — and all THREE pool nodes carry a per-node FACTORY
 label that the kubernetes-sandbox-backend plugin will select on. The label is a
 fact of each node's committed profile (`FACTORY_NODE`), rendered by the ONE
-procedure, so a fourth node is a fourth profile and never a fourth script
-(`SPECIFICATION/non-functional-requirements.md` §"Runner-pool node rebuild
-recipe", "One profile per node").
+procedure, so a fourth node is a fourth profile and never a fourth script —
+which is what the runner-pool node rebuild recipe in
+`SPECIFICATION/non-functional-requirements.md` requires of every node-specific
+value: read it from a per-node profile committed beside the procedure, and never
+embed in the procedure a value that belongs to one node.
 
 WHY A PYTEST FILE AND NOT ONLY `provision-k3s-exit-tests.sh`. That shell suite
 is the artifact the Definition of Done names and it is extended alongside this
@@ -90,8 +92,9 @@ def _hp_profile() -> Path:
     profile = _PROFILES / f"{_HP}.env"
     assert profile.is_file(), (
         f"{profile.relative_to(_REPO_ROOT)} must be committed: hp-xubuntu joins the pool as "
-        f"a second AGENT profile consumed by the one procedure, never as a second procedure "
-        f"(SPECIFICATION/non-functional-requirements.md §'Runner-pool node rebuild recipe')"
+        f"a second AGENT profile consumed by the one procedure, never as a second procedure, "
+        f"which is what the runner-pool node rebuild recipe in "
+        f"SPECIFICATION/non-functional-requirements.md requires"
     )
     return profile
 

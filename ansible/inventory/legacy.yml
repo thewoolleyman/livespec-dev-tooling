@@ -19,6 +19,16 @@
 #   ci_pool       — the k3s cluster's nodes. `cluster_role` selects the
 #                   server-only steps, replacing install-node.sh's STEP_SKIP.
 #   sandbox_hosts — the Fabro sandbox machines.
+#
+# ONE HOST IS IN TWO GROUPS, AND THAT IS THE POINT. `hp-xubuntu` is a Fabro
+# FACTORY host that also joins the k3s pool as a factory-only agent
+# (livespec-dev-tooling-7we6po), so it appears in BOTH `sandbox_hosts` — where
+# ansible/fabro-hosts.yml reaches it, and which it never leaves — and `ci_pool`,
+# where ansible/ci-pool.yml does. Two groups is not two owners: the two plays
+# converge disjoint facilities on it, and the overlap they have to coexist
+# inside is this host's kubelet reservation budget, recorded in
+# ansible/roles/docker_sandbox_slice/HOST_VARS.md §"Coexistence with the k3s
+# agent".
 # ---------------------------------------------------------------------------
 all:
   children:
@@ -37,6 +47,15 @@ all:
               ansible_user: cwoolley
               cluster_role: server
             gmktec-xubuntu:
+              ansible_user: cwoolley
+              cluster_role: agent
+            # A FACTORY-ONLY agent: it joins the pool and executes no CI job.
+            # The posture is its committed profile's, not this file's — the play
+            # reads CI_NODE_FACILITIES=none out of
+            # ci-runner/k3s/phase0-bare-metal/profiles/hp-xubuntu.env and gates
+            # the tier and job-execution roles off it. Also in `sandbox_hosts`
+            # below, which it never leaves.
+            hp-xubuntu:
               ansible_user: cwoolley
               cluster_role: agent
         sandbox_hosts:

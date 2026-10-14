@@ -1,0 +1,184 @@
+---
+# node_labels — reconcile a ci_pool node's FACTORY label to its committed phase0
+# profile's FACTORY_NODE, on the server under the admin kubeconfig.
+#
+# WHY IT EXISTS, AND WHY IT IS A SIBLING OF ../node_taints RATHER THAN PART OF
+# IT. k3s applies `--node-label` at node REGISTRATION only, exactly as it does
+# `--node-taint`, so a label set by ci-runner/k3s/provision-k3s.sh's install
+# command is a label that survives only until something re-creates the cluster's
+# objects. That is not hypothetical: a control-plane reboot re-registered
+# gmktec-xubuntu off a stale `k3s-agent.service` and put a retired taint back on
+# it (livespec-dev-tooling-yapwva). This role makes the label's converge
+# DECLARATIVE, so the factory posture of a node is a fact of its committed
+# profile and of nothing else.
+#
+# It is a SEPARATE role because ../node_taints manages exactly ONE taint key and
+# nothing else, and that narrowness is the property that makes it safe — a role
+# that also managed labels would be a role whose scope a reader has to
+# re-establish. The two share their shape: read the profile, probe the live
+# state under `check_mode: false` so the drift report can see it, and mutate
+# only on an apply (livespec-dev-tooling-ewjby3).
+#
+# SCOPE — the FACTORY label ONLY. It never reads, adds or removes any other
+# label on the node. `k3s-role=arc-runner-host` is the RUNNER role and belongs
+# to the install command; `ci-runner.io/cache-tier-carrier` is set by
+# provision-k3s.sh step 2b and only when the tier is actually mounted.
+#
+# EVERY ci_pool NODE RUNS IT, server included. All three pool nodes carry the
+# factory label and poweredge-xubuntu is UNTAINTED, which is why the label had
+# to exist at all: "the factory nodes" cannot be spelled as "the tainted ones"
+# (maintainer ruling 2026-10-13, livespec epic livespec-sqvj7p). The kubectl
+# calls are delegated to the server; the NODE is inventory_hostname.
+
+- name: Read this node's profile FACTORY_NODE
+  # The same read shape ../node_taints and ../k3s_config use on the same
+  # directory of profiles: regex_findall | first, NOT regex_search(..., '\1'),
+  # because with a group argument regex_search returns a LIST (['x'], not 'x')
+  # and every scalar compare below would fail. A missing key yields the parser's
+  # own default, `false` — the posture of both nodes written before the key
+  # existed, so this role is a no-op on a profile that predates it rather than
+  # an error.
+  ansible.builtin.set_fact:
+    node_labels_factory_declared: >-
+      {{ lookup('ansible.builtin.file', node_labels_profile)
+      | regex_findall('^FACTORY_NODE=(.*)$', multiline=True) | first | default('false') }}
+
+- name: Refuse a profile whose FACTORY_NODE is neither true nor false
+  # ci-runner/k3s/phase0-bare-metal/profile.sh already refuses this for every
+  # stage that parses the profile, but this role does NOT go through that parser
+  # — it reads the one line it needs with a lookup, because the profile lives in
+  # this repository and the target has no checkout. So the enum is re-asserted
+  # here rather than assumed: without it a typo would read as "not true" and
+  # silently REMOVE a live factory label.
+  ansible.builtin.assert:
+    that:
+      - node_labels_factory_declared in ['true', 'false']
+    fail_msg: >-
+      {{ node_labels_profile }} declares FACTORY_NODE='{{ node_labels_factory_declared }}',
+      which is neither 'true' nor 'false'
+    success_msg: >-
+      {{ inventory_hostname }}: FACTORY_NODE={{ node_labels_factory_declared }}
+
+- name: Read whether this node is registered in the API yet
+  # Separate from the probe below, and a read. A node still converging through a
+  # fresh join returns kubectl's exact `Error from server (NotFound): nodes
+  # "<name>" not found`; that is not a failure to abort the play on, and any
+  # OTHER non-zero is. The literal `(NotFound)` reason token is matched rather
+  # than the bare words "NotFound"/"not found", so an unrelated future stderr
+  # that merely contains those words is not swallowed.
+  #
+  # It is asked SEPARATELY because the selector read below cannot answer it: a
+  # node that is absent and a node that is present without the label are both
+  # simply missing from a selector's output, and adding a label to the first is
+  # a failure rather than a reconcile.
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - "-o"
+      - name
+  delegate_to: "{{ node_labels_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_labels_admin_kubeconfig }}"
+  register: node_labels_registered
+  changed_when: false
+  check_mode: false
+  failed_when:
+    - node_labels_registered.rc != 0
+    - "'(NotFound)' not in (node_labels_registered.stderr | default(''))"
+
+- name: Probe the live factory node label against the profile
+  # THE TASK THAT MAKES THE DRIFT REPORT MEAN ANYTHING, and it is a READ. Both
+  # reconciling tasks below are `ansible.builtin.command`, which ansible SKIPS
+  # under `--check` because it cannot know whether running them would mutate
+  # anything — so without a computed `changed_when` here,
+  # `just ansible-drift ansible/ci-pool.yml` would print `skipping` over a real
+  # pending change and report `changed=0`. That is the defect measured on
+  # 2026-10-12 for the taint (livespec-dev-tooling-ewjby3): not wrong about any
+  # single task, silent about the whole change.
+  #
+  # ASKED AS A LABEL SELECTOR, which is the question the label exists to answer:
+  # the kubernetes-sandbox-backend will select factory capacity with exactly this
+  # selector, so a node that does not appear here is a node that plugin cannot
+  # see. It also needs no inner quoting — a `-o jsonpath` reading a label key
+  # containing a dot and a slash would, and ../node_taints' own comment records
+  # that a `cmd:` string shlex-tokenized a jsonpath into a broken expression.
+  # argv:, not cmd:, for the same reason it does.
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - nodes
+      - "-l"
+      - "{{ node_labels_factory_key }}={{ node_labels_factory_value }}"
+      - "-o"
+      - name
+  delegate_to: "{{ node_labels_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_labels_admin_kubeconfig }}"
+  register: node_labels_live
+  check_mode: false
+  # THE PENDING RECONCILE, as a predicate over the selector's answer and the
+  # profile: the node matches but does not declare the label (the removal
+  # below), or declares it but does not match (the addition) — an exclusive-or,
+  # which is exactly the union of the two `when:` blocks that follow, so this
+  # probe cannot report a change neither of them would make. Both rc guards are
+  # load-bearing: an unregistered node has no label to compare and a reconcile
+  # that cannot be performed must not be reported as one.
+  changed_when: >-
+    node_labels_registered.rc == 0
+    and node_labels_live.rc == 0
+    and (('node/' ~ inventory_hostname) in node_labels_live.stdout_lines)
+    != (node_labels_factory_declared == 'true')
+
+- name: Note a node not yet registered (factory label reconcile skipped this pass)
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} is not registered in the API yet (NotFound) —
+      skipping the {{ node_labels_factory_key }} label reconcile this pass; it
+      converges once the node has joined.
+  when: node_labels_registered.rc != 0
+
+- name: Add the factory label the profile declares but the node lacks
+  # The ordinary case on every pool node, and the one a control-plane reboot
+  # re-creates: `--node-label` applied the label at the node's FIRST
+  # registration and nothing re-applies it at the next one.
+  # `kubectl label --overwrite` IS the idempotent form — a bare `kubectl label`
+  # fails once the key exists — and the `when:` already establishes it does not.
+  ansible.builtin.command:
+    cmd: >-
+      kubectl label --overwrite node {{ inventory_hostname }}
+      {{ node_labels_factory_key }}={{ node_labels_factory_value }}
+  delegate_to: "{{ node_labels_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_labels_admin_kubeconfig }}"
+  when:
+    - node_labels_registered.rc == 0
+    - node_labels_live.rc == 0
+    - node_labels_factory_declared == 'true'
+    - ('node/' ~ inventory_hostname) not in node_labels_live.stdout_lines
+  changed_when: true
+
+- name: Remove the factory label the profile no longer declares
+  # The retirement case: a node taken out of the factory pool by a profile edit.
+  # The trailing `-` is kubectl's remove syntax. Removing the label is what makes
+  # the edit take effect WITHOUT a rebuild — the install command's
+  # `--node-label` is gone from the plan, but a registered node keeps what it was
+  # registered with until something takes it away.
+  ansible.builtin.command:
+    cmd: kubectl label node {{ inventory_hostname }} {{ node_labels_factory_key }}-
+  delegate_to: "{{ node_labels_server_host }}"
+  become: true
+  environment:
+    KUBECONFIG: "{{ node_labels_admin_kubeconfig }}"
+  when:
+    - node_labels_registered.rc == 0
+    - node_labels_live.rc == 0
+    - node_labels_factory_declared == 'false'
+    - ('node/' ~ inventory_hostname) in node_labels_live.stdout_lines
+  changed_when: true
