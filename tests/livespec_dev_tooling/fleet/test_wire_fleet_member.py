@@ -47,6 +47,10 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
 )
 from livespec_dev_tooling.fleet._contract_rows import ObligationRow
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    RECONCILER_WORKFLOW,
+    reconciler_shim_content,
+)
 from livespec_dev_tooling.fleet.wire_fleet_member import reconcile_member
 
 if TYPE_CHECKING:
@@ -88,6 +92,12 @@ _TOPICS_PUT: tuple[str, ...] = (
 _CI_ARGS: tuple[str, ...] = (
     "api",
     "repos/acme/widget/contents/.github/workflows/ci.yml?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
+_RECONCILER_SHIM_ARGS: tuple[str, ...] = (
+    "api",
+    f"repos/acme/widget/contents/{RECONCILER_WORKFLOW}?ref=master",
     "-H",
     "Accept: application/vnd.github.raw",
 )
@@ -183,6 +193,7 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         ".github/workflows/bump-pin-from-dispatch.yml",
         ".github/workflows/pin-freshness.yml",
         ".github/workflows/release-dispatch.yml",
+        RECONCILER_WORKFLOW,
         "pyproject.toml",
         ".livespec.jsonc",
         ".claude/settings.json",
@@ -206,6 +217,7 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         _PROTECTION_ARGS: ok(payload=aligned_protection_payload()),
         _REPO_ARGS: ok(payload=aligned_merge_settings_payload()),
         _CI_ARGS: raw(text=_CI_YML),
+        _RECONCILER_SHIM_ARGS: raw(text=reconciler_shim_content(owner="acme")),
         _TOPICS_GET: ok(payload={"names": topics if topics is not None else ["livespec-sibling"]}),
     }
 

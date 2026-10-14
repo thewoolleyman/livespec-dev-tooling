@@ -68,6 +68,10 @@ from livespec_dev_tooling.fleet._rows_instructions import (
     assert_agent_ai_references_resolve,
     assert_agent_instruction_surface,
 )
+from livespec_dev_tooling.fleet._rows_reconciler_shim import (
+    RECONCILER_SHIM_HINT,
+    assert_reconciler_shim,
+)
 from livespec_dev_tooling.fleet._rows_worktree_pack import assert_worktree_pack_wired
 
 __all__: list[str] = [
@@ -144,6 +148,21 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=PIN_WEB_CLASSES,
         assert_member=assert_release_dispatch_workflow,
         reconcile=reconcile_shim_workflows,
+    ),
+    # ALL_CLASSES, so no `_contract_scope` declaration: every fleet repository
+    # has a master whose CI can go red, and the charter's assertion is "EVERY
+    # fleet repository carries the reconciler shim". Unlike the three rows
+    # above, this one checks the shim's CONTENT — a hand-edited shim passes a
+    # presence check while reconciling nothing. It shares their reconcile
+    # because the once-marker inside it dedupes per MEMBER: a second
+    # provisioning path would open a second shim pull request in one wire run.
+    ObligationRow(
+        row_id="workflow-master-health-reconcile",
+        obligation_type="committed-file",
+        applies_to=ALL_CLASSES,
+        assert_member=assert_reconciler_shim,
+        reconcile=reconcile_shim_workflows,
+        manual_hint=RECONCILER_SHIM_HINT,
     ),
     _manual_committed_file_row(
         row_id="copier-answers",

@@ -28,7 +28,20 @@ from typing import Protocol, cast
 
 from test_reconcile import make_context, ok
 
-from livespec_dev_tooling.fleet._context import FleetMember, GhResult, RowPass
+from livespec_dev_tooling.fleet._context import (
+    FleetContext,
+    FleetMember,
+    GhResult,
+    RowFinding,
+    RowOutcome,
+    RowPass,
+    RowSkip,
+)
+from livespec_dev_tooling.fleet._contract_rows import (
+    OBLIGATION_ROWS,
+    REPO_CLASSES,
+    rows_for,
+)
 from livespec_dev_tooling.fleet._reconcile_shims import (
     SHIM_BRANCH,
     reconcile_shim_workflows,
@@ -49,6 +62,7 @@ __all__: list[str] = []
 
 _OWNER = "acme"
 _FLEET_PACKAGE = Path(__file__).resolve().parents[3] / "livespec_dev_tooling" / "fleet"
+_ROW_ID = "workflow-master-health-reconcile"
 
 # GitHub's own floor for a `schedule:` trigger is five minutes, so "a schedule
 # no coarser than five minutes" IS `*/5`. The assertion below is written as an
@@ -395,3 +409,165 @@ def test_a_second_wire_run_after_the_shim_landed_leaves_the_member_unchanged() -
     assert isinstance(second, RowPass), second
     writes = [args for args, _stdin in second_calls if "--method" in args]
     assert writes == [], f"a second run must leave the repository unchanged; it issued {writes}"
+
+
+class _ReconcilerRowModule(Protocol):
+    """The surface `_rows_reconciler_shim` publishes to this test module."""
+
+    RECONCILER_SHIM_HINT: str
+
+    def assert_reconciler_shim(self, *, ctx: FleetContext, member: FleetMember) -> RowOutcome: ...
+
+
+def _row_module() -> _ReconcilerRowModule:
+    """The obligation-row module, behind a genuine assertion on its path."""
+    module_path = _FLEET_PACKAGE / "_rows_reconciler_shim.py"
+    assert module_path.is_file(), (
+        "the reconciler-shim obligation row must live in its own module beside "
+        "the sibling row families"
+    )
+    return cast(
+        "_ReconcilerRowModule",
+        importlib.import_module("livespec_dev_tooling.fleet._rows_reconciler_shim"),
+    )
+
+
+def _shim_file(*, path: str) -> tuple[str, ...]:
+    return (
+        "api",
+        f"{_REPO}/contents/{path}?ref=master",
+        "-H",
+        "Accept: application/vnd.github.raw",
+    )
+
+
+def _row_table(
+    *,
+    present: list[str],
+    body: str | None,
+    truncated: bool = False,
+) -> dict[tuple[str, ...], GhResult]:
+    """A canned forge serving `widget`'s tree and, when `body` is given, the shim."""
+    entries = [{"path": path, "mode": "100644"} for path in present]
+    table: dict[tuple[str, ...], GhResult] = {
+        _TREE: ok(payload={"tree": entries, "truncated": truncated})
+    }
+    for text in [body] if body is not None else []:
+        table[_shim_file(path=RECONCILER_WORKFLOW)] = GhResult(returncode=0, stdout=text, stderr="")
+    return table
+
+
+def _row_outcome(*, table: dict[tuple[str, ...], GhResult]) -> RowOutcome:
+    return _row_module().assert_reconciler_shim(
+        ctx=make_context(table=table, calls=[]), member=_MEMBER
+    )
+
+
+def test_a_member_missing_the_reconciler_shim_fails_the_conformance_row() -> None:
+    """Absence is a FINDING, and the message names the path an operator must fix."""
+    outcome = _row_outcome(table=_row_table(present=_RECEIVING_SHIMS, body=None))
+
+    assert isinstance(outcome, RowFinding), outcome
+    assert outcome.severity == "error"
+    assert RECONCILER_WORKFLOW in outcome.message
+    assert "widget" in outcome.message
+
+
+def test_a_member_whose_reconciler_shim_drifted_fails_the_conformance_row() -> None:
+    """A shim that differs from canonical is as broken as one that is absent.
+
+    Presence alone is not the obligation: a shim edited by hand — a dropped
+    trigger, a coarsened cron, a redirected `uses:` — still satisfies a
+    presence check while reconciling nothing, and that is the failure mode this
+    row exists for. The sibling pin-and-bump rows check presence only, so this
+    is a deliberate strengthening rather than a copy of them.
+    """
+    drifted = reconciler_shim_content(owner=_OWNER).replace(
+        "- cron: '*/5 * * * *'", "- cron: '0 * * * *'"
+    )
+    outcome = _row_outcome(
+        table=_row_table(present=[*_RECEIVING_SHIMS, RECONCILER_WORKFLOW], body=drifted)
+    )
+
+    assert isinstance(outcome, RowFinding), outcome
+    assert RECONCILER_WORKFLOW in outcome.message
+
+
+def test_a_member_carrying_the_canonical_reconciler_shim_passes() -> None:
+    outcome = _row_outcome(
+        table=_row_table(
+            present=[*_RECEIVING_SHIMS, RECONCILER_WORKFLOW],
+            body=reconciler_shim_content(owner=_OWNER),
+        )
+    )
+
+    assert isinstance(outcome, RowPass), outcome
+
+
+def test_a_shim_whose_pinned_ref_the_bump_automation_rewrote_is_not_drift() -> None:
+    """The one difference that is NOT drift, and the fleet depends on it.
+
+    `wire-fleet-member` installs the shim at the bootstrap `@master` ref and
+    the bump-pin automation rewrites that ref to a release tag — BY DESIGN, per
+    the pin-and-bump contract. A byte-identity comparison would therefore
+    report every correctly-wired member as drifted from the moment the first
+    pin bump lands: red fleet-wide, for conformance to a ratified mechanism.
+    So the comparison normalises the pinned ref away and compares everything
+    else exactly.
+    """
+    bumped = reconciler_shim_content(owner=_OWNER).replace(
+        "reconcile.yml@master", "reconcile.yml@v1.97.2"
+    )
+    assert "@v1.97.2" in bumped, "the fixture must actually carry a bumped ref"
+
+    outcome = _row_outcome(
+        table=_row_table(present=[*_RECEIVING_SHIMS, RECONCILER_WORKFLOW], body=bumped)
+    )
+
+    assert isinstance(outcome, RowPass), outcome
+
+
+def test_an_unreadable_tree_skips_rather_than_reporting_the_shim_absent() -> None:
+    """Can't-read is never absent — a permission-limited token must not red the fleet."""
+    outcome = _row_outcome(table={})
+
+    assert isinstance(outcome, RowSkip), outcome
+
+
+def test_a_truncated_tree_cannot_prove_the_shim_absent() -> None:
+    outcome = _row_outcome(table=_row_table(present=_RECEIVING_SHIMS, body=None, truncated=True))
+
+    assert isinstance(outcome, RowSkip), outcome
+
+
+def test_a_shim_present_in_the_tree_but_unreadable_skips() -> None:
+    """Listed-but-unreadable is a READ failure, not drift.
+
+    Reporting it as drift would put a member's conformance at the mercy of a
+    transient contents-API failure, and the remedy an operator would read off
+    the finding — rewrite the shim — is not the remedy for a failed read.
+    """
+    outcome = _row_outcome(
+        table=_row_table(present=[*_RECEIVING_SHIMS, RECONCILER_WORKFLOW], body=None)
+    )
+
+    assert isinstance(outcome, RowSkip), outcome
+
+
+def test_the_conformance_row_binds_every_repo_class_and_shares_the_shim_reconcile() -> None:
+    """Every fleet repository carries the shim, so the row narrows to nothing.
+
+    It also shares `reconcile_shim_workflows` with the pin-and-bump rows rather
+    than carrying a reconcile of its own: the once-marker inside that function
+    dedupes per MEMBER, so a second provisioning path would open a second shim
+    pull request against the same member in the same wire run.
+    """
+    for repo_class in REPO_CLASSES:
+        row_ids = {row.row_id for row in rows_for(repo_class=repo_class)}
+        assert _ROW_ID in row_ids, repo_class
+
+    row = next(row for row in OBLIGATION_ROWS if row.row_id == _ROW_ID)
+    assert row.obligation_type == "committed-file"
+    assert row.applies_to == frozenset(REPO_CLASSES)
+    assert row.reconcile is reconcile_shim_workflows
+    assert row.manual_hint == _row_module().RECONCILER_SHIM_HINT

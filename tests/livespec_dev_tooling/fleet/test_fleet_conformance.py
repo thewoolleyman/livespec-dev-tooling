@@ -64,6 +64,10 @@ from livespec_dev_tooling.fleet._invocation_failure import (
 )
 from livespec_dev_tooling.fleet._local_context import CommandOutcome
 from livespec_dev_tooling.fleet._manifest_git import GitReader
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    RECONCILER_WORKFLOW,
+    reconciler_shim_content,
+)
 from livespec_dev_tooling.fleet._snapshot import DownloadOutcome, DownloadResult
 from livespec_dev_tooling.fleet.fleet_conformance import (
     central_run_vantages,
@@ -328,6 +332,7 @@ def _member_entries(
         ".github/workflows/bump-pin-from-dispatch.yml",
         ".github/workflows/pin-freshness.yml",
         ".github/workflows/release-dispatch.yml",
+        RECONCILER_WORKFLOW,
         "pyproject.toml",
         ".livespec.jsonc",
         ".beads/config.yaml",
@@ -350,6 +355,7 @@ def _member_entries(
         contents(".gitignore"): raw(text=WIRED_GITIGNORE),
         contents("lefthook.yml"): raw(text=WIRED_LEFTHOOK),
         contents("pyproject.toml"): raw(text=_PYPROJECT),
+        contents(RECONCILER_WORKFLOW): raw(text=reconciler_shim_content(owner="acme")),
         contents(".github/workflows/ci.yml"): raw(text=_CI_YML),
         ("api", f"repos/acme/{repo}/actions/secrets"): ok(
             payload={"secrets": [{"name": "APP_ID"}, {"name": "APP_PRIVATE_KEY"}]}
