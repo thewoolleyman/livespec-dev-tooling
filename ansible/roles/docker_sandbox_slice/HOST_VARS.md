@@ -53,6 +53,69 @@ load on the same host, and the number worth protecting is the host's. If that
 cache ever needs to sit outside the envelope, give its unit its own
 `--cgroup-parent`; do not narrow this role.
 
+## Coexistence with the k3s agent
+
+**Why this section is here and not somewhere else.** Since
+`livespec-dev-tooling-7we6po`, `hp-xubuntu` also runs a **k3s agent** — it joins
+the CI pool as a factory-only node, closed to CI by its own committed profile.
+The kubelet must hold capacity back from the pods it would otherwise schedule, or
+the first node-pressure eviction takes a running factory dispatch with it. The
+numbers it holds back are computed almost entirely from the three slice limits
+above, so the budget is recorded beside them rather than in a file of its own.
+The values themselves live in **one** place — `KUBELET_ARGS` in
+`ci-runner/k3s/phase0-bare-metal/profiles/hp-xubuntu.env` — and the `k3s_config`
+role renders them into `/etc/rancher/k3s/config.yaml.d/`. This section is the
+arithmetic, not a second copy of the data.
+
+**What is on this host at once.** The Docker sandbox slice (ceiling
+`docker_sandbox_slice_memory_max` `24G` / `docker_sandbox_slice_cpu_quota`
+`1400%`, with `docker_sandbox_slice_memory_high` `22G` as its throttling
+watermark, holding every sandbox container and `sccache-redis`); two running
+Fabro server instances and one stopped one, which run *outside* the slice;
+`sshd`, the host's own daemons and the page cache; and now a k3s agent —
+`k3s-agent` itself (the kubelet plus the bundled containerd) and whatever pods it
+is allocated for.
+
+**The reservations, as `hp-xubuntu`'s profile declares them.**
+
+```text
+system-reserved=cpu=14500m,memory=25088Mi
+kube-reserved=cpu=1000m,memory=1024Mi
+eviction-hard=memory.available<512Mi,nodefs.available<10%,imagefs.available<10%
+```
+
+| term | memory | CPU | what it covers |
+| --- | --- | --- | --- |
+| node capacity | ~29Gi (30 GB) | 16000m | measured 2026-10-13 |
+| `system-reserved` | 25088Mi (24.5Gi) | 14500m | the slice's hard ceiling (`24G` / `1400%`) **plus** 512Mi and 500m for the two Fabro servers, `sshd` and the host's daemons |
+| `kube-reserved` | 1024Mi | 1000m | `k3s-agent`: the kubelet and the bundled containerd |
+| `eviction-hard` | 512Mi | — | the headroom the kubelet keeps so it evicts before the kernel OOM-kills |
+| **pod-allocatable** | **~3Gi** | **500m** | what is left for pods |
+
+**Read the two allocatable figures as a consequence, not a target.** `500m` and
+`~3Gi` are what the subtraction leaves, and they are deliberately not inflated:
+this node admits **no CI churn** (`ADMISSION_CAPACITY_C=0`) and the pods it is
+expected to carry are the cluster's own small system pods plus, later, whatever
+the Kubernetes sandbox backend places on it. A factory dispatch on this host runs
+in a **Docker** sandbox inside the slice, not in a pod, so it is funded by the
+`system-reserved` line and not by the allocatable one. Confirm the live figures
+with `kubectl describe node hp-xubuntu` after the apply rather than from this
+table — the capacity figure above is approximate, and the kubelet's own
+arithmetic is the authority.
+
+**The conditions under which this is revisited.** Two, and the first is this
+role's own "Expiry" below:
+
+1. **When the Kubernetes sandbox backend cutover steps the slice budget down.**
+   The sandbox containers move into pods, `docker_sandbox_slice` is retired, and
+   the `24G`/`1400%` that dominates `system-reserved` is released to the
+   allocatable line. The reservations and the slice limits are two halves of one
+   budget and move together — do not lower one without the other.
+2. **When `hp-xubuntu`'s `ADMISSION_CAPACITY_C` becomes non-zero.** Opening this
+   node to CI means runner and workflow pods, which `500m`/`3Gi` cannot fund. A
+   profile edit that opens the node without revisiting this table produces work
+   Kueue admits and the scheduler then cannot place.
+
 ## The drained restart
 
 **`cgroup-parent` is not reloadable.** `systemctl reload docker` re-reads only a

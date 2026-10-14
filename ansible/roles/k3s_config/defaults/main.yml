@@ -22,6 +22,29 @@ k3s_config_profile: "{{ k3s_config_profiles_dir }}/{{ inventory_hostname }}.env"
 # belonging to one node.
 k3s_config_drop_in_dir: /etc/rancher/k3s/config.yaml.d
 k3s_config_node_taint_drop_in: /etc/rancher/k3s/config.yaml.d/10-node-taint.yaml
+# THIS NODE's kubelet arguments, APPENDED to the fleet's shared list rather than
+# replacing it. The shared ci-runner/k3s/phase2/k3s-config/config.agent.yaml
+# every agent receives declares `kubelet-arg` with `max-pods=200`; this file's
+# template emits `kubelet-arg+`, which is the only form k3s's multi-file merge
+# appends with. Numbered 20- so it merges after the taint drop-in; the two touch
+# different keys, so the order is cosmetic rather than load-bearing, and the
+# number is stated so a third per-node file has somewhere obvious to go.
+#
+# WHERE THE VALUES COME FROM, AND WHY PER-NODE. The profile's KUBELET_ARGS. A
+# node's reservations are measured against the OTHER workloads on that one
+# machine — hp-xubuntu's Docker sandbox slice and its two Fabro servers — so they
+# belong to no other node and cannot live in the shared file. The arithmetic and
+# the resulting pod-allocatable figures are recorded in
+# ../../docker_sandbox_slice/HOST_VARS.md, beside the slice limits they are
+# computed from.
+k3s_config_kubelet_args_drop_in: /etc/rancher/k3s/config.yaml.d/20-kubelet-args.yaml
+# The node's data directory, from the profile's NODE_DATA_DIR, and the systemd
+# drop-in that refuses to start the agent before the volume holding it is
+# mounted. `--data-dir` itself is in the unit's ExecStart from the install — it
+# is a BUILD-TIME fact, and moving a populated data directory is a rebuild rather
+# than a converge — so what this role owns is the ORDERING, not the path.
+k3s_config_agent_unit_drop_in_dir: /etc/systemd/system/k3s-agent.service.d
+k3s_config_data_dir_drop_in: 10-requires-data-dir-mount.conf
 # The unit get.k3s.io writes from INSTALL_K3S_EXEC, and the expression that
 # takes `--node-taint` back out of its ExecStart.
 #

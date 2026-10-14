@@ -1,8 +1,15 @@
 ---
 # k3s_config — this node's k3s START CONFIGURATION: the shared
 # /etc/rancher/k3s/config.yaml selected by its cluster role, the per-node
-# node-taint drop-in rendered from its committed profile, and the server's
-# packaged-manifest skip marker.
+# drop-ins rendered from its committed profile (its node taints, its own kubelet
+# arguments, and the mount its data directory needs before the agent may start),
+# and the server's packaged-manifest skip marker.
+#
+# EVERY PER-NODE FACT OF THE START CONFIGURATION COMES OUT OF ONE FILE — the
+# node's committed phase0 profile — and is RENDERED rather than left in the unit
+# the installer wrote. That is the whole lesson of livespec-dev-tooling-yapwva:
+# a fact baked into `k3s-agent.service`'s ExecStart at join time goes stale the
+# day the profile changes, and the node re-registers off the stale copy.
 #
 # Replaces ci-runner/k3s/phase2/k3s-config/install-k3s-config.sh.
 #
@@ -114,6 +121,94 @@
   when: k3s_config_cluster_role == 'agent'
   notify: Settle the agent k3s runtime
 
+- name: Read this agent's profile KUBELET_ARGS and NODE_DATA_DIR
+  # The same read shape as the taint above, on the same file: this role renders
+  # every per-node fact of the k3s START CONFIGURATION, and all of them come out
+  # of the one committed profile. A missing or empty key yields '' — a node with
+  # no second workload to reserve against, and a node on k3s's own default data
+  # directory — and both tasks below are gated on non-empty rather than rendering
+  # a file that says nothing.
+  ansible.builtin.set_fact:
+    k3s_config_kubelet_args: >-
+      {{ lookup('ansible.builtin.file', k3s_config_profile)
+      | regex_findall('^KUBELET_ARGS=(.*)$', multiline=True) | first | default('') }}
+    k3s_config_node_data_dir: >-
+      {{ lookup('ansible.builtin.file', k3s_config_profile)
+      | regex_findall('^NODE_DATA_DIR=(.*)$', multiline=True) | first | default('') }}
+  when: k3s_config_cluster_role == 'agent'
+
+- name: Derive the kubelet argument records this agent appends
+  # Space-separated records, so `.split()` on whitespace IS the record list and
+  # `to_json` renders it as the YAML flow sequence k3s reads.
+  ansible.builtin.set_fact:
+    k3s_config_kubelet_arg_records: "{{ k3s_config_kubelet_args.split() | to_json }}"
+  when:
+    - k3s_config_cluster_role == 'agent'
+    - k3s_config_kubelet_args | length > 0
+
+- name: Render this agent's own kubelet arguments from its committed profile
+  # THE COEXISTENCE BUDGET, AS CONFIGURATION. On a node that is also a Fabro
+  # factory host, the kubelet must hold back what the Docker sandbox slice, the
+  # Fabro servers and the page cache need, or the first node-pressure eviction
+  # takes a running dispatch with it. The records are the profile's;
+  # ../../docker_sandbox_slice/HOST_VARS.md carries the arithmetic, the resulting
+  # pod-allocatable figures and the condition under which they are revisited.
+  #
+  # APPENDS rather than replaces — the template emits `kubelet-arg+`, which is the
+  # only form k3s's multi-file merge appends with. See the template's own header
+  # for what the plain key would silently drop.
+  #
+  # TAKES EFFECT ON THE NEXT k3s START, like everything else in this role.
+  ansible.builtin.template:
+    src: kubelet-args.yaml.j2
+    dest: "{{ k3s_config_kubelet_args_drop_in }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  when:
+    - k3s_config_cluster_role == 'agent'
+    - k3s_config_kubelet_args | length > 0
+  notify: Settle the agent k3s runtime
+
+- name: Create the agent unit's drop-in directory
+  # Explicit, because --check cannot see past a missing parent: with the
+  # directory absent the render below reports a would-be change and then fails
+  # only on a real apply.
+  ansible.builtin.file:
+    path: "{{ k3s_config_agent_unit_drop_in_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when:
+    - k3s_config_cluster_role == 'agent'
+    - k3s_config_node_data_dir | length > 0
+
+- name: Order the agent after the volume holding its data directory
+  # A node whose profile names NODE_DATA_DIR keeps k3s's data — the containerd
+  # store above all — off the root filesystem. `--data-dir` is in the unit's
+  # ExecStart from the install, so k3s uses that path from its first start; if
+  # the volume is not mounted then, k3s creates the directory on the root
+  # filesystem and the mount HIDES it, silently. The template's header records
+  # the 2026-09-07 incident that is the same shape.
+  #
+  # The tier-carrying nodes get the equivalent ordering from the storage_layout
+  # role's own drop-in, which a node with no tier does not run — which is why
+  # this one is rendered from the profile instead.
+  ansible.builtin.template:
+    src: data-dir-mount.conf.j2
+    dest: "{{ k3s_config_agent_unit_drop_in_dir }}/{{ k3s_config_data_dir_drop_in }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: k3s_config_data_dir_ordering
+  when:
+    - k3s_config_cluster_role == 'agent'
+    - k3s_config_node_data_dir | length > 0
+
 - name: Drop --node-taint out of the agent unit's start command
   # THE STALE CARRIER, REMOVED. The rendered file above is only an opinion while
   # the unit still carries a `--node-taint` from join time; k3s would still
@@ -135,16 +230,21 @@
 
 - name: Make systemd re-read the agent unit this pass rewrote
   # daemon_reload ONLY. No `state:` — this role must never restart k3s-agent,
-  # which would kill every CI job running on the node; the stripped unit takes
-  # effect at the next start, exactly like the config file above. Reached only
-  # when the strip actually edited something, so a converged node reloads
+  # which would kill every CI job running on the node; the rewritten unit takes
+  # effect at the next start, exactly like the config files above. Reached only
+  # when this pass actually edited something, so a converged node reloads
   # nothing.
+  #
+  # ONE RELOAD FOR BOTH EDITS THIS ROLE CAN MAKE TO THE AGENT UNIT — the
+  # `--node-taint` strip and the data-directory ordering drop-in. Two reload
+  # tasks would be two answers to one question, and systemd needs telling once
+  # per pass however many files changed.
   ansible.builtin.systemd_service:
     daemon_reload: true
   become: true
   when:
     - k3s_config_cluster_role == 'agent'
-    - k3s_config_agent_unit_taint_strip.changed
+    - k3s_config_agent_unit_taint_strip.changed or k3s_config_data_dir_ordering.changed
 
 - name: Create the packaged-manifest directory on the server
   # 0700 as the shell installed it. This is under /var/lib/rancher/k3s/server/
