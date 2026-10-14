@@ -171,6 +171,20 @@ def _revert_in_flight_step(
             episode_key=key,
         )
 
+    # The release step's idempotence, and the mirror of the open step's: the
+    # effect of having released is visible in the forge, so a later run reads
+    # it and takes no second step. Without this the reconciler would re-arm on
+    # every tick for the whole window between arming auto-merge and the merge
+    # landing.
+    if revert.auto_merge_armed:
+        return ReconcileStep(
+            kind=STEP_NONE,
+            target_branch=config.target_branch,
+            reason="this revert is already released to merge; nothing further is owed",
+            revert_pull_request=revert.number,
+            episode_key=key,
+        )
+
     return ReconcileStep(
         kind=STEP_RELEASE_REVERT,
         target_branch=config.target_branch,
