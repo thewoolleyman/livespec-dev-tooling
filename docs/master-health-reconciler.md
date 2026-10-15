@@ -210,3 +210,117 @@ What this does and does not settle:
   mint new code the byte-identity half must then refuse, so the module records
   the hazard and leaves the "refuse the episode and escalate instead" decision
   to child C2, where "the revert may not be safe" already lives.
+
+## The distribution surface — decisions recorded by child D
+
+Authored for work-item `livespec-dev-tooling-dw7dzd`, child D of the same plan.
+C1 stopped at the decision layer; D is how that layer reaches a fleet
+repository and nothing more.
+
+| Artifact | Where it lives |
+| --- | --- |
+| The per-repo shim's canonical body | `livespec_dev_tooling/fleet/_reconciler_shim.py` (`RECONCILER_SHIM_TEMPLATE`) |
+| The reusable workflow's canonical body | the same module (`REUSABLE_RECONCILER_BODY`) |
+| The install | `_reconcile_shims.reconcile_shim_workflows`, which the shim joins |
+| The conformance row | `_contract_master_health_rows.MASTER_HEALTH_ROWS` |
+| The recorded-state seam | `livespec_dev_tooling/cross_repo/master_health_step.py` |
+
+### The reusable workflow's body is Python data, and that is a BOUNDARY
+
+A factory branch may not create or modify anything under `.github/workflows/`:
+the dispatch credential carries no `workflows` grant, and
+`check-no-workflow-edits` enforces it. The body is therefore authored in the
+module above — where the branch may carry it — and the committed
+`.github/workflows/reusable-master-health-reconcile.yml` lands maintainer-side
+from that text.
+
+What stops the two copies drifting once the file lands is a test, not a
+convention: `tests/livespec_dev_tooling/fleet/test_reconciler_shim.py` proves a
+byte-comparator against files that DO exist and then applies it to the
+committed path, where `is not False` passes while the file is absent (the
+boundary's own state) and FAILS from the moment a differing copy lands.
+
+### The row detects drift; the install repairs ABSENCE only
+
+`assert_master_health_workflow` is the only content-reading row in
+`_rows_files.py`, and the reason is the shape of this mechanism's failure. Every
+other shim announces its own breakage — a pin stops being bumped, a release
+stops fanning out. This one goes QUIET, and it goes quiet exactly when a master
+is red. A hand-edited shim keeps its path, so a presence-only row would read it
+as conforming while its triggers or its `uses:` target had been changed.
+
+`wire-fleet-member` writes the shim where it is ABSENT and reports drift as an
+error-severity finding naming the remedy. That split is the Definition of Done's
+own: repair-on-absence plus report-on-drift. Widening the reconcile to overwrite
+a committed file is a separate decision, and the finding's remedy (delete the
+file, re-run the wire) reaches the same end through the mechanism that already
+exists.
+
+### The transport is in the workflow, and the adapter is pure
+
+`master_health_state.py` records where the halves live: "the gathering lives in
+the reusable workflow". D honours that literally. The workflow's shell carries
+every `gh` read and every `gh` write; `master_health_step` carries the parse and
+delegates the whole judgement to `reconcile_step`; nothing in the shell branches
+on forge state. That is also why the adapter can sit on the network-touching
+side of the seam and still inherit the `master_health_*` AST ban — it decides
+nothing, so a replay of the recording reproduces the step exactly.
+
+Its one hard rule is to FAIL CLOSED, and the load-bearing instance is the
+malformed REVERT. Read leniently as "no revert in flight" it would send the
+decision table down the branch that OPENS one, for an episode that already has
+a revert in flight. There is no safe lenient reading of that field.
+
+### The gatherer's two JOINS with the decision core are asserted, not reviewed
+
+D's workflow is the GATHERER on the far side of that seam, which gives it two
+obligations a YAML linter cannot see: it owes the decision exactly the recording
+the decision reads, and it must perform exactly the steps the decision can
+choose. Both had already drifted once by the time this landed — C1's calibration
+slice (`livespec-dev-tooling-zdqnr2`) added `gating_workflow` and
+`unrelated_lookback_commits` to the configuration, `ci_workflow` and `subject`
+to each recorded commit, retired a pre-computed `unrelated_failure_signatures`
+summary that carried no DISTANCE, and added a sixth step kind
+(`STEP_CLOSE_REVERT`).
+
+A gatherer frozen at the older shapes fails CLOSED on every tick: the adapter
+writes no step, the job reds, nothing heals — and every structural assertion
+about the workflow still passes. So the sibling test now reads the keys the
+recording's `jq -n` program writes and compares them against
+`dataclasses.fields` of `ReconcileConfig` and `MasterCommit`, and reads the
+`case` arms the perform step dispatches on and compares them against the
+decision module's own `STEP_*` constants. Both readers are proven first on a
+sample carrying the trap they must not fall into — an intermediate `--jq`
+filter's keys, and the `case` default arm — so neither comparison can pass
+vacuously. The same discipline sits in `master_health_step`: its payload is
+projected off `ReconcileStep`'s fields rather than enumerated, and its sibling
+test requires every configuration and non-nullable commit field by name.
+
+### The revert this ships is still the forge's, and it degrades SAFELY
+
+The `open-revert` arm asks for `revertPullRequest`, not the described-revert
+`createCommitOnBranch` request the repair section above records. That is a scope
+line, not an oversight: the request is already BUILT by
+`master_health_revert_commit`, and posting it needs the culprit's diff gathered
+and handed to the builder, which is the signed-revert follow-up child's work.
+
+What makes shipping the forge-authored revert in the meantime honest is that its
+known limitation cannot cause damage. The commit it mints is unsigned, so a
+revert of a culprit that touched product impl `.py` is convicted by
+`check-red-green-replay`'s commit-range gate — which reds the revert's OWN CI,
+and `_revert_in_flight_step` escalates a revert whose CI is not green to a
+needs-attention item instead of merging anything. The failure mode is therefore
+a human, never a bad merge. It is also why the live proof below must use a
+culprit that touches no product `.py`.
+
+### What D does NOT prove, and why
+
+The reusable workflow's YAML parses and every `run:` block is `shellcheck`-clean
+at warning severity, but its `jq` programs and every forge read it performs are
+unexercised until a live run: `jq` is not installed in the factory sandbox, and
+no fake forge would prove anything about the real one. That is precisely the
+work-item's host-captured assertion — a live fleet repository whose master goes
+red — and it is graded after the release carrying this lands through the normal
+pin path. The negative verification above (a web-flow revert here is UNSIGNED)
+still stands, so the culprit that proves it must touch no product `.py` until
+the signed-revert follow-up lands.
