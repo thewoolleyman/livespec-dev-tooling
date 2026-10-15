@@ -127,8 +127,16 @@ def test_committed_configuration_carries_the_branch_the_markers_and_the_gate() -
 
     The set is asserted EXACTLY rather than by membership: a knob that reaches
     the decision without being committed configuration is the shape this
-    assertion exists to catch.
+    assertion exists to catch. `unrelated_lookback_commits` is here for that
+    reason — how far back the recurring-failure read may look decides whether
+    a revert is opened at all, so it is committed rather than a constant in
+    the rule.
     """
     declared = {field.name for field in fields(ReconcileConfig)}
 
-    assert declared == {"target_branch", "infra_outage_markers", "gating_workflow"}
+    assert declared == {
+        "target_branch",
+        "infra_outage_markers",
+        "gating_workflow",
+        "unrelated_lookback_commits",
+    }

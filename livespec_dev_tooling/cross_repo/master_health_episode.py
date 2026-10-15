@@ -43,7 +43,7 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
     ReconcileState,
 )
 
-__all__: list[str] = ["culprit_commit", "head_commit", "red_block"]
+__all__: list[str] = ["culprit_commit", "head_commit", "lookback_block", "red_block"]
 
 
 def _by_sha(*, state: ReconcileState) -> dict[str, MasterCommit]:
@@ -82,6 +82,31 @@ def red_block(*, state: ReconcileState) -> tuple[MasterCommit, ...]:
         cursor = by_sha.get(cursor.parent_sha)
     block.reverse()
     return tuple(block)
+
+
+def lookback_block(*, state: ReconcileState, lookback: int) -> tuple[MasterCommit, ...]:
+    """The `lookback` recorded commits immediately BELOW the current episode.
+
+    The same ancestry walk as `red_block`, in the same direction, continuing
+    from where that one stopped — so a caller comparing the episode against
+    recent history reads both through `parent_sha` and neither through list
+    position.
+
+    It stops at `lookback` commits or when the window runs out, whichever comes
+    first, and answers EMPTY for a green branch: with no episode there is no
+    "below the episode", and returning the branch's last commits instead would
+    answer a different question than the caller asked.
+    """
+    block = red_block(state=state)
+    if not block:
+        return ()
+    by_sha = _by_sha(state=state)
+    walked: list[MasterCommit] = []
+    cursor = by_sha.get(block[0].parent_sha)
+    while cursor is not None and len(walked) < lookback:
+        walked.append(cursor)
+        cursor = by_sha.get(cursor.parent_sha)
+    return tuple(walked)
 
 
 def culprit_commit(*, state: ReconcileState) -> MasterCommit | None:

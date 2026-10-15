@@ -138,11 +138,17 @@ class ReconcileConfig:
     check branch protection evaluates. It is committed configuration rather
     than a constant because the name is a per-repository fact, and it carries
     no default for the reason `MasterCommit.ci_workflow` carries none.
+
+    `unrelated_lookback_commits` is how far BELOW the current episode the
+    recurring-failure read may look for the same failing check — counted in
+    commits, because the decision path holds no clock (see
+    `master_health_flake_history` for why the bound is load-bearing).
     """
 
     target_branch: str
     infra_outage_markers: tuple[str, ...]
     gating_workflow: str
+    unrelated_lookback_commits: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -156,10 +162,15 @@ class ReconcileState:
 
     `open_needs_attention_episodes` carries the episode keys that already have
     an open needs-attention issue, so raising one is open-or-update rather than
-    open-again. `unrelated_failure_signatures` carries signatures observed
-    OUTSIDE this episode; a failure that also appears there is not attributable
-    to this merge, which is one of the three ways a red master is classified as
-    something a revert would not fix.
+    open-again.
+
+    THERE IS NO PRE-COMPUTED "FAILED ELSEWHERE" FIELD, and that is deliberate.
+    One used to live here, filled in by the gatherer, and it carried no DISTANCE
+    — so the decision could not tell a failure from ten minutes ago from one
+    three months old, and the bounded rule the episode calibration asks for was
+    not expressible over it. `commits` is the single source for that evidence
+    now: a red commit recorded below a green one is a previous episode, which is
+    what `master_health_flake_history` reads.
     """
 
     head_sha: str
@@ -167,4 +178,3 @@ class ReconcileState:
     rerun_outcome: str
     revert_pull_request: RevertPullRequest | None
     open_needs_attention_episodes: tuple[str, ...]
-    unrelated_failure_signatures: tuple[str, ...]

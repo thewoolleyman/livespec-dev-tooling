@@ -29,6 +29,7 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
 
 _LINT_FAILURE = "check-lint failed"
 _GATING_WORKFLOW = "CI"
+_LOOKBACK_COMMITS = 20
 _ORDINARY_SUBJECT = "feat(cross-repo): an ordinary merge"
 
 
@@ -59,7 +60,6 @@ def _state(*, head_sha: str, commits: tuple[MasterCommit, ...]) -> ReconcileStat
         rerun_outcome=RERUN_STILL_RED,
         revert_pull_request=None,
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
 

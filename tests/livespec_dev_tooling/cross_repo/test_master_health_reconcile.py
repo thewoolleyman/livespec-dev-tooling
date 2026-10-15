@@ -39,12 +39,14 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
 
 _LINT_FAILURE = "check-lint failed"
 _GATING_WORKFLOW = "CI"
+_LOOKBACK_COMMITS = 20
 _ORDINARY_SUBJECT = "feat(cross-repo): an ordinary merge"
 
 _CONFIG = ReconcileConfig(
     target_branch="master",
     infra_outage_markers=("No runner matching", "registry down"),
     gating_workflow=_GATING_WORKFLOW,
+    unrelated_lookback_commits=_LOOKBACK_COMMITS,
 )
 
 
@@ -89,7 +91,6 @@ def _incident_state(
         rerun_outcome=rerun_outcome,
         revert_pull_request=None,
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
 
@@ -131,7 +132,6 @@ def test_a_green_branch_yields_no_step_at_all() -> None:
         rerun_outcome=RERUN_NOT_ATTEMPTED,
         revert_pull_request=None,
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
     step = reconcile_step(state=state, config=_CONFIG)
@@ -187,7 +187,6 @@ def _superseded_green_state(*, head_pull_request: int | None) -> ReconcileState:
         rerun_outcome=RERUN_STILL_RED,
         revert_pull_request=_green_revert(),
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
 
@@ -239,7 +238,6 @@ def test_a_window_that_does_not_record_the_green_heads_verdict_closes_nothing() 
         rerun_outcome=RERUN_STILL_RED,
         revert_pull_request=_green_revert(),
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
     step = reconcile_step(state=state, config=_CONFIG)
@@ -263,7 +261,6 @@ def test_a_flake_verdict_escalates_and_never_releases_an_open_green_revert() -> 
         rerun_outcome=RERUN_PASSED,
         revert_pull_request=_green_revert(),
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
     step = reconcile_step(state=state, config=_CONFIG)
@@ -289,30 +286,12 @@ def test_an_infrastructure_outage_escalates_rather_than_reverting() -> None:
         rerun_outcome=RERUN_STILL_RED,
         revert_pull_request=None,
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
     step = reconcile_step(state=state, config=_CONFIG)
 
     assert step.kind == STEP_NEEDS_ATTENTION
     assert step.culprit_pull_request is None
-
-
-def test_a_failure_seen_on_an_unrelated_commit_escalates_rather_than_reverting() -> None:
-    """The culprit did not introduce it, so reverting the culprit cannot fix it."""
-    state = ReconcileState(
-        head_sha="35fea321",
-        commits=_incident_state().commits,
-        rerun_outcome=RERUN_STILL_RED,
-        revert_pull_request=None,
-        open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(_LINT_FAILURE,),
-    )
-
-    step = reconcile_step(state=state, config=_CONFIG)
-
-    assert step.kind == STEP_NEEDS_ATTENTION
-    assert step.episode_key == "master@35fea321"
 
 
 def _still_red_with_revert(*, revert: RevertPullRequest) -> ReconcileState:
@@ -327,7 +306,6 @@ def _still_red_with_revert(*, revert: RevertPullRequest) -> ReconcileState:
         rerun_outcome=RERUN_STILL_RED,
         revert_pull_request=revert,
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
 
