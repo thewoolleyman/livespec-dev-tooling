@@ -21,9 +21,9 @@ classification and the revert's own CI get to speak.
 
 THE ORDER OF THE TABLE IS THE SAFETY ARGUMENT, not a style choice. A classified
 non-regression is matched BEFORE any branch that could release a revert, so
-"never merges a revert on a flake, an outage, or an unrelated failure" is a
-property of the table's SHAPE rather than a rule each later branch has to
-remember. A green branch is matched before the in-flight revert branch for the
+"never merges a revert on a flake, an outage, or a check that was already
+failing" is a property of the table's SHAPE rather than a rule each later
+branch has to remember. A green branch is matched before the in-flight revert branch for the
 same kind of reason: once the branch is healthy there is nothing left to merge
 a revert FOR, so a revert still held open there is CLOSED as superseded rather
 than released into a green branch.
@@ -66,7 +66,6 @@ from livespec_dev_tooling.cross_repo.master_health_verdict import (
     VERDICT_GREEN,
     VERDICT_INFRA,
     VERDICT_UNCLASSIFIED,
-    VERDICT_UNRELATED,
     red_verdict,
 )
 
@@ -339,7 +338,7 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
     # docstring. A revert may already be open and green here; escalating anyway
     # is the point, because the red this revert was opened for has since been
     # classified as something no revert fixes.
-    if verdict in (VERDICT_FLAKE, VERDICT_INFRA, VERDICT_UNRELATED):
+    if verdict in (VERDICT_FLAKE, VERDICT_INFRA):
         return ReconcileStep(
             kind=STEP_NEEDS_ATTENTION,
             target_branch=config.target_branch,

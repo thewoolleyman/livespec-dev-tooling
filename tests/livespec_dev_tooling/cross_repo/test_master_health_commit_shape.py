@@ -44,6 +44,7 @@ _MODULE_PATH = (
 _MODULE_NAME = "livespec_dev_tooling.cross_repo.master_health_commit_shape"
 
 _GATING_WORKFLOW = "CI"
+_LOOKBACK_COMMITS = 20
 _COVERAGE_FAILURE = "check-per-file-coverage failed"
 _RELEASE_SUBJECT = "chore(master): release 1.97.3"
 _ORDINARY_SUBJECT = "feat(cross-repo): an ordinary merge"
@@ -62,6 +63,7 @@ def _config() -> ReconcileConfig:
         target_branch="master",
         infra_outage_markers=("No runner matching",),
         gating_workflow=_GATING_WORKFLOW,
+        unrelated_lookback_commits=_LOOKBACK_COMMITS,
     )
 
 
@@ -106,7 +108,6 @@ def _episode_on(*, subject: str) -> ReconcileState:
         rerun_outcome=RERUN_STILL_RED,
         revert_pull_request=None,
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
 

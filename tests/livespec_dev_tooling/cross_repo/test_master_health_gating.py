@@ -47,6 +47,7 @@ _MODULE_PATH = (
 _MODULE_NAME = "livespec_dev_tooling.cross_repo.master_health_gating"
 
 _GATING_WORKFLOW = "CI"
+_LOOKBACK_COMMITS = 20
 _SCHEDULED_WORKFLOW = "fleet-capacity-sweep"
 _LINT_FAILURE = "check-lint failed"
 _ORDINARY_SUBJECT = "feat(cross-repo): an ordinary merge"
@@ -64,6 +65,7 @@ def _config() -> ReconcileConfig:
         target_branch="master",
         infra_outage_markers=("No runner matching",),
         gating_workflow=_GATING_WORKFLOW,
+        unrelated_lookback_commits=_LOOKBACK_COMMITS,
     )
 
 
@@ -93,7 +95,6 @@ def _state(*, head_sha: str, commits: tuple[MasterCommit, ...]) -> ReconcileStat
         rerun_outcome=RERUN_STILL_RED,
         revert_pull_request=None,
         open_needs_attention_episodes=(),
-        unrelated_failure_signatures=(),
     )
 
 
