@@ -159,7 +159,7 @@ else to restore.
 - **Unattended openssh upgrades restart the fallback listener.** Every future
   openssh-server upgrade stops `ssh.socket` in its preinst and restarts it in
   its postinst; the fallback flaps for the duration. With the drop-ins in place
-  the restarted socket comes back on the fallback port, bound to the interface.
+  the restarted socket comes back on the fallback address and port.
 - **The boot path has not been exercised.** The generator, `FreeBind`,
   the address binding and socket activation are only combined at boot. Prove it once
   on the least critical host, through the sanctioned reboot path, when the

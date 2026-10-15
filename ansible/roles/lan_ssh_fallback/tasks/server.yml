@@ -1,6 +1,6 @@
 ---
 # Phase 2, ONE home-lab host at a time (the play runs `serial: 1` and stops at
-# the first failure): make OpenSSH listen on this host's LAN addresses at the
+# the first failure): make OpenSSH listen on this host's wired LAN address at the
 # fallback port, without changing anything Tailscale SSH presents.
 #
 # The invariant every step is checked against: the host key Tailscale SSH
@@ -74,9 +74,8 @@
   check_mode: false
 
 - name: Refuse unless the declared address is on the declared wired interface
-  # The address is a DHCP lease (no reservation was readable from the host); the
-  # listener is bound by device and survives a lease change, but the client
-  # aliases dial this address, so a stale value must be caught here.
+  # The listener binds this address and the client aliases dial it, so a
+  # stale value in host_vars must be caught here, before anything changes.
   ansible.builtin.assert:
     that:
       - lan_ssh_fallback_iface_addr.stdout is search(lan_ssh_fallback_address ~ '/')
@@ -93,18 +92,27 @@
   failed_when: false
   check_mode: false
 
-- name: Read the installed openssh package versions
-  ansible.builtin.command:
-    argv: [dpkg-query, -W, "-f=${Package}=${Version}\n", openssh-server, openssh-client, openssh-sftp-server]
+- name: Read whether every pinned openssh package is installed at its pin or newer
+  # At-or-above, not equal: unattended-upgrades moves openssh forward on its
+  # own, and a converged host whose openssh is newer than the pin must stay a
+  # no-op rather than be held off and then refused by the install fence.
+  ansible.builtin.shell:
+    cmd: >-
+      for spec in {{ lan_ssh_fallback_packages | map('quote') | join(' ') }}; do
+      pkg="${spec%%=*}"; want="${spec#*=}";
+      have="$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)" || exit 1;
+      [ -n "$have" ] || exit 1;
+      dpkg --compare-versions "$have" ge "$want" || exit 1;
+      done
+    executable: /bin/bash
   register: lan_ssh_fallback_pkg_versions
   changed_when: false
   failed_when: false
   check_mode: false
 
-- name: Hold whether the host already carries exactly the pinned packages
+- name: Hold whether the host already carries the pinned packages or newer
   ansible.builtin.set_fact:
-    lan_ssh_fallback_pinned_present: >-
-      {{ (lan_ssh_fallback_pkg_versions.stdout_lines | sort) == (lan_ssh_fallback_packages | sort) }}
+    lan_ssh_fallback_pinned_present: "{{ lan_ssh_fallback_pkg_versions.rc == 0 }}"
 
 - name: Read whether openssh-server is already installed
   ansible.builtin.command:
