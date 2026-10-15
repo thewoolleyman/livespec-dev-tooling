@@ -12,6 +12,20 @@ Definition of Done states a property. "A schedule no coarser than five minutes"
 is asserted by PARSING the cron minute field and comparing the interval, so a
 later edit to `*/10` fails here rather than passing a substring match that only
 ever proved the line was present.
+
+AND THE WORKFLOW'S TWO JOINS WITH THE DECISION CORE ARE ASSERTED AGAINST THE
+CORE ITSELF, never against a list restated here. The reusable workflow is the
+GATHERER on the far side of the seam `master_health_state` names, so it owes the
+decision exactly the recording the decision reads and must perform exactly the
+steps the decision can choose. Both obligations are invisible to a YAML linter
+and both have already drifted once: child C1's calibration slice
+(`livespec-dev-tooling-zdqnr2`) added two configuration fields and two
+per-commit fields to the recording and added a sixth step kind
+(`STEP_CLOSE_REVERT`), and a gatherer frozen at the older shapes fails CLOSED on
+every tick — writing no step, reddening the job, healing nothing — while every
+structural assertion about it still passes. So the recorded-state keys are
+compared against `dataclasses.fields` of the state vocabulary, and the performed
+step kinds against the `STEP_*` constants the decision module exports.
 """
 
 from __future__ import annotations
@@ -19,10 +33,16 @@ from __future__ import annotations
 import base64
 import json
 import re
+from dataclasses import fields
 from pathlib import Path
 
 from _gh_railway import lift_gh
 
+from livespec_dev_tooling.cross_repo import master_health_reconcile
+from livespec_dev_tooling.cross_repo.master_health_state import (
+    MasterCommit,
+    ReconcileConfig,
+)
 from livespec_dev_tooling.fleet import _reconciler_shim
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -509,3 +529,105 @@ def test_the_committed_reusable_workflow_is_byte_identical_to_the_canonical_body
         _committed_matches(path=_REPO_ROOT / REUSABLE_RECONCILER_WORKFLOW, canonical=canonical)
         is not False
     )
+
+
+def _recorded_state_keys(*, body: str) -> frozenset[str]:
+    """Every key the workflow's recording step writes into `state.json`.
+
+    Read off the ONE `jq -n` program that composes the recording, not off the
+    whole body: the per-read `gh api --jq` filters above it build intermediate
+    files whose keys are that read's vocabulary rather than the recording's, and
+    scanning them too would report a union nothing ever wrote.
+    """
+    program = body.partition("jq -n ")[2].partition("> state.json")[0]
+    return frozenset(re.findall(r"(?m)^\s*(\w+):", program))
+
+
+def _performed_step_kinds(*, body: str) -> frozenset[str]:
+    """Every step kind the workflow's `case` dispatches on, excluding its default.
+
+    The `*)` arm is deliberately NOT collected. It is the arm that reds the job
+    on a kind this workflow does not recognise, so counting it would let it
+    stand in for the coverage this reader exists to measure.
+    """
+    dispatch = body.partition('case "${kind}" in')[2].partition("esac")[0]
+    return frozenset(re.findall(r"(?m)^\s*([a-z][a-z-]*)\)$", dispatch))
+
+
+def test_the_recording_and_dispatch_readers_see_only_their_own_region() -> None:
+    """Both join assertions are only as strong as the readers underneath them.
+
+    The recording reader must not pick up an intermediate read's keys, and the
+    dispatch reader must not count the default arm — proven here on samples
+    carrying exactly those traps, so a vacuous frozenset cannot masquerade as
+    agreement with the core below.
+    """
+    body = (
+        "gh api x --jq '{ decoy: .y }' > runs.json\n"
+        "jq -n '{\n  target_branch: $branch,\n  commits: [ $c[] | {\n"
+        "    sha: .sha\n  } ]\n}' > state.json\n"
+    )
+
+    assert _recorded_state_keys(body=body) == frozenset({"target_branch", "commits", "sha"})
+
+    dispatch = 'case "${kind}" in\n  none)\n    :\n    ;;\n  *)\n    exit 1\n    ;;\nesac\n'
+
+    assert _performed_step_kinds(body=dispatch) == frozenset({"none"})
+
+
+def test_the_recording_carries_exactly_what_the_decision_reads() -> None:
+    """The gatherer's output shape IS the decision's input shape, field for field.
+
+    This is the assertion the drift of `livespec-dev-tooling-zdqnr2` needed and
+    did not have. A recording short one field fails CLOSED in the adapter — no
+    step written, the job red, nothing healed — and a recording carrying a field
+    the decision retired is a read nobody consumes. Both are silent in YAML and
+    both are caught here, because the expected set is projected from
+    `ReconcileConfig` and `MasterCommit` rather than restated.
+
+    The two names that are NOT dataclass fields are the recording's own
+    vocabulary and are listed for that reason: the issue TITLES travel (the
+    adapter owns the title convention, so it derives
+    `open_needs_attention_episodes` from them), and `revert_pull_request` is
+    recorded as a whole object whose own keys the adapter parses separately.
+    """
+    expected = (
+        {field.name for field in fields(ReconcileConfig)}
+        | {field.name for field in fields(MasterCommit)}
+        | {"head_sha", "rerun_outcome", "commits", "revert_pull_request"}
+        | {"needs_attention_issue_titles"}
+    )
+
+    assert _recorded_state_keys(body=_reusable_workflow_body()) == expected
+
+
+def test_the_workflow_performs_every_step_the_decision_can_choose() -> None:
+    """Every `STEP_*` the core can answer has an arm, and no arm is orphaned.
+
+    A step kind with no arm falls to the default and reds the job on a decision
+    the reconciler reached correctly — which is how `STEP_CLOSE_REVERT`, the
+    ending 25% of measured episodes take, would have turned the commonest happy
+    path into a failing workflow. Equality rather than containment, so an arm
+    for a kind the core no longer emits fails here too.
+    """
+    kinds = {
+        value
+        for name, value in vars(master_health_reconcile).items()
+        if name.startswith("STEP_") and isinstance(value, str)
+    }
+
+    assert kinds, "no STEP_* constants found — the comparison would pass vacuously"
+    assert _performed_step_kinds(body=_reusable_workflow_body()) == kinds
+
+
+def test_the_revert_step_carries_the_hold_rebump_label_the_decision_computed() -> None:
+    """A reverted pin bump must hold the bump shim, or the pin comes straight back.
+
+    `hold_rebump_label` is `None` for every culprit that is not a pin bump, so
+    the workflow reads one field rather than re-deriving the rule: the label is
+    the JOIN with the bump shim that must honour it, and a revert opened without
+    it is re-bumped on the next freshness tick.
+    """
+    body = _reusable_workflow_body()
+
+    assert "hold_rebump_label" in body

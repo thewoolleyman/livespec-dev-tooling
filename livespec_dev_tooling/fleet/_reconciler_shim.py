@@ -162,6 +162,17 @@ REUSABLE_RECONCILER_BODY = r"""
 # file. Every judgement, including which commit is the culprit and whether a
 # revert may be released, is made by `master_health_step` over the recording.
 # Nothing in the shell below branches on forge state.
+#
+# THE RECORDING'S SHAPE IS NOT THIS FILE'S TO CHOOSE. It is the decision's input
+# vocabulary, and the two have drifted once already: child C1's calibration
+# slice (livespec-dev-tooling-zdqnr2) added `gating_workflow` and
+# `unrelated_lookback_commits` to the configuration, `ci_workflow` and `subject`
+# to each recorded commit, and retired a pre-computed
+# `unrelated_failure_signatures` summary that carried no DISTANCE. A gatherer
+# left at the older shapes fails CLOSED on every tick — the adapter writes no
+# step, the job reds, nothing heals — so the sibling test compares the keys
+# written below against `dataclasses.fields` of that vocabulary, and the `case`
+# arms below against the decision module's own `STEP_*` constants.
 
 name: reusable-master-health-reconcile
 
@@ -184,14 +195,28 @@ on:
         required: false
         type: number
         default: 30
-      ci_workflow:
+      gating_workflow:
         description: >-
-          The CI workflow FILE whose per-commit conclusion is the branch's
-          verdict. A file name rather than a display name because the Actions
-          API addresses workflows by file.
+          The ONE workflow FILE whose per-commit conclusion is the branch's
+          verdict: the one whose all-green gate job is the required status
+          check branch protection evaluates. Every other workflow on the branch
+          can fail for days without blocking a merge, so recording any of them
+          would let a non-gating failure start an episode. A file name rather
+          than a display name because the Actions API addresses workflows by
+          file.
         required: false
         type: string
         default: ci.yml
+      unrelated_lookback_commits:
+        description: >-
+          How far BELOW the current episode the already-failing read may look
+          for the same failing check. Counted in COMMITS because the decision
+          path holds no clock: a commit count is replayable, a duration read at
+          decision time is not. The bound is what stops that exoneration being
+          unlimited — check names recur for unrelated reasons.
+        required: false
+        type: number
+        default: 20
       infra_outage_markers:
         description: >-
           Newline-separated substrings that identify a failure as an
@@ -246,29 +271,37 @@ jobs:
           REPO: ${{ github.repository }}
           BRANCH: ${{ inputs.target_branch }}
           WINDOW: ${{ inputs.window }}
-          CI_WORKFLOW: ${{ inputs.ci_workflow }}
+          GATING_WORKFLOW: ${{ inputs.gating_workflow }}
+          LOOKBACK: ${{ inputs.unrelated_lookback_commits }}
           MARKERS: ${{ inputs.infra_outage_markers }}
         run: |
           set -euo pipefail
 
           # The commit window, newest first. `parent_sha` is what the culprit
-          # rule walks — ancestry is read from the field, never from position.
+          # rule walks — ancestry is read from the field, never from position —
+          # and `subject` is carried RAW because two rules read nothing else: a
+          # release-please release commit may not be reverted at all, and a pin
+          # bump's revert must carry the hold-rebump label.
           gh api "repos/${REPO}/commits?sha=${BRANCH}&per_page=${WINDOW}" --jq '
             [ .[] | { sha: .sha,
                       parent_sha: (.parents[0].sha // ""),
                       subject: (.commit.message | split("\n")[0]) } ]' > commits.json
 
-          # Every CI run on the branch in ONE read. A commit with no run at all
-          # is PENDING — undecided, not green — and `run_attempt` is how "have
-          # this episode's failed jobs already been re-run once?" is answered
-          # without the reconciler remembering anything between runs.
-          runs_path="repos/${REPO}/actions/workflows/${CI_WORKFLOW}/runs"
+          # Every run of the GATING workflow on the branch in ONE read. Only
+          # that workflow's verdict decides whether the branch is red, so no
+          # other workflow's runs are recorded at all: a commit with no gating
+          # run is PENDING — undecided, not green — and `run_attempt` is how
+          # "have this episode's failed jobs already been re-run once?" is
+          # answered without the reconciler remembering anything between runs.
+          runs_path="repos/${REPO}/actions/workflows/${GATING_WORKFLOW}/runs"
           gh api "${runs_path}?branch=${BRANCH}&per_page=100" \
             --jq '[ .workflow_runs[] | { head_sha, conclusion, run_attempt, id } ]' > runs.json
 
           # The failing CHECK names per red commit are the failure SIGNATURE the
-          # classifier compares across commits. Only red commits are read, so
-          # this loop is one call per commit in the red block, not per window.
+          # classifier compares across commits — against the outage markers, and
+          # against the same check recorded BELOW the episode inside the
+          # configured lookback. Only red commits are read, so this loop is one
+          # call per commit in the red block, not per window.
           echo '{}' > signatures.json
           red_shas=$(jq -r '[ .[] | select(.conclusion == "failure") | .head_sha ]
                              | unique | .[]' runs.json)
@@ -280,19 +313,6 @@ jobs:
             jq --arg sha "${sha}" --arg signature "${signature}" \
               '. + {($sha): $signature}' signatures.json > signatures.next.json
             mv signatures.next.json signatures.json
-          done
-
-          # Failing checks seen OUTSIDE this branch. A failure that also appears
-          # here is not attributable to the merge under suspicion, which is one
-          # of the three ways a red branch is classified as something no revert
-          # would fix. Capped at ten open pull requests: this is a safety net,
-          # and an unbounded sweep would make the reconciler the slow step.
-          echo '[]' > unrelated.json
-          for head in $(gh api "repos/${REPO}/pulls?state=open&per_page=10" --jq '.[].head.sha'); do
-            gh api "repos/${REPO}/commits/${head}/check-runs?per_page=100" \
-              --jq '[ .check_runs[] | select(.conclusion == "failure") | .name ]' > head-checks.json
-            jq -s 'add | unique' unrelated.json head-checks.json > unrelated.next.json
-            mv unrelated.next.json unrelated.json
           done
 
           # The revert pull request already in flight, if any. GitHub's own
@@ -341,18 +361,21 @@ jobs:
           jq -n \
             --arg branch "${BRANCH}" \
             --arg markers "${MARKERS}" \
+            --arg gating "${GATING_WORKFLOW}" \
+            --argjson lookback "${LOOKBACK}" \
             --slurpfile commits commits.json \
             --slurpfile runs runs.json \
             --slurpfile signatures signatures.json \
-            --slurpfile unrelated unrelated.json \
             --slurpfile revert revert.json \
             --slurpfile titles issue-titles.json '
             ($runs[0] | group_by(.head_sha)
-                      | map({key: .[0].head_sha,
-                             value: (max_by(.run_attempt))}) | from_entries) as $bysha
+                      | map({key: .[0].head_sha, value: (max_by(.run_attempt))})
+                      | from_entries) as $bysha
             | {
                 target_branch: $branch,
                 infra_outage_markers: ($markers | split("\n") | map(select(length > 0))),
+                gating_workflow: $gating,
+                unrelated_lookback_commits: $lookback,
                 head_sha: ($commits[0][0].sha // ""),
                 rerun_outcome: (
                   [ $commits[0][] | $bysha[.sha] // empty
@@ -366,12 +389,13 @@ jobs:
                   pull_request: ((.subject
                                    | capture("\\(#(?<n>[0-9]+)\\)$").n
                                    | tonumber) // null),
+                  ci_workflow: $gating,
                   ci_conclusion: (($bysha[.sha].conclusion) // "pending"),
-                  failure_signature: (($signatures[0][.sha]) // null)
+                  failure_signature: (($signatures[0][.sha]) // null),
+                  subject: .subject
                 } ],
                 revert_pull_request: ($revert[0] // null),
-                needs_attention_issue_titles: $titles[0],
-                unrelated_failure_signatures: $unrelated[0]
+                needs_attention_issue_titles: $titles[0]
               }' > state.json
 
       - name: Decide the ONE step this run takes
@@ -407,23 +431,63 @@ jobs:
               # the gap in which classification and the revert's own CI get to
               # speak, and `auto_merge_held` travels as data so this step cannot
               # arm auto-merge by omission.
+              #
+              # ⚠️ THE COMMIT THIS MINTS IS UNSIGNED. Measured 2026-10-14 and
+              # recorded in docs/master-health-reconciler.md §"The negative
+              # verification: a web-flow revert here is UNSIGNED": every revert
+              # commit GitHub authored for orchestrator PR #2918 reports
+              # `verification.verified: false`. So a revert of a culprit that
+              # touched product impl `.py` is convicted by
+              # check-red-green-replay's commit-range gate — which this
+              # reconciler handles SAFELY rather than silently: the revert's own
+              # CI goes red, and `_revert_in_flight_step` escalates the episode
+              # to a needs-attention item instead of merging anything. Replacing
+              # this call with the described-revert request
+              # `master_health_revert_commit` already builds (a
+              # `createCommitOnBranch` mutation whose bytes restore the
+              # culprit's parent) is the signed-revert follow-up child's work,
+              # not this one's; until it lands, a culprit touching product impl
+              # `.py` ends with a human rather than with a merge.
               test "$(jq -r '.auto_merge_held' step.json)" = "true"
               culprit=$(jq -r '.culprit_pull_request' step.json)
               pr_node=$(gh api "repos/${REPO}/pulls/${culprit}" --jq '.node_id')
-              gh api graphql -f query='
+              revert_number=$(gh api graphql -f query='
                 mutation($pr: ID!, $title: String!, $body: String!) {
                   revertPullRequest(input: {pullRequestId: $pr, title: $title, body: $body}) {
                     revertPullRequest { number url }
                   }
                 }' -f pr="${pr_node}" \
                    -f title="revert: #${culprit} reddened $(jq -r '.target_branch' step.json)" \
-                   -f body="Opened by the master-health reconciler. ${reason}"
+                   -f body="Opened by the master-health reconciler. ${reason}" \
+                   --jq '.data.revertPullRequest.revertPullRequest.number')
+              # A reverted pin bump must HOLD the bump shim, or the freshness
+              # tick re-bumps the pin this revert just undid. The label is the
+              # decision's `hold_rebump_label` and is EMPTY for every culprit
+              # that is not a pin bump, so this step reads one field rather than
+              # re-deriving the rule — and `--force` creates-or-updates the
+              # label rather than failing on a repository that has not seen it.
+              label=$(jq -r '.hold_rebump_label // empty' step.json)
+              if [ -n "${label}" ]; then
+                gh label create "${label}" --repo "${REPO}" --force \
+                  --description "master-health: hold pin re-bumps while this revert stands"
+                gh pr edit "${revert_number}" --repo "${REPO}" --add-label "${label}"
+              fi
               ;;
             release-revert)
               # Reached only when the revert's own CI is green and nothing is
               # claimed. Rebase strategy, matching the fleet's merge discipline.
               gh pr merge "$(jq -r '.revert_pull_request' step.json)" \
                 --repo "${REPO}" --auto --rebase
+              ;;
+            close-revert)
+              # A revert held open while a LATER commit turned the branch green
+              # is a revert of a red that no longer exists: the episode it was
+              # opened for ended without it. The plan's calibration found this to
+              # be the COMMON ending rather than an edge case — 39 of 154
+              # measured episodes — and leaving it open parks a revert of
+              # someone's work on a healthy branch for a human to reason about.
+              gh pr close "$(jq -r '.revert_pull_request' step.json)" \
+                --repo "${REPO}" --comment "${reason}"
               ;;
             needs-attention)
               # One issue per EPISODE, open-or-update rather than open-again. The
