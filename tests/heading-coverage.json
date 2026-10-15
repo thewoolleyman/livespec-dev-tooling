@@ -626,5 +626,69 @@
     "heading": "## Scenario: an opted-in push is refused when no verdict arrives",
     "test": "tests.consumer.test_delegated_pre_push_gate_scenarios.test_an_opted_in_push_is_refused_when_no_verdict_arrives",
     "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). The Given is modelled as the canned cluster refusing every CLUSTER command with kubectl's own unreachable-API-server wording while the local git and renderer steps still succeed — the host is fine, the cluster is not. The mapped arm proves the first Then as NO_VERDICT with `refuses_push` true and no green token written (asserted as the absence of the `green_token write` invocation, not merely as a flag), and the second Then in the recipe arm: with the client exiting non-zero the script exits non-zero and invokes no `just` target at all, so the local aggregate does not run in place of the missing verdict. That is the half a recipe could get wrong while looking generous — falling back locally would turn \"we could not gate this\" into \"we gated it some other way\"."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Docker engine install guard",
+    "test": "TODO",
+    "reason": "A real test at the required tier is owed for this heading; livespec-dev-tooling-ubpufs owns it.",
+    "work_item": "livespec-dev-tooling-ubpufs"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a second controller cannot reserve the Docker engine install guard while a run is unfinished",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "work_item": "livespec-dev-tooling-4on5pg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the Docker engine install guard refuses to start without a live dead-man",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "work_item": "livespec-dev-tooling-4on5pg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard deadline recorded on an earlier boot counts as passed",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "work_item": "livespec-dev-tooling-4on5pg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard confirm that arrives after the deadline loses to the rollback",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "work_item": "livespec-dev-tooling-4on5pg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard run named by the commit marker is finished, never rolled back",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "work_item": "livespec-dev-tooling-4on5pg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard rollback phase that keeps killing the driver does not stop the later phases",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "work_item": "livespec-dev-tooling-4on5pg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the Docker engine install guard's recover resumes an interrupted publish and rolls back any other uncommitted run",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "work_item": "livespec-dev-tooling-4on5pg"
   }
 ]
