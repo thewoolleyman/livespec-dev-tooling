@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.101.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.101.0...v1.101.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **ansible:** lan_ssh_fallback - single backslashes in regex literals ([32faa19](https://github.com/thewoolleyman/livespec-dev-tooling/commit/32faa190f0a2ec0eaa918ef4465ed6e9abc58223))
+
 ## [1.101.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.100.2...v1.101.0) (2026-10-15)
 
 
