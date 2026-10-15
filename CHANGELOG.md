@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.101.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.101.1...v1.101.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **ansible:** lan_ssh_fallback - create /run/sshd before validating ([6210c86](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6210c86332f2d74ca3afe5e1f73fd14ca25548ac))
+
 ## [1.101.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.101.0...v1.101.1) (2026-10-15)
 
 
