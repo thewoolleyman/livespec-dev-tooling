@@ -385,6 +385,9 @@
       # (poweredge) the package upgrade stops ssh.service and the directory is
       # gone, while the off switch keeps the unit from recreating it. This is
       # the same directory, owner and mode the unit itself would create.
+      # `systemd-tmpfiles --create` cannot stand in for this task: the package's
+      # own tmpfiles file carries no /run/sshd line, and the `d /run/sshd` line
+      # is systemd's 20-systemd-ssh-generator.conf, which is applied at boot.
       ansible.builtin.file:
         path: /run/sshd
         state: directory
