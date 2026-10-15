@@ -34,6 +34,11 @@ from livespec_dev_tooling.fleet._context import (
 )
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._reconcile import _gh_failed
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    MASTER_HEALTH_WORKFLOW,
+    RECONCILER_SHIM_TEMPLATE,
+    reconciler_shim_content,
+)
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
     PIN_FRESHNESS_WORKFLOW,
@@ -42,6 +47,7 @@ from livespec_dev_tooling.fleet._rows_files import (
 
 __all__: list[str] = [
     "SHIM_BRANCH",
+    "reconcile_master_health_shim",
     "reconcile_shim_workflows",
     "shim_content",
 ]
@@ -49,7 +55,21 @@ __all__: list[str] = [
 
 SHIM_BRANCH = "wire-fleet-member/shim-workflows"
 
-_SHIM_WORKFLOWS = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
+# The master-health reconciler shim rides the SAME provisioning mechanism as
+# the three pin-and-bump shims rather than growing a second one, and that reuse
+# is what gives the Definition of Done's "a second run leaves the repository
+# unchanged" for free: the all-present pass, the pending-shim-branch pass and
+# the per-run once-marker below are already the three idempotence guards this
+# shim needs. Its canonical body is homed in `_reconciler_shim` because the
+# drift read in `reconcile_master_health_shim` must render the same bytes this
+# install writes (work-item livespec-dev-tooling-dw7dzd, child D of plan
+# red-master-self-healing).
+_SHIM_WORKFLOWS = (
+    BUMP_PIN_WORKFLOW,
+    PIN_FRESHNESS_WORKFLOW,
+    RELEASE_DISPATCH_WORKFLOW,
+    MASTER_HEALTH_WORKFLOW,
+)
 
 # Canonical shim bodies, mirroring livespec-dev-tooling's own committed
 # shims (the reusable workflows these `uses:` lines target live in this
@@ -124,6 +144,7 @@ _SHIM_BODIES = {
     BUMP_PIN_WORKFLOW: _BUMP_PIN_SHIM,
     PIN_FRESHNESS_WORKFLOW: _PIN_FRESHNESS_SHIM,
     RELEASE_DISPATCH_WORKFLOW: _RELEASE_DISPATCH_SHIM,
+    MASTER_HEALTH_WORKFLOW: RECONCILER_SHIM_TEMPLATE,
 }
 
 
@@ -192,12 +213,74 @@ def _open_shim_pr(*, ctx: FleetContext, member: FleetMember, missing: list[str])
     return RowPass(note=f"opened shim PR for {', '.join(missing)} (pending merge)")
 
 
+def reconcile_master_health_shim(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """Discover the member's reconciler shim; install it where it is ABSENT.
+
+    ⛔ WIRE-FLEET-MEMBER'S OWN STEP, DELIBERATELY NOT AN OBLIGATION ROW, and the
+    reason is arming ORDER rather than taste. A fleet conformance row convicting
+    a missing shim is correct only once every member carries one; registered
+    before that it reds the central lane for the whole fleet — and the FIRST
+    repository it reds is livespec-dev-tooling itself, whose own
+    `fleet_conformance --member-ci` leg reads its own rows (measured on
+    livespec-dev-tooling draft pull request #2477, where `own_failing_rows` was
+    exactly that row against ten members). Enforcement is a separate child of
+    plan `red-master-self-healing`; this is provisioning, and it needs no row to
+    find its own work. `plan/rop-railway-enforcement/` records what the fleet
+    already paid for arming ahead of adoption: `46c5dab` reddened five repos and
+    was reverted in `f4247110`.
+
+    Three outcomes, and the split between the last two is load-bearing:
+
+    - ABSENT is repaired, through the shared `reconcile_shim_workflows` install
+      that the three pin-and-bump shims already use — ONE pull request carrying
+      every shim the member lacks, and a no-op on a second run.
+    - DRIFTED is REPORTED with its remedy. A hand-edited shim keeps its path, so
+      presence alone takes it for conforming while its triggers, its `uses:`
+      target or its `secrets: inherit` may all have been changed — and a
+      reconciler that is never invoked goes quiet exactly when a master is red.
+      Overwriting a file a repository has committed is a wider decision than
+      this slice takes; the remedy named here reaches the same end through the
+      install path above.
+    - UNREADABLE is neither. Treating bytes this run could not read as bytes
+      that DIFFER would accuse every member a scoped token cannot see into, for
+      a fact about the token rather than about the repository (the
+      `livespec-dev-tooling-6ge` discipline: can't-read is never reported as
+      different).
+    """
+    tree = ctx.tree(repo=member.repo)
+    if not tree.readable:
+        return RowSkip(
+            reason=(
+                f"{member.repo}: default-branch tree unreadable; "
+                "cannot reconcile the master-health reconciler shim"
+            )
+        )
+    if MASTER_HEALTH_WORKFLOW not in tree.paths:
+        return reconcile_shim_workflows(ctx=ctx, member=member)
+    committed = ctx.file_text(repo=member.repo, path=MASTER_HEALTH_WORKFLOW)
+    if committed is None:
+        return RowSkip(
+            reason=f"{member.repo}: {MASTER_HEALTH_WORKFLOW} unreadable; drift not established"
+        )
+    if committed != reconciler_shim_content(owner=ctx.owner):
+        return RowFinding(
+            message=(
+                f"{member.repo}: {MASTER_HEALTH_WORKFLOW} has DRIFTED from the canonical "
+                "master-health reconciler shim — restore it by deleting the file in a "
+                "repo-local commit and re-running wire-fleet-member, which writes the "
+                "canonical body (livespec-dev-tooling "
+                "plan/red-master-self-healing, child D)"
+            )
+        )
+    return RowPass(note=f"{MASTER_HEALTH_WORKFLOW} is the canonical reconciler shim")
+
+
 def reconcile_shim_workflows(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """Open ONE PR adding every missing shim workflow (idempotent).
 
-    Shared by all three shim rows; the per-run once-marker and the
-    pre-existing-branch check keep repeat invocations from opening
-    duplicate PRs.
+    Shared by all three shim rows AND by `reconcile_master_health_shim` above;
+    the per-run once-marker and the pre-existing-branch check keep repeat
+    invocations from opening duplicate PRs.
     """
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:

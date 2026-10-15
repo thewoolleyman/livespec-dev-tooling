@@ -47,6 +47,10 @@ from livespec_dev_tooling.fleet._context import (
     RowSkip,
 )
 from livespec_dev_tooling.fleet._contract_rows import ObligationRow
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    MASTER_HEALTH_WORKFLOW,
+    reconciler_shim_content,
+)
 from livespec_dev_tooling.fleet.wire_fleet_member import reconcile_member
 
 if TYPE_CHECKING:
@@ -121,6 +125,12 @@ _LEFTHOOK_ARGS: tuple[str, ...] = (
     "-H",
     "Accept: application/vnd.github.raw",
 )
+_RECONCILER_SHIM_ARGS: tuple[str, ...] = (
+    "api",
+    f"repos/acme/widget/contents/{MASTER_HEALTH_WORKFLOW}?ref=master",
+    "-H",
+    "Accept: application/vnd.github.raw",
+)
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
 _PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
@@ -183,6 +193,7 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         ".github/workflows/bump-pin-from-dispatch.yml",
         ".github/workflows/pin-freshness.yml",
         ".github/workflows/release-dispatch.yml",
+        MASTER_HEALTH_WORKFLOW,
         "pyproject.toml",
         ".livespec.jsonc",
         ".claude/settings.json",
@@ -207,6 +218,7 @@ def _green_table(*, topics: list[str] | None = None) -> dict[tuple[str, ...], Gh
         _REPO_ARGS: ok(payload=aligned_merge_settings_payload()),
         _CI_ARGS: raw(text=_CI_YML),
         _TOPICS_GET: ok(payload={"names": topics if topics is not None else ["livespec-sibling"]}),
+        _RECONCILER_SHIM_ARGS: raw(text=reconciler_shim_content(owner="acme")),
     }
 
 
