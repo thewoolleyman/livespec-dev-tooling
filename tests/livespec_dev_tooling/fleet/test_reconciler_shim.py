@@ -26,10 +26,18 @@ from __future__ import annotations
 import base64
 import json
 import re
+from dataclasses import fields
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from _gh_railway import lift_gh
 
+from livespec_dev_tooling.cross_repo import master_health_reconcile
+from livespec_dev_tooling.cross_repo.master_health_state import (
+    MasterCommit,
+    ReconcileConfig,
+)
+from livespec_dev_tooling.fleet import _reconciler_shim
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -59,6 +67,7 @@ __all__: list[str] = []
 
 _OWNER = "acme"
 _MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
 _MASTER_REF: tuple[str, ...] = ("api", "repos/acme/widget/git/ref/heads/master")
@@ -95,6 +104,7 @@ _REQUIRED_PULL_REQUEST_TYPES = (
     "unlabeled",
 )
 
+_COMMENT_LINE = re.compile(r"^\s*#")
 _CRON_LINE = re.compile(r"^\s*- cron: '(?P<expression>[^']+)'\s*$", re.MULTILINE)
 
 
@@ -427,3 +437,228 @@ def test_the_reconciler_shim_carries_no_fleet_conformance_obligation_row() -> No
     deliberate act with a failing test in front of it rather than an accident.
     """
     assert [row.row_id for row in OBLIGATION_ROWS if "master-health" in row.row_id] == []
+
+
+def _reusable_workflow_body() -> str:
+    """The canonical reusable reconciler workflow body, or a failure naming its absence.
+
+    Resolved through the module object with `getattr` rather than imported at
+    module top ON PURPOSE: at the Red moment of this assertion's cycle the name
+    does not exist yet, and a top-level import would make that Red a COLLECTION
+    error — which proves only unimportability, never that the behaviour is
+    unimplemented.
+    """
+    body = getattr(_reconciler_shim, "REUSABLE_RECONCILER_BODY", None)
+
+    assert isinstance(body, str), (
+        "_reconciler_shim carries no REUSABLE_RECONCILER_BODY — the canonical "
+        "reusable reconciler workflow body is the artifact this row distributes"
+    )
+    return body
+
+
+def _runs_on_values(*, body: str) -> tuple[str, ...]:
+    """Every `runs-on:` value in `body`, with comment lines stripped first.
+
+    Comments are stripped because this workflow EXPLAINS at length why
+    self-hosted capacity is the wrong place for a reconciler, and a raw
+    substring scan would match the explanation. It is the same correctness point
+    the shipped `self_hosted_routing` check records about its own parser:
+    parsing the structure beats grepping the text.
+    """
+    return tuple(
+        line.split("runs-on:", 1)[1].strip()
+        for line in body.splitlines()
+        if "runs-on:" in line and not _COMMENT_LINE.match(line)
+    )
+
+
+def test_the_runs_on_reader_ignores_the_workflow_s_own_explanation() -> None:
+    """The hosted-runner assertion is only as strong as the reader underneath it."""
+    assert _runs_on_values(
+        body="# runs-on: local-ci would be wrong here\n    runs-on: ubuntu-latest\n"
+    ) == ("ubuntu-latest",)
+
+
+def test_the_reusable_reconciler_workflow_runs_on_github_hosted_runners() -> None:
+    """HOSTED runners, and the requirement is load-bearing rather than a default.
+
+    The k3s pool the fleet's other gating jobs run on can itself BE the failure
+    the reconciler is healing, and a reconciler queued against a broken pool
+    never runs — at exactly the moment it is needed. Asserting the WHOLE set of
+    `runs-on` values rather than the presence of one is what makes a second job
+    added later on fleet capacity fail here.
+    """
+    assert _runs_on_values(body=_reusable_workflow_body()) == ("ubuntu-latest",)
+
+
+def test_the_reusable_reconciler_workflow_authenticates_with_the_fleet_app_token() -> None:
+    """The fleet GitHub App token, not `github.token`, and for two distinct reasons.
+
+    A pull request opened or merged with `GITHUB_TOKEN` does NOT trigger CI, and
+    this workflow's whole purpose is to open a revert whose own CI must speak
+    before it may land — so with `github.token` the revert would sit forever
+    with no verdict. The App installation token also carries the admin-level
+    access the auto-merge mutation needs, which `github-actions[bot]` lacks
+    regardless of declared `permissions:` (the finding `auto-enable-merge.yml`
+    records).
+    """
+    body = _reusable_workflow_body()
+
+    assert "actions/create-github-app-token@v3" in body
+    assert "client-id: ${{ secrets.APP_ID }}" in body
+    assert "private-key: ${{ secrets.APP_PRIVATE_KEY }}" in body
+    assert "GH_TOKEN: ${{ steps.app-token.outputs.token }}" in body
+    assert "${{ github.token }}" not in body
+
+
+def test_the_reusable_reconciler_workflow_delegates_every_decision_to_the_pure_core() -> None:
+    """The workflow gathers and performs; it decides nothing.
+
+    `master_health_state`'s docstring puts the gathering here and the decision
+    in the pure modules, so the workflow must reach the step through the
+    adapter rather than branching on forge state itself. It is `workflow_call`
+    only — the shim owns the triggers.
+    """
+    body = _reusable_workflow_body()
+
+    assert "workflow_call:" in body
+    assert "python3 -m livespec_dev_tooling.cross_repo.master_health_step" in body
+    assert "--state" in body
+    assert "--step-out" in body
+
+
+def _committed_matches(*, path: Path, canonical: str) -> bool | None:
+    """Whether `path` holds `canonical`; None when `path` does not exist."""
+    return path.read_text(encoding="utf-8") == canonical if path.is_file() else None
+
+
+def test_the_committed_reusable_workflow_is_byte_identical_to_the_canonical_body(
+    *, tmp_path: Path
+) -> None:
+    """The join that stops the Python source of truth and the committed file drifting.
+
+    The body is authored in Python because a FACTORY branch may not create or
+    modify anything under `.github/workflows/` — the dispatch credential carries
+    no `workflows` grant and `check-no-workflow-edits` enforces the boundary — so
+    the committed workflow lands maintainer-side from that text.
+
+    The comparator is therefore proven against files that DO exist (an identical
+    one and an edited one) and then applied to the committed path, where
+    `is not False` is the real gate: absent is the boundary's own state and
+    passes, DIFFERENT fails from the moment a copy lands.
+    """
+    canonical = _reusable_workflow_body()
+    landed = tmp_path / "landed.yml"
+    _ = landed.write_text(canonical, encoding="utf-8")
+    drifted = tmp_path / "drifted.yml"
+    _ = drifted.write_text(f"{canonical}# a hand edit\n", encoding="utf-8")
+
+    assert _committed_matches(path=landed, canonical=canonical) is True
+    assert _committed_matches(path=drifted, canonical=canonical) is False
+    assert (
+        _committed_matches(path=_REPO_ROOT / REUSABLE_RECONCILER_WORKFLOW, canonical=canonical)
+        is not False
+    )
+
+
+def _recorded_state_keys(*, body: str) -> frozenset[str]:
+    """Every key the workflow's recording step writes into `state.json`.
+
+    Read off the ONE `jq -n` program that composes the recording, not off the
+    whole body: the per-read `gh api --jq` filters above it build intermediate
+    files whose keys are that read's vocabulary rather than the recording's, and
+    scanning them too would report a union nothing ever wrote.
+    """
+    program = body.partition("jq -n ")[2].partition("> state.json")[0]
+    return frozenset(re.findall(r"(?m)^\s*(\w+):", program))
+
+
+def _performed_step_kinds(*, body: str) -> frozenset[str]:
+    """Every step kind the workflow's `case` dispatches on, excluding its default.
+
+    The `*)` arm is deliberately NOT collected. It is the arm that reds the job
+    on a kind this workflow does not recognise, so counting it would let it
+    stand in for the coverage this reader exists to measure.
+    """
+    dispatch = body.partition('case "${kind}" in')[2].partition("esac")[0]
+    return frozenset(re.findall(r"(?m)^\s*([a-z][a-z-]*)\)$", dispatch))
+
+
+def test_the_recording_and_dispatch_readers_see_only_their_own_region() -> None:
+    """Both join assertions are only as strong as the readers underneath them.
+
+    The recording reader must not pick up an intermediate read's keys, and the
+    dispatch reader must not count the default arm — proven here on samples
+    carrying exactly those traps, so a vacuous frozenset cannot masquerade as
+    agreement with the core below.
+    """
+    body = (
+        "gh api x --jq '{ decoy: .y }' > runs.json\n"
+        "jq -n '{\n  target_branch: $branch,\n  commits: [ $c[] | {\n"
+        "    sha: .sha\n  } ]\n}' > state.json\n"
+    )
+
+    assert _recorded_state_keys(body=body) == frozenset({"target_branch", "commits", "sha"})
+
+    dispatch = 'case "${kind}" in\n  none)\n    :\n    ;;\n  *)\n    exit 1\n    ;;\nesac\n'
+
+    assert _performed_step_kinds(body=dispatch) == frozenset({"none"})
+
+
+def test_the_recording_carries_exactly_what_the_decision_reads() -> None:
+    """The gatherer's output shape IS the decision's input shape, field for field.
+
+    This is the assertion the drift of `livespec-dev-tooling-zdqnr2` needed and
+    did not have. A recording short one field fails CLOSED in the adapter — no
+    step written, the job red, nothing healed — and a recording carrying a field
+    the decision retired is a read nobody consumes. Both are silent in YAML and
+    both are caught here, because the expected set is projected from
+    `ReconcileConfig` and `MasterCommit` rather than restated.
+
+    The two names that are NOT dataclass fields are the recording's own
+    vocabulary and are listed for that reason: the issue TITLES travel (the
+    adapter owns the title convention, so it derives
+    `open_needs_attention_episodes` from them), and `revert_pull_request` is
+    recorded as a whole object whose own keys the adapter parses separately.
+    """
+    expected = (
+        {field.name for field in fields(ReconcileConfig)}
+        | {field.name for field in fields(MasterCommit)}
+        | {"head_sha", "rerun_outcome", "commits", "revert_pull_request"}
+        | {"needs_attention_issue_titles"}
+    )
+
+    assert _recorded_state_keys(body=_reusable_workflow_body()) == expected
+
+
+def test_the_workflow_performs_every_step_the_decision_can_choose() -> None:
+    """Every `STEP_*` the core can answer has an arm, and no arm is orphaned.
+
+    A step kind with no arm falls to the default and reds the job on a decision
+    the reconciler reached correctly — which is how `STEP_CLOSE_REVERT`, the
+    ending 25% of measured episodes take, would have turned the commonest happy
+    path into a failing workflow. Equality rather than containment, so an arm
+    for a kind the core no longer emits fails here too.
+    """
+    kinds = {
+        value
+        for name, value in vars(master_health_reconcile).items()
+        if name.startswith("STEP_") and isinstance(value, str)
+    }
+
+    assert kinds, "no STEP_* constants found — the comparison would pass vacuously"
+    assert _performed_step_kinds(body=_reusable_workflow_body()) == kinds
+
+
+def test_the_revert_step_carries_the_hold_rebump_label_the_decision_computed() -> None:
+    """A reverted pin bump must hold the bump shim, or the pin comes straight back.
+
+    `hold_rebump_label` is `None` for every culprit that is not a pin bump, so
+    the workflow reads one field rather than re-deriving the rule: the label is
+    the JOIN with the bump shim that must honour it, and a revert opened without
+    it is re-bumped on the next freshness tick.
+    """
+    body = _reusable_workflow_body()
+
+    assert "hold_rebump_label" in body
