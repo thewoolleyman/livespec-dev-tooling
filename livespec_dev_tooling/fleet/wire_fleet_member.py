@@ -12,6 +12,13 @@ ONE shim-workflow PR opened for missing shims — or surfaces the row's
 The secret source env vars are GITHUB_APP_ID and GITHUB_PRIVATE_KEY;
 the destination Actions secret names remain APP_ID and APP_PRIVATE_KEY.
 
+ONE step runs BESIDE that table rather than inside it: the master-health
+reconciler shim (`_reconcile_shims.reconcile_master_health_shim`), which
+discovers an absent or drifted shim itself. It is a step of THIS engine
+so the assert-only central lane never evaluates it — see that function
+for why the obligation row it would otherwise be cannot be armed until
+every member has adopted the shim.
+
 Operator-invoked, NOT CI (no run lever): the repo-birth procedure is
 scaffold → register in the manifest FIRST → run this → fleet
 conformance green. Invoke under the environment wrapper so the secret
@@ -53,6 +60,7 @@ from livespec_dev_tooling.fleet._context import (
     default_gh_runner,
 )
 from livespec_dev_tooling.fleet._contract_rows import ObligationRow, rows_for
+from livespec_dev_tooling.fleet._reconcile_shims import reconcile_master_health_shim
 from livespec_dev_tooling.fleet.fleet_conformance import fetch_manifest
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -115,11 +123,55 @@ def _reconcile_row(
     return 1
 
 
+_RECONCILER_SHIM_STEP = "master-health-reconciler-shim"
+
+
+def _reconcile_reconciler_shim(
+    *, ctx: FleetContext, member: FleetMember, log: structlog.stdlib.BoundLogger
+) -> int:
+    """Perform the master-health reconciler-shim step; 1 = still unresolved.
+
+    Reported with a `step` key rather than a `row` key BECAUSE it is not a row,
+    so an operator reading the log never goes looking for a conformance row that
+    does not exist. A SKIP is not unresolved, matching how the row walk above
+    treats a row it could not evaluate: a read this run could not perform is
+    neither a satisfied obligation nor a violated one.
+    """
+    outcome = reconcile_master_health_shim(ctx=ctx, member=member)
+    match outcome:
+        case RowPass():
+            log.info(
+                "reconciler shim step settled",
+                step=_RECONCILER_SHIM_STEP,
+                member=member.repo,
+                note=outcome.note,
+            )
+            return 0
+        case RowSkip():
+            log.info(
+                "reconciler shim step not evaluable; nothing reconciled",
+                step=_RECONCILER_SHIM_STEP,
+                member=member.repo,
+                reason=outcome.reason,
+            )
+            return 0
+        case RowFinding():
+            log.error(
+                "reconciler shim step did not resolve",
+                step=_RECONCILER_SHIM_STEP,
+                member=member.repo,
+                detail=outcome.message,
+            )
+            return 1
+        case _:
+            assert_never(outcome)
+
+
 def reconcile_member(
     *, ctx: FleetContext, member: FleetMember, log: structlog.stdlib.BoundLogger
 ) -> int:
     """Assert-then-reconcile every applicable row; return the unresolved count."""
-    unresolved = 0
+    unresolved = _reconcile_reconciler_shim(ctx=ctx, member=member, log=log)
     for row in rows_for(repo_class=member.repo_class):
         outcome = row.assert_member(ctx=ctx, member=member)
         match outcome:
