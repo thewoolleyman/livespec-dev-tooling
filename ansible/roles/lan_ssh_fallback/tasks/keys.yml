@@ -1,0 +1,91 @@
+---
+# Phase 1, on every home-lab host: make sure the two keys this fallback needs
+# exist, and read their PUBLIC halves. Nothing here touches sshd, the network or
+# Tailscale; private keys never leave the host.
+
+- name: Refuse a home-lab host with no wired interface or address declared
+  ansible.builtin.assert:
+    that:
+      - lan_ssh_fallback_interface | length > 0
+      - lan_ssh_fallback_address | length > 0
+    fail_msg: >-
+      Declare lan_ssh_fallback_interface (the wired interface) and
+      lan_ssh_fallback_address (its LAN address) in {{ inventory_hostname }}'s host_vars.
+    success_msg: "{{ inventory_hostname }}: {{ lan_ssh_fallback_interface }} {{ lan_ssh_fallback_address }}"
+
+- name: Create the fallback's own directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - "{{ lan_ssh_fallback_dir }}"
+    - "{{ lan_ssh_fallback_authorized_keys_dir }}"
+
+- name: Generate the fallback's own host key, only if it does not exist
+  # `creates:` makes this a no-op on every later run: an existing key is never
+  # replaced, so a pinned known_hosts entry never goes stale. This path is not
+  # one Tailscale SSH reads (it reads /etc/ssh/ssh_host_*_key or its own store).
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -q
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -C
+      - "lan-fallback@{{ inventory_hostname }}"
+      - -f
+      - "{{ lan_ssh_fallback_host_key }}"
+    creates: "{{ lan_ssh_fallback_host_key }}"
+  become: true
+
+- name: Generate the login user's key, only if it does not exist
+  # Run AS that user so the key is theirs. Never replaced.
+  ansible.builtin.command:
+    argv:
+      - ssh-keygen
+      - -q
+      - -t
+      - ed25519
+      - -N
+      - ""
+      - -C
+      - "{{ lan_ssh_fallback_user }}@{{ inventory_hostname }}"
+      - -f
+      - "{{ lan_ssh_fallback_user_home }}/.ssh/id_ed25519"
+    creates: "{{ lan_ssh_fallback_user_home }}/.ssh/id_ed25519"
+  become: true
+  become_user: "{{ lan_ssh_fallback_user }}"
+
+- name: Read the fallback host key's public half
+  ansible.builtin.slurp:
+    src: "{{ lan_ssh_fallback_host_key }}.pub"
+  become: true
+  register: lan_ssh_fallback_host_pub_raw
+  check_mode: false
+  # Under --check on a first run the keygen above was a would-be write, so the
+  # file does not exist yet; the drift report renders a placeholder instead.
+  failed_when: lan_ssh_fallback_host_pub_raw.failed and not ansible_check_mode
+
+- name: Read the login user's public key
+  ansible.builtin.slurp:
+    src: "{{ lan_ssh_fallback_user_home }}/.ssh/id_ed25519.pub"
+  become: true
+  register: lan_ssh_fallback_user_pub_raw
+  check_mode: false
+  failed_when: lan_ssh_fallback_user_pub_raw.failed and not ansible_check_mode
+
+- name: Hold both public keys for the rendering phases
+  # The host key's comment is dropped: a known_hosts line is "<key type> <key>".
+  ansible.builtin.set_fact:
+    lan_ssh_fallback_host_pubkey: >-
+      {{ ((lan_ssh_fallback_host_pub_raw.content | default('') | b64decode).split()[0:2] | join(' '))
+         or 'ssh-ed25519 (not-yet-generated)' }}
+    lan_ssh_fallback_user_pubkey: >-
+      {{ (lan_ssh_fallback_user_pub_raw.content | default('') | b64decode | trim)
+         or '# ' ~ inventory_hostname ~ ' user key not yet generated' }}

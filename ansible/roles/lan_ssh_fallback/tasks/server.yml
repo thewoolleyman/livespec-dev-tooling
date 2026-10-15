@@ -1,0 +1,527 @@
+---
+# Phase 2, ONE home-lab host at a time (the play runs `serial: 1` and stops at
+# the first failure): make OpenSSH listen on this host's LAN addresses at the
+# fallback port, without changing anything Tailscale SSH presents.
+#
+# The invariant every step is checked against: the host key Tailscale SSH
+# presents on the tailnet, read from the CONTROL NODE, is the same at the end
+# as at the start. The design and its reviews: livespec-orchestrator-beads-fabro
+# plan/petri-factory-on-gmktec/research/004.
+
+# --- preflight: read-only -------------------------------------------------
+
+- name: Read the host key Tailscale SSH presents on the tailnet, from the control node
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      ssh-keyscan -T 10 -t rsa,ecdsa,ed25519 {{ inventory_hostname }} 2>/dev/null
+      | ssh-keygen -lf - | awk '{print $NF, $2}' | sort
+    executable: /bin/bash
+  delegate_to: localhost
+  become: false
+  register: lan_ssh_fallback_tailnet_fp_before
+  changed_when: false
+  check_mode: false
+
+- name: Refuse unless the tailnet host key was read
+  ansible.builtin.assert:
+    that:
+      # Tailscale SSH chooses its host key PER KEY TYPE, on every connection:
+      # /etc/ssh/ssh_host_<type>_key if it exists, else its own. All three
+      # types are compared, so a stray RSA or ECDSA file cannot slip past.
+      - lan_ssh_fallback_tailnet_fp_before.stdout_lines | length == 3
+      - lan_ssh_fallback_tailnet_fp_before.stdout_lines | select('search', ' SHA256:') | list | length == 3
+    fail_msg: >-
+      Could not read the host key Tailscale SSH presents for {{ inventory_hostname }};
+      without that baseline this role cannot prove it left Tailscale SSH alone.
+    success_msg: "Tailscale SSH presents {{ lan_ssh_fallback_tailnet_fp_before.stdout_lines | join('; ') }}"
+
+- name: Record the /etc/ssh host keys as they are (present or absent, and their digests)
+  # Tailscale SSH presents these when they exist. This role must neither create
+  # nor change one.
+  ansible.builtin.shell:
+    cmd: for f in /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub; do [ -e "$f" ] && sha256sum "$f"; done; true
+    executable: /bin/bash
+  become: true
+  register: lan_ssh_fallback_etc_keys_before
+  changed_when: false
+  check_mode: false
+
+- name: Read the units that must stay running
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ item }}"]
+  loop: "{{ lan_ssh_fallback_must_stay_running }}"
+  register: lan_ssh_fallback_units_before
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse unless every must-stay-running unit is active
+  ansible.builtin.assert:
+    that:
+      - lan_ssh_fallback_units_before.results | rejectattr('stdout', 'equalto', 'active') | list | length == 0
+    fail_msg: >-
+      Not active before any change:
+      {{ lan_ssh_fallback_units_before.results | rejectattr('stdout', 'equalto', 'active') | map(attribute='item') | join(', ') }}.
+      Nothing has been changed.
+    success_msg: every must-stay-running unit is active
+
+- name: Read the wired interface's addresses
+  ansible.builtin.command:
+    argv: [ip, -4, -br, addr, show, dev, "{{ lan_ssh_fallback_interface }}"]
+  register: lan_ssh_fallback_iface_addr
+  changed_when: false
+  check_mode: false
+
+- name: Refuse unless the declared address is on the declared wired interface
+  # The address is a DHCP lease (no reservation was readable from the host); the
+  # listener is bound by device and survives a lease change, but the client
+  # aliases dial this address, so a stale value must be caught here.
+  ansible.builtin.assert:
+    that:
+      - lan_ssh_fallback_iface_addr.stdout is search(lan_ssh_fallback_address ~ '/')
+    fail_msg: >-
+      {{ lan_ssh_fallback_interface }} carries {{ lan_ssh_fallback_iface_addr.stdout }},
+      not {{ lan_ssh_fallback_address }}. Update host_vars before applying.
+    success_msg: "{{ lan_ssh_fallback_interface }} carries {{ lan_ssh_fallback_address }}"
+
+- name: Read the running sshd's main PID, if any
+  ansible.builtin.command:
+    argv: [systemctl, show, ssh.service, -p, MainPID, --value]
+  register: lan_ssh_fallback_sshd_pid_before
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the installed openssh package versions
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, "-f=${Package}=${Version}\n", openssh-server, openssh-client, openssh-sftp-server]
+  register: lan_ssh_fallback_pkg_versions
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Hold whether the host already carries exactly the pinned packages
+  ansible.builtin.set_fact:
+    lan_ssh_fallback_pinned_present: >-
+      {{ (lan_ssh_fallback_pkg_versions.stdout_lines | sort) == (lan_ssh_fallback_packages | sort) }}
+
+- name: Read whether openssh-server is already installed
+  ansible.builtin.command:
+    argv: [dpkg-query, -W, "-f=${Status}", openssh-server]
+  register: lan_ssh_fallback_server_pkg
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Hold whether this host already had openssh-server
+  ansible.builtin.set_fact:
+    lan_ssh_fallback_preinstalled: "{{ lan_ssh_fallback_server_pkg.stdout == 'install ok installed' }}"
+
+- name: Read the other sshd drop-ins on this host
+  ansible.builtin.find:
+    paths: /etc/ssh/sshd_config.d
+    patterns: "*.conf"
+  register: lan_ssh_fallback_other_dropins
+  check_mode: false
+
+- name: Refuse a host carrying an sshd drop-in this role does not own
+  # A foreign drop-in could add a ListenAddress (a listener this role did not
+  # intend) or a HostKey (a key path the postinst would then create).
+  ansible.builtin.assert:
+    that:
+      - >-
+        lan_ssh_fallback_other_dropins.files | map(attribute='path')
+        | reject('equalto', lan_ssh_fallback_dropin) | list | length == 0
+    fail_msg: >-
+      Foreign sshd drop-ins: {{ lan_ssh_fallback_other_dropins.files | map(attribute='path') | join(', ') }}.
+      Read them and decide before applying this role.
+    success_msg: no foreign sshd drop-in
+
+# --- configure while OpenSSH cannot listen --------------------------------
+
+- name: Hold OpenSSH off while it is installed and configured (the package's own switch)
+  ansible.builtin.file:
+    path: "{{ lan_ssh_fallback_off_switch }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+  become: true
+
+- name: Create the sshd drop-in directory
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the fallback's sshd drop-in
+  # Written BEFORE any package install, so the postinst's `sshd -G` already
+  # lists only this HostKey and generates no /etc/ssh/ssh_host_*_key.
+  ansible.builtin.template:
+    src: 00-lan-fallback.conf.j2
+    dest: "{{ lan_ssh_fallback_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the fail-safe auth-only sshd drop-in
+  ansible.builtin.template:
+    src: 01-lan-fallback-auth.conf.j2
+    dest: "{{ lan_ssh_fallback_auth_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Create the ssh.socket drop-in directory
+  ansible.builtin.file:
+    path: "{{ lan_ssh_fallback_socket_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Confine every OpenSSH listening socket to the wired interface
+  # Takes effect at the next daemon-reload and socket restart (activation
+  # below); written now so no socket, not even the packaged port-22 default, is
+  # ever started without it.
+  ansible.builtin.template:
+    src: ssh-socket-dropin.conf.j2
+    dest: "{{ lan_ssh_fallback_socket_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the fallback's authorized keys for the login user
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: "{{ lan_ssh_fallback_authorized_keys_dir }}/{{ lan_ssh_fallback_user }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+# --- install, fenced and audited (only where openssh-server is absent) -----
+
+- name: Install or upgrade the pinned openssh packages inert, fenced from unattended upgrades
+  when: not (lan_ssh_fallback_pinned_present | bool)
+  block:
+    - name: Preseed the package's own answer to "allow password authentication" as no
+      # The postinst's create_sshdconfig then writes `PasswordAuthentication no`
+      # into the main sshd_config itself: a third, independent fail-safe.
+      ansible.builtin.debconf:
+        name: openssh-server
+        question: openssh-server/password-authentication
+        value: "false"
+        vtype: boolean
+      become: true
+
+    - name: Clear a restore unit an interrupted earlier run left behind
+      ansible.builtin.command:
+        argv: [systemctl, stop, "{{ lan_ssh_fallback_apt_restore_unit }}.timer", "{{ lan_ssh_fallback_apt_restore_unit }}.service"]
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Arm a host-side restore of the apt timers before stopping them
+      ansible.builtin.command:
+        argv:
+          - systemd-run
+          - "--unit={{ lan_ssh_fallback_apt_restore_unit }}"
+          - "--on-active={{ lan_ssh_fallback_apt_restore_after }}"
+          - systemctl
+          - start
+          - "{{ lan_ssh_fallback_apt_timers[0] }}"
+          - "{{ lan_ssh_fallback_apt_timers[1] }}"
+      become: true
+      changed_when: true
+
+    - name: Stop the apt timers for the duration of the install
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ lan_ssh_fallback_apt_timers }}"
+      become: true
+
+    - name: Wait until no package manager is running
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail; for i in $(seq 1 120); do
+          pgrep -x 'apt|apt-get|dpkg|unattended-upgr' >/dev/null || exit 0; sleep 5;
+          done; exit 1
+        executable: /bin/bash
+      changed_when: false
+      check_mode: false
+
+    - name: Simulate the transaction
+      ansible.builtin.command:
+        argv: "{{ ['apt-get', '-s', 'install', '--no-install-recommends', '--no-remove'] + lan_ssh_fallback_packages }}"
+      register: lan_ssh_fallback_sim
+      changed_when: false
+      check_mode: false
+
+    - name: Read which packages are installed now
+      ansible.builtin.command:
+        argv: [dpkg-query, -W, "-f=${Package} ${Status}\n"]
+      register: lan_ssh_fallback_installed_now
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse a transaction that removes or upgrades anything it must not
+      vars:
+        installed: >-
+          {{ lan_ssh_fallback_installed_now.stdout_lines
+             | select('search', ' install ok installed$')
+             | map('split', ' ') | map('first') | list }}
+        inst: >-
+          {{ lan_ssh_fallback_sim.stdout_lines | select('match', '^Inst ')
+             | map('split', ' ') | map(attribute=1) | list }}
+      ansible.builtin.assert:
+        that:
+          - lan_ssh_fallback_sim.stdout_lines | select('match', '^Remv ') | list | length == 0
+          - inst | select('in', installed) | reject('in', lan_ssh_fallback_upgradable) | list | length == 0
+        fail_msg: >-
+          The simulated transaction would remove or upgrade more than allowed.
+          Upgrades of installed packages: {{ inst | select('in', installed) | list }}.
+          Removals: {{ lan_ssh_fallback_sim.stdout_lines | select('match', '^Remv ') | list }}.
+          Nothing has been installed.
+        success_msg: "transaction installs {{ inst | join(', ') }}"
+
+    - name: Install the pinned packages (OpenSSH cannot listen; the off switch holds)
+      ansible.builtin.apt:
+        name: "{{ lan_ssh_fallback_packages }}"
+        install_recommends: false
+        update_cache: false
+        lock_timeout: 600
+      become: true
+
+  always:
+    - name: Restart the apt timers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ lan_ssh_fallback_apt_timers }}"
+      become: true
+
+    - name: Cancel the host-side restore, now that the timers are running
+      ansible.builtin.command:
+        argv: [systemctl, stop, "{{ lan_ssh_fallback_apt_restore_unit }}.timer"]
+      become: true
+      changed_when: true
+      failed_when: false
+
+# --- verify while still inert ----------------------------------------------
+
+- name: Prove the configuration and the untouched Tailscale identity, still inert
+  when: not ansible_check_mode
+  block:
+    - name: Validate the whole sshd configuration
+      ansible.builtin.command:
+        argv: [/usr/sbin/sshd, -t]
+      become: true
+      changed_when: false
+
+    - name: Read the effective sshd configuration
+      ansible.builtin.command:
+        argv: [/usr/sbin/sshd, -G]
+      become: true
+      register: lan_ssh_fallback_effective
+      changed_when: false
+
+    - name: Refuse unless only the fallback's addresses, key and auth settings are in effect
+      vars:
+        eff: "{{ lan_ssh_fallback_effective.stdout_lines }}"
+      ansible.builtin.assert:
+        that:
+          - eff | select('match', '^hostkey ') | list == ['hostkey ' ~ lan_ssh_fallback_host_key]
+          - "'port ' ~ lan_ssh_fallback_port in eff"
+          - >-
+            eff | select('match', '^listenaddress ') | sort
+            == ['listenaddress 0.0.0.0:' ~ lan_ssh_fallback_port, 'listenaddress [::]:' ~ lan_ssh_fallback_port] | sort
+          - "'passwordauthentication no' in eff"
+          - "'kbdinteractiveauthentication no' in eff"
+          - "'permitrootlogin no' in eff"
+          - "'pubkeyauthentication yes' in eff"
+          - "'allowusers ' ~ lan_ssh_fallback_user in eff"
+          - "'authorizedkeysfile ' ~ lan_ssh_fallback_authorized_keys_dir ~ '/%u .ssh/authorized_keys' in eff"
+        fail_msg: >-
+          The effective sshd configuration is not the fallback's. OpenSSH is still
+          held off by {{ lan_ssh_fallback_off_switch }}; nothing listens.
+        success_msg: effective configuration is the fallback's only
+
+    - name: Re-read the /etc/ssh host keys
+      ansible.builtin.shell:
+        cmd: for f in /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub; do [ -e "$f" ] && sha256sum "$f"; done; true
+        executable: /bin/bash
+      become: true
+      register: lan_ssh_fallback_etc_keys_mid
+      changed_when: false
+
+    - name: Refuse if any /etc/ssh host key appeared or changed
+      ansible.builtin.assert:
+        that:
+          - lan_ssh_fallback_etc_keys_mid.stdout == lan_ssh_fallback_etc_keys_before.stdout
+        fail_msg: >-
+          /etc/ssh/ssh_host_* changed during the install. Tailscale SSH may now
+          present a different key. OpenSSH is still held off. Before:
+          {{ lan_ssh_fallback_etc_keys_before.stdout }} After:
+          {{ lan_ssh_fallback_etc_keys_mid.stdout }}
+        success_msg: /etc/ssh host keys unchanged
+
+    - name: Read whether anything listens on the fallback port yet
+      ansible.builtin.command:
+        argv: [ss, -Hltn, "sport = :{{ lan_ssh_fallback_port }}"]
+      become: true
+      register: lan_ssh_fallback_listen_inert
+      changed_when: false
+
+    - name: Refuse if OpenSSH is already listening while it should be held off
+      ansible.builtin.assert:
+        that:
+          - (lan_ssh_fallback_preinstalled | bool) and (lan_ssh_fallback_pinned_present | bool) or (lan_ssh_fallback_listen_inert.stdout | trim == '')
+        fail_msg: "Something already listens on {{ lan_ssh_fallback_port }}: {{ lan_ssh_fallback_listen_inert.stdout }}"
+        success_msg: nothing listens on the fallback port yet
+
+# --- activate ---------------------------------------------------------------
+
+- name: Activate and verify, rolling back on any failure
+  when: not ansible_check_mode
+  block:
+    - name: Release the off switch
+      ansible.builtin.file:
+        path: "{{ lan_ssh_fallback_off_switch }}"
+        state: absent
+      become: true
+
+    - name: Enable the socket and regenerate its listen addresses from sshd -G
+      # daemon-reload re-runs sshd-socket-generator, which turns the drop-in's
+      # Port into the socket's ListenStream lines (0.0.0.0 and [::] at that
+      # port); the BindToDevice drop-in confines them to the wired interface.
+      ansible.builtin.systemd_service:
+        name: ssh.socket
+        enabled: true
+        daemon_reload: true
+      become: true
+
+    - name: Restart the socket so it listens on the fallback port, bound to the interface
+      ansible.builtin.systemd_service:
+        name: ssh.socket
+        state: restarted
+      become: true
+
+    - name: Restart any running sshd so none keeps an inherited port-22 socket
+      # On a host where sshd was already running (poweredge) it holds a dup of
+      # the old listening socket. A socket restart try-restarts it through
+      # systemd's stop propagation, but this role does not rely on that rule.
+      ansible.builtin.systemd_service:
+        name: ssh.service
+        state: restarted
+      become: true
+      when: lan_ssh_fallback_sshd_pid_before.stdout | default('0') | trim not in ['', '0']
+
+    - name: Read the addresses the ssh socket listens on
+      # systemd's own account of the socket, rather than an `ss` filter on a
+      # process name: pid 1 holds many sockets, and only this unit's are ours.
+      ansible.builtin.command:
+        argv: [systemctl, show, ssh.socket, -p, Listen, --value]
+      become: true
+      register: lan_ssh_fallback_socket_listen
+      changed_when: false
+
+    - name: Read whether anything still listens on port 22 for OpenSSH
+      ansible.builtin.shell:
+        cmd: set -o pipefail; ss -Hltnp 'sport = :22' | grep -c sshd || true
+        executable: /bin/bash
+      become: true
+      register: lan_ssh_fallback_port22_sshd
+      changed_when: false
+
+    - name: Read the interface the ssh socket is bound to
+      ansible.builtin.command:
+        argv: [systemctl, show, ssh.socket, -p, BindToDevice, --value]
+      become: true
+      register: lan_ssh_fallback_socket_device
+      changed_when: false
+
+    - name: Refuse unless OpenSSH listens only on the fallback port, bound to the wired interface
+      vars:
+        listen: >-
+          {{ lan_ssh_fallback_socket_listen.stdout | regex_findall('(\\S+) \\(Stream\\)') | sort }}
+      ansible.builtin.assert:
+        that:
+          - listen == ['0.0.0.0:' ~ lan_ssh_fallback_port, '[::]:' ~ lan_ssh_fallback_port] | sort
+          - lan_ssh_fallback_socket_device.stdout | trim == lan_ssh_fallback_interface
+          - lan_ssh_fallback_port22_sshd.stdout | trim == '0'
+        fail_msg: >-
+          ssh.socket listens on {{ listen }} bound to
+          '{{ lan_ssh_fallback_socket_device.stdout | trim }}'; sshd sockets on
+          port 22: {{ lan_ssh_fallback_port22_sshd.stdout | trim }}.
+        success_msg: >-
+          OpenSSH listens on {{ listen | join(', ') }} bound to
+          {{ lan_ssh_fallback_interface }} only, and nothing of OpenSSH's on port 22
+
+    - name: Re-read the host key Tailscale SSH presents, from the control node
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          ssh-keyscan -T 10 -t rsa,ecdsa,ed25519 {{ inventory_hostname }} 2>/dev/null
+          | ssh-keygen -lf - | awk '{print $NF, $2}' | sort
+        executable: /bin/bash
+      delegate_to: localhost
+      become: false
+      register: lan_ssh_fallback_tailnet_fp_after
+      changed_when: false
+
+    - name: Re-read the units that must stay running
+      ansible.builtin.command:
+        argv: [systemctl, is-active, "{{ item }}"]
+      loop: "{{ lan_ssh_fallback_must_stay_running }}"
+      register: lan_ssh_fallback_units_after
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse unless Tailscale SSH and every must-stay-running unit are as they were
+      ansible.builtin.assert:
+        that:
+          - lan_ssh_fallback_tailnet_fp_after.stdout_lines == lan_ssh_fallback_tailnet_fp_before.stdout_lines
+          - lan_ssh_fallback_units_after.results | rejectattr('stdout', 'equalto', 'active') | list | length == 0
+        fail_msg: >-
+          Tailscale SSH now presents {{ lan_ssh_fallback_tailnet_fp_after.stdout | trim }}
+          (was {{ lan_ssh_fallback_tailnet_fp_before.stdout | trim }}), or a
+          must-stay-running unit stopped.
+        success_msg: Tailscale SSH presents the same host key and every unit is active
+
+  rescue:
+    - name: Roll back - hold OpenSSH off again
+      ansible.builtin.file:
+        path: "{{ lan_ssh_fallback_off_switch }}"
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+
+    - name: Roll back - stop OpenSSH
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: [ssh.socket, ssh.service]
+      become: true
+      failed_when: false
+
+    - name: Report the rollback and stop
+      ansible.builtin.fail:
+        msg: >-
+          The fallback failed its activation checks on {{ inventory_hostname }} and
+          OpenSSH has been stopped and held off with {{ lan_ssh_fallback_off_switch }}.
+          No firewall, interface, route, sysctl or Tailscale state was changed by
+          this role. Read the failed task above before re-running.

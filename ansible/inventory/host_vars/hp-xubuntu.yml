@@ -122,6 +122,20 @@ fabro_server_instances:
     # the word is what the cutover flips on the fleet instance instead.
     service_state: running
 
+# --- lan_ssh_fallback ---
+# OpenSSH binds the WIRED interface by device (BindToDevice), so a DHCP lease
+# change cannot strand the listener; the address is what the client aliases
+# dial, and it is a DHCP lease (no reservation was readable from the host on
+# 2026-10-15), so the verify phase asserts it is still assigned.
+lan_ssh_fallback_interface: enp11s0
+lan_ssh_fallback_address: 192.168.1.4
+lan_ssh_fallback_must_stay_running:
+  - tailscaled.service
+  - k3s-agent.service
+  - docker.service
+  - fabro-server.service
+  - fabro-server-candidate.service
+
 # --- sandbox_storage ---
 # The former Steam disk (Fanxiang S101 4 TB SATA SSD, was NTFS "4TB SSD"),
 # wiped with the maintainer's confirmation on 2026-10-12 (work-item smrzsj).

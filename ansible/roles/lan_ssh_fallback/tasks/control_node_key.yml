@@ -1,0 +1,12 @@
+---
+# On the control node: read its public key so every home-lab host authorises
+# it, which is what lets it reach one host through a jump over another.
+- name: Read the control node's public key
+  ansible.builtin.slurp:
+    src: "{{ lan_ssh_fallback_client_pubkey_path }}"
+  register: lan_ssh_fallback_client_pub_raw
+  check_mode: false
+
+- name: Hold the control node's public key for the rendering phase
+  ansible.builtin.set_fact:
+    lan_ssh_fallback_client_pubkey: "{{ lan_ssh_fallback_client_pub_raw.content | b64decode | trim }}"

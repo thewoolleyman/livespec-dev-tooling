@@ -1,0 +1,105 @@
+---
+# Phase 4: prove the fallback end to end, from every home-lab host to each of
+# the others and from the control node to each home-lab host. A login is
+# `true` run through a NEW connection with strict host-key checking against the
+# pinned keys; nothing is changed by it.
+
+- name: Log in to every other home-lab host over the LAN fallback
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -o
+      - BatchMode=yes
+      - -o
+      - ConnectTimeout=15
+      - -o
+      - ControlMaster=no
+      - -o
+      - ControlPath=none
+      - "{{ item }}-lan"
+      - "true"
+  # On a home-lab host the login runs AS the login user (its key); the
+  # control node manages itself locally and logs in as its own user.
+  become: "{{ inventory_hostname in groups['home_lab'] }}"
+  become_user: "{{ lan_ssh_fallback_user }}"
+  loop: "{{ groups['home_lab'] | sort | reject('equalto', inventory_hostname) | list }}"
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: Prove the tailnet path the k3s agents use still works, unchanged
+  # The positive control for the invariant this role protects: the node-status
+  # credential refresh on every k3s agent runs `ssh -o BatchMode=yes <server>`
+  # over the tailnet and pins the key Tailscale SSH presents there. If this
+  # role had changed what Tailscale SSH presents, this login would now fail.
+  ansible.builtin.command:
+    argv:
+      - ssh
+      - -o
+      - BatchMode=yes
+      - -o
+      - ConnectTimeout=15
+      - "{{ item }}"
+      - "true"
+  # Exactly that path: from each k3s agent in the home lab to the k3s server,
+  # as the login user whose known_hosts the node-status role pinned. Other
+  # host pairs have no pinned tailnet key and would fail for that reason alone.
+  become: true
+  become_user: "{{ lan_ssh_fallback_user }}"
+  loop: >-
+    {{ groups['ci_pool'] | select('in', groups['home_lab'])
+       | map('extract', hostvars) | selectattr('cluster_role', 'equalto', 'server')
+       | map(attribute='inventory_hostname') | list }}
+  changed_when: false
+  check_mode: false
+  when:
+    - not ansible_check_mode
+    - inventory_hostname in groups['home_lab']
+    - hostvars[inventory_hostname]['cluster_role'] | default('') == 'agent'
+
+- name: Read the ssh socket's listeners and device binding (also in the drift report)
+  # Read-only, and run under --check too, so `just ansible-drift` reports a
+  # listener that drifted back to the packaged port 22 (which is what an
+  # unparsable sshd configuration makes sshd-socket-generator do at the next
+  # daemon-reload or boot).
+  ansible.builtin.command:
+    argv: [systemctl, show, ssh.socket, -p, Listen, -p, BindToDevice]
+  become: true
+  register: lan_ssh_fallback_socket_state
+  changed_when: false
+  check_mode: false
+  when: inventory_hostname in groups['home_lab']
+
+- name: Report a drifted fallback listener
+  ansible.builtin.assert:
+    that:
+      - lan_ssh_fallback_socket_state.stdout is search('BindToDevice=' ~ lan_ssh_fallback_interface)
+      - lan_ssh_fallback_socket_state.stdout is search(':' ~ lan_ssh_fallback_port ~ ' \\(Stream\\)')
+      - lan_ssh_fallback_socket_state.stdout is not search(':22 \\(Stream\\)')
+    fail_msg: "ssh.socket has drifted: {{ lan_ssh_fallback_socket_state.stdout }}"
+    success_msg: "ssh.socket: {{ lan_ssh_fallback_socket_state.stdout | replace('\n', '; ') }}"
+  when: inventory_hostname in groups['home_lab']
+
+- name: Read the k3s nodes from the server (read-only)
+  # Unit-active checks prove the k3s units run; this proves the cluster still
+  # sees every node Ready after the fallback was installed beside it.
+  ansible.builtin.command:
+    argv: [k3s, kubectl, get, nodes, --no-headers]
+  become: true
+  register: lan_ssh_fallback_k3s_nodes
+  changed_when: false
+  check_mode: false
+  when:
+    - inventory_hostname in groups['home_lab']
+    - hostvars[inventory_hostname]['cluster_role'] | default('') == 'server'
+
+- name: Require every k3s node to be Ready
+  ansible.builtin.assert:
+    that:
+      - lan_ssh_fallback_k3s_nodes.stdout_lines | length > 0
+      - lan_ssh_fallback_k3s_nodes.stdout_lines | reject('search', '\\sReady\\s') | list | length == 0
+    fail_msg: "Not every k3s node is Ready: {{ lan_ssh_fallback_k3s_nodes.stdout_lines }}"
+    success_msg: "{{ lan_ssh_fallback_k3s_nodes.stdout_lines | length }} k3s nodes Ready"
+  when:
+    - inventory_hostname in groups['home_lab']
+    - hostvars[inventory_hostname]['cluster_role'] | default('') == 'server'

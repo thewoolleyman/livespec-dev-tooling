@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# Fail-safe for the direct-LAN OpenSSH fallback: if 00-lan-fallback.conf is ever
+# lost, the daemon still refuses passwords, keyboard-interactive and root, and
+# admits only {{ lan_ssh_fallback_user }}. Every value here equals the first
+# drop-in's, so while both exist this file changes nothing.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AllowUsers {{ lan_ssh_fallback_user }}

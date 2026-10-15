@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+# The direct-LAN OpenSSH fallback's host keys, pinned from each host's own
+# {{ lan_ssh_fallback_host_key }}.pub. Separate from every known_hosts entry
+# for the hosts' tailnet names, which Tailscale SSH answers with other keys.
+{% for host in groups['home_lab'] | sort %}
+[{{ hostvars[host]['lan_ssh_fallback_address'] }}]:{{ lan_ssh_fallback_port }} {{ hostvars[host]['lan_ssh_fallback_host_pubkey'] }}
+{% endfor %}

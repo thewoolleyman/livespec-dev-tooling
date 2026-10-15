@@ -62,3 +62,13 @@ all:
           hosts:
             hp-xubuntu:
               ansible_user: cwoolley
+        # The machines on the maintainer's home LAN, which reach one another
+        # by direct OpenSSH as a fallback that does not depend on Tailscale
+        # (ansible/lan-ssh-fallback.yml, role lan_ssh_fallback). The control
+        # node `vps` is a cloud host and is NOT a member: it reaches these
+        # through a jump over one of them.
+        home_lab:
+          hosts:
+            poweredge-xubuntu:
+            hp-xubuntu:
+            gmktec-xubuntu:

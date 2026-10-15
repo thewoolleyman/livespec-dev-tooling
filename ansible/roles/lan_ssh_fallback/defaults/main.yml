@@ -1,0 +1,85 @@
+---
+# lan_ssh_fallback — a direct OpenSSH path between the home-lab hosts over their
+# shared LAN, as a fail-safe that does not depend on Tailscale. See HOST_VARS.md.
+#
+# The maintainer's ruling (2026-10-15, plan petri-factory-on-gmktec, epic
+# bd-ib-fyozyd in livespec-orchestrator-beads-fabro): each home-lab host must be
+# reachable from the others by direct SSH without Tailscale, through an OpenSSH
+# server on a non-standard port that does not conflict with Tailscale SSH, with
+# every piece of Tailscale configuration left exactly as it is.
+
+# THE PORT. Never 22: Tailscale SSH answers port 22 on every tailnet address of
+# these hosts, and an OpenSSH listener on 22 would be one more owner of the
+# port. 22022 is outside the k3s NodePort range (30000-32767) and was measured
+# free on all three hosts on 2026-10-15.
+lan_ssh_fallback_port: 22022
+
+# WHERE OpenSSH listens, per host, from host_vars: the WIRED interface, bound by
+# device (systemd BindToDevice= on ssh.socket, i.e. SO_BINDTODEVICE). The kernel
+# then delivers only connections arriving on that interface, so the tailnet
+# address (tailscale0) never reaches this server, and a DHCP lease change on
+# the interface cannot strand the listener the way a literal ListenAddress
+# would. The address is what the client aliases dial.
+lan_ssh_fallback_interface: ""
+lan_ssh_fallback_address: ""
+
+# OpenSSH's OWN identity, separate from what Tailscale SSH presents. Tailscale
+# SSH presents /etc/ssh/ssh_host_*_key when they exist and its own keys under
+# /var/lib/tailscale/ssh/ otherwise (measured 2026-10-15: poweredge and gmktec
+# present the /etc/ssh key, hp presents tailscaled's own). An explicit HostKey
+# elsewhere means sshd never needs, and the package postinst never creates, an
+# /etc/ssh/ssh_host_*_key file, so what Tailscale SSH presents cannot change.
+lan_ssh_fallback_dir: /etc/ssh/lan-fallback
+lan_ssh_fallback_host_key: "{{ lan_ssh_fallback_dir }}/ssh_host_ed25519_key"
+lan_ssh_fallback_authorized_keys_dir: "{{ lan_ssh_fallback_dir }}/authorized_keys"
+lan_ssh_fallback_known_hosts: "{{ lan_ssh_fallback_dir }}/known_hosts"
+lan_ssh_fallback_dropin: /etc/ssh/sshd_config.d/00-lan-fallback.conf
+# A second, auth-only drop-in, so that if the first is ever lost the daemon
+# still refuses passwords and root (a fail-safe direction, not a duplicate).
+lan_ssh_fallback_auth_dropin: /etc/ssh/sshd_config.d/01-lan-fallback-auth.conf
+lan_ssh_fallback_socket_dropin: /etc/systemd/system/ssh.socket.d/50-lan-fallback.conf
+lan_ssh_fallback_client_config: /etc/ssh/ssh_config.d/50-lan-fallback.conf
+
+# The package's own off switch: the packaged ssh.socket carries
+# ConditionPathExists=!/etc/ssh/sshd_not_to_be_run, so while this file exists
+# nothing (postinst restart, boot, manual start) can make OpenSSH listen.
+lan_ssh_fallback_off_switch: /etc/ssh/sshd_not_to_be_run
+
+# The one login OpenSSH accepts on these hosts.
+lan_ssh_fallback_user: cwoolley
+lan_ssh_fallback_user_home: /home/cwoolley
+
+# Exact package versions every home-lab host is brought to. A moved archive
+# refuses rather than installing an unreviewed build. poweredge already had
+# 3.6 with 3.8 pending as an unattended security upgrade, whose maintainer
+# scripts stop and restart ssh.socket on their own schedule; taking it here,
+# inside the fence and behind the off switch, means that restart happens once,
+# under supervision, instead of later and unobserved.
+lan_ssh_fallback_packages:
+  - openssh-server=1:10.2p1-2ubuntu3.8
+  - openssh-client=1:10.2p1-2ubuntu3.8
+  - openssh-sftp-server=1:10.2p1-2ubuntu3.8
+# The only already-installed packages the transaction may upgrade (the server
+# requires the client at its own version). Any other upgrade or any removal in
+# the simulated transaction refuses the install, which is what keeps systemd,
+# libssl and everything else on these hosts exactly as they are.
+lan_ssh_fallback_upgradable: [openssh-client, openssh-server, openssh-sftp-server]
+
+# A HOST-SIDE restore of the apt timers, armed before they are stopped and
+# cancelled once the controller restarts them: if the control node loses the
+# host mid-run (the play itself rides Tailscale SSH), security updates are not
+# left paused until the next reboot.
+lan_ssh_fallback_apt_restore_unit: lan-ssh-fallback-apt-timers-restore
+lan_ssh_fallback_apt_restore_after: 30min
+
+# The apt timers stopped while the install runs, so unattended-upgrades cannot
+# change the package database between the simulation and the install. Restarted
+# at the end of the run whatever happens.
+lan_ssh_fallback_apt_timers: [apt-daily.timer, apt-daily-upgrade.timer]
+
+# Units that must be active before and after every change on a host.
+lan_ssh_fallback_must_stay_running: [tailscaled.service]
+
+# The control node's public key, authorised on every home-lab host so it can
+# reach one through a jump over another. Read from the dev host at run time.
+lan_ssh_fallback_client_pubkey_path: /home/ubuntu/.ssh/id_ed25519.pub

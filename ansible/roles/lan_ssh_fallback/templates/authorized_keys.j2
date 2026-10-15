@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# Keys allowed to log in as {{ lan_ssh_fallback_user }} through the direct-LAN
+# OpenSSH fallback: every home-lab host's {{ lan_ssh_fallback_user }} key and the
+# control node's key. Rendered from the inventory; ~/.ssh/authorized_keys is
+# not read by this server and is never touched.
+{% for host in groups['home_lab'] | sort %}
+{{ hostvars[host]['lan_ssh_fallback_user_pubkey'] }}
+{% endfor %}
+{% for host in groups['dev_hosts'] | sort %}
+{{ hostvars[host]['lan_ssh_fallback_client_pubkey'] }}
+{% endfor %}
