@@ -11,10 +11,9 @@
 ---
 
 # --- lan_ssh_fallback ---
-# OpenSSH binds the WIRED interface by device (BindToDevice), so a DHCP lease
-# change cannot strand the listener; the address is what the client aliases
-# dial, and it is a DHCP lease (no reservation was readable from the host on
-# 2026-10-15), so the verify phase asserts it is still assigned.
+# OpenSSH binds the WIRED LAN address only (never the tailnet address); the
+# client aliases dial it. It is valid_lft forever and the address k3s pins
+# (measured 2026-10-15); every run checks the interface still carries it.
 lan_ssh_fallback_interface: eno1
 lan_ssh_fallback_address: 192.168.1.200
 lan_ssh_fallback_must_stay_running:
