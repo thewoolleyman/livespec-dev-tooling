@@ -58,6 +58,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.99.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.98.0...v1.99.0) (2026-10-15)
+
+
+### Features
+
+* **cross-repo:** carry a hold-rebump label on a pin-bump culprit's revert ([7773085](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7773085dcaa933e386fc181787ce5cf33f9542c1))
+* **cross-repo:** classify a failure recurring below the episode as infra ([e1ea371](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e1ea37157f45ca11b0348d4a4be3a5a8f92da38a))
+* **cross-repo:** close a held revert that a later green commit superseded ([48f9ef3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/48f9ef365767702dfe3bcb0a6cadf700c8ea4421))
+* **cross-repo:** escalate a release-please culprit instead of reverting it ([f298d9c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f298d9c22e9d4d5907d1d1c0b67528c9cd822af7))
+* **cross-repo:** start a red-master episode only from the gating CI workflow ([75418e5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/75418e50239e9245ec87ba41b9f5b0202cbdf0ed))
+
 ## [1.98.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.97.2...v1.98.0) (2026-10-15)
 
 
