@@ -27,6 +27,7 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
 )
 
 _LINT_FAILURE = "check-lint failed"
+_GATING_WORKFLOW = "CI"
 
 
 def _commit(
@@ -37,10 +38,12 @@ def _commit(
     pull_request: int | None = None,
     signature: str | None = None,
 ) -> MasterCommit:
+    """A gating-workflow record; the non-gating shapes live in the gating tests."""
     return MasterCommit(
         sha=sha,
         parent_sha=parent_sha,
         pull_request=pull_request,
+        ci_workflow=_GATING_WORKFLOW,
         ci_conclusion=conclusion,
         failure_signature=signature,
     )

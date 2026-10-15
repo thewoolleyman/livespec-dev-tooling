@@ -47,6 +47,7 @@ from livespec_dev_tooling.cross_repo.master_health_episode import (
     culprit_commit,
     red_block,
 )
+from livespec_dev_tooling.cross_repo.master_health_gating import gating_state
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_SUCCESS,
     ReconcileConfig,
@@ -200,9 +201,16 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
     Total over the recorded state. See this module's docstring for why the
     order of the branches below is the safety argument rather than a style
     choice.
+
+    The window is PROJECTED ONTO THE GATING WORKFLOW first and every rule below
+    reads the projection, never the raw window — a non-gating workflow's
+    failure is not a red master and must not reach any of them. Doing it here,
+    at the one public entry point, is what keeps that true without each rule
+    having to ask (see `master_health_gating`).
     """
-    verdict = red_verdict(state=state, config=config)
-    key = episode_key(state=state, config=config)
+    gating = gating_state(state=state, config=config)
+    verdict = red_verdict(state=gating, config=config)
+    key = episode_key(state=gating, config=config)
 
     if verdict == VERDICT_GREEN:
         return ReconcileStep(
@@ -230,7 +238,7 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
     # step: its existence means this episode is already past classification,
     # so re-running the culprit's jobs again would answer a question that has
     # been answered.
-    revert = state.revert_pull_request
+    revert = gating.revert_pull_request
     if revert is not None:
         return _revert_in_flight_step(revert=revert, config=config, key=key)
 
@@ -242,7 +250,7 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
             episode_key=key,
         )
 
-    culprit = culprit_commit(state=state)
+    culprit = culprit_commit(state=gating)
     if culprit is None or culprit.pull_request is None:
         return ReconcileStep(
             kind=STEP_NEEDS_ATTENTION,
