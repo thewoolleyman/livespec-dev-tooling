@@ -36,10 +36,12 @@ from livespec_dev_tooling.cross_repo.master_health_verdict import (
 
 _LINT_FAILURE = "check-lint failed"
 _NO_RUNNERS = "No runner matching the specified labels was found"
+_GATING_WORKFLOW = "CI"
 
 _CONFIG = ReconcileConfig(
     target_branch="master",
     infra_outage_markers=("No runner matching", "registry down", "bad credentials"),
+    gating_workflow=_GATING_WORKFLOW,
 )
 
 
@@ -50,10 +52,12 @@ def _commit(
     conclusion: str,
     signature: str | None = None,
 ) -> MasterCommit:
+    """A gating-workflow record; the non-gating shapes live in the gating tests."""
     return MasterCommit(
         sha=sha,
         parent_sha=parent_sha,
         pull_request=101,
+        ci_workflow=_GATING_WORKFLOW,
         ci_conclusion=conclusion,
         failure_signature=signature,
     )

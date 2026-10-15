@@ -116,14 +116,19 @@ def test_the_decision_inputs_are_frozen_so_a_decision_cannot_mutate_them() -> No
         assert all(field.kw_only for field in fields(record))
 
 
-def test_committed_configuration_carries_the_branch_and_the_outage_markers() -> None:
-    """The two things the decision may read besides forge state.
+def test_committed_configuration_carries_the_branch_the_markers_and_the_gate() -> None:
+    """Everything the decision may read besides forge state, and nothing more.
 
     `target_branch` is a parameter rather than a hardcoded `master` so the
-    scheduled drill can prove the revert path on a throwaway branch, and the
-    outage markers are committed text rather than a model's judgement of a
-    failure log.
+    scheduled drill can prove the revert path on a throwaway branch; the outage
+    markers are committed text rather than a model's judgement of a failure
+    log; and `gating_workflow` names the one workflow whose verdict decides
+    whether the branch is red, which is a per-repository fact.
+
+    The set is asserted EXACTLY rather than by membership: a knob that reaches
+    the decision without being committed configuration is the shape this
+    assertion exists to catch.
     """
     declared = {field.name for field in fields(ReconcileConfig)}
 
-    assert declared == {"target_branch", "infra_outage_markers"}
+    assert declared == {"target_branch", "infra_outage_markers", "gating_workflow"}

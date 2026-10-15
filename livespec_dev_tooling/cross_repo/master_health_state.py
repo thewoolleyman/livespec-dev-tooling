@@ -70,11 +70,19 @@ class MasterCommit:
     `failure_signature` identifies WHAT failed (a check name, a job name) and is
     `None` exactly when the commit is not red. It is compared across commits to
     recognise a failure that is not attributable to this merge.
+
+    `ci_workflow` names the workflow whose run reached `ci_conclusion`, and it
+    is REQUIRED rather than defaulted because a record whose workflow is
+    unrecorded would read as the gating one and let a non-gating failure start
+    an episode. One commit may therefore carry SEVERAL records, one per
+    workflow that ran on it; `master_health_gating` keeps only the gating
+    workflow's before any rule indexes the window.
     """
 
     sha: str
     parent_sha: str
     pull_request: int | None
+    ci_workflow: str
     ci_conclusion: str
     failure_signature: str | None
 
@@ -117,10 +125,17 @@ class ReconcileConfig:
     labels, an expired token, a registry that is down). They live in committed
     configuration because the alternative is asking a model to judge the
     failure text, and no LLM may reach this decision path.
+
+    `gating_workflow` names the ONE workflow whose verdict decides whether the
+    branch is red: the one whose all-green gate job is the required status
+    check branch protection evaluates. It is committed configuration rather
+    than a constant because the name is a per-repository fact, and it carries
+    no default for the reason `MasterCommit.ci_workflow` carries none.
     """
 
     target_branch: str
     infra_outage_markers: tuple[str, ...]
+    gating_workflow: str
 
 
 @dataclass(frozen=True, kw_only=True)
