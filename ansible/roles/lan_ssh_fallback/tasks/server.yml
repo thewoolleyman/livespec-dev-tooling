@@ -239,7 +239,7 @@
          or (lan_ssh_fallback_dropin_write is changed)
          or (lan_ssh_fallback_auth_write is changed)
          or lan_ssh_fallback_off_switch_now.stat.exists
-         or ((lan_ssh_fallback_listen_now.stdout | regex_findall('(\\S+) \\(Stream\\)'))
+         or ((lan_ssh_fallback_listen_now.stdout | regex_findall('(\S+) \(Stream\)'))
              != [lan_ssh_fallback_address ~ ':' ~ lan_ssh_fallback_port]) }}
 
 - name: Hold OpenSSH off while it is installed and configured (the package's own switch)
@@ -516,7 +516,7 @@
     - name: Refuse unless OpenSSH listens only on the wired address at the fallback port
       vars:
         listen: >-
-          {{ lan_ssh_fallback_socket_listen.stdout | regex_findall('(\\S+) \\(Stream\\)') }}
+          {{ lan_ssh_fallback_socket_listen.stdout | regex_findall('(\S+) \(Stream\)') }}
       ansible.builtin.assert:
         that:
           - listen == [lan_ssh_fallback_address ~ ':' ~ lan_ssh_fallback_port]

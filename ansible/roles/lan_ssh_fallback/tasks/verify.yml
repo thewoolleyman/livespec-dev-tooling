@@ -22,7 +22,7 @@
          + ((inventory_hostname in groups['home_lab'])
             | ternary([], lan_ssh_fallback_proven | product(groups['home_lab'] | sort)
                           | map('join', '-lan-via-')
-                          | reject('match', '^(.*)-lan-via-\\1$') | list)) }}
+                          | reject('match', '^(.*)-lan-via-\1$') | list)) }}
 
 - name: Log in through every alias toward the proven hosts
   ansible.builtin.command:
@@ -105,7 +105,7 @@
   ansible.builtin.assert:
     that:
       - >-
-        (lan_ssh_fallback_socket_state.stdout | regex_findall('(\\S+) \\(Stream\\)'))
+        (lan_ssh_fallback_socket_state.stdout | regex_findall('(\S+) \(Stream\)'))
         == [lan_ssh_fallback_address ~ ':' ~ lan_ssh_fallback_port]
     fail_msg: "ssh.socket has drifted: {{ lan_ssh_fallback_socket_state.stdout }}"
     success_msg: "ssh.socket listens on {{ lan_ssh_fallback_socket_state.stdout }}"
@@ -131,7 +131,7 @@
     that:
       - lan_ssh_fallback_k3s_nodes.stdout_lines | length > 0
       # `Ready` or `Ready,SchedulingDisabled` (cordoned) both count as Ready.
-      - lan_ssh_fallback_k3s_nodes.stdout_lines | reject('search', '\\sReady(\\s|,)') | list | length == 0
+      - lan_ssh_fallback_k3s_nodes.stdout_lines | reject('search', '\sReady(\s|,)') | list | length == 0
     fail_msg: "Not every k3s node is Ready: {{ lan_ssh_fallback_k3s_nodes.stdout_lines }}"
     success_msg: "{{ lan_ssh_fallback_k3s_nodes.stdout_lines | length }} k3s nodes Ready"
   when:
