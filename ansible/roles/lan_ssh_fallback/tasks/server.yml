@@ -379,6 +379,20 @@
     - not ansible_check_mode
     - lan_ssh_fallback_needs_activation | bool
   block:
+    - name: Create sshd's privilege separation directory for the validation
+      # `sshd -t` refuses without /run/sshd. ssh.service creates it as its
+      # RuntimeDirectory when it starts, but on a host that ran OpenSSH before
+      # (poweredge) the package upgrade stops ssh.service and the directory is
+      # gone, while the off switch keeps the unit from recreating it. This is
+      # the same directory, owner and mode the unit itself would create.
+      ansible.builtin.file:
+        path: /run/sshd
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+
     - name: Validate the whole sshd configuration
       ansible.builtin.command:
         argv: [/usr/sbin/sshd, -t]
