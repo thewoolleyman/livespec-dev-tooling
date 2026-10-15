@@ -1,10 +1,30 @@
 ---
-# Phase 4: prove the fallback end to end, from every home-lab host to each of
-# the others and from the control node to each home-lab host. A login is
-# `true` run through a NEW connection with strict host-key checking against the
-# pinned keys; nothing is changed by it.
+# Phase 4: prove the fallback end to end. A login is `true` run through a NEW
+# connection with strict host-key checking against the pinned keys; nothing is
+# changed by it. The hosts proven are the ones this run converged
+# (`lan_ssh_fallback_only`, default every home-lab host), so a one-host first
+# apply is proven without requiring the others to be converged yet.
 
-- name: Log in to every other home-lab host over the LAN fallback
+- name: Hold the hosts this run is proving
+  ansible.builtin.set_fact:
+    lan_ssh_fallback_proven: >-
+      {{ (lan_ssh_fallback_only | default('') | length > 0)
+         | ternary([lan_ssh_fallback_only | default('')], groups['home_lab'] | sort) }}
+
+- name: Hold every alias this host should be able to use toward the proven hosts
+  # On a home-lab host: `<target>-lan`. On the control node: `<target>-lan`
+  # plus one `<target>-lan-via-<jump>` per possible jump, so every rendered
+  # jump is exercised, not only the default one.
+  ansible.builtin.set_fact:
+    lan_ssh_fallback_aliases: >-
+      {{ (lan_ssh_fallback_proven | reject('equalto', inventory_hostname)
+          | map('regex_replace', '$', '-lan') | list)
+         + ((inventory_hostname in groups['home_lab'])
+            | ternary([], lan_ssh_fallback_proven | product(groups['home_lab'] | sort)
+                          | map('join', '-lan-via-')
+                          | reject('match', '^(.*)-lan-via-\\1$') | list)) }}
+
+- name: Log in through every alias toward the proven hosts
   ansible.builtin.command:
     argv:
       - ssh
@@ -16,13 +36,13 @@
       - ControlMaster=no
       - -o
       - ControlPath=none
-      - "{{ item }}-lan"
+      - "{{ item }}"
       - "true"
   # On a home-lab host the login runs AS the login user (its key); the
   # control node manages itself locally and logs in as its own user.
   become: "{{ inventory_hostname in groups['home_lab'] }}"
   become_user: "{{ lan_ssh_fallback_user }}"
-  loop: "{{ groups['home_lab'] | sort | reject('equalto', inventory_hostname) | list }}"
+  loop: "{{ lan_ssh_fallback_aliases }}"
   changed_when: false
   check_mode: false
   when: not ansible_check_mode
@@ -32,6 +52,9 @@
   # credential refresh on every k3s agent runs `ssh -o BatchMode=yes <server>`
   # over the tailnet and pins the key Tailscale SSH presents there. If this
   # role had changed what Tailscale SSH presents, this login would now fail.
+  # Exactly that path: from each k3s agent in the home lab to the k3s server,
+  # as the login user whose known_hosts the node-status role pinned. Other
+  # host pairs have no pinned tailnet key and would fail for that reason alone.
   ansible.builtin.command:
     argv:
       - ssh
@@ -41,9 +64,6 @@
       - ConnectTimeout=15
       - "{{ item }}"
       - "true"
-  # Exactly that path: from each k3s agent in the home lab to the k3s server,
-  # as the login user whose known_hosts the node-status role pinned. Other
-  # host pairs have no pinned tailnet key and would fail for that reason alone.
   become: true
   become_user: "{{ lan_ssh_fallback_user }}"
   loop: >-
@@ -57,28 +77,41 @@
     - inventory_hostname in groups['home_lab']
     - hostvars[inventory_hostname]['cluster_role'] | default('') == 'agent'
 
-- name: Read the ssh socket's listeners and device binding (also in the drift report)
+- name: Look for this role's sshd drop-in (has the server phase converged here?)
+  ansible.builtin.stat:
+    path: "{{ lan_ssh_fallback_dropin }}"
+  register: lan_ssh_fallback_dropin_present
+  become: true
+  check_mode: false
+  when: inventory_hostname in groups['home_lab']
+
+- name: Read the ssh socket's listeners (also in the drift report)
   # Read-only, and run under --check too, so `just ansible-drift` reports a
   # listener that drifted back to the packaged port 22 (which is what an
   # unparsable sshd configuration makes sshd-socket-generator do at the next
-  # daemon-reload or boot).
+  # daemon-reload or boot). Skipped on a host the server phase has not reached
+  # yet, where there is nothing of this role's to drift.
   ansible.builtin.command:
-    argv: [systemctl, show, ssh.socket, -p, Listen, -p, BindToDevice]
+    argv: [systemctl, show, ssh.socket, -p, Listen, --value]
   become: true
   register: lan_ssh_fallback_socket_state
   changed_when: false
   check_mode: false
-  when: inventory_hostname in groups['home_lab']
+  when:
+    - inventory_hostname in groups['home_lab']
+    - lan_ssh_fallback_dropin_present.stat.exists
 
 - name: Report a drifted fallback listener
   ansible.builtin.assert:
     that:
-      - lan_ssh_fallback_socket_state.stdout is search('BindToDevice=' ~ lan_ssh_fallback_interface)
-      - lan_ssh_fallback_socket_state.stdout is search(':' ~ lan_ssh_fallback_port ~ ' \\(Stream\\)')
-      - lan_ssh_fallback_socket_state.stdout is not search(':22 \\(Stream\\)')
+      - >-
+        (lan_ssh_fallback_socket_state.stdout | regex_findall('(\\S+) \\(Stream\\)'))
+        == [lan_ssh_fallback_address ~ ':' ~ lan_ssh_fallback_port]
     fail_msg: "ssh.socket has drifted: {{ lan_ssh_fallback_socket_state.stdout }}"
-    success_msg: "ssh.socket: {{ lan_ssh_fallback_socket_state.stdout | replace('\n', '; ') }}"
-  when: inventory_hostname in groups['home_lab']
+    success_msg: "ssh.socket listens on {{ lan_ssh_fallback_socket_state.stdout }}"
+  when:
+    - inventory_hostname in groups['home_lab']
+    - lan_ssh_fallback_dropin_present.stat.exists
 
 - name: Read the k3s nodes from the server (read-only)
   # Unit-active checks prove the k3s units run; this proves the cluster still
@@ -97,7 +130,8 @@
   ansible.builtin.assert:
     that:
       - lan_ssh_fallback_k3s_nodes.stdout_lines | length > 0
-      - lan_ssh_fallback_k3s_nodes.stdout_lines | reject('search', '\\sReady\\s') | list | length == 0
+      # `Ready` or `Ready,SchedulingDisabled` (cordoned) both count as Ready.
+      - lan_ssh_fallback_k3s_nodes.stdout_lines | reject('search', '\\sReady(\\s|,)') | list | length == 0
     fail_msg: "Not every k3s node is Ready: {{ lan_ssh_fallback_k3s_nodes.stdout_lines }}"
     success_msg: "{{ lan_ssh_fallback_k3s_nodes.stdout_lines | length }} k3s nodes Ready"
   when:

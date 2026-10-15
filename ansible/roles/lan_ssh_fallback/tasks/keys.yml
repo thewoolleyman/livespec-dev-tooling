@@ -44,6 +44,14 @@
     creates: "{{ lan_ssh_fallback_host_key }}"
   become: true
 
+- name: Make sure the login user's ~/.ssh exists
+  ansible.builtin.file:
+    path: "{{ lan_ssh_fallback_user_home }}/.ssh"
+    state: directory
+    mode: "0700"
+  become: true
+  become_user: "{{ lan_ssh_fallback_user }}"
+
 - name: Generate the login user's key, only if it does not exist
   # Run AS that user so the key is theirs. Never replaced.
   ansible.builtin.command:
