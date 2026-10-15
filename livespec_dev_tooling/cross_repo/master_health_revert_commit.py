@@ -36,15 +36,35 @@ workflow, exactly as the decision table is computed here and acted on there.
 That is also what keeps every claim about the revert replay-testable: the
 request a given recorded forge state produces is a value a test can compare,
 where a call would only be a thing that happened.
+
+WHY THE CALLER PASSES THE CULPRIT'S DIFF RATHER THAN THE STEP. WHICH commit is
+the culprit is `master_health_reconcile`'s answer; WHAT that commit changed is a
+further forge read worth making only once the step says to open a revert. The
+shape is therefore two-phase on purpose — decide, gather, build — and this
+module takes the gathered half.
+
+⚠️ WHAT RESTORING THE PARENT'S BYTES DOES NOT PROMISE. The request restores the
+bytes the culprit's parent held, at the paths the culprit changed, and nothing
+narrows that by what landed afterwards: if a LATER commit on the branch touched
+one of those paths, the revert overwrites it too. That is the same state a
+`git revert` would stop on as a conflict, and it is deliberately NOT resolved
+here — a hand-resolved conflict is new code the exemption's byte-identity half
+would (correctly) refuse, so inventing one would trade a visible clobber for an
+invisible conviction. Whether to refuse such an episode outright and raise a
+needs-attention item instead is a decision for the fix-forward child, which is
+where "the revert may not be safe" already lives.
 """
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 
 __all__: list[str] = [
     "FORGE_COMMIT_MUTATION",
     "REVERT_COMMIT_CREDENTIAL",
+    "CulpritPath",
+    "FileAddition",
     "RevertCommitRequest",
     "revert_commit_request",
 ]
@@ -71,6 +91,39 @@ _SHORT_SHA_CHARS = 12
 
 
 @dataclass(frozen=True, kw_only=True)
+class CulpritPath:
+    """One path the culprit merge changed, with the bytes its PARENT held there.
+
+    `parent_contents` is `None` exactly when the parent held nothing at this
+    path — the culprit CREATED it. That distinction is the whole reason this is
+    a record rather than a plain mapping: the correct revert of a created path
+    is a DELETION, and an empty addition would leave behind a module no commit
+    ever earned evidence for while also differing from the parent at that path,
+    which loses the exemption's byte-identity half.
+
+    Bytes, not text, because the restoration is byte-for-byte: a path the
+    culprit changed may hold anything a repository can hold, and decoding it to
+    pass it through `str` would corrupt exactly the contents nobody reviews.
+    """
+
+    path: str
+    parent_contents: bytes | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class FileAddition:
+    """One `fileChanges.additions` entry: a path, and its contents base64-encoded.
+
+    The encoding happens here rather than at the transport because it is part of
+    the mutation's own input shape, and because a request that is already
+    exactly what gets posted is a request a replay test can compare.
+    """
+
+    path: str
+    contents: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class RevertCommitRequest:
     """One `createCommitOnBranch` mutation, as the data a transport posts.
 
@@ -83,6 +136,9 @@ class RevertCommitRequest:
     is. The body carries the `This reverts commit <sha>.` line on its OWN line,
     which is not decoration: it is the lookup the server-side-revert exemption
     reads to decide which ancestor the restored bytes are compared against.
+
+    `additions` and `deletions` are the mutation's `fileChanges`, and they are
+    DISJOINT by construction below — a path is restored or removed, never both.
     """
 
     mutation: str
@@ -91,10 +147,21 @@ class RevertCommitRequest:
     expected_head_oid: str
     headline: str
     body: str
+    additions: tuple[FileAddition, ...]
+    deletions: tuple[str, ...]
+
+
+def _encoded(*, contents: bytes) -> str:
+    """`contents` as the base64 the mutation's `additions` entries carry."""
+    return base64.b64encode(contents).decode("ascii")
 
 
 def revert_commit_request(
-    *, culprit_sha: str, target_branch: str, expected_head_oid: str
+    *,
+    culprit_sha: str,
+    culprit_paths: tuple[CulpritPath, ...],
+    target_branch: str,
+    expected_head_oid: str,
 ) -> RevertCommitRequest:
     """The mutation one `STEP_OPEN_REVERT` run asks the forge for.
 
@@ -102,12 +169,25 @@ def revert_commit_request(
     `master_health_reconcile.reconcile_step` — so the culprit is passed in
     rather than re-derived here, and this module stays a builder with one job
     rather than a second copy of the decision table.
+
+    The file changes are ordered BY PATH rather than by however the caller
+    enumerated the culprit's diff, so the request is a function of the forge
+    state alone: two runs reading the same culprit build the same request, which
+    is the property that makes a duplicate reconcile run harmless here as well
+    as in the decision table.
     """
+    ordered = sorted(culprit_paths, key=lambda changed: changed.path)
     return RevertCommitRequest(
         mutation=FORGE_COMMIT_MUTATION,
         credential=REVERT_COMMIT_CREDENTIAL,
         branch=f"{_REVERT_BRANCH_PREFIX}{culprit_sha[:_SHORT_SHA_CHARS]}",
         expected_head_oid=expected_head_oid,
+        additions=tuple(
+            FileAddition(path=changed.path, contents=_encoded(contents=changed.parent_contents))
+            for changed in ordered
+            if changed.parent_contents is not None
+        ),
+        deletions=tuple(changed.path for changed in ordered if changed.parent_contents is None),
         headline=(
             f"chore(revert): undo {culprit_sha[:_SHORT_SHA_CHARS]} "
             f"to return {target_branch} to green"
