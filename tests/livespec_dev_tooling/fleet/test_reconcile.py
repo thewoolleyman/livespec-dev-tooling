@@ -35,6 +35,10 @@ from livespec_dev_tooling.fleet._reconcile_shims import (
     reconcile_shim_workflows,
     shim_content,
 )
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    MASTER_HEALTH_WORKFLOW,
+    reconciler_shim_content,
+)
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
     CI_WORKFLOW,
@@ -494,8 +498,17 @@ def _shim_happy_table() -> dict[tuple[str, ...], GhResult]:
         _REFS_POST: ok(payload={}),
         _put_args(path=PIN_FRESHNESS_WORKFLOW): ok(payload={}),
         _put_args(path=RELEASE_DISPATCH_WORKFLOW): ok(payload={}),
+        _put_args(path=MASTER_HEALTH_WORKFLOW): ok(payload={}),
         _PULLS_POST: ok(payload={"number": 7}),
     }
+
+
+_ALL_SHIM_PATHS = [
+    BUMP_PIN_WORKFLOW,
+    PIN_FRESHNESS_WORKFLOW,
+    RELEASE_DISPATCH_WORKFLOW,
+    MASTER_HEALTH_WORKFLOW,
+]
 
 
 def test_reconcile_shims_opens_one_pr_with_rendered_contents() -> None:
@@ -518,15 +531,56 @@ def test_reconcile_shims_opens_one_pr_with_rendered_contents() -> None:
 def test_reconcile_shims_all_present_passes_without_calls_beyond_tree() -> None:
     """The only calls are the one-time default-branch lookup and the tree read."""
     calls: list[tuple[tuple[str, ...], str | None]] = []
-    table = {
-        _TREE_ARGS: _tree(
-            paths=[BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW]
-        )
-    }
+    table = {_TREE_ARGS: _tree(paths=_ALL_SHIM_PATHS)}
     outcome = reconcile_shim_workflows(ctx=make_context(table=table, calls=calls), member=_MEMBER)
     assert isinstance(outcome, RowPass)
     assert "all shim workflows present" in outcome.note
     assert len(calls) == 2
+
+
+def test_reconcile_installs_the_reconciler_shim_and_a_second_run_changes_nothing() -> None:
+    """wire-fleet-member writes the canonical reconciler shim, then settles.
+
+    Owns the acceptance assertion that "`wire-fleet-member` writes the
+    canonical reconciler shim workflow into a fleet repository that lacks it,
+    and a second run leaves the repository unchanged" (work-item
+    `livespec-dev-tooling-dw7dzd`, child D of plan `red-master-self-healing`).
+
+    The write is asserted on BYTES — the PUT body is decoded and compared
+    against `reconciler_shim_content` — rather than on the path appearing in a
+    note. The conformance row this change also adds compares a member's copy
+    against those same bytes, so an installer that wrote anything else would
+    install a shim its own conformance row reports as drifted, forever.
+
+    The second leg is the IDEMPOTENCE half, and it asserts the absence of every
+    MUTATING call rather than a note: the first run's effect is modelled by
+    putting the shim into the member's tree, which is the state the merged shim
+    PR leaves behind. A reconcile that re-PUT identical bytes would still open
+    a second pull request, and "unchanged" is about the repository, not about
+    the bytes the second run would have written.
+    """
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    outcome = reconcile_shim_workflows(
+        ctx=make_context(table=_shim_happy_table(), calls=calls), member=_MEMBER
+    )
+    assert isinstance(outcome, RowPass)
+    assert MASTER_HEALTH_WORKFLOW in outcome.note
+    put_body = next(
+        stdin for args, stdin in calls if args == _put_args(path=MASTER_HEALTH_WORKFLOW)
+    )
+    assert put_body is not None
+    decoded = base64.b64decode(json.loads(put_body)["content"]).decode("utf-8")
+    assert decoded == reconciler_shim_content(owner="acme", repo="widget")
+
+    settled = _shim_happy_table()
+    settled[_TREE_ARGS] = _tree(paths=_ALL_SHIM_PATHS)
+    second_calls: list[tuple[tuple[str, ...], str | None]] = []
+    second = reconcile_shim_workflows(
+        ctx=make_context(table=settled, calls=second_calls), member=_MEMBER
+    )
+    assert isinstance(second, RowPass)
+    assert "all shim workflows present" in second.note
+    assert not [args for args, _stdin in second_calls if "--method" in args]
 
 
 def test_reconcile_shims_once_marker_dedupes_within_run() -> None:
