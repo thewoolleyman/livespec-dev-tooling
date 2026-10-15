@@ -29,6 +29,10 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    MASTER_HEALTH_WORKFLOW,
+    reconciler_shim_content,
+)
 from livespec_dev_tooling.fleet._settle_window import (
     LatestRelease,
     latest_release_unread_clause,
@@ -55,6 +59,7 @@ __all__: list[str] = [
     "assert_ci_workflow",
     "assert_copier_answers",
     "assert_dev_tooling_pin",
+    "assert_master_health_workflow",
     "assert_no_tracked_gitlinks",
     "assert_pin_freshness_workflow",
     "assert_release_dispatch_workflow",
@@ -102,6 +107,43 @@ def assert_pin_freshness_workflow(*, ctx: FleetContext, member: FleetMember) -> 
 def assert_release_dispatch_workflow(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
     """`release-dispatch.yml` shim present on master."""
     return _tree_path_outcome(ctx=ctx, member=member, path=RELEASE_DISPATCH_WORKFLOW)
+
+
+def assert_master_health_workflow(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:
+    """`master-health-reconcile.yml` present on master AND byte-identical to canonical.
+
+    THE ONLY ROW IN THIS MODULE THAT READS CONTENT RATHER THAN PRESENCE, and the
+    reason is the shape of this mechanism's failure. A hand-edited shim keeps its
+    path, so a presence-only row reads it as conforming while its triggers, its
+    `uses:` target or its `secrets: inherit` may all have been changed — and a
+    reconciler that is never invoked reports nothing at all. Every other shim
+    here announces its own breakage (a pin stops being bumped, a release stops
+    fanning out); this one goes quiet exactly when a master is red.
+
+    An unreadable file SKIPS rather than convicting (the
+    `livespec-dev-tooling-6ge` discipline): treating bytes this run could not
+    read as bytes that differ would red every member a scoped token cannot see
+    into. Drift REPAIR is not this row's: `wire-fleet-member` writes the shim
+    where it is absent, and a drifted one is an error-severity finding naming
+    the remedy, per the Definition of Done of work-item
+    livespec-dev-tooling-dw7dzd.
+    """
+    present = _tree_path_outcome(ctx=ctx, member=member, path=MASTER_HEALTH_WORKFLOW)
+    if not isinstance(present, RowPass):
+        return present
+    text = ctx.file_text(repo=member.repo, path=MASTER_HEALTH_WORKFLOW)
+    if text is None:
+        return RowSkip(reason=f"{member.repo}: {MASTER_HEALTH_WORKFLOW} unreadable")
+    if text != reconciler_shim_content(owner=ctx.owner):
+        return RowFinding(
+            message=(
+                f"{member.repo}: {MASTER_HEALTH_WORKFLOW} has DRIFTED from the canonical "
+                "reconciler shim — restore it by deleting the file in a repo-local commit "
+                "and re-running wire-fleet-member, which writes the canonical body "
+                "(livespec-dev-tooling plan/red-master-self-healing, child D)"
+            )
+        )
+    return RowPass()
 
 
 def assert_copier_answers(*, ctx: FleetContext, member: FleetMember) -> RowOutcome:

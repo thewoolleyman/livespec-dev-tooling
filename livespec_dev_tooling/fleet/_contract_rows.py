@@ -14,15 +14,19 @@ typed imports so the type checker sees every dispatch target.
 `contract.py` for the manifest parser; the LOCAL-vantage table lives in
 `_contract_local_rows.py`.
 
-TWO SLICES of this table live in sibling modules and are spliced in below at
+THREE SLICES of this table live in sibling modules and are spliced in below at
 the positions their rows already occupied: the github-state slice
 (`_contract_github_state_rows.py`, livespec-dev-tooling-oitd: this module had
 reached 246 of its 250-LLOC hard ceiling, which silently closed the fleet's
 one obligation table to new rows) and the pyproject-declaration slice
 (`_contract_declaration_rows.py`, livespec-dev-tooling-lptplj: registering
-`worktree-pack-wired` took the module to 262). Both cuts are along a family
-the rows already formed, not at a line number. `OBLIGATION_ROWS` remains the
-single exported table — a lane still reads exactly one name.
+`worktree-pack-wired` took the module to 262), and the red-master
+self-healing slice (`_contract_master_health_rows.py`,
+livespec-dev-tooling-dw7dzd: the module sat at 235 and an inline row would have
+left room for about one more, which is the state the two work-items above
+record as the failure). Every cut is along a family the rows already formed, not
+at a line number. `OBLIGATION_ROWS` remains the single exported table — a lane
+still reads exactly one name.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from __future__ import annotations
 from livespec_dev_tooling.fleet import _rows_pin_currency as pin_currency
 from livespec_dev_tooling.fleet._contract_declaration_rows import DECLARATION_ROWS
 from livespec_dev_tooling.fleet._contract_github_state_rows import GITHUB_STATE_ROWS
+from livespec_dev_tooling.fleet._contract_master_health_rows import MASTER_HEALTH_ROWS
 from livespec_dev_tooling.fleet._contract_model import (
     ADMIN_VANTAGE,
     CENTRAL_APP_VANTAGE,
@@ -145,6 +150,9 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         assert_member=assert_release_dispatch_workflow,
         reconcile=reconcile_shim_workflows,
     ),
+    # The red-master self-healing slice, verbatim and in position, from
+    # `_contract_master_health_rows.py`.
+    *MASTER_HEALTH_ROWS,
     _manual_committed_file_row(
         row_id="copier-answers",
         applies_to=TEMPLATE_BORN_CLASSES,

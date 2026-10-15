@@ -27,8 +27,14 @@ from livespec_dev_tooling.fleet._context import (
     FleetMember,
     GhResult,
     GhRunner,
+    RowFinding,
+    RowOutcome,
     RowPass,
+    RowSkip,
 )
+from livespec_dev_tooling.fleet._contract_classes import ALL_CLASSES
+from livespec_dev_tooling.fleet._contract_model import ObligationRow
+from livespec_dev_tooling.fleet._contract_rows import OBLIGATION_ROWS
 from livespec_dev_tooling.fleet._reconcile_shims import (
     SHIM_BRANCH,
     reconcile_shim_workflows,
@@ -71,6 +77,8 @@ _PULLS_POST: tuple[str, ...] = (
 )
 
 _PIN_AND_BUMP_SHIMS = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
+
+_RECONCILER_ROW_ID = "workflow-master-health-reconcile"
 
 # The pull-request event types the decision needs, and WHY each is required.
 # `labeled` / `unlabeled` are the fix-forward CLAIM's own events — the claim is
@@ -271,3 +279,106 @@ def test_a_second_run_against_a_fully_wired_member_changes_nothing() -> None:
     )
 
     assert _put_args(path=MASTER_HEALTH_WORKFLOW) in _mutating(calls=lacking_calls)
+
+
+def _contents_args(*, path: str) -> tuple[str, ...]:
+    return (
+        "api",
+        f"repos/acme/widget/contents/{path}?ref=master",
+        "-H",
+        "Accept: application/vnd.github.raw",
+    )
+
+
+def _reconciler_shim_row() -> ObligationRow:
+    """The registered conformance row, or a failure naming its absence.
+
+    Resolved through `OBLIGATION_ROWS` rather than by importing the asserter
+    directly: the row's REGISTRATION is half of what the Definition of Done
+    asks for, and an asserter nothing dispatches to reports on no repository.
+    """
+    registered = [row for row in OBLIGATION_ROWS if row.row_id == _RECONCILER_ROW_ID]
+
+    assert registered, f"no obligation row {_RECONCILER_ROW_ID} is registered"
+    return registered[0]
+
+
+def _row_outcome(*, table: dict[tuple[str, ...], GhResult]) -> RowOutcome:
+    return _reconciler_shim_row().assert_member(
+        ctx=_make_context(table=table, calls=[]), member=_MEMBER
+    )
+
+
+def test_the_reconciler_shim_row_is_registered_for_every_repository_class() -> None:
+    """Every governed member owes this shim, and the row is machine-fixable.
+
+    Scoping is BY CLASS and the class set is every one of them: a red master
+    stops ANY member's factory, so there is no class that can opt out. The row
+    carries a `reconcile` reference because `wire-fleet-member` can write the
+    shim itself — a row with no reconcile would leave the fleet's only install
+    path to a `manual_hint`, which charter item 6 forbids.
+    """
+    row = _reconciler_shim_row()
+
+    assert row.obligation_type == "committed-file"
+    assert row.applies_to == ALL_CLASSES
+    assert row.reconcile is reconcile_shim_workflows
+
+
+def test_conformance_convicts_a_member_whose_reconciler_shim_is_missing() -> None:
+    """An absent shim is a definitive violation, and the finding names the path."""
+    outcome = _row_outcome(table={_TREE_ARGS: _tree(paths=_PIN_AND_BUMP_SHIMS)})
+
+    assert isinstance(outcome, RowFinding)
+    assert MASTER_HEALTH_WORKFLOW in outcome.message
+
+
+def test_conformance_convicts_a_member_whose_reconciler_shim_has_drifted() -> None:
+    """A shim PRESENT but edited is the failure presence alone cannot see.
+
+    This is the half that makes the row worth having. A hand-edited shim keeps
+    its path, so a presence-only row reads it as conforming while its triggers,
+    its `uses:` target or its `secrets: inherit` may all have been changed —
+    and a reconciler that is never invoked fails silently, which is the worst
+    shape for exactly this mechanism.
+    """
+    drifted = reconciler_shim_content(owner=_OWNER).replace("*/5 * * * *", "0 * * * *")
+    outcome = _row_outcome(
+        table={
+            _TREE_ARGS: _tree(paths=(*_PIN_AND_BUMP_SHIMS, MASTER_HEALTH_WORKFLOW)),
+            _contents_args(path=MASTER_HEALTH_WORKFLOW): GhResult(
+                returncode=0, stdout=drifted, stderr=""
+            ),
+        }
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert "drifted" in outcome.message.lower()
+
+
+def test_conformance_passes_a_member_carrying_the_canonical_shim() -> None:
+    """The byte-identical case is the only pass, so the row has no slack."""
+    outcome = _row_outcome(
+        table={
+            _TREE_ARGS: _tree(paths=(*_PIN_AND_BUMP_SHIMS, MASTER_HEALTH_WORKFLOW)),
+            _contents_args(path=MASTER_HEALTH_WORKFLOW): GhResult(
+                returncode=0, stdout=reconciler_shim_content(owner=_OWNER), stderr=""
+            ),
+        }
+    )
+
+    assert isinstance(outcome, RowPass)
+
+
+def test_a_shim_present_but_unreadable_skips_rather_than_convicting() -> None:
+    """Can't-read is never reported as drift — a token limit must not red the fleet.
+
+    The repository-wide discipline (`livespec-dev-tooling-6ge`): a read this run
+    could not perform is a SKIP, because treating unreadable bytes as different
+    bytes would convict every member a scoped token cannot see into.
+    """
+    outcome = _row_outcome(
+        table={_TREE_ARGS: _tree(paths=(*_PIN_AND_BUMP_SHIMS, MASTER_HEALTH_WORKFLOW))}
+    )
+
+    assert isinstance(outcome, RowSkip)
