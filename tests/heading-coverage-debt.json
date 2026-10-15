@@ -1,1 +1,58 @@
-[]
+[
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Docker engine install guard",
+    "work_item": "livespec-dev-tooling-ubpufs",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard confirm that arrives after the deadline loses to the rollback",
+    "work_item": "livespec-dev-tooling-4on5pg",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard deadline recorded on an earlier boot counts as passed",
+    "work_item": "livespec-dev-tooling-4on5pg",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard rollback phase that keeps killing the driver does not stop the later phases",
+    "work_item": "livespec-dev-tooling-4on5pg",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard run named by the commit marker is finished, never rolled back",
+    "work_item": "livespec-dev-tooling-4on5pg",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a second controller cannot reserve the Docker engine install guard while a run is unfinished",
+    "work_item": "livespec-dev-tooling-4on5pg",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the Docker engine install guard refuses to start without a live dead-man",
+    "work_item": "livespec-dev-tooling-4on5pg",
+    "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the Docker engine install guard's recover resumes an interrupted publish and rolls back any other uncommitted run",
+    "work_item": "livespec-dev-tooling-4on5pg",
+    "first_seen": "2026-10-15"
+  }
+]

@@ -617,3 +617,89 @@ When a git push of a tree that has no green token runs the pre-push gate
 Then the push MUST be refused
 
 And the local `just check` fall-through MUST NOT run in place of the missing verdict
+
+## Scenario: a second controller cannot reserve the Docker engine install guard while a run is unfinished
+
+Given a factory host whose Docker engine install guard holds a current reservation for run A in phase `observing`
+
+When a second controller invokes `reserve` for run B
+
+Then the reservation MUST be refused
+
+And the refusal MUST print run A's id, its phase and its deadline
+
+And run A's phase, its deadline and its dead-man timer MUST be unchanged
+
+## Scenario: the Docker engine install guard refuses to start without a live dead-man
+
+Given a run in phase `armed` whose deadline has not passed
+
+And the run's dead-man timer unit is not active
+
+When `start` is invoked for that run
+
+Then `start` MUST refuse
+
+And the start permission MUST NOT be created
+
+## Scenario: a Docker engine install guard deadline recorded on an earlier boot counts as passed
+
+Given a run in phase `armed` whose deadline was recorded under a boot id that differs from the current boot id
+
+When `start` is invoked for that run
+
+Then `start` MUST refuse because the deadline has passed
+
+And the start permission MUST NOT be created
+
+## Scenario: a Docker engine install guard confirm that arrives after the deadline loses to the rollback
+
+Given a run in phase `observed` with passing evidence and a current challenge
+
+And the run's deadline has passed
+
+When `confirm` is invoked with the challenge's nonce
+
+Then `confirm` MUST refuse
+
+And the commit marker MUST NOT be written
+
+And a later `rollback` for that run MUST roll it back
+
+## Scenario: a Docker engine install guard run named by the commit marker is finished, never rolled back
+
+Given a run whose commit marker names it while its recorded phase reads `committed`
+
+When `rollback` is invoked for that run
+
+Then `rollback` MUST exit 0 without acting
+
+When `confirm` is invoked for that run without a challenge
+
+Then `confirm` MUST enable and start the three guarded units, stop the dead-man timer and move the run to `confirmed`
+
+## Scenario: a Docker engine install guard rollback phase that keeps killing the driver does not stop the later phases
+
+Given a run in phase `rolling-back` whose job-cancellation phase kills the rollback driver every time it is entered
+
+When the dead-man fires `rollback` four times
+
+Then each of the first three firings MUST end in the job-cancellation phase without writing an outcome, leaving the run `rolling-back`
+
+And on the fourth firing the job-cancellation phase MUST be skipped, its recorded attempts having reached three
+
+And on the fourth firing every phase after job cancellation MUST run and the driver MUST write an outcome
+
+## Scenario: the Docker engine install guard's recover resumes an interrupted publish and rolls back any other uncommitted run
+
+Given a run in phase `publishing` whose commit marker is absent and whose snapshot was already taken
+
+When an operator invokes `recover` for that run
+
+Then `publish` MUST resume for that run and keep the first snapshot
+
+Given a run in phase `started` whose commit marker is absent
+
+When an operator invokes `recover` for that run
+
+Then the run MUST be rolled back
