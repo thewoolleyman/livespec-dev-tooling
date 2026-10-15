@@ -43,12 +43,24 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
     ReconcileState,
 )
 
-__all__: list[str] = ["culprit_commit", "red_block"]
+__all__: list[str] = ["culprit_commit", "head_commit", "red_block"]
 
 
 def _by_sha(*, state: ReconcileState) -> dict[str, MasterCommit]:
     """Index the recorded window so ancestry is a lookup rather than a scan."""
     return {commit.sha: commit for commit in state.commits}
+
+
+def head_commit(*, state: ReconcileState) -> MasterCommit | None:
+    """The recorded record for the branch head, or `None` when it is missing.
+
+    `None` is the truncated-window answer, and it is NOT the same as a green
+    head: an empty red block says the walk found no red, which a window
+    missing the head produces too. A caller that reads the head's own verdict
+    must therefore distinguish the two, or it decides on the absence of
+    evidence.
+    """
+    return _by_sha(state=state).get(state.head_sha)
 
 
 def red_block(*, state: ReconcileState) -> tuple[MasterCommit, ...]:

@@ -24,9 +24,9 @@ non-regression is matched BEFORE any branch that could release a revert, so
 "never merges a revert on a flake, an outage, or an unrelated failure" is a
 property of the table's SHAPE rather than a rule each later branch has to
 remember. A green branch is matched before the in-flight revert branch for the
-same kind of reason: once the branch is healthy there is nothing to heal, and a
-stale revert pull request is a human's to close rather than something for this
-module to merge into a green branch.
+same kind of reason: once the branch is healthy there is nothing left to merge
+a revert FOR, so a revert still held open there is CLOSED as superseded rather
+than released into a green branch.
 
 WHERE IT REFUSES TO ACT. A regression whose culprit cannot be PROVEN (a
 truncated window, an episode opening on an undecided run) or whose culprit has
@@ -45,6 +45,7 @@ from dataclasses import dataclass
 
 from livespec_dev_tooling.cross_repo.master_health_episode import (
     culprit_commit,
+    head_commit,
     red_block,
 )
 from livespec_dev_tooling.cross_repo.master_health_gating import gating_state
@@ -65,6 +66,7 @@ from livespec_dev_tooling.cross_repo.master_health_verdict import (
 
 __all__: list[str] = [
     "NEEDS_ATTENTION_LABEL",
+    "STEP_CLOSE_REVERT",
     "STEP_NEEDS_ATTENTION",
     "STEP_NONE",
     "STEP_OPEN_REVERT",
@@ -85,6 +87,7 @@ STEP_NONE = "none"
 STEP_RERUN_FAILED_JOBS = "rerun-failed-jobs"
 STEP_OPEN_REVERT = "open-revert"
 STEP_RELEASE_REVERT = "release-revert"
+STEP_CLOSE_REVERT = "close-revert"
 STEP_NEEDS_ATTENTION = "needs-attention"
 
 
@@ -92,7 +95,7 @@ STEP_NEEDS_ATTENTION = "needs-attention"
 class ReconcileStep:
     """The single next step one reconcile run would take, and why.
 
-    `kind` is one of the five `STEP_*` constants. The remaining fields are the
+    `kind` is one of the `STEP_*` constants. The remaining fields are the
     arguments that step needs, and each is `None` or `False` for the kinds that
     do not use it: `culprit_*` for the revert-opening step, `revert_pull_
     request` for the steps acting on a revert already in flight, and
@@ -130,6 +133,60 @@ def episode_key(*, state: ReconcileState, config: ReconcileConfig) -> str | None
     if not block:
         return None
     return f"{config.target_branch}@{block[0].sha}"
+
+
+def _green_branch_step(*, state: ReconcileState, config: ReconcileConfig) -> ReconcileStep:
+    """Decide what a HEALTHY branch still owes a revert pull request.
+
+    SUPERSEDED-GREEN. A revert held open while a later commit has turned the
+    branch green is a revert of a red that no longer exists: the episode it was
+    opened for ended without it. Closing it is the only honest step — there is
+    nothing left to merge it for, and leaving it open parks a revert of
+    someone's work on a healthy branch for a human to find and reason about.
+    The plan's calibration found this to be the COMMON ending rather than an
+    edge case: 39 of 154 measured episodes (25%) ended with a later unrelated
+    commit coming back green and no fix landing at all.
+
+    Two green heads are deliberately NOT closed. One is the head this revert's
+    own merge minted — that revert LANDED, so acting on it would act on a
+    merged pull request. The other is a head whose verdict the window does not
+    record: an empty red block is what both a green head and a truncated
+    window produce, so without the head's own record there is no evidence the
+    branch is healthy at all.
+    """
+    revert = state.revert_pull_request
+    if revert is None:
+        return ReconcileStep(
+            kind=STEP_NONE,
+            target_branch=config.target_branch,
+            reason="branch is green; nothing to heal",
+        )
+    head = head_commit(state=state)
+    if head is None:
+        return ReconcileStep(
+            kind=STEP_NONE,
+            target_branch=config.target_branch,
+            reason=(
+                "the window does not record the head's own verdict, so the "
+                "branch reading green is not evidence; close nothing"
+            ),
+        )
+    if head.pull_request == revert.number:
+        return ReconcileStep(
+            kind=STEP_NONE,
+            target_branch=config.target_branch,
+            reason="this revert's own merge turned the branch green; nothing further is owed",
+            revert_pull_request=revert.number,
+        )
+    return ReconcileStep(
+        kind=STEP_CLOSE_REVERT,
+        target_branch=config.target_branch,
+        reason=(
+            "a later non-revert commit turned the branch green; this held "
+            "revert is superseded, so close it and raise nothing"
+        ),
+        revert_pull_request=revert.number,
+    )
 
 
 def _revert_in_flight_step(
@@ -213,11 +270,7 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
     key = episode_key(state=gating, config=config)
 
     if verdict == VERDICT_GREEN:
-        return ReconcileStep(
-            kind=STEP_NONE,
-            target_branch=config.target_branch,
-            reason="branch is green; nothing to heal",
-        )
+        return _green_branch_step(state=gating, config=config)
 
     # Matched BEFORE any branch that can release a revert — see this module's
     # docstring. A revert may already be open and green here; escalating anyway
