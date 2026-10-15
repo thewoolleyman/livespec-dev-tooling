@@ -19,9 +19,11 @@ from __future__ import annotations
 import base64
 import json
 import re
+from pathlib import Path
 
 from _gh_railway import lift_gh
 
+from livespec_dev_tooling.fleet import _reconciler_shim
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
     FleetMember,
@@ -79,6 +81,7 @@ _PULLS_POST: tuple[str, ...] = (
 _PIN_AND_BUMP_SHIMS = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
 
 _RECONCILER_ROW_ID = "workflow-master-health-reconcile"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # The pull-request event types the decision needs, and WHY each is required.
 # `labeled` / `unlabeled` are the fix-forward CLAIM's own events — the claim is
@@ -93,6 +96,7 @@ _REQUIRED_PULL_REQUEST_TYPES = (
     "unlabeled",
 )
 
+_COMMENT_LINE = re.compile(r"^\s*#")
 _CRON_LINE = re.compile(r"^\s*- cron: '(?P<expression>[^']+)'\s*$", re.MULTILINE)
 
 
@@ -382,3 +386,126 @@ def test_a_shim_present_but_unreadable_skips_rather_than_convicting() -> None:
     )
 
     assert isinstance(outcome, RowSkip)
+
+
+def _reusable_workflow_body() -> str:
+    """The canonical reusable reconciler workflow body, or a failure naming its absence.
+
+    Resolved through the module object with `getattr` rather than imported at
+    module top ON PURPOSE: at the Red moment of this assertion's cycle the name
+    does not exist yet, and a top-level import would make that Red a COLLECTION
+    error — which proves only unimportability, never that the behaviour is
+    unimplemented.
+    """
+    body = getattr(_reconciler_shim, "REUSABLE_RECONCILER_BODY", None)
+
+    assert isinstance(body, str), (
+        "_reconciler_shim carries no REUSABLE_RECONCILER_BODY — the canonical "
+        "reusable reconciler workflow body is the artifact this row distributes"
+    )
+    return body
+
+
+def _runs_on_values(*, body: str) -> tuple[str, ...]:
+    """Every `runs-on:` value in `body`, with comment lines stripped first.
+
+    Comments are stripped because this workflow EXPLAINS at length why
+    self-hosted capacity is the wrong place for a reconciler, and a raw
+    substring scan would match the explanation. It is the same correctness point
+    the shipped `self_hosted_routing` check records about its own parser:
+    parsing the structure beats grepping the text.
+    """
+    return tuple(
+        line.split("runs-on:", 1)[1].strip()
+        for line in body.splitlines()
+        if "runs-on:" in line and not _COMMENT_LINE.match(line)
+    )
+
+
+def test_the_runs_on_reader_ignores_the_workflow_s_own_explanation() -> None:
+    """The hosted-runner assertion is only as strong as the reader underneath it."""
+    assert _runs_on_values(
+        body="# runs-on: local-ci would be wrong here\n    runs-on: ubuntu-latest\n"
+    ) == ("ubuntu-latest",)
+
+
+def test_the_reusable_reconciler_workflow_runs_on_github_hosted_runners() -> None:
+    """HOSTED runners, and the requirement is load-bearing rather than a default.
+
+    The k3s pool the fleet's other gating jobs run on can itself BE the failure
+    the reconciler is healing, and a reconciler queued against a broken pool
+    never runs — at exactly the moment it is needed. Asserting the WHOLE set of
+    `runs-on` values rather than the presence of one is what makes a second job
+    added later on fleet capacity fail here.
+    """
+    assert _runs_on_values(body=_reusable_workflow_body()) == ("ubuntu-latest",)
+
+
+def test_the_reusable_reconciler_workflow_authenticates_with_the_fleet_app_token() -> None:
+    """The fleet GitHub App token, not `github.token`, and for two distinct reasons.
+
+    A pull request opened or merged with `GITHUB_TOKEN` does NOT trigger CI, and
+    this workflow's whole purpose is to open a revert whose own CI must speak
+    before it may land — so with `github.token` the revert would sit forever
+    with no verdict. The App installation token also carries the admin-level
+    access the auto-merge mutation needs, which `github-actions[bot]` lacks
+    regardless of declared `permissions:` (the finding `auto-enable-merge.yml`
+    records).
+    """
+    body = _reusable_workflow_body()
+
+    assert "actions/create-github-app-token@v3" in body
+    assert "client-id: ${{ secrets.APP_ID }}" in body
+    assert "private-key: ${{ secrets.APP_PRIVATE_KEY }}" in body
+    assert "GH_TOKEN: ${{ steps.app-token.outputs.token }}" in body
+    assert "${{ github.token }}" not in body
+
+
+def test_the_reusable_reconciler_workflow_delegates_every_decision_to_the_pure_core() -> None:
+    """The workflow gathers and performs; it decides nothing.
+
+    `master_health_state`'s docstring puts the gathering here and the decision
+    in the pure modules, so the workflow must reach the step through the
+    adapter rather than branching on forge state itself. It is `workflow_call`
+    only — the shim owns the triggers.
+    """
+    body = _reusable_workflow_body()
+
+    assert "workflow_call:" in body
+    assert "python3 -m livespec_dev_tooling.cross_repo.master_health_step" in body
+    assert "--state" in body
+    assert "--step-out" in body
+
+
+def _committed_matches(*, path: Path, canonical: str) -> bool | None:
+    """Whether `path` holds `canonical`; None when `path` does not exist."""
+    return path.read_text(encoding="utf-8") == canonical if path.is_file() else None
+
+
+def test_the_committed_reusable_workflow_is_byte_identical_to_the_canonical_body(
+    *, tmp_path: Path
+) -> None:
+    """The join that stops the Python source of truth and the committed file drifting.
+
+    The body is authored in Python because a FACTORY branch may not create or
+    modify anything under `.github/workflows/` — the dispatch credential carries
+    no `workflows` grant and `check-no-workflow-edits` enforces the boundary — so
+    the committed workflow lands maintainer-side from that text.
+
+    The comparator is therefore proven against files that DO exist (an identical
+    one and an edited one) and then applied to the committed path, where
+    `is not False` is the real gate: absent is the boundary's own state and
+    passes, DIFFERENT fails from the moment a copy lands.
+    """
+    canonical = _reusable_workflow_body()
+    landed = tmp_path / "landed.yml"
+    _ = landed.write_text(canonical, encoding="utf-8")
+    drifted = tmp_path / "drifted.yml"
+    _ = drifted.write_text(f"{canonical}# a hand edit\n", encoding="utf-8")
+
+    assert _committed_matches(path=landed, canonical=canonical) is True
+    assert _committed_matches(path=drifted, canonical=canonical) is False
+    assert (
+        _committed_matches(path=_REPO_ROOT / REUSABLE_RECONCILER_WORKFLOW, canonical=canonical)
+        is not False
+    )
