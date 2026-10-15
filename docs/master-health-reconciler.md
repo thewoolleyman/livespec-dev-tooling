@@ -171,3 +171,42 @@ decisions for the maintainer:
 
 Recorded here rather than acted on, per this repository's rule that a factory
 or tooling breakage stops the line instead of being routed around.
+
+## The repair: the reconciler describes the revert commit, the forge commits it
+
+Work-item `livespec-dev-tooling-7n2itg` acts on the finding above, and it is
+NEITHER of the two repairs that section listed. Both of those put the next move
+on the forge or on the exemption; this one puts it on the only participant that
+was ever ours — the step that asks.
+
+The revert step no longer asks the forge to AUTHOR a revert
+(`revertPullRequest`). It builds the revert commit itself, as a
+`createCommitOnBranch` mutation authenticated with the fleet GitHub App
+installation token (`SPECIFICATION/contracts.md` §"GitHub App auth model"),
+restoring the bytes the culprit's parent held at every path the culprit
+changed. The request is a VALUE built by
+`livespec_dev_tooling/cross_repo/master_health_revert_commit.py` and posted by
+child D's workflow, because this package is network-I/O-free — which is also
+what keeps the claim replay-testable rather than merely observed.
+
+What this does and does not settle:
+
+- **Both halves of the exemption still hold, unchanged.** The described commit
+  carries the `This reverts commit <sha>.` lookup line and restores the
+  parent's bytes, so the byte-identity half is satisfied by construction; the
+  signature half is satisfied only if the forge signs. The paired tests in
+  `tests/livespec_dev_tooling/checks/test_red_green_replay_revert.py` assert
+  the admission AND the refusal of the same described commit without a
+  signature, so describing a revert buys an agent nothing.
+- **Whether the forge signs an App-authored commit is still UNMEASURED here.**
+  It needs a live fleet repository and the App's private key, neither of which
+  a factory sandbox publishes, so the work-item carries it as a host-captured
+  assertion. If it comes back unsigned, that is a finding for the plan epic —
+  the refusal leg is what still holds, and the answer is not a weaker
+  exemption.
+- **Restoring the parent's bytes does not narrow by what landed afterwards.**
+  A later commit touching one of the culprit's paths is overwritten, which is
+  the state `git revert` would stop on as a conflict. Resolving it here would
+  mint new code the byte-identity half must then refuse, so the module records
+  the hazard and leaves the "refuse the episode and escalate instead" decision
+  to child C2, where "the revert may not be safe" already lives.

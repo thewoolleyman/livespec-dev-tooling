@@ -43,6 +43,7 @@ track is inhabited end to end rather than left as an uninhabited type.
 from __future__ import annotations
 
 import ast
+import base64
 import functools
 import importlib.util
 import os
@@ -66,6 +67,10 @@ from livespec_dev_tooling.checks._red_green_replay_revert import (
     _undoes_ancestor,
     _validsig_names_trusted_key,
     is_forge_authored_revert,
+)
+from livespec_dev_tooling.cross_repo.master_health_revert_commit import (
+    CulpritPath,
+    revert_commit_request,
 )
 
 if TYPE_CHECKING:
@@ -654,3 +659,90 @@ def test_range_gate_convicts_and_names_an_exemption_it_could_not_probe(
     reported = capsys.readouterr().err
     assert "red-green-replay-forge-exemption-unprobed" in reported
     assert "red-green-replay-range-missing-trailers" in reported
+
+
+# ---------------------------------------------------------------------------
+# The master-health reconciler's revert, judged at this gate — the join the
+# red-master-self-healing plan needs (work-item livespec-dev-tooling-7n2itg).
+# ---------------------------------------------------------------------------
+
+
+def _commit_the_described_revert(*, deadlock: DeadlockRepo, key: ForgeKey | None) -> str:
+    """Commit exactly what the reconciler's revert step DESCRIBES, signed or not.
+
+    The request comes from the shipped builder rather than from `git revert`,
+    and that is the whole point of this leg: the plan's revert is no longer a
+    commit the forge authors on its own terms — every revert commit GitHub
+    minted for orchestrator PR #2918 was `unsigned`, which is why the step
+    builds the commit itself through `createCommitOnBranch` — so proving the
+    exemption against a hand-rolled revert would prove it against something
+    nothing in the fleet now produces.
+    """
+    request = revert_commit_request(
+        culprit_sha=deadlock.reddening_sha,
+        culprit_paths=(
+            CulpritPath(path=_PRODUCT_PATH, parent_contents=_PRE_REVERT_BODY.encode("utf-8")),
+        ),
+        target_branch="master",
+        expected_head_oid=deadlock.reddening_sha,
+    )
+    assert request.deletions == (), "the 2026-08-22 culprit created no path to delete"
+    for addition in request.additions:
+        (deadlock.path / addition.path).write_bytes(base64.b64decode(addition.contents))
+    _git(cwd=deadlock.path, args=["add", "-A"])
+    sign = [f"--gpg-sign={key.fingerprint}"] if key is not None else ["--no-gpg-sign"]
+    _git(
+        cwd=deadlock.path,
+        args=["commit", "-q", "-m", request.headline, "-m", request.body, *sign],
+        home=key.home if key is not None else None,
+    )
+    return _head_sha(repo=deadlock.path)
+
+
+def test_the_reconcilers_described_revert_is_admitted_when_the_forge_signs_it(
+    *, tmp_path: Path, forge_key: ForgeKey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Revert-by-default can heal a product-`.py` regression, and this is why.
+
+    The culprit here touches product impl `.py`, which is the commonest
+    regression and the one the plan's own design record says
+    revert-by-default could NOT heal: the revert carries no TDD trailers, so
+    without the exemption the commit-range gate convicts it, the revert's own
+    CI is red, and the reconciler reaches needs-attention every time instead of
+    returning master to green unattended.
+
+    What makes it admissible is the conjunction the exemption already required
+    and still requires — the forge's signature over a commit restoring the
+    culprit's parent bytes. Nothing here relaxes either half; the commit is
+    simply one the reconciler described rather than one it asked the forge to
+    invent.
+    """
+    deadlock = _deadlock_repo(tmp_path=tmp_path, forge_key=forge_key, monkeypatch=monkeypatch)
+    _ = _commit_the_described_revert(deadlock=deadlock, key=forge_key)
+    module = _load_range_validator(forge_key=forge_key, monkeypatch=monkeypatch)
+    monkeypatch.chdir(deadlock.path)
+
+    assert module._validate_range() == 0  # noqa: SLF001 — the module's own range entry point.
+
+
+def test_the_same_described_revert_is_refused_without_the_forge_signature(
+    *, tmp_path: Path, forge_key: ForgeKey, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The paired near-miss, and the reason the admission above is not a lever.
+
+    Byte-for-byte the same commit — the same restored bytes, the same
+    `This reverts commit` line, the same subject — with the signature absent.
+    It is convicted, so describing a revert buys an agent NOTHING: the half it
+    cannot forge is still the half that decides.
+
+    This is also the measured status quo the work-item opens on. An unsigned
+    revert is what the forge produces today, so if the live measurement comes
+    back saying it does not sign an App-authored commit either, THIS is the leg
+    that still holds and the finding belongs on the plan epic.
+    """
+    deadlock = _deadlock_repo(tmp_path=tmp_path, forge_key=forge_key, monkeypatch=monkeypatch)
+    _ = _commit_the_described_revert(deadlock=deadlock, key=None)
+    module = _load_range_validator(forge_key=forge_key, monkeypatch=monkeypatch)
+    monkeypatch.chdir(deadlock.path)
+
+    assert module._validate_range() == 1  # noqa: SLF001 — the module's own range entry point.
