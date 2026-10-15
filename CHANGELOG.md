@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.100.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.100.1...v1.100.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **ansible:** lan_ssh_fallback - prove the play rides Tailscale SSH; no-remove install ([bbca309](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bbca309cef1cdef554dd32f8d55ffd2864691aa6))
+* **ansible:** lan_ssh_fallback - wait on the dpkg and apt locks, not on process names ([5c3631a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5c3631a2dbcb44c6b241665b3b24b56e8a5c2a45))
+
 ## [1.100.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.100.0...v1.100.1) (2026-10-15)
 
 
