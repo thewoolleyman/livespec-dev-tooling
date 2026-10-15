@@ -35,6 +35,7 @@ from livespec_dev_tooling.fleet._reconcile_shims import (
     reconcile_shim_workflows,
     shim_content,
 )
+from livespec_dev_tooling.fleet._reconciler_shim import MASTER_HEALTH_WORKFLOW
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
     CI_WORKFLOW,
@@ -494,6 +495,7 @@ def _shim_happy_table() -> dict[tuple[str, ...], GhResult]:
         _REFS_POST: ok(payload={}),
         _put_args(path=PIN_FRESHNESS_WORKFLOW): ok(payload={}),
         _put_args(path=RELEASE_DISPATCH_WORKFLOW): ok(payload={}),
+        _put_args(path=MASTER_HEALTH_WORKFLOW): ok(payload={}),
         _PULLS_POST: ok(payload={"number": 7}),
     }
 
@@ -520,7 +522,12 @@ def test_reconcile_shims_all_present_passes_without_calls_beyond_tree() -> None:
     calls: list[tuple[tuple[str, ...], str | None]] = []
     table = {
         _TREE_ARGS: _tree(
-            paths=[BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW]
+            paths=[
+                BUMP_PIN_WORKFLOW,
+                PIN_FRESHNESS_WORKFLOW,
+                RELEASE_DISPATCH_WORKFLOW,
+                MASTER_HEALTH_WORKFLOW,
+            ]
         )
     }
     outcome = reconcile_shim_workflows(ctx=make_context(table=table, calls=calls), member=_MEMBER)
@@ -608,6 +615,7 @@ def test_reconcile_shims_pr_bases_on_resolved_default_branch() -> None:
         _REFS_POST: ok(payload={}),
         _put_args(path=PIN_FRESHNESS_WORKFLOW): ok(payload={}),
         _put_args(path=RELEASE_DISPATCH_WORKFLOW): ok(payload={}),
+        _put_args(path=MASTER_HEALTH_WORKFLOW): ok(payload={}),
         _PULLS_POST: ok(payload={"number": 7}),
     }
     outcome = reconcile_shim_workflows(ctx=make_context(table=table, calls=calls), member=_MEMBER)
