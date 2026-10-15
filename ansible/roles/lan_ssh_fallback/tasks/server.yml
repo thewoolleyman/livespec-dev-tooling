@@ -66,6 +66,32 @@
       Nothing has been changed.
     success_msg: every must-stay-running unit is active
 
+# The whole safety argument is that this play rides Tailscale SSH, so moving
+# or stopping OpenSSH cannot cut the control node off. A host-key comparison
+# cannot prove that where /etc/ssh keys exist (Tailscale SSH presents them), so
+# prove it from this task's own process ancestry: a Tailscale SSH session is a
+# descendant of tailscaled, an OpenSSH one of sshd.
+- name: Read this connection's process ancestry
+  ansible.builtin.shell:
+    cmd: >-
+      p=$$; while [ "$p" -gt 1 ]; do cat /proc/$p/comm;
+      p=$(awk '/^PPid:/ {print $2}' /proc/$p/status); done
+    executable: /bin/bash
+  register: lan_ssh_fallback_ancestry
+  changed_when: false
+  check_mode: false
+
+- name: Refuse unless this play reached the host over Tailscale SSH, not OpenSSH
+  ansible.builtin.assert:
+    that:
+      - "'tailscaled' in lan_ssh_fallback_ancestry.stdout_lines"
+      - lan_ssh_fallback_ancestry.stdout_lines | select('match', '^sshd') | list | length == 0
+    fail_msg: >-
+      This connection is not a Tailscale SSH session (ancestry:
+      {{ lan_ssh_fallback_ancestry.stdout_lines | join(' < ') }}). The role moves
+      and may stop OpenSSH, so it must not ride OpenSSH. Nothing has been changed.
+    success_msg: this play rides Tailscale SSH
+
 - name: Read the wired interface's addresses
   ansible.builtin.command:
     argv: [ip, -4, -br, addr, show, dev, "{{ lan_ssh_fallback_interface }}"]
@@ -278,9 +304,10 @@
     - name: Wait until no package manager holds the dpkg or apt locks
       ansible.builtin.shell:
         cmd: >-
-          for i in $(seq 1 120); do
+          command -v fuser >/dev/null || exit 2; for i in $(seq 1 120); do
           fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock
-          /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1 || exit 0;
+          /var/lib/apt/lists/lock /var/cache/apt/archives/lock
+          /var/lib/apt/daily_lock >/dev/null 2>&1 || exit 0;
           sleep 5; done; exit 1
         executable: /bin/bash
       become: true
@@ -325,6 +352,7 @@
       ansible.builtin.apt:
         name: "{{ lan_ssh_fallback_packages }}"
         install_recommends: false
+        fail_on_autoremove: true
         update_cache: false
         lock_timeout: 600
       become: true
