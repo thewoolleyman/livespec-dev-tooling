@@ -34,6 +34,10 @@ from livespec_dev_tooling.fleet._context import (
 )
 from livespec_dev_tooling.fleet._invocation_failure import InvocationNotPerformed
 from livespec_dev_tooling.fleet._reconcile import _gh_failed
+from livespec_dev_tooling.fleet._reconciler_shim import (
+    MASTER_HEALTH_WORKFLOW,
+    RECONCILER_SHIM_TEMPLATE,
+)
 from livespec_dev_tooling.fleet._rows_files import (
     BUMP_PIN_WORKFLOW,
     PIN_FRESHNESS_WORKFLOW,
@@ -49,7 +53,21 @@ __all__: list[str] = [
 
 SHIM_BRANCH = "wire-fleet-member/shim-workflows"
 
-_SHIM_WORKFLOWS = (BUMP_PIN_WORKFLOW, PIN_FRESHNESS_WORKFLOW, RELEASE_DISPATCH_WORKFLOW)
+# The master-health reconciler shim rides the SAME provisioning mechanism as
+# the three pin-and-bump shims rather than growing a second one, and that reuse
+# is what gives the Definition of Done's "a second run leaves the repository
+# unchanged" for free: the all-present pass, the pending-shim-branch pass and
+# the per-run once-marker below are already the three idempotence guards this
+# shim needs. Its canonical body is homed in `_reconciler_shim` because the
+# conformance row that convicts DRIFT must render the same bytes this install
+# writes (work-item livespec-dev-tooling-dw7dzd, child D of plan
+# red-master-self-healing).
+_SHIM_WORKFLOWS = (
+    BUMP_PIN_WORKFLOW,
+    PIN_FRESHNESS_WORKFLOW,
+    RELEASE_DISPATCH_WORKFLOW,
+    MASTER_HEALTH_WORKFLOW,
+)
 
 # Canonical shim bodies, mirroring livespec-dev-tooling's own committed
 # shims (the reusable workflows these `uses:` lines target live in this
@@ -124,6 +142,7 @@ _SHIM_BODIES = {
     BUMP_PIN_WORKFLOW: _BUMP_PIN_SHIM,
     PIN_FRESHNESS_WORKFLOW: _PIN_FRESHNESS_SHIM,
     RELEASE_DISPATCH_WORKFLOW: _RELEASE_DISPATCH_SHIM,
+    MASTER_HEALTH_WORKFLOW: RECONCILER_SHIM_TEMPLATE,
 }
 
 

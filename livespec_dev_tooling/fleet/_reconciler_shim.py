@@ -23,6 +23,7 @@ from __future__ import annotations
 
 __all__: list[str] = [
     "MASTER_HEALTH_WORKFLOW",
+    "RECONCILER_SHIM_TEMPLATE",
     "REUSABLE_RECONCILER_WORKFLOW",
     "reconciler_shim_content",
 ]
@@ -36,12 +37,13 @@ __all__: list[str] = [
 MASTER_HEALTH_WORKFLOW = ".github/workflows/master-health-reconcile.yml"
 REUSABLE_RECONCILER_WORKFLOW = ".github/workflows/reusable-master-health-reconcile.yml"
 
-# The canonical shim body. `{owner}` is the member's own owner (resolved from
-# its git remote by `wire-fleet-member`), never a hardcoded `thewoolleyman`, so
-# a fork of the fleet reaches its own copy of the reusable workflow. The
-# `@master` ref is the bootstrap-discipline ref the sibling pin-and-bump shims
-# use; the bump-pin automation rewrites it to a tag on the next release.
-_RECONCILER_SHIM = """\
+# The canonical shim body, as authored. `{owner}` is the member's own owner
+# (resolved from its git remote by `wire-fleet-member`), never a hardcoded
+# `thewoolleyman`, so a fork of the fleet reaches its own copy of the reusable
+# workflow. The `@master` ref is the bootstrap-discipline ref the sibling
+# pin-and-bump shims use; the bump-pin automation rewrites it to a tag on the
+# next release.
+_RECONCILER_SHIM_SOURCE = """\
 # master-health-reconcile.yml — the red-master self-healing reconciler shim.
 #
 # Installed by wire-fleet-member per livespec-dev-tooling
@@ -95,6 +97,17 @@ jobs:
 """
 
 
+# The template `_reconcile_shims` PUTs and `reconciler_shim_content` renders —
+# ONE string, so the install path and the drift-detecting conformance row can
+# never disagree about what the canonical bytes are. The `{workflow}` slot is
+# resolved HERE rather than left to each caller: the reusable workflow's path is
+# a property of this repository, not of the member being wired, and only
+# `{owner}` is.
+RECONCILER_SHIM_TEMPLATE = _RECONCILER_SHIM_SOURCE.replace(
+    "{workflow}", REUSABLE_RECONCILER_WORKFLOW
+)
+
+
 def reconciler_shim_content(*, owner: str) -> str:
     """The canonical reconciler shim body rendered against `owner`."""
-    return _RECONCILER_SHIM.format(owner=owner, workflow=REUSABLE_RECONCILER_WORKFLOW)
+    return RECONCILER_SHIM_TEMPLATE.format(owner=owner)
