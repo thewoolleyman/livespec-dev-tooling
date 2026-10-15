@@ -171,3 +171,75 @@ decisions for the maintainer:
 
 Recorded here rather than acted on, per this repository's rule that a factory
 or tooling breakage stops the line instead of being routed around.
+
+## The distribution surface — decisions recorded by child D
+
+Authored for work-item `livespec-dev-tooling-dw7dzd`, child D of the same plan.
+C1 stopped at the decision layer; D is how that layer reaches a fleet
+repository and nothing more.
+
+| Artifact | Where it lives |
+| --- | --- |
+| The per-repo shim's canonical body | `livespec_dev_tooling/fleet/_reconciler_shim.py` (`RECONCILER_SHIM_TEMPLATE`) |
+| The reusable workflow's canonical body | the same module (`REUSABLE_RECONCILER_BODY`) |
+| The install | `_reconcile_shims.reconcile_shim_workflows`, which the shim joins |
+| The conformance row | `_contract_master_health_rows.MASTER_HEALTH_ROWS` |
+| The recorded-state seam | `livespec_dev_tooling/cross_repo/master_health_step.py` |
+
+### The reusable workflow's body is Python data, and that is a BOUNDARY
+
+A factory branch may not create or modify anything under `.github/workflows/`:
+the dispatch credential carries no `workflows` grant, and
+`check-no-workflow-edits` enforces it. The body is therefore authored in the
+module above — where the branch may carry it — and the committed
+`.github/workflows/reusable-master-health-reconcile.yml` lands maintainer-side
+from that text.
+
+What stops the two copies drifting once the file lands is a test, not a
+convention: `tests/livespec_dev_tooling/fleet/test_reconciler_shim.py` proves a
+byte-comparator against files that DO exist and then applies it to the
+committed path, where `is not False` passes while the file is absent (the
+boundary's own state) and FAILS from the moment a differing copy lands.
+
+### The row detects drift; the install repairs ABSENCE only
+
+`assert_master_health_workflow` is the only content-reading row in
+`_rows_files.py`, and the reason is the shape of this mechanism's failure. Every
+other shim announces its own breakage — a pin stops being bumped, a release
+stops fanning out. This one goes QUIET, and it goes quiet exactly when a master
+is red. A hand-edited shim keeps its path, so a presence-only row would read it
+as conforming while its triggers or its `uses:` target had been changed.
+
+`wire-fleet-member` writes the shim where it is ABSENT and reports drift as an
+error-severity finding naming the remedy. That split is the Definition of Done's
+own: repair-on-absence plus report-on-drift. Widening the reconcile to overwrite
+a committed file is a separate decision, and the finding's remedy (delete the
+file, re-run the wire) reaches the same end through the mechanism that already
+exists.
+
+### The transport is in the workflow, and the adapter is pure
+
+`master_health_state.py` records where the halves live: "the gathering lives in
+the reusable workflow". D honours that literally. The workflow's shell carries
+every `gh` read and every `gh` write; `master_health_step` carries the parse and
+delegates the whole judgement to `reconcile_step`; nothing in the shell branches
+on forge state. That is also why the adapter can sit on the network-touching
+side of the seam and still inherit the `master_health_*` AST ban — it decides
+nothing, so a replay of the recording reproduces the step exactly.
+
+Its one hard rule is to FAIL CLOSED, and the load-bearing instance is the
+malformed REVERT. Read leniently as "no revert in flight" it would send the
+decision table down the branch that OPENS one, for an episode that already has
+a revert in flight. There is no safe lenient reading of that field.
+
+### What D does NOT prove, and why
+
+The reusable workflow's shell was authored and syntax-checked (`bash -n`) and
+its YAML parses, but its `jq` programs and every forge read it performs are
+unexercised until a live run: `jq` is not installed in the factory sandbox, and
+no fake forge would prove anything about the real one. That is precisely the
+work-item's host-captured assertion — a live fleet repository whose master goes
+red — and it is graded after the release carrying this lands through the normal
+pin path. The negative verification above (a web-flow revert here is UNSIGNED)
+still stands, so the culprit that proves it must touch no product `.py` until
+the signed-revert follow-up lands.
