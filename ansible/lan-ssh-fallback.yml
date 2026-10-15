@@ -40,7 +40,7 @@
       ansible.builtin.assert:
         that:
           - lan_ssh_fallback_only | default('') in [''] + groups['home_lab']
-        fail_msg: "lan_ssh_fallback_only={{ lan_ssh_fallback_only }} is not in home_lab"
+        fail_msg: "lan_ssh_fallback_only={{ lan_ssh_fallback_only | default('') }} is not in home_lab"
     - name: Install and verify the fallback server
       ansible.builtin.include_role:
         name: lan_ssh_fallback
