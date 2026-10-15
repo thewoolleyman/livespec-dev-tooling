@@ -355,6 +355,47 @@
   register: fabro_server_checkout
   check_mode: false
 
+- name: Clone this host's checkout from the remote it declares
+  # The ONE piece of state in this block the role creates rather than refuses,
+  # and the reason is in defaults/main.yml beside the axis: every other
+  # refusal here stands in for a step only an operator can take, while a git
+  # clone is derivable from one URL. On a factory host that has no checkout
+  # the refusal below left exactly one way through — a hand clone, which the
+  # fleet host guard denies.
+  #
+  # BOTH GUARDS ARE LOAD-BEARING, AND THEY GUARD DIFFERENT THINGS. The `when`
+  # is the DECISION: clone only where there is nothing to lose. `update: false`
+  # is the CONSEQUENCE of that decision ever being wrong — ansible.builtin.git
+  # DEFAULTS to update: true, which resets the working tree HARD onto
+  # `version`, and the directory this names is the WorkingDirectory of a server
+  # that is carrying live Fabro runs while this role runs against it. One is a
+  # condition; the other is what happens if the condition is wrong, and a live
+  # factory's uncommitted work is not a thing to leave to a single condition.
+  #
+  # As the service user, because that account is the one the server runs as. A
+  # root-owned checkout is one the factory cannot write to, and nothing later
+  # in this role would fix the ownership.
+  #
+  # NOT `check_mode: false`, unlike every probe around it. The probes disable
+  # it because a drift report that skipped its own reads would report on a host
+  # it never inspected; this task WRITES, so leaving check mode alone is what
+  # makes `just ansible-drift` REPORT the clone instead of performing it.
+  ansible.builtin.git:
+    repo: "{{ fabro_server_host_checkout_remote }}"
+    dest: "{{ fabro_server_host_checkout }}"
+    version: "{{ fabro_server_host_checkout_ref }}"
+    update: false
+  become: true
+  become_user: "{{ fabro_server_host_user }}"
+  register: fabro_server_checkout_clone
+  when:
+    # Undeclared is the normal case and means "this host's checkout is not
+    # provisioned from here"; the refusal below is then unchanged.
+    - fabro_server_host_checkout_remote | length > 0
+    # A checkout that is already there is LEFT EXACTLY AS IT IS FOUND. A live
+    # factory's checkout carries uncommitted work and a branch somebody chose.
+    - not fabro_server_checkout.stat.exists
+
 - name: Refuse an instance whose checkout is missing
   ansible.builtin.assert:
     that:
@@ -363,8 +404,19 @@
     fail_msg: >-
       {{ fabro_server_host_checkout }} is not a directory. The server runs
       from the stable primary checkout, never a disposable worktree; clone it
-      before applying this role.
+      before applying this role, or declare
+      fabro_server_host_checkout_remote on this host and let the role clone
+      it.
     success_msg: the instance's checkout is present
+  when:
+    # Skipped for exactly one run: the one that has just cloned this checkout.
+    # The stat above predates that clone and still reports the directory
+    # absent, and under --check nothing was written at all — so a refusal
+    # reading only that register would fail the drift read of the very host
+    # the remote axis was added for, and an operator cannot apply a play whose
+    # drift report they are forbidden to obtain. A clone that FAILED never
+    # reaches here: ansible.builtin.git aborts the play.
+    - not (fabro_server_checkout_clone.changed | default(false))
 
 - name: Look for the instance's generated server environment file
   ansible.builtin.stat:

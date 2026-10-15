@@ -123,6 +123,52 @@ Rollback is step 4 in reverse and needs no role change: move the `.bak` over
 its digest. Both the `.incoming` and `.bak` siblings are left on the host
 deliberately; nothing in the role reaps them.
 
+## The checkout the server runs in
+
+`fabro_server_host_checkout` is a **per-host** value, not a per-instance axis:
+every instance on a host runs from one checkout, which is the `WorkingDirectory`
+of every unit this role renders. Two optional per-host axes say where a host that
+does not have it yet gets it from:
+
+| variable | default | what declaring it does |
+|---|---|---|
+| `fabro_server_host_checkout_remote` | **empty** — the role leaves this host's checkout alone, exactly as it did before the axis existed | the git remote `fabro_server_host_checkout` is cloned from. Declared on a host whose checkout directory is **absent**, the role clones it there as the instance's service user, before the preflight that requires it. |
+| `fabro_server_host_checkout_ref` | `HEAD` | the ref a fresh clone is left on. `HEAD` is git's own word for the remote's default branch, so the default names no branch of its own. Read **only** by a clone. |
+
+**An existing checkout is never reset.** A host whose checkout directory is
+already there keeps that checkout's working tree and its HEAD across a converge,
+whatever the two axes say — a live factory's checkout carries uncommitted work
+and a branch somebody chose, and it is the working directory of a server that is
+carrying runs while this role runs against it. Two separate guards say so: the
+clone's `when:` fires only on an absent directory, and the clone passes
+`update: false` because `ansible.builtin.git` DEFAULTS to `update: true`, which
+would reset that working tree hard onto `version`. The second is not redundant —
+it is what happens if the first is ever wrong.
+
+A host that declares **no** remote is refused by the checkout preflight exactly
+as it was before: the role has never created this directory for such a host and
+still does not.
+
+Why the role clones at all, having refused to create every other piece of
+out-of-band state: each of those stands in for a step only an operator can take
+— a `SESSION_SECRET` Fabro itself generates, a GitHub App private key held in the
+instance's own vault, a `tailscale serve` mapping that lives in the
+`tailscale-admin` repository, a Fabro binary this role will never build. A git
+clone is none of those; it is derivable from one URL. On a new factory host the
+old refusal left exactly one way through — a hand clone — and a service placed on
+a factory host by hand is drift to be expressed in the play, never an accepted
+exception.
+
+**Operator notes.** The parent directory of `fabro_server_host_checkout` must
+exist and be writable by `fabro_server_host_user`, or the clone fails naming it;
+the role deliberately does not create or re-own it, because that path is shared
+(`/data/projects` on `vps`) and re-owning a shared parent is a bigger change than
+the clone it would enable. Under `--check` the clone is **reported and not
+performed** — `just ansible-drift ansible/fabro-hosts.yml` against a host with no
+checkout names the clone it would make and changes nothing, and the checkout
+preflight stands aside for that run rather than failing the drift read of the one
+host the axis was added for.
+
 ## The sandbox environment catalog
 
 The `environments` axis is the one per-instance axis that is **not a file this role

@@ -164,6 +164,38 @@ fabro_server_instance: {}
 #   fabro_server_host_home       follows the account; every ~/.fabro path with it
 #   fabro_server_host_checkout   the stable primary checkout the server runs in
 
+# --- the checkout's remote, the one per-host axis that DOES default --------
+#
+# The git remote the checkout above is cloned from on a host that has none,
+# and the ref that clone is left on. These default where the four axes above
+# refuse, because they are OPTIONAL rather than required: an omitted remote
+# cannot make two instances collide or point a unit at the wrong state — it
+# only keeps the behaviour every host had before the axis existed.
+#
+# WHY THE ROLE CLONES AT ALL, having refused to create every other piece of
+# out-of-band state. Each of those stands in for a step only an operator can
+# take: a SESSION_SECRET Fabro itself generates, a GitHub App key held in the
+# instance's own vault, a `tailscale serve` mapping that lives in another
+# repository, a binary this role will never build. A git clone is none of
+# those — it is derivable from one URL — and on a factory host that has no
+# checkout the refusal below left exactly one way through: a hand clone, which
+# the fleet host guard denies. The checkout is PROVISIONING, not out-of-band
+# state.
+#
+# EMPTY is the only safe default, for the same reason binary_source's is: it
+# is the one value that means "touch nothing", and touching nothing is what
+# every host did before the axis existed. A host that declares nothing here is
+# refused by the checkout preflight exactly as it was.
+fabro_server_host_checkout_remote: ""
+
+# Read ONLY by a clone. `HEAD` is git's own word for "whatever the remote says
+# its default branch is", so this default names no branch of its own — a
+# hard-coded `master` would be this repository's guess about another
+# repository's naming, wrong silently on the day that guess stops holding.
+# Changing it cannot move a live factory off its branch: an existing checkout
+# is never reset, so nothing re-reads this once the directory is there.
+fabro_server_host_checkout_ref: HEAD
+
 # The verifier's retry budget, in ~1s attempts. render-unit.sh REQUIRED this
 # with no default, so a values file that forgot it was refused. A role
 # default is safer than that refusal, but only if the default is 300 and not
