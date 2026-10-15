@@ -47,6 +47,8 @@ _GATING_WORKFLOW = "CI"
 _COVERAGE_FAILURE = "check-per-file-coverage failed"
 _RELEASE_SUBJECT = "chore(master): release 1.97.3"
 _ORDINARY_SUBJECT = "feat(cross-repo): an ordinary merge"
+_PIN_BUMP_SUBJECT = "chore(deps): bump livespec-dev-tooling pin to v1.97.2"
+_HOLD_REBUMP_LABEL = "master-health-hold-rebump:v1.97.2"
 
 
 def _module() -> ModuleType:
@@ -159,3 +161,58 @@ def test_an_ordinary_culprit_is_still_reverted() -> None:
 
     assert step.kind == STEP_OPEN_REVERT
     assert step.culprit_pull_request == 4100
+
+
+def test_the_hold_rebump_rule_is_part_of_this_modules_public_surface() -> None:
+    """Asserted on the declared surface so this file's Red fails on an assertion.
+
+    The label is the JOIN with the bump-pin shim, so it has to BE public: a
+    rule the shim cannot import is a rule the shim cannot honour.
+    """
+    module = _module()
+
+    assert "hold_rebump_label" in module.__all__
+
+
+def test_the_hold_rebump_label_names_the_pin_version_the_revert_undoes() -> None:
+    """The version is in the label because the shim needs to know WHICH bump.
+
+    A bare "do not re-bump" label would freeze the pin for good. Naming the
+    reverted version lets the shim hold re-bumps TO THAT VERSION while a later
+    upstream release still flows — which is the whole remedy the plan's
+    calibration asks for: the dev-tooling v1.37.1 and v1.40.0 bumps broke
+    `Install Python dev deps via uv` in four repositories at once, and each
+    stayed red for 19-22 h because reverting alone would have been re-bumped
+    straight back.
+    """
+    module = _module()
+
+    assert module.hold_rebump_label(subject=_PIN_BUMP_SUBJECT) == _HOLD_REBUMP_LABEL
+    assert module.hold_rebump_label(subject=_ORDINARY_SUBJECT) is None
+    assert module.hold_rebump_label(subject=_RELEASE_SUBJECT) is None
+
+
+def test_a_pin_bump_culprits_revert_carries_the_hold_rebump_label() -> None:
+    """The acceptance assertion: the opened revert names the reverted version.
+
+    Reverting a pin bump is correct locally and is NOT sufficient on its own —
+    the pin-freshness sweep re-opens the same bump, so the breakage returns
+    behind a landed revert. The label rides the revert the reconciler opens;
+    honouring it inside the bump-pin shim is a separate work-item.
+    """
+    step = reconcile_step(state=_episode_on(subject=_PIN_BUMP_SUBJECT), config=_config())
+
+    assert step.kind == STEP_OPEN_REVERT
+    assert step.culprit_pull_request == 4100
+    assert step.hold_rebump_label == _HOLD_REBUMP_LABEL
+
+
+def test_an_ordinary_culprits_revert_carries_no_hold_rebump_label() -> None:
+    """The label is a pin-bump remedy, so no other revert may carry it.
+
+    A label on every revert would be read by the shim as a standing hold and
+    would freeze pin bumps the reconciler never reverted.
+    """
+    step = reconcile_step(state=_episode_on(subject=_ORDINARY_SUBJECT), config=_config())
+
+    assert step.hold_rebump_label is None
