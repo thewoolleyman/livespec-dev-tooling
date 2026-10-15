@@ -39,6 +39,7 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
 
 _LINT_FAILURE = "check-lint failed"
 _GATING_WORKFLOW = "CI"
+_ORDINARY_SUBJECT = "feat(cross-repo): an ordinary merge"
 
 _CONFIG = ReconcileConfig(
     target_branch="master",
@@ -63,6 +64,7 @@ def _commit(
         ci_workflow=_GATING_WORKFLOW,
         ci_conclusion=conclusion,
         failure_signature=signature,
+        subject=_ORDINARY_SUBJECT,
     )
 
 

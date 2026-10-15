@@ -29,11 +29,13 @@ a revert FOR, so a revert still held open there is CLOSED as superseded rather
 than released into a green branch.
 
 WHERE IT REFUSES TO ACT. A regression whose culprit cannot be PROVEN (a
-truncated window, an episode opening on an undecided run) or whose culprit has
-no pull request to revert escalates to a needs-attention item instead. Those
-are the states where acting would revert an innocent merge or hand-roll a
-revert commit carrying none of the signing the server-side-revert exemption
-looks for, and refusing is strictly better than guessing.
+truncated window, an episode opening on an undecided run), whose culprit has no
+pull request to revert, or whose episode opens on a RELEASE-PLEASE RELEASE
+COMMIT escalates to a needs-attention item instead. Those are the states where
+acting would revert an innocent merge, hand-roll a revert commit carrying none
+of the signing the server-side-revert exemption looks for, or leave a published
+tag disagreeing with the branch — and refusing is strictly better than
+guessing.
 
 No LLM reaches any decision here: the step is a pure function of the recorded
 state and committed configuration.
@@ -43,6 +45,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from livespec_dev_tooling.cross_repo.master_health_commit_shape import is_release_commit
 from livespec_dev_tooling.cross_repo.master_health_episode import (
     culprit_commit,
     head_commit,
@@ -252,6 +255,58 @@ def _revert_in_flight_step(
     )
 
 
+def _regression_step(
+    *, state: ReconcileState, config: ReconcileConfig, key: str | None
+) -> ReconcileStep:
+    """Decide what a REGRESSION with no revert in flight is owed: revert, or not.
+
+    Split from the table because it is one cohesive question — which merge
+    broke the branch, and may it be reverted at all — and because it is where
+    every further culprit rule belongs: each class of commit a plain revert
+    would mishandle is refused HERE rather than by a branch of the table that
+    has the whole recorded state in scope.
+    """
+    # Read off the EARLIEST red commit rather than off the culprit, because
+    # that is where a release commit's own red starts the episode: the culprit
+    # rule would skip it and could name a later merge, reverting an innocent
+    # one for a red the release commit's shape caused.
+    block = red_block(state=state)
+    if block and is_release_commit(subject=block[0].subject):
+        return ReconcileStep(
+            kind=STEP_NEEDS_ATTENTION,
+            target_branch=config.target_branch,
+            reason=(
+                "the earliest red commit is a release-please release commit; "
+                "reverting it would leave its tag and published release "
+                "disagreeing with the branch, so raise it for a human"
+            ),
+            episode_key=key,
+        )
+
+    culprit = culprit_commit(state=state)
+    if culprit is None or culprit.pull_request is None:
+        return ReconcileStep(
+            kind=STEP_NEEDS_ATTENTION,
+            target_branch=config.target_branch,
+            reason=(
+                "red is a regression but no revertable culprit is proven — the "
+                "window is truncated, the episode opens on an undecided run, or "
+                "the culprit was a direct push with no pull request"
+            ),
+            episode_key=key,
+        )
+
+    return ReconcileStep(
+        kind=STEP_OPEN_REVERT,
+        target_branch=config.target_branch,
+        reason="regression with a proven culprit; open its revert with auto-merge held",
+        culprit_pull_request=culprit.pull_request,
+        culprit_sha=culprit.sha,
+        auto_merge_held=True,
+        episode_key=key,
+    )
+
+
 def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> ReconcileStep:
     """Choose this run's single step from recorded forge truth and config.
 
@@ -303,25 +358,4 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
             episode_key=key,
         )
 
-    culprit = culprit_commit(state=gating)
-    if culprit is None or culprit.pull_request is None:
-        return ReconcileStep(
-            kind=STEP_NEEDS_ATTENTION,
-            target_branch=config.target_branch,
-            reason=(
-                "red is a regression but no revertable culprit is proven — the "
-                "window is truncated, the episode opens on an undecided run, or "
-                "the culprit was a direct push with no pull request"
-            ),
-            episode_key=key,
-        )
-
-    return ReconcileStep(
-        kind=STEP_OPEN_REVERT,
-        target_branch=config.target_branch,
-        reason="regression with a proven culprit; open its revert with auto-merge held",
-        culprit_pull_request=culprit.pull_request,
-        culprit_sha=culprit.sha,
-        auto_merge_held=True,
-        episode_key=key,
-    )
+    return _regression_step(state=gating, config=config, key=key)

@@ -77,6 +77,12 @@ class MasterCommit:
     an episode. One commit may therefore carry SEVERAL records, one per
     workflow that ran on it; `master_health_gating` keeps only the gating
     workflow's before any rule indexes the window.
+
+    `subject` is the commit's subject line, carried RAW so the rules that read
+    it stay in the decision and under test — see `master_health_commit_shape`.
+    It is required for the same reason `ci_workflow` is: a record whose subject
+    is unrecorded would read as an ordinary merge, and an ordinary merge is
+    exactly what those rules route away from the plain revert.
     """
 
     sha: str
@@ -85,6 +91,7 @@ class MasterCommit:
     ci_workflow: str
     ci_conclusion: str
     failure_signature: str | None
+    subject: str
 
 
 @dataclass(frozen=True, kw_only=True)

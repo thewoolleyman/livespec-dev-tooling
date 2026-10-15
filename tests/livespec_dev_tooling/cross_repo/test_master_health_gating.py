@@ -49,6 +49,7 @@ _MODULE_NAME = "livespec_dev_tooling.cross_repo.master_health_gating"
 _GATING_WORKFLOW = "CI"
 _SCHEDULED_WORKFLOW = "fleet-capacity-sweep"
 _LINT_FAILURE = "check-lint failed"
+_ORDINARY_SUBJECT = "feat(cross-repo): an ordinary merge"
 
 
 def _module() -> ModuleType:
@@ -81,6 +82,7 @@ def _commit(
         ci_workflow=workflow,
         ci_conclusion=conclusion,
         failure_signature=_LINT_FAILURE if conclusion == CI_FAILURE else None,
+        subject=_ORDINARY_SUBJECT,
     )
 
 
