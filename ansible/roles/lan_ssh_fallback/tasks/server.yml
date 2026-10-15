@@ -271,13 +271,19 @@
       loop: "{{ lan_ssh_fallback_apt_timers }}"
       become: true
 
-    - name: Wait until no package manager is running
+    # Wait on the locks, not on process names: pgrep -x matches the
+    # 15-character comm, and the always-running unattended-upgrade-shutdown
+    # truncates to the same "unattended-upgr" as a real upgrade run, so a
+    # name match never clears. fuser exits 1 when no process holds any lock.
+    - name: Wait until no package manager holds the dpkg or apt locks
       ansible.builtin.shell:
         cmd: >-
-          set -o pipefail; for i in $(seq 1 120); do
-          pgrep -x 'apt|apt-get|dpkg|unattended-upgr' >/dev/null || exit 0; sleep 5;
-          done; exit 1
+          for i in $(seq 1 120); do
+          fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock
+          /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1 || exit 0;
+          sleep 5; done; exit 1
         executable: /bin/bash
+      become: true
       changed_when: false
       check_mode: false
 
