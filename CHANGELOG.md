@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.100.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.99.0...v1.100.0) (2026-10-15)
+
+
+### Features
+
+* **ansible:** lan_ssh_fallback - direct-LAN OpenSSH between the home-lab hosts (livespec-dev-tooling-4yrfjd) ([86f555d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/86f555d6c41c22594b550281f1b55503d626c904))
+
+
+### Bug Fixes
+
+* **ansible:** lan_ssh_fallback - accept openssh at the pin or newer; stale binding comments ([7d741cb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7d741cb111bda32745afb1cde91a0bba4793745e))
+* **ansible:** lan_ssh_fallback - findings from the Fable implementation review ([88d9b90](https://github.com/thewoolleyman/livespec-dev-tooling/commit/88d9b90953290488f5e82a6548170240d1c8bbca))
+
 ## [1.99.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.98.0...v1.99.0) (2026-10-15)
 
 
