@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.98.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.97.2...v1.98.0) (2026-10-15)
+
+
+### Features
+
+* **cross-repo:** reconciler describes its own revert commit for the forge ([a9d79b4](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a9d79b417c0292507263d16ebbb6eadda5894623))
+* **cross-repo:** requested revert restores the culprit's parent bytes ([92f373c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/92f373c1b8bbb8938ebb11042f98df37642ccf24))
+
 ## [1.97.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.97.1...v1.97.2) (2026-10-14)
 
 
