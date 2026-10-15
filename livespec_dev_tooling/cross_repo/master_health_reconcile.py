@@ -45,7 +45,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from livespec_dev_tooling.cross_repo.master_health_commit_shape import is_release_commit
+from livespec_dev_tooling.cross_repo.master_health_commit_shape import (
+    hold_rebump_label,
+    is_release_commit,
+)
 from livespec_dev_tooling.cross_repo.master_health_episode import (
     culprit_commit,
     head_commit,
@@ -106,7 +109,10 @@ class ReconcileStep:
 
     `auto_merge_held` is `True` only on `STEP_OPEN_REVERT`. It is carried as
     data rather than left implicit so the caller that opens the pull request
-    cannot arm auto-merge by omission.
+    cannot arm auto-merge by omission. `hold_rebump_label` rides the same step
+    and is `None` unless the culprit bumped a toolchain pin — see
+    `master_health_commit_shape` for why reverting such a bump is not enough on
+    its own.
 
     `reason` is operator-facing text naming WHY this step was chosen. It is
     part of the value because the step is often "do nothing", and a reader
@@ -120,6 +126,7 @@ class ReconcileStep:
     culprit_sha: str | None = None
     revert_pull_request: int | None = None
     auto_merge_held: bool = False
+    hold_rebump_label: str | None = None
     episode_key: str | None = None
 
 
@@ -303,6 +310,7 @@ def _regression_step(
         culprit_pull_request=culprit.pull_request,
         culprit_sha=culprit.sha,
         auto_merge_held=True,
+        hold_rebump_label=hold_rebump_label(subject=culprit.subject),
         episode_key=key,
     )
 
