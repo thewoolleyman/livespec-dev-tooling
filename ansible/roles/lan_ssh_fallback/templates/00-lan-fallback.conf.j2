@@ -1,12 +1,12 @@
 # {{ ansible_managed }}
 # The direct-LAN OpenSSH fallback (role lan_ssh_fallback). It is separate from
-# Tailscale SSH in every respect: its own port, its own interface (ssh.socket is
-# bound to {{ lan_ssh_fallback_interface }} by device, so the tailnet address never
-# reaches it), its own host key and its own authorized-keys file.
-# `00-` sorts first, and sshd keeps the FIRST value it reads for each keyword.
-# No ListenAddress: sshd-socket-generator turns this Port into ListenStream
-# lines, and the socket's BindToDevice drop-in confines them to the interface.
+# Tailscale SSH in every respect: its own port, its own address (the wired LAN
+# address only, never the tailnet address), its own host key and its own
+# authorized-keys file. `00-` sorts first, and sshd keeps the FIRST value it
+# reads for each keyword. sshd-socket-generator turns the ListenAddress below
+# into ssh.socket's only ListenStream.
 Port {{ lan_ssh_fallback_port }}
+ListenAddress {{ lan_ssh_fallback_address }}:{{ lan_ssh_fallback_port }}
 HostKey {{ lan_ssh_fallback_host_key }}
 # The fallback's own rendered keys first; the user's own file second, so keys
 # already authorised on a host (a laptop on the LAN, say) keep working.

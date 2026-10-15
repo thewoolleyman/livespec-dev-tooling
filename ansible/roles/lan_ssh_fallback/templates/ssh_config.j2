@@ -23,7 +23,7 @@ Host {{ host }}-lan
 Host {{ host }}-lan{% if loop.first %} {{ host }}-lan-via-{{ jump }}{% else %}-via-{{ jump }}{% endif %}
 
     HostName {{ addr }}
-    ProxyCommand ssh -o BatchMode=yes -o ConnectTimeout=15 {{ lan_ssh_fallback_user }}@{{ jump }} nc -w 30 %h %p
+    ProxyCommand ssh -o BatchMode=yes -o ConnectTimeout=15 {{ lan_ssh_fallback_user }}@{{ jump }} nc %h %p
 {% endfor %}
 {% endif %}
 {% endfor %}

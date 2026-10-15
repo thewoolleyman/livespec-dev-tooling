@@ -1,8 +1,0 @@
-# {{ ansible_managed }}
-# Confine every OpenSSH listening socket to the wired LAN interface
-# (SO_BINDTODEVICE). Independent of the generated listen addresses, so even the
-# packaged default (port 22) would be confined to this interface if the sshd
-# configuration were ever unparsable; nothing of OpenSSH's can be reached
-# through tailscale0, where Tailscale SSH answers.
-[Socket]
-BindToDevice={{ lan_ssh_fallback_interface }}

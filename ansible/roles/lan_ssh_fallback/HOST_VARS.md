@@ -15,7 +15,7 @@ reviews: that repository's `plan/petri-factory-on-gmktec/research/004`.
 | | Tailscale SSH | this OpenSSH |
 | --- | --- | --- |
 | port | 22 | `lan_ssh_fallback_port` (22022) |
-| interface | `tailscale0` (the tailnet address) | only `lan_ssh_fallback_interface`, by device (`BindToDevice=` on `ssh.socket`) |
+| address | the tailnet address | only `lan_ssh_fallback_address`, the wired LAN address |
 | host key | `/etc/ssh/ssh_host_*_key` if present, else tailscaled's own store | `/etc/ssh/lan-fallback/ssh_host_ed25519_key` |
 | authorized keys | tailnet policy | `/etc/ssh/lan-fallback/authorized_keys/<user>`, then the user's own `~/.ssh/authorized_keys` |
 
@@ -32,12 +32,12 @@ differs at the end from the start.
 
 | variable | default | where set | meaning |
 | --- | --- | --- | --- |
-| `lan_ssh_fallback_interface` | `""` (refused) | host_vars | the wired interface every OpenSSH socket is bound to |
-| `lan_ssh_fallback_address` | `""` (refused) | host_vars | that interface's LAN address, which the client aliases dial (a DHCP lease; asserted current on every run) |
+| `lan_ssh_fallback_interface` | `""` (refused) | host_vars | the wired interface, checked to carry the address on every run |
+| `lan_ssh_fallback_address` | `""` (refused) | host_vars | the wired LAN address OpenSSH binds and the client aliases dial |
 | `lan_ssh_fallback_must_stay_running` | `[tailscaled.service]` | host_vars | units that must be active before and after the change |
 | `lan_ssh_fallback_port` | `22022` | defaults | never 22 |
-| `lan_ssh_fallback_packages` | `openssh-server`, `openssh-client`, `openssh-sftp-server` at `1:10.2p1-2ubuntu3.8` | defaults | installed only where `openssh-server` is absent |
-| `lan_ssh_fallback_upgradable` | `[openssh-client]` | defaults | the only installed package the transaction may upgrade |
+| `lan_ssh_fallback_packages` | `openssh-server`, `openssh-client`, `openssh-sftp-server` at `1:10.2p1-2ubuntu3.8` | defaults | installed or upgraded where the host does not already carry exactly these |
+| `lan_ssh_fallback_upgradable` | the three openssh packages | defaults | the only installed packages the transaction may upgrade |
 | `lan_ssh_fallback_apt_timers` | `apt-daily.timer`, `apt-daily-upgrade.timer` | defaults | stopped during the install, restarted after |
 | `lan_ssh_fallback_user` / `_user_home` | `cwoolley` / `/home/cwoolley` | defaults | the only login |
 | `lan_ssh_fallback_client_pubkey_path` | `/home/ubuntu/.ssh/id_ed25519.pub` | defaults | the control node's key, authorised everywhere |
@@ -60,22 +60,27 @@ lan_ssh_fallback_must_stay_running:
   [tailscaled.service, k3s-agent.service, local-homelab-llama-server.service]
 ```
 
-The wired addresses are DHCP leases; no reservation was readable from the hosts
-on 2026-10-15. The LISTENER does not depend on them (it is bound by device),
-but the aliases dial them, so every run asserts the declared address is still
-on the declared interface and refuses with the current one if not.
+Why the listener is bound by ADDRESS. hp and gmktec also have Wi-Fi on the same
+/24 with `arp_ignore=0`, so a peer's packets for the wired address can arrive on
+the Wi-Fi interface. An address-bound listener accepts them; a device-bound one
+(`BindToDevice=`) would refuse them intermittently, which an earlier draft did.
+The wired addresses are `valid_lft forever` and are the addresses the k3s units
+already pin (`--node-ip`, `--server`), so the listener is as durable as the
+cluster; every run still checks the interface carries the address.
 
 ## Three fail-safes against a password-capable listener
 
 If the first drop-in were ever lost or unparsable, `sshd-socket-generator` falls
 back to the packaged `ssh.socket` (port 22, all addresses) and a fresh main
-`sshd_config` defaults to password authentication. Three independent layers
-close that: the `ssh.socket` drop-in binds every socket, packaged default
-included, to the wired interface, so nothing of OpenSSH's is ever reachable on
-`tailscale0`; the auth-only drop-in `01-lan-fallback-auth.conf` repeats the
-key-only, no-root, one-user settings; and on a fresh install the role preseeds
-debconf `openssh-server/password-authentication` to false, so the postinst
-writes `PasswordAuthentication no` into the main file itself.
+`sshd_config` defaults to password authentication. Two independent layers keep
+such a listener key-only: the auth-only drop-in `01-lan-fallback-auth.conf`
+repeats the key-only, no-root, one-user settings, and on a FRESH install (hp,
+gmktec) the role preseeds debconf `openssh-server/password-authentication` to
+false, so the postinst writes `PasswordAuthentication no` into the main file
+itself (on poweredge, whose main file already exists, the preseed changes
+nothing). Such a listener would still never answer Tailscale SSH's traffic:
+tailscaled intercepts port 22 on the tailnet address in its own network stack.
+The drift report shows any listener that is not exactly the fallback address.
 
 ## A local-only listener the package adds
 
@@ -89,9 +94,16 @@ no TCP listener.
 
 ```bash
 just ansible-drift ansible/lan-ssh-fallback.yml   # read it
-just ansible-apply ansible/lan-ssh-fallback.yml --limit hp-xubuntu
+just ansible-apply ansible/lan-ssh-fallback.yml -e lan_ssh_fallback_only=hp-xubuntu
 just ansible-apply ansible/lan-ssh-fallback.yml   # then the rest
 ```
+
+Never `--limit`: the key plays must reach every home-lab host and the control
+node, because every host's authorized keys and pinned known_hosts are rendered
+from all of them. `lan_ssh_fallback_only` changes one host's server and proves
+only that host. A host that is already converged (pinned packages, unchanged
+drop-ins, listener already on the fallback address, no off switch) is left
+alone, so re-applying does not restart its listener.
 
 The server phase runs one host at a time and stops the whole play at the first
 failure. On a host without `openssh-server` it holds OpenSSH off with the
@@ -110,8 +122,14 @@ node's own key, end to end.
 
 ## Rollback
 
-Automatic, inside the server phase, on any failed activation check: the off
-switch is restored and `ssh.socket` and `ssh.service` are stopped. By hand:
+Automatic, inside the server phase, on any failed ACTIVATION check: the off
+switch is restored and `ssh.socket` and `ssh.service` are stopped. A failure in
+the inert verification before activation leaves the off switch in place, so
+nothing of OpenSSH's listens. A failure in the verify play (the end-to-end
+logins) rolls nothing back: the servers are in their intended state, and the
+failed login is what to investigate. If an apply is abandoned with the off
+switch in place on a host that ran OpenSSH before (poweredge), remove it by
+hand or its next unattended openssh upgrade leaves OpenSSH stopped. By hand:
 
 ```bash
 sudo touch /etc/ssh/sshd_not_to_be_run
@@ -143,7 +161,7 @@ else to restore.
   its postinst; the fallback flaps for the duration. With the drop-ins in place
   the restarted socket comes back on the fallback port, bound to the interface.
 - **The boot path has not been exercised.** The generator, `FreeBind`,
-  `BindToDevice` and socket activation are only combined at boot. Prove it once
+  the address binding and socket activation are only combined at boot. Prove it once
   on the least critical host, through the sanctioned reboot path, when the
   maintainer chooses.
 

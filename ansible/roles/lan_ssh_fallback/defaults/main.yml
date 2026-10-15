@@ -14,12 +14,16 @@
 # free on all three hosts on 2026-10-15.
 lan_ssh_fallback_port: 22022
 
-# WHERE OpenSSH listens, per host, from host_vars: the WIRED interface, bound by
-# device (systemd BindToDevice= on ssh.socket, i.e. SO_BINDTODEVICE). The kernel
-# then delivers only connections arriving on that interface, so the tailnet
-# address (tailscale0) never reaches this server, and a DHCP lease change on
-# the interface cannot strand the listener the way a literal ListenAddress
-# would. The address is what the client aliases dial.
+# WHERE OpenSSH listens, per host, from host_vars: the wired LAN ADDRESS only,
+# never the tailnet address, so Tailscale SSH and this server never share an
+# address or a port. Bound by address rather than by device on purpose: hp and
+# gmktec also have Wi-Fi on the same /24 with arp_ignore=0, so a peer's packets
+# for the wired address can arrive on the Wi-Fi interface, which an
+# address-bound listener still accepts and a device-bound one would refuse.
+# Measured 2026-10-15: the wired addresses are valid_lft forever and are the
+# addresses the k3s units already pin (--node-ip / --server), so this listener
+# is exactly as durable as the cluster. The interface is checked to carry the
+# address on every run.
 lan_ssh_fallback_interface: ""
 lan_ssh_fallback_address: ""
 
@@ -37,7 +41,6 @@ lan_ssh_fallback_dropin: /etc/ssh/sshd_config.d/00-lan-fallback.conf
 # A second, auth-only drop-in, so that if the first is ever lost the daemon
 # still refuses passwords and root (a fail-safe direction, not a duplicate).
 lan_ssh_fallback_auth_dropin: /etc/ssh/sshd_config.d/01-lan-fallback-auth.conf
-lan_ssh_fallback_socket_dropin: /etc/systemd/system/ssh.socket.d/50-lan-fallback.conf
 lan_ssh_fallback_client_config: /etc/ssh/ssh_config.d/50-lan-fallback.conf
 
 # The package's own off switch: the packaged ssh.socket carries
@@ -49,7 +52,8 @@ lan_ssh_fallback_off_switch: /etc/ssh/sshd_not_to_be_run
 lan_ssh_fallback_user: cwoolley
 lan_ssh_fallback_user_home: /home/cwoolley
 
-# Exact package versions every home-lab host is brought to. A moved archive
+# Exact package versions every home-lab host is brought to, on a host where
+# they are absent or older (poweredge carried 3.6). A moved archive
 # refuses rather than installing an unreviewed build. poweredge already had
 # 3.6 with 3.8 pending as an unattended security upgrade, whose maintainer
 # scripts stop and restart ssh.socket on their own schedule; taking it here,

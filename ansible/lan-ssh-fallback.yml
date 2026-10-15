@@ -2,13 +2,14 @@
 # The direct-LAN OpenSSH fallback between the home-lab hosts (role
 # lan_ssh_fallback; read its HOST_VARS.md). Plays name inventory GROUPS only.
 #
-# Order is the design: read and create keys everywhere first, then change ONE
-# home-lab host at a time and stop at the first failure, then write the client
-# aliases, then prove every path. Run the drift report first:
+# Read the drift report first, then converge. To converge ONE home-lab host
+# (the documented first apply), name it in `lan_ssh_fallback_only` rather than
+# using --limit: the key plays must still reach every home-lab host and the
+# control node, because every host's authorized keys and pinned known_hosts are
+# rendered from all of them.
 #   just ansible-drift ansible/lan-ssh-fallback.yml
+#   just ansible-apply ansible/lan-ssh-fallback.yml -e lan_ssh_fallback_only=<host>
 #   just ansible-apply ansible/lan-ssh-fallback.yml
-# To change one host only, add `--limit <host>` to both: every phase still reads
-# the other hosts' public keys, because the key phase targets the whole group.
 
 - name: LAN fallback - keys on every home-lab host
   hosts: home_lab
@@ -35,10 +36,16 @@
   max_fail_percentage: 0
   any_errors_fatal: true
   tasks:
+    - name: Refuse a one-host target that is not a home-lab host
+      ansible.builtin.assert:
+        that:
+          - lan_ssh_fallback_only | default('') in [''] + groups['home_lab']
+        fail_msg: "lan_ssh_fallback_only={{ lan_ssh_fallback_only }} is not in home_lab"
     - name: Install and verify the fallback server
       ansible.builtin.include_role:
         name: lan_ssh_fallback
         tasks_from: server.yml
+      when: lan_ssh_fallback_only | default('') in ['', inventory_hostname]
 
 - name: LAN fallback - client aliases and pinned keys
   hosts: home_lab:dev_hosts
@@ -51,7 +58,7 @@
 
 - name: LAN fallback - prove every path
   hosts: home_lab:dev_hosts
-  gather_facts: true
+  gather_facts: false
   tasks:
     - name: Log in through every alias
       ansible.builtin.include_role:
