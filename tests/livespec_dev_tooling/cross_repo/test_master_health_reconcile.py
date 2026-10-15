@@ -163,6 +163,89 @@ def _green_revert(*, number: int = 3001, claim: str | None = None) -> RevertPull
     )
 
 
+def _superseded_green_state(*, head_pull_request: int | None) -> ReconcileState:
+    """The branch green again on a LATER commit, with the revert still held.
+
+    The plan's calibration measured 39 of 154 episodes (25%) ending exactly
+    like this — a later, unrelated commit came back green and no fix ever
+    landed — so this is the most common ending the reconciler meets, not an
+    edge case.
+    """
+    return ReconcileState(
+        head_sha="later",
+        commits=(
+            *_incident_state().commits,
+            _commit(
+                sha="later",
+                parent_sha="35fea321",
+                conclusion=CI_SUCCESS,
+                pull_request=head_pull_request,
+            ),
+        ),
+        rerun_outcome=RERUN_STILL_RED,
+        revert_pull_request=_green_revert(),
+        open_needs_attention_episodes=(),
+        unrelated_failure_signatures=(),
+    )
+
+
+def test_a_later_green_non_revert_commit_closes_the_held_revert() -> None:
+    """The acceptance assertion: superseded-green closes, and escalates nothing.
+
+    The red this revert was opened for is OVER — a later merge turned the
+    branch green without it — so there is nothing left for it to fix and
+    nothing for a human to decide. Leaving it open parks a revert of someone's
+    work on a healthy branch; merging it would revert work the branch has
+    already proven green. `"close-revert"` is asserted as the literal wire
+    value because the caller dispatches on the kind, not on the constant's
+    name, and `episode_key is None` is what says no needs-attention item was
+    raised: every escalating step carries that key.
+    """
+    step = reconcile_step(state=_superseded_green_state(head_pull_request=2930), config=_CONFIG)
+
+    assert step.kind == "close-revert"
+    assert step.revert_pull_request == 3001
+    assert step.episode_key is None
+
+
+def test_the_revert_whose_own_merge_minted_the_green_head_is_not_closed() -> None:
+    """A revert that LANDED is not a superseded revert, and must not be closed.
+
+    This is the one green head the close step must keep its hands off: the
+    branch is green BECAUSE this revert merged, so closing it would act on a
+    merged pull request. The two cases are told apart by the head commit's
+    own pull request, which is recorded forge truth rather than a guess from
+    the subject line.
+    """
+    step = reconcile_step(state=_superseded_green_state(head_pull_request=3001), config=_CONFIG)
+
+    assert step.kind == STEP_NONE
+    assert step.revert_pull_request == 3001
+
+
+def test_a_window_that_does_not_record_the_green_heads_verdict_closes_nothing() -> None:
+    """No recorded head verdict is no evidence, so the held revert stands.
+
+    A window truncated above the head reads as green only because the episode
+    walk found nothing to walk. Closing a revert on that would act on the
+    absence of evidence, which is the same mistake the culprit rule refuses to
+    make in the opposite direction.
+    """
+    state = ReconcileState(
+        head_sha="unrecorded",
+        commits=_incident_state().commits,
+        rerun_outcome=RERUN_STILL_RED,
+        revert_pull_request=_green_revert(),
+        open_needs_attention_episodes=(),
+        unrelated_failure_signatures=(),
+    )
+
+    step = reconcile_step(state=state, config=_CONFIG)
+
+    assert step.kind == STEP_NONE
+    assert step.revert_pull_request is None
+
+
 def test_a_flake_verdict_escalates_and_never_releases_an_open_green_revert() -> None:
     """The load-bearing ORDER test: classification outranks the open revert.
 

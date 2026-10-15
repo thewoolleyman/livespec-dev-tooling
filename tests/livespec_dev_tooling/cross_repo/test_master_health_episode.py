@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from livespec_dev_tooling.cross_repo.master_health_episode import (
     culprit_commit,
+    head_commit,
     red_block,
 )
 from livespec_dev_tooling.cross_repo.master_health_state import (
@@ -136,6 +137,21 @@ def test_a_green_head_has_no_red_block_and_no_culprit() -> None:
 
     assert red_block(state=state) == ()
     assert culprit_commit(state=state) is None
+
+
+def test_the_head_record_is_read_by_sha_and_is_none_when_the_window_misses_it() -> None:
+    """A truncated window answers `None`, which is not the same as a green head.
+
+    Both a green head and a window missing the head produce an EMPTY red
+    block, so a caller reading the head's own verdict — the superseded-green
+    rule does — needs this to tell them apart rather than deciding on the
+    absence of evidence.
+    """
+    recorded = _commit(sha="a", parent_sha="root", conclusion=CI_SUCCESS)
+    state = _state(head_sha="a", commits=(recorded,))
+
+    assert head_commit(state=state) == recorded
+    assert head_commit(state=_state(head_sha="missing", commits=(recorded,))) is None
 
 
 def test_no_culprit_when_the_earliest_reds_parent_is_not_in_the_window() -> None:
