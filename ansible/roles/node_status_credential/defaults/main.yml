@@ -71,8 +71,15 @@ node_status_credential_ssh_user: cwoolley
 # The SERVER's ssh HOST key, named as a path on the server rather than as bytes
 # committed here: the trust then follows the machine's own key instead of a copy
 # that goes stale the first time the key is rotated. ed25519 because it is the
-# host key every OpenSSH in this pool offers and the type the agent's client
-# prefers, so it is the one a connection will actually be authenticated with.
+# type the agent's client prefers, so it is the one a connection will actually
+# be authenticated with. The refresh reaches the server over the TAILNET, where
+# Tailscale SSH answers and presents the server's /etc/ssh/ssh_host_*_key files
+# (it reads exactly those paths, per key type, on every connection). The
+# server's OpenSSH does NOT use this key: since role lan_ssh_fallback it listens
+# only on the LAN at its own port with its own host key under
+# /etc/ssh/lan-fallback. So never delete or rotate these /etc/ssh files as
+# "unused by OpenSSH": that would change what Tailscale SSH presents and break
+# this pin on every agent.
 node_status_credential_server_host_key: /etc/ssh/ssh_host_ed25519_key.pub
 node_status_credential_server_host_key_type: ssh-ed25519
 # The ssh user's OWN known_hosts — the refresh tool fetches as that account, so

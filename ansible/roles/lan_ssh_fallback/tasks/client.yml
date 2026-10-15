@@ -1,0 +1,30 @@
+---
+# Phase 3, on every home-lab host and on the control node: the `<host>-lan`
+# aliases and the pinned host keys they verify against. Client files only.
+
+- name: Create the fallback's directory on a client that has none
+  ansible.builtin.file:
+    path: "{{ lan_ssh_fallback_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Pin every home-lab host's fallback host key
+  ansible.builtin.template:
+    src: known_hosts.j2
+    dest: "{{ lan_ssh_fallback_known_hosts }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the `<host>-lan` client aliases
+  ansible.builtin.template:
+    src: ssh_config.j2
+    dest: "{{ lan_ssh_fallback_client_config }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true

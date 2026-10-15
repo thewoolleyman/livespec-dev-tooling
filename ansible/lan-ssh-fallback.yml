@@ -1,0 +1,59 @@
+---
+# The direct-LAN OpenSSH fallback between the home-lab hosts (role
+# lan_ssh_fallback; read its HOST_VARS.md). Plays name inventory GROUPS only.
+#
+# Order is the design: read and create keys everywhere first, then change ONE
+# home-lab host at a time and stop at the first failure, then write the client
+# aliases, then prove every path. Run the drift report first:
+#   just ansible-drift ansible/lan-ssh-fallback.yml
+#   just ansible-apply ansible/lan-ssh-fallback.yml
+# To change one host only, add `--limit <host>` to both: every phase still reads
+# the other hosts' public keys, because the key phase targets the whole group.
+
+- name: LAN fallback - keys on every home-lab host
+  hosts: home_lab
+  gather_facts: false
+  tasks:
+    - name: Ensure and read the fallback's keys
+      ansible.builtin.include_role:
+        name: lan_ssh_fallback
+        tasks_from: keys.yml
+
+- name: LAN fallback - the control node's key
+  hosts: dev_hosts
+  gather_facts: false
+  tasks:
+    - name: Read the control node's public key
+      ansible.builtin.include_role:
+        name: lan_ssh_fallback
+        tasks_from: control_node_key.yml
+
+- name: LAN fallback - OpenSSH on each home-lab host, one at a time
+  hosts: home_lab
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: true
+  tasks:
+    - name: Install and verify the fallback server
+      ansible.builtin.include_role:
+        name: lan_ssh_fallback
+        tasks_from: server.yml
+
+- name: LAN fallback - client aliases and pinned keys
+  hosts: home_lab:dev_hosts
+  gather_facts: false
+  tasks:
+    - name: Install the client side
+      ansible.builtin.include_role:
+        name: lan_ssh_fallback
+        tasks_from: client.yml
+
+- name: LAN fallback - prove every path
+  hosts: home_lab:dev_hosts
+  gather_facts: true
+  tasks:
+    - name: Log in through every alias
+      ansible.builtin.include_role:
+        name: lan_ssh_fallback
+        tasks_from: verify.yml

@@ -1,0 +1,4 @@
+---
+# No handlers: every state change in this role is an explicit, verified task,
+# because a handler fires at the end of the play, after the checks that were
+# meant to gate it.

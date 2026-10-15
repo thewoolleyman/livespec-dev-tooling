@@ -1,0 +1,40 @@
+# {{ ansible_managed }}
+# Aliases for the direct-LAN OpenSSH fallback. Each dials a home-lab host's
+# wired LAN address on port {{ lan_ssh_fallback_port }}, never its tailnet name.
+{% set lab = groups['home_lab'] | sort %}
+{% set on_lan = inventory_hostname in lab %}
+{% if on_lan %}
+# From this LAN host: direct.
+{% else %}
+# From the control node, which is not on the LAN: through another home-lab
+# host. The hop is an ordinary Tailscale SSH session on the jump host running
+# `nc` (no port-forwarding grant needed); authentication to the target is this
+# host's own key, end to end. `<host>-lan` uses the first jump, and one
+# `<host>-lan-via-<jump>` alias exists per jump in case that one is down.
+{% endif %}
+{% for host in lab | reject('equalto', inventory_hostname) %}
+{% set addr = hostvars[host]['lan_ssh_fallback_address'] %}
+{% if on_lan %}
+Host {{ host }}-lan
+    HostName {{ addr }}
+{% else %}
+{% set jumps = lab | reject('equalto', host) | list %}
+{% for jump in jumps %}
+Host {{ host }}-lan{% if loop.first %} {{ host }}-lan-via-{{ jump }}{% else %}-via-{{ jump }}{% endif %}
+
+    HostName {{ addr }}
+    ProxyCommand ssh -o BatchMode=yes -o ConnectTimeout=15 {{ lan_ssh_fallback_user }}@{{ jump }} nc -w 30 %h %p
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+# Settings shared by every alias above (ssh keeps the first value it reads per
+# keyword, so the per-alias HostName and ProxyCommand above still win).
+Host *-lan *-lan-via-*
+    Port {{ lan_ssh_fallback_port }}
+    User {{ lan_ssh_fallback_user }}
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    UserKnownHostsFile {{ lan_ssh_fallback_known_hosts }}
+    StrictHostKeyChecking yes
+    BatchMode yes
