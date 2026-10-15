@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.102.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.101.2...v1.102.0) (2026-10-15)
+
+
+### Features
+
+* **cross-repo:** carry the recorded state to the chosen reconcile step ([953f3ad](https://github.com/thewoolleyman/livespec-dev-tooling/commit/953f3ad0ef406f910bb2e2673d21bebeb7a11bd3))
+* **fleet:** canonical master-health reconciler shim trigger set ([5d0e192](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5d0e19222b861cb853b90c362a1945718b77d9eb))
+* **fleet:** canonical reusable master-health reconciler workflow body ([96332e2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/96332e22323d78196c5e34c1027abbb0f3c8a50f))
+* **fleet:** wire-fleet-member discovers and installs the reconciler shim ([f5d7633](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f5d76334f72cd8aa964144afa6c76de321398619))
+
 ## [1.101.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.101.1...v1.101.2) (2026-10-15)
 
 
