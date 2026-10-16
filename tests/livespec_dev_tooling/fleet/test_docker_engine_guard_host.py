@@ -365,3 +365,168 @@ def test_the_planned_deletion_set_excludes_everything_the_snapshot_holds() -> No
     assert plan.delete_chains == ("DOCKER", "DOCKER-ISOLATION-STAGE-1")
     assert set(plan.delete_rules).isdisjoint(snapshot.rules)
     assert set(plan.delete_chains).isdisjoint(snapshot.chains)
+
+
+# The `nat` table and the second family once Docker has run. `ip6tables`'
+# `nat` table is UNCHANGED, which is the "this table has nothing of
+# Docker's in it" path every removal pass has to walk without acting.
+_IPV4_NAT_AFTER = (
+    "*nat",
+    ":PREROUTING ACCEPT [0:0]",
+    ":POSTROUTING ACCEPT [0:0]",
+    ":DOCKER - [0:0]",
+    "-A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER",
+    "-A POSTROUTING -s 10.42.0.0/16 -j MASQUERADE",
+    "-A POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE",
+    "COMMIT",
+)
+_IPV6_FILTER_AFTER = (
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD ACCEPT [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    ":DOCKER - [0:0]",
+    "-A FORWARD -o docker0 -j DOCKER",
+    "COMMIT",
+)
+
+# Every `-D` the removal must issue, in the order the two families and
+# their two tables are walked. Each carries the rule's FULL specification
+# and never a position: a reconciler inserting a rule between the read and
+# the delete would otherwise make the guard remove k3s's rule instead.
+_EXPECTED_DELETES = (
+    ("iptables-nft", "-t", "filter", "-D", "FORWARD", "-j", "DOCKER-ISOLATION-STAGE-1"),
+    ("iptables-nft", "-t", "filter", "-D", "FORWARD", "-o", "docker0", "-j", "DOCKER"),
+    (
+        "iptables-nft",
+        "-t",
+        "filter",
+        "-D",
+        "FORWARD",
+        "-o",
+        "docker0",
+        "-m",
+        "conntrack",
+        "--ctstate",
+        "RELATED,ESTABLISHED",
+        "-j",
+        "ACCEPT",
+    ),
+    (
+        "iptables-nft",
+        "-t",
+        "filter",
+        "-D",
+        "FORWARD",
+        "-i",
+        "docker0",
+        "!",
+        "-o",
+        "docker0",
+        "-j",
+        "ACCEPT",
+    ),
+    (
+        "iptables-nft",
+        "-t",
+        "filter",
+        "-D",
+        "DOCKER-ISOLATION-STAGE-1",
+        "-i",
+        "docker0",
+        "!",
+        "-o",
+        "docker0",
+        "-j",
+        "RETURN",
+    ),
+    (
+        "iptables-nft",
+        "-t",
+        "nat",
+        "-D",
+        "PREROUTING",
+        "-m",
+        "addrtype",
+        "--dst-type",
+        "LOCAL",
+        "-j",
+        "DOCKER",
+    ),
+    (
+        "iptables-nft",
+        "-t",
+        "nat",
+        "-D",
+        "POSTROUTING",
+        "-s",
+        "172.17.0.0/16",
+        "!",
+        "-o",
+        "docker0",
+        "-j",
+        "MASQUERADE",
+    ),
+    ("ip6tables-nft", "-t", "filter", "-D", "FORWARD", "-o", "docker0", "-j", "DOCKER"),
+)
+
+_EXPECTED_CHAIN_TARGETS = (
+    ("iptables-nft", "filter", "DOCKER"),
+    ("iptables-nft", "filter", "DOCKER-ISOLATION-STAGE-1"),
+    ("iptables-nft", "nat", "DOCKER"),
+    ("ip6tables-nft", "filter", "DOCKER"),
+)
+
+
+def _after_tables() -> dict[tuple[str, str], list[str]]:
+    """The four recorded dumps of a host the Docker packages have run on."""
+    return {
+        ("iptables-save", "filter"): list(_IPV4_FILTER_AFTER),
+        ("iptables-save", "nat"): list(_IPV4_NAT_AFTER),
+        ("ip6tables-save", "filter"): list(_IPV6_FILTER_AFTER),
+        ("ip6tables-save", "nat"): list(_IPV6_NAT_BEFORE),
+    }
+
+
+def _write_snapshot(*, root: Path) -> Path:
+    """A run's `before/` directory holding the pre-Docker dumps."""
+    snapshot = root / "var" / "runs" / "run-a" / "before"
+    snapshot.mkdir(parents=True, exist_ok=True)
+    for (command, table), lines in _before_tables().items():
+        _ = (snapshot / f"{command}.{table}").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return snapshot
+
+
+def test_footprint_removal_deletes_each_rule_then_flushes_and_deletes_each_chain(
+    tmp_path: Path,
+) -> None:
+    """`-D` per rule, then `-F` per chain, then `-X` -- and the order is forced.
+
+    A chain cannot be deleted while a rule still jumps to it, and cannot
+    be deleted while it holds rules of its own, so a removal that deleted
+    chains first would simply fail and leave the footprint in place. Both
+    address families are driven, because Docker's ip6tables rules are as
+    capable of cutting the tailnet as its ipv4 ones.
+    """
+    actions = importlib.import_module(_ACTIONS_MODULE)
+    assert hasattr(actions, "remove_footprint")
+    snapshot = _write_snapshot(root=tmp_path)
+    commands = _Commands(tables=_after_tables())
+    host = _real_host(root=tmp_path, commands=commands)
+
+    _ = host.remove_firewall_footprint(snapshot=snapshot)
+
+    assert commands.argvs_with(flag="-D") == _EXPECTED_DELETES
+    assert commands.argvs_with(flag="-F") == tuple(
+        (command, "-t", table, "-F", chain) for command, table, chain in _EXPECTED_CHAIN_TARGETS
+    )
+    assert commands.argvs_with(flag="-X") == tuple(
+        (command, "-t", table, "-X", chain) for command, table, chain in _EXPECTED_CHAIN_TARGETS
+    )
+    emitted = commands.argvs
+    assert emitted.index(_EXPECTED_DELETES[4]) < emitted.index(
+        ("iptables-nft", "-t", "filter", "-F", "DOCKER")
+    )
+    assert emitted.index(("iptables-nft", "-t", "filter", "-F", "DOCKER-ISOLATION-STAGE-1")) < (
+        emitted.index(("iptables-nft", "-t", "filter", "-X", "DOCKER"))
+    )

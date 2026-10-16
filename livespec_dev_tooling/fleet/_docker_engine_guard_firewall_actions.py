@@ -23,7 +23,12 @@ from livespec_dev_tooling.fleet._docker_engine_guard_firewall import (
     FAMILIES,
     FORWARD_POLICY_SNAPSHOT,
     SNAPSHOT_TABLES,
+    FirewallTable,
+    FootprintPlan,
+    chain_argv,
+    delete_argv,
     parse_table,
+    plan_footprint,
     save_argv,
     snapshot_name,
 )
@@ -32,10 +37,20 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "DELETE_CHAIN",
     "FIREWALL_TIMEOUT_SECONDS",
+    "FLUSH_CHAIN",
     "FORWARD_CHAIN",
+    "read_current_table",
+    "read_snapshot_table",
+    "remove_footprint",
     "write_firewall_snapshot",
 ]
+
+# The two whole-chain verbs, in the order they have to be issued: a chain
+# still holding rules cannot be deleted.
+FLUSH_CHAIN: Final[str] = "-F"
+DELETE_CHAIN: Final[str] = "-X"
 
 # Long enough for the xtables lock a reconciler may hold mid-sync (the
 # design measures k3s's own sweeps at 4 within 300 seconds), short enough
@@ -74,3 +89,59 @@ def write_firewall_snapshot(*, destination: Path, runner: GuardCommandRunner) ->
     _ = (destination / FORWARD_POLICY_SNAPSHOT).write_text(
         json.dumps(policies, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+
+
+def read_current_table(*, runner: GuardCommandRunner, family: str, table: str) -> FirewallTable:
+    """One family's one table as it stands right now."""
+    return parse_table(
+        dump=runner(
+            argv=save_argv(family=family, table=table),
+            timeout_seconds=FIREWALL_TIMEOUT_SECONDS,
+        ).stdout
+    )
+
+
+def read_snapshot_table(*, snapshot: Path, family: str, table: str) -> FirewallTable:
+    """The same table as the run's `before/` directory recorded it."""
+    return parse_table(
+        dump=(snapshot / snapshot_name(family=family, table=table)).read_text(encoding="utf-8")
+    )
+
+
+def apply_footprint_plan(
+    *, runner: GuardCommandRunner, family: str, table: str, plan: FootprintPlan
+) -> None:
+    """Issue one table's plan: every `-D`, then every `-F`, then every `-X`."""
+    for rule in plan.delete_rules:
+        _ = runner(
+            argv=delete_argv(family=family, table=table, rule=rule),
+            timeout_seconds=FIREWALL_TIMEOUT_SECONDS,
+        )
+    for verb in (FLUSH_CHAIN, DELETE_CHAIN):
+        for chain in plan.delete_chains:
+            _ = runner(
+                argv=chain_argv(family=family, table=table, verb=verb, chain=chain),
+                timeout_seconds=FIREWALL_TIMEOUT_SECONDS,
+            )
+
+
+def remove_footprint(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str, ...]:
+    """Take Docker's footprint off both families, table by table.
+
+    The walk order is the families' order and then the tables', so a
+    report of what happened reads the same way twice. Residual reporting
+    and the repeat passes the specification requires arrive with the next
+    assertion; this pass is the single sweep they repeat.
+    """
+    for family in FAMILIES:
+        for table in SNAPSHOT_TABLES:
+            apply_footprint_plan(
+                runner=runner,
+                family=family,
+                table=table,
+                plan=plan_footprint(
+                    current=read_current_table(runner=runner, family=family, table=table),
+                    snapshot=read_snapshot_table(snapshot=snapshot, family=family, table=table),
+                ),
+            )
+    return ()
