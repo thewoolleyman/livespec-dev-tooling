@@ -9,9 +9,9 @@ PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
 resync refusal) and the observation `sample`; child 5 adds the clock
 and boot identity, the runtime directory's ownership and the start
 permission, the admission reads, the unit start, the post-commit
-enable and the reconfigure seams. The seams that still raise, each
-saying so where it stands, are the rollback phase child child 2
-added, and child 3b's package step.
+enable, the reconfigure seams and the rollback phase child. The one
+seam that still raises, saying so where it stands, is child 3b's
+package step.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -67,6 +67,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_permission import (
     revoke_start_permission,
     set_owner_root,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_phase_child import run_phase_child
 from livespec_dev_tooling.fleet._docker_engine_guard_postconditions import read_postconditions
 from livespec_dev_tooling.fleet._docker_engine_guard_preflight import (
     docker_group_accounts,
@@ -315,8 +316,8 @@ class RealHost:
         return read_postconditions(runner=self.runner, paths=self.paths, snapshot=snapshot)
 
     def run_phase_child(self, *, argv: Sequence[str]) -> bool:
-        """CHILD 4: run one rollback phase as its own child; whether it completed."""
-        raise NotImplementedError
+        """Run one rollback phase as its own child; whether it completed."""
+        return run_phase_child(runner=self.runner, argv=argv)
 
 
 def build_real_host(
