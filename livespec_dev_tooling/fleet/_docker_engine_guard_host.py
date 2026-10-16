@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.fleet._docker_engine_guard_conditions import condition_check_passed
 from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
     remove_footprint,
     restore_forward_policy,
@@ -121,7 +122,7 @@ class RealHost:
 
     def condition_check_passed(self) -> bool:
         """Each guarded unit's EFFECTIVE conditions, read from the service manager."""
-        raise NotImplementedError
+        return condition_check_passed(runner=self.runner, paths=self.paths)
 
     # --- arm ---
 
