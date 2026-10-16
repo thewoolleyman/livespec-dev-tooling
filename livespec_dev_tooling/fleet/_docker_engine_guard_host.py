@@ -35,7 +35,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_netstate import write_sysctl_snapshot
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
-from livespec_dev_tooling.fleet._docker_engine_guard_units import cancel_jobs, read_queued_jobs
+from livespec_dev_tooling.fleet._docker_engine_guard_units import (
+    cancel_jobs,
+    read_queued_jobs,
+    stop_unit,
+)
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps, QueuedJob
@@ -150,7 +154,7 @@ class RealHost:
 
     def stop_unit(self, *, unit: str, timeout_seconds: int) -> None:
         """Stop one unit with a bounded wait."""
-        raise NotImplementedError
+        stop_unit(runner=self.runner, unit=unit, timeout_seconds=timeout_seconds)
 
     def cancel_jobs(self, *, job_ids: Sequence[str]) -> None:
         """Cancel exactly the guarded units' queued jobs, by id."""
