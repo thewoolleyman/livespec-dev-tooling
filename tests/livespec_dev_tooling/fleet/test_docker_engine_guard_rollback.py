@@ -599,6 +599,10 @@ def test_a_failed_timed_out_or_skipped_phase_never_stops_a_later_one(
     failed = tmp_path / "failed"
     fake = _reporting_fake(root=failed)
     fake.failing_phase_children = {"forward-restore"}
+    # Every postcondition but the restored FORWARD policy holds, so the
+    # final check clears nothing the successful phases recorded and the
+    # success records still say which children completed.
+    fake.postconditions = _postconditions_except(failing="each FORWARD policy as snapshotted")
     _record_phase(root=failed, run="run-a", phase="started")
 
     _ = rollback.run_rollback(run="run-a", env=_env(root=failed, host=fake), decision=_decision())
@@ -622,3 +626,74 @@ def test_a_failed_timed_out_or_skipped_phase_never_stops_a_later_one(
     later = _SPECIFIED_ORDER[_SPECIFIED_ORDER.index("cgroup-kill") + 1 :]
     assert [phase for phase in spawned if phase in later] == list(later)
     assert other.calls_named(name="read_postconditions")
+
+
+# The postcondition four phases share: the socket stop, the job
+# cancellation, the cgroup kill and the unit disable all exist to make
+# the guarded units quiet, so any of them failing shows up here.
+_UNITS_POSTCONDITION = "no socket, process, queued job or pending start for the guarded units"
+
+
+def _surviving_successes(*, root: Path, run: str) -> set[str]:
+    """Every phase that still has a success record a later firing would trust."""
+    return {
+        phase
+        for phase in _SPECIFIED_ORDER
+        if _rollback_record(root=root, run=run, name=f"{phase}.success").is_file()
+    }
+
+
+def _postconditions_except(*, failing: str) -> dict[str, bool]:
+    """A host postcondition record in which exactly `failing` does not hold."""
+    return {name: name != failing for name in _SPECIFIED_POSTCONDITIONS}
+
+
+def test_the_final_check_clears_the_success_of_every_failing_postcondition(
+    tmp_path: Path,
+) -> None:
+    """Design H6: a postcondition that REGRESSES makes its phase eligible again.
+
+    A success record is what a later firing trusts to skip a phase, so a
+    stale one is the one way this driver could leave a host unrepaired
+    while reporting that it had tried: the phase ran, something undid its
+    work, and every firing after that skipped it. Clearing the record
+    against the final check closes that, and it closes it for all four
+    phases that share the guarded-units postcondition, because the check
+    cannot tell which of them the regression belongs to.
+    """
+    rollback = _driver()
+    assert "POSTCONDITION_OF_PHASE" in rollback.__all__
+    owners = rollback.POSTCONDITION_OF_PHASE
+    assert tuple(owners) == _SPECIFIED_ORDER
+    assert set(owners.values()) <= set(_SPECIFIED_POSTCONDITIONS)
+    assert [phase for phase, name in owners.items() if name == _UNITS_POSTCONDITION] == [
+        "socket-stop",
+        "job-cancel",
+        "cgroup-kill",
+        "unit-disable",
+    ]
+
+    one = tmp_path / "one"
+    fake = _reporting_fake(root=one)
+    fake.postconditions = _postconditions_except(failing="no docker0")
+    _record_phase(root=one, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=one, host=fake), decision=_decision())
+
+    assert _surviving_successes(root=one, run="run-a") == set(_SPECIFIED_ORDER) - {
+        "interface-deletion"
+    }
+
+    shared = tmp_path / "shared"
+    other = _reporting_fake(root=shared)
+    other.postconditions = _postconditions_except(failing=_UNITS_POSTCONDITION)
+    _record_phase(root=shared, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=shared, host=other), decision=_decision())
+
+    assert _surviving_successes(root=shared, run="run-a") == {
+        "forward-restore",
+        "footprint-removal",
+        "interface-deletion",
+        "sysctl-comparison",
+    }
