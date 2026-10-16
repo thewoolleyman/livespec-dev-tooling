@@ -30,7 +30,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
 from livespec_dev_tooling.fleet._docker_engine_guard_cluster_probes import (
     dns_placement_probe,
@@ -80,6 +80,13 @@ __all__: list[str] = [
 # own inputs directory and nowhere else (design G3).
 PROBE_PARAMETERS: Final[str] = "probes.json"
 
+# The declared key naming the route to the k3s server, and what the
+# refusal says when the declaration cannot be run. The message names the
+# key rather than describing it, because the reader is the operator who
+# wrote the file it names.
+_K3S_SERVER_ARGV: Final[str] = "k3s_server_argv"
+_ROUTE_REFUSAL: Final[str] = f"{_K3S_SERVER_ARGV} must be a non-empty list of non-empty strings"
+
 
 @dataclass(frozen=True, kw_only=True)
 class ProbeParameters:
@@ -116,9 +123,38 @@ def probe_parameters_path(*, paths: GuardPaths, run: str) -> Path:
     return paths.inputs_dir(run=run) / PROBE_PARAMETERS
 
 
+def _k3s_server_argv(*, declared: object, path: Path) -> tuple[str, ...]:
+    """The declared route to the k3s server, refused unless it can be RUN.
+
+    Every shape but a non-empty list of non-empty strings fails where
+    the failure is invisible rather than loud, which is why this refuses
+    here — at the read, in front of the operator who wrote the file —
+    instead of once per sample inside the observation window, on the one
+    host nobody can reach by hand. An empty list reads as "no route
+    declared" to the default and silently restores the root-to-root
+    prefix the declaration exists to replace. A bare string is iterated
+    character by character, so `"ssh host"` becomes eight one-letter
+    words. A word that is empty builds an argv carrying an empty
+    argument, which `ssh` reads as a host named "".
+    """
+    words = cast("Sequence[object]", declared) if isinstance(declared, list) else ()
+    if not words or not all(isinstance(word, str) and word for word in words):
+        msg = f"{path}: {_ROUTE_REFUSAL}"
+        raise ValueError(msg)
+    return tuple(str(word) for word in words)
+
+
 def read_probe_parameters(*, paths: GuardPaths, run: str) -> ProbeParameters:
-    """One run's declared probe parameters, read from its own inputs directory."""
-    recorded = json.loads(probe_parameters_path(paths=paths, run=run).read_text(encoding="utf-8"))
+    """One run's declared probe parameters, read from its own inputs directory.
+
+    An ABSENT `k3s_server_argv` is the undeclared route and keeps the
+    placement read's previous prefix; a PRESENT one is refused unless it
+    can be run. The two are told apart by membership rather than by a
+    falsy value, so an explicit `null` is a malformed declaration and
+    not a second spelling of "absent".
+    """
+    path = probe_parameters_path(paths=paths, run=run)
+    recorded = json.loads(path.read_text(encoding="utf-8"))
     return ProbeParameters(
         node=str(recorded["node"]),
         k3s_server=str(recorded["k3s_server"]),
@@ -128,7 +164,11 @@ def read_probe_parameters(*, paths: GuardPaths, run: str) -> ProbeParameters:
         api_port=int(recorded["api_port"]),
         canary=str(recorded["canary"]),
         must_stay_running=tuple(str(unit) for unit in recorded.get("must_stay_running", ())),
-        k3s_server_argv=tuple(str(word) for word in recorded.get("k3s_server_argv", ())),
+        k3s_server_argv=(
+            _k3s_server_argv(declared=recorded[_K3S_SERVER_ARGV], path=path)
+            if _K3S_SERVER_ARGV in recorded
+            else ()
+        ),
     )
 
 
