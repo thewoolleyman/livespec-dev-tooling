@@ -851,6 +851,13 @@ log "10e. Re-apply the factory namespace, its quota, its egress policy and its l
 # namespace that failed to apply means the sandbox backend's pods have nowhere
 # bounded to run, and `kubectl apply` here touches only committed manifests with
 # no host precondition to fail on.
+#
+# TWO OF THE OBJECTS THIS STEP CREATES ARE CLUSTER-SCOPED, despite the step's
+# name: ../factory/factory-rbac.yaml carries a ClusterRole and ClusterRoleBinding
+# granting the launcher a read-only `get`/`list` on `nodes`
+# (livespec-dev-tooling-pvykv7, derived in ../factory/DERIVATION.md §"The
+# widening"). So deleting the `factory` namespace does NOT undo this step —
+# the node read survives it and is re-applied here either way.
 kubectl apply -f "${FACTORY_DIR}"
 # AND RE-RENDER THE CREDENTIAL THAT IDENTITY IS ONLY USEFUL AS
 # (livespec-dev-tooling-sqobqv). The apply above recreates the ServiceAccount

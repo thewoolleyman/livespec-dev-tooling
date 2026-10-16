@@ -34,9 +34,14 @@ _BOOT_CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 # only apply what this role has already put there.
 _ROLE_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml"
 
-# The seven objects the work-item's Definition of Done names, as KINDS: the
-# names are this repository's to choose, the kinds are not.
+# The objects the work-items' Definitions of Done name, as KINDS: the names are
+# this repository's to choose, the kinds are not. The two cluster-scoped kinds
+# arrived with the nodes read `livespec-dev-tooling-pvykv7` widened the
+# credential by; everything else is `livespec-dev-tooling-f5e6vl`'s original
+# seven.
 _EXPECTED_KINDS = (
+    "ClusterRole",
+    "ClusterRoleBinding",
     "Namespace",
     "NetworkPolicy",
     "ResourceQuota",
@@ -57,6 +62,33 @@ _EXPECTED_POD_VERBS: dict[tuple[str, str], frozenset[str]] = {
 }
 _JOBS_RULE_KEY = ("batch", "jobs")
 _CLUSTER_SCOPED_KINDS = frozenset({"ClusterRole", "ClusterRoleBinding"})
+# The grants `livespec-dev-tooling-pvykv7` widened the launcher credential by,
+# each the item's own wording, and each the WHOLE rule rather than a floor: the
+# assertions below compare for EQUALITY, so an extra verb fails exactly as a
+# missing one does.
+#
+# The nodes read is the only cluster-scoped grant, and it HAS to be one —
+# `nodes` is a cluster-scoped resource, so a namespaced Role cannot name it at
+# all. The plugin uses it to tell a NotReady node from a lost pod; without it
+# every node-loss check answers 403.
+_EXPECTED_CLUSTER_RULES: dict[tuple[str, str], frozenset[str]] = {
+    ("", "nodes"): frozenset({"get", "list"}),
+}
+# In the namespaced Role: the per-pod egress policies that open holes in the
+# `factory-egress` baseline, and the Events that tell pending-on-quota from
+# pending-on-scheduling.
+_EXPECTED_WIDENED_ROLE_VERBS: dict[tuple[str, str], frozenset[str]] = {
+    ("networking.k8s.io", "networkpolicies"): frozenset({"create", "get", "list", "delete"}),
+    ("", "events"): frozenset({"list", "watch"}),
+}
+# What the derivation note must NAME, so the widening carries its reason beside
+# the manifest the way every other number in this directory does.
+_WIDENING_DERIVATION_TERMS = (
+    "nodes",
+    "networkpolicies",
+    "events",
+    "pvykv7",
+)
 # The live node capacities the quota must be sized against, each as the plan's
 # own research note spells it, plus the pod-allocatable figure hp is left with
 # while the Docker sandbox slice runs. A quota derived without naming these is
@@ -160,6 +192,26 @@ def _role_rules(*, document: str) -> dict[tuple[str, str], frozenset[str]]:
     return rules
 
 
+def _binding_subject(*, document: str) -> tuple[str, str, str]:
+    """A binding's SINGLE subject as `(kind, name, namespace)`.
+
+    Asserted to be single rather than searched for a match: a binding's power
+    is the UNION of its subjects, so "the launcher is in there somewhere" is not
+    the question — an extra subject is itself the widening, and a reader that
+    looked for one entry would never see it.
+    """
+    subjects = re.findall(
+        r"-\s*kind:\s*(?P<kind>\S+)\s*\n\s*name:\s*(?P<name>\S+)\s*\n\s*namespace:\s*(?P<ns>\S+)",
+        document,
+    )
+    assert len(subjects) == 1, (
+        f"the binding must carry exactly ONE subject; found {len(subjects)}, and a binding's "
+        "grant is the union of all of them"
+    )
+    kind, name, namespace = subjects[0]
+    return (kind, name, namespace)
+
+
 def _gates_role_rules() -> dict[tuple[str, str], frozenset[str]]:
     """The gates Role's rules, read from the gates manifest itself."""
     roles = [
@@ -190,28 +242,31 @@ def _objects() -> tuple[tuple[str, str, str], ...]:
     return tuple(found)
 
 
-def test_the_factory_manifests_declare_exactly_the_seven_labelled_objects() -> None:
+def test_the_factory_manifests_declare_exactly_the_nine_labelled_objects() -> None:
     assert _FACTORY_DIR.is_dir(), (
         f"{_FACTORY_DIR.relative_to(_REPO_ROOT)} does not exist, so the factory namespace is "
         "whatever somebody last typed at a cluster whose datastore is wiped at every boot"
     )
     declared = _objects()
     assert tuple(sorted(kind for kind, _, _ in declared)) == _EXPECTED_KINDS, (
-        "the factory artifact directory must declare EXACTLY the seven objects the Definition "
-        f"of Done names, one each; found {sorted(kind for kind, _, _ in declared)}"
+        "the factory artifact directory must declare EXACTLY the objects the two Definitions of "
+        f"Done name, one each; found {sorted(kind for kind, _, _ in declared)}"
     )
     by_kind = {kind: (name, document) for kind, name, document in declared}
     assert (
         by_kind["Namespace"][0] == _NAMESPACE_NAME
     ), f"the Namespace must be named {_NAMESPACE_NAME!r}, not {by_kind['Namespace'][0]!r}"
     for kind, name, document in declared:
-        if kind == "Namespace":
+        if kind == "Namespace" or kind in _CLUSTER_SCOPED_KINDS:
+            # The Namespace is not in itself, and a cluster-scoped object is in
+            # no namespace at all — a `namespace:` on either is silently
+            # ignored by the API server, so requiring one would require a lie.
             continue
         metadata = _top_level_block(document=document, key="metadata")
         namespace = _at_indent(block=metadata, key="namespace", indent=2)
         assert namespace == _NAMESPACE_NAME, (
-            f"{kind} {name!r} declares namespace {namespace!r}; every object but the Namespace "
-            f"itself must be IN {_NAMESPACE_NAME!r}, or the apply lands it somewhere else"
+            f"{kind} {name!r} declares namespace {namespace!r}; every namespaced object must be "
+            f"IN {_NAMESPACE_NAME!r}, or the apply lands it somewhere else"
         )
     for kind, name, document in declared:
         metadata = _top_level_block(document=document, key="metadata")
@@ -256,18 +311,103 @@ def test_the_factory_role_grants_the_pod_lifecycle_the_gates_job_verbs_and_no_se
         "projects a sandbox's credentials into it, so a grant here only widens what a leaked "
         "token reaches"
     )
-    cluster_scoped = sorted(
-        f"{kind} {name!r}" for kind, name, _ in _objects() if kind in _CLUSTER_SCOPED_KINDS
-    )
-    assert (
-        not cluster_scoped
-    ), f"the factory artifacts declare {cluster_scoped}; nothing here may be cluster-scoped"
+    # What may be cluster-scoped is asserted in
+    # `test_the_widened_launcher_grant_reads_nodes_through_one_cluster_role_and_nothing_else`
+    # — the nodes READ and its binding, and nothing else.
     role_binding = by_kind["RoleBinding"]
     role_ref = _top_level_block(document=role_binding, key="roleRef")
     assert _at_indent(block=role_ref, key="kind", indent=2) == "Role", (
         "the RoleBinding's roleRef must name a Role; a RoleBinding to a ClusterRole grants that "
         "ClusterRole's rules in this namespace, which is the cluster-scoped grant this item "
         "forbids wearing a namespaced hat"
+    )
+
+
+def test_the_widened_launcher_grant_reads_nodes_through_one_cluster_role_and_nothing_else() -> None:
+    """`livespec-dev-tooling-pvykv7`: the ONE cluster-scoped grant, read-only on nodes.
+
+    The sandbox backend needs it to tell a NotReady NODE from a lost POD — two
+    observations that look identical from inside the namespace, and without this
+    read every node-loss check answers 403 instead. `nodes` is cluster-scoped,
+    so a namespaced Role cannot name it; the narrowing is the VERB SET, asserted
+    for equality so `patch`, `delete` or a wildcard fails here rather than on a
+    cluster where the credential could then drain or evict a CI node.
+    """
+    declared = _objects()
+    by_kind = {kind: (name, document) for kind, name, document in declared}
+    cluster_kinds = sorted(kind for kind, _, _ in declared if kind in _CLUSTER_SCOPED_KINDS)
+    assert cluster_kinds == ["ClusterRole", "ClusterRoleBinding"], (
+        "the factory artifacts must declare EXACTLY one ClusterRole and one ClusterRoleBinding — "
+        "the nodes read and the binding that delivers it — and no other cluster-scoped object; "
+        f"found {cluster_kinds}"
+    )
+    cluster_role_name, cluster_role = by_kind["ClusterRole"]
+    granted = _role_rules(document=cluster_role)
+    assert granted == _EXPECTED_CLUSTER_RULES, (
+        f"ClusterRole {cluster_role_name!r} grants "
+        f"{ {key: sorted(verbs) for key, verbs in granted.items()} }; the only cluster-scoped "
+        "power this credential may hold is "
+        f"{ {key: sorted(verbs) for key, verbs in _EXPECTED_CLUSTER_RULES.items()} }"
+    )
+    binding_name, binding = by_kind["ClusterRoleBinding"]
+    role_ref = _top_level_block(document=binding, key="roleRef")
+    assert _at_indent(block=role_ref, key="kind", indent=2) == "ClusterRole"
+    assert _at_indent(block=role_ref, key="name", indent=2) == cluster_role_name, (
+        f"ClusterRoleBinding {binding_name!r} names a roleRef that is not the declared "
+        f"ClusterRole {cluster_role_name!r}, so the nodes read is bound to something else — or to "
+        "nothing, which fails as a 403 at the first node-loss check and nowhere else"
+    )
+    assert _binding_subject(document=binding) == (
+        "ServiceAccount",
+        by_kind["ServiceAccount"][0],
+        _NAMESPACE_NAME,
+    ), (
+        f"ClusterRoleBinding {binding_name!r} must bind EXACTLY the declared ServiceAccount in "
+        f"{_NAMESPACE_NAME!r}; a Group or an extra subject hands a cluster-wide node read to "
+        "identities this item never authorized"
+    )
+
+
+def test_the_widened_launcher_role_adds_networkpolicies_and_events_in_the_factory_namespace() -> (
+    None
+):
+    """`livespec-dev-tooling-pvykv7`: the two namespaced widenings, and still no Secrets.
+
+    NetworkPolicies because a sandbox's egress is a per-pod policy punching a
+    hole in the `factory-egress` baseline, and Events because `Pending` means
+    two different things — out of quota, or unschedulable — that only the
+    namespace's Events distinguish. `update` and `patch` are deliberately NOT
+    granted on networkpolicies: RBAC cannot express "every NetworkPolicy except
+    `factory-egress`", so withholding the in-place-modify verbs is what keeps
+    the baseline out of the plugin's reach, and the boot converge re-applies it
+    regardless. The derivation note is asserted to carry the reason, because a
+    widening whose rationale lives only in a ledger comment is a grant the next
+    reader cannot audit.
+    """
+    by_kind = {kind: document for kind, _, document in _objects()}
+    role_rules = _role_rules(document=by_kind["Role"])
+    for key, expected in _EXPECTED_WIDENED_ROLE_VERBS.items():
+        granted = role_rules.get(key)
+        assert granted == expected, (
+            f"the factory Role grants {sorted(granted) if granted else None} on {key[1]!r} in "
+            f"apiGroup {key[0]!r}; this widening is exactly {sorted(expected)}"
+        )
+    for scope in ("Role", "ClusterRole"):
+        on_secrets = sorted(
+            key for key in _role_rules(document=by_kind[scope]) if key[1].split("/")[0] == "secrets"
+        )
+        assert not on_secrets, (
+            f"the factory {scope} grants {on_secrets} — nothing on secrets, ever, at either "
+            "scope: the dispatcher projects a sandbox's credentials into it, so a grant here "
+            "only widens what a leaked token reaches"
+        )
+    notes = sorted(_FACTORY_DIR.glob("*.md"))
+    derivation = notes[0].read_text(encoding="utf-8")
+    unrecorded = [term for term in _WIDENING_DERIVATION_TERMS if term not in derivation]
+    assert not unrecorded, (
+        f"{notes[0].name} does not record the widening: these terms are absent {unrecorded}. The "
+        "manifest says WHAT the credential may now do; only the note can say why, and an "
+        "unexplained grant is the one a later reader cannot safely narrow again"
     )
 
 

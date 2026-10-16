@@ -195,6 +195,98 @@ pull-through mirror each node's `registries.yaml` points at
 traffic — a tool inside the sandbox fetching from the registry, and the same 443
 every package index the sandbox's toolchain reads lives behind.
 
+## The widening
+
+`./factory-rbac.yaml` started at the pod lifecycle and nothing else. Three
+grants were added by work-item `livespec-dev-tooling-pvykv7`, requested
+2026-10-16 by the livespec-orchestrator-beads-fabro plan
+`kubernetes-sandbox-backend` (epic `bd-ib-nmuyjc`, its research note 003
+section 7.3) for the `bd-ib-ad6dby` lifecycle proofs, which run from
+`hp-xubuntu` as `cwoolley` against what this plan delivers. Each one is here
+because a lifecycle QUESTION has no answer without it, and each is recorded with
+the question rather than with the verb list, because the verb list is already in
+the manifest and only the question can say whether the grant may later shrink.
+
+**A verb added live is gone at the next boot.** That is why this is a committed
+widening and not a `kubectl edit`: the k3s datastore is a tmpfs
+(`../datastore-tmpfs/`), the boot converge re-applies this whole directory at
+every `poweredge-xubuntu` boot (`../reconstruct/converge-ci-stack.sh` step 10e),
+and anything not in these files is wiped by the next reboot with no error
+anywhere.
+
+### 1. `nodes` — `get` and `list`, cluster-scoped
+
+**The question: did the NODE leave, or did the POD die?** From inside the
+`factory` namespace those are one observation — the pod is gone and nothing in
+the namespace says whether its machine is still in the cluster. The plugin needs
+to tell a `NotReady` node from a lost pod, and without this read every node-loss
+check answers `403`, which is indistinguishable from a healthy cluster with a
+dead pod.
+
+**Cluster-scoped is forced, not chosen.** `nodes` is a cluster-scoped resource,
+so a namespaced Role cannot name it at all — the same constraint
+`../node-status-credential/node-status-patch-rbac.yaml`'s header records for
+`nodes/status`. This is the ONLY cluster-scoped grant the launcher credential
+holds, delivered by one ClusterRole and one ClusterRoleBinding bound to the
+single subject `factory:sandbox-launcher`.
+
+**The narrowing is the verb set, and it could not have been `resourceNames`.**
+Kubernetes applies `resourceNames` only to requests that name a single object,
+so `list` is not restrictable by it at all — and enumerating the nodes the
+plugin has NOT been told about is the whole point of the read, so a name list
+would either break it or be decoration. `get` and `list` and nothing else: no
+`watch`, which was not asked for, and emphatically no `patch`, `update` or
+`delete`, any of which would let a leaked sandbox token untaint, drain or evict
+a node in the CI pool.
+
+### 2. `networkpolicies` — `create`, `get`, `list`, `delete`, in `factory`
+
+**The question: what may THIS sandbox reach?** The `factory-egress` policy
+derived above is a NAMESPACE baseline: it default-denies ingress and allows the
+three egress classes every factory pod needs. A sandbox that needs more than the
+baseline gets a per-pod NetworkPolicy the plugin creates beside its pod and
+deletes with it, each one punching a hole in that baseline. `create` and
+`delete` are the lifecycle; `get` and `list` are how the plugin finds the
+policies it owns in order to reap them.
+
+**It does NOT hand `factory-egress` to the plugin to manage, and RBAC cannot
+say so directly.** `resourceNames` is an ALLOW list, not a deny list, and it
+does not apply to `create` at all, so there is no way to spell "every
+NetworkPolicy except `factory-egress`". Two things stand in for the rule RBAC
+cannot express: `update` and `patch` are withheld, so the baseline cannot be
+rewritten in place; and the boot converge re-applies `./factory-namespace.yaml`
+at every boot, so a baseline deleted between boots is restored. The residual —
+a token that could `delete factory-egress` and leave the namespace on the k3s
+controller's default-allow until the next converge — is accepted here because
+`delete` is what makes the per-pod policies reapable, and the alternative is a
+plugin that leaks a policy per sandbox forever.
+
+### 3. `events` — `list` and `watch`, in `factory`
+
+**The question: is `Pending` out of quota, or unschedulable?** A pod held out by
+this namespace's ResourceQuota and a pod no node can hold are both `Pending`
+with the same `status.phase`; the only thing that distinguishes them is the
+Event the API server records — `FailedCreate` against the quota,
+`FailedScheduling` against the scheduler. The distinction is load-bearing for
+this namespace in particular, because the derivation above makes the quota the
+ONLY admission bound and `hp-xubuntu` is plumbing today with nothing at the
+4 cpu / 8GB envelope fitting on it, so BOTH failures are live and they demand
+opposite responses: wait for a slot, or stop waiting.
+
+Read-only on purpose — the plugin never writes an Event. `watch` is granted
+beside `list` because the interesting Event arrives AFTER the pod is created,
+and polling a list for it is the same read with worse latency.
+
+### Still no secrets, at either scope
+
+The one grant that stays absent, and the only one with no question behind it
+that the dispatcher does not already answer: the sandbox's own credentials are
+projected INTO it by the dispatcher, so a verb on `secrets` would buy nothing
+and widen the blast radius of a leaked token to every secret in the namespace.
+Neither the Role nor the ClusterRole names `secrets`, and
+`tests/livespec_dev_tooling/test_ci_runner_k3s_factory_namespace.py` asserts
+that at both scopes.
+
 ## What is deliberately NOT here
 
 - **No Kueue anything.** Nothing in this namespace is denominated in
@@ -206,6 +298,8 @@ every package index the sandbox's toolchain reads lives behind.
   (livespec-orchestrator-beads-fabro plan `kubernetes-sandbox-backend`, epic
   `bd-ib-nmuyjc`), and a selector committed here would be this repository
   guessing at it.
-- **No grant on secrets and nothing cluster-scoped.** See
-  `./factory-rbac.yaml`'s header; the Role's rules are asserted by
+- **No grant on secrets, and exactly one cluster-scoped grant — the `nodes`
+  read of §"The widening" §1.** See `./factory-rbac.yaml`'s header; the Role's
+  rules, the ClusterRole's single rule and the absence of `secrets` at both
+  scopes are asserted by
   `tests/livespec_dev_tooling/test_ci_runner_k3s_factory_namespace.py`.
