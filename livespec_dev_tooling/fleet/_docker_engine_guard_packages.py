@@ -97,7 +97,9 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     declared = load_package_inputs(inputs=inputs)
     if isinstance(declared, str):
         return PackageStepResult(refusal=declared)
-    audit = audit_transaction(declared=declared)
+    audit = audit_transaction(declared=declared, runner=runner)
+    if isinstance(audit, str):
+        return PackageStepResult(refusal=audit)
     before = read_installed(runner=runner)
     _ = runner(
         command=TimedCommand(
