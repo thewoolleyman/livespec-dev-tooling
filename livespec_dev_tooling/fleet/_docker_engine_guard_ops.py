@@ -20,6 +20,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     holder_of,
     read_reservation,
     record_phase,
+    write_durable,
     write_reservation,
 )
 
@@ -29,10 +30,16 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
 __all__: list[str] = [
+    "publish",
     "reserve",
 ]
 
 _QUIESCENT = "inactive"
+
+# Written inside the run's snapshot directory once the host snapshot has
+# COMPLETED, so a resumed publish can tell "already snapshotted" from
+# "interrupted part way through snapshotting".
+_SNAPSHOT_TAKEN = "taken"
 
 
 def _busy_guard_units(*, host: HostOps) -> tuple[str, ...]:
@@ -91,4 +98,40 @@ def reserve(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     record_phase(paths=env.paths, run=run, phase="reserved")
     return GuardOutcome(
         operation="reserve", run=run, verdict=decision.verdict, reason="reservation taken"
+    )
+
+
+def publish(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
+    """Snapshot the host once, install the audited set inert, and prove it cannot start.
+
+    The ORDER is the whole content of this operation. The phase reaches
+    `publishing` first, so an install interrupted anywhere is a run a
+    later `recover` can resume rather than a run that looks untouched.
+    The snapshot is taken before the first package step and never
+    retaken, because it is what a rollback compares against: taken after
+    a package step it would record Docker's own footprint as the host's
+    baseline, and the cleanup could no longer tell the two apart. And
+    `published` is reached only once the post-install condition check
+    has passed — that check is the proof the installed units cannot
+    start, so arming over a run that skipped it would arm over an engine
+    free to start on its own.
+    """
+    record_phase(paths=env.paths, run=run, phase="publishing")
+    taken = env.paths.snapshot_dir(run=run) / _SNAPSHOT_TAKEN
+    if not taken.is_file():
+        env.host.take_snapshot(destination=env.paths.snapshot_dir(run=run))
+        # Written only AFTER the host returns, so a snapshot interrupted
+        # half way is retaken rather than trusted.
+        write_durable(path=taken, data=run)
+    env.host.install_packages(inputs=env.paths.inputs_dir(run=run))
+    if not env.host.condition_check_passed():
+        return GuardOutcome(
+            operation="publish",
+            run=run,
+            verdict="refuse",
+            reason="the installed units' effective conditions are not the guard's two",
+        )
+    record_phase(paths=env.paths, run=run, phase="published")
+    return GuardOutcome(
+        operation="publish", run=run, verdict=decision.verdict, reason="inert install published"
     )

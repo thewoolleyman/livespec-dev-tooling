@@ -982,3 +982,106 @@ def test_a_refused_reserve_names_each_guard_unit_found_in_the_failed_state(
     # read as "no deadline has passed yet".
     assert "run-a" in report
     assert "none recorded" in report
+
+
+def _entry(*, name: str) -> Any:
+    """The operations module, asserted to carry the entry `name`."""
+    ops = _ops_surface()
+    assert name in ops.__all__
+    return ops
+
+
+def test_publish_records_the_snapshot_once_before_the_first_package_step(
+    tmp_path: Path,
+) -> None:
+    """Specification "Publish": the snapshot is taken once, before any package moves.
+
+    The snapshot is what a rollback compares against, so taking it after
+    a package step would record Docker's own footprint as the host's
+    baseline and make the cleanup unable to tell the two apart. The
+    phase reaches `publishing` first so that an interrupted install is
+    recoverable rather than invisible.
+    """
+    _entry(name="publish")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="reserved")
+
+    outcome = guard.run_operation(
+        operation="publish", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert outcome.exit_code == 0
+    names = [call.name for call in fake.calls]
+    assert names.index("take_snapshot") < names.index("install_packages")
+    assert len(fake.calls_named(name="take_snapshot")) == 1
+    assert fake.calls_named(name="install_packages")[0].phase == "publishing"
+    assert fake.calls_named(name="take_snapshot")[0].phase == "publishing"
+    paths = _paths(root=tmp_path)
+    assert state.read_phase(paths=paths, run="run-a") == "published"
+    assert fake.calls_named(name="install_packages")[0].detail == (
+        str(paths.inputs_dir(run="run-a")),
+    )
+
+
+def test_a_publish_resumed_from_publishing_keeps_the_first_snapshot(tmp_path: Path) -> None:
+    """Specification "Publish": a resumed publish keeps the snapshot it already took.
+
+    An interrupted install leaves the run `publishing` with packages
+    half-placed. Re-snapshotting there would capture a host that is no
+    longer the baseline, so the resume must reuse the first snapshot and
+    only finish the transaction.
+    """
+    _entry(name="publish")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="reserved")
+    paths = _paths(root=tmp_path)
+
+    first = guard.run_operation(
+        operation="publish", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+    assert first.exit_code == 0
+    (paths.snapshot_dir(run="run-a") / "iptables-save").write_text("# first\n", encoding="utf-8")
+    state.record_phase(paths=paths, run="run-a", phase="publishing")
+
+    resumed_host = _fake(root=tmp_path)
+    outcome = guard.run_operation(
+        operation="publish", run="run-a", env=_env(root=tmp_path, host=resumed_host)
+    )
+
+    assert outcome.exit_code == 0
+    assert resumed_host.calls_named(name="take_snapshot") == ()
+    assert len(resumed_host.calls_named(name="install_packages")) == 1
+    assert (paths.snapshot_dir(run="run-a") / "iptables-save").read_text(
+        encoding="utf-8"
+    ) == "# first\n"
+    assert state.read_phase(paths=paths, run="run-a") == "published"
+
+
+def test_publish_stays_at_publishing_when_the_post_install_condition_check_fails(
+    tmp_path: Path,
+) -> None:
+    """Specification "Publish": `published` only once the condition check has passed.
+
+    The condition check is what proves the installed units cannot start:
+    their effective conditions name the start permission and the commit
+    marker and nothing else. A run that reached `published` without it
+    would be armed over an engine that could start on its own.
+    """
+    _entry(name="publish")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.condition_check = False
+    _record_phase(root=tmp_path, run="run-a", phase="reserved")
+
+    outcome = guard.run_operation(
+        operation="publish", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert outcome.verdict == "refuse"
+    assert outcome.exit_code == 1
+    assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "publishing"
