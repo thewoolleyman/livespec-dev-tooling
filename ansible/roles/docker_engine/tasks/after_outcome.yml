@@ -1,0 +1,83 @@
+---
+# Read the host after a run's outcome with instruments the guard did not
+# write: the run's phase, the commit marker, the units that must keep running,
+# and each family's FORWARD policy against the role's own preflight reading.
+#
+# docker_engine_outcome_strict: true after a confirmation (every check must
+# hold, and the run must be committed); false after a rollback, where the same
+# reads are REPORTED so the failure message carries them, and the rescue's own
+# fail decides the converge.
+
+- name: Read the run's phase
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_state_root }}/runs/{{ docker_engine_run }}/phase"
+  register: docker_engine_outcome_phase_raw
+  become: true
+  failed_when: false
+
+- name: Read the commit marker
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_state_root }}/confirmed"
+  register: docker_engine_outcome_marker_raw
+  become: true
+  failed_when: false
+
+- name: Read the units that must keep running
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ item }}"]
+  loop: "{{ docker_engine_required_units }}"
+  register: docker_engine_outcome_units
+  become: true
+  changed_when: false
+  failed_when: false
+
+- name: Read each family's FORWARD policy now
+  ansible.builtin.command:
+    argv: ["{{ item }}", -w, "5", -S, FORWARD]
+  loop: [iptables, ip6tables]
+  register: docker_engine_forward_after
+  become: true
+  changed_when: false
+  failed_when: false
+
+- name: Hold what the host shows after the outcome
+  ansible.builtin.set_fact:
+    docker_engine_outcome_phase: >-
+      {{ (docker_engine_outcome_phase_raw.content | b64decode | trim)
+         if docker_engine_outcome_phase_raw.content is defined else 'unrecorded' }}
+    docker_engine_outcome_marker_run: >-
+      {{ (docker_engine_outcome_marker_raw.content | b64decode | from_json).run
+         if docker_engine_outcome_marker_raw.content is defined else '' }}
+    docker_engine_outcome_down: >-
+      {{ docker_engine_outcome_units.results | rejectattr('stdout', 'equalto', 'active')
+         | map(attribute='item') | list }}
+    docker_engine_forward_policies_after: >-
+      {{ docker_engine_forward_after.results | map(attribute='stdout_lines')
+         | map('select', 'match', '^-P FORWARD ') | map('join', '') | list }}
+
+- name: Report the host after the outcome
+  ansible.builtin.debug:
+    msg: >-
+      run={{ docker_engine_run }} phase={{ docker_engine_outcome_phase }}
+      committed={{ docker_engine_outcome_marker_run == docker_engine_run }}
+      units_down={{ docker_engine_outcome_down }}
+      forward_before={{ docker_engine_forward_policies_before }}
+      forward_after={{ docker_engine_forward_policies_after }}
+
+- name: Require a committed run on an unchanged host
+  ansible.builtin.assert:
+    that:
+      - docker_engine_outcome_marker_run == docker_engine_run
+      - docker_engine_outcome_phase == 'confirmed'
+      - docker_engine_outcome_down | length == 0
+      - docker_engine_forward_policies_after == docker_engine_forward_policies_before
+    fail_msg: >-
+      Run {{ docker_engine_run }} confirmed but the host is not as required:
+      phase {{ docker_engine_outcome_phase }}, marker names
+      '{{ docker_engine_outcome_marker_run }}', units down
+      {{ docker_engine_outcome_down }}, FORWARD before
+      {{ docker_engine_forward_policies_before }} and after
+      {{ docker_engine_forward_policies_after }}. The run is committed and is
+      NOT rolled back; investigate on the host.
+    success_msg: "run {{ docker_engine_run }} is committed and the host's access and FORWARD policy are unchanged"
+  when: docker_engine_outcome_strict | bool

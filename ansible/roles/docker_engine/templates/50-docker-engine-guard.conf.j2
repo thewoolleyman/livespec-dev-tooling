@@ -1,0 +1,10 @@
+# Managed by the docker_engine role (livespec-dev-tooling). Do not edit.
+#
+# The Docker engine install guard's start condition (design Mechanism 1): this
+# unit cannot start, by ANY path (boot, socket activation, a postinst start, an
+# operator's systemctl start), unless the guard holds the tmpfs start permission
+# or a run has committed. The `|` makes the two an OR. The guard reads these
+# back through busctl and accepts exactly these two conditions.
+[Unit]
+ConditionPathExists=|{{ docker_engine_dropin_permission }}
+ConditionPathExists=|{{ docker_engine_state_root }}/confirmed

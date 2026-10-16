@@ -1,0 +1,51 @@
+---
+# Answer the challenge the observer issued at the end of a passing window
+# (design R8 "Controller freshness", G4). The controller runs its probes only
+# AFTER reading the challenge, and answers with that challenge's nonce, which
+# the guard accepts only for the current challenge, on the current boot, within
+# 120 seconds of issue, and only once. A failed probe here raises, and the
+# rescue rolls the run back: the challenge is never reused, and a new one exists
+# only after a new passing window, which only a new run can have.
+
+- name: Read the guard's challenge
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_runtime_root }}/challenge"
+  register: docker_engine_challenge_raw
+  become: true
+
+- name: Hold the challenge
+  ansible.builtin.set_fact:
+    docker_engine_challenge: "{{ docker_engine_challenge_raw.content | b64decode | from_json }}"
+
+- name: Refuse a challenge issued for another run
+  ansible.builtin.assert:
+    that:
+      - docker_engine_challenge.run == docker_engine_run
+      - docker_engine_challenge.nonce | length > 0
+    fail_msg: "The outstanding challenge names run {{ docker_engine_challenge.run }}, not {{ docker_engine_run }}."
+    success_msg: the challenge is this run's
+
+- name: Re-read the units that must still be running
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ item }}"]
+  loop: "{{ docker_engine_required_units }}"
+  register: docker_engine_required_after_window
+  become: true
+  changed_when: false
+  failed_when: docker_engine_required_after_window.stdout != 'active'
+
+- name: Run the controller-side probes against the host as it is now
+  ansible.builtin.include_tasks: controller_probes.yml
+  vars:
+    docker_engine_probe_stage: challenge
+
+- name: Answer with the challenge's nonce
+  # Into the run's own inputs/, like every other controller write (design G3);
+  # the guard's `confirm` reads it from there.
+  ansible.builtin.copy:
+    content: "{{ docker_engine_challenge.nonce }}\n"
+    dest: "{{ docker_engine_state_root }}/runs/{{ docker_engine_run }}/inputs/challenge-answer"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true

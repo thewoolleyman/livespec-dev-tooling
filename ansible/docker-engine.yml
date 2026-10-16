@@ -1,0 +1,33 @@
+---
+# The Docker engine on a factory host that already runs k3s and Tailscale,
+# installed behind the Docker engine install guard (role docker_engine; read its
+# HOST_VARS.md before running this). Plays name inventory GROUPS only.
+#
+# Its own play, and its own group, on purpose. The guarded transition installs
+# the engine once per host and refuses foreign Docker, and design "Capacity and
+# admission" requires that the first-install logic can never run on a host
+# whose Docker was installed by hand (hp-xubuntu). Binding it to
+# `docker_engine_hosts`, a group no host joins until it is deliberately put
+# there, keeps it off every existing host by construction rather than by a
+# `when`. Folding it into fabro-hosts.yml's factory play is carrier
+# livespec-dev-tooling-2puzjr's, once the factory group and the split of
+# docker_sandbox_slice exist.
+#
+# One host at a time, and the whole play stops at the first failure: a second
+# host must never start its guarded run while the first one's outcome is
+# unread.
+#
+#   just ansible-drift ansible/docker-engine.yml
+#   just ansible-apply ansible/docker-engine.yml
+#   just ansible-apply ansible/docker-engine.yml -e docker_engine_recover=<run>
+#   just ansible-apply ansible/docker-engine.yml -e docker_engine_acknowledge_run=<run>
+
+- name: Docker engine behind the install guard
+  hosts: docker_engine_hosts
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  any_errors_fatal: true
+  roles:
+    - role: docker_engine
+      tags: [docker_engine]

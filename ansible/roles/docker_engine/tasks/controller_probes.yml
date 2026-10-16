@@ -1,0 +1,39 @@
+---
+# The CONTROLLER-SIDE probes (design R8 "Controller freshness"), run on the
+# control node: a NEW Tailscale SSH session, the local LLM service's health
+# endpoint across the tailnet, and a login through the direct-LAN OpenSSH
+# fallback. Each opens a fresh connection with sharing disabled, so a session
+# that predates the change cannot vouch for the host after it. Run once at the
+# preflight and once after the guard issues its challenge; the challenge is
+# answered only if all three pass here, every time.
+#
+# Every probe is bounded well inside the guard's 120-second challenge age, so
+# the three together cannot outlast the challenge they answer.
+
+- name: Open a new Tailscale SSH session to the host ({{ docker_engine_probe_stage }})
+  ansible.builtin.command:
+    argv: "{{ docker_engine_tailscale_ssh_argv }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+  timeout: 45
+
+- name: Read the local LLM service's health across the tailnet ({{ docker_engine_probe_stage }})
+  ansible.builtin.uri:
+    url: "{{ docker_engine_llm_health_url }}"
+    method: GET
+    status_code: 200
+    timeout: "{{ docker_engine_probe_timeout_seconds }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+
+- name: Log in through the LAN fallback ({{ docker_engine_probe_stage }})
+  ansible.builtin.command:
+    argv: "{{ docker_engine_lan_fallback_ssh_argv }}"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+  timeout: 45

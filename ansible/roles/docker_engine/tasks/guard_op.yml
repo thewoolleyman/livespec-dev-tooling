@@ -1,0 +1,97 @@
+---
+# Run ONE guard operation as its own bounded transient oneshot unit (design G1,
+# spec "Bounds"), never as a child of this SSH session:
+#
+#   systemd-run --unit=<name> --wait --collect --property=Type=oneshot
+#     --property=TimeoutStartSec=<budget> --property=TimeoutStopSec=30
+#     --property=KillMode=control-group --property=SendSIGKILL=yes
+#     /usr/local/libexec/docker-engine-guard <op> <run> --window-seconds=<W>
+#
+# so a stalled guard, and every child of it, is gone within its budget plus 30 s
+# whatever happens to the controller, and the guard's lock goes with it. `start`
+# and `observe` run under their FIXED names (design I3), which is what makes the
+# service manager refuse a second one; every other operation gets a
+# per-invocation name.
+#
+# Inputs: docker_engine_op, docker_engine_op_run. Output: docker_engine_op_outcome
+# (op, run, unit, rc, report), and the task FAILS on a non-zero exit unless
+# docker_engine_op_may_refuse is true.
+
+- name: Name the unit for guard operation {{ docker_engine_op }}
+  ansible.builtin.set_fact:
+    docker_engine_op_unit: >-
+      {{ ('docker-engine-guard-' ~ docker_engine_op)
+         if docker_engine_op in ['start', 'observe']
+         else ('docker-engine-guard-' ~ docker_engine_op ~ '-' ~ docker_engine_op_run
+               ~ '-' ~ now(utc=true, fmt='%H%M%S%f')) }}
+    docker_engine_op_budget: "{{ docker_engine_guard_timing.budgets[docker_engine_op] }}"
+
+- name: Mark the journal before guard operation {{ docker_engine_op }}
+  ansible.builtin.command:
+    argv: [date, +%s]
+  register: docker_engine_op_since
+  changed_when: false
+
+- name: Run guard operation {{ docker_engine_op }}
+  ansible.builtin.command:
+    argv:
+      - systemd-run
+      - "--unit={{ docker_engine_op_unit }}"
+      - --wait
+      - --collect
+      - --quiet
+      - --property=Type=oneshot
+      - "--property=TimeoutStartSec={{ docker_engine_op_budget }}"
+      - --property=TimeoutStopSec=30
+      - --property=KillMode=control-group
+      - --property=SendSIGKILL=yes
+      - "{{ docker_engine_guard_executable }}"
+      - "{{ docker_engine_op }}"
+      - "{{ docker_engine_op_run }}"
+      - "--window-seconds={{ docker_engine_window_seconds }}"
+  # The controller waits through Ansible's async poller rather than holding one
+  # SSH channel open for up to the operation's whole budget; the unit's own
+  # lifetime never depends on either.
+  async: "{{ docker_engine_op_budget | int + 120 }}"
+  poll: 10
+  register: docker_engine_op_run_result
+  become: true
+  changed_when: true
+  failed_when: false
+
+- name: Read what the unit reported for guard operation {{ docker_engine_op }}
+  # The guard writes its verdict, the holding run and anything that blocked it
+  # to its unit's journal; a bare exit code tells an operator none of that.
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - "--unit={{ docker_engine_op_unit }}.service"
+      - "--since=@{{ docker_engine_op_since.stdout }}"
+      - --output=cat
+      - --no-pager
+  register: docker_engine_op_journal
+  become: true
+  changed_when: false
+  failed_when: false
+
+- name: Hold the outcome of guard operation {{ docker_engine_op }}
+  ansible.builtin.set_fact:
+    docker_engine_op_outcome:
+      op: "{{ docker_engine_op }}"
+      run: "{{ docker_engine_op_run }}"
+      unit: "{{ docker_engine_op_unit }}"
+      rc: "{{ docker_engine_op_run_result.rc | default(-1) }}"
+      report: "{{ docker_engine_op_journal.stdout_lines | default([]) }}"
+
+- name: Report the outcome of guard operation {{ docker_engine_op }}
+  ansible.builtin.debug:
+    var: docker_engine_op_outcome
+
+- name: Fail on a refusal or failure of guard operation {{ docker_engine_op }}
+  ansible.builtin.fail:
+    msg: >-
+      docker-engine-guard {{ docker_engine_op }} {{ docker_engine_op_run }} exited
+      {{ docker_engine_op_outcome.rc }}: {{ docker_engine_op_outcome.report | join(' | ') }}
+  when:
+    - docker_engine_op_outcome.rc | int != 0
+    - not (docker_engine_op_may_refuse | default(false) | bool)

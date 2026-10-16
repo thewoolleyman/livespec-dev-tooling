@@ -1,0 +1,181 @@
+---
+# Design Mechanism 1 with R5/F5/G6's proofs: the start condition is written
+# BEFORE any package exists, and is proven twice before `dpkg -i` runs — once
+# as a MECHANISM on this host's systemd with a throwaway unit, and once against
+# the audited packages' own unit files in a scratch root (scratch.yml). The
+# third proof, after the install, reads the manager's effective conditions
+# through busctl and is the guard's own (rider point 6), inside `publish`.
+
+- name: Survey the drop-ins already present on the three guarded units
+  ansible.builtin.find:
+    paths:
+      - /etc/systemd/system/containerd.service.d
+      - /etc/systemd/system/docker.service.d
+      - /etc/systemd/system/docker.socket.d
+    patterns: "*.conf"
+  register: docker_engine_existing_dropins
+  become: true
+
+- name: Refuse any drop-in on a guarded unit but the guard's and the fleet's sandbox_storage one
+  # Design G6 and rider point 7: an override nobody reviewed could undo the
+  # start condition, while the sandbox_storage RequiresMountsFor drop-in
+  # (present on hp, absent on gmktec) is tolerated on the two services only.
+  vars:
+    docker_engine_unexpected: >-
+      {{ docker_engine_existing_dropins.files | map(attribute='path')
+         | reject('search', '/50-docker-engine-guard\.conf$')
+         | reject('search', '/(containerd|docker)\.service\.d/10-requires-sandbox-storage\.conf$')
+         | list }}
+  ansible.builtin.assert:
+    that:
+      - docker_engine_unexpected | length == 0
+    fail_msg: "Unexpected drop-ins on a guarded unit: {{ docker_engine_unexpected }}"
+    success_msg: no unexpected drop-in on a guarded unit
+
+- name: Create each guarded unit's drop-in directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [containerd.service, docker.service, docker.socket]
+  become: true
+
+- name: Write the start condition for each guarded unit
+  ansible.builtin.template:
+    src: 50-docker-engine-guard.conf.j2
+    dest: "/etc/systemd/system/{{ item }}.d/50-docker-engine-guard.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    docker_engine_dropin_permission: "{{ docker_engine_runtime_root }}/allow-start"
+  loop: [containerd.service, docker.service, docker.socket]
+  become: true
+
+- name: Prove the start-condition mechanism on this host's systemd
+  vars:
+    docker_engine_probe_allow: "{{ docker_engine_runtime_root }}/probe-allow"
+    docker_engine_probe_props: [-p, ConditionResult, -p, ActiveState, -p, ExecMainStartTimestampMonotonic]
+  block:
+    - name: Ensure the guard's runtime directory exists as the guard creates it
+      ansible.builtin.file:
+        path: "{{ docker_engine_runtime_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      become: true
+
+    - name: Ensure the probe's test permission is absent
+      ansible.builtin.file:
+        path: "{{ docker_engine_probe_allow }}"
+        state: absent
+      become: true
+
+    - name: Install the probe unit
+      ansible.builtin.template:
+        src: docker-engine-guard-probe.service.j2
+        dest: /etc/systemd/system/docker-engine-guard-probe.service
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+
+    - name: Create the probe unit's drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/docker-engine-guard-probe.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+
+    - name: Give the probe the identical two-line OR condition, on its own permission
+      # Its own path, never allow-start (design F5 step 1), and the real marker
+      # path, which the fresh-run assertions have already found absent.
+      ansible.builtin.template:
+        src: 50-docker-engine-guard.conf.j2
+        dest: /etc/systemd/system/docker-engine-guard-probe.service.d/50-docker-engine-guard.conf
+        owner: root
+        group: root
+        mode: "0644"
+      vars:
+        docker_engine_dropin_permission: "{{ docker_engine_probe_allow }}"
+      become: true
+
+    - name: Load the drop-ins and the probe
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      become: true
+
+    - name: Start the probe without its permission
+      ansible.builtin.command:
+        argv: [systemctl, start, docker-engine-guard-probe.service]
+      become: true
+      changed_when: true
+
+    - name: Read the probe after the denied start
+      ansible.builtin.command:
+        argv: "{{ ['systemctl', 'show', 'docker-engine-guard-probe.service'] + docker_engine_probe_props }}"
+      register: docker_engine_probe_denied
+      become: true
+      changed_when: false
+
+    - name: Require the denied start to have been skipped by its condition
+      ansible.builtin.assert:
+        that:
+          - "'ConditionResult=no' in docker_engine_probe_denied.stdout_lines"
+          - "'ActiveState=inactive' in docker_engine_probe_denied.stdout_lines"
+          - "'ExecMainStartTimestampMonotonic=0' in docker_engine_probe_denied.stdout_lines"
+        fail_msg: "The OR condition did not hold the probe down: {{ docker_engine_probe_denied.stdout_lines }}"
+        success_msg: the probe was skipped by its condition
+
+    - name: Grant the probe its permission
+      ansible.builtin.file:
+        path: "{{ docker_engine_probe_allow }}"
+        state: touch
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+
+    - name: Start the probe with its permission
+      ansible.builtin.command:
+        argv: [systemctl, start, docker-engine-guard-probe.service]
+      become: true
+      changed_when: true
+
+    - name: Read the probe after the permitted start
+      ansible.builtin.command:
+        argv: "{{ ['systemctl', 'show', 'docker-engine-guard-probe.service'] + docker_engine_probe_props }}"
+      register: docker_engine_probe_permitted
+      become: true
+      changed_when: false
+
+    - name: Require the permitted start to have run (the positive control)
+      # Without this the denied start proves nothing: a unit that never runs at
+      # all reads exactly like one held down by its condition.
+      ansible.builtin.assert:
+        that:
+          - "'ConditionResult=yes' in docker_engine_probe_permitted.stdout_lines"
+          - "'ExecMainStartTimestampMonotonic=0' not in docker_engine_probe_permitted.stdout_lines"
+        fail_msg: "The probe did not run with its permission: {{ docker_engine_probe_permitted.stdout_lines }}"
+        success_msg: the probe ran with its permission
+
+  always:
+    - name: Remove the probe's permission, unit and drop-in
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ docker_engine_probe_allow }}"
+        - /etc/systemd/system/docker-engine-guard-probe.service.d
+        - /etc/systemd/system/docker-engine-guard-probe.service
+      become: true
+
+    - name: Unload the probe
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      become: true

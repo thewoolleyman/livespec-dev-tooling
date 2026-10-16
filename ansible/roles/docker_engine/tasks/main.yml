@@ -1,0 +1,57 @@
+---
+# docker_engine — install the Docker engine on a factory host that already runs
+# k3s and Tailscale, without risking the host's network access. See HOST_VARS.md.
+#
+# Governing specification: `## Docker engine install guard` and `## Fabro
+# factory host provisioning` in SPECIFICATION/non-functional-requirements.md.
+# Governing design: docs/docker-engine-guard-design.md, revisions 5 to 8 and the
+# implementation rider. Work-item livespec-dev-tooling-xxfqqr.
+#
+# WHO DECIDES WHAT. Every decision about the guarded transition (whether a run
+# may reserve, publish, arm, start, observe, commit or roll back) is the
+# GUARD's, made under its one lock against its own records. The role's part is
+# what the guard cannot do from the host: refuse an unsafe host before anything
+# is written, write the run's inputs and the start-condition drop-ins, fence the
+# package step from apt, run the CONTROLLER-SIDE probes and answer the
+# challenge, and roll back when anything it observes fails (rider point 5).
+#
+# THE SEQUENCE ON A FRESH HOST: preflight (read-only) -> classify (read-only) ->
+# install the guard -> reserve -> drop-ins, mechanism proof, inputs -> apt
+# fence -> publish (the inert, audited install) -> post-install proof -> arm ->
+# start -> observe -> controller probes -> confirm. From reserve on, any
+# failure rolls the run back through the guard. Under --check the role stops
+# after the guard's installation is compared, having changed nothing.
+
+- name: Refuse a role configuration that cannot be converged
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Refuse a host whose access or workload is not healthy now
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Classify what the guard and the host already hold
+  ansible.builtin.include_tasks: classify.yml
+
+- name: Refuse every host state the role does not act on
+  ansible.builtin.include_tasks: refusals.yml
+
+- name: Install the guard
+  ansible.builtin.include_tasks: install_guard.yml
+
+- name: Stop a drift read here, having changed nothing
+  # Everything past this point drives the guard, and a guard operation is never
+  # simulated: --check reporting a would-be reserve would be a claim about a
+  # transition nobody ran.
+  ansible.builtin.meta: end_host
+  when: ansible_check_mode
+
+- name: Carry out the operator's explicit recovery or acknowledgement
+  ansible.builtin.include_tasks: operator.yml
+  when: docker_engine_class in ['unfinished', 'rollback-partial']
+
+- name: Validate a committed host, reconfiguring only through the guard
+  ansible.builtin.include_tasks: post_commit.yml
+  when: docker_engine_class == 'committed'
+
+- name: Install the engine through one guarded run
+  ansible.builtin.include_tasks: fresh_run.yml
+  when: docker_engine_class == 'fresh'
