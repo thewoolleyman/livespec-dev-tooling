@@ -138,6 +138,22 @@
           loop: "{{ range(1, docker_engine_acceptance_instances | int) | list }}"
           changed_when: true
 
+        # The role's controller runs on the control node and reaches each
+        # guest through a jump over this host (acceptance/inventory-kvm.yml),
+        # so it needs the guest key locally. Every instance shares instance
+        # 0's key, which the clone above copied.
+        - name: Fetch the guest key to the control node
+          ansible.builtin.fetch:
+            src: "{{ docker_engine_acceptance_state_dir }}/id_ed25519"
+            dest: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/docker-engine-guard-acceptance/{{ inventory_hostname }}/id_ed25519"
+            flat: true
+
+        - name: Make the fetched guest key private
+          delegate_to: localhost
+          ansible.builtin.file:
+            path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/docker-engine-guard-acceptance/{{ inventory_hostname }}/id_ed25519"
+            mode: "0600"
+
     - name: Restore baseline and boot every instance
       when: docker_engine_acceptance_action == 'up'
       ansible.builtin.shell:
