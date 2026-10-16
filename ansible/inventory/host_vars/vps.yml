@@ -21,9 +21,6 @@ btop_loop_expected_hostname: vmi3006760
 # --- claude_ntfy ---
 claude_ntfy_topic: vps-claude-ready-4267
 
-# --- code_pwa_proxy ---
-code_pwa_proxy_serve_hostname: vps.perch-rudd.ts.net
-
 # --- codex_config ---
 codex_config_user: ubuntu
 
