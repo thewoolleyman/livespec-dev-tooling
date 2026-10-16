@@ -360,3 +360,88 @@ def test_the_resync_window_is_the_largest_effective_interval_plus_two_minutes(
     )
     assert {one.source for one in defaults} == {resync.DEFAULT_SOURCE}
     assert resync.resync_window_seconds(intervals=defaults) == model.DEFAULT_WINDOW_SECONDS
+
+
+def _preflight_bus(*, group: str = "", addresses: str = _ADDRESSES_CLEAR) -> _Commands:
+    """A bus answering every read the whole preflight makes."""
+    preflight = importlib.import_module(_PREFLIGHT_MODULE)
+    return _Commands(
+        answers={
+            preflight.ADDRESS_SHOW_ARGV: addresses,
+            preflight.ROUTE_SHOW_ARGV["ipv4"]: _ROUTES_CLEAR,
+            preflight.ROUTE_SHOW_ARGV["ipv6"]: _ROUTES6,
+            preflight.GETENT_GROUP_ARGV: group,
+            preflight.GETENT_PASSWD_ARGV: _PASSWD_TABLE,
+        }
+    )
+
+
+def test_the_preflight_refuses_a_resync_interval_above_five_minutes(tmp_path: Path) -> None:
+    """Above five minutes the install is refused, and every refusal names its source.
+
+    A reconciler slower than five minutes would need a window longer
+    than the dead-man's budgets cover, so the install is refused rather
+    than stretched to fit. The three refusal families compose into ONE
+    answer because the preflight is one decision: an operator reading it
+    on a machine reachable only over Tailscale needs every reason at
+    once, not the first one in some order.
+    """
+    assert "preflight_refusals" in importlib.import_module(_PREFLIGHT_MODULE).__all__
+    preflight = importlib.import_module(_PREFLIGHT_MODULE)
+    resync = importlib.import_module(_RESYNC_MODULE)
+
+    ordinary = _k3s_tree(
+        root=tmp_path / "ordinary",
+        dropins={"10-router.yaml": _K3S_DROPIN_ROUTER, "20-typo.yaml": _K3S_DROPIN_TYPO},
+    )
+    assert (
+        preflight.preflight_refusals(
+            runner=_preflight_bus(),
+            declared=_DECLARED_CLEAR,
+            config=ordinary["config"],
+            dropins=ordinary["dropins"],
+        )
+        == ()
+    )
+
+    slow = _k3s_tree(root=tmp_path / "slow", dropins={"10-slow.yaml": _K3S_DROPIN_SLOW})
+    assert preflight.preflight_refusals(
+        runner=_preflight_bus(),
+        declared=_DECLARED_CLEAR,
+        config=slow["config"],
+        dropins=slow["dropins"],
+    ) == (
+        f"kube-router-arg {resync.SYNC_PERIOD_ARGUMENT} is 420s in "
+        f"{slow['dropins'] / '10-slow.yaml'}, above the {resync.MAX_RESYNC_SECONDS}s maximum",
+    )
+
+    every = preflight.preflight_refusals(
+        runner=_preflight_bus(group=_GROUP_WITH_MEMBERS, addresses=_ADDRESSES_OVERLAPPING),
+        declared=_DECLARED_OVERLAPPING,
+        config=slow["config"],
+        dropins=slow["dropins"],
+    )
+    assert every == (
+        "172.17.0.0/16 overlaps the address 172.17.3.1/24 on br-lab",
+        "172.17.0.0/16 overlaps the declared cluster pod CIDR 172.16.0.0/12",
+        "these accounts are in the docker group and could reach the API: "
+        "('alice', 'bob', 'builder')",
+        f"kube-router-arg {resync.SYNC_PERIOD_ARGUMENT} is 420s in "
+        f"{slow['dropins'] / '10-slow.yaml'}, above the {resync.MAX_RESYNC_SECONDS}s maximum",
+    )
+
+
+def test_the_real_host_answers_the_whole_preflight(tmp_path: Path) -> None:
+    """The host layer the factory runs IS the preflight above, one delegation deep."""
+    assert "preflight_refusals" in importlib.import_module(_PREFLIGHT_MODULE).__all__
+    slow = _k3s_tree(root=tmp_path / "slow", dropins={"10-slow.yaml": _K3S_DROPIN_SLOW})
+    resync = importlib.import_module(_RESYNC_MODULE)
+
+    host = _real_host(root=tmp_path / "guard", commands=_preflight_bus())
+
+    assert host.preflight_refusals(
+        declared=_DECLARED_CLEAR, config=slow["config"], dropins=slow["dropins"]
+    ) == (
+        f"kube-router-arg {resync.SYNC_PERIOD_ARGUMENT} is 420s in "
+        f"{slow['dropins'] / '10-slow.yaml'}, above the {resync.MAX_RESYNC_SECONDS}s maximum",
+    )
