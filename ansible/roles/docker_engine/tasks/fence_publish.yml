@@ -93,7 +93,9 @@
           - -I
           - -B
           - "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/_docker_engine_guard_aptlock.py"
+          - --ready-file
           - "{{ docker_engine_aptlock_ready }}"
+          - --wait-seconds
           - "{{ docker_engine_lock_wait_seconds }}"
       become: true
       changed_when: true

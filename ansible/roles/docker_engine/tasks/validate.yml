@@ -38,9 +38,9 @@
   ansible.builtin.set_fact:
     docker_engine_guard_timing: >-
       {{ lookup('ansible.builtin.pipe',
-                'python3 -I '
-                ~ (docker_engine_guard_source_root ~ '/livespec_dev_tooling/fleet/docker_engine_guard_budgets.py') | quote
-                ~ ' ' ~ (docker_engine_window_seconds | int | string)) | from_json }}
+                'env PYTHONPATH=' ~ (docker_engine_guard_source_root | realpath) | quote
+                ~ ' python3 -m livespec_dev_tooling.fleet.docker_engine_guard_budgets'
+                ~ ' --window-seconds ' ~ (docker_engine_window_seconds | int | string)) | from_json }}
 
 - name: Hold the backstop that restores the apt timers if this controller is lost
   # Design F6: the worst-case guarded run (the install budget, the deadline N,
@@ -49,5 +49,5 @@
   ansible.builtin.set_fact:
     docker_engine_apt_restore_after: >-
       {{ docker_engine_guard_timing.budgets.publish
-         + docker_engine_guard_timing.deadline
+         + docker_engine_guard_timing.deadman_deadline_seconds
          + docker_engine_guard_timing.budgets.rollback + 1800 }}
