@@ -15,7 +15,7 @@
 # whichever instance happened to be resolved.
 
 - name: Fabro sandbox host
-  hosts: hp-xubuntu
+  hosts: sandbox_hosts
   gather_facts: true
   roles:
     - role: container_reclaim
@@ -59,7 +59,7 @@
         label: "{{ fabro_server_instance.unit_name }}"
 
 - name: Fabro services on the dev host
-  hosts: vps
+  hosts: dev_hosts
   gather_facts: true
   roles:
     - role: container_reclaim

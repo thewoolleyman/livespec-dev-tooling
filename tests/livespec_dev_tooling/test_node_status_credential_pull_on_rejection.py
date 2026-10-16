@@ -505,27 +505,38 @@ def test_the_role_tells_the_refresh_tool_which_node_and_which_server_it_pulls_fr
         assert f"{variable}=" in tasks
 
 
+def _inventory_k3s_server() -> str:
+    """The `ci_pool` member whose `cluster_role` is `server`, read from the inventory."""
+    inventory = (_REPO_ROOT / "ansible" / "inventory" / "legacy.yml").read_text(encoding="utf-8")
+    pool = inventory.split("        ci_pool:\n", 1)[1]
+    server = re.search(
+        r"^ {12}(?P<host>[\w.-]+):\n(?: {14}.*\n)*? {14}cluster_role: server$",
+        pool,
+        re.MULTILINE,
+    )
+    assert server is not None, "the inventory's ci_pool must name one server"
+    return server["host"]
+
+
 def test_the_refresh_tool_and_the_role_name_the_same_control_plane_node() -> None:
     """An un-provisioned host must fail against the right name, not an empty string.
 
     The shipped script's fallback and the role's default are two spellings of one
     pool fact, and a disagreement would make a converged node and an
-    un-provisioned one pull from different hosts.
+    un-provisioned one pull from different hosts. The role resolves the server
+    from the inventory (livespec-dev-tooling-prdxxe), so the script's literal
+    fallback must equal the inventory's `ci_pool` server.
     """
     shipped = re.search(
         r'^REMOTE_HOST="\$\{NODE_STATUS_REMOTE_HOST:-(?P<host>[^}"]+)\}"$',
         _REFRESH_TOOL.read_text(encoding="utf-8"),
         re.MULTILINE,
     )
-    declared = re.search(
-        r"^node_status_credential_server_host: (?P<host>\S+)$",
-        _ROLE_DEFAULTS.read_text(encoding="utf-8"),
-        re.MULTILINE,
-    )
+    defaults = _ROLE_DEFAULTS.read_text(encoding="utf-8")
 
     assert shipped is not None
-    assert declared is not None
-    assert shipped["host"] == declared["host"]
+    assert "selectattr('cluster_role', 'equalto', 'server')" in defaults
+    assert shipped["host"] == _inventory_k3s_server()
 
 
 def test_the_boot_converge_remints_every_agent_nodes_node_status_rbac() -> None:

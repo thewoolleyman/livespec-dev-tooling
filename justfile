@@ -278,6 +278,7 @@ check:
         check-work-item-status-vocabulary
         check-wrapper-shape
         check-ansible-lint
+        check-ansible-hostname-free
         check-lint
         check-format
         check-types
@@ -322,6 +323,12 @@ check:
 
 check-ansible-lint:
     uvx --from ansible-lint==26.8.0 --with ansible-core==2.21.4 ansible-lint ansible/
+
+# A machine is bound ONLY through the inventory's groups and host_vars
+# (livespec-dev-tooling-prdxxe): a play's `hosts:` field names groups, and no
+# role value equals an inventory host name or carries its tailnet name.
+check-ansible-hostname-free:
+    uv run python -m livespec_dev_tooling.ansible_hostname_free
 
 # `ansible-drift` — the drift report. This is what replaced the bespoke
 # verify-installed-tree.sh: it reports what the host would change and changes

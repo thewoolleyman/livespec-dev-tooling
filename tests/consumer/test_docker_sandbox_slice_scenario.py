@@ -545,7 +545,7 @@ def test_the_pending_restart_is_recorded_for_a_daemon_that_has_not_loaded_the_sl
 def test_the_play_includes_the_role_for_the_sandbox_host_under_its_own_tag() -> None:
     """The role reaches hp-xubuntu the way the spec section requires: through the play."""
     play = _hp_xubuntu_play()
-    assert "hosts: hp-xubuntu" in play, "this is the play that targets the sandbox host"
+    assert "hosts: sandbox_hosts" in play, "this is the play that targets the sandbox host group"
     entry = re.search(
         rf"^    - role: {_ROLE_NAME}\n      tags: \[(?P<tags>[^\]]+)\]$", play, re.MULTILINE
     )

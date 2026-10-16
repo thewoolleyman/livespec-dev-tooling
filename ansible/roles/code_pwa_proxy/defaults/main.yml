@@ -31,8 +31,9 @@ code_pwa_proxy_distro_nginx_unit: nginx.service
 # also what the post-install probe greps for, so it lives in one place.
 code_pwa_proxy_sw_registration: "navigator.serviceWorker.register('/sw.js').catch(console.warn);"
 
-# Tailscale Serve publication. The hostname is a HOST FACT, not a default —
-# see HOST_VARS.md in this role directory.
+# Tailscale Serve publication. The hostname is a HOST FACT, not a default, so
+# `code_pwa_proxy_serve_hostname` has NO default here: it comes from host_vars
+# (see HOST_VARS.md in this role directory), and a host that lacks it fails the
+# play rather than publishing under another machine's name.
 code_pwa_proxy_tailscale_bin: /usr/bin/tailscale
-code_pwa_proxy_serve_hostname: vps.perch-rudd.ts.net
 code_pwa_proxy_serve_https_port: 8443

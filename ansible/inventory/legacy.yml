@@ -19,6 +19,13 @@
 #   ci_pool       — the k3s cluster's nodes. `cluster_role` selects the
 #                   server-only steps, replacing install-node.sh's STEP_SKIP.
 #   sandbox_hosts — the Fabro sandbox machines.
+#   usb_backup_hosts — machines with a committed local USB backup volume
+#                   (ansible/poweredge-backup.yml).
+#   home_lab      — the machines on the maintainer's home LAN.
+#
+# A play names one of these GROUPS, never a host: a machine is bound only here
+# and in host_vars (livespec-dev-tooling-prdxxe; `just
+# check-ansible-hostname-free` refuses a regression).
 #
 # ONE HOST IS IN TWO GROUPS, AND THAT IS THE POINT. `hp-xubuntu` is a Fabro
 # FACTORY host that also joins the k3s pool as a factory-only agent
@@ -62,6 +69,9 @@ all:
           hosts:
             hp-xubuntu:
               ansible_user: cwoolley
+        usb_backup_hosts:
+          hosts:
+            poweredge-xubuntu:
         # The machines on the maintainer's home LAN, which reach one another
         # by direct OpenSSH as a fallback that does not depend on Tailscale
         # (ansible/lan-ssh-fallback.yml, role lan_ssh_fallback). The control
