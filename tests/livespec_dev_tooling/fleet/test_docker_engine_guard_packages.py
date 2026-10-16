@@ -80,6 +80,42 @@ def _deb_name(*, package: str, version: str) -> str:
     return f"{package}_{version}_amd64.deb"
 
 
+def _control_listing(*, scripts: tuple[str, ...]) -> str:
+    """`dpkg-deb -I <deb>`'s recorded output, carrying `scripts` as executables.
+
+    The shape is measured and the ASTERISK is the load-bearing part of
+    it: `dpkg-deb -I` with no member names lists the control archive's
+    members before printing the control stanza, and only an EXECUTABLE
+    member is marked. That mark is what picks the maintainer scripts out
+    of a listing that also names `control` and `md5sums`.
+    """
+    members = "".join(
+        f"     714 bytes,    10 lines   *  {script}             #!/bin/sh\n" for script in scripts
+    )
+    return (
+        " new Debian package, version 2.0.\n"
+        " size 20418432 bytes: control archive=4096 bytes.\n"
+        "     503 bytes,    13 lines      control              \n"
+        "   18274 bytes,   266 lines      md5sums              \n"
+        f"{members}"
+        " Package: docker.io\n"
+        " Version: 29.1.3-0ubuntu4.1\n"
+    )
+
+
+def _control_listings() -> dict[str, str]:
+    """Each audited archive's control listing, carrying exactly the allowed script.
+
+    The DEFAULT for every runner, because every test but the one driving
+    a changed script set needs the audited shape — one executable member,
+    named by the committed allowlist.
+    """
+    return {
+        _deb_name(package=package, version=version): _control_listing(scripts=("postinst",))
+        for package, version in (_ENGINE, _SHIM)
+    }
+
+
 def _index_stanza(*, package: str, version: str, digest: str) -> str:
     """One `apt-cache show` stanza, in the shape the archive index carries it."""
     return (
@@ -92,6 +128,14 @@ def _index_stanza(*, package: str, version: str, digest: str) -> str:
     )
 
 
+# The control-archive read, and how many argv tokens it carries.
+# `dpkg-deb -I <deb>` prints the whole archive's LISTING and
+# `dpkg-deb -I <deb> <member>` prints one member's bytes, so the two
+# reads share every token a prefix can match and differ only in ARITY.
+_CONTROL_READ = ("dpkg-deb", "-I")
+_LISTING_ARGC = 3
+
+
 @dataclass(kw_only=True)
 class _RecordedRunner:
     """The one injectable runner, answering RECORDED output and recording each call.
@@ -101,14 +145,23 @@ class _RecordedRunner:
     order and then repeats the last, which is how the SAME `dpkg-query`
     the fence runs on both sides of the install answers the host before
     the engine landed and then the host after it.
+
+    `listings` is keyed by archive file name rather than by a prefix,
+    because the control-archive listing is the one answer no prefix can
+    select — see `_CONTROL_READ` above.
     """
 
     result: Any
     outputs: list[tuple[tuple[str, ...], list[str]]] = field(default_factory=list)
+    listings: dict[str, str] = field(default_factory=_control_listings)
     calls: list[Any] = field(default_factory=list)
 
     def __call__(self, *, command: Any) -> Any:
         self.calls.append(command)
+        if tuple(command.argv[:2]) == _CONTROL_READ and len(command.argv) == _LISTING_ARGC:
+            return self.result(
+                returncode=0, stdout=self.listings.get(Path(command.argv[2]).name, "")
+            )
         for prefix, queued in self.outputs:
             if tuple(command.argv[: len(prefix)]) == prefix:
                 return self.result(
@@ -476,6 +529,51 @@ def test_the_package_step_refuses_a_deb_the_archive_index_and_digests_do_not_vou
 
         assert outcome.refusal is not None
         assert expected in outcome.refusal
+        assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
+def test_the_package_step_refuses_a_deb_whose_maintainer_scripts_are_not_the_allowlists(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the committed digests cover the whole SET.
+
+    The per-script digest loop walks the names the ALLOWLIST carries, so
+    it is entirely silent about a script the archive carries and the
+    allowlist does not — a program that would run as root during the
+    install having been read by nobody, and the cheapest way for a
+    rebuilt or substituted archive to get one there. The committed
+    digests are only a complete statement about the scripts if the set
+    they cover is the set the archive holds, so the SET is compared
+    before any digest is.
+
+    Both directions refuse, and the second is not symmetry for its own
+    sake: an allowlist naming a script the archive no longer carries is
+    a committed audit that has gone stale, and reading it as "that
+    digest simply has nothing to check" would let the staleness through.
+    """
+    assert _RUNNER_PATH.is_file()
+    assert _AUDIT_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    payload = _payload(cache=tmp_path / "cache")
+    engine_deb = _deb_name(package=_ENGINE[0], version=_ENGINE[1])
+
+    for scripts, expected in (
+        (("postinst", "postrm"), "postrm"),
+        ((), "not the ('postinst',)"),
+    ):
+        inputs = _declare(root=tmp_path, payload=payload)
+        runner = _RecordedRunner(
+            result=runner_module.CommandOutput,
+            outputs=_fenced_outputs(),
+            listings={**_control_listings(), engine_deb: _control_listing(scripts=scripts)},
+        )
+
+        outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+        assert outcome.refusal is not None
+        assert expected in outcome.refusal
+        assert engine_deb in outcome.refusal
         assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
