@@ -150,12 +150,19 @@ def plan_footprint(*, current: FirewallTable, snapshot: FirewallTable) -> Footpr
     """Exactly Docker's rules and chains in this table, and nothing else's.
 
     A chain is Docker's when its name starts with `DOCKER` and the
-    snapshot does not have it; a rule is Docker's when it references the
-    default bridge, the default subnet, or one of those chains. Matching
-    on a TOKEN rather than a substring is what keeps a hypothetical
-    `docker0-shim` interface or a `172.17.0.0/16`-prefixed string out of
-    the set: the canonical rule line is already whitespace-normalized, so
-    its tokens are the rule's actual arguments.
+    snapshot does not have it; a rule is Docker's when it is absent from
+    the snapshot AND references the default bridge, the default subnet,
+    or one of those chains. Matching on a TOKEN rather than a substring
+    is what keeps a hypothetical `docker0-shim` interface or a
+    `172.17.0.0/16`-prefixed string out of the set: the canonical rule
+    line is already whitespace-normalized, so its tokens are the rule's
+    actual arguments.
+
+    "ABSENT FROM THE SNAPSHOT" IS NOT REDUNDANT with the name match, and
+    the asymmetry is why it stands as its own filter: anything the
+    snapshot holds is the HOST's, and removing it is damage the rollback
+    cannot undo, because the snapshot is the only record of what the host
+    looked like and it does not say who put each line there.
     """
     docker_chains = tuple(
         chain
@@ -163,7 +170,12 @@ def plan_footprint(*, current: FirewallTable, snapshot: FirewallTable) -> Footpr
         if chain.startswith(DOCKER_CHAIN_PREFIX) and chain not in snapshot.chains
     )
     marks = {DOCKER_BRIDGE, DOCKER_SUBNET, *docker_chains}
+    recorded = set(snapshot.rules)
     return FootprintPlan(
-        delete_rules=tuple(rule for rule in current.rules if not marks.isdisjoint(rule.split())),
+        delete_rules=tuple(
+            rule
+            for rule in current.rules
+            if rule not in recorded and not marks.isdisjoint(rule.split())
+        ),
         delete_chains=docker_chains,
     )
