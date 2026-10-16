@@ -24,6 +24,10 @@ all:
         ansible_ssh_common_args: >-
           -o ProxyJump=cwoolley@poweredge-xubuntu
           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+        # Each guest is its own single-node k3s server (baseline.sh), named
+        # guard-vm, which root reaches over ssh as guard-vm.
+        docker_engine_k3s_node: guard-vm
+        docker_engine_k3s_server: guard-vm
         docker_engine_must_stay_running:
           - local-homelab-llama-server.service
         docker_engine_dpkg_config_digests:
