@@ -720,3 +720,105 @@ def test_after_the_post_commit_steps_confirm_validates_the_committed_installatio
     assert outcome.verdict == "refuse"
     assert "digest" in outcome.reason
     assert state.read_phase(paths=_paths(root=drifted), run="run-a") == "confirmed"
+
+
+_POSTCONDITIONS_HOLDING = {
+    "each FORWARD policy as snapshotted": True,
+    "each watched sysctl as snapshotted": True,
+    "no Docker rule": True,
+    "no docker0": True,
+    "no socket, process, queued job or pending start": True,
+    "no start permission": True,
+}
+
+
+def _commit_entry(*, name: str) -> Any:
+    """The commit module, asserted to carry the entry `name`.
+
+    Asserted at the top of each test rather than once, so a Red fails on
+    the entry it is driving instead of on whichever test happened to run
+    first.
+    """
+    commit = importlib.import_module(_COMMIT_MODULE)
+    assert name in commit.__all__
+    return commit
+
+
+def _verify_run(*, root: Path, postconditions: dict[str, bool]) -> Any:
+    """Run `verify` through the whole guard with `postconditions` injected."""
+    guard = importlib.import_module(_GUARD_MODULE)
+    fake = _fake(root=root)
+    fake.postconditions = postconditions
+    return guard.run_operation(operation="verify", run="run-a", env=_env(root=root, host=fake))
+
+
+def test_verify_rereads_the_postconditions_and_promotes_only_a_wholly_clean_host(
+    tmp_path: Path,
+) -> None:
+    """Specification "After the commit", the `verify` sentence.
+
+    `verify` is how a `rollback-partial` run ever ends. The reservation
+    stays with that run until it does, so nothing else can reserve the
+    host -- which is the correct state while Docker's footprint may
+    still be on it, and the reason the promotion is the single most
+    consequential write in this file: it is what lets a LATER run start.
+
+    So it is made only when EVERY postcondition holds, re-read now
+    rather than taken from what the rollback recorded. A partial
+    recovery that read as complete would admit a fresh install onto a
+    host still carrying a `docker0`, a Docker rule, or a daemon.
+
+    An empty set refuses rather than promoting. A read that came back
+    with nothing is not evidence that every postcondition holds; it is
+    evidence that the read did not happen.
+    """
+    state = importlib.import_module(_STATE_MODULE)
+    _commit_entry(name="verify")
+
+    failing = tmp_path / "still-failing"
+    _record_phase(root=failing, run="run-a", phase="rollback-partial")
+    outcome = _verify_run(
+        root=failing, postconditions={**_POSTCONDITIONS_HOLDING, "no docker0": False}
+    )
+    assert outcome.verdict == "refuse"
+    assert "no docker0" in outcome.reason
+    assert state.read_phase(paths=_paths(root=failing), run="run-a") == "rollback-partial"
+
+    unread = tmp_path / "read-back-empty"
+    _record_phase(root=unread, run="run-a", phase="rollback-partial")
+    assert _verify_run(root=unread, postconditions={}).verdict == "refuse"
+    assert state.read_phase(paths=_paths(root=unread), run="run-a") == "rollback-partial"
+
+    repaired = tmp_path / "repaired"
+    _record_phase(root=repaired, run="run-a", phase="rollback-partial")
+    outcome = _verify_run(root=repaired, postconditions=dict(_POSTCONDITIONS_HOLDING))
+    assert outcome.verdict == "proceed"
+    assert state.read_phase(paths=_paths(root=repaired), run="run-a") == "rolled-back"
+
+    finished = tmp_path / "already-rolled-back"
+    _record_phase(root=finished, run="run-a", phase="rolled-back")
+    assert _verify_run(root=finished, postconditions=dict(_POSTCONDITIONS_HOLDING)).verdict == (
+        "proceed"
+    )
+    assert state.read_phase(paths=_paths(root=finished), run="run-a") == "rolled-back"
+
+
+def test_verify_reads_the_postconditions_against_the_runs_own_snapshot(tmp_path: Path) -> None:
+    """The comparison is against THIS run's snapshot, not the host's current state.
+
+    The snapshot `publish` took before the first package step is what
+    "as snapshotted" means for the FORWARD policies and the sysctls, so
+    a `verify` reading any other baseline would compare Docker's own
+    footprint against itself and find it clean.
+    """
+    guard = importlib.import_module(_GUARD_MODULE)
+    _commit_entry(name="verify")
+    _record_phase(root=tmp_path, run="run-a", phase="rolled-back")
+    fake = _fake(root=tmp_path)
+    fake.postconditions = dict(_POSTCONDITIONS_HOLDING)
+
+    guard.run_operation(operation="verify", run="run-a", env=_env(root=tmp_path, host=fake))
+
+    assert fake.calls_named(name="read_postconditions")[0].detail == (
+        str(_paths(root=tmp_path).snapshot_dir(run="run-a")),
+    )
