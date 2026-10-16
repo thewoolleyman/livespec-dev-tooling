@@ -1336,3 +1336,19 @@ def test_the_dead_man_recipe_reaches_systemd_run_with_collect_and_both_budgets(
     assert "--on-active=360" in emitted
     assert emitted[-2:] == ("rollback", "run-a")
     assert commands.timeouts == [units.UNIT_ACTION_TIMEOUT_SECONDS]
+
+
+def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:
+    """`RealHost` stays a complete `HostOps` as siblings widen the protocol.
+
+    Children 1b and 2 added post-commit, reconfigure and rollback-phase
+    seams to `HostOps` while this host was being built, so a real host
+    missing any of them is no longer the `HostOps` the guard's entry
+    point promises. A seam no child has built yet still has to EXIST and
+    raise, so the guard fails loudly at that seam rather than at import.
+    """
+    hostops = importlib.import_module(_HOSTOPS_MODULE)
+    host_module = importlib.import_module(_HOST_MODULE)
+    declared = {name for name in dir(hostops.HostOps) if not name.startswith("_")}
+
+    assert declared - set(dir(host_module.RealHost)) == set()

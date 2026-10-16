@@ -7,8 +7,9 @@ Definition of Done names: the snapshot, the firewall footprint, unit and
 job control, the effective-condition check, the postcondition read and
 the dead-man recipe. The remaining seams — the clock and boot identity,
 the admission reads, the start permission, the observation `sample`, the
-preflight's docker-group read, and child 3b's package step — still raise,
-each saying so where it stands.
+preflight's docker-group read, the post-commit and reconfigure seams child
+1b added, the rollback phase child child 2 added, and child 3b's package
+step — still raise, each saying so where it stands.
 
 This module is deliberately THIN. Every action it exposes is one line of
 delegation to a cohesive sibling — the firewall actions, the unit
@@ -155,6 +156,26 @@ class RealHost:
         """CHILD 4: one observation sample, the probes and the k3s witness."""
         raise NotImplementedError
 
+    # --- confirm's post-commit steps (child 1b) ---
+
+    def enable_units(self, *, units: Sequence[str]) -> None:
+        """CHILD 4: enable the guarded units, carrying Docker across the next boot."""
+        raise NotImplementedError
+
+    def unit_enabled_states(self) -> Mapping[str, str]:
+        """CHILD 4: every guard-relevant unit mapped to its `UnitFileState`."""
+        raise NotImplementedError
+
+    # --- reconfigure (child 1b) ---
+
+    def write_daemon_keys(self, *, keys: Mapping[str, object]) -> None:
+        """CHILD 4: write the role-owned daemon keys, leaving every other key alone."""
+        raise NotImplementedError
+
+    def record_pending_drained_restart(self, *, unit: str) -> None:
+        """CHILD 4: record that `unit` needs a drained restart, restarting nothing."""
+        raise NotImplementedError
+
     # --- rollback phases ---
 
     def revoke_start_permission(self) -> None:
@@ -196,6 +217,10 @@ class RealHost:
     def read_postconditions(self, *, snapshot: Path) -> Mapping[str, bool]:
         """The whole postcondition set read as one record."""
         return read_postconditions(runner=self.runner, paths=self.paths, snapshot=snapshot)
+
+    def run_phase_child(self, *, argv: Sequence[str]) -> bool:
+        """CHILD 4: run one rollback phase as its own child; whether it completed."""
+        raise NotImplementedError
 
 
 def build_real_host(*, paths: GuardPaths, runner: GuardCommandRunner = run_command) -> HostOps:
