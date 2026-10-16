@@ -480,13 +480,27 @@ def _enter_phase(*, run: str, env: GuardEnv, phase: str) -> None:
     after the spawn would never be written for exactly the phase the
     budget exists to bound.
 
-    A phase that has spent its attempts without ever succeeding is not
-    entered at all. Its postcondition is still read by the final check
-    and still reported, so skipping hides nothing — it only stops one
-    phase from standing between the dead-man and the later ones.
+    Two kinds of phase are not entered at all, and NEITHER is hidden by
+    that: each one's postcondition is still read by the final check and
+    still named in the outcome, so skipping only decides what work a
+    firing repeats, never what it reports.
+
+    A phase holding a success is DONE. The final check clears the
+    success of every phase whose postcondition failed, so a success that
+    survived into this firing is the record of a postcondition that
+    HELD — and re-running it would mean a `rollback-partial` host whose
+    only defect is a `docker0` got its cgroups re-killed and its whole
+    rule set re-parsed every 60 seconds, forever.
+
+    A phase that has spent its attempts without ever succeeding is
+    skipped for the opposite reason: it is not going to finish. Bounding
+    it is what stops one crashing phase from standing between the
+    dead-man and the later ones.
     """
+    if _succeeded(run=run, env=env, phase=phase):
+        return
     attempts = _attempts(run=run, env=env, phase=phase)
-    if attempts >= MAX_ATTEMPTS and not _succeeded(run=run, env=env, phase=phase):
+    if attempts >= MAX_ATTEMPTS:
         return
     _record_attempt(run=run, env=env, phase=phase, attempts=attempts)
     if env.host.run_phase_child(argv=phase_child_argv(run=run, env=env, phase=phase)):
