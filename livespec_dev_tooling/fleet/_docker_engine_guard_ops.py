@@ -15,11 +15,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardOutcome
+from livespec_dev_tooling.fleet._docker_engine_guard_model import (
+    Deadline,
+    GuardOutcome,
+    deadline_seconds,
+    deadman_argv,
+    rollback_argv,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     holder_of,
+    read_deadline,
     read_reservation,
     record_phase,
+    write_deadline,
     write_durable,
     write_reservation,
 )
@@ -30,6 +38,7 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
 __all__: list[str] = [
+    "arm",
     "publish",
     "reserve",
 ]
@@ -135,3 +144,46 @@ def publish(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     return GuardOutcome(
         operation="publish", run=run, verdict=decision.verdict, reason="inert install published"
     )
+
+
+def arm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
+    """Record the run's deadline and put its dead-man in the air.
+
+    The docker-group check is repeated here and NOT as a formality: the
+    package step created the group, so this is the first moment the
+    check can see what the install made. A member of it is a second
+    party on the Docker API, and the run is rolled back rather than
+    merely stopped, because the inert install is already on the host.
+
+    The deadline is read before it is written, so a retried `arm` keeps
+    the instant the run was first given — an arm that re-recorded it
+    would let a run buy itself unlimited time by retrying, which is the
+    one failure a dead-man cannot have. For the same reason the timer's
+    `--on-active` is the interval REMAINING to that instant, recomputed
+    now, rather than the full interval over again.
+    """
+    members = env.host.docker_group_members()
+    if members:
+        # The lock is held by this invocation, so the rollback entry
+        # cannot be called in-process without deadlocking on it; it is
+        # started as its own transient unit instead, exactly as the
+        # observer starts one on a failed sample.
+        env.host.systemd_run(argv=rollback_argv(run=run))
+        return GuardOutcome(
+            operation="arm",
+            run=run,
+            verdict="refuse",
+            reason=f"the install created the docker group and these accounts are in it: {members}",
+        )
+    deadline = read_deadline(paths=env.paths, run=run)
+    if deadline is None:
+        deadline = Deadline(
+            boot_id=env.host.boot_id(),
+            monotonic=env.host.monotonic() + deadline_seconds(window_seconds=env.window_seconds),
+        )
+        write_deadline(paths=env.paths, run=run, deadline=deadline)
+    if not env.host.deadman_timer_exists(run=run):
+        remaining = max(1, round(deadline.monotonic - env.host.monotonic()))
+        env.host.systemd_run(argv=deadman_argv(run=run, on_active_seconds=remaining))
+    record_phase(paths=env.paths, run=run, phase="armed")
+    return GuardOutcome(operation="arm", run=run, verdict=decision.verdict, reason="dead-man armed")

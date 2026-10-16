@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (
+    DEFAULT_WINDOW_SECONDS,
     PHASES,
     Deadline,
     GuardPaths,
@@ -80,6 +81,9 @@ class GuardEnv:
 
     paths: GuardPaths
     host: HostOps
+    # The observation window this run's preflight derived. Only the
+    # deadline and `observe`'s budget read it.
+    window_seconds: int = DEFAULT_WINDOW_SECONDS
 
 
 def write_durable(*, path: Path, data: str) -> None:
