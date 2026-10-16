@@ -93,6 +93,15 @@ _SYSCTL_BEFORE = {
 }
 
 
+# Which `*-save` dump a change command's edits are visible in, so the bus
+# can answer a re-read with the effect of the delete that preceded it --
+# the whole point of the footprint's repeat passes.
+_SAVE_OF_CHANGE = {
+    "iptables-nft": "iptables-save",
+    "ip6tables-nft": "ip6tables-save",
+}
+
+
 def _result(*, argv: tuple[str, ...], returncode: int, stdout: str) -> Any:
     """One `GuardCommandResult`, built through the module the Red moment creates."""
     runner_module = importlib.import_module(_RUNNER_MODULE)
@@ -103,14 +112,20 @@ def _result(*, argv: tuple[str, ...], returncode: int, stdout: str) -> Any:
 class _Commands:
     """A recorded command bus standing in for the guard's one timed runner.
 
-    `tables` holds each `(save command, table)` dump as a list of lines, so
-    a read is answered from recorded host output; `answers` holds every
-    other command's recorded reply. Each call is recorded with the timeout
-    it carried, which is how "every command is bounded" is asserted.
+    `tables` holds each `(save command, table)` dump as a list of lines and
+    is MUTATED by the change commands the bus sees, so a RE-READ observes
+    the effect of the delete that preceded it exactly as the real host
+    would; `answers` holds every other command's recorded reply.
+    `undeletable` is the one lever a test needs that a real host has no
+    switch for -- a rule the host will not drop, which is the only way to
+    reach residual reporting at all. Each call is recorded with the
+    timeout it carried, which is how "every command is bounded" is
+    asserted.
     """
 
     answers: dict[tuple[str, ...], str] = field(default_factory=dict)
     tables: dict[tuple[str, str], list[str]] = field(default_factory=dict)
+    undeletable: tuple[str, ...] = ()
     argvs: list[tuple[str, ...]] = field(default_factory=list)
     timeouts: list[int] = field(default_factory=list)
 
@@ -123,7 +138,23 @@ class _Commands:
     def _answer(self, *, key: tuple[str, ...]) -> str:
         if key[0].endswith("-save"):
             return "\n".join(self.tables.get((key[0], key[2]), [])) + "\n"
+        if key[0] in _SAVE_OF_CHANGE:
+            self._apply(key=key)
+            return ""
         return self.answers.get(key, "")
+
+    def _apply(self, *, key: tuple[str, ...]) -> None:
+        slot = (_SAVE_OF_CHANGE[key[0]], key[2])
+        lines = self.tables.get(slot, [])
+        verb = key[3]
+        rest = list(key[4:])
+        rule = "-A " + " ".join(rest)
+        if verb == "-D" and rule not in self.undeletable:
+            self.tables[slot] = [line for line in lines if line != rule]
+        if verb == "-F":
+            self.tables[slot] = [line for line in lines if not line.startswith(f"-A {rest[0]} ")]
+        if verb == "-X":
+            self.tables[slot] = [line for line in lines if not line.startswith(f":{rest[0]} ")]
 
     def argvs_with(self, *, flag: str) -> tuple[tuple[str, ...], ...]:
         """Every recorded argv carrying `flag`, in the order it was emitted."""
@@ -530,3 +561,43 @@ def test_footprint_removal_deletes_each_rule_then_flushes_and_deletes_each_chain
     assert emitted.index(("iptables-nft", "-t", "filter", "-F", "DOCKER-ISOLATION-STAGE-1")) < (
         emitted.index(("iptables-nft", "-t", "filter", "-X", "DOCKER"))
     )
+
+
+def test_footprint_removal_repeats_at_most_three_passes_and_reports_the_residue(
+    tmp_path: Path,
+) -> None:
+    """Deleting a rule can fail, and a rollback that says nothing about it lies.
+
+    A delete races every reconciler on the host, so the removal re-reads
+    and repeats -- but BOUNDED, because a rule that will not go will not
+    go, and an unbounded retry would hold the rollback phase until its own
+    `timeout -k 10` killed it mid-teardown. A host that gives everything
+    up stops after the pass that finds nothing; a host that keeps one rule
+    exhausts the three passes and the rule is REPORTED, named with its
+    family and table, so the driver can write `rollback-partial` instead
+    of a false `rolled-back`.
+    """
+    actions = importlib.import_module(_ACTIONS_MODULE)
+    assert hasattr(actions, "FOOTPRINT_PASSES")
+    assert actions.FOOTPRINT_PASSES == 3
+
+    clean_root = tmp_path / "clean"
+    clean = _Commands(tables=_after_tables())
+    clean_host = _real_host(root=clean_root, commands=clean)
+
+    assert clean_host.remove_firewall_footprint(snapshot=_write_snapshot(root=clean_root)) == ()
+    assert clean.argvs_with(flag="-D") == _EXPECTED_DELETES
+
+    stuck_root = tmp_path / "stuck"
+    # Unique to the ipv4 `filter` table, so the residue report is pinned to
+    # one family -- the bus refuses a rule by its TEXT, and the DOCKER jump
+    # rule is spelled identically in both.
+    stubborn = "-A FORWARD -i docker0 ! -o docker0 -j ACCEPT"
+    stuck = _Commands(tables=_after_tables(), undeletable=(stubborn,))
+    stuck_host = _real_host(root=stuck_root, commands=stuck)
+
+    residue = stuck_host.remove_firewall_footprint(snapshot=_write_snapshot(root=stuck_root))
+
+    assert residue == (f"ipv4 filter {stubborn}",)
+    assert stuck.argvs.count(_EXPECTED_DELETES[3]) == actions.FOOTPRINT_PASSES
+    assert len(stuck.argvs_with(flag="-D")) == len(_EXPECTED_DELETES) + 2
