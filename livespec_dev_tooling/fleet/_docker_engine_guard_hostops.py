@@ -126,6 +126,14 @@ class HostOps(Protocol):
     # One observation sample: the probes and the k3s witness, as a record.
     def sample(self) -> Mapping[str, object]: ...
 
+    # --- confirm's post-commit steps (child 1b) ---
+
+    # Enable the guarded units. After the commit point Docker is an
+    # ordinary enabled service, and enabling is what carries it across the
+    # next boot; `start_unit` above is what carries it across THIS one, so
+    # the post-commit steps issue both (rider point 9).
+    def enable_units(self, *, units: Sequence[str]) -> None: ...
+
     # --- rollback phases (child 2) ---
 
     # Remove the start permission. The first act of any rollback.
