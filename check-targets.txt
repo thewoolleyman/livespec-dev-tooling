@@ -69,6 +69,7 @@ check-wrapper-shape
 
 # Repo-private block.
 check-ansible-lint
+check-ansible-hostname-free
 check-lint
 check-format
 check-types

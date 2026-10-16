@@ -193,12 +193,27 @@ def _role_defaults() -> dict[str, str]:
     }
 
 
+def _inventory_k3s_server() -> str:
+    """The `ci_pool` member whose `cluster_role` is `server`, read from the inventory."""
+    inventory = (_REPO_ROOT / "ansible" / "inventory" / "legacy.yml").read_text(encoding="utf-8")
+    pool = inventory.split("        ci_pool:\n", 1)[1]
+    server = re.search(
+        r"^ {12}(?P<host>[\w.-]+):\n(?: {14}.*\n)*? {14}cluster_role: server$",
+        pool,
+        re.MULTILINE,
+    )
+    assert server is not None, "the inventory's ci_pool must name one server"
+    return server["host"]
+
+
 def _role_variables(*, render_dir: Path) -> dict[str, str]:
     """Every role variable the render invocation can name, fully expanded.
 
-    The two the role derives at run time are derived here the way the role
-    derives them: the node name comes from the agent's own profile, and the
-    ServiceAccount is the role's prefix and that node. `phase2_dir` is resolved
+    The three the role derives at run time are derived here the way the role
+    derives them: the node name comes from the agent's own profile, the
+    ServiceAccount is the role's prefix and that node, and the k3s server is the
+    inventory's `ci_pool` member whose `cluster_role` is `server`
+    (livespec-dev-tooling-prdxxe). `phase2_dir` is resolved
     to the repository's own tree (the committed default spells it relative to
     `role_path`), and `render_dir` is redirected into `tmp_path`.
     """
@@ -212,6 +227,7 @@ def _role_variables(*, render_dir: Path) -> dict[str, str]:
             "node_status_credential_sa": (
                 f"{variables.get('node_status_credential_sa_prefix', '')}{node}"
             ),
+            "node_status_credential_server_host": _inventory_k3s_server(),
         }
     )
     for _ in range(len(variables)):

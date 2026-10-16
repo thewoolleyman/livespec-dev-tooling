@@ -16,7 +16,7 @@
 # failure in one role's package step must not be able to withhold the other
 # eighteen.
 - name: Dev host services
-  hosts: vps
+  hosts: dev_hosts
   gather_facts: true
   roles:
     - role: arq_root_snapshot

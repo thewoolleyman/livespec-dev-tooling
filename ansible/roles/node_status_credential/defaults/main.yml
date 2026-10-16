@@ -4,9 +4,14 @@ node_status_credential_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/pha
 node_status_credential_profile: "{{ node_status_credential_profiles_dir }}/{{ inventory_hostname }}.env"
 node_status_credential_cluster_role: "{{ cluster_role }}"
 # The ci_pool server that mints the credential, under its own become, with the
-# admin kubeconfig. Hardcoded exactly as gates_kubeconfig hardcodes its
-# remote_host: the pool has one server. Overridable if that ever changes.
-node_status_credential_server_host: poweredge-xubuntu
+# admin kubeconfig. Resolved from the inventory, exactly as gates_kubeconfig
+# resolves its remote_host: the ci_pool member whose cluster_role is server
+# (livespec-dev-tooling-prdxxe). Overridable if the pool ever has more than one.
+node_status_credential_server_host: >-
+  {{ groups['ci_pool'] | map('extract', hostvars)
+     | selectattr('cluster_role', 'defined')
+     | selectattr('cluster_role', 'equalto', 'server')
+     | map(attribute='inventory_hostname') | first }}
 node_status_credential_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
 node_status_credential_namespace: ci-runner-node-status
 node_status_credential_sa_prefix: node-status-patcher-
@@ -35,7 +40,11 @@ node_status_credential_renderer: >-
 # boot converge began rendering this file; NOT a loopback, which would name the
 # reader's own machine, and not the profile's CLUSTER_JOIN_ADDRESS, which the
 # server-side converge cannot know.
-node_status_credential_api_server: https://poweredge-xubuntu.perch-rudd.ts.net:6443
+# Built from the resolved server's inventory name, which is also its MagicDNS
+# name on the tailnet, so no machine is named here (livespec-dev-tooling-prdxxe).
+node_status_credential_tailnet_domain: perch-rudd.ts.net
+node_status_credential_api_server: >-
+  https://{{ node_status_credential_server_host }}.{{ node_status_credential_tailnet_domain }}:6443
 # The API server's own wordings for a REFUSED credential, as the drift-report
 # probe recognises them. Co-maintained with
 # ci-runner/k3s/phase2/node-extended-resource/patch-node-churn-capacity.sh's

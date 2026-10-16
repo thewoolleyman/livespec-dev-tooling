@@ -4,7 +4,13 @@ node_labels_profile: "{{ node_labels_profiles_dir }}/{{ inventory_hostname }}.en
 # Reconciled on the server, under its admin kubeconfig — the same delegate_to
 # shape ../node_taints, node_status_credential and gates_kubeconfig use. An
 # agent holds no credential that may label a node.
-node_labels_server_host: poweredge-xubuntu
+# The k3s server is resolved from the inventory, never named here: the ci_pool
+# member whose cluster_role is server (livespec-dev-tooling-prdxxe).
+node_labels_server_host: >-
+  {{ groups['ci_pool'] | map('extract', hostvars)
+     | selectattr('cluster_role', 'defined')
+     | selectattr('cluster_role', 'equalto', 'server')
+     | map(attribute='inventory_hostname') | first }}
 node_labels_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
 # This role manages exactly ONE label — the FACTORY role. Never anything else on
 # the node: `k3s-role=arc-runner-host` is set by the install command and is the
