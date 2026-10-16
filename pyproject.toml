@@ -609,6 +609,20 @@ subprocess_spawn_allowlist = [
     "tests/livespec_dev_tooling/checks/test_red_green_replay.py",
     "tests/livespec_dev_tooling/checks/test_rop_pipeline_shape.py",
     "tests/livespec_dev_tooling/checks/test_supervisor_discipline.py",
+    # Added by livespec-dev-tooling-26w6d2, and NOT a gratuitous spawn: the
+    # Docker engine install guard's preflight command line is installed onto a
+    # guarded host as a plain tree and run by the role as
+    # `python3 -I -B <module>` against that host's bare interpreter. `-I`
+    # changes interpreter STARTUP — it ignores PYTHONPATH and the user site
+    # directory, which is exactly why the module needs its own `sys.path`
+    # preamble to resolve its package-qualified siblings — so by the time any
+    # in-process call could look, this process's path is already built and the
+    # property is unobservable. The ONE spawning test runs a COPY of the guard
+    # tree, and its second arm deletes a sibling from that copy to prove the
+    # imports were served from the installed tree rather than from this
+    # checkout. The child scrubs COVERAGE_PROCESS_START + COV_CORE_* per the
+    # contract above.
+    "tests/livespec_dev_tooling/fleet/test_docker_engine_guard_preflight_cli.py",
     # Added by livespec-dev-tooling-r44po2, and NOT a gratuitous spawn: its
     # three namespace-isolation proofs assert on IMPORT ORDER between the
     # partial vendored budget subset and a consumer's complete public
