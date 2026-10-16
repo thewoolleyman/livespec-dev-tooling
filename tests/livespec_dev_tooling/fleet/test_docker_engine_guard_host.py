@@ -27,7 +27,7 @@ import importlib
 import json
 import subprocess
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,8 @@ _DAEMON_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_daemon.py")
 _PHASE_CHILD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_phase_child"
 _PHASE_CHILD_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_phase_child.py")
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
+_PACKAGE_AUDIT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_audit"
+_PACKAGE_RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_runner"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -1824,3 +1826,102 @@ def test_the_rollback_phase_child_completes_only_on_a_zero_exit(
         )
         assert tuple(commands.argvs) == (_PHASE_CHILD_ARGV,)
         assert commands.timeouts == [phase_child.PHASE_CHILD_TIMEOUT_SECONDS]
+
+
+_INSTALL_PACKAGE = "docker-ce"
+_INSTALL_VERSION = "5:28.0.1-1~ubuntu.24.04~noble"
+
+
+@dataclass(kw_only=True)
+class _PackageCommands:
+    """A recorded bus for the package fence's OWN timed runner.
+
+    A second bus, because the fence's runner is a different seam from
+    the host's: it carries a whole `TimedCommand` -- argv, bound,
+    working directory, environment additions -- rather than an argv and
+    a number, because the one mutation it makes has to ride a fenced
+    environment.
+    """
+
+    commands: list[Any] = field(default_factory=list)
+
+    def __call__(self, *, command: Any) -> Any:
+        self.commands.append(command)
+        package_runner = importlib.import_module(_PACKAGE_RUNNER_MODULE)
+        return package_runner.CommandOutput(returncode=0, stdout="")
+
+
+def _package_inputs(*, root: Path) -> Path:
+    """A run's committed package inputs: one pinned package and no host config to vouch for."""
+    audit = importlib.import_module(_PACKAGE_AUDIT_MODULE)
+    inputs = root / "inputs"
+    inputs.mkdir(parents=True)
+    _ = (inputs / audit.INPUTS_FILE).write_text(
+        json.dumps(
+            {
+                "allow": [
+                    {
+                        "package": _INSTALL_PACKAGE,
+                        "version": _INSTALL_VERSION,
+                        "deb": "docker-ce.deb",
+                        "scripts": {},
+                    }
+                ],
+                "cache": str(root / "cache"),
+                "config_digests": {},
+                "config_dirs": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return inputs
+
+
+def test_the_package_seam_runs_the_fenced_step_on_the_runs_own_inputs(
+    tmp_path: Path,
+) -> None:
+    """`publish`'s one mutation is child 3b's audited transaction, and nothing else.
+
+    The seam is a delegation, so what is asserted is that the
+    delegation CARRIES the run's own inputs: the first command the
+    fence emits is the simulated transaction over exactly the
+    `package=version` this run's `packages.json` committed. A host
+    that installed from anywhere else -- a default allowlist, another
+    run's inputs, apt's own resolution -- would emit a different first
+    command and nothing downstream would notice, because the audit
+    would then be auditing the wrong transaction perfectly.
+
+    The recorded fence refuses at its simulation, which is the point:
+    the step is driven far enough to prove it ran on these inputs and
+    stops before it mutates anything. No `dpkg -i` is emitted, so the
+    assertion holds without a package database to install into.
+
+    The fence's runner is a FIELD for the same reason the host's one
+    runner is -- without it this seam could only be proven by running
+    `apt-get` on the machine under test.
+    """
+    host_module = importlib.import_module(_HOST_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    audit = importlib.import_module(_PACKAGE_AUDIT_MODULE)
+    package_runner = importlib.import_module(_PACKAGE_RUNNER_MODULE)
+
+    assert "package_runner" in {declared.name for declared in fields(host_module.RealHost)}
+
+    fence = _PackageCommands()
+    # Built directly rather than through `build_real_host`: the fence's
+    # runner is the one field that factory does not forward, because
+    # the command line it exists for never varies it.
+    host = host_module.RealHost(
+        paths=model.GuardPaths(state_root=tmp_path / "var", runtime_root=tmp_path / "run"),
+        runner=_Commands(),
+        package_runner=fence,
+    )
+
+    host.install_packages(inputs=_package_inputs(root=tmp_path))
+
+    assert tuple(fence.commands[0].argv) == (
+        *audit.SIMULATE_ARGV,
+        f"{_INSTALL_PACKAGE}={_INSTALL_VERSION}",
+    )
+    assert fence.commands[0].timeout_seconds == package_runner.COMMAND_TIMEOUT_SECONDS
+    assert [tuple(command.argv)[:2] for command in fence.commands].count(("dpkg", "-i")) == 0

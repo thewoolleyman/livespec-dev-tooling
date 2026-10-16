@@ -1,4 +1,4 @@
-"""The Docker engine install guard's real host — SOME SEAMS STILL RAISE.
+"""The Docker engine install guard's real host — every seam, against this machine.
 
 `docker_engine_guard.py`'s command line builds its `HostOps` from
 `build_real_host` here, so the real host actions land in this module
@@ -9,9 +9,9 @@ PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
 resync refusal) and the observation `sample`; child 5 adds the clock
 and boot identity, the runtime directory's ownership and the start
 permission, the admission reads, the unit start, the post-commit
-enable, the reconfigure seams and the rollback phase child. The one
-seam that still raises, saying so where it stands, is child 3b's
-package step.
+enable, the reconfigure seams, the rollback phase child and child
+3b's package step. With that last one the protocol is COMPLETE here:
+no seam raises any more, and the guard can run on a real host.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -62,6 +62,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
     delete_bridge_interfaces,
     write_sysctl_snapshot,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
+    TimedRunner,
+    default_runner,
+)
+from livespec_dev_tooling.fleet._docker_engine_guard_packages import run_package_step
 from livespec_dev_tooling.fleet._docker_engine_guard_permission import (
     grant_start_permission,
     revoke_start_permission,
@@ -135,6 +140,16 @@ class RealHost:
     # reconfiguring the machine it runs on.
     daemon_config: Path = DAEMON_CONFIG
     restart_marker: Path = PENDING_RESTART_MARKER
+
+    # The package fence's OWN runner, a second seam because a fenced
+    # transaction carries a working directory and an environment
+    # addition that the one-argv runner above has nowhere to put. A
+    # field for the same reason: without it the package step could only
+    # be proven by running `apt-get` on the machine under test. It is
+    # the one field the factory below does not forward, because the
+    # command line never varies it and the factory exists for the
+    # command line -- a caller that drives the fence builds `RealHost`.
+    package_runner: TimedRunner = default_runner
 
     # --- clock, boot identity and the guard's own runtime directory ---
 
@@ -211,8 +226,17 @@ class RealHost:
         record_preflight(destination=destination, runner=self.runner, proc_root=self.proc_root)
 
     def install_packages(self, *, inputs: Path) -> None:
-        """CHILD 3b: the fenced, audited package transaction."""
-        raise NotImplementedError
+        """The fenced, audited package transaction, over this run's own inputs.
+
+        The step's result is not carried back, because `HostOps` gives
+        this seam nothing to carry it in -- and that is the shape the
+        lifecycle wants: `publish`'s proof that the install is inert is
+        the post-install CONDITION CHECK it runs next, not the step's
+        own word for it. A refused step leaves the host unmutated, so
+        that check then fails on a host with no installed units and the
+        operation refuses.
+        """
+        _ = run_package_step(inputs=inputs, runner=self.package_runner)
 
     def condition_check_passed(self) -> bool:
         """Each guarded unit's EFFECTIVE conditions, read from the service manager."""
