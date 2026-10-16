@@ -45,7 +45,13 @@ from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     Operation,
     Phase,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_ops import arm, publish, reserve, start
+from livespec_dev_tooling.fleet._docker_engine_guard_ops import (
+    arm,
+    publish,
+    recover,
+    reserve,
+    start,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     GuardEnv,
     acquire_lock,
@@ -201,7 +207,7 @@ DISPATCH_TABLE: Final[tuple[DispatchRow, ...]] = (
     ),
     DispatchRow(
         operation="recover",
-        handler=_pending,
+        handler=recover,
         marker_self="finish",
         allowed_from=PHASES,
     ),

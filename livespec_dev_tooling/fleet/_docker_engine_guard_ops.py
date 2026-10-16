@@ -24,9 +24,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     deadman_argv,
     rollback_argv,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_rollback import run_rollback
 from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     holder_of,
     read_deadline,
+    read_phase,
     read_reservation,
     record_phase,
     write_deadline,
@@ -42,6 +44,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "arm",
     "publish",
+    "recover",
     "reserve",
     "start",
 ]
@@ -220,3 +223,29 @@ def start(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     return GuardOutcome(
         operation="start", run=run, verdict=decision.verdict, reason="the engine is running"
     )
+
+
+def recover(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
+    """Finish, resume or roll back one run, at an operator's explicit request.
+
+    `recover` is the ONLY way an unfinished run is ever touched by
+    something other than its own controller or its dead-man — the guard
+    never attaches to or takes over a run by itself. It gets no path of
+    its own for that privilege: it reaches here through the same lock
+    and the same dispatch table as everything else, so a busy lock, a
+    run that is not the current reservation, and a marker naming
+    another run all refuse it exactly as they refuse a controller.
+
+    `publishing` is the one pre-commit phase it can carry FORWARD,
+    because the install it interrupted is inert by construction. Every
+    other uncommitted phase has granted something, so the only safe
+    direction is back.
+    """
+    if decision.verdict == "finish":
+        # The marker names this run, so recovery FINISHES the
+        # confirmation rather than repeating it: `confirm`'s idempotent
+        # post-commit steps, which child 1b owns.
+        raise NotImplementedError
+    if read_phase(paths=env.paths, run=run) == "publishing":
+        return publish(run=run, env=env, decision=decision)
+    return run_rollback(run=run, env=env, decision=decision)
