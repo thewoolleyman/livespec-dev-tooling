@@ -260,3 +260,103 @@ def test_the_real_host_reads_the_docker_group_through_the_preflight(tmp_path: Pa
     host = _real_host(root=tmp_path, commands=commands)
 
     assert host.docker_group_members() == ("alice", "bob", "builder")
+
+
+_RESYNC_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_resync"
+_RESYNC_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_resync.py")
+
+# `/etc/rancher/k3s/config.yaml` as the fleet writes it: a comment, a
+# scalar setting, a scalar resync interval, and an argument LIST whose
+# first entry is not a resync interval at all. Every one of those four
+# shapes has to survive the parse, and the list entry that is not a
+# sync period must not be read as one.
+_K3S_CONFIG = _lines(
+    "# gmktec k3s agent configuration -- owned by the k3s-on-gmktec plan",
+    "server: https://poweredge-xubuntu:6443",
+    "flannel-iptables-resync: 10s",
+    "kube-proxy-arg:",
+    "  - proxy-mode=iptables",
+    "  - iptables-sync-period=45s",
+)
+
+# A drop-in declaring kube-router's own period BELOW its default, and a
+# second one whose value is a typo. The typo is in the fixture on
+# purpose: an unparseable duration is NOT an interval, and reading it as
+# a zero would shorten the window to the margin alone.
+_K3S_DROPIN_ROUTER = _lines(
+    "kube-router-arg:",
+    "  - iptables-sync-period=4m30s",
+)
+_K3S_DROPIN_TYPO = _lines(
+    "kube-proxy-arg:",
+    "  - iptables-sync-period=everyfiveminutes",
+)
+
+# A drop-in that puts a reconciler's period ABOVE every default, which
+# is what makes the window longer than the measured 420 seconds.
+_K3S_DROPIN_SLOW = _lines(
+    "kube-router-arg:",
+    "  - iptables-sync-period=7m",
+)
+
+
+def _k3s_tree(*, root: Path, dropins: dict[str, str], config: str = _K3S_CONFIG) -> dict[str, Path]:
+    """A recorded `/etc/rancher/k3s` tree: the base file and its drop-ins."""
+    root.mkdir(parents=True, exist_ok=True)
+    base = root / "config.yaml"
+    _ = base.write_text(config, encoding="utf-8")
+    directory = root / "config.yaml.d"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, body in dropins.items():
+        _ = (directory / name).write_text(body, encoding="utf-8")
+    return {"config": base, "dropins": directory}
+
+
+def test_the_resync_window_is_the_largest_effective_interval_plus_two_minutes(
+    tmp_path: Path,
+) -> None:
+    """Every effective interval is recorded with its SOURCE, and the largest governs.
+
+    Design R8 requires the window to be derived from the effective
+    intervals recorded with their source, never from defaults alone --
+    so a setting no file mentions is still recorded, as a component
+    default, because it is still in force. The window is the largest of
+    them plus two minutes, which is what makes one full resync period of
+    the slowest reconciler fit inside the window with room to see its
+    result.
+    """
+    assert _RESYNC_PATH.is_file()
+    resync = importlib.import_module(_RESYNC_MODULE)
+    tree = _k3s_tree(
+        root=tmp_path / "ordinary",
+        dropins={"10-router.yaml": _K3S_DROPIN_ROUTER, "20-typo.yaml": _K3S_DROPIN_TYPO},
+    )
+
+    intervals = resync.read_resync_intervals(config=tree["config"], dropins=tree["dropins"])
+
+    assert {(one.setting, one.seconds, one.source) for one in intervals} == {
+        ("flannel-iptables-resync", 5.0, resync.DEFAULT_SOURCE),
+        ("kube-proxy-arg iptables-sync-period", 30.0, resync.DEFAULT_SOURCE),
+        ("kube-router-arg iptables-sync-period", 300.0, resync.DEFAULT_SOURCE),
+        ("flannel-iptables-resync", 10.0, str(tree["config"])),
+        ("kube-proxy-arg iptables-sync-period", 45.0, str(tree["config"])),
+        (
+            "kube-router-arg iptables-sync-period",
+            270.0,
+            str(tree["dropins"] / "10-router.yaml"),
+        ),
+    }
+    model = importlib.import_module(_MODEL_MODULE)
+    assert resync.resync_window_seconds(intervals=intervals) == model.DEFAULT_WINDOW_SECONDS
+
+    slow = _k3s_tree(root=tmp_path / "slow", dropins={"10-slow.yaml": _K3S_DROPIN_SLOW})
+    slower = resync.read_resync_intervals(config=slow["config"], dropins=slow["dropins"])
+    assert resync.resync_window_seconds(intervals=slower) == 420 + resync.WINDOW_MARGIN_SECONDS
+
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    defaults = resync.read_resync_intervals(
+        config=bare / "config.yaml", dropins=bare / "config.yaml.d"
+    )
+    assert {one.source for one in defaults} == {resync.DEFAULT_SOURCE}
+    assert resync.resync_window_seconds(intervals=defaults) == model.DEFAULT_WINDOW_SECONDS
