@@ -1575,17 +1575,36 @@ def test_the_command_line_reports_the_outcome_and_exits_with_its_code(
     assert "boot-a" in reported
 
 
-def test_the_entry_point_builds_the_real_host_child_3a_will_supply(
+def test_the_entry_point_builds_the_real_host_from_the_module_next_door(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`main` parses, builds the real host from the stub next door, and runs.
+    """`main` parses, builds the REAL host beside it, and runs the request on it.
 
-    Child 1a ships no real host action at all, so the entry point stops
-    exactly where child 3a takes over -- which is also the proof that
-    the command line reaches that seam rather than some private path.
+    The property under test is that the command line reaches
+    `_docker_engine_guard_host.build_real_host` rather than some
+    private path of its own, and the parsed roots reach it with it.
+
+    It is asserted by REPLACING that one function, and the replacement
+    is what keeps this test hermetic: the genuine real host answers
+    admission by running `systemctl` and `chown` against whatever
+    machine the suite happens to be on. Child 1a could prove the same
+    thing by catching the `NotImplementedError` every seam then raised,
+    which is what this test used to do; once child 5 finished the real
+    host there is no exception left to catch, so the recorder is what
+    remains of that evidence.
     """
     guard = _guard_surface()
     assert "main" in guard.__all__
+    fake = _fake(root=tmp_path)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+    built: list[Any] = []
+
+    def _record_build(*, paths: Any) -> Any:
+        built.append(paths)
+        return fake
+
+    host_module = importlib.import_module(_HOST_MODULE)
+    monkeypatch.setattr(host_module, "build_real_host", _record_build)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -1599,7 +1618,8 @@ def test_the_entry_point_builds_the_real_host_child_3a_will_supply(
         ],
     )
 
-    with pytest.raises(NotImplementedError) as caught:
-        guard.main()
+    assert guard.main() == 0
 
-    assert caught.traceback[-1].path.name == "_docker_engine_guard_host.py"
+    assert [paths.state_root for paths in built] == [tmp_path / "var"]
+    assert [paths.runtime_root for paths in built] == [tmp_path / "run"]
+    assert (tmp_path / "var" / "run").read_text(encoding="utf-8") == "run-a"

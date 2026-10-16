@@ -8,12 +8,11 @@ the postcondition read and the dead-man recipe; child 4 adds the
 PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
 resync refusal) and the observation `sample`; child 5 answers the seams
 left over, beginning with the clock, the boot identity, the runtime
-directory's ownership and the start permission. The seams that still
-raise, each saying so where it stands, are the admission reads of
-guard-unit state and this invocation's own unit, the unit start, the
-dead-man timer reads, the post-commit and reconfigure seams child 1b
-added, the rollback phase child child 2 added, and child 3b's package
-step.
+directory's ownership, the start permission and the admission reads of
+unit state and this invocation's own unit. The seams that still raise,
+each saying so where it stands, are the unit start, the dead-man timer
+reads, the post-commit and reconfigure seams child 1b added, the
+rollback phase child child 2 added, and child 3b's package step.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -71,6 +70,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_preflight import (
 from livespec_dev_tooling.fleet._docker_engine_guard_probe_set import record_preflight, take_sample
 from livespec_dev_tooling.fleet._docker_engine_guard_resync import K3S_CONFIG, K3S_CONFIG_DROPINS
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
+from livespec_dev_tooling.fleet._docker_engine_guard_unit_reads import (
+    guard_unit_states,
+    invoking_unit,
+    unit_enabled_states,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
     disable_units,
@@ -135,16 +139,16 @@ class RealHost:
     # --- admission reads (design I1) ---
 
     def guard_unit_states(self) -> Mapping[str, str]:
-        """CHILD 4: every guard unit mapped to its `ActiveState`."""
-        raise NotImplementedError
+        """Every guard-relevant unit mapped to its `ActiveState`."""
+        return guard_unit_states(runner=self.runner)
 
     def queued_jobs(self) -> tuple[QueuedJob, ...]:
         """The whole job queue, as both admission and cancellation read it."""
         return read_queued_jobs(runner=self.runner)
 
     def invoking_unit(self) -> str:
-        """CHILD 4: this invocation's own transient unit."""
-        raise NotImplementedError
+        """This invocation's own transient unit, read from its own cgroup."""
+        return invoking_unit(proc_root=self.proc_root)
 
     def docker_group_members(self) -> tuple[str, ...]:
         """Every account the `docker` group admits, by either kind of membership."""
@@ -238,8 +242,8 @@ class RealHost:
         raise NotImplementedError
 
     def unit_enabled_states(self) -> Mapping[str, str]:
-        """CHILD 4: every guard-relevant unit mapped to its `UnitFileState`."""
-        raise NotImplementedError
+        """The three guarded units mapped to their `UnitFileState`."""
+        return unit_enabled_states(runner=self.runner)
 
     # --- reconfigure (child 1b) ---
 

@@ -57,6 +57,8 @@ _CLOCK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_clock"
 _CLOCK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_clock.py")
 _PERMISSION_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_permission"
 _PERMISSION_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_permission.py")
+_UNIT_READS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_unit_reads"
+_UNIT_READS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_unit_reads.py")
 
 # What the guarded host's two address families look like BEFORE any Docker
 # package exists: the k3s and Tailscale rule sets the snapshot has to
@@ -1441,6 +1443,120 @@ def test_the_start_permission_is_granted_where_the_paths_name_it_and_revoked_twi
     permission = importlib.import_module(_PERMISSION_MODULE)
     assert commands.argvs == [("chown", permission.ROOT_OWNER, str(paths.runtime_root))]
     assert commands.timeouts == [permission.OWNERSHIP_TIMEOUT_SECONDS]
+
+
+def _unit_file_state_argv(*, unit: str) -> tuple[str, ...]:
+    """The read of one unit's `UnitFileState`."""
+    return ("systemctl", "show", "--property", "UnitFileState", "--value", unit)
+
+
+# What the manager lists under the guard's two prefixes while a previous
+# run's dead-man is still armed and another invocation is reserving: the
+# observer, that dead-man's timer AND its service, and the reserving
+# invocation itself. The footer line is part of the recorded output on
+# purpose -- `--no-legend` does not suppress it.
+_GUARD_UNIT_LISTING = (
+    "docker-engine-guard-observe.service loaded active running Docker engine guard observer\n"
+    "docker-engine-deadman-run-a.timer loaded active waiting Dead-man for run-a\n"
+    "docker-engine-deadman-run-a.service loaded inactive dead Dead-man for run-a\n"
+    "docker-engine-guard-reserve-run-b-1.service loaded active running Reserving run-b\n"
+    "4 loaded units listed.\n"
+)
+
+_GUARD_UNIT_ACTIVE_STATES = {
+    "containerd.service": "inactive",
+    "docker-engine-deadman-run-a.service": "inactive",
+    "docker-engine-deadman-run-a.timer": "active",
+    "docker-engine-guard-observe.service": "active",
+    "docker-engine-guard-reserve-run-b-1.service": "active",
+    "docker-engine-guard-start.service": "inactive",
+    "docker.service": "inactive",
+    "docker.socket": "inactive",
+}
+
+_GUARD_UNIT_FILE_STATES = {
+    "containerd.service": "enabled",
+    "docker.service": "disabled",
+    "docker.socket": "enabled",
+}
+
+
+def test_the_admission_reads_cover_the_fixed_units_the_loaded_ones_and_this_invocation(
+    tmp_path: Path,
+) -> None:
+    """Design I1's admission set, F4's validation set, and the one exclusion.
+
+    THE ACTIVE-STATE SET IS A UNION and every part of it is load-bearing.
+    The guard's two fixed units and the three guarded ones are read
+    whether the manager listed them or not, because a unit the manager
+    does not know answers `inactive` while a MISSING KEY reads as drift
+    to the post-commit validation. The LISTED units are read because a
+    previous run's dead-man -- timer and service both -- is exactly what
+    a new reservation must not step over, and its run id is one this
+    process has never seen.
+
+    `UnitFileState` is read for the three guarded units ALONE: the
+    guard's own units are transient, so they have no unit file and no
+    enablement to report. It is read BESIDE the active states and not
+    instead of them, because enablement carries the engine across the
+    next boot while the active state says it is running now.
+
+    The invoking unit is read from this process's own control group --
+    the kernel's answer about the subject of the question, with no round
+    trip. An unidentifiable placement answers the empty string, which
+    excludes nothing from admission: the fail-closed direction, because
+    a wrong name would exclude a unit that is genuinely busy.
+    """
+    assert _UNIT_READS_PATH.is_file()
+    reads = importlib.import_module(_UNIT_READS_MODULE)
+    answers = {reads.LIST_UNITS_ARGV: _GUARD_UNIT_LISTING}
+    answers.update(
+        {
+            _active_state_argv(unit=unit): f"{state}\n"
+            for unit, state in _GUARD_UNIT_ACTIVE_STATES.items()
+        }
+    )
+    answers.update(
+        {
+            _unit_file_state_argv(unit=unit): f"{state}\n"
+            for unit, state in _GUARD_UNIT_FILE_STATES.items()
+        }
+    )
+    commands = _Commands(answers=answers)
+    cgroup = tmp_path / "proc" / reads.SELF_CGROUP_PATH
+    cgroup.parent.mkdir(parents=True)
+    _ = cgroup.write_text(
+        "0::/system.slice/docker-engine-guard-reserve-run-b-1.service\n", encoding="utf-8"
+    )
+    host = _real_host(root=tmp_path, commands=commands, proc_root=tmp_path / "proc")
+
+    assert host.guard_unit_states() == _GUARD_UNIT_ACTIVE_STATES
+    assert host.unit_enabled_states() == _GUARD_UNIT_FILE_STATES
+    assert host.invoking_unit() == "docker-engine-guard-reserve-run-b-1.service"
+
+    # The listing comes first and the per-unit reads follow it, one unit
+    # at a time: a single `systemctl show` over several units interleaves
+    # their properties, and a unit the manager does not know is simply
+    # absent from that output -- so a mis-parse would report a running
+    # unit as stopped.
+    units = importlib.import_module(_UNITS_MODULE)
+    assert commands.argvs[0] == reads.LIST_UNITS_ARGV
+    assert commands.argvs[1:9] == [
+        _active_state_argv(unit=unit) for unit in sorted(_GUARD_UNIT_ACTIVE_STATES)
+    ]
+    assert set(commands.timeouts) == {units.UNIT_READ_TIMEOUT_SECONDS}
+
+    # A placement that names no unit, and no placement at all: both are
+    # the empty answer, which excludes nothing.
+    unnamed = tmp_path / "unnamed"
+    (unnamed / "self").mkdir(parents=True)
+    _ = (unnamed / reads.SELF_CGROUP_PATH).write_text("0::/\n", encoding="utf-8")
+
+    assert _real_host(root=tmp_path, commands=commands, proc_root=unnamed).invoking_unit() == ""
+    assert (
+        _real_host(root=tmp_path, commands=commands, proc_root=tmp_path / "absent").invoking_unit()
+        == ""
+    )
 
 
 def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:
