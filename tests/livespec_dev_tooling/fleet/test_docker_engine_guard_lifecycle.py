@@ -1575,17 +1575,39 @@ def test_the_command_line_reports_the_outcome_and_exits_with_its_code(
     assert "boot-a" in reported
 
 
-def test_the_entry_point_builds_the_real_host_child_3a_will_supply(
+def test_the_entry_point_builds_the_real_host_and_runs_the_request_through_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`main` parses, builds the real host from the stub next door, and runs.
+    """`main` parses, builds the real host next door, and runs the request on it.
 
-    Child 1a ships no real host action at all, so the entry point stops
-    exactly where child 3a takes over -- which is also the proof that
-    the command line reaches that seam rather than some private path.
+    The construction is INTERCEPTED rather than driven, and that is
+    forced rather than convenient: every seam of the real host now acts
+    on the machine running the test -- it invokes `systemctl`, reads
+    this host's `/proc` and would delete this host's firewall rules --
+    so a test that let `main` build it would be a test that ran the
+    guard against its own CI runner.
+
+    What is left to assert is exactly what `main` alone owns: that the
+    paths it parsed reach `build_real_host`, and that whatever that
+    answers is handed to the same `run_request` every other test drives
+    against the fake. The real host's own seams are asserted in
+    `test_docker_engine_guard_host.py`, against recorded command
+    output.
     """
     guard = _guard_surface()
     assert "main" in guard.__all__
+    fake = _fake(root=tmp_path)
+    built: list[Any] = []
+
+    def _intercept(*, paths: Any) -> Any:
+        built.append(paths)
+        return fake
+
+    monkeypatch.setattr(
+        importlib.import_module("livespec_dev_tooling.fleet._docker_engine_guard_host"),
+        "build_real_host",
+        _intercept,
+    )
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -1599,7 +1621,8 @@ def test_the_entry_point_builds_the_real_host_child_3a_will_supply(
         ],
     )
 
-    with pytest.raises(NotImplementedError) as caught:
-        guard.main()
+    assert guard.main() == 0
 
-    assert caught.traceback[-1].path.name == "_docker_engine_guard_host.py"
+    assert [paths.state_root for paths in built] == [tmp_path / "var"]
+    assert [paths.runtime_root for paths in built] == [tmp_path / "run"]
+    assert (tmp_path / "var" / "run").read_text(encoding="utf-8") == "run-a"

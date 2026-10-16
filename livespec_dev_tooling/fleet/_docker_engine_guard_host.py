@@ -70,6 +70,13 @@ from livespec_dev_tooling.fleet._docker_engine_guard_preflight import (
 from livespec_dev_tooling.fleet._docker_engine_guard_probe_set import record_preflight, take_sample
 from livespec_dev_tooling.fleet._docker_engine_guard_resync import K3S_CONFIG, K3S_CONFIG_DROPINS
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
+from livespec_dev_tooling.fleet._docker_engine_guard_unit_state import (
+    deadman_timer_active,
+    deadman_timer_exists,
+    guard_unit_states,
+    invoking_unit,
+    unit_enabled_states,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
     disable_units,
@@ -134,16 +141,16 @@ class RealHost:
     # --- admission reads (design I1) ---
 
     def guard_unit_states(self) -> Mapping[str, str]:
-        """CHILD 4: every guard unit mapped to its `ActiveState`."""
-        raise NotImplementedError
+        """Every guard unit mapped to its `ActiveState`."""
+        return guard_unit_states(runner=self.runner)
 
     def queued_jobs(self) -> tuple[QueuedJob, ...]:
         """The whole job queue, as both admission and cancellation read it."""
         return read_queued_jobs(runner=self.runner)
 
     def invoking_unit(self) -> str:
-        """CHILD 4: this invocation's own transient unit."""
-        raise NotImplementedError
+        """This invocation's own transient unit."""
+        return invoking_unit(proc_root=self.proc_root)
 
     def docker_group_members(self) -> tuple[str, ...]:
         """Every account the `docker` group admits, by either kind of membership."""
@@ -198,12 +205,12 @@ class RealHost:
     # --- arm ---
 
     def deadman_timer_exists(self, *, run: str) -> bool:
-        """CHILD 4: whether this run's dead-man timer unit is already loaded."""
-        raise NotImplementedError
+        """Whether this run's dead-man timer unit is already loaded."""
+        return deadman_timer_exists(runner=self.runner, run=run)
 
     def deadman_timer_active(self, *, run: str) -> bool:
-        """CHILD 4: whether it is active, which `start` refuses without."""
-        raise NotImplementedError
+        """Whether it is active, which `start` refuses without."""
+        return deadman_timer_active(runner=self.runner, run=run)
 
     def systemd_run(self, *, argv: Sequence[str]) -> None:
         """Run a `systemd-run` argv the guard built, such as the dead-man recipe."""
@@ -237,8 +244,8 @@ class RealHost:
         raise NotImplementedError
 
     def unit_enabled_states(self) -> Mapping[str, str]:
-        """CHILD 4: every guard-relevant unit mapped to its `UnitFileState`."""
-        raise NotImplementedError
+        """Every guard-relevant unit mapped to its `UnitFileState`."""
+        return unit_enabled_states(runner=self.runner)
 
     # --- reconfigure (child 1b) ---
 
