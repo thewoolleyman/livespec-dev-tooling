@@ -44,6 +44,8 @@ __all__: list[str] = [
     "SNAPSHOT_TABLES",
     "FirewallTable",
     "FootprintPlan",
+    "chain_argv",
+    "delete_argv",
     "parse_table",
     "plan_footprint",
     "save_argv",
@@ -179,3 +181,19 @@ def plan_footprint(*, current: FirewallTable, snapshot: FirewallTable) -> Footpr
         ),
         delete_chains=docker_chains,
     )
+
+
+def delete_argv(*, family: str, table: str, rule: str) -> tuple[str, ...]:
+    """The `-D` of one canonical rule, carrying its FULL specification.
+
+    `rule` begins with `-A`, which is dropped: what follows it is the
+    chain plus the specification, and that is exactly what `-D` takes. A
+    position is never used, because a reconciler inserting a rule between
+    the read and the delete would make the position name k3s's rule.
+    """
+    return (CHANGE_COMMAND[family], "-t", table, "-D", *rule.split()[1:])
+
+
+def chain_argv(*, family: str, table: str, verb: str, chain: str) -> tuple[str, ...]:
+    """A whole-chain verb (`-F`, `-X`) against one chain of one table."""
+    return (CHANGE_COMMAND[family], "-t", table, verb, chain)
