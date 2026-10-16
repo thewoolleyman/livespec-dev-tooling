@@ -417,3 +417,42 @@ def test_confirm_commits_only_with_passing_evidence_and_this_boots_matching_nonc
     _ready_to_confirm(root=committed)
     assert _confirm_through_the_guard(root=committed).verdict != "refuse"
     assert state.read_marker(paths=_paths(root=committed), run="run-a") == "self"
+
+
+def test_a_confirm_carrying_an_expired_or_already_spent_challenge_refuses(
+    tmp_path: Path,
+) -> None:
+    """Specification "Commit": an expired or already-used challenge refuses.
+
+    The two are different replays and both have to be closed. An
+    EXPIRED challenge means the controller's probes ran more than 120
+    seconds ago, so its answer vouches for a host as it was, not as it
+    is -- and the window it watched is long over. An ALREADY-SPENT one
+    means this exact answer has been presented before, so re-presenting
+    it proves nothing a second time.
+
+    The nonce is spent BEFORE the commit point, not after, and that
+    order is what closes the spent case at all: a `confirm` that died
+    between the two would otherwise leave an answer that still worked,
+    and rider point 5 requires the challenge to be re-issued rather than
+    reused.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+
+    expired = tmp_path / "expired"
+    _ready_to_confirm(root=expired, issued=-200.0)
+    _confirm_refuses(root=expired, clause="120 seconds")
+
+    spent = tmp_path / "already-spent"
+    _ready_to_confirm(root=spent)
+    records.record_consumed_nonce(
+        paths=_paths(root=spent), run="run-a", nonce="nonce-of-the-current-window"
+    )
+    _confirm_refuses(root=spent, clause="spent")
+
+    committed = tmp_path / "committed"
+    _ready_to_confirm(root=committed)
+    assert _confirm_through_the_guard(root=committed).verdict != "refuse"
+    assert records.consumed_nonces(paths=_paths(root=committed), run="run-a") == (
+        "nonce-of-the-current-window",
+    )

@@ -28,9 +28,12 @@ from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardOutcome
 from livespec_dev_tooling.fleet._docker_engine_guard_records import (
+    CHALLENGE_MAX_AGE_SECONDS,
+    consumed_nonces,
     evidence_passed,
     publish_marker,
     read_challenge,
+    record_consumed_nonce,
     submitted_nonce,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_state import record_phase
@@ -60,8 +63,12 @@ def commit_refusal(*, run: str, env: GuardEnv, answer: str) -> str:
     challenge = read_challenge(paths=env.paths)
     if challenge is None or challenge.run != run or challenge.boot_id != env.host.boot_id():
         return "no challenge for this run was issued on this boot"
+    if env.host.monotonic() - challenge.issued_monotonic > CHALLENGE_MAX_AGE_SECONDS:
+        return f"the outstanding challenge is older than {CHALLENGE_MAX_AGE_SECONDS} seconds"
     if answer != challenge.nonce:
         return "the answer does not carry the nonce of the outstanding challenge"
+    if answer in consumed_nonces(paths=env.paths, run=run):
+        return "the answered nonce was already spent by an earlier confirm"
     return ""
 
 
@@ -75,9 +82,11 @@ def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     order is safe -- a marker with no phase update is a committed run
     whose post-commit steps a later `confirm` simply repeats.
     """
-    refusal = commit_refusal(run=run, env=env, answer=submitted_nonce(paths=env.paths, run=run))
+    answer = submitted_nonce(paths=env.paths, run=run)
+    refusal = commit_refusal(run=run, env=env, answer=answer)
     if refusal:
         return GuardOutcome(operation="confirm", run=run, verdict="refuse", reason=refusal)
+    record_consumed_nonce(paths=env.paths, run=run, nonce=answer)
     publish_marker(paths=env.paths, run=run)
     record_phase(paths=env.paths, run=run, phase="committed")
     return GuardOutcome(
