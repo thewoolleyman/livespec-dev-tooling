@@ -1,0 +1,11 @@
+# Managed by the livespec-dev-tooling sandbox_driver_kubernetes role. Do not edit by hand.
+# The lithos-sandbox CLI's profile for the Kubernetes plugin. The protocol
+# refuses to launch the plugin unless its bytes match `sha256`.
+default-provider = "kubernetes"
+
+[providers.kubernetes]
+type = "plugin"
+kind = "kubernetes"
+path = "{{ sandbox_driver_kubernetes_bin_dir }}/sandbox-driver-kubernetes"
+sha256 = "{{ sandbox_driver_kubernetes_sha256 }}"
+inherit-env = ["PATH", "HOME", "RUST_LOG"]

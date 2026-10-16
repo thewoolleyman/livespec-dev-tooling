@@ -1,0 +1,19 @@
+# Managed by the livespec-dev-tooling sandbox_driver_kubernetes role. Do not edit by hand.
+kubeconfig = "{{ sandbox_driver_kubernetes_kubeconfig }}"
+namespace = "{{ sandbox_driver_kubernetes_namespace }}"
+service_account = "{{ sandbox_driver_kubernetes_service_account }}"
+workspace_root = "{{ sandbox_driver_kubernetes_workspace_root }}"
+factory = "{{ sandbox_driver_kubernetes_factory }}"
+refresh_command = [{% for arg in sandbox_driver_kubernetes_refresh_command %}"{{ arg }}"{{ ", " if not loop.last }}{% endfor %}]
+
+[node_selector]
+{% for key, value in sandbox_driver_kubernetes_node_selector.items() %}
+"{{ key }}" = "{{ value }}"
+{% endfor %}
+{% for t in sandbox_driver_kubernetes_tolerations %}
+
+[[tolerations]]
+{% for field in ['key', 'operator', 'value', 'effect'] if t[field] is defined %}
+{{ field }} = "{{ t[field] }}"
+{% endfor %}
+{% endfor %}
