@@ -50,6 +50,20 @@ fabro_server_instances:
     github_app_id: "3668528"
     # Live on the host since 2026-08-21.
     otel_dropin: present
+    # The SAME build this instance has run since 2026-10-01 — fabro 0.254.0 at
+    # 8869e88 (tag carrier-8869e88-pre-rebuild-2026-10-10 on
+    # thewoolleyman/fabro) — rebuilt 2026-10-16 with NODE_ENV=production
+    # exported, because fabro-web's build.ts never sets it and every earlier
+    # build embedded React's DEVELOPMENT build in the web console. Engine source
+    # is identical; only the SPA differs. STAGED, NOT RESTARTED: this instance is
+    # never idle, so an apply with fabro_server_restart_allowed false swaps the
+    # file atomically under the running server and records the deferred restart.
+    # The new console goes live at the next restart: a zero-live window, or the
+    # fabro-currency cutover (gitops-fleet-capacity-monitoring ruling R80). The
+    # path is shared with fabro-server-mi-homelab, which names no binary_path and
+    # is stopped. Provenance is in BUILD_INFO beside the binary.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
+    binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/cwoolley/.fabro-mi-homelab
     port: 32277

@@ -164,6 +164,11 @@ _CANDIDATE_BINARY_SHA256 = "26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1
 # both axes, and the candidate instance the fabro-currency cutover moves production
 # onto, which names both. These values are the Definition of Done's, not the file's.
 _FLEET_UNIT = "fabro-server"
+# The instance the no-binary-source arm reads. It was the fleet instance until
+# 2026-10-16, when that instance began declaring binary_source for its
+# NODE_ENV=production rebuild; mi-homelab still names neither install axis and
+# shares the host's binary path, so the arm's property is unchanged.
+_UNSOURCED_UNIT = "fabro-server-mi-homelab"
 _CANDIDATE_UNIT = "fabro-server-candidate"
 _CANDIDATE_PORT = "32278"
 _CANDIDATE_HOME = "/home/cwoolley/.fabro-candidate"
@@ -1128,10 +1133,10 @@ def test_the_binary_install_guards_stay_inside_the_vocabulary_this_test_can_eval
 
 def test_an_instance_that_omits_the_binary_install_axes_leaves_the_hosts_binary_alone() -> None:
     """The first assertion: omitting `binary_source` changes neither the host nor the unit."""
-    instance = _instance_named(unit=_FLEET_UNIT, source=_INVENTORY)
+    instance = _instance_named(unit=_UNSOURCED_UNIT, source=_INVENTORY)
     present = sorted(axis for axis in _BINARY_AXES if axis in instance)
     assert not present, (
-        f"this arm is the no-source arm, so hp-xubuntu's {_FLEET_UNIT} instance must omit both "
+        f"this arm is the no-source arm, so hp-xubuntu's {_UNSOURCED_UNIT} instance must omit both "
         f"{list(_BINARY_AXES)}; it declares {present}, which would make every verdict below a "
         f"claim about an instance that uses them"
     )
