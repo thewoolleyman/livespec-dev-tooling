@@ -27,13 +27,26 @@
 
 set -euo pipefail
 
-VM_DIR="${DOCKER_ENGINE_VM_DIR:-$HOME/.cache/docker-engine-guard-vm}"
+# DOCKER_ENGINE_VM_INSTANCE names one of several VMs run side by side for the
+# fault suite: each instance has its own directory (overlay, key, logs) and its
+# own forwarded ports (base + 10 * index), and shares the verified base image.
+INSTANCE="${DOCKER_ENGINE_VM_INSTANCE:-0}"
+[[ "$INSTANCE" =~ ^[0-9]+$ ]] || { echo "vm.sh: DOCKER_ENGINE_VM_INSTANCE must be a number" >&2; exit 2; }
+BASE_DIR="${DOCKER_ENGINE_VM_BASE_DIR:-$HOME/.cache/docker-engine-guard-vm}"
+if [[ "$INSTANCE" -eq 0 ]]; then VM_DIR_DEFAULT="$BASE_DIR"; else VM_DIR_DEFAULT="$BASE_DIR/vm-$INSTANCE"; fi
+VM_DIR="${DOCKER_ENGINE_VM_DIR:-$VM_DIR_DEFAULT}"
+IMAGE_DIR="$BASE_DIR"
 IMAGE_URL_BASE="https://cloud-images.ubuntu.com/releases/26.04/release"
 IMAGE_NAME="ubuntu-26.04-server-cloudimg-amd64.img"
-SSH_PORT="${DOCKER_ENGINE_VM_SSH_PORT:-2229}"
+SSH_PORT="${DOCKER_ENGINE_VM_SSH_PORT:-$((2229 + 10 * INSTANCE))}"
 # The guest's LLM-health stub (baseline.sh, port 8080), forwarded so the
 # role's CONTROLLER-SIDE probe, which runs on the control node, can reach it.
-LLM_PORT="${DOCKER_ENGINE_VM_LLM_PORT:-2280}"
+LLM_PORT="${DOCKER_ENGINE_VM_LLM_PORT:-$((2280 + 10 * INSTANCE))}"
+# The address the LLM-health forward listens on. 127.0.0.1 when the role's
+# controller runs on this same machine; the tailnet-reachable host address
+# when the VM runs on a remote KVM host and the controller reaches it over
+# the tailnet. The stub answers only GET /health.
+LLM_BIND="${DOCKER_ENGINE_VM_LLM_BIND:-127.0.0.1}"
 MEMORY="${DOCKER_ENGINE_VM_MEMORY:-4096}"
 SMP="${DOCKER_ENGINE_VM_SMP:-4}"
 DISK_SIZE="${DOCKER_ENGINE_VM_DISK:-20G}"
@@ -92,16 +105,16 @@ ssh_argv() {
 }
 
 cmd_fetch() {
-  run mkdir -p "$VM_DIR"
-  run curl -sfL --max-time 60 -o "$VM_DIR/SHA256SUMS" "$IMAGE_URL_BASE/SHA256SUMS"
-  if [[ "$DRY_RUN" -eq 0 ]] && [[ -f "$VM_DIR/$IMAGE_NAME" ]] &&
-    (cd "$VM_DIR" && grep " \*\?${IMAGE_NAME}\$" SHA256SUMS | sha256sum -c --status); then
+  run mkdir -p "$IMAGE_DIR"
+  run curl -sfL --max-time 60 -o "$IMAGE_DIR/SHA256SUMS" "$IMAGE_URL_BASE/SHA256SUMS"
+  if [[ "$DRY_RUN" -eq 0 ]] && [[ -f "$IMAGE_DIR/$IMAGE_NAME" ]] &&
+    (cd "$IMAGE_DIR" && grep " \*\?${IMAGE_NAME}\$" SHA256SUMS | sha256sum -c --status); then
     printf 'vm.sh: %s already present and verified\n' "$IMAGE_NAME"
     return 0
   fi
-  run curl -sfL --max-time 3600 -o "$VM_DIR/$IMAGE_NAME" "$IMAGE_URL_BASE/$IMAGE_NAME"
+  run curl -sfL --max-time 3600 -o "$IMAGE_DIR/$IMAGE_NAME" "$IMAGE_URL_BASE/$IMAGE_NAME"
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    (cd "$VM_DIR" && grep " \*\?${IMAGE_NAME}\$" SHA256SUMS | sha256sum -c) ||
+    (cd "$IMAGE_DIR" && grep " \*\?${IMAGE_NAME}\$" SHA256SUMS | sha256sum -c) ||
       die "the downloaded image does not match SHA256SUMS; refusing to use it"
   fi
 }
@@ -130,9 +143,9 @@ EOF
 
 cmd_up() {
   qemu_running && { printf 'vm.sh: already running\n'; return 0; }
-  [[ -f "$VM_DIR/$IMAGE_NAME" ]] || [[ "$DRY_RUN" -eq 1 ]] || die "no base image; run: vm.sh fetch"
+  [[ -f "$IMAGE_DIR/$IMAGE_NAME" ]] || [[ "$DRY_RUN" -eq 1 ]] || die "no base image; run: vm.sh fetch"
   [[ -f "$(overlay)" ]] ||
-    run qemu-img create -q -f qcow2 -F qcow2 -b "$VM_DIR/$IMAGE_NAME" "$(overlay)" "$DISK_SIZE"
+    run qemu-img create -q -f qcow2 -F qcow2 -b "$IMAGE_DIR/$IMAGE_NAME" "$(overlay)" "$DISK_SIZE"
   write_seed
 
   # The NoCloud seed is served over HTTP from the control node's loopback,
@@ -146,11 +159,22 @@ cmd_up() {
     printf '%s\n' "$!" >"$VM_DIR/seed-http.pid"
   fi
 
-  run qemu-system-x86_64 \
-    -machine q35 -accel tcg,thread=multi -cpu max \
+  # KVM where this user can open /dev/kvm (poweredge-xubuntu, ruled usable by
+  # coordinator ruling R59), otherwise TCG (the vps control node). The VM runs
+  # inside its own transient --user scope, so `vm.sh down` or one
+  # `systemctl --user stop <scope>` removes it and everything it spawned, with
+  # no persistent unit and no privilege.
+  local -a accel=(-accel "tcg,thread=multi" -cpu max)
+  if [[ -r /dev/kvm && -w /dev/kvm ]]; then accel=(-accel kvm -cpu host); fi
+  local -a scope=()
+  if command -v systemd-run >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+    scope=(systemd-run --user --scope --quiet --unit="docker-engine-guard-vm-${INSTANCE}-$$")
+  fi
+  run "${scope[@]}" qemu-system-x86_64 \
+    -machine q35 "${accel[@]}" \
     -m "$MEMORY" -smp "$SMP" \
     -drive "file=$(overlay),if=virtio,format=qcow2" \
-    -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22,hostfwd=tcp:127.0.0.1:${LLM_PORT}-:8080" \
+    -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22,hostfwd=tcp:${LLM_BIND}:${LLM_PORT}-:8080" \
     -device virtio-net-pci,netdev=net0 \
     -smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:${seed_port}/" \
     -display none -serial "file:$VM_DIR/serial.log" \

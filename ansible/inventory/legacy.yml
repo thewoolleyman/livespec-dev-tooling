@@ -82,3 +82,13 @@ all:
             poweredge-xubuntu:
             hp-xubuntu:
             gmktec-xubuntu:
+        # Where the docker_engine role's disposable acceptance VMs run
+        # (ansible/docker-engine-acceptance.yml): a KVM host, as the
+        # inventory's own user with no become. Coordinator ruling R59
+        # (2026-10-16, on livespec-dev-tooling-dfixhe) ruled it usable, with a
+        # bound of 8 VMs, 32 vCPU and 64 GiB. hp-xubuntu, which runs live
+        # factory work, and gmktec-xubuntu, the converge target, must never be
+        # added here.
+        docker_engine_acceptance_hosts:
+          hosts:
+            poweredge-xubuntu:
