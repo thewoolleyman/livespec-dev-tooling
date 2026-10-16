@@ -1627,6 +1627,52 @@ def test_the_dead_man_timer_reads_tell_a_loaded_timer_from_an_airborne_one(
     assert stalled.deadman_timer_active(run="run-a") is False
 
 
+def test_the_unit_start_takes_the_callers_bound_and_the_enable_takes_the_fixed_set(
+    tmp_path: Path,
+) -> None:
+    """The two post-commit halves of rider point 9, and the bound each carries.
+
+    STARTING takes the CALLER's timeout rather than this module's action
+    bound, because the caller is the one that knows what it can afford:
+    `start` brings up two daemons and takes the lock wait inside a
+    180-second unit, so a daemon that never becomes ready has to end as
+    a refusal rather than as a transient unit SIGKILLed with no verdict
+    at all.
+
+    ENABLING is narrowed to the fixed set exactly as disabling is -- the
+    set is the module's and never the caller's -- and issues one command
+    per unit, so a unit whose enable fails does not take the other two
+    with it. Enabling carries the engine across the NEXT boot and the
+    start carries it across this one; an enabled-but-stopped Docker on a
+    committed host is an engine that only comes back at a reboot, so the
+    post-commit steps issue both.
+    """
+    units = importlib.import_module(_UNITS_MODULE)
+    assert {"enable_units", "start_unit"} <= set(units.__all__)
+    model = importlib.import_module(_MODEL_MODULE)
+    commands = _Commands()
+    host = _real_host(root=tmp_path, commands=commands)
+
+    host.start_unit(unit="containerd.service", timeout_seconds=model.UNIT_WAIT_SECONDS)
+    host.enable_units(units=model.GUARDED_UNITS)
+
+    assert tuple(commands.argvs) == (
+        ("systemctl", "start", "containerd.service"),
+        ("systemctl", "enable", "containerd.service"),
+        ("systemctl", "enable", "docker.service"),
+        ("systemctl", "enable", "docker.socket"),
+    )
+    assert commands.timeouts == [
+        model.UNIT_WAIT_SECONDS,
+        *[units.UNIT_ACTION_TIMEOUT_SECONDS] * 3,
+    ]
+
+    narrow = _Commands()
+    units.enable_units(runner=narrow, units=("docker.service", "k3s-agent.service"))
+
+    assert tuple(narrow.argvs) == (("systemctl", "enable", "docker.service"),)
+
+
 def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:
     """`RealHost` stays a complete `HostOps` as siblings widen the protocol.
 

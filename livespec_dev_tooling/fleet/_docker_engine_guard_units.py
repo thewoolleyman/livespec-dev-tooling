@@ -49,9 +49,11 @@ __all__: list[str] = [
     "GuardSleeper",
     "cancel_jobs",
     "disable_units",
+    "enable_units",
     "guarded_job_ids",
     "kill_cgroup",
     "read_queued_jobs",
+    "start_unit",
     "stop_docker",
     "stop_guard_units",
     "stop_unit",
@@ -174,6 +176,19 @@ def stop_unit(*, runner: GuardCommandRunner, unit: str, timeout_seconds: int) ->
     _ = runner(argv=(SYSTEMCTL, "stop", unit), timeout_seconds=timeout_seconds)
 
 
+def start_unit(*, runner: GuardCommandRunner, unit: str, timeout_seconds: int) -> None:
+    """Start one unit, bounded by the caller's own budget.
+
+    The budget is the CALLER's rather than this module's action timeout
+    because the caller is the one that knows what it can afford: `start`
+    brings up two daemons and takes the lock wait inside a 180-second
+    unit, so each start gets a bound those three fit inside. A daemon
+    that never becomes ready then ends as a refusal, instead of a
+    transient unit SIGKILLed at its budget with no verdict at all.
+    """
+    _ = runner(argv=(SYSTEMCTL, "start", unit), timeout_seconds=timeout_seconds)
+
+
 def systemd_run(*, runner: GuardCommandRunner, argv: Sequence[str]) -> None:
     """Run a `systemd-run` recipe the guard built, through the one bounded runner.
 
@@ -233,6 +248,26 @@ def disable_units(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
         if unit in named:
             _ = runner(
                 argv=(SYSTEMCTL, "disable", unit),
+                timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
+            )
+
+
+def enable_units(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
+    """Enable each named guarded unit, one command per unit.
+
+    The post-commit mirror of `disable_units` above, and narrowed to the
+    same fixed set for the same reason: the set is this module's, never
+    the caller's. Enabling is what carries Docker across the NEXT boot —
+    the commit marker satisfies the start condition from now on, but
+    only a `WantedBy` link actually starts the units — while the start
+    beside it carries the engine across this boot (rider point 9), and
+    neither does the other's job.
+    """
+    named = set(units)
+    for unit in GUARDED_UNITS:
+        if unit in named:
+            _ = runner(
+                argv=(SYSTEMCTL, "enable", unit),
                 timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
             )
 
