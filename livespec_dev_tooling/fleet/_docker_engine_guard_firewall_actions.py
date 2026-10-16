@@ -40,12 +40,20 @@ __all__: list[str] = [
     "DELETE_CHAIN",
     "FIREWALL_TIMEOUT_SECONDS",
     "FLUSH_CHAIN",
+    "FOOTPRINT_PASSES",
     "FORWARD_CHAIN",
     "read_current_table",
     "read_snapshot_table",
     "remove_footprint",
+    "residual_docker_rules",
     "write_firewall_snapshot",
 ]
+
+# How many times removal re-reads and repeats. BOUNDED on purpose: a rule
+# that will not go will not go, and an unbounded retry would hold the
+# rollback phase until its own `timeout -k 10` killed it mid-teardown,
+# which is strictly worse than reporting the residue.
+FOOTPRINT_PASSES: Final[int] = 3
 
 # The two whole-chain verbs, in the order they have to be issued: a chain
 # still holding rules cannot be deleted.
@@ -125,23 +133,56 @@ def apply_footprint_plan(
             )
 
 
-def remove_footprint(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str, ...]:
-    """Take Docker's footprint off both families, table by table.
+def _table_plan(
+    *, runner: GuardCommandRunner, snapshot: Path, family: str, table: str
+) -> FootprintPlan:
+    """What this table has to give up, read fresh against the snapshot."""
+    return plan_footprint(
+        current=read_current_table(runner=runner, family=family, table=table),
+        snapshot=read_snapshot_table(snapshot=snapshot, family=family, table=table),
+    )
 
-    The walk order is the families' order and then the tables', so a
-    report of what happened reads the same way twice. Residual reporting
-    and the repeat passes the specification requires arrive with the next
-    assertion; this pass is the single sweep they repeat.
+
+def _named_rules(*, family: str, table: str, plan: FootprintPlan) -> tuple[str, ...]:
+    """Each planned rule named with the family and table it lives in.
+
+    The rule text alone is ambiguous: the same `-A FORWARD -o docker0 -j
+    DOCKER` exists in both families, so a residue report carrying only the
+    text would not tell an operator which one is still there.
     """
+    return tuple(f"{family} {table} {rule}" for rule in plan.delete_rules)
+
+
+def residual_docker_rules(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str, ...]:
+    """Every Docker rule still present, read-only, named with family and table."""
+    found: tuple[str, ...] = ()
     for family in FAMILIES:
         for table in SNAPSHOT_TABLES:
-            apply_footprint_plan(
-                runner=runner,
+            found += _named_rules(
                 family=family,
                 table=table,
-                plan=plan_footprint(
-                    current=read_current_table(runner=runner, family=family, table=table),
-                    snapshot=read_snapshot_table(snapshot=snapshot, family=family, table=table),
-                ),
+                plan=_table_plan(runner=runner, snapshot=snapshot, family=family, table=table),
             )
-    return ()
+    return found
+
+
+def remove_footprint(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str, ...]:
+    """Take Docker's footprint off both families, repeating boundedly.
+
+    The walk order is the families' order and then the tables', so a
+    report of what happened reads the same way twice. A pass that finds
+    nothing ends the removal right there; otherwise the passes run out and
+    the final READ-ONLY sweep is what the residue report is built from --
+    never the last pass's plan, which says what was attempted rather than
+    what survived.
+    """
+    for _ in range(FOOTPRINT_PASSES):
+        found: tuple[str, ...] = ()
+        for family in FAMILIES:
+            for table in SNAPSHOT_TABLES:
+                plan = _table_plan(runner=runner, snapshot=snapshot, family=family, table=table)
+                found += _named_rules(family=family, table=table, plan=plan)
+                apply_footprint_plan(runner=runner, family=family, table=table, plan=plan)
+        if not found:
+            return ()
+    return residual_docker_rules(runner=runner, snapshot=snapshot)
