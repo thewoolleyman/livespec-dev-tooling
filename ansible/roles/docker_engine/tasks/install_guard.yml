@@ -1,0 +1,102 @@
+---
+# Install the guard onto the host: the stdlib-only module set, copied from this
+# repository's own checkout on the control node, under a tree that keeps
+# livespec_dev_tooling/fleet/ intact (the guard resolves its package root as
+# parents[2] of its own file), and the executable at the path every transient
+# unit and the dead-man recipe name.
+#
+# The fake host (_docker_engine_guard_fake.py) is a test double and is never
+# installed. The dpkg frontend-lock helper (_docker_engine_guard_aptlock.py)
+# comes with the module set and is run from this tree by fence_publish.yml. The two package __init__.py files are docstring-only.
+
+- name: Hold the guard modules to install
+  ansible.builtin.set_fact:
+    docker_engine_guard_modules: >-
+      {{ (query('ansible.builtin.fileglob',
+                docker_engine_guard_source_root ~ '/livespec_dev_tooling/fleet/_docker_engine_guard_*.py')
+          | reject('search', '/_docker_engine_guard_fake\.py$') | list)
+         + [docker_engine_guard_source_root ~ '/livespec_dev_tooling/fleet/docker_engine_guard.py',
+            docker_engine_guard_source_root ~ '/livespec_dev_tooling/fleet/__init__.py'] }}
+
+- name: Refuse a source tree that does not carry the guard
+  ansible.builtin.assert:
+    that:
+      - docker_engine_guard_modules | length > 3
+      - docker_engine_guard_modules | select('search', '/_docker_engine_guard_model\.py$') | list | length == 1
+    fail_msg: >-
+      No guard modules under {{ docker_engine_guard_source_root }}/livespec_dev_tooling/fleet;
+      run the play from a livespec-dev-tooling checkout.
+    success_msg: "{{ docker_engine_guard_modules | length }} guard modules to install"
+
+- name: Create the guard's package tree
+  ansible.builtin.file:
+    path: "{{ docker_engine_guard_install_root }}/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - livespec_dev_tooling
+    - livespec_dev_tooling/fleet
+  become: true
+
+- name: Install the top-level package marker
+  ansible.builtin.copy:
+    src: "{{ docker_engine_guard_source_root }}/livespec_dev_tooling/__init__.py"
+    dest: "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/__init__.py"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the guard modules
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ docker_engine_guard_modules }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  become: true
+
+- name: Find modules installed by an earlier converge
+  ansible.builtin.find:
+    paths: "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet"
+    patterns: "*.py"
+  register: docker_engine_installed_modules
+  become: true
+  check_mode: false
+
+- name: Remove a module the source no longer carries
+  # A renamed or deleted module left behind would still be importable by name.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{ docker_engine_installed_modules.files | map(attribute='path')
+       | reject('in', docker_engine_guard_modules
+                      | map('basename')
+                      | map('regex_replace', '^', docker_engine_guard_install_root ~ '/livespec_dev_tooling/fleet/')
+                      | list)
+       | list }}
+  become: true
+
+- name: Install the guard executable
+  ansible.builtin.template:
+    src: docker-engine-guard.sh.j2
+    dest: "{{ docker_engine_guard_executable }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Prove the installed guard imports and parses its command line
+  # `--help` exits inside argparse, before a host is built or a lock is taken,
+  # so this acts on nothing; it fails if the tree is incomplete.
+  ansible.builtin.command:
+    argv: ["{{ docker_engine_guard_executable }}", --help]
+  become: true
+  changed_when: false
+  when: not ansible_check_mode

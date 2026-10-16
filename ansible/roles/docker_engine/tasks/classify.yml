@@ -1,0 +1,184 @@
+---
+# Design Mechanism 6, as revisions 7 and 8 left it: what a converge does with
+# what it finds. Read-only. The result is one fact, `docker_engine_class`:
+#
+#   committed         the commit marker exists: post-commit path only (H3)
+#   rollback-partial  the current run ended rollback-partial: refused unless the
+#                     operator acknowledges it (-e docker_engine_acknowledge_run)
+#   unfinished        the current run is in any other non-terminal phase:
+#                     refused unless the operator names it (-e docker_engine_recover);
+#                     the role never attaches to or takes over a run (H1)
+#   busy              a guard unit is running or queued: refused
+#   foreign           Docker packages or state this guard's runs did not record:
+#                     refused, never adopted, never erased
+#   fresh             nothing in the way of a new run (no reservation, or a
+#                     rolled-back one), with any Docker packages present
+#                     accounted for by a recorded run
+#
+# The guard re-decides every one of these under its own lock; the role reads
+# them first only so it can refuse BEFORE writing anything at all.
+
+- name: Read the commit marker
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_state_root }}/confirmed"
+  register: docker_engine_marker_raw
+  become: true
+  failed_when: false
+  check_mode: false
+
+- name: Read the current reservation
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_state_root }}/run"
+  register: docker_engine_reservation_raw
+  become: true
+  failed_when: false
+  check_mode: false
+
+- name: Hold the current reservation's run
+  ansible.builtin.set_fact:
+    docker_engine_current_run: >-
+      {{ (docker_engine_reservation_raw.content | b64decode | trim)
+         if docker_engine_reservation_raw.content is defined else '' }}
+
+- name: Read the current run's phase
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_state_root }}/runs/{{ docker_engine_current_run }}/phase"
+  register: docker_engine_phase_raw
+  become: true
+  failed_when: false
+  check_mode: false
+  when: docker_engine_current_run | length > 0
+
+- name: Read the current run's deadline
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_state_root }}/runs/{{ docker_engine_current_run }}/deadline.json"
+  register: docker_engine_deadline_raw
+  become: true
+  failed_when: false
+  check_mode: false
+  when: docker_engine_current_run | length > 0
+
+- name: Hold the current run's phase and deadline
+  ansible.builtin.set_fact:
+    docker_engine_current_phase: >-
+      {{ (docker_engine_phase_raw.content | b64decode | trim)
+         if docker_engine_phase_raw.content is defined else '' }}
+    docker_engine_current_deadline: >-
+      {{ (docker_engine_deadline_raw.content | b64decode | trim)
+         if docker_engine_deadline_raw.content is defined else 'none recorded' }}
+
+- name: List every guard unit and dead-man unit the service manager knows
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - list-units
+      - --all
+      - --plain
+      - --no-legend
+      - --no-pager
+      - docker-engine-guard-*
+      - docker-engine-deadman-*
+  register: docker_engine_guard_units
+  become: true
+  changed_when: false
+  check_mode: false
+
+- name: List the queued jobs
+  ansible.builtin.command:
+    argv: [systemctl, list-jobs, --plain, --no-legend, --no-pager]
+  register: docker_engine_jobs
+  become: true
+  changed_when: false
+  check_mode: false
+
+- name: Read which Docker engine packages dpkg holds
+  vars:
+    docker_engine_query_format: -f=${binary:Package} ${db:Status-Status}\n
+  ansible.builtin.command:
+    argv: "{{ ['dpkg-query', '-W', docker_engine_query_format] + docker_engine_packages | map(attribute='package') | list }}"
+  register: docker_engine_pkg_query
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Look for Docker state on disk
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /var/lib/docker
+    - /var/lib/containerd
+    - /etc/docker
+  register: docker_engine_state_dirs
+  become: true
+  check_mode: false
+
+- name: Find every guard run's recorded intended package set
+  ansible.builtin.find:
+    paths: "{{ docker_engine_state_root }}/runs"
+    patterns: intended.json
+    recurse: true
+    depth: 2
+  register: docker_engine_intended_files
+  become: true
+  check_mode: false
+
+- name: Read every recorded intended package set
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ docker_engine_intended_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: docker_engine_intended_raw
+  become: true
+  check_mode: false
+
+- name: Find every guard run directory
+  ansible.builtin.find:
+    paths: "{{ docker_engine_state_root }}/runs"
+    file_type: directory
+  register: docker_engine_run_dirs
+  become: true
+  check_mode: false
+
+- name: Classify the host
+  vars:
+    # A dpkg-query row whose status is anything but `not-installed` is a
+    # package dpkg holds something for, half-installed included.
+    docker_engine_held_packages: >-
+      {{ docker_engine_pkg_query.stdout_lines | map('split', ' ')
+         | rejectattr(1, 'equalto', 'not-installed') | map('first') | list }}
+    docker_engine_recorded_packages: >-
+      {{ docker_engine_intended_raw.results | map(attribute='content') | map('b64decode')
+         | map('from_json') | map(attribute='additions') | flatten
+         | map('regex_replace', '=.*$', '') | unique | list }}
+    docker_engine_present_state: >-
+      {{ docker_engine_state_dirs.results | selectattr('stat.exists') | map(attribute='item') | list }}
+    docker_engine_busy_found: >-
+      {{ docker_engine_guard_units.stdout_lines | map('split') | rejectattr(2, 'equalto', 'inactive')
+         | map('first') | list
+         + (docker_engine_jobs.stdout_lines | map('split') | map(attribute=1)
+            | select('match', '^docker-engine-(guard|deadman)-') | list) }}
+  ansible.builtin.set_fact:
+    docker_engine_busy_units: "{{ docker_engine_busy_found }}"
+    docker_engine_foreign: >-
+      {{ (docker_engine_held_packages | difference(docker_engine_recorded_packages))
+         + ((docker_engine_present_state if docker_engine_run_dirs.matched == 0 else [])) }}
+    docker_engine_class: >-
+      {%- if docker_engine_marker_raw.content is defined -%}committed
+      {%- elif docker_engine_current_run | length > 0 and docker_engine_current_phase == 'rollback-partial' -%}rollback-partial
+      {%- elif docker_engine_current_run | length > 0 and docker_engine_current_phase not in ['rolled-back'] -%}unfinished
+      {%- elif docker_engine_busy_found | length > 0 -%}busy
+      {%- elif (docker_engine_held_packages | difference(docker_engine_recorded_packages)) | length > 0
+               or (docker_engine_present_state | length > 0 and docker_engine_run_dirs.matched == 0) -%}foreign
+      {%- else -%}fresh
+      {%- endif -%}
+
+- name: Report what this converge found
+  ansible.builtin.debug:
+    msg: >-
+      class={{ docker_engine_class }}
+      current_run={{ docker_engine_current_run or 'none' }}
+      phase={{ docker_engine_current_phase or 'none' }}
+      deadline={{ docker_engine_current_deadline }}
+      busy={{ docker_engine_busy_units }}
+      foreign={{ docker_engine_foreign }}

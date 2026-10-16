@@ -1,0 +1,150 @@
+---
+# The apt fence around the guard's package step (design Mechanism 5, R6, F6),
+# and `publish` inside it. The guard's package step assumes the dpkg frontend
+# lock is ALREADY held (it runs `dpkg -i` with DPKG_FRONTEND_LOCKED=1), and
+# leaves the apt timers, the lock wait and the post-install daemon-reload to
+# the role. Here:
+#
+#   1. record each apt timer's state, arm a host-side backstop that restores
+#      exactly that state if this controller is lost, and stop the timers;
+#   2. wait, bounded, until no process holds any apt or dpkg lock;
+#   3. take the dpkg frontend lock in a helper that runs as its OWN transient
+#      unit, so its lifetime belongs to systemd and not to this SSH session;
+#   4. require the fresh-install preconditions (no marker, no start permission,
+#      no probe permission) immediately before the install;
+#   5. run `publish`;
+#   6. ALWAYS release the lock.
+#
+# The timers stay stopped until the run reaches an OUTCOME (design F6), not
+# merely until the install returns: an unattended upgrade of one of the three
+# packages during the observation window would restart the daemon under the
+# guard's feet. fresh_run.yml's `always` restores them.
+
+- name: Fence the package step
+  vars:
+    docker_engine_aptlock_unit: "docker-engine-guard-aptlock-{{ docker_engine_run }}"
+    docker_engine_aptlock_ready: "/run/docker-engine-guard-aptlock-{{ docker_engine_run }}"
+  block:
+    - name: Read whether each apt timer is active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, "{{ item }}"]
+      loop: "{{ docker_engine_apt_timers }}"
+      register: docker_engine_apt_timer_states
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Hold the apt timers that were active before the fence
+      # A timer that was inactive before is never started by the restore.
+      ansible.builtin.set_fact:
+        docker_engine_apt_timers_active: >-
+          {{ docker_engine_apt_timer_states.results | selectattr('stdout', 'equalto', 'active')
+             | map(attribute='item') | list }}
+
+    - name: Arm the host-side backstop that restores them if this controller is lost
+      ansible.builtin.command:
+        argv: >-
+          {{ ['systemd-run', '--unit=' ~ docker_engine_apt_restore_unit, '--collect',
+              '--on-active=' ~ docker_engine_apt_restore_after, '--timer-property=AccuracySec=1s',
+              'systemctl', 'start'] + docker_engine_apt_timers_active }}
+      become: true
+      changed_when: true
+      when: docker_engine_apt_timers_active | length > 0
+
+    - name: Stop the apt timers for the guarded run
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ docker_engine_apt_timers_active }}"
+      become: true
+
+    # Wait on the locks, not on process names: the always-running
+    # unattended-upgrade-shutdown truncates to the same 15-character comm as a
+    # real upgrade run, so a name match never clears (lan_ssh_fallback measured
+    # this). fuser exits 1 when no process holds any of the files.
+    - name: Wait until no package manager holds an apt or dpkg lock
+      ansible.builtin.shell:
+        cmd: >-
+          command -v fuser >/dev/null || exit 2;
+          end=$((SECONDS + {{ docker_engine_lock_wait_seconds | int }}));
+          while [ "$SECONDS" -lt "$end" ]; do
+          fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock
+          /var/lib/apt/lists/lock /var/cache/apt/archives/lock
+          /var/lib/apt/daily_lock >/dev/null 2>&1 || exit 0;
+          sleep 5; done; exit 1
+        executable: /bin/bash
+      become: true
+      changed_when: false
+
+    - name: Clear a ready file an interrupted earlier helper left behind
+      ansible.builtin.file:
+        path: "{{ docker_engine_aptlock_ready }}"
+        state: absent
+      become: true
+
+    - name: Take the dpkg frontend lock in its own transient unit
+      ansible.builtin.command:
+        argv:
+          - systemd-run
+          - "--unit={{ docker_engine_aptlock_unit }}"
+          - --collect
+          - "--property=RuntimeMaxSec={{ docker_engine_guard_timing.budgets.publish | int + docker_engine_lock_wait_seconds | int + 120 }}"
+          - /usr/bin/python3
+          - -I
+          - -B
+          - "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/_docker_engine_guard_aptlock.py"
+          - "{{ docker_engine_aptlock_ready }}"
+          - "{{ docker_engine_lock_wait_seconds }}"
+      become: true
+      changed_when: true
+
+    - name: Wait until the helper holds the lock
+      ansible.builtin.wait_for:
+        path: "{{ docker_engine_aptlock_ready }}"
+        timeout: "{{ docker_engine_lock_wait_seconds | int + 30 }}"
+      become: true
+
+    - name: Look for every permission immediately before the install
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ docker_engine_state_root }}/confirmed"
+        - "{{ docker_engine_runtime_root }}/allow-start"
+        - "{{ docker_engine_runtime_root }}/probe-allow"
+      register: docker_engine_permissions_before
+      become: true
+
+    - name: Require no start permission of any kind before the install
+      # Design G6: in a fresh install the marker, the start permission and the
+      # probe's test permission are all absent immediately before dpkg runs, or
+      # the postinst start would find its condition MET.
+      ansible.builtin.assert:
+        that:
+          - docker_engine_permissions_before.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: >-
+          A permission exists before the install:
+          {{ docker_engine_permissions_before.results | selectattr('stat.exists') | map(attribute='item') | list }}
+        success_msg: no start permission exists
+
+    - name: Mark the journal before the install
+      ansible.builtin.command:
+        argv: [date, +%s]
+      register: docker_engine_publish_since
+      changed_when: false
+
+    - name: Publish the inert install
+      # Snapshot once, the audited transaction under the held lock, then the
+      # busctl read of each unit's effective conditions; `published` only if
+      # that read finds exactly the guard's two.
+      ansible.builtin.include_tasks: guard_op.yml
+      vars:
+        docker_engine_op: publish
+        docker_engine_op_run: "{{ docker_engine_run }}"
+
+  always:
+    - name: Release the dpkg frontend lock
+      ansible.builtin.command:
+        argv: [systemctl, stop, "{{ docker_engine_aptlock_unit }}.service"]
+      become: true
+      changed_when: true
+      failed_when: false

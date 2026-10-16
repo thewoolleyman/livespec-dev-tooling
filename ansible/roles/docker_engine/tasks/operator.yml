@@ -1,0 +1,32 @@
+---
+# The two operator switches, each naming the CURRENT run (refusals.yml has
+# already refused any other). Each runs exactly one guard operation and ends the
+# host: a recovered or verified host is converged by the NEXT run of the play,
+# after the operator has read what this one reported.
+
+- name: Recover the named run through the guard
+  # `recover` takes the same lock and the same dispatch table as everything
+  # else (rider point 8) and runs whatever it delegates to inside its own unit,
+  # so its 1800 s budget bounds the whole recovery: it finishes a committed run,
+  # resumes an interrupted inert publish, and rolls back any other uncommitted
+  # phase.
+  ansible.builtin.include_tasks: guard_op.yml
+  vars:
+    docker_engine_op: recover
+    docker_engine_op_run: "{{ docker_engine_current_run }}"
+  when: docker_engine_recover == docker_engine_current_run
+
+- name: Verify the acknowledged rollback-partial run through the guard
+  # `verify` re-reads every rollback postcondition now, against the run's own
+  # snapshot, and promotes the run to rolled-back only if all of them hold;
+  # that promotion is what lets a later run reserve.
+  ansible.builtin.include_tasks: guard_op.yml
+  vars:
+    docker_engine_op: verify
+    docker_engine_op_run: "{{ docker_engine_current_run }}"
+  when:
+    - docker_engine_class == 'rollback-partial'
+    - docker_engine_acknowledge_run == docker_engine_current_run
+
+- name: Stop here; the next converge starts from what the guard now records
+  ansible.builtin.meta: end_host

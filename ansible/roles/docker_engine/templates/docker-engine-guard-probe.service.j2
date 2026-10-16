@@ -1,0 +1,13 @@
+# Managed by the docker_engine role (livespec-dev-tooling). Removed again by the
+# same run that installed it.
+#
+# A throwaway unit that proves the start condition's MECHANISM on this host
+# before any Docker package is installed (design R5 step 1, F5 step 1): it
+# carries the identical two-line OR drop-in, naming its own test permission
+# instead of the real one, and must be skipped without it and run with it.
+[Unit]
+Description=docker-engine-guard start-condition probe
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true

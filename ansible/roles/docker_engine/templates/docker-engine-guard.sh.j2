@@ -1,0 +1,8 @@
+#!/bin/sh
+# Managed by the docker_engine role (livespec-dev-tooling). Do not edit.
+#
+# The Docker engine install guard. Every invocation runs inside its own bounded
+# transient systemd unit (design G1); never call it from a login session.
+# `-I` keeps the environment and the working directory off sys.path, so only the
+# installed tree below is imported; `-B` writes no bytecode beside it.
+exec /usr/bin/python3 -I -B {{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/docker_engine_guard.py "$@"

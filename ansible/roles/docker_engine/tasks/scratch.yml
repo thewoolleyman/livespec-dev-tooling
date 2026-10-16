@@ -1,0 +1,86 @@
+---
+# Download the audited .deb files and prove, BEFORE `dpkg -i`, that the drop-ins
+# will attach to the units those exact packages ship (design F5 step 2, G6):
+# a scratch root holding the packages' unit files plus every drop-in the host
+# carries for the three units, read with `systemctl --root=<scratch> cat`.
+# (`systemd-analyze verify --root` is not used: it fails on a scratch root
+# without the targets and executables, and it is silent about a misplaced
+# drop-in.)
+#
+# The maintainer-script audit (the script set and each script's digest) is the
+# guard's, inside `publish`, and is not restated here.
+
+- name: Create the .deb cache
+  ansible.builtin.file:
+    path: "{{ docker_engine_deb_cache }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Download the audited .deb files
+  # A download changes no dpkg state (design R6). The guard's audit downloads
+  # into the same directory again and checks each file against the archive
+  # index; this copy exists only so the proofs below can read the packages.
+  ansible.builtin.command:
+    argv: "{{ ['apt-get', 'download'] + docker_engine_packages | map(attribute='package')
+              | zip(docker_engine_packages | map(attribute='version')) | map('join', '=') | list }}"
+    chdir: "{{ docker_engine_deb_cache }}"
+  become: true
+  changed_when: true
+
+- name: Hold the scratch root
+  ansible.builtin.set_fact:
+    docker_engine_scratch: "/var/tmp/docker-engine-guard-scratch-{{ docker_engine_run }}"
+
+- name: Create the scratch root
+  ansible.builtin.file:
+    path: "{{ docker_engine_scratch }}/root/etc/systemd/system"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: Unpack each .deb's files into the scratch root
+  ansible.builtin.command:
+    argv:
+      - dpkg-deb
+      - -x
+      - "{{ docker_engine_deb_cache }}/{{ item.package }}_{{ item.version }}_{{ docker_engine_deb_arch }}.deb"
+      - "{{ docker_engine_scratch }}/root"
+  loop: "{{ docker_engine_packages }}"
+  loop_control:
+    label: "{{ item.package }}"
+  become: true
+  changed_when: true
+
+- name: Copy the host's drop-ins for the three units into the scratch root
+  ansible.builtin.copy:
+    src: "/etc/systemd/system/{{ item }}.d"
+    dest: "{{ docker_engine_scratch }}/root/etc/systemd/system/"
+    remote_src: true
+    mode: preserve
+  loop: [containerd.service, docker.service, docker.socket]
+  become: true
+
+- name: Read each unit as the scratch root's service manager would assemble it
+  ansible.builtin.command:
+    argv: [systemctl, "--root={{ docker_engine_scratch }}/root", cat, "{{ item }}"]
+  loop: [containerd.service, docker.service, docker.socket]
+  register: docker_engine_scratch_cat
+  become: true
+  changed_when: false
+
+- name: Require the guard drop-in and both OR conditions on each packaged unit
+  ansible.builtin.assert:
+    that:
+      - item.stdout is search((item.item ~ '.d/50-docker-engine-guard.conf') | regex_escape)
+      - item.stdout_lines is contains('ConditionPathExists=|' ~ docker_engine_runtime_root ~ '/allow-start')
+      - item.stdout_lines is contains('ConditionPathExists=|' ~ docker_engine_state_root ~ '/confirmed')
+    fail_msg: "The guard drop-in does not attach to the packaged {{ item.item }}: {{ item.stdout_lines }}"
+    success_msg: "the packaged {{ item.item }} carries the guard's start condition"
+  loop: "{{ docker_engine_scratch_cat.results }}"
+  loop_control:
+    label: "{{ item.item }}"

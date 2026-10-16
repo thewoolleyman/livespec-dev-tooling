@@ -1,0 +1,212 @@
+---
+# Defaults for docker_engine — install the Docker engine on a factory host that
+# already runs k3s and Tailscale, behind the Docker engine install guard
+# (`/usr/local/libexec/docker-engine-guard`, livespec_dev_tooling/fleet/
+# docker_engine_guard.py). See this role's HOST_VARS.md.
+#
+# Governing specification: `## Docker engine install guard` and `## Fabro
+# factory host provisioning` in SPECIFICATION/non-functional-requirements.md.
+# Governing design: docs/docker-engine-guard-design.md, revisions 5 to 8 and the
+# implementation rider. Work-item livespec-dev-tooling-xxfqqr.
+#
+# THE ROLE NEVER STARTS, STOPS, ENABLES OR DISABLES A GUARDED UNIT ITSELF.
+# containerd.service, docker.service and docker.socket are moved only by the
+# guard, which the role drives one bounded transient unit per operation. That is
+# load-bearing beyond tidiness (rider point 1): on systemd 259 a `Restart=`
+# respawn does NOT re-evaluate ConditionPathExists, so the only thing that keeps
+# a respawning dockerd down after the start permission is revoked is the guard's
+# rollback stopping docker.socket before docker.service, in that order.
+
+# --- what is installed ---------------------------------------------------------
+
+# The audited package set, in the order dpkg is handed it. The versions are the
+# Ubuntu 26.04 archive's, measured 2026-10-15 on gmktec-xubuntu and identical on
+# hp-xubuntu. `scripts` maps each maintainer script the .deb carries to the
+# SHA256 a human read and committed (`dpkg-deb -I <deb> <script> | sha256sum`).
+# EMPTY ON PURPOSE: the guard's audit refuses a .deb whose set of maintainer
+# scripts differs from these keys, and a script whose bytes differ from its
+# digest, so no run can publish until the audit is committed.
+docker_engine_packages:
+  - package: containerd
+    version: 2.2.2-0ubuntu1.1
+    scripts: {}
+  - package: runc
+    version: 1.4.0-0ubuntu1
+    scripts: {}
+  - package: docker.io
+    version: 29.1.3-0ubuntu4.1
+    scripts: {}
+
+# The Debian architecture in each .deb's file name.
+docker_engine_deb_arch: amd64
+
+# Where the .deb files are downloaded. The role downloads them first (for the
+# scratch-root condition check, design F5 step 2) and the guard's audit
+# re-downloads into the same directory and checks each against the archive
+# index's SHA256.
+docker_engine_deb_cache: /var/cache/docker-engine-guard/debs
+
+# The host's apt and dpkg configuration files mapped to their committed SHA256,
+# and the directories every file of which must be covered by one of them. Per
+# host (the apt hooks differ by host), so empty here and REFUSED while empty.
+# The guard refuses a file that differs, and a file in a listed directory that
+# no digest covers.
+docker_engine_dpkg_config_digests: {}
+docker_engine_dpkg_config_dirs:
+  - /etc/apt/apt.conf.d
+  - /etc/dpkg/dpkg.cfg.d
+
+# --- the daemon configuration -----------------------------------------------
+
+# The daemon.json keys this role OWNS, verbatim from the design's "The daemon
+# configuration". The key set must equal the guard's OWNED_DAEMON_KEYS
+# (_docker_engine_guard_records.py), because the commit marker's digest covers
+# exactly that set; the role refuses a mismatch rather than let the two drift.
+# Every other key in /etc/docker/daemon.json is preserved.
+#
+# `cgroup-parent` is shared with docker_sandbox_slice, which writes the same
+# value; the two must name the same slice.
+docker_engine_daemon_config:
+  iptables: true
+  ip6tables: true
+  ip-forward: true
+  ip-forward-no-drop: true
+  ipv6: false
+  bip: 172.17.0.1/16
+  cgroup-parent: fabro-sandbox.slice
+  live-restore: false
+docker_engine_daemon_config_path: /etc/docker/daemon.json
+
+# The bridge network the guarded scope covers, and the ranges it must not
+# overlap (the tailnet range and the cluster's pod and service CIDRs, k3s
+# defaults). Both are passed to the guard in the run's probes.json; the guard's
+# own preflight refuses an overlap with these, an interface address or any
+# route (guard child 4).
+docker_engine_bridge_cidr: 172.17.0.0/16
+docker_engine_reserved_cidrs:
+  - 100.64.0.0/10
+  - 10.42.0.0/16
+  - 10.43.0.0/16
+
+# --- the guard ----------------------------------------------------------------
+
+# Where the guard's module tree is taken from on the CONTROL NODE: this
+# repository's own checkout, so the installed guard is exactly the reviewed
+# source and never a second copy kept in the role.
+docker_engine_guard_source_root: "{{ role_path }}/../../.."
+# Where it is installed. The guard resolves its package root as parents[2] of
+# its own file, so the tree must keep livespec_dev_tooling/fleet/ beneath this.
+docker_engine_guard_install_root: /usr/local/lib/docker-engine-guard
+docker_engine_guard_executable: /usr/local/libexec/docker-engine-guard
+
+# NOT KNOBS. The guard's own DEFAULT_STATE_ROOT and DEFAULT_RUNTIME_ROOT
+# (_docker_engine_guard_model.py). The drop-ins name paths under them and the
+# guard reads its records there; a different value here would make the two
+# disagree about where the start permission is.
+docker_engine_state_root: /var/lib/docker-engine-guard
+docker_engine_runtime_root: /run/docker-engine-guard
+
+# The observation window W, in seconds, passed to every guard operation as
+# `--window-seconds`. 420 is the guard's DEFAULT_WINDOW_SECONDS: k3s's longest
+# measured default resync period (kube-router, five minutes) plus two minutes.
+# A host whose effective k3s resync intervals differ sets its own value; it is
+# also what sizes `observe`'s unit budget and the run's deadline.
+docker_engine_window_seconds: 420
+
+# --- what must keep running ---------------------------------------------------
+
+# The preflight refuses to change a host on which any of these is not active,
+# and the role re-reads them after the confirmation and after any rollback.
+# Variables, not literals, so the disposable VM acceptance run can point them
+# at stub units.
+docker_engine_tailscale_unit: tailscaled.service
+docker_engine_k3s_agent_unit: k3s-agent.service
+# Every further unit the host must keep running throughout (gmktec-xubuntu:
+# local-homelab-llama-server.service). Per host.
+docker_engine_must_stay_running: []
+
+# The sandbox slice the daemon's cgroup-parent names. Its unit must be loaded
+# and active BEFORE the guard's first start (design "The daemon configuration"),
+# which is the systemd-only half of docker_sandbox_slice.
+docker_engine_sandbox_slice: fabro-sandbox.slice
+
+# --- probes -------------------------------------------------------------------
+
+# The CONTROLLER-SIDE probes, run on the control node at the preflight and
+# again after the guard issues its challenge; the challenge is answered only if
+# all three pass. Each argv opens a NEW connection (no connection sharing), so a
+# session that predates the change cannot vouch for the host after it.
+#
+# A new Tailscale SSH session to the host.
+docker_engine_tailscale_ssh_argv:
+  - ssh
+  - -o
+  - BatchMode=yes
+  - -o
+  - ConnectTimeout=15
+  - -o
+  - ControlMaster=no
+  - -o
+  - ControlPath=none
+  - "{{ (ansible_user ~ '@') if ansible_user is defined else '' }}{{ ansible_host | default(inventory_hostname) }}"
+  - "true"
+# The direct-LAN OpenSSH fallback (role lan_ssh_fallback), through the
+# `<host>-lan` alias that role renders on the control node.
+docker_engine_lan_fallback_port: 22022
+docker_engine_lan_fallback_ssh_argv:
+  - ssh
+  - -o
+  - BatchMode=yes
+  - -o
+  - ConnectTimeout=20
+  - -o
+  - ControlMaster=no
+  - -o
+  - ControlPath=none
+  - -p
+  - "{{ docker_engine_lan_fallback_port }}"
+  - "{{ inventory_hostname }}-lan"
+  - "true"
+# The local LLM service's health endpoint across the tailnet. Per host, so
+# empty here and REFUSED while empty.
+docker_engine_llm_health_url: ""
+docker_engine_probe_timeout_seconds: 15
+
+# The HOST-SIDE probe parameters, uploaded into the run's inputs/ directory as
+# probes.json for the guard's observer. The observer's probes are guard child 4
+# (livespec-dev-tooling-bfzrq7); the file name and these keys are the role's
+# proposal until that child lands and fixes them.
+docker_engine_probe_parameters:
+  node_status_kubeconfig: /etc/rancher/k3s/node-status-kubeconfig
+  kube_dns_address: 10.43.0.10
+  kube_api_address: 10.43.0.1
+  https_probe_host: archive.ubuntu.com
+
+# The units whose postinst start the post-install check expects to find
+# condition-skipped in the journal (design F5 step 3). Measured on the VM; a
+# unit the postinst never tries to start would otherwise read as a gate that
+# did not fire.
+docker_engine_postinst_started_units:
+  - containerd.service
+  - docker.socket
+  - docker.service
+
+# --- the package fence -------------------------------------------------------
+
+# Stopped for the guarded run and restored afterwards to exactly the state they
+# had (a timer that was inactive is not started).
+docker_engine_apt_timers:
+  - apt-daily.timer
+  - apt-daily-upgrade.timer
+# How long to wait for every apt/dpkg lock to be free, and for the lock-holding
+# helper to take the dpkg frontend lock.
+docker_engine_lock_wait_seconds: 600
+
+# --- operator switches (set with -e, never in host_vars) -----------------------
+
+# Name a run whose phase is `rollback-partial` to acknowledge you have read its
+# record and repaired the host; the role then runs the guard's `verify` on it.
+docker_engine_acknowledge_run: ""
+# Name the CURRENT unfinished run to have the guard `recover` it (finish a
+# committed run, resume an interrupted inert publish, else roll back).
+docker_engine_recover: ""
