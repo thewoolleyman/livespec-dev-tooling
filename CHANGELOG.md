@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.111.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.0...v1.111.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **factory:** accept a live telemetry receiver on the reach check's run-now apply ([32648d2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/32648d2603200d47ff9d2714750fe264d4d90f4d))
+* **factory:** drop the beads Dolt tenant from the factory reach endpoints ([f629496](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f6294968ecffdab1bba8307bebbe89abec8fc1ff))
+
 ## [1.111.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.110.1...v1.111.0) (2026-10-16)
 
 
