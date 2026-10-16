@@ -39,6 +39,8 @@ from livespec_dev_tooling.fleet._docker_engine_guard_state import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision, Phase
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
@@ -245,8 +247,19 @@ def _failed_postconditions(*, run: str, env: GuardEnv) -> tuple[str, ...]:
     postcondition the host did not answer at all counts as failing, so a
     narrowed or broken read reports a partial recovery rather than a
     clean one.
+
+    A snapshot file the read cannot OPEN is that same unanswered case,
+    and is answered the same way rather than allowed to raise. Raising
+    is worse than useless twice over: the firing dies before
+    `_record_outcome`, so it writes no outcome and leaves the run
+    holding the host's one reservation, and the one thing an unanswered
+    read must never do is let the host read as clean.
     """
-    read = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
+    read: Mapping[str, bool]
+    try:
+        read = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
+    except FileNotFoundError:
+        read = {}
     return tuple(name for name in POSTCONDITIONS if not read.get(name, False))
 
 
