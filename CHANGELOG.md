@@ -58,6 +58,27 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.106.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.105.0...v1.106.0) (2026-10-16)
+
+
+### Features
+
+* apportion the Docker engine guard rollback phase budgets to 600 seconds ([6a5e4be](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6a5e4be150c1a9d4f7efe0923fa6ce368a8e0f94))
+* bound each Docker engine guard rollback phase child with timeout -k 10 ([cd70f59](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd70f59cdf3e03cd0dbd5a05c8b063617e51b48f))
+* clear a Docker engine guard rollback phase's success when it regresses ([4fdb415](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4fdb4150e7bf77adf1a3039f54ee8fb3add1a604))
+* fence the Docker engine guard observer and starter before revoking ([db2a9d1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/db2a9d19ee75a910ea7a094bc6333078b177ee93))
+* keep a Docker engine guard rollback run's phase across firings ([3461806](https://github.com/thewoolleyman/livespec-dev-tooling/commit/34618068b841e601059084e52d265a8c08be9c5a))
+* re-run only the unfinished Docker engine guard rollback phases ([8882e06](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8882e06dbad031de581826618c56a0c9546861c1))
+* read every Docker engine guard rollback postcondition in one final check ([b509f72](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b509f72e966f28a384694260dda5452c536021b7))
+* record a Docker engine guard rollback attempt before entering the phase ([4a2a864](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4a2a8649ce04ae6bf6a5a75a159b473f8cd6b6c9))
+* record rolling-back before the Docker engine guard rollback acts ([0e4341b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0e4341b4f913b613f4f848bd42aa970869ce88d6))
+* run the Docker engine guard rollback phases in the specified order ([911017f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/911017f2c7c9925ad44b78ff81077ae2526adf8d))
+* skip a Docker engine guard rollback phase after three failed attempts ([ac64bdd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac64bdd358ff4780f9e9604d96749d3fa8a84bab))
+* stop the Docker engine guard dead-man once every failing phase is spent ([0aaf2f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0aaf2f08e452af8d7038e81ea1faec4edcb3ce7c))
+* stop the Docker engine guard dead-man timer on a rolled-back outcome ([2c848da](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2c848dacb755dd74eb4e64525da493259dc43bc7))
+* write rollback-partial naming each failed Docker engine guard postcondition ([9b81af8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9b81af814a58d12e6d1a58ead6fc836b46f34e3c))
+* write rolled-back only when every Docker engine guard postcondition holds ([0a4d030](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a4d030f2e3f092d6eb3fd7beaf8aa3d3448754f))
+
 ## [1.105.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.104.0...v1.105.0) (2026-10-16)
 
 
