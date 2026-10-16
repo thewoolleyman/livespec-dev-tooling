@@ -680,12 +680,17 @@ def test_rollback_hands_a_decided_run_to_child_two_and_no_ops_a_finished_one(
     rather than of the driver's good behaviour.
     """
     guard = _guard_surface()
+    model = importlib.import_module(_MODEL_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
 
     decided = tmp_path / "decided"
     fake = _fake(root=decided)
     _record_phase(root=decided, run="run-a", phase="started")
-    with pytest.raises(NotImplementedError):
-        guard.run_operation(operation="rollback", run="run-a", env=_env(root=decided, host=fake))
+    outcome = guard.run_operation(
+        operation="rollback", run="run-a", env=_env(root=decided, host=fake)
+    )
+    assert outcome.verdict == "proceed"
+    assert state.read_phase(paths=_paths(root=decided), run="run-a") in model.ROLLBACK_PHASES
 
     committed = tmp_path / "committed"
     fake = _fake(root=committed)
@@ -710,12 +715,13 @@ def test_rollback_hands_a_decided_run_to_child_two_and_no_ops_a_finished_one(
 def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     tmp_path: Path,
 ) -> None:
-    """Three stub modules, so no sibling ever has to reopen the guard module.
+    """Stub modules, so no sibling ever has to reopen the guard module.
 
-    Child 2 replaces the rollback driver, children 3a and 4 the real
-    host, child 3b the package step. Each is reached by name from the
-    guard module, which resolves siblings package-qualified when imported
-    and bare when run as a script on the guarded host.
+    Children 3a and 4 replace the real host and child 3b the package
+    step; child 2 has already replaced the rollback driver, which is why
+    it is no longer asserted here. Each is reached by name from the guard
+    module, which resolves siblings package-qualified when imported and
+    bare when run as a script on the guarded host.
     """
     guard = _guard_surface()
     assert guard.sibling_module_name(package="pkg", name="_mod") == "pkg._mod"
@@ -724,15 +730,9 @@ def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     # guard's own package name is the one that resolves.
     assert guard.sibling_module_name(package="", name="_mod") == "livespec_dev_tooling.fleet._mod"
 
-    rollback = importlib.import_module(_ROLLBACK_MODULE)
     host_module = importlib.import_module(_HOST_MODULE)
     packages = importlib.import_module(_PACKAGES_MODULE)
-    env = _env(root=tmp_path, host=_fake(root=tmp_path))
-    model = importlib.import_module(_MODEL_MODULE)
-    decision = model.Decision(verdict="proceed", reason="decided")
 
-    with pytest.raises(NotImplementedError):
-        rollback.run_rollback(run="run-a", env=env, decision=decision)
     with pytest.raises(NotImplementedError):
         host_module.build_real_host(paths=_paths(root=tmp_path))
     with pytest.raises(NotImplementedError):
@@ -1344,21 +1344,26 @@ def test_recover_rolls_back_a_run_in_any_other_uncommitted_phase(tmp_path: Path)
     """Acceptance scenario: recover rolls back any other uncommitted run.
 
     Reaching child 2's DRIVER is the proof, and the test asserts where
-    the call landed rather than merely that something was unimplemented:
-    an uncommitted run in `reserved`, `started` or `observed` has no
-    forward path at all, whatever its records say, because the commit
-    marker is what decides commitment and it is absent.
+    the run LANDED rather than merely that the call went somewhere: an
+    uncommitted run in `reserved`, `started` or `observed` has no forward
+    path at all, whatever its records say, because the commit marker is
+    what decides commitment and it is absent.
     """
     _entry(name="recover")
     guard = _guard_surface()
+    model = importlib.import_module(_MODEL_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
 
     for phase in ("reserved", "started", "observed"):
         root = tmp_path / phase
         fake = _fake(root=root)
         _record_phase(root=root, run="run-a", phase=phase)
-        with pytest.raises(NotImplementedError) as caught:
-            guard.run_operation(operation="recover", run="run-a", env=_env(root=root, host=fake))
-        assert caught.traceback[-1].path.name == "_docker_engine_guard_rollback.py", phase
+        outcome = guard.run_operation(
+            operation="recover", run="run-a", env=_env(root=root, host=fake)
+        )
+        assert outcome.operation == "rollback", phase
+        landed = state.read_phase(paths=_paths(root=root), run="run-a")
+        assert landed in model.ROLLBACK_PHASES, phase
 
 
 def test_recover_takes_the_same_lock_and_decides_through_the_same_table(
