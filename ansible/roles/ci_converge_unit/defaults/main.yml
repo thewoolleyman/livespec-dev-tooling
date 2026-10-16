@@ -2,6 +2,20 @@
 ci_converge_unit_phase2_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2"
 # The ONE file in the installed set that comes from outside phase2/.
 ci_converge_unit_observability_dir: "{{ role_path }}/../../../ci-runner/observability"
+# The committed phase0 profiles of the WHOLE pool, which the boot converge's
+# step 10f reads every node's declared FACTORY_NODE out of
+# (livespec-dev-tooling-izlx4g). The same directory ../../node_labels,
+# ../../node_taints and ../../k3s_config read; THIS role is the only one that
+# installs more than one node's copy, because the reconcile runs on the server
+# and decides for every pool member.
+#
+# RESOLVED FROM THE INVENTORY GROUP, never listed: a machine is bound in
+# ansible/inventory/legacy.yml and in host_vars and nowhere else
+# (livespec-dev-tooling-prdxxe), so a node added to `ci_pool` travels onto the
+# boot path with no edit here — and a hand-written roster would be a node the
+# boot reconcile cannot see.
+ci_converge_unit_profiles_dir: "{{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles"
+ci_converge_unit_pool_profiles: "{{ groups['ci_pool'] | default([]) | sort }}"
 ci_converge_unit_lib_dir: /usr/local/lib/ci-runner-k3s
 ci_converge_unit_unit_dir: /etc/systemd/system
 ci_converge_unit_service: converge-ci-stack.service
@@ -23,6 +37,11 @@ ci_converge_unit_directories:
   - gates
   - factory
   - node-status-credential
+  # The pool's committed phase0 profiles, read by the boot converge's step 10f
+  # (livespec-dev-tooling-izlx4g). A SUBDIRECTORY and not the lib dir itself:
+  # ../../node_extended_resource already installs THIS node's own profile there
+  # as `<node>.env`, and one file may have one owner.
+  - profiles
 # The named members of the installed tree, with the mode each is installed
 # under. The three GLOBS the shell uses — arc/values-*.yaml minus the EXAMPLE
 # template, kueue/core/*.yaml, kueue/cluster-queue-*.yaml — are resolved at run
@@ -35,6 +54,15 @@ ci_converge_unit_files:
     mode: "0755"
   - src: reconstruct/render-sa-kubeconfig.sh
     dest: render-sa-kubeconfig.sh
+    mode: "0755"
+  # The per-node FACTORY-label reconcile the boot converge's step 10f runs
+  # (livespec-dev-tooling-izlx4g). It must be installed BESIDE converge-ci-stack.sh,
+  # which resolves it from its own SCRIPT_DIR — and the `profiles` directory
+  # below must carry the pool's profiles it reads, or the step warns and the
+  # factory label stays lost at every reboot, silently, exactly as it was on
+  # 2026-10-16.
+  - src: reconstruct/converge-factory-node-labels.sh
+    dest: converge-factory-node-labels.sh
     mode: "0755"
   - src: arc/converge-hook-pod-template.sh
     dest: arc/converge-hook-pod-template.sh

@@ -144,6 +144,11 @@ else
   NODE_STATUS_DIR=""
 fi
 RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
+# The per-node FACTORY-label reconcile step 10f runs (livespec-dev-tooling-izlx4g).
+# Beside this script in both layouts, like the renderer above — but NOT in the
+# fail-closed check below: a boot that cannot reconcile one node's label must
+# still build the cluster stack, so step 10f tests it there and WARNs.
+FACTORY_LABEL_CONVERGE="${SCRIPT_DIR}/converge-factory-node-labels.sh"
 for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR" "$FACTORY_DIR"; do
   [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
 done
@@ -889,6 +894,35 @@ kubectl apply -f "${FACTORY_DIR}"
   --group root --mode 0600
 
 # ---------------------------------------------------------------------------
+log "10f. Reconcile every ci_pool node's FACTORY label from its committed profile"
+# livespec-dev-tooling-izlx4g. k3s applies `--node-label` at node REGISTRATION
+# only, and this host's datastore is a tmpfs, so every Node object is re-created
+# when its node re-registers after a reboot carrying only what that node's own
+# kubelet was started with. ../../../../ansible/roles/node_labels reconciles the
+# factory label on a `ci-pool.yml` APPLY, which is not on the boot path: the
+# 2026-10-16 reboot came back with `ci-runner.io/factory` on hp-xubuntu alone —
+# hp's agent registration carries it, gmktec's and poweredge's did not — so the
+# sandbox backend's `ci-runner.io/factory=true` selector matched one node of
+# three until an operator ran an apply. See ./converge-factory-node-labels.sh's
+# header for why the reconcile lives on the control plane rather than in each
+# node's start configuration (nothing here may restart a k3s-agent).
+#
+# ORDERED LAST among the converging steps, like the warm cache and the probe
+# identity and for the header's reason: it depends on nothing above it and
+# nothing above depends on it, so its bounded wait for an agent that has not
+# re-registered yet must never sit in front of Kueue, ARC and the scale sets.
+#
+# WARN rather than fail, like the mirror converges: a node missing the factory
+# label costs factory dispatch, not CI, and must not take the rest of the boot
+# converge down with it. The script's own output names every node it could not
+# reconcile — the whole cost of the defect was that nothing said anything.
+if [ ! -x "${FACTORY_LABEL_CONVERGE}" ]; then
+  echo "WARN: ${FACTORY_LABEL_CONVERGE} not found or not executable, so no node's ci-runner.io/factory label is reconciled this boot and the sandbox backend's selector sees only the nodes whose own registration carries it. Re-install the boot tree with the ci_converge_unit Ansible role (just ansible-apply ansible/ci-pool.yml)"
+elif ! "${FACTORY_LABEL_CONVERGE}"; then
+  echo "WARN: converge-factory-node-labels.sh failed (see above) — continuing; factory dispatch reaches only the nodes the selector can still see until it is re-run"
+fi
+
+# ---------------------------------------------------------------------------
 log "11. Verify (informational — non-fatal reads of the converged state)"
 kubectl -n kube-system get deployment local-path-provisioner
 kubectl -n "$CONTROLLER_NAMESPACE" get deployment -l app.kubernetes.io/name=gha-rs-controller
@@ -901,4 +935,4 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy, launcher identity and its rendered kubeconfig."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy, launcher identity and its rendered kubeconfig + every ci_pool node's factory label."
