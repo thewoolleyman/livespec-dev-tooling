@@ -47,6 +47,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     kill_cgroup,
     read_queued_jobs,
     stop_unit,
+    systemd_run,
 )
 
 if TYPE_CHECKING:
@@ -136,7 +137,7 @@ class RealHost:
 
     def systemd_run(self, *, argv: Sequence[str]) -> None:
         """Run a `systemd-run` argv the guard built, such as the dead-man recipe."""
-        raise NotImplementedError
+        systemd_run(runner=self.runner, argv=argv)
 
     # --- start ---
 

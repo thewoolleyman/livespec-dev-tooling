@@ -55,6 +55,7 @@ __all__: list[str] = [
     "stop_docker",
     "stop_guard_units",
     "stop_unit",
+    "systemd_run",
     "unit_active_states",
     "unit_property",
 ]
@@ -171,6 +172,25 @@ def cancel_jobs(*, runner: GuardCommandRunner, job_ids: Sequence[str]) -> None:
 def stop_unit(*, runner: GuardCommandRunner, unit: str, timeout_seconds: int) -> None:
     """Stop one unit, bounded by the caller's own budget."""
     _ = runner(argv=(SYSTEMCTL, "stop", unit), timeout_seconds=timeout_seconds)
+
+
+def systemd_run(*, runner: GuardCommandRunner, argv: Sequence[str]) -> None:
+    """Run a `systemd-run` recipe the guard built, through the one bounded runner.
+
+    The argv is passed THROUGH rather than rebuilt here: the recipes --
+    the dead-man timer, the rollback trigger -- are built in the model
+    beside the budget table they derive their own timeouts from, so a
+    budget that moves moves the recipe with it. This seam's only job is
+    that the recipe reaches the host bounded like everything else.
+
+    The bound is the action timeout, not the recipe's own
+    `TimeoutStartSec`. The two measure different things: the recipe's
+    budget bounds the unit's EXECUTION once the manager owns it, while
+    this one bounds the `systemd-run` CALL that registers it. Arming a
+    timer returns as soon as the manager has the unit, so the call is
+    short even when the unit it creates may run for fifteen minutes.
+    """
+    _ = runner(argv=tuple(argv), timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS)
 
 
 def stop_docker(*, runner: GuardCommandRunner) -> None:
