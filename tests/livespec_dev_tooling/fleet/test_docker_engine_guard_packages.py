@@ -83,9 +83,30 @@ docker.io 29.1.3-0ubuntu4.1 installed
 """
 
 
+# `apt-get -s install`'s recorded output for the audited set on a host that
+# has never carried the engine: the two `Inst` lines carry a version in
+# parentheses and NO bracketed version before it, which is what an install
+# of a package not currently held looks like.
+_SIMULATION_CLEAN = """NOTE: This is only a simulation!
+      apt-get needs root privileges for real execution.
+Reading package lists...
+Building dependency tree...
+The following NEW packages will be installed:
+  containerd docker.io
+0 upgraded, 2 newly installed, 0 to remove and 0 not upgraded.
+Inst containerd (2.2.2-0ubuntu1.1 Ubuntu:24.04/noble-updates [amd64])
+Inst docker.io (29.1.3-0ubuntu4.1 Ubuntu:24.04/noble-updates [amd64])
+Conf containerd (2.2.2-0ubuntu1.1 Ubuntu:24.04/noble-updates [amd64])
+Conf docker.io (29.1.3-0ubuntu4.1 Ubuntu:24.04/noble-updates [amd64])
+"""
+
+
 def _fenced_outputs() -> list[tuple[tuple[str, ...], list[str]]]:
     """The output a clean fenced transaction measures, command by command."""
-    return [(("dpkg-query",), [_QUERY_BEFORE, _QUERY_AFTER])]
+    return [
+        (("apt-get", "-s"), [_SIMULATION_CLEAN]),
+        (("dpkg-query",), [_QUERY_BEFORE, _QUERY_AFTER]),
+    ]
 
 
 def _payload(*, cache: Path) -> dict[str, Any]:
@@ -158,6 +179,62 @@ def test_the_package_step_installs_exactly_the_audited_debs_under_the_frontend_l
     )
     assert installed[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
     assert installed[0].timeout_seconds == runner_module.INSTALL_TIMEOUT_SECONDS
+
+
+def test_the_package_step_refuses_a_simulated_transaction_the_allowlist_does_not_cover(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the three shapes a simulation may not have.
+
+    The simulation is run with `--no-install-recommends --no-remove` and
+    the exact pinned specs, so the only transaction apt is asked about is
+    the committed one — and then the answer is read line by line anyway,
+    because `--no-remove` makes a removal an apt ERROR rather than a
+    silent `Remv`, and a resolver that satisfies the pins by UPGRADING
+    something already installed has broken nothing apt would complain
+    about. Each of the three refuses before anything is mutated.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    clean = _RecordedRunner(result=runner_module.CommandOutput, outputs=_fenced_outputs())
+
+    assert packages.run_package_step(inputs=inputs, runner=clean).refusal is None
+    simulated = _calls_named(runner=clean, argv=("apt-get", "-s"))
+    assert len(simulated) == 1
+    assert tuple(simulated[0].argv) == (
+        "apt-get",
+        "-s",
+        "install",
+        "--no-install-recommends",
+        "--no-remove",
+        "docker.io=29.1.3-0ubuntu4.1",
+        "containerd=2.2.2-0ubuntu1.1",
+    )
+
+    for answer, expected in (
+        (
+            _SIMULATION_CLEAN + "Inst runc (1.4.0-0ubuntu1 Ubuntu:24.04/noble [amd64])\n",
+            "runc=1.4.0-0ubuntu1",
+        ),
+        (_SIMULATION_CLEAN + "Remv containerd [1.7.27-0ubuntu1]\n", "removes containerd"),
+        (
+            _SIMULATION_CLEAN
+            + "Inst libc6 [2.39-0ubuntu8.3] (2.39-0ubuntu8.4 Ubuntu:24.04/noble-updates)\n",
+            "upgrades the installed libc6",
+        ),
+    ):
+        runner = _RecordedRunner(
+            result=runner_module.CommandOutput,
+            outputs=[(("apt-get", "-s"), [answer]), (("dpkg-query",), [_QUERY_BEFORE])],
+        )
+
+        outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+        assert outcome.refusal is not None
+        assert expected in outcome.refusal
+        assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
 def test_the_package_step_requires_the_post_install_difference_to_be_the_additions(

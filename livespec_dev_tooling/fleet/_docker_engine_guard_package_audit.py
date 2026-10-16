@@ -20,6 +20,7 @@ bare interpreter, where the `returns` railway is not importable.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -46,6 +47,19 @@ __all__: list[str] = [
 # directory, so this name is resolved against the directory the step was
 # handed and never against a path the inputs themselves carry.
 INPUTS_FILE: Final[str] = "packages.json"
+
+# The simulated transaction, which the committed specs are appended to.
+# `--no-install-recommends` keeps apt from widening the set, and
+# `--no-remove` makes a transaction that would remove something an apt
+# ERROR rather than a silent `Remv` line — belt and braces, because the
+# answer is read line by line regardless.
+SIMULATE_ARGV: Final[tuple[str, ...]] = (
+    "apt-get",
+    "-s",
+    "install",
+    "--no-install-recommends",
+    "--no-remove",
+)
 
 # The one package query the fence makes, in the one format it parses. Both
 # fields are asked for together because dpkg's table is read once per side
@@ -143,8 +157,49 @@ def read_installed(*, runner: TimedRunner) -> dict[str, InstalledPackage]:
     return rows
 
 
-def audit_transaction(*, declared: PackageInputs) -> Audit:
+def _simulation_refusal(*, output: str, allow: Mapping[str, str]) -> str | None:
+    """The first line of the simulated transaction the allowlist does not cover.
+
+    Three shapes refuse, and each is read off the line itself because apt
+    reports none of them as an error. A `Remv` line is a removal. An
+    `Inst` line carrying a BRACKETED version before the parenthesised one
+    is an UPGRADE of a package the host already holds — a resolver
+    satisfying the pins by moving something else, which is exactly the
+    collateral change a guarded install must not make. And an `Inst` line
+    naming a (package, version) pair the committed allowlist does not
+    carry is the resolver widening the transaction.
+    """
+    for line in output.splitlines():
+        fields = line.split()
+        if fields[:1] == ["Remv"]:
+            return f"the simulated transaction removes {fields[1]}: {line.strip()}"
+        if fields[:1] != ["Inst"]:
+            continue
+        if fields[2].startswith("["):
+            return f"the simulated transaction upgrades the installed {fields[1]}: {line.strip()}"
+        version = fields[2].lstrip("(")
+        if allow.get(fields[1]) != version:
+            return (
+                f"the simulated transaction installs {fields[1]}={version}, "
+                "outside the committed allowlist"
+            )
+    return None
+
+
+def audit_transaction(*, declared: PackageInputs, runner: TimedRunner) -> Audit | str:
     """Prove what the install may touch, before the step has touched anything."""
+    simulated = runner(
+        command=TimedCommand(
+            argv=(*SIMULATE_ARGV, *(f"{spec.package}={spec.version}" for spec in declared.specs)),
+            timeout_seconds=COMMAND_TIMEOUT_SECONDS,
+        )
+    )
+    refusal = _simulation_refusal(
+        output=simulated.stdout,
+        allow={spec.package: spec.version for spec in declared.specs},
+    )
+    if refusal is not None:
+        return refusal
     return Audit(
         debs=tuple(declared.cache / spec.deb for spec in declared.specs),
         additions=tuple(sorted(f"{spec.package}={spec.version}" for spec in declared.specs)),
