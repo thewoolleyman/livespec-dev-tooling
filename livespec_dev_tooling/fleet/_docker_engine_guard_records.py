@@ -12,6 +12,10 @@ nonces a `confirm` has already spent, and the canonical digest of the
 role-owned daemon keys. A record read by one module and written by
 another is a shared contract rather than a private helper of either.
 
+The reconfigured digest beside the commit marker belongs here for the
+same reason, one operation later: `reconfigure` writes it and the
+post-commit validation reads it.
+
 WHY THE DIGEST IS CANONICAL RATHER THAN THE FILE'S BYTES (design F4).
 The commit marker carries the digest of the owned keys PARSED and
 re-serialized, so that the slice role's own re-serialization of
@@ -55,8 +59,11 @@ __all__: list[str] = [
     "owned_keys_digest",
     "publish_marker",
     "read_challenge",
+    "reconfigured_digest",
+    "reconfigured_digest_path",
     "record_consumed_nonce",
     "record_durability_warning",
+    "record_reconfigured_digest",
     "submitted_nonce",
     "write_challenge",
     "write_evidence",
@@ -260,6 +267,53 @@ def publish_marker(*, paths: GuardPaths, run: str, digest: str) -> str:
     except OSError as failure:
         return f"{type(failure).__name__}: {failure}"
     return ""
+
+
+def reconfigured_digest_path(*, paths: GuardPaths) -> Path:
+    """Where a post-commit reconfiguration records the digest it has just written.
+
+    BESIDE the commit marker and never inside it, which is the whole
+    mechanism rather than a filing choice. The specification forbids
+    `reconfigure` from removing or rewriting the marker -- the marker is
+    the statement that this host COMMITTED, and a reconfiguration must
+    not be able to restate it -- so a second record is the only place
+    the reconfigured digest can go. Durable rather than runtime: the
+    reconfiguration survives the reboot that clears /run, and so must
+    the statement of what it wrote.
+    """
+    return paths.state_root / "reconfigured"
+
+
+def record_reconfigured_digest(*, paths: GuardPaths, run: str, digest: str) -> None:
+    """Record the owned-keys digest a reconfiguration has written, durably.
+
+    Written AFTER the keys reach the host, and that order is the only
+    safe one. Interrupted between the two, the host carries the new keys
+    and no record of them, so the next converge reports a fault and an
+    operator's `reconfigure` repeats idempotently. Recorded first, an
+    interruption would leave a record vouching for keys the host never
+    received -- and the next converge would accept it, silently.
+    """
+    write_durable(
+        path=reconfigured_digest_path(paths=paths),
+        data=json.dumps({"digest": digest, "run": run}, sort_keys=True),
+    )
+
+
+def reconfigured_digest(*, paths: GuardPaths) -> str:
+    """The owned-keys digest the latest reconfiguration recorded, or an empty string.
+
+    An empty string where no reconfiguration has happened, which cannot
+    equal any real digest -- every digest is a SHA256 hex string, even
+    the one over an empty set of owned keys -- so a caller comparing the
+    two is fail-closed with no second branch for "nothing was ever
+    reconfigured".
+    """
+    path = reconfigured_digest_path(paths=paths)
+    payload: dict[str, object] = (
+        json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    )
+    return str(payload.get("digest", ""))
 
 
 def marker_digest(*, paths: GuardPaths) -> str:

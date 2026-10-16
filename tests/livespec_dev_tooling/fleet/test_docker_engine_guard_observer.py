@@ -887,3 +887,90 @@ def test_reconfigure_writes_the_owned_keys_only_for_the_run_the_marker_names(
     bare_host = _fake(root=uncommitted)
     assert _reconfigure_run(root=uncommitted, host=bare_host).verdict == "refuse"
     assert bare_host.calls_named(name="write_daemon_keys") == ()
+
+
+# The owned keys a later converge changes, and the one key it changes.
+# `live-restore` because turning it on is the realest post-commit change
+# this role makes: it is what lets a drained `docker.service` restart
+# leave the sandbox containers running.
+_RECONFIGURED_DAEMON_CONFIGURATION: dict[str, Any] = {
+    **_OWNED_DAEMON_CONFIGURATION,
+    "live-restore": True,
+}
+
+
+def _committed_at(*, root: Path, keys: dict[str, Any]) -> Any:
+    """A `confirmed` run whose commit marker carries the digest of `keys`.
+
+    The state every post-commit converge starts from: the marker names
+    the run and vouches for the configuration that was committed, and
+    the run's `inputs/daemon.json` is what the controller has uploaded
+    for THIS converge -- the same file on both occasions, which is why
+    changing it is how a reconfiguration is expressed at all.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    paths = _paths(root=root)
+    _record_phase(root=root, run="run-a", phase="confirmed")
+    paths.inputs_dir(run="run-a").mkdir(parents=True, exist_ok=True)
+    (paths.inputs_dir(run="run-a") / "daemon.json").write_text(
+        json.dumps({**keys, "log-driver": "json-file"}), encoding="utf-8"
+    )
+    records.publish_marker(
+        paths=paths, run="run-a", digest=records.owned_keys_digest(paths=paths, run="run-a")
+    )
+    return paths
+
+
+def test_a_reconfiguration_records_its_digest_beside_the_untouched_commit_marker(
+    tmp_path: Path,
+) -> None:
+    """Specification "After the commit", and design H3: the two rules, reconciled.
+
+    A converge on a committed host MUST validate the owned keys by their
+    digest, and `reconfigure` MUST NOT rewrite the commit marker. Read
+    together with nothing else recorded, the two refuse every host that
+    has ever been reconfigured: the marker still vouches for the
+    configuration the run COMMITTED, so the changed keys match no digest
+    the host carries and the validation reports a mismatch on every
+    later converge, forever.
+
+    So the reconfigured digest is recorded BESIDE the marker, and the
+    validation accepts either. The marker's own bytes are asserted
+    unchanged in the same breath, because the whole reason for a second
+    record is that the first one may not move.
+
+    The second half is what keeps the acceptance from being a hole: a
+    configuration matching NEITHER digest is still a fault. That is the
+    one state the validation exists to catch -- owned keys nobody
+    committed and no reconfiguration ever wrote -- and widening the
+    accepted set must not widen it to anything.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    commit = _commit_entry(name="reconfigure")
+    root = tmp_path / "reconfigured"
+    paths = _committed_at(root=root, keys=_OWNED_DAEMON_CONFIGURATION)
+    committed_bytes = paths.marker.read_text(encoding="utf-8")
+    (paths.inputs_dir(run="run-a") / "daemon.json").write_text(
+        json.dumps({**_RECONFIGURED_DAEMON_CONFIGURATION, "log-driver": "json-file"}),
+        encoding="utf-8",
+    )
+    host = _host_after_the_commit(root=root)
+
+    outcome = _reconfigure_run(root=root, host=host)
+
+    assert outcome.verdict == "proceed"
+    assert host.daemon_keys == _RECONFIGURED_DAEMON_CONFIGURATION
+    assert paths.marker.read_text(encoding="utf-8") == committed_bytes
+    reconfigured = records.owned_keys_digest(paths=paths, run="run-a")
+    assert reconfigured != records.marker_digest(paths=paths)
+    assert commit.committed_installation_fault(run="run-a", env=_env(root=root, host=host)) == ""
+    assert _confirm_on_a_committed_host(root=root, host=host).verdict != "refuse"
+    assert records.reconfigured_digest(paths=paths) == reconfigured
+
+    (paths.inputs_dir(run="run-a") / "daemon.json").write_text(
+        json.dumps({**_OWNED_DAEMON_CONFIGURATION, "bip": "10.17.0.1/16"}), encoding="utf-8"
+    )
+    drifted = _env(root=root, host=host)
+
+    assert "digest" in commit.committed_installation_fault(run="run-a", env=drifted)
+    assert _confirm_on_a_committed_host(root=root, host=host).verdict == "refuse"
