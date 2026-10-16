@@ -456,3 +456,59 @@ def test_a_confirm_carrying_an_expired_or_already_spent_challenge_refuses(
     assert records.consumed_nonces(paths=_paths(root=committed), run="run-a") == (
         "nonce-of-the-current-window",
     )
+
+
+_OWNED_DAEMON_CONFIGURATION: dict[str, Any] = {
+    "bip": "172.17.0.1/16",
+    "cgroup-parent": "fabro-sandbox.slice",
+    "ip-forward": True,
+    "ip-forward-no-drop": True,
+    "ip6tables": True,
+    "iptables": True,
+    "ipv6": False,
+    "live-restore": False,
+}
+
+
+def test_the_commit_marker_carries_the_run_and_the_canonical_owned_keys_digest(
+    tmp_path: Path,
+) -> None:
+    """Specification "Commit", and design F4: the digest is over PARSED keys.
+
+    The marker is the only durable statement of what was committed, and
+    it says two things: WHICH run committed, so a later dispatch can
+    tell this host's commitment from another run's, and WHAT
+    configuration it committed, so a later converge can tell a
+    reconfiguration from a no-op.
+
+    The digest covers the owned keys parsed and re-serialized rather
+    than the file's bytes, and that is the half a byte digest would get
+    wrong in the damaging direction: the slice role re-serializes
+    `daemon.json` without changing an owned key, so a byte digest would
+    report an identical configuration as a changed one on every later
+    converge. The second half of this test writes exactly that -- the
+    same owned keys reordered and re-indented, beside a CHANGED foreign
+    key -- and requires the digest not to move.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    root = tmp_path / "commit"
+    _ready_to_confirm(root=root)
+    paths = _paths(root=root)
+    daemon_json = paths.inputs_dir(run="run-a") / "daemon.json"
+    daemon_json.write_text(
+        json.dumps({**_OWNED_DAEMON_CONFIGURATION, "log-driver": "json-file"}), encoding="utf-8"
+    )
+
+    assert _confirm_through_the_guard(root=root).verdict != "refuse"
+
+    marker = json.loads(paths.marker.read_text(encoding="utf-8"))
+    assert marker["run"] == "run-a"
+    assert "digest" in marker
+    assert marker["digest"] == records.owned_keys_digest(paths=paths, run="run-a")
+    assert records.owned_daemon_keys(paths=paths, run="run-a") == _OWNED_DAEMON_CONFIGURATION
+
+    reordered = dict(reversed(list(_OWNED_DAEMON_CONFIGURATION.items())))
+    daemon_json.write_text(
+        json.dumps({"log-driver": "syslog", **reordered}, indent=4), encoding="utf-8"
+    )
+    assert records.owned_keys_digest(paths=paths, run="run-a") == marker["digest"]

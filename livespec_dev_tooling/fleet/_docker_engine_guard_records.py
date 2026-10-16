@@ -215,13 +215,21 @@ def record_consumed_nonce(*, paths: GuardPaths, run: str, nonce: str) -> None:
     write_durable(path=_consumed_path(paths=paths, run=run), data="\n".join(spent))
 
 
-def publish_marker(*, paths: GuardPaths, run: str) -> None:
+def publish_marker(*, paths: GuardPaths, run: str, digest: str) -> None:
     """Write the commit marker: the guard's one commit point.
 
     The moment the rename inside `write_durable` returns, the run is
     committed, and no failure after that point ever rolls it back.
+
+    It carries two things and needs both. The run id is what lets every
+    later dispatch tell this host's own commitment from another run's.
+    The digest is what lets a later converge tell a post-commit
+    reconfiguration from a no-op, without reading the daemon
+    configuration's bytes.
     """
-    write_durable(path=paths.marker, data=json.dumps({"run": run}, sort_keys=True))
+    write_durable(
+        path=paths.marker, data=json.dumps({"digest": digest, "run": run}, sort_keys=True)
+    )
 
 
 def owned_daemon_keys(*, paths: GuardPaths, run: str) -> dict[str, object]:
