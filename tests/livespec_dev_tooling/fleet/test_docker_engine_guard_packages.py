@@ -596,6 +596,49 @@ def test_the_package_step_configures_only_part_installed_packages_a_run_intended
     assert runner.calls.index(configured[0]) < runner.calls.index(installed[0])
 
 
+def test_the_package_step_completes_interrupted_triggers_for_those_packages_only(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": `dpkg --triggers-only`, restricted that way.
+
+    Design G7: a helper killed during the install can leave trigger
+    processing half done, and a package left `triggers-pending` is not
+    broken enough for `--configure` and not finished enough to be
+    installed over. It is completed with `dpkg --triggers-only` aimed at
+    the named packages, which is what keeps a rollback from `publishing`
+    from stranding every later run — and the restriction is the same
+    recorded-intended-set membership, so somebody else's pending trigger
+    is never completed on their behalf.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    awaiting = _QUERY_BEFORE + "runc 1.4.0-0ubuntu1 unpacked\ntini 0.19.0-1 triggers-pending\n"
+    settled = _QUERY_AFTER + "runc 1.4.0-0ubuntu1 installed\ntini 0.19.0-1 installed\n"
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("dpkg", "--audit"), [_audit_report(packages=("runc", "tini"))]),
+            (("dpkg-query",), [awaiting, awaiting, settled]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    completed = _calls_named(runner=runner, argv=("dpkg", "--triggers-only"))
+    assert len(completed) == 1
+    # `runc` is absent on purpose: an unpacked package is the configure
+    # branch's, and completing its triggers would skip the configuration.
+    assert tuple(completed[0].argv) == ("dpkg", "--triggers-only", "tini")
+    assert completed[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
+    installed = _calls_named(runner=runner, argv=("dpkg", "-i"))
+    assert runner.calls.index(completed[0]) < runner.calls.index(installed[0])
+
+
 def test_the_package_step_refuses_when_an_installed_version_moved_under_the_audit(
     tmp_path: Path,
 ) -> None:
