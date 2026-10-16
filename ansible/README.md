@@ -101,7 +101,7 @@ the next time the cluster's objects are re-created. Every `ci_pool` node runs it
 the SERVER included — `poweredge-xubuntu` is a factory node and is untainted,
 which is why "the factory nodes" could not be spelled as "the tainted ones".
 
-**Two gating axes, not one.** `cluster_role` answers "server or agent".
+**Three gating axes, not one.** `cluster_role` answers "server or agent".
 `hp-xubuntu` is the first node for which that is not the whole question: it is a
 Fabro FACTORY host that joins the pool as a full agent and executes **no CI
 job**, carrying none of the pool's CI storage tiers. That posture is read from
@@ -114,6 +114,19 @@ gated on it with a `when:` in this one play rather than in a second play. Read
 `ci-pool.yml`'s header for the three roles a closed node still runs and why each
 one, and `tests/livespec_dev_tooling/test_ci_pool_factory_only_agent_roles.py`
 for the test that resolves the whole answer from the inventory and the profiles.
+
+The third axis is `FACTORY_NODE`, and it asks a question neither of the other two
+can: **can this node take a factory pod?** All three nodes answer `true` — the
+server included, which is why it is not `cluster_role`, and `hp-xubuntu` answers
+it while executing no CI job, which is why it is not `CI_NODE_FACILITIES`.
+`factory_workspace_root` is gated on it: the kubernetes-sandbox-backend plugin
+takes ONE `workspace_root`, so every node that advertises factory capacity must
+already carry a directory at that one absolute path
+(`/srv/factory-workspaces`, `root:root` mode 0755, on a persistent non-tmpfs
+filesystem the role measures at every apply). The capacity reasoning sits beside
+the role in `roles/factory_workspace_root/CAPACITY.md`, and
+`tests/livespec_dev_tooling/test_factory_workspace_root_provisioning.py` resolves
+the host set from the same two inputs.
 
 `ci_converge_unit` only ENABLES `converge-ci-stack.service` for the next boot; to
 apply a committed change to the cluster stack now, pass `-e
