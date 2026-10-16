@@ -16,14 +16,28 @@ Stdlib only, Python 3.10 syntax, for the reason the model module records.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass
+from typing import Final, Protocol
 
 __all__: list[str] = [
+    "COUNTS_KEY",
+    "FAILURES_KEY",
+    "PASSED_KEY",
+    "PROBES_KEY",
     "Probe",
     "ProbeResult",
+    "build_sample",
     "run_probe",
 ]
+
+# The keys of a sample record. `PASSED_KEY` is the one the observer
+# reads, fail-closed: anything that is not exactly `True` there -- a
+# `False`, a missing key, a truthy string -- is a failed sample.
+PASSED_KEY: Final[str] = "passed"
+COUNTS_KEY: Final[str] = "counts_toward_confirmation"
+PROBES_KEY: Final[str] = "probes"
+FAILURES_KEY: Final[str] = "failures"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -101,3 +115,29 @@ def run_probe(*, probe: Probe) -> ProbeResult:
         error=f"{first.error}; then {second.error}",
         counts_toward_confirmation=second.counts_toward_confirmation,
     )
+
+
+def build_sample(*, probes: Sequence[Probe]) -> Mapping[str, object]:
+    """One observation sample: every probe's result, and every failure named.
+
+    EVERY probe runs, even after one has failed. The sample is the only
+    record an operator gets of a rolled-back run, and stopping at the
+    first failure would hide whether the rest of the host was healthy --
+    which is exactly the difference between "Docker broke the pod
+    network" and "CoreDNS restarted".
+
+    `passed` and `counts_toward_confirmation` are separate verdicts.
+    The first says nothing went wrong; the second says the evidence was
+    actually gathered. A window of samples that all passed on a
+    same-node DNS placement has proven less than it looks, and the
+    record says so rather than leaving a reader to infer it.
+    """
+    results = tuple(run_probe(probe=probe) for probe in probes)
+    return {
+        PASSED_KEY: all(result.passed for result in results),
+        COUNTS_KEY: all(result.counts_toward_confirmation for result in results),
+        PROBES_KEY: tuple(asdict(result) for result in results),
+        FAILURES_KEY: tuple(
+            {"probe": result.name, "error": result.error} for result in results if not result.passed
+        ),
+    }
