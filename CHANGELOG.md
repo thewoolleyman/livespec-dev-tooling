@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.105.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.104.0...v1.105.0) (2026-10-16)
+
+
+### Features
+
+* **ansible:** bind machines only through the inventory ([98738f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/98738f8443b9f02baf15997f0a46e1107b89b1c0))
+
 ## [1.104.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.103.0...v1.104.0) (2026-10-16)
 
 
