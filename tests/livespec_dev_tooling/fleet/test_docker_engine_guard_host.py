@@ -51,6 +51,8 @@ _CONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_conditions
 _CONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_conditions.py")
 _POSTCONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_postconditions"
 _POSTCONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_postconditions.py")
+_CLOCK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_clock"
+_CLOCK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_clock.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -1352,3 +1354,61 @@ def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:
     declared = {name for name in dir(hostops.HostOps) if not name.startswith("_")}
 
     assert declared - set(dir(host_module.RealHost)) == set()
+
+
+_BOOT_ID = "6f0d2b1e-9d4c-4a9f-8f8e-2f1b7c0a5d33"
+_BOOT_ID_RELATIVE = Path("sys/kernel/random/boot_id")
+
+
+def _proc_tree(*, root: Path, boot_id: str = f"{_BOOT_ID}\n") -> Path:
+    """A recorded `/proc` carrying this boot's id exactly as the kernel writes it."""
+    proc_root = root / "proc"
+    (proc_root / _BOOT_ID_RELATIVE.parent).mkdir(parents=True, exist_ok=True)
+    _ = (proc_root / _BOOT_ID_RELATIVE).write_text(boot_id, encoding="utf-8")
+    return proc_root
+
+
+def _host_on(*, root: Path, commands: _Commands, proc_root: Path) -> Any:
+    """The real host rooted under `root`, reading a RECORDED `/proc` tree."""
+    model = importlib.import_module(_MODEL_MODULE)
+    host_module = importlib.import_module(_HOST_MODULE)
+    paths = model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+    return host_module.build_real_host(paths=paths, runner=commands, proc_root=proc_root)
+
+
+def test_the_clock_reads_monotonic_seconds_this_boots_id_and_waits_when_asked(
+    tmp_path: Path,
+) -> None:
+    """A deadline is a boot id AND a monotonic instant, and neither is a command.
+
+    The wall clock is not either half, on purpose: it steps under NTP
+    and means nothing across a reboot, so a deadline recorded against
+    it would be a deadline that an administrator could move. The boot
+    id comes from the kernel's own `/proc/sys/kernel/random/boot_id`
+    and is STRIPPED, because the kernel ends it with a newline and a
+    deadline comparison is a string comparison -- an unstripped id
+    matches nothing, so every recorded deadline would read as belonging
+    to another boot and every run would be out of time the moment it
+    was armed.
+
+    The `/proc` root is a FIELD on the host for exactly the reason the
+    runner is: it is what makes the boot-id read drivable against a
+    recorded tree rather than against this machine's own boot.
+    """
+    assert _CLOCK_PATH.is_file()
+    clock = importlib.import_module(_CLOCK_MODULE)
+    commands = _Commands()
+    host = _host_on(root=tmp_path, commands=commands, proc_root=_proc_tree(root=tmp_path))
+
+    assert host.boot_id() == _BOOT_ID
+
+    before = host.monotonic()
+    host.sleep(seconds=0.01)
+    after = host.monotonic()
+
+    assert isinstance(before, float)
+    assert after >= before + 0.01
+    assert clock.monotonic_seconds() >= after
+    # Reading a clock and waiting are not external commands, so neither
+    # reaches the one timed runner and neither can be bounded by it.
+    assert commands.argvs == []
