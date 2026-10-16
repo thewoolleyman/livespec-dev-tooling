@@ -67,7 +67,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_state import (
 )
 
 if TYPE_CHECKING:
-    from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision
+    from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision, Operation
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
 __all__: list[str] = [
@@ -75,6 +75,7 @@ __all__: list[str] = [
     "committed_installation_fault",
     "confirm",
     "deadman_timer_unit",
+    "finish_post_commit",
     "reconfigure",
     "verify",
 ]
@@ -175,13 +176,22 @@ def committed_installation_fault(*, run: str, env: GuardEnv) -> str:
     )
 
 
-def _finish(*, run: str, env: GuardEnv, decision: Decision, warning: str) -> GuardOutcome:
+def finish_post_commit(
+    *, operation: Operation, run: str, env: GuardEnv, decision: Decision, warning: str
+) -> GuardOutcome:
     """The post-commit steps, in the order the specification sets them.
 
     Every one is idempotent, which is what lets a `confirm` that died
     anywhere past the commit rename simply be run again -- and what lets
     a `confirm` for a run the marker already names repeat them with no
     challenge at all.
+
+    PUBLIC because two operations perform them and their ORDER is the
+    load-bearing part: `confirm` reaches them past its own commit point
+    or for a run the marker already names, and an operator's `recover`
+    of a committed run performs them at design H5's direction. The
+    `operation` rides in so the outcome names the one an operator
+    actually invoked rather than the one that happens to own the steps.
 
     The start permission goes FIRST, and that is safe only here: the
     marker is already visible, so the guarded units' start condition is
@@ -203,9 +213,9 @@ def _finish(*, run: str, env: GuardEnv, decision: Decision, warning: str) -> Gua
     record_phase(paths=env.paths, run=run, phase="confirmed")
     fault = committed_installation_fault(run=run, env=env)
     if fault:
-        return GuardOutcome(operation="confirm", run=run, verdict="refuse", reason=fault)
+        return GuardOutcome(operation=operation, run=run, verdict="refuse", reason=fault)
     return GuardOutcome(
-        operation="confirm",
+        operation=operation,
         run=run,
         verdict=decision.verdict,
         reason=_committed_reason(warning=warning),
@@ -230,7 +240,9 @@ def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     whose post-commit steps a later `confirm` simply repeats.
     """
     if decision.verdict == "finish":
-        return _finish(run=run, env=env, decision=decision, warning="")
+        return finish_post_commit(
+            operation="confirm", run=run, env=env, decision=decision, warning=""
+        )
     answer = submitted_nonce(paths=env.paths, run=run)
     refusal = commit_refusal(run=run, env=env, answer=answer)
     if refusal:
@@ -246,7 +258,8 @@ def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
             verdict="refuse",
             reason=f"the commit marker is not in place, so this run is not committed: {failure}",
         )
-    return _finish(
+    return finish_post_commit(
+        operation="confirm",
         run=run,
         env=env,
         decision=decision,
