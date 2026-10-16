@@ -32,6 +32,7 @@ __all__: list[str] = [
     "SYSCTL_SNAPSHOT",
     "SYSCTL_TIMEOUT_SECONDS",
     "WATCHED_SYSCTLS",
+    "compare_sysctls",
     "delete_bridge_interfaces",
     "read_bridge_links",
     "read_sysctls",
@@ -123,3 +124,26 @@ def delete_bridge_interfaces(*, runner: GuardCommandRunner) -> tuple[str, ...]:
             timeout_seconds=LINK_TIMEOUT_SECONDS,
         )
     return going
+
+
+def snapshot_sysctls(*, snapshot: Path) -> Mapping[str, str]:
+    """The five watched values as the run's `before/` directory recorded them."""
+    recorded = json.loads((snapshot / SYSCTL_SNAPSHOT).read_text(encoding="utf-8"))
+    return {name: str(recorded[name]) for name in WATCHED_SYSCTLS}
+
+
+def compare_sysctls(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str, ...]:
+    """Each watched value that moved, named with where it was and where it is.
+
+    BOTH values are reported because an operator reading
+    `rollback-partial` has to put the value back and the snapshot is the
+    only record of what it was. A value that matches stays silent: a
+    report naming all five every time would bury the one that matters.
+    """
+    recorded = snapshot_sysctls(snapshot=snapshot)
+    current = read_sysctls(runner=runner)
+    return tuple(
+        f"{name} {recorded[name]} -> {current[name]}"
+        for name in WATCHED_SYSCTLS
+        if current[name] != recorded[name]
+    )
