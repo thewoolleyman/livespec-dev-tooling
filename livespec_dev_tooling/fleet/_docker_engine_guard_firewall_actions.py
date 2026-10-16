@@ -16,17 +16,21 @@ Stdlib only, Python 3.10 syntax.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_firewall import (
     FAMILIES,
+    FORWARD_CHAIN,
     FORWARD_POLICY_SNAPSHOT,
+    POLICY_TABLE,
     SNAPSHOT_TABLES,
     FirewallTable,
     FootprintPlan,
     chain_argv,
     delete_argv,
+    forward_policy_argv,
     parse_table,
     plan_footprint,
     save_argv,
@@ -41,11 +45,12 @@ __all__: list[str] = [
     "FIREWALL_TIMEOUT_SECONDS",
     "FLUSH_CHAIN",
     "FOOTPRINT_PASSES",
-    "FORWARD_CHAIN",
     "read_current_table",
     "read_snapshot_table",
     "remove_footprint",
     "residual_docker_rules",
+    "restore_forward_policy",
+    "snapshot_forward_policies",
     "write_firewall_snapshot",
 ]
 
@@ -64,12 +69,6 @@ DELETE_CHAIN: Final[str] = "-X"
 # design measures k3s's own sweeps at 4 within 300 seconds), short enough
 # that one stuck table cannot consume a whole rollback phase's budget.
 FIREWALL_TIMEOUT_SECONDS: Final[int] = 30
-
-FORWARD_CHAIN: Final[str] = "FORWARD"
-
-# The one table the FORWARD chain lives in. Named rather than left
-# implicit so every emitted argv says which table it means.
-_POLICY_TABLE: Final[str] = "filter"
 
 
 def write_firewall_snapshot(*, destination: Path, runner: GuardCommandRunner) -> None:
@@ -92,7 +91,7 @@ def write_firewall_snapshot(*, destination: Path, runner: GuardCommandRunner) ->
             _ = (destination / snapshot_name(family=family, table=table)).write_text(
                 dump, encoding="utf-8"
             )
-            if table == _POLICY_TABLE:
+            if table == POLICY_TABLE:
                 policies[family] = parse_table(dump=dump).policies[FORWARD_CHAIN]
     _ = (destination / FORWARD_POLICY_SNAPSHOT).write_text(
         json.dumps(policies, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -186,3 +185,25 @@ def remove_footprint(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str
         if not found:
             return ()
     return residual_docker_rules(runner=runner, snapshot=snapshot)
+
+
+def snapshot_forward_policies(*, snapshot: Path) -> Mapping[str, str]:
+    """Each family's FORWARD policy as the run's `before/` directory recorded it."""
+    recorded = json.loads((snapshot / FORWARD_POLICY_SNAPSHOT).read_text(encoding="utf-8"))
+    return {family: str(recorded[family]) for family in FAMILIES}
+
+
+def restore_forward_policy(*, runner: GuardCommandRunner, snapshot: Path) -> None:
+    """Put each family's recorded FORWARD policy back, one `-P` per family.
+
+    The policy is READ from the snapshot and never inferred: Docker sets
+    FORWARD to DROP and adds the rules that make its own traffic work, so
+    a rollback that removed the rules and left the policy would leave
+    k3s's pod traffic dropped by a chain with nothing left in it.
+    """
+    policies = snapshot_forward_policies(snapshot=snapshot)
+    for family in FAMILIES:
+        _ = runner(
+            argv=forward_policy_argv(family=family, policy=policies[family]),
+            timeout_seconds=FIREWALL_TIMEOUT_SECONDS,
+        )
