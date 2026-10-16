@@ -428,3 +428,32 @@ def test_the_driver_records_a_phase_attempt_durably_before_it_enters_the_phase(
     _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
 
     assert seen == {phase: "1" for phase in _SPECIFIED_ORDER}
+
+
+def test_every_phase_child_runs_under_timeout_with_that_phases_budget(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback" / design H6: `timeout -k 10 <phase budget>`.
+
+    The wrapper is what makes a phase that HANGS cost its own budget and
+    nothing more: SIGTERM at the budget, SIGKILL ten seconds later, and
+    the driver gets a status back either way instead of blocking until
+    its own transient unit is killed with no verdict at all. The budget
+    is read from the driver's own table rather than written out here —
+    the apportionment is its own rule, asserted on its own.
+    """
+    rollback = _driver()
+    assert "PHASE_BUDGET_SECONDS" in rollback.__all__
+    assert tuple(rollback.PHASE_BUDGET_SECONDS) == rollback.ROLLBACK_PHASE_ORDER
+    assert all(budget > 0 for budget in rollback.PHASE_BUDGET_SECONDS.values())
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
+
+    spawned = fake.calls_named(name="run_phase_child")
+    assert len(spawned) == len(_SPECIFIED_ORDER)
+    for call in spawned:
+        phase = call.detail[-1]
+        budget = str(rollback.PHASE_BUDGET_SECONDS[phase])
+        assert call.detail[:4] == ("timeout", "-k", "10", budget), phase
