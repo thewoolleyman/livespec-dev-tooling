@@ -72,6 +72,10 @@ class _Commands:
             argv=key, returncode=self.codes.get(key, 0), stdout=self.answers.get(key, "")
         )
 
+    def argvs_with(self, *, flag: str) -> tuple[tuple[str, ...], ...]:
+        """Every recorded argv carrying `flag`, in the order it was emitted."""
+        return tuple(argv for argv in self.argvs if flag in argv)
+
 
 def _lines(*rows: str) -> str:
     """Recorded command output, as a host writes it: one row per line."""
@@ -1286,4 +1290,175 @@ def test_a_sample_fails_on_an_interface_that_appeared_outside_the_guarded_pair(
     assert (intruded.passed, intruded.error) == (
         False,
         "these interfaces appeared since the snapshot: ('br-lab',)",
+    )
+
+
+_FIREWALL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_sample_firewall"
+_FIREWALL_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_sample_firewall.py")
+_ACTIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions"
+
+# The guarded host's `filter` table before the install: Tailscale's two
+# chains and a kube-proxy chain, each with contents of its own.
+_FILTER_BEFORE = _lines(
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD DROP [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    ":KUBE-SERVICES - [0:0]",
+    ":ts-forward - [0:0]",
+    ":ts-input - [0:0]",
+    "-A INPUT -j ts-input",
+    "-A INPUT -j KUBE-SERVICES",
+    "-A FORWARD -j ts-forward",
+    "-A ts-input -i tailscale0 -j ACCEPT",
+    "-A KUBE-SERVICES -d 10.43.0.1/32 -j ACCEPT",
+    "COMMIT",
+)
+
+# The same table during a HEALTHY window. Docker's own chains and rules
+# are there, and so is one further rule kube-proxy added INSIDE its own
+# chain -- the reconciler churn R4 says must never be mistaken for a
+# fault.
+_FILTER_HEALTHY = _lines(
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD DROP [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    ":KUBE-SERVICES - [0:0]",
+    ":ts-forward - [0:0]",
+    ":ts-input - [0:0]",
+    ":DOCKER - [0:0]",
+    ":DOCKER-USER - [0:0]",
+    "-A INPUT -j ts-input",
+    "-A INPUT -j KUBE-SERVICES",
+    "-A FORWARD -j ts-forward",
+    "-A FORWARD -o docker0 -j DOCKER",
+    "-A FORWARD -i docker0 ! -o docker0 -j ACCEPT",
+    "-A DOCKER-USER -j RETURN",
+    "-A ts-input -i tailscale0 -j ACCEPT",
+    "-A KUBE-SERVICES -d 10.43.0.1/32 -j ACCEPT",
+    "-A KUBE-SERVICES -d 10.43.0.17/32 -j ACCEPT",
+    "COMMIT",
+)
+
+# And during a window that went wrong in all three in-scope ways: a
+# built-in policy moved, a rule appeared in a built-in chain that is
+# not Docker's, and a Tailscale chain lost one of its own.
+_FILTER_FAULTY = _lines(
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD ACCEPT [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    ":KUBE-SERVICES - [0:0]",
+    ":ts-forward - [0:0]",
+    ":ts-input - [0:0]",
+    ":DOCKER - [0:0]",
+    "-A INPUT -j ts-input",
+    "-A INPUT -j KUBE-SERVICES",
+    "-A INPUT -p tcp -m tcp --dport 2375 -j ACCEPT",
+    "-A FORWARD -j ts-forward",
+    "-A FORWARD -o docker0 -j DOCKER",
+    "-A KUBE-SERVICES -d 10.43.0.1/32 -j ACCEPT",
+    "COMMIT",
+)
+
+_NAT_BEFORE = _lines(
+    "*nat",
+    ":PREROUTING ACCEPT [0:0]",
+    ":POSTROUTING ACCEPT [0:0]",
+    ":KUBE-POSTROUTING - [0:0]",
+    "-A POSTROUTING -s 10.42.0.0/16 -j MASQUERADE",
+    "COMMIT",
+)
+_NAT_HEALTHY = _lines(
+    "*nat",
+    ":PREROUTING ACCEPT [0:0]",
+    ":POSTROUTING ACCEPT [0:0]",
+    ":KUBE-POSTROUTING - [0:0]",
+    ":DOCKER - [0:0]",
+    "-A POSTROUTING -s 10.42.0.0/16 -j MASQUERADE",
+    "-A POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE",
+    "-A PREROUTING -m addrtype --dst-type LOCAL -j DOCKER",
+    "COMMIT",
+)
+_IPV6_FILTER = _lines(
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD ACCEPT [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    "COMMIT",
+)
+_IPV6_NAT = _lines(
+    "*nat",
+    ":PREROUTING ACCEPT [0:0]",
+    ":POSTROUTING ACCEPT [0:0]",
+    "COMMIT",
+)
+
+
+def _firewall_snapshot(*, root: Path) -> Path:
+    """A recorded `before/` directory holding both families' two tables."""
+    firewall = importlib.import_module("livespec_dev_tooling.fleet._docker_engine_guard_firewall")
+    root.mkdir(parents=True, exist_ok=True)
+    recorded = {
+        ("ipv4", "filter"): _FILTER_BEFORE,
+        ("ipv4", "nat"): _NAT_BEFORE,
+        ("ipv6", "filter"): _IPV6_FILTER,
+        ("ipv6", "nat"): _IPV6_NAT,
+    }
+    for (family, table), dump in recorded.items():
+        _ = (root / firewall.snapshot_name(family=family, table=table)).write_text(
+            dump, encoding="utf-8"
+        )
+    return root
+
+
+def _firewall_bus(*, ipv4_filter: str) -> _Commands:
+    """A bus answering each family's two `*-save` reads."""
+    firewall = importlib.import_module("livespec_dev_tooling.fleet._docker_engine_guard_firewall")
+    return _Commands(
+        answers={
+            firewall.save_argv(family="ipv4", table="filter"): ipv4_filter,
+            firewall.save_argv(family="ipv4", table="nat"): _NAT_HEALTHY,
+            firewall.save_argv(family="ipv6", table="filter"): _IPV6_FILTER,
+            firewall.save_argv(family="ipv6", table="nat"): _IPV6_NAT,
+        }
+    )
+
+
+def test_the_sample_firewall_comparison_covers_the_scope_r4_fixed_and_no_more(
+    tmp_path: Path,
+) -> None:
+    """Built-in policies, the five built-in chains' rules, `ts-*` contents -- and no more.
+
+    R4 scopes the comparison so a reconciler's healthy churn is never
+    mistaken for a fault: kube-router and kube-proxy rewrite the
+    contents of their own `KUBE-*` and `FLANNEL-*` chains per pod, so a
+    comparison covering those would fail on every sample of a perfectly
+    healthy host. Docker's OWN footprint is excluded too -- the engine
+    is expected to be running during the window -- so what is left is
+    exactly what nobody should have changed.
+    """
+    assert _FIREWALL_PATH.is_file()
+    sample_firewall = importlib.import_module(_FIREWALL_MODULE)
+    actions = importlib.import_module(_ACTIONS_MODULE)
+    snapshot = _firewall_snapshot(root=tmp_path / "before")
+
+    healthy = _firewall_bus(ipv4_filter=_FILTER_HEALTHY)
+    passing = sample_firewall.firewall_probe(runner=healthy, snapshot=snapshot)
+    assert (passing.name, passing.passed, passing.error) == (
+        sample_firewall.FIREWALL_PROBE,
+        True,
+        "",
+    )
+    assert set(healthy.timeouts) == {actions.FIREWALL_TIMEOUT_SECONDS}
+    assert healthy.argvs_with(flag="-c") == ()
+
+    faulty = _firewall_bus(ipv4_filter=_FILTER_FAULTY)
+    failing = sample_firewall.firewall_probe(runner=faulty, snapshot=snapshot)
+    assert failing.passed is False
+    assert failing.error == (
+        "ipv4 filter policy FORWARD: DROP -> ACCEPT; "
+        "ipv4 filter appeared -A INPUT -p tcp -m tcp --dport 2375 -j ACCEPT; "
+        "ipv4 filter disappeared -A ts-input -i tailscale0 -j ACCEPT"
     )
