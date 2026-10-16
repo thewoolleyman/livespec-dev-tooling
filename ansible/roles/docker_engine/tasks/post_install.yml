@@ -78,11 +78,15 @@
   changed_when: false
 
 - name: Require systemd's condition-skip message for each of them
-  # The text systemd 259 writes for `|` conditions; its presence proves the gate
+  # The text systemd writes for `|` conditions; its presence proves the gate
   # fired on a real start attempt rather than that nothing tried to start.
+  # systemd 259.5 (Ubuntu 26.04) writes "<unit> - <description> skipped, no
+  # trigger condition checks were met." (measured 2026-10-16, H-01 on an
+  # acceptance guest); older releases write "... was skipped because no trigger
+  # condition checks were met". Both mean the same skip, so accept either.
   ansible.builtin.assert:
     that:
-      - item.stdout is search('skipped because no trigger condition checks were met')
+      - item.stdout is search('skipped(,| because) no trigger condition checks were met')
     fail_msg: >-
       No condition skip for {{ item.item }} since the install, so the gate is
       not proven to have fired: {{ item.stdout_lines }}
