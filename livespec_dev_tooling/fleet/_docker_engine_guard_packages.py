@@ -86,6 +86,27 @@ def _difference_refusal(
     return None
 
 
+def _drift_refusal(*, audit: Audit, installed: Mapping[str, InstalledPackage]) -> str | None:
+    """Every version the audit relied on that has moved since it read them.
+
+    An unattended upgrade landing libc6 while the audit downloaded and
+    digested its archives breaks no committed digest and leaves the
+    audited verdict resting on a host that no longer exists. A package
+    that has GONE counts as moved for the same reason, which is why the
+    comparison is on the version the audit saw and not on presence.
+    """
+    moved = tuple(
+        sorted(
+            name
+            for name, version in audit.relied_on.items()
+            if name not in installed or installed[name].version != version
+        )
+    )
+    if moved:
+        return f"these installed versions moved since the audit read them: {moved}"
+    return None
+
+
 def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> PackageStepResult:
     """Install exactly the audited package set named by this run's `inputs`.
 
@@ -101,6 +122,9 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     if isinstance(audit, str):
         return PackageStepResult(refusal=audit)
     before = read_installed(runner=runner)
+    drift = _drift_refusal(audit=audit, installed=before)
+    if drift is not None:
+        return PackageStepResult(refusal=drift)
     _ = runner(
         command=TimedCommand(
             argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),
