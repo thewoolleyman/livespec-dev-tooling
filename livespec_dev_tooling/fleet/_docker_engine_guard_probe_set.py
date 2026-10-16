@@ -86,11 +86,18 @@ class ProbeParameters:
     """Everything the probe set needs that is a fact about the CLUSTER.
 
     Declared rather than discovered, every one of them. The node's own
-    name, the k3s server to delegate a pod listing to, the kube-dns and
-    API service addresses, the units the fleet says must stay running
-    and the canary's name are all decisions made where the cluster is
-    known — and a guard that discovered them would be guessing on the
-    one host that must not be guessed about.
+    name, the k3s server to delegate a pod listing to, the ROUTE that
+    reaches it, the kube-dns and API service addresses, the units the
+    fleet says must stay running and the canary's name are all decisions
+    made where the cluster is known — and a guard that discovered them
+    would be guessing on the one host that must not be guessed about.
+
+    `k3s_server_argv` is the command prefix that reaches the k3s server
+    and runs a command there with the rights `k3s kubectl` needs. It is
+    declared because what those rights cost differs per fleet (see
+    `coredns_placement_argv`), and it is OPTIONAL because the previous
+    root-to-root `ssh` prefix remains the default — so a run that says
+    nothing about the route behaves exactly as it did before.
     """
 
     node: str
@@ -101,6 +108,7 @@ class ProbeParameters:
     api_port: int
     canary: str
     must_stay_running: tuple[str, ...] = ()
+    k3s_server_argv: tuple[str, ...] = ()
 
 
 def probe_parameters_path(*, paths: GuardPaths, run: str) -> Path:
@@ -120,6 +128,7 @@ def read_probe_parameters(*, paths: GuardPaths, run: str) -> ProbeParameters:
         api_port=int(recorded["api_port"]),
         canary=str(recorded["canary"]),
         must_stay_running=tuple(str(unit) for unit in recorded.get("must_stay_running", ())),
+        k3s_server_argv=tuple(str(word) for word in recorded.get("k3s_server_argv", ())),
     )
 
 
@@ -149,6 +158,7 @@ def host_probes(
             runner=runner,
             server=parameters.k3s_server,
             node=parameters.node,
+            k3s_server_argv=parameters.k3s_server_argv,
         ),
         partial(
             dns_probe,

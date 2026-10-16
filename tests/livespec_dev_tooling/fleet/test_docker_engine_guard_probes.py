@@ -29,7 +29,7 @@ import importlib
 import json
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -1585,7 +1585,9 @@ def _before_bus() -> _Commands:
     return _Commands(answers=answers)
 
 
-def _sample_bus(*, sysctls: dict[str, str] = _SYSCTLS_BEFORE) -> _Commands:
+def _sample_bus(
+    *, sysctls: dict[str, str] = _SYSCTLS_BEFORE, k3s_server_argv: Sequence[str] = ()
+) -> _Commands:
     """Every read ONE sample takes, on the host during a healthy window."""
     firewall = importlib.import_module("livespec_dev_tooling.fleet._docker_engine_guard_firewall")
     netstate = importlib.import_module(_NETSTATE_MODULE)
@@ -1595,7 +1597,9 @@ def _sample_bus(*, sysctls: dict[str, str] = _SYSCTLS_BEFORE) -> _Commands:
     scope = importlib.import_module(_SCOPE_MODULE)
     answers: dict[tuple[str, ...], str] = {
         cluster.node_status_argv(node="gmktec-xubuntu"): _NODE_STATUS_READY,
-        cluster.coredns_placement_argv(server="poweredge-xubuntu"): (_KUBE_SYSTEM_WIDE_CROSS_NODE),
+        cluster.coredns_placement_argv(
+            server="poweredge-xubuntu", k3s_server_argv=k3s_server_argv
+        ): (_KUBE_SYSTEM_WIDE_CROSS_NODE),
         pod_probes.POD_LIST_ARGV: _READY_PODS,
         pod_probes.inspect_pod_argv(sandbox="svclb0001"): _HOST_NETWORK_POD,
         pod_probes.inspect_pod_argv(sandbox="cijob0002"): _POD_NETWORK_POD,
@@ -1622,14 +1626,20 @@ def _sample_bus(*, sysctls: dict[str, str] = _SYSCTLS_BEFORE) -> _Commands:
     return _Commands(answers=answers)
 
 
-def _guarded_tree(*, root: Path, proc: Path, shims: tuple[Path, ...]) -> Any:
+def _guarded_tree(
+    *,
+    root: Path,
+    proc: Path,
+    shims: tuple[Path, ...],
+    parameters: dict[str, Any] = _PROBE_PARAMETERS,
+) -> Any:
     """A reserved run with its probe parameters and its preflight snapshot."""
     paths = _guard_paths(root=root)
     paths.state_root.mkdir(parents=True, exist_ok=True)
     _ = paths.reservation.write_text(_lines(_RUN), encoding="utf-8")
     inputs = paths.inputs_dir(run=_RUN)
     inputs.mkdir(parents=True, exist_ok=True)
-    _ = (inputs / "probes.json").write_text(json.dumps(_PROBE_PARAMETERS), encoding="utf-8")
+    _ = (inputs / "probes.json").write_text(json.dumps(parameters), encoding="utf-8")
     host = _real_host(root=root, commands=_before_bus(), proc_root=proc, containerd_paths=shims)
     host.take_snapshot(destination=paths.snapshot_dir(run=_RUN))
     host.record_preflight(destination=paths.snapshot_dir(run=_RUN))
@@ -1702,3 +1712,58 @@ def test_the_real_hosts_sample_composes_every_probe_against_recorded_output(
             "error": "net.ipv4.ip_forward 1 -> 0; then net.ipv4.ip_forward 1 -> 0",
         },
     )
+
+
+# The same declared parameters, plus the route this fleet reaches its k3s
+# server by. It is a LIST in the recorded file because that is what JSON
+# has; the parameters carry it as a tuple.
+_PROBE_PARAMETERS_ROUTED: dict[str, Any] = {
+    **_PROBE_PARAMETERS,
+    "k3s_server_argv": list(_DECLARED_K3S_SERVER_ROUTE),
+}
+
+
+def test_the_declared_k3s_server_route_carries_from_probes_json_into_the_sample(
+    tmp_path: Path,
+) -> None:
+    """A run's declared route reaches the placement read, and only it.
+
+    The route is a fact about the FLEET, so it arrives the way every
+    other cluster fact does: declared in the run's own `probes.json`,
+    read into the parameters, and bound to the one probe that delegates
+    to the k3s server. Nothing else in the sample changes, which is why
+    both halves below drive the same recorded bus: a run that declares
+    no route emits exactly the argv it emitted before the route was a
+    parameter, and a run that declares one emits that prefix instead.
+    """
+    probe_set = importlib.import_module(_PROBE_SET_MODULE)
+    assert "k3s_server_argv" in {declared.name for declared in fields(probe_set.ProbeParameters)}
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+    sample_module = importlib.import_module(_SAMPLE_MODULE)
+
+    proc = _proc_tree(
+        root=tmp_path / "proc",
+        cgroups={
+            **_CONTAINERD_CGROUPS,
+            "7211": f"0::{_SANDBOX_CONTROL_GROUP}/docker-abc123.scope",
+        },
+    )
+    shims = (tmp_path / "containerd" / "s", tmp_path / "containerd" / "runc" / "k8s.io")
+    for directory in shims:
+        directory.mkdir(parents=True, exist_ok=True)
+
+    for name, declared, route in (
+        ("routed", _PROBE_PARAMETERS_ROUTED, _DECLARED_K3S_SERVER_ROUTE),
+        ("undeclared", _PROBE_PARAMETERS, ()),
+    ):
+        root = tmp_path / name
+        paths = _guarded_tree(root=root, proc=proc, shims=shims, parameters=declared)
+        assert probe_set.read_probe_parameters(paths=paths, run=_RUN).k3s_server_argv == route
+
+        bus = _sample_bus(k3s_server_argv=route)
+        taken = _real_host(root=root, commands=bus, proc_root=proc, containerd_paths=shims).sample()
+        assert taken[sample_module.PASSED_KEY] is True
+        assert (
+            cluster.coredns_placement_argv(server="poweredge-xubuntu", k3s_server_argv=route)
+            in bus.argvs
+        )
