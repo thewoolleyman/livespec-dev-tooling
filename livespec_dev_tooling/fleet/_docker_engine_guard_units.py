@@ -49,9 +49,11 @@ __all__: list[str] = [
     "GuardSleeper",
     "cancel_jobs",
     "disable_units",
+    "enable_units",
     "guarded_job_ids",
     "kill_cgroup",
     "read_queued_jobs",
+    "start_unit",
     "stop_docker",
     "stop_guard_units",
     "stop_unit",
@@ -174,6 +176,19 @@ def stop_unit(*, runner: GuardCommandRunner, unit: str, timeout_seconds: int) ->
     _ = runner(argv=(SYSTEMCTL, "stop", unit), timeout_seconds=timeout_seconds)
 
 
+def start_unit(*, runner: GuardCommandRunner, unit: str, timeout_seconds: int) -> None:
+    """Start one unit, bounded by the caller's own budget.
+
+    The bound is the CALLER's rather than this module's because the
+    budget a unit start may take is the lifecycle's to set: `start`
+    gives each guarded unit the same wait that, taken twice plus the
+    lock wait, still fits inside its own operation budget -- so a
+    daemon that never becomes ready ends as a refusal rather than as a
+    transient unit SIGKILLed with no verdict at all.
+    """
+    _ = runner(argv=(SYSTEMCTL, "start", unit), timeout_seconds=timeout_seconds)
+
+
 def systemd_run(*, runner: GuardCommandRunner, argv: Sequence[str]) -> None:
     """Run a `systemd-run` recipe the guard built, through the one bounded runner.
 
@@ -233,6 +248,25 @@ def disable_units(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
         if unit in named:
             _ = runner(
                 argv=(SYSTEMCTL, "disable", unit),
+                timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
+            )
+
+
+def enable_units(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
+    """Enable each named guarded unit, one command per unit.
+
+    The mirror of the disable below the rollback runs, and narrowed the
+    same way for the same reason: enabling is the act that carries a
+    unit across the NEXT boot, so an enable that reached
+    `k3s-agent.service` would be writing a durable `WantedBy` for a
+    unit this guard must never touch. One command per unit so a unit
+    whose enable fails does not take the other two with it.
+    """
+    named = set(units)
+    for unit in GUARDED_UNITS:
+        if unit in named:
+            _ = runner(
+                argv=(SYSTEMCTL, "enable", unit),
                 timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
             )
 

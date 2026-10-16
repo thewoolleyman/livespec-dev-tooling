@@ -8,11 +8,10 @@ the postcondition read and the dead-man recipe; child 4 adds the
 PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
 resync refusal) and the observation `sample`; child 5 adds the clock
 and boot identity, the runtime directory's ownership and the start
-permission. The seams that still raise, each saying so where it
-stands, are the admission reads of guard-unit state and this
-invocation's own unit, the unit start, the dead-man timer reads, the
-post-commit and reconfigure seams child 1b added, the rollback phase
-child child 2 added, and child 3b's package step.
+permission, the admission reads, the unit start and the post-commit
+enable. The seams that still raise, each saying so where it stands,
+are the reconfigure seams child 1b added, the rollback phase child
+child 2 added, and child 3b's package step.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -80,8 +79,10 @@ from livespec_dev_tooling.fleet._docker_engine_guard_unit_state import (
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
     disable_units,
+    enable_units,
     kill_cgroup,
     read_queued_jobs,
+    start_unit,
     stop_unit,
     systemd_run,
 )
@@ -223,8 +224,8 @@ class RealHost:
         grant_start_permission(paths=self.paths)
 
     def start_unit(self, *, unit: str, timeout_seconds: int) -> None:
-        """CHILD 4: start one guarded unit with a bounded wait."""
-        raise NotImplementedError
+        """Start one guarded unit with a bounded wait."""
+        start_unit(runner=self.runner, unit=unit, timeout_seconds=timeout_seconds)
 
     # --- observe (child 1b, probes from child 4) ---
 
@@ -240,8 +241,8 @@ class RealHost:
     # --- confirm's post-commit steps (child 1b) ---
 
     def enable_units(self, *, units: Sequence[str]) -> None:
-        """CHILD 4: enable the guarded units, carrying Docker across the next boot."""
-        raise NotImplementedError
+        """Enable the guarded units, carrying Docker across the next boot."""
+        enable_units(runner=self.runner, units=units)
 
     def unit_enabled_states(self) -> Mapping[str, str]:
         """Every guard-relevant unit mapped to its `UnitFileState`."""

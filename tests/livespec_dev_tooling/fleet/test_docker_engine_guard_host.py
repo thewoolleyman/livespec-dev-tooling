@@ -1604,3 +1604,56 @@ def test_the_admission_reads_name_every_guard_unit_its_state_and_this_invocation
     )
 
     assert unit_state.invoking_unit(proc_root=legacy) == ""
+
+
+def test_the_start_and_enable_actions_reach_only_the_guarded_units(
+    tmp_path: Path,
+) -> None:
+    """Starting carries the engine across THIS boot; enabling across the next.
+
+    Rider point 9: the post-commit steps issue both, because neither
+    implies the other -- an enabled-but-stopped Docker on a committed
+    host is an engine that only comes back at a reboot, and a started
+    one that was never enabled is an engine the next boot loses.
+
+    The enable is narrowed to the guarded set and issues ONE command
+    per unit, for the two reasons the disable beside it is: a caller
+    that named `k3s-agent.service` -- by defect, by a mis-parsed read,
+    or by a later refactor -- still cannot reach it, and a unit whose
+    enable fails does not take the other two down with it. The start
+    carries the CALLER's timeout rather than the module's, because the
+    bound on a unit start is the lifecycle's budget to set.
+    """
+    units = importlib.import_module(_UNITS_MODULE)
+    assert hasattr(units, "start_unit")
+    assert hasattr(units, "enable_units")
+    commands = _Commands()
+
+    _real_host(root=tmp_path, commands=commands).start_unit(
+        unit="containerd.service", timeout_seconds=42
+    )
+
+    assert tuple(commands.argvs) == (("systemctl", "start", "containerd.service"),)
+    assert commands.timeouts == [42]
+
+    enabling = _Commands()
+
+    _real_host(root=tmp_path, commands=enabling).enable_units(
+        units=("docker.service", "k3s-agent.service", "docker.socket", "containerd.service")
+    )
+
+    assert tuple(enabling.argvs) == (
+        ("systemctl", "enable", "containerd.service"),
+        ("systemctl", "enable", "docker.service"),
+        ("systemctl", "enable", "docker.socket"),
+    )
+    assert set(enabling.timeouts) == {units.UNIT_ACTION_TIMEOUT_SECONDS}
+
+    # A guarded unit the caller did NOT name stays unenabled: the
+    # narrowing bounds what may be reached, and the caller's set still
+    # decides what is.
+    partial = _Commands()
+
+    _real_host(root=tmp_path, commands=partial).enable_units(units=("docker.service",))
+
+    assert tuple(partial.argvs) == (("systemctl", "enable", "docker.service"),)
