@@ -19,6 +19,8 @@ import importlib
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 __all__: list[str] = []
 
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
@@ -494,3 +496,78 @@ def test_the_phase_budgets_are_apportioned_and_sum_to_six_hundred_seconds(
         run="run-a", env=_env(root=tmp_path, host=fake), phase="footprint-removal"
     )
     assert argv[:4] == ("timeout", "-k", "10", "300")
+
+
+def _kill_driver_at(*, fake: Any, phase: str) -> None:
+    """Make the phase child for `phase` take the whole driver down with it.
+
+    A `RuntimeError` out of the seam is how a driver KILLED mid-phase is
+    modelled: the driver has no handler for it, so the firing ends where
+    the kill landed, having written whatever it had already written and
+    no outcome at all. That is the state the next dead-man firing finds,
+    and the only thing that advances across those firings is the attempt
+    record the driver wrote before entering.
+
+    The child is SPAWNED first and kills the driver second, which is the
+    real sequence: the phase WAS entered, and it is the entry the attempt
+    budget counts.
+    """
+    spawn = fake.run_phase_child
+
+    def killing_spawn(*, argv: tuple[str, ...]) -> bool:
+        completed = spawn(argv=argv)
+        if argv[-1] == phase:
+            raise RuntimeError(f"the {phase} child killed the driver")
+        return completed
+
+    fake.run_phase_child = killing_spawn
+
+
+def test_a_phase_that_keeps_killing_the_driver_is_skipped_after_three_attempts(
+    tmp_path: Path,
+) -> None:
+    """Acceptance scenario: a phase that keeps killing the driver is bounded.
+
+    "Given a run in phase `rolling-back` whose job-cancellation phase
+    kills the rollback driver every time it is entered; when the dead-man
+    fires `rollback` four times" — the first three firings each end in
+    that phase with no outcome written, and the fourth skips it, having
+    reached three recorded attempts without a recorded success, and runs
+    every later phase. A parser that crashes the same way every time can
+    therefore delay the later phases by at most three firings rather
+    than forever.
+    """
+    rollback = _driver()
+    assert "MAX_ATTEMPTS" in rollback.__all__
+    assert rollback.MAX_ATTEMPTS == 3
+    _record_phase(root=tmp_path, run="run-a", phase="rolling-back")
+    attempts = _rollback_record(root=tmp_path, run="run-a", name="job-cancel.attempts")
+
+    for firing in (1, 2, 3):
+        fake = _reporting_fake(root=tmp_path)
+        _kill_driver_at(fake=fake, phase="job-cancel")
+
+        with pytest.raises(RuntimeError):
+            _ = rollback.run_rollback(
+                run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision()
+            )
+
+        spawned = [call.detail[-1] for call in fake.calls_named(name="run_phase_child")]
+        assert spawned[-1] == "job-cancel", firing
+        assert attempts.read_text(encoding="utf-8") == str(firing), firing
+        assert not fake.calls_named(name="read_postconditions"), firing
+        assert _phase_of(root=tmp_path, run="run-a") == "rolling-back", firing
+
+    fourth = _reporting_fake(root=tmp_path)
+    _kill_driver_at(fake=fourth, phase="job-cancel")
+
+    _ = rollback.run_rollback(
+        run="run-a", env=_env(root=tmp_path, host=fourth), decision=_decision()
+    )
+
+    spawned = [call.detail[-1] for call in fourth.calls_named(name="run_phase_child")]
+    assert "job-cancel" not in spawned
+    later = _SPECIFIED_ORDER[_SPECIFIED_ORDER.index("job-cancel") + 1 :]
+    assert [phase for phase in spawned if phase in later] == list(later)
+    assert attempts.read_text(encoding="utf-8") == "3"
+    assert fourth.calls_named(name="read_postconditions")

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
 __all__: list[str] = [
+    "MAX_ATTEMPTS",
     "PHASE_BODIES",
     "PHASE_BUDGET_SECONDS",
     "POSTCONDITIONS",
@@ -126,6 +127,13 @@ PHASE_BUDGET_SECONDS: Final[dict[str, int]] = {
     "interface-deletion": 30,
     "sysctl-comparison": 30,
 }
+
+# How many times a phase may be ENTERED without a recorded success
+# before later firings skip it. Three, so a phase whose child crashes
+# the same way every time delays the later phases by at most three
+# firings rather than forever; its postcondition is still read by every
+# final check and still reported.
+MAX_ATTEMPTS: Final[int] = 3
 
 # What `timeout` is given between the SIGTERM at the budget and the
 # SIGKILL that follows it, so a phase ignoring the first still ends.
@@ -276,6 +284,16 @@ def _record_attempt(*, run: str, env: GuardEnv, phase: str, attempts: int) -> No
     )
 
 
+def _succeeded(*, run: str, env: GuardEnv, phase: str) -> bool:
+    """Whether this phase has a recorded success a later firing may trust."""
+    return (_rollback_dir(run=run, env=env) / f"{phase}.success").is_file()
+
+
+def _record_success(*, run: str, env: GuardEnv, phase: str) -> None:
+    """Record that this phase's child completed, durably."""
+    write_durable(path=_rollback_dir(run=run, env=env) / f"{phase}.success", data=phase)
+
+
 def phase_child_argv(*, run: str, env: GuardEnv, phase: str) -> tuple[str, ...]:
     """The command line the driver spawns for one phase.
 
@@ -371,11 +389,18 @@ def _enter_phase(*, run: str, env: GuardEnv, phase: str) -> None:
     such a phase never returns to record anything, so an attempt written
     after the spawn would never be written for exactly the phase the
     budget exists to bound.
+
+    A phase that has spent its attempts without ever succeeding is not
+    entered at all. Its postcondition is still read by the final check
+    and still reported, so skipping hides nothing — it only stops one
+    phase from standing between the dead-man and the later ones.
     """
-    _record_attempt(
-        run=run, env=env, phase=phase, attempts=_attempts(run=run, env=env, phase=phase)
-    )
-    _ = env.host.run_phase_child(argv=phase_child_argv(run=run, env=env, phase=phase))
+    attempts = _attempts(run=run, env=env, phase=phase)
+    if attempts >= MAX_ATTEMPTS and not _succeeded(run=run, env=env, phase=phase):
+        return
+    _record_attempt(run=run, env=env, phase=phase, attempts=attempts)
+    if env.host.run_phase_child(argv=phase_child_argv(run=run, env=env, phase=phase)):
+        _record_success(run=run, env=env, phase=phase)
 
 
 def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
