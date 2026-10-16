@@ -840,3 +840,73 @@ def test_a_rolled_back_outcome_stops_the_drivers_own_dead_man_timer(
 
     assert _phase_of(root=partial, run="run-a") == "rollback-partial"
     assert "docker-engine-deadman-run-a.timer" not in _stopped_units(fake=other)
+
+
+def test_a_partial_outcome_re_runs_only_failing_phases_with_attempts_left(
+    tmp_path: Path,
+) -> None:
+    """Design G5: a `rollback-partial` firing re-runs the failing, un-exhausted phases.
+
+    A `rollback-partial` outcome keeps the dead-man firing every 60
+    seconds, which is what an operator wants while access remains — but
+    a firing that re-ran all eight phases every minute would re-kill
+    cgroups, re-cancel jobs and re-parse the whole rule set over a host
+    whose only remaining defect is a `docker0`, forever. So each firing
+    does exactly the work that is left.
+
+    Both filters are asserted in one scenario because they compose: the
+    success record the final check LEFT in place is what excludes a
+    phase whose postcondition holds, and the attempt budget is what
+    excludes a failing phase that has already had its three tries. A
+    phase excluded by either is still read by the final check and still
+    named in the outcome, so nothing is hidden by not re-running it.
+    """
+    rollback = _driver()
+    root = tmp_path / "partial"
+    residual = ("no Docker rule", "no docker0")
+    failing = {name: name not in residual for name in _SPECIFIED_POSTCONDITIONS}
+    _record_phase(root=root, run="run-a", phase="started")
+    # The footprint phase has already spent its three tries without ever
+    # succeeding — the crashing rule parser G5 exists to bound.
+    _exhaust_attempts(root=root, run="run-a", phase="footprint-removal")
+
+    first = _reporting_fake(root=root)
+    first.postconditions = failing
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=root, host=first), decision=_decision())
+
+    assert _phase_of(root=root, run="run-a") == "rollback-partial"
+    assert [call.detail[-1] for call in first.calls_named(name="run_phase_child")] == [
+        phase for phase in _SPECIFIED_ORDER if phase != "footprint-removal"
+    ]
+    # The final check left a success on every phase whose postcondition
+    # holds, and cleared the one whose `docker0` survived.
+    assert _surviving_successes(root=root, run="run-a") == set(_SPECIFIED_ORDER) - {
+        "footprint-removal",
+        "interface-deletion",
+    }
+
+    second = _reporting_fake(root=root)
+    second.postconditions = failing
+
+    outcome = rollback.run_rollback(
+        run="run-a", env=_env(root=root, host=second), decision=_decision()
+    )
+
+    assert [call.detail[-1] for call in second.calls_named(name="run_phase_child")] == [
+        "interface-deletion"
+    ]
+    # The exhausted phase is not re-entered, so its count does not grow.
+    assert (
+        _rollback_record(root=root, run="run-a", name="footprint-removal.attempts").read_text(
+            encoding="utf-8"
+        )
+        == "3"
+    )
+    # Both residual postconditions are still read and still reported.
+    assert second.calls_named(name="read_postconditions")
+    assert json.loads(
+        _rollback_record(root=root, run="run-a", name="outcome.json").read_text(encoding="utf-8")
+    ) == {"outcome": "rollback-partial", "failed_postconditions": list(residual)}
+    for name in residual:
+        assert name in outcome.reason
