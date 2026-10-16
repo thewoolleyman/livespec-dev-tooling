@@ -149,6 +149,11 @@ class FakeHost:
         self._record(name="sample")
         return self.sample_result
 
+    # --- confirm's post-commit steps (child 1b) ---
+
+    def enable_units(self, *, units: Sequence[str]) -> None:
+        self._record(name="enable_units", detail=tuple(units))
+
     # --- rollback phases (child 2) ---
 
     def revoke_start_permission(self) -> None:

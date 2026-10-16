@@ -585,3 +585,52 @@ def test_a_failed_directory_fsync_after_the_rename_leaves_the_run_committed(
     assert refused.verdict == "refuse"
     assert state.read_marker(paths=uncommitted, run="run-a") == "absent"
     assert state.read_phase(paths=uncommitted, run="run-a") == "observed"
+
+
+def test_a_confirm_on_a_run_the_marker_names_repeats_the_post_commit_steps(
+    tmp_path: Path,
+) -> None:
+    """Specification "Commit": the post-commit steps repeat, with no challenge.
+
+    This is the state a crash between the commit rename and the phase
+    update leaves, and the state a reboot after a failed directory
+    fsync leaves. The marker names the run, so the run IS committed
+    whatever its phase reads, and every step after the commit point is
+    idempotent -- which is what lets the repeat be a plain re-run rather
+    than a recovery protocol of its own.
+
+    The challenge is deliberately removed first. A committed run has
+    nothing left to prove, and /run is tmpfs, so after the reboot this
+    case models there IS no challenge to answer: a repeat that still
+    demanded one could never finish a committed host.
+
+    Rider point 9: the repeat STARTS the units, not merely enables
+    them. An enabled-but-stopped Docker on a committed host is a host
+    whose engine comes back only at the next boot.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    root = tmp_path / "finish"
+    _ready_to_confirm(root=root)
+    paths = _paths(root=root)
+    records.publish_marker(
+        paths=paths, run="run-a", digest=records.owned_keys_digest(paths=paths, run="run-a")
+    )
+    records.challenge_path(paths=paths).unlink()
+    _record_phase(root=root, run="run-a", phase="committed")
+    fake = _fake(root=root)
+    fake.clock = 1.0
+
+    outcome = importlib.import_module(_GUARD_MODULE).run_operation(
+        operation="confirm", run="run-a", env=_env(root=root, host=fake)
+    )
+
+    assert outcome.verdict != "refuse"
+    assert state.read_phase(paths=paths, run="run-a") == "confirmed"
+    assert fake.calls_named(name="revoke_start_permission") != ()
+    assert fake.calls_named(name="enable_units")[0].detail == model.GUARDED_UNITS
+    started = [call.detail[0] for call in fake.calls_named(name="start_unit")]
+    assert started == list(model.GUARDED_UNITS)
+    stopped = [call.detail[0] for call in fake.calls_named(name="stop_unit")]
+    assert stopped == ["docker-engine-deadman-run-a.timer"]

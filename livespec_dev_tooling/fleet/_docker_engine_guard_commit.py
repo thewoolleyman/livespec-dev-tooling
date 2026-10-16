@@ -26,7 +26,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardOutcome
+from livespec_dev_tooling.fleet._docker_engine_guard_model import (
+    GUARDED_UNITS,
+    UNIT_WAIT_SECONDS,
+    GuardOutcome,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_records import (
     CHALLENGE_MAX_AGE_SECONDS,
     consumed_nonces,
@@ -47,7 +51,18 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "commit_refusal",
     "confirm",
+    "deadman_timer_unit",
 ]
+
+
+def deadman_timer_unit(*, run: str) -> str:
+    """The transient TIMER unit `arm` put in the air for this run.
+
+    A timer, not its service, and stopped rather than disabled: a
+    transient unit cannot be disabled at all, so `systemctl disable` on
+    it is an error rather than a no-op (design G5).
+    """
+    return f"docker-engine-deadman-{run}.timer"
 
 
 def commit_refusal(*, run: str, env: GuardEnv, answer: str) -> str:
@@ -79,16 +94,58 @@ def _committed_reason(*, warning: str) -> str:
     return f"the run is committed; {warning}" if warning else "the run is committed"
 
 
+def _finish(*, run: str, env: GuardEnv, decision: Decision, warning: str) -> GuardOutcome:
+    """The post-commit steps, in the order the specification sets them.
+
+    Every one is idempotent, which is what lets a `confirm` that died
+    anywhere past the commit rename simply be run again -- and what lets
+    a `confirm` for a run the marker already names repeat them with no
+    challenge at all.
+
+    The start permission goes FIRST, and that is safe only here: the
+    marker is already visible, so the guarded units' start condition is
+    satisfied by it from this point on and removing the tmpfs permission
+    takes nothing away. The units are enabled AND started (rider point
+    9) -- enabling carries the engine across the next boot, starting
+    carries it across this one, and an enabled-but-stopped Docker on a
+    committed host is an engine that only comes back at a reboot. The
+    dead-man is stopped last, because until it is, a run that died mid
+    way would be rolled back by it, and a committed run must never be.
+    """
+    record_phase(paths=env.paths, run=run, phase="committed")
+    env.host.revoke_start_permission()
+    env.host.enable_units(units=GUARDED_UNITS)
+    for unit in GUARDED_UNITS:
+        env.host.start_unit(unit=unit, timeout_seconds=UNIT_WAIT_SECONDS)
+    env.host.stop_unit(unit=deadman_timer_unit(run=run), timeout_seconds=UNIT_WAIT_SECONDS)
+    record_phase(paths=env.paths, run=run, phase="confirmed")
+    return GuardOutcome(
+        operation="confirm",
+        run=run,
+        verdict=decision.verdict,
+        reason=_committed_reason(warning=warning),
+    )
+
+
 def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     """Commit the run, or refuse and name the clause that stopped it.
 
-    The marker is written BEFORE the phase moves, and that order is the
+    A `finish` verdict means the commit marker already names this run,
+    so the run is committed whatever its phase reads and there is
+    nothing left to prove: it goes straight to the post-commit steps,
+    with no challenge and no evidence read. Demanding either would
+    refuse a host that is already committed -- and after the reboot that
+    case models, /run is tmpfs and no challenge exists at all.
+
+    Otherwise the marker is written BEFORE the phase moves, and that order is the
     whole of R1: the marker is what every later dispatch reads to learn
     whether the host is committed, so a phase recorded first would claim
     a commitment the host could not prove after a crash. The reverse
     order is safe -- a marker with no phase update is a committed run
     whose post-commit steps a later `confirm` simply repeats.
     """
+    if decision.verdict == "finish":
+        return _finish(run=run, env=env, decision=decision, warning="")
     answer = submitted_nonce(paths=env.paths, run=run)
     refusal = commit_refusal(run=run, env=env, answer=answer)
     if refusal:
@@ -104,11 +161,9 @@ def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
             verdict="refuse",
             reason=f"the commit marker is not in place, so this run is not committed: {failure}",
         )
-    warning = record_durability_warning(paths=env.paths, run=run, failure=failure)
-    record_phase(paths=env.paths, run=run, phase="committed")
-    return GuardOutcome(
-        operation="confirm",
+    return _finish(
         run=run,
-        verdict=decision.verdict,
-        reason=_committed_reason(warning=warning),
+        env=env,
+        decision=decision,
+        warning=record_durability_warning(paths=env.paths, run=run, failure=failure),
     )
