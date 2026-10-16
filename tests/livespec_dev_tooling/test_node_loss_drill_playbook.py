@@ -31,15 +31,22 @@ stand-in `kubectl`, `systemctl` and `sudo`. No cluster is reached and no host is
 mutated.
 
 THE STAND-INS ARE A COUPLED STATE MACHINE, WHICH IS WHAT MAKES THE ORDERING
-MEASURED RATHER THAN MODELLED. The stand-in `systemctl` records the agent's
-simulated state in a file; the stand-in `kubectl` answers the node's Ready
-condition `True` while that file reads `running` and `Unknown` while it reads
-`stopped`. So the drill's NotReady wait can only be satisfied AFTER its own stop
-ran, and its Ready wait only after its own start ran — a play that stopped
-nothing hangs out its retries and fails, rather than passing on a canned answer.
-Both stand-ins append their argv to ONE shared log in invocation order, so "the
-agent stopped only after the pod wait finished" is read off that order rather
-than off the file's layout.
+MEASURED RATHER THAN MODELLED. The stand-in `systemctl` records each unit's
+simulated state in a file of its own; the stand-in `kubectl` answers the node's
+Ready condition `True` while the AGENT's file reads `running` and `Unknown` while
+it reads `stopped`. So the drill's NotReady wait can only be satisfied AFTER its
+own stop ran, and its Ready wait only after its own start ran — a play that
+stopped nothing hangs out its retries and fails, rather than passing on a canned
+answer. Both stand-ins append their argv to ONE shared log in invocation order,
+so "the agent stopped only after the pod wait finished" is read off that order
+rather than off the file's layout.
+
+THE SERVICE MANAGER ALSO HAS TIMERS, because the node's own timers are what undid
+this drill's first real run (livespec-dev-tooling-6xki5a). The stand-in answers
+the three reads the discovery makes — which timer units the host has, which unit
+each triggers, and that unit's `Wants` and `Requires` — out of a table the
+fixture writes, so "pause every timer whose unit pulls the agent in, and only
+those" is asserted against a host that has one of each kind.
 
 Work-item: livespec-dev-tooling-raynnh. Plan: livespec `factory-worker-nodes-gitops`
 (epic livespec-sqvj7p). The governing clause on consent-gated pool-node
@@ -103,6 +110,59 @@ _FACTORY_TAINT = "ci-runner.io/factory-only"
 # by renaming the stand-in's expectations with it.
 _AGENT_UNIT = "k3s-agent"
 
+# THE NODE'S OWN TIMERS, which is what undid the first real run of this drill
+# (livespec-dev-tooling-6xki5a, measured on gmktec-xubuntu 2026-10-16). The drill
+# stopped `k3s-agent` at 22:44:05Z; at 22:44:45Z systemd STARTED it again, with
+# no operator session and not by the drill. `agent-rejoin-watchdog.timer` fires
+# every minute and its service declares `Wants=k3s-agent.service`, so merely
+# ACTIVATING it pulled the stopped agent back up before its own body ran. The
+# node controller therefore never saw NotReady and the drill failed its own
+# observation — with the node Ready and its posture intact, which is the
+# dangerous shape: nothing errored on the host, only the drill.
+#
+# These four rows are the stand-in service manager's whole world, and each is a
+# distinct arm of the claim rather than decoration:
+#
+#   - a timer whose service WANTS the agent — the watchdog that actually did it;
+#   - a timer whose service REQUIRES the agent — `reapply-node-extended-resource`,
+#     on a five-minute timer, which would have done the same thing a moment
+#     later. Both verbs are present because a discovery that read only one of
+#     them would leave the other armed;
+#   - a timer whose service pulls NOTHING — a drill that paused the node's whole
+#     timer set would pass a one-sided assertion while disarming unrelated
+#     maintenance for the length of the hold;
+#   - a timer whose service wants the agent but which is ALREADY INACTIVE — the
+#     restore must re-arm what IT paused and must never arm a timer the operator
+#     had deliberately left down.
+#
+# Named without a `k3s-agent` prefix on purpose: the ordering assertions below
+# read `systemctl stop k3s-agent` out of a shared log by substring, and a timer
+# whose name began with the agent's would match it.
+_WATCHDOG_TIMER = "agent-rejoin-watchdog.timer"
+_EXTENDED_RESOURCE_TIMER = "reapply-node-extended-resource.timer"
+_UNRELATED_TIMER = "logrotate.timer"
+_DISARMED_TIMER = "agent-rejoin-standby.timer"
+
+# One row per timer: the timer, the unit it triggers, that unit's `Wants`, its
+# `Requires`, and the timer's state before the drill. `-` is "no such value",
+# which is how the stand-in answers a property a real unit simply does not set.
+_TIMER_TABLE = (
+    (_WATCHDOG_TIMER, "agent-rejoin-watchdog.service", f"{_AGENT_UNIT}.service", "-", "running"),
+    (
+        _EXTENDED_RESOURCE_TIMER,
+        "reapply-node-extended-resource.service",
+        "-",
+        f"{_AGENT_UNIT}.service",
+        "running",
+    ),
+    (_UNRELATED_TIMER, "logrotate.service", "-", "-", "running"),
+    (_DISARMED_TIMER, "agent-rejoin-standby.service", f"{_AGENT_UNIT}.service", "-", "stopped"),
+)
+
+# The two the drill must pause and re-arm, and the two it must leave alone.
+_PAUSED_TIMERS = (_WATCHDOG_TIMER, _EXTENDED_RESOURCE_TIMER)
+_UNPAUSED_TIMERS = (_UNRELATED_TIMER, _DISARMED_TIMER)
+
 # The three hosts, named for the drill rather than for real pool nodes so no
 # output of this suite can be mistaken for a record of a fleet machine having
 # been touched. The roles are the two inventory facts the play selects on:
@@ -128,6 +188,10 @@ _REFUSAL_TASK = "Refuse a node-loss drill on the control-plane node or a Fabro f
 _IDLE_WAIT_TASK = "Wait for two consecutive idle reads of the node's CI runner and gate pods"
 _BUSY_REFUSAL_TASK = "Refuse a node-loss drill on a node whose CI pods never went idle"
 _POSTURE_BEFORE_TASK = "Read the node's taints, factory label and churn-slot capacity"
+_DISCOVER_TASK = "Discover the units whose timers would restart the node's k3s agent"
+_PAUSE_TASK = "Pause the timers that would restart the node's k3s agent during the hold"
+_REARM_TASK = "Re-arm the timers that were paused for the hold"
+_REARM_REPORT_TASK = "Report the timers that were paused for the hold and re-armed after it"
 _STOP_TASK = "Stop the node's k3s agent"
 _NOTREADY_WAIT_TASK = "Wait until the API first reports the node NotReady"
 _HOLD_TASK = "Hold the node NotReady for the configured window"
@@ -186,6 +250,14 @@ exec "$@"
 # becomes when its kubelet stops posting status. That coupling is what makes the
 # drill's two waits real waits.
 #
+# `NODE_LOSS_DRILL_READY_WHILE_STOPPED` BREAKS THAT COUPLING ON PURPOSE, and it
+# is the only way to reproduce the defect this drill was actually undone by: a
+# node whose agent is down but which the API keeps reporting Ready, because
+# something on the host put the agent back. With it set, the NotReady wait
+# exhausts its window and the play fails there — the exact run recorded on
+# gmktec-xubuntu — so the restore and re-arm path can be asserted on a run that
+# failed AFTER the agent was stopped.
+#
 # THE NODE OBJECT IS SERVED FROM TWO FILES AND A READ COUNTER: the first
 # `-o json` read gets the recorded "before" document, every later one gets the
 # "after" document. A test that wants the drill to find a changed node writes a
@@ -206,7 +278,12 @@ case "$*" in
     fi
     exit 0 ;;
   *'get node'*jsonpath*)
-    if [ "${{agent_state}}" = running ]; then printf 'True'; else printf 'Unknown'; fi
+    if [ "${{agent_state}}" = running ] \
+       || [ "${{NODE_LOSS_DRILL_READY_WHILE_STOPPED}}" = yes ]; then
+      printf 'True'
+    else
+      printf 'Unknown'
+    fi
     exit 0 ;;
   *'get node'*'-o json'*)
     reads="$(cat "${{NODE_LOSS_DRILL_NODE_READS}}" 2>/dev/null || printf '0')"
@@ -228,24 +305,77 @@ exit 1
 # It is the WRITER of the agent state file the stand-in `kubectl` reads, so a
 # stop is observable both in the shared log and in what the API then says about
 # the node.
+#
+# STATE IS PER UNIT, in one file per unit under a state directory, which is what
+# lets the drill's timer pause be told apart from its agent stop. One shared
+# state file would make stopping a timer read as stopping the agent — the node
+# would read NotReady before the drill had taken it down, and the agent's own
+# stop would then be a no-op the module declined to issue. The agent's file is
+# the one the stand-in `kubectl` derives the node's Ready condition from.
+#
+# IT ALSO ANSWERS THE THREE READS THE DISCOVERY NEEDS, out of the timer table
+# the fixture writes rather than out of anything canned here: which timer units
+# the host has, which unit each one triggers, and that unit's `Wants` and
+# `Requires`. A timer with no state file of its own starts in the state its
+# table row records, so a timer the operator had already stopped is INACTIVE to
+# `is-active` on the first read — which is what makes "re-arm only what you
+# paused" falsifiable.
 _SYSTEMCTL_STAND_IN = """#!/bin/sh
 printf 'systemctl %s\\n' "$*" >> "${NODE_LOSS_DRILL_COMMAND_LOG}"
-state_file="${NODE_LOSS_DRILL_AGENT_STATE}"
-state="$(cat "${state_file}" 2>/dev/null || printf 'running')"
+state_dir="${NODE_LOSS_DRILL_STATE_DIR}"
+table="${NODE_LOSS_DRILL_TIMER_TABLE}"
+
+table_row() {
+  awk -v column="$1" -v wanted="$2" '$column == wanted { print; exit }' "${table}"
+}
+
+unit_state() {
+  if [ -f "${state_dir}/$1" ]; then
+    cat "${state_dir}/$1"
+    return 0
+  fi
+  row="$(table_row 1 "$1")"
+  if [ -n "${row}" ]; then
+    printf '%s' "${row}" | awk '{ print $5 }'
+    return 0
+  fi
+  printf 'running'
+}
+
+case "$*" in
+  *'list-unit-files'*'--type=timer'*)
+    awk '{ printf "%s enabled enabled\\n", $1 }' "${table}"
+    exit 0 ;;
+  *'--property=Unit'*)
+    table_row 1 "$2" | awk '{ print $2 }'
+    exit 0 ;;
+  *'--property=Wants'*)
+    table_row 2 "$2" | awk '{ if ($3 != "-") print $3; if ($4 != "-") print $4 }'
+    exit 0 ;;
+esac
+
 case "$1" in
   show)
     printf 'LoadState=loaded\\nUnitFileState=enabled\\n'
-    if [ "${state}" = running ]; then
+    if [ "$(unit_state "$2")" = running ]; then
       printf 'ActiveState=active\\nSubState=running\\n'
     else
       printf 'ActiveState=inactive\\nSubState=dead\\n'
     fi
     exit 0 ;;
+  is-active)
+    target=''
+    shift
+    for argument in "$@"; do
+      case "${argument}" in -*) ;; *) target="${argument}" ;; esac
+    done
+    if [ "$(unit_state "${target}")" = running ]; then exit 0; fi
+    exit 3 ;;
   stop)
-    printf 'stopped' > "${state_file}"
+    printf 'stopped' > "${state_dir}/$2"
     exit 0 ;;
   start)
-    printf 'running' > "${state_file}"
+    printf 'running' > "${state_dir}/$2"
     exit 0 ;;
   is-enabled)
     printf 'enabled\\n'
@@ -323,7 +453,9 @@ class _Scratch:
     root: Path
     bin_dir: Path
     command_log: Path
+    state_dir: Path
     agent_state: Path
+    timer_table: Path
     node_reads: Path
     node_before: Path
     node_after: Path
@@ -362,6 +494,10 @@ def scratch(*, tmp_path: Path) -> _Scratch:
         stand_in = bin_dir / name
         stand_in.write_text(body, encoding="utf-8")
         stand_in.chmod(0o755)
+    state_dir = tmp_path / "unit-state"
+    state_dir.mkdir()
+    timer_table = tmp_path / "timer-table"
+    timer_table.write_text("".join(f"{' '.join(row)}\n" for row in _TIMER_TABLE), encoding="utf-8")
     node_before = tmp_path / "node-before.json"
     node_after = tmp_path / "node-after.json"
     for document in (node_before, node_after):
@@ -370,7 +506,11 @@ def scratch(*, tmp_path: Path) -> _Scratch:
         root=tmp_path,
         bin_dir=bin_dir,
         command_log=tmp_path / "command.log",
-        agent_state=tmp_path / "agent-state",
+        state_dir=state_dir,
+        # The AGENT's own state file, inside the per-unit state directory: the
+        # one the stand-in `kubectl` derives the node's Ready condition from.
+        agent_state=state_dir / _AGENT_UNIT,
+        timer_table=timer_table,
         node_reads=tmp_path / "node-reads",
         node_before=node_before,
         node_after=node_after,
@@ -416,7 +556,9 @@ def _write_inventory(*, scratch: _Scratch) -> Path:
     return inventory
 
 
-def _playbook_environment(*, scratch: _Scratch, pods: str) -> dict[str, str]:
+def _playbook_environment(
+    *, scratch: _Scratch, pods: str, ready_while_stopped: bool
+) -> dict[str, str]:
     """The child's environment, built rather than inherited wholesale.
 
     `COVERAGE_PROCESS_START` and `COV_CORE_*` are scrubbed so the ansible
@@ -435,11 +577,17 @@ def _playbook_environment(*, scratch: _Scratch, pods: str) -> dict[str, str]:
         {
             "PATH": f"{scratch.bin_dir}{os.pathsep}{env['PATH']}",
             "NODE_LOSS_DRILL_COMMAND_LOG": str(scratch.command_log),
+            "NODE_LOSS_DRILL_STATE_DIR": str(scratch.state_dir),
             "NODE_LOSS_DRILL_AGENT_STATE": str(scratch.agent_state),
+            "NODE_LOSS_DRILL_TIMER_TABLE": str(scratch.timer_table),
             "NODE_LOSS_DRILL_NODE_READS": str(scratch.node_reads),
             "NODE_LOSS_DRILL_NODE_BEFORE": str(scratch.node_before),
             "NODE_LOSS_DRILL_NODE_AFTER": str(scratch.node_after),
             "NODE_LOSS_DRILL_PODS": pods,
+            # Always SET, never merely absent when unwanted: the stand-in reads
+            # it with no `set -u`, so an unset variable would make the knob's
+            # off state untested rather than tested.
+            "NODE_LOSS_DRILL_READY_WHILE_STOPPED": "yes" if ready_while_stopped else "no",
             # Skipped tasks are SHOWN, as `ansible/ansible.cfg` shows them: a
             # task that vanishes from the output cannot be read as "this was not
             # evaluated", and the unconfirmed cases assert on exactly those lines.
@@ -459,6 +607,7 @@ def _run_playbook(
     confirm: str | None,
     check_mode: bool = False,
     pods: str = "idle",
+    ready_while_stopped: bool = False,
 ) -> tuple[int, str]:
     """Run the committed playbook; return its exit code and its callback output."""
     assert _PLAYBOOK.is_file(), (
@@ -503,7 +652,9 @@ def _run_playbook(
     completed = subprocess.run(
         argv,
         cwd=scratch.root,
-        env=_playbook_environment(scratch=scratch, pods=pods),
+        env=_playbook_environment(
+            scratch=scratch, pods=pods, ready_while_stopped=ready_while_stopped
+        ),
         capture_output=True,
         text=True,
         timeout=_PLAYBOOK_TIMEOUT_SECONDS,
@@ -930,6 +1081,152 @@ def test_the_drill_stops_the_agent_after_the_wait_holds_it_and_restores_the_node
         "the drill must leave the agent running; it left "
         f"`{scratch.agent_state.read_text(encoding='utf-8')}`"
     )
+
+
+def test_the_drill_pauses_the_timers_that_would_restart_the_agent_and_re_arms_them(
+    *, scratch: _Scratch
+) -> None:
+    """The node's OWN timers, paused for the hold and re-armed after it.
+
+    This is the defect the drill's first real run met and the reason this test
+    exists (livespec-dev-tooling-6xki5a, gmktec-xubuntu 2026-10-16). The drill
+    stopped `k3s-agent` at 22:44:05Z and at 22:44:45Z systemd started it again,
+    with no operator session and not by the drill: `agent-rejoin-watchdog.timer`
+    fires every minute and its service declares `Wants=k3s-agent.service`, so
+    activating it pulled the stopped agent back up before its own body ran. The
+    node controller never observed NotReady, and `reapply-node-extended-resource`
+    — which `Requires=k3s-agent.service` on a five-minute timer — would have
+    done the same thing a moment later. A hold longer than about a minute is
+    undone by the node itself.
+
+    So the ordering is asserted in the ONE shared command log, by POSITION, and
+    in both directions:
+
+    1. each timer whose service Wants OR Requires the agent is stopped BEFORE
+       the agent is — a pause issued afterwards leaves a window in which the
+       watchdog can fire;
+    2. each of them is started again AFTER the agent is back, and the stand-in's
+       per-unit state file is read to prove it ended up armed rather than merely
+       asked to start;
+    3. a timer whose service pulls NOTHING is neither stopped nor started, so a
+       drill cannot pass this by disarming the node's whole timer set;
+    4. a timer whose service wants the agent but which was ALREADY inactive is
+       neither stopped nor started, so the restore re-arms what it paused and
+       never arms what an operator had deliberately left down.
+
+    The play's output must also NAME them, in both senses: an operator reading a
+    run has to see which of the node's units were disarmed for the hold and that
+    they were put back.
+    """
+    exit_code, output = _run_playbook(scratch=scratch, confirm=_AGENT)
+
+    assert exit_code == 0, f"an idle, confirmed drill must complete:\n{output}"
+    statuses = _task_statuses(output=output, host=_AGENT)
+    for task in (_DISCOVER_TASK, _PAUSE_TASK, _REARM_TASK, _REARM_REPORT_TASK):
+        assert _status_of(statuses=statuses, task=task) in {"ok", "changed"}, (
+            f"task `{task}` did not run to a clean status on {_AGENT}: "
+            f"{statuses.get(task)}\n{output}"
+        )
+
+    commands = _commands(scratch=scratch)
+    agent_stop = _first_index(commands=commands, needle=f"systemctl stop {_AGENT_UNIT}")
+    agent_start = _first_index(commands=commands, needle=f"systemctl start {_AGENT_UNIT}")
+    assert agent_stop >= 0 and agent_start >= 0, (
+        f"the drill must stop and then start `{_AGENT_UNIT}`; the log reads " f"{commands}"
+    )
+    for timer in _PAUSED_TIMERS:
+        paused = _first_index(commands=commands, needle=f"systemctl stop {timer}")
+        re_armed = _last_index(commands=commands, needle=f"systemctl start {timer}")
+        assert 0 <= paused < agent_stop, (
+            f"`{timer}` triggers a unit that pulls `{_AGENT_UNIT}` in, so it must "
+            f"be stopped at a log position BEFORE the agent's own stop at "
+            f"{agent_stop}; it was stopped at {paused}. A timer left armed "
+            f"restarts the agent mid-hold and the node never reads NotReady: "
+            f"{commands}"
+        )
+        assert re_armed > agent_start, (
+            f"`{timer}` must be started again after the agent is back; the agent "
+            f"started at log position {agent_start} and the timer at {re_armed}. "
+            f"A drill that left the node's rejoin watchdog disarmed is worse than "
+            f"one that failed: {commands}"
+        )
+        assert (scratch.state_dir / timer).read_text(encoding="utf-8") == "running", (
+            f"`{timer}` must be left ARMED, not merely asked to start; it was "
+            f"left `{(scratch.state_dir / timer).read_text(encoding='utf-8')}`"
+        )
+        assert timer in output, (
+            f"the run must name `{timer}` — an operator cannot confirm the node's "
+            f"timers were put back if the play never says which it took "
+            f"down:\n{output}"
+        )
+    for timer in _UNPAUSED_TIMERS:
+        assert _first_index(commands=commands, needle=f"systemctl stop {timer}") == -1, (
+            f"`{timer}` must not be stopped by the drill: its unit does not pull "
+            f"`{_AGENT_UNIT}` in, or it was already inactive. A drill that "
+            f"disarms a node's whole timer set is doing something else: {commands}"
+        )
+        assert _first_index(commands=commands, needle=f"systemctl start {timer}") == -1, (
+            f"`{timer}` must not be started by the drill — the restore re-arms "
+            f"what the drill paused and nothing else: {commands}"
+        )
+
+
+def test_the_drill_re_arms_the_paused_timers_when_a_step_after_the_stop_fails(
+    *, scratch: _Scratch
+) -> None:
+    """The re-arm on the failure path, driven by the very failure that was observed.
+
+    The first real run of this drill failed at "Wait until the API first reports
+    the node NotReady", because the node's own watchdog had already put the agent
+    back. That is the shape the re-arm has to survive: a step AFTER the agent stop
+    fails, and the play must still end with the node's timers armed — a failed
+    drill that leaves the rejoin watchdog disarmed is worse than no drill, because
+    the next real agent stall then has nothing to recover it.
+
+    `NODE_LOSS_DRILL_READY_WHILE_STOPPED` reproduces it exactly: the stand-in
+    `kubectl` answers `ready=True` even with the agent stopped, so the NotReady
+    wait exhausts its bounded window and the play fails THERE, with the drill's
+    own stop already issued. The run must fail, and the timers must still come
+    back armed — which is what an `always:` path buys and a later task would not.
+    """
+    exit_code, output = _run_playbook(scratch=scratch, confirm=_AGENT, ready_while_stopped=True)
+
+    assert exit_code != 0, (
+        f"a drill whose node never reads NotReady must FAIL — that observation is "
+        f"the artifact the drill exists to produce:\n{output}"
+    )
+    statuses = _task_statuses(output=output, host=_AGENT)
+    assert _status_of(statuses=statuses, task=_NOTREADY_WAIT_TASK) == "fatal"
+    assert _status_of(statuses=statuses, task=_REARM_TASK) in {"ok", "changed"}, (
+        f"the re-arm must run on a failed drill; it reported "
+        f"{statuses.get(_REARM_TASK)}\n{output}"
+    )
+    commands = _commands(scratch=scratch)
+    agent_start = _first_index(commands=commands, needle=f"systemctl start {_AGENT_UNIT}")
+    assert agent_start >= 0, (
+        f"a failed drill must still start `{_AGENT_UNIT}` again, or it has taken "
+        f"a pool node out: {commands}"
+    )
+    assert scratch.agent_state.read_text(encoding="utf-8") == "running", (
+        "the agent must be left running even when the drill fails; it was left "
+        f"`{scratch.agent_state.read_text(encoding='utf-8')}`"
+    )
+    for timer in _PAUSED_TIMERS:
+        paused = _first_index(commands=commands, needle=f"systemctl stop {timer}")
+        re_armed = _last_index(commands=commands, needle=f"systemctl start {timer}")
+        assert 0 <= paused < re_armed, (
+            f"`{timer}` was paused at log position {paused} and re-armed at "
+            f"{re_armed} on a run that failed after the agent stop; a failed "
+            f"drill must never leave it disarmed: {commands}"
+        )
+        assert (scratch.state_dir / timer).read_text(encoding="utf-8") == "running", (
+            f"`{timer}` must be left ARMED by a failed drill; it was left "
+            f"`{(scratch.state_dir / timer).read_text(encoding='utf-8')}`"
+        )
+        assert timer in output, (
+            f"a failed run must still name `{timer}` as paused and re-armed — it "
+            f"is the run an operator most needs that from:\n{output}"
+        )
 
 
 @pytest.mark.parametrize(

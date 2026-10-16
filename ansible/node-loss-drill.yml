@@ -59,10 +59,35 @@
 # calls are reads, and `tests/livespec_dev_tooling/test_node_loss_drill_playbook.py`
 # asserts that over this file's own executable text as well as over a run.
 #
+# IT PAUSES THE NODE'S OWN TIMERS, because they undid the first real run of it.
+# On 2026-10-16 the drill stopped `k3s-agent` on gmktec-xubuntu at 22:44:05Z and
+# at 22:44:45Z systemd STARTED it again, with no operator session and not by this
+# play: `agent-rejoin-watchdog.timer` fires every minute and the service it
+# triggers declares `Wants=k3s-agent.service`, so merely ACTIVATING it pulled the
+# stopped agent back up before its own body ran. The node controller never
+# observed NotReady and the drill failed its own observation with the node Ready
+# and its posture intact — nothing broke on the host, only the drill.
+# `reapply-node-extended-resource.service` declares `Requires=k3s-agent.service`
+# on a five-minute timer and would have done the same thing a moment later, so a
+# hold longer than about a minute is undone by the node itself
+# (livespec-dev-tooling-6xki5a).
+#
+# SO THEY ARE DISCOVERED, NOT LISTED. The play reads every timer unit the host
+# has, asks each which unit it triggers, and pauses it when that unit's `Wants`
+# or `Requires` names the agent — a hand list of two timer names would be correct
+# today and silently wrong the first time a role adds a third. It pauses only the
+# ones that are ACTIVE, so the restore re-arms what this play took down and never
+# arms a timer an operator had deliberately left down.
+#
 # IT RESTORES THE NODE EVEN WHEN THE DRILL FAILS. The start and the Ready wait
 # live in an `always:`, so a hold that errors or a NotReady observation that
 # never arrives still ends with the agent back up. A play that failed partway
-# and left a pool node down would convert a drill into an outage.
+# and left a pool node down would convert a drill into an outage. The timer
+# re-arm lives in a SECOND, outer `always:` for the same reason one level up: a
+# failure in the restore itself — the start, or a Ready wait whose window runs
+# out — must still leave the node's rejoin watchdog armed, because a failed drill
+# that disarmed it is worse than no drill at all. The next real agent stall would
+# have nothing to recover it.
 #
 # Governing clause: `SPECIFICATION/non-functional-requirements.md` §"Consent-gated
 # pool-node disruption". Scenario: `SPECIFICATION/scenarios.md` §"Scenario: a
@@ -107,6 +132,13 @@
          | map(attribute='inventory_hostname') | first }}
     # The unit whose absence IS the node loss.
     node_loss_drill_agent_unit: k3s-agent
+    # The timers this run paused for the hold, read back off the discovery
+    # register. `| default([], true)` is load-bearing on the re-arm path: that
+    # task lives in an `always:` reached even by a run whose discovery itself
+    # failed, and an undefined register there must mean "nothing to re-arm"
+    # rather than an error inside the handler that exists to clean up.
+    node_loss_drill_paused_timers: >-
+      {{ node_loss_drill_rearm_discovery.stdout_lines | default([], true) }}
     # The three axes the restore is verified against, as this repository spells
     # them: the factory label the sandbox backend's selector reads, and the
     # finite extended resource the pool's admission budget is apportioned
@@ -358,6 +390,64 @@
           changed_when: false
           check_mode: false
 
+        - name: Discover the units whose timers would restart the node's k3s agent
+          # DISCOVERED FROM THE UNITS THEMSELVES, never from a list spelled here.
+          # Every timer unit the host has is read, each is asked which unit it
+          # triggers, and that unit is asked for its `Wants` and its `Requires`:
+          # a timer survives the filter only when the unit it triggers names the
+          # agent in one of them. That is the exact relation that undid the first
+          # real run — activating the watchdog's service pulled the stopped agent
+          # up as a dependency, before the service's own body ran — so it is the
+          # relation the discovery reads, rather than a pair of unit names a role
+          # can add a third to tomorrow.
+          #
+          # READ FORWARD, FROM EVERY INSTALLED TIMER, rather than backward from
+          # the agent's own reverse dependencies. `systemctl show k3s-agent -p
+          # WantedBy` reports only the reverse edges of units that happen to be
+          # LOADED, which is a property of the manager's current state; a
+          # `systemctl show` of a named unit loads it on demand, so asking each
+          # timer's own target what it pulls in is answerable whatever is loaded.
+          #
+          # ONLY THE ACTIVE ONES. An inactive timer cannot fire during the hold,
+          # and starting it afterwards would arm something the operator had
+          # deliberately left down — the restore must put back what this play
+          # took away and nothing else.
+          ansible.builtin.shell:
+            executable: /bin/bash
+            # `set -o pipefail` for the `sort -u` at the end, and the two
+            # command substitutions are plain assignments at the top level of the
+            # loop body rather than `local` declarations, so a systemctl that
+            # failed reaches `set -e` instead of being masked by the declaration's
+            # own exit status — the same split the idle gate above explains.
+            #
+            # A unit name cannot contain whitespace, so the unquoted expansions
+            # below are the intended word splitting rather than an oversight.
+            cmd: |
+              set -euo pipefail
+              agent_unit='{{ node_loss_drill_agent_unit }}.service'
+              timers="$(systemctl list-unit-files --type=timer --no-legend --no-pager \
+                | awk '{ print $1 }')"
+              {
+                for timer in ${timers}; do
+                  triggered="$(systemctl show "${timer}" --property=Unit --value)"
+                  [ -n "${triggered}" ] || continue
+                  pulls="$(systemctl show "${triggered}" \
+                    --property=Wants --property=Requires --value | tr '\n' ' ')"
+                  case " ${pulls} " in
+                    *" ${agent_unit} "*) ;;
+                    *) continue ;;
+                  esac
+                  systemctl is-active --quiet "${timer}" || continue
+                  printf '%s\n' "${timer}"
+                done
+              } | sort -u
+          register: node_loss_drill_rearm_discovery
+          # A READ, so a `--check` run answers it too: a drift report of this
+          # playbook should be able to say which of the node's units the drill
+          # would disarm for the length of its hold.
+          check_mode: false
+          changed_when: false
+
         - name: Note that a check run withholds the node loss itself
           # WHAT `--check` IS FOR HERE, stated rather than left to be inferred.
           # The two tasks above are real reads and they answer the question a
@@ -370,10 +460,13 @@
           ansible.builtin.debug:
             msg: >-
               `--check`: {{ inventory_hostname }} would be drilled. Its CI
-              runner and gate pods read idle and its posture was recorded, but
-              {{ node_loss_drill_agent_unit }} is NOT being stopped, so the
-              hold, the restore and the verification are withheld. Re-run
-              without `--check` to perform the drill.
+              runner and gate pods read idle, its posture was recorded, and the
+              timers that would restart {{ node_loss_drill_agent_unit }} during
+              the hold were discovered —
+              {{ node_loss_drill_paused_timers | join(', ') | default('<none>', true) }}
+              — but {{ node_loss_drill_agent_unit }} is NOT being stopped, so
+              pausing those timers, the hold, the restore and the verification
+              are all withheld. Re-run without `--check` to perform the drill.
           when: ansible_check_mode
 
         - name: Perform the node loss and verify the restore
@@ -385,106 +478,152 @@
           # against itself and report a verdict it had not earned.
           when: not ansible_check_mode
           block:
-            - name: Take the node's k3s agent down and hold it there
+            - name: Pause the node's agent-restarting timers for the hold and re-arm them after
+              # TWO NESTED `always:` LEVELS, and the nesting is the whole point.
+              # The inner one restores the AGENT, so a failed hold still ends
+              # with the node back; this outer one re-arms the node's TIMERS, so
+              # a failure in that restore — the start itself, or a Ready wait
+              # whose window runs out — still ends with the rejoin watchdog
+              # armed. Flattened into one `always:` the re-arm would sit after
+              # the Ready wait in the same list, and a failure in an `always:`
+              # abandons the tasks after it: the drill would then leave the node
+              # with no watchdog at exactly the moment it needed one.
               block:
-                - name: Stop the node's k3s agent
-                  # THE NODE LOSS ITSELF, and the only task in this play that
-                  # changes anything on any host. It runs on the TARGET, not on the
-                  # server: the unit is the target's.
+                - name: Pause the timers that would restart the node's k3s agent during the hold
+                  # BEFORE THE STOP, which is the ordering the defect was. A
+                  # pause issued afterwards leaves a window the watchdog can fire
+                  # in, and on gmktec it fired 40 seconds into the hold.
                   ansible.builtin.systemd_service:
-                    name: "{{ node_loss_drill_agent_unit }}"
+                    name: "{{ item }}"
                     state: stopped
+                  loop: "{{ node_loss_drill_paused_timers }}"
 
-                - name: Wait until the API first reports the node NotReady
-                  # The observation, and it is the API's rather than the host's: the
-                  # claim the proof rests on is what the CLUSTER believed about this
-                  # node, so the instant recorded here is the instant the API first
-                  # said so, not the instant the unit stopped.
-                  ansible.builtin.shell:
-                    executable: /bin/bash
-                    # Same fail-closed split assignment as the idle gate above, for
-                    # the same reason: a masked kubectl failure would print an empty
-                    # status, and an empty status is not `True`, so it would read as
-                    # NotReady and end the wait on a read that never happened.
-                    cmd: |
-                      set -euo pipefail
-                      ready_condition() {
-                        local status
-                        status="$(kubectl get node '{{ inventory_hostname }}' \
-                          --output 'jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}')"
-                        printf '%s' "${status}"
-                      }
-                      observed="$(ready_condition)"
-                      printf 'ready=%s observed-at=%s\n' \
-                        "${observed:-missing}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                  delegate_to: "{{ node_loss_drill_server_host }}"
-                  environment:
-                    KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
-                  register: node_loss_drill_notready_reads
-                  changed_when: false
-                  until: >-
-                    node_loss_drill_notready_reads.rc == 0
-                    and 'ready=True' not in node_loss_drill_notready_reads.stdout
-                  failed_when: >-
-                    node_loss_drill_notready_reads.rc != 0
-                    or 'ready=True' in node_loss_drill_notready_reads.stdout
-                  retries: "{{ node_loss_drill_status_retries }}"
-                  delay: "{{ node_loss_drill_status_interval }}"
+                - name: Take the node's k3s agent down and hold it there
+                  block:
+                    - name: Stop the node's k3s agent
+                      # THE NODE LOSS ITSELF, and the only task in this play that
+                      # changes anything on any host. It runs on the TARGET, not on the
+                      # server: the unit is the target's.
+                      ansible.builtin.systemd_service:
+                        name: "{{ node_loss_drill_agent_unit }}"
+                        state: stopped
 
-                - name: Hold the node NotReady for the configured window
-                  # The window the observer watches, and the drill's one knob.
-                  #
-                  # `wait_for` WITH ONLY A TIMEOUT, NEVER `ansible.builtin.pause`.
-                  # `pause` sets `BYPASS_HOST_LOOP`: it is evaluated for the
-                  # FIRST host of the play and its result applied to every other
-                  # one. The first host here is whichever `ci_pool` member the
-                  # inventory happens to list first, which the confirmation
-                  # almost never names — so the task skipped on that host and
-                  # the hold never happened on the host being drilled. Measured
-                  # while building this playbook's own suite, and the shape of
-                  # the defect is the dangerous one: the output carried a
-                  # `skipping:` line naming a DIFFERENT host and no error at all,
-                  # so a zero-length hold read exactly like a held one. A
-                  # per-host module cannot be bypassed that way.
-                  ansible.builtin.wait_for:
-                    timeout: "{{ (node_loss_drill_hold_minutes | float * 60) | round | int }}"
+                    - name: Wait until the API first reports the node NotReady
+                      # The observation, and it is the API's rather than the host's: the
+                      # claim the proof rests on is what the CLUSTER believed about this
+                      # node, so the instant recorded here is the instant the API first
+                      # said so, not the instant the unit stopped.
+                      ansible.builtin.shell:
+                        executable: /bin/bash
+                        # Same fail-closed split assignment as the idle gate above, for
+                        # the same reason: a masked kubectl failure would print an empty
+                        # status, and an empty status is not `True`, so it would read as
+                        # NotReady and end the wait on a read that never happened.
+                        cmd: |
+                          set -euo pipefail
+                          ready_condition() {
+                            local status
+                            status="$(kubectl get node '{{ inventory_hostname }}' \
+                              --output 'jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}')"
+                            printf '%s' "${status}"
+                          }
+                          observed="$(ready_condition)"
+                          printf 'ready=%s observed-at=%s\n' \
+                            "${observed:-missing}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                      delegate_to: "{{ node_loss_drill_server_host }}"
+                      environment:
+                        KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
+                      register: node_loss_drill_notready_reads
+                      changed_when: false
+                      until: >-
+                        node_loss_drill_notready_reads.rc == 0
+                        and 'ready=True' not in node_loss_drill_notready_reads.stdout
+                      failed_when: >-
+                        node_loss_drill_notready_reads.rc != 0
+                        or 'ready=True' in node_loss_drill_notready_reads.stdout
+                      retries: "{{ node_loss_drill_status_retries }}"
+                      delay: "{{ node_loss_drill_status_interval }}"
+
+                    - name: Hold the node NotReady for the configured window
+                      # The window the observer watches, and the drill's one knob.
+                      #
+                      # `wait_for` WITH ONLY A TIMEOUT, NEVER `ansible.builtin.pause`.
+                      # `pause` sets `BYPASS_HOST_LOOP`: it is evaluated for the
+                      # FIRST host of the play and its result applied to every other
+                      # one. The first host here is whichever `ci_pool` member the
+                      # inventory happens to list first, which the confirmation
+                      # almost never names — so the task skipped on that host and
+                      # the hold never happened on the host being drilled. Measured
+                      # while building this playbook's own suite, and the shape of
+                      # the defect is the dangerous one: the output carried a
+                      # `skipping:` line naming a DIFFERENT host and no error at all,
+                      # so a zero-length hold read exactly like a held one. A
+                      # per-host module cannot be bypassed that way.
+                      ansible.builtin.wait_for:
+                        timeout: "{{ (node_loss_drill_hold_minutes | float * 60) | round | int }}"
+                  always:
+                    # ALWAYS, NOT A LATER TASK. A hold that errors, or a NotReady
+                    # observation whose window runs out, must still end with this node's
+                    # agent back up: a play that failed partway and left a pool node
+                    # down would have converted a drill into an outage.
+                    - name: Start the node's k3s agent again
+                      ansible.builtin.systemd_service:
+                        name: "{{ node_loss_drill_agent_unit }}"
+                        state: started
+
+                    - name: Wait until the API reports the node Ready again
+                      ansible.builtin.shell:
+                        executable: /bin/bash
+                        cmd: |
+                          set -euo pipefail
+                          ready_condition() {
+                            local status
+                            status="$(kubectl get node '{{ inventory_hostname }}' \
+                              --output 'jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}')"
+                            printf '%s' "${status}"
+                          }
+                          observed="$(ready_condition)"
+                          printf 'ready=%s observed-at=%s\n' \
+                            "${observed:-missing}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                      delegate_to: "{{ node_loss_drill_server_host }}"
+                      environment:
+                        KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
+                      register: node_loss_drill_ready_reads
+                      changed_when: false
+                      until: >-
+                        node_loss_drill_ready_reads.rc == 0
+                        and 'ready=True' in node_loss_drill_ready_reads.stdout
+                      failed_when: >-
+                        node_loss_drill_ready_reads.rc != 0
+                        or 'ready=True' not in node_loss_drill_ready_reads.stdout
+                      retries: "{{ node_loss_drill_status_retries }}"
+                      delay: "{{ node_loss_drill_status_interval }}"
               always:
-                # ALWAYS, NOT A LATER TASK. A hold that errors, or a NotReady
-                # observation whose window runs out, must still end with this node's
-                # agent back up: a play that failed partway and left a pool node
-                # down would have converted a drill into an outage.
-                - name: Start the node's k3s agent again
+                # UNCONDITIONALLY, AND ONLY WHAT THIS RUN PAUSED. Reached by a
+                # run whose hold errored, whose NotReady observation never
+                # arrived, and whose agent restore itself failed — the three
+                # paths on which a node left without its rejoin watchdog is worse
+                # than a node that was never drilled.
+                - name: Re-arm the timers that were paused for the hold
                   ansible.builtin.systemd_service:
-                    name: "{{ node_loss_drill_agent_unit }}"
+                    name: "{{ item }}"
                     state: started
+                  loop: "{{ node_loss_drill_paused_timers }}"
 
-                - name: Wait until the API reports the node Ready again
-                  ansible.builtin.shell:
-                    executable: /bin/bash
-                    cmd: |
-                      set -euo pipefail
-                      ready_condition() {
-                        local status
-                        status="$(kubectl get node '{{ inventory_hostname }}' \
-                          --output 'jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}')"
-                        printf '%s' "${status}"
-                      }
-                      observed="$(ready_condition)"
-                      printf 'ready=%s observed-at=%s\n' \
-                        "${observed:-missing}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-                  delegate_to: "{{ node_loss_drill_server_host }}"
-                  environment:
-                    KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
-                  register: node_loss_drill_ready_reads
-                  changed_when: false
-                  until: >-
-                    node_loss_drill_ready_reads.rc == 0
-                    and 'ready=True' in node_loss_drill_ready_reads.stdout
-                  failed_when: >-
-                    node_loss_drill_ready_reads.rc != 0
-                    or 'ready=True' not in node_loss_drill_ready_reads.stdout
-                  retries: "{{ node_loss_drill_status_retries }}"
-                  delay: "{{ node_loss_drill_status_interval }}"
+                - name: Report the timers that were paused for the hold and re-armed after it
+                  # NAMED IN THE OUTPUT, both halves. A run that disarmed a node's
+                  # units has to say which, and has to say they are back: an
+                  # operator reading a FAILED drill cannot otherwise tell whether
+                  # the watchdog is armed, and that is the run they most need it
+                  # from.
+                  ansible.builtin.debug:
+                    msg: >-
+                      Node-loss drill on {{ inventory_hostname }}: the timers
+                      whose units would have re-started
+                      {{ node_loss_drill_agent_unit }} during the hold were
+                      paused before it was stopped and have been re-armed —
+                      {{ node_loss_drill_paused_timers | join(', ') | default('<none>', true) }}.
+                      No other timer on this node was touched.
 
             - name: Read the node's posture again and wait for it to match the recorded one
               # RETRIED, and the verdict is NOT here. `until` gives the node
