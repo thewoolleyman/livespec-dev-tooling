@@ -59,6 +59,7 @@ _PERMISSION_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_permission
 _PERMISSION_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_permission.py")
 _UNIT_READS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_unit_reads"
 _UNIT_READS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_unit_reads.py")
+_ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
 
 # What the guarded host's two address families look like BEFORE any Docker
 # package exists: the k3s and Tailscale rule sets the snapshot has to
@@ -1557,6 +1558,73 @@ def test_the_admission_reads_cover_the_fixed_units_the_loaded_ones_and_this_invo
         _real_host(root=tmp_path, commands=commands, proc_root=tmp_path / "absent").invoking_unit()
         == ""
     )
+
+
+def _load_state_argv(*, unit: str) -> tuple[str, ...]:
+    """The read of whether the manager holds one unit at all."""
+    return ("systemctl", "show", "--property", "LoadState", "--value", unit)
+
+
+def test_the_dead_man_timer_reads_tell_a_loaded_timer_from_an_airborne_one(
+    tmp_path: Path,
+) -> None:
+    """Two reads of one unit, because `arm` and `start` ask different questions.
+
+    `arm` asks whether the timer EXISTS, so that a retried arm creates
+    no second dead-man: `systemd-run --unit=` refuses a duplicate name,
+    and that refusal would fail an operation which had in fact already
+    done its job. Loaded, not active, is the right test there -- a timer
+    that has FIRED and whose rollback is running is not active, and
+    arming over it would put two dead-men on one run.
+
+    `start` asks whether it is ACTIVE, and refuses without it. The
+    dead-man is the only thing that takes the host back if the
+    controller dies, so granting the start permission beside a timer
+    that is merely loaded -- failed, stopped, already fired -- would
+    leave a running Docker daemon with nothing watching it on a machine
+    reachable only over Tailscale.
+
+    A timer the manager collected answers `not-found` to the first
+    question, which is how `--collect` and this read fit together: the
+    corpse of a failed dead-man is not an armed one.
+    """
+    reads = importlib.import_module(_UNIT_READS_MODULE)
+    assert {"deadman_timer_active", "deadman_timer_exists"} <= set(reads.__all__)
+    rollback = importlib.import_module(_ROLLBACK_MODULE)
+    timer = rollback.deadman_timer_unit(run="run-a")
+    assert timer == "docker-engine-deadman-run-a.timer"
+
+    armed = _Commands(
+        answers={
+            _load_state_argv(unit=timer): "loaded\n",
+            _active_state_argv(unit=timer): "active\n",
+        }
+    )
+    host = _real_host(root=tmp_path, commands=armed)
+
+    assert host.deadman_timer_exists(run="run-a") is True
+    assert host.deadman_timer_active(run="run-a") is True
+    assert armed.argvs == [_load_state_argv(unit=timer), _active_state_argv(unit=timer)]
+    units = importlib.import_module(_UNITS_MODULE)
+    assert set(armed.timeouts) == {units.UNIT_READ_TIMEOUT_SECONDS}
+
+    # Collected: the manager holds nothing for this run at all.
+    collected = _Commands(answers={_load_state_argv(unit=timer): "not-found\n"})
+
+    assert _real_host(root=tmp_path, commands=collected).deadman_timer_exists(run="run-a") is False
+
+    # Loaded but FAILED: it exists, so `arm` creates no second one, and
+    # it is not in the air, so `start` must refuse.
+    failed = _Commands(
+        answers={
+            _load_state_argv(unit=timer): "loaded\n",
+            _active_state_argv(unit=timer): "failed\n",
+        }
+    )
+    stalled = _real_host(root=tmp_path, commands=failed)
+
+    assert stalled.deadman_timer_exists(run="run-a") is True
+    assert stalled.deadman_timer_active(run="run-a") is False
 
 
 def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:

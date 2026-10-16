@@ -30,7 +30,9 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import GUARDED_UNITS
+from livespec_dev_tooling.fleet._docker_engine_guard_rollback import deadman_timer_unit
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
+    ACTIVE_STATE,
     GUARD_OWN_UNITS,
     SYSTEMCTL,
     UNIT_READ_TIMEOUT_SECONDS,
@@ -46,11 +48,16 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "ACTIVE",
     "CGROUP_UNIT_SUFFIXES",
     "LIST_UNITS_ARGV",
+    "LOADED",
+    "LOAD_STATE",
     "SELF_CGROUP_PATH",
     "UNIT_FILE_STATE",
     "UNIT_SUFFIXES",
+    "deadman_timer_active",
+    "deadman_timer_exists",
     "guard_unit_states",
     "invoking_unit",
     "loaded_guard_units",
@@ -89,6 +96,14 @@ SELF_CGROUP_PATH: Final[str] = "self/cgroup"
 CGROUP_UNIT_SUFFIXES: Final[tuple[str, ...]] = (".service", ".scope")
 
 UNIT_FILE_STATE: Final[str] = "UnitFileState"
+
+# Whether the manager holds the unit at all, and the value it reports for
+# one it does. A transient unit armed with `--collect` is GONE once it
+# has been collected, and the manager answers `not-found` for it.
+LOAD_STATE: Final[str] = "LoadState"
+LOADED: Final[str] = "loaded"
+
+ACTIVE: Final[str] = "active"
 
 
 def loaded_guard_units(*, runner: GuardCommandRunner) -> tuple[str, ...]:
@@ -148,3 +163,34 @@ def invoking_unit(*, proc_root: Path = PROC_ROOT) -> str:
         if part.endswith(CGROUP_UNIT_SUFFIXES)
     ]
     return named[-1] if named else ""
+
+
+def deadman_timer_exists(*, runner: GuardCommandRunner, run: str) -> bool:
+    """Whether this run's dead-man timer unit is loaded at all.
+
+    What a retried `arm` asks, so that it re-records nothing and arms
+    nothing a second time: `systemd-run --unit=` would refuse a second
+    timer of the same name, and the refusal would fail an operation
+    that has in fact already done its job.
+
+    LOADED rather than active, because the two answer different
+    questions. A timer that has FIRED and whose rollback is running is
+    not active, and arming a second one over it would put two dead-men
+    on one run.
+    """
+    return unit_property(runner=runner, unit=deadman_timer_unit(run=run), name=LOAD_STATE) == LOADED
+
+
+def deadman_timer_active(*, runner: GuardCommandRunner, run: str) -> bool:
+    """Whether this run's dead-man timer is actually in the air.
+
+    `start` refuses without it, and that refusal is the whole reason
+    this read is separate from the one above. The dead-man is the only
+    thing that takes the host back if the controller dies, so granting
+    the start permission beside a timer that is merely LOADED -- failed,
+    collected, or stopped -- would leave a Docker daemon nothing is
+    watching on a machine reachable only over Tailscale.
+    """
+    return (
+        unit_property(runner=runner, unit=deadman_timer_unit(run=run), name=ACTIVE_STATE) == ACTIVE
+    )

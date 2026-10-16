@@ -8,11 +8,11 @@ the postcondition read and the dead-man recipe; child 4 adds the
 PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
 resync refusal) and the observation `sample`; child 5 answers the seams
 left over, beginning with the clock, the boot identity, the runtime
-directory's ownership, the start permission and the admission reads of
-unit state and this invocation's own unit. The seams that still raise,
-each saying so where it stands, are the unit start, the dead-man timer
-reads, the post-commit and reconfigure seams child 1b added, the
-rollback phase child child 2 added, and child 3b's package step.
+directory's ownership, the start permission, the admission reads of
+unit state and this invocation's own unit, and the dead-man timer
+reads. The seams that still raise, each saying so where it stands, are
+the unit start, the post-commit and reconfigure seams child 1b added,
+the rollback phase child child 2 added, and child 3b's package step.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -71,6 +71,8 @@ from livespec_dev_tooling.fleet._docker_engine_guard_probe_set import record_pre
 from livespec_dev_tooling.fleet._docker_engine_guard_resync import K3S_CONFIG, K3S_CONFIG_DROPINS
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
 from livespec_dev_tooling.fleet._docker_engine_guard_unit_reads import (
+    deadman_timer_active,
+    deadman_timer_exists,
     guard_unit_states,
     invoking_unit,
     unit_enabled_states,
@@ -203,12 +205,12 @@ class RealHost:
     # --- arm ---
 
     def deadman_timer_exists(self, *, run: str) -> bool:
-        """CHILD 4: whether this run's dead-man timer unit is already loaded."""
-        raise NotImplementedError
+        """Whether this run's dead-man timer unit is already loaded."""
+        return deadman_timer_exists(runner=self.runner, run=run)
 
     def deadman_timer_active(self, *, run: str) -> bool:
-        """CHILD 4: whether it is active, which `start` refuses without."""
-        raise NotImplementedError
+        """Whether it is active, which `start` refuses without."""
+        return deadman_timer_active(runner=self.runner, run=run)
 
     def systemd_run(self, *, argv: Sequence[str]) -> None:
         """Run a `systemd-run` argv the guard built, such as the dead-man recipe."""
