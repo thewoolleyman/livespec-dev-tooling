@@ -571,3 +571,54 @@ def test_a_phase_that_keeps_killing_the_driver_is_skipped_after_three_attempts(
     assert [phase for phase in spawned if phase in later] == list(later)
     assert attempts.read_text(encoding="utf-8") == "3"
     assert fourth.calls_named(name="read_postconditions")
+
+
+def _exhaust_attempts(*, root: Path, run: str, phase: str) -> None:
+    """Pre-seed a phase's attempt record at the budget, with no success beside it."""
+    record = _rollback_record(root=root, run=run, name=f"{phase}.attempts")
+    record.parent.mkdir(parents=True, exist_ok=True)
+    _ = record.write_text("3", encoding="utf-8")
+
+
+def test_a_failed_timed_out_or_skipped_phase_never_stops_a_later_one(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": no phase stands between the driver and a later one.
+
+    All three ways a phase can come to nothing are asserted together
+    because the driver must not tell them apart. A non-zero exit and a
+    `timeout` kill arrive at the seam identically — `False` — and a
+    skipped phase never reaches the seam at all; in every case the driver
+    records no success, enters the next phase, and still reaches its
+    final check. The reason is the access it protects: the FORWARD
+    restore and the interface deletion come after the kill, so a kill
+    that failed must not be able to keep them from running.
+    """
+    rollback = _driver()
+
+    failed = tmp_path / "failed"
+    fake = _reporting_fake(root=failed)
+    fake.failing_phase_children = {"forward-restore"}
+    _record_phase(root=failed, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=failed, host=fake), decision=_decision())
+
+    assert [call.detail[-1] for call in fake.calls_named(name="run_phase_child")] == list(
+        _SPECIFIED_ORDER
+    )
+    assert not _rollback_record(root=failed, run="run-a", name="forward-restore.success").is_file()
+    assert _rollback_record(root=failed, run="run-a", name="cgroup-kill.success").is_file()
+    assert fake.calls_named(name="read_postconditions")
+
+    skipped = tmp_path / "skipped"
+    other = _reporting_fake(root=skipped)
+    _record_phase(root=skipped, run="run-a", phase="rolling-back")
+    _exhaust_attempts(root=skipped, run="run-a", phase="cgroup-kill")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=skipped, host=other), decision=_decision())
+
+    spawned = [call.detail[-1] for call in other.calls_named(name="run_phase_child")]
+    assert "cgroup-kill" not in spawned
+    later = _SPECIFIED_ORDER[_SPECIFIED_ORDER.index("cgroup-kill") + 1 :]
+    assert [phase for phase in spawned if phase in later] == list(later)
+    assert other.calls_named(name="read_postconditions")
