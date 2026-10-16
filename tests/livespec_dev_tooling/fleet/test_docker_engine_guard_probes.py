@@ -973,3 +973,91 @@ def test_every_probe_failure_is_recorded_with_its_probe_name_and_its_error() -> 
     assert broken[sample_module.FAILURES_KEY] == (
         {"probe": "dns", "error": "no answer; then no answer"},
     )
+
+
+def _proc_tree(*, root: Path, cgroups: dict[str, str]) -> Path:
+    """A recorded `/proc` holding one `cgroup` file per named process."""
+    for pid, line in cgroups.items():
+        directory = root / pid
+        directory.mkdir(parents=True, exist_ok=True)
+        _ = (directory / "cgroup").write_text(_lines(line), encoding="utf-8")
+    return root
+
+
+# `pgrep --exact containerd` once the install has run: Docker's own
+# containerd, a PID that has since exited, and k3s's. Only the last one
+# is the witness, and the first is the reason the cgroup is read at all
+# -- after the install there are two processes with this exact name.
+_CONTAINERD_PIDS = _lines("991", "40001", "512")
+_CONTAINERD_CGROUPS = {
+    "991": "0::/system.slice/containerd.service",
+    "512": "0::/system.slice/k3s-agent.service",
+}
+
+
+def test_the_k3s_witness_fails_a_sample_when_the_pid_moved_or_a_path_is_missing(
+    tmp_path: Path,
+) -> None:
+    """k3s-agent's own containerd PID, and its two shim directories.
+
+    Design F8 drops the shim-survival assertion -- CI pods legitimately
+    come and go -- and asserts instead what Docker CLEANUP could
+    actually damage: the containerd k3s runs keeps its PID across the
+    window, and the two directories its shims keep sockets and runc
+    state in still exist. The PID is found through the process's own
+    cgroup and not by name, because after the install there are TWO
+    processes called `containerd` on this host and killing the wrong
+    one is the lockout the guard exists to prevent.
+    """
+    assert "k3s_witness_probe" in importlib.import_module(_WITNESS_MODULE).__all__
+    witness = importlib.import_module(_WITNESS_MODULE)
+    proc = _proc_tree(root=tmp_path / "proc", cgroups=_CONTAINERD_CGROUPS)
+    running = _Commands(answers={witness.PGREP_CONTAINERD_ARGV: _CONTAINERD_PIDS})
+    assert witness.containerd_pid(runner=running, proc_root=proc) == "512"
+    assert tuple(running.argvs) == (witness.PGREP_CONTAINERD_ARGV,)
+    assert witness.containerd_pid(runner=_Commands(), proc_root=proc) == ""
+
+    snapshot = tmp_path / "before"
+    witness.write_witness_snapshot(destination=snapshot, runner=running, proc_root=proc)
+    shims = _proc_tree(root=tmp_path / "shims", cgroups={})
+    for directory in ("s", "runc/k8s.io"):
+        (shims / directory).mkdir(parents=True, exist_ok=True)
+    present = (shims / "s", shims / "runc/k8s.io")
+
+    unmoved = witness.k3s_witness_probe(
+        runner=_Commands(answers={witness.PGREP_CONTAINERD_ARGV: _CONTAINERD_PIDS}),
+        snapshot=snapshot,
+        proc_root=proc,
+        containerd_paths=present,
+    )
+    assert (unmoved.name, unmoved.passed, unmoved.error) == (
+        witness.K3S_WITNESS_PROBE,
+        True,
+        "",
+    )
+
+    restarted = _proc_tree(
+        root=tmp_path / "restarted",
+        cgroups={"777": "0::/system.slice/k3s-agent.service"},
+    )
+    moved = witness.k3s_witness_probe(
+        runner=_Commands(answers={witness.PGREP_CONTAINERD_ARGV: _lines("777")}),
+        snapshot=snapshot,
+        proc_root=restarted,
+        containerd_paths=present,
+    )
+    assert (moved.passed, moved.error) == (
+        False,
+        "k3s-agent's containerd PID moved from 512 to 777",
+    )
+
+    gone = witness.k3s_witness_probe(
+        runner=_Commands(answers={witness.PGREP_CONTAINERD_ARGV: _CONTAINERD_PIDS}),
+        snapshot=snapshot,
+        proc_root=proc,
+        containerd_paths=(shims / "s", shims / "runc" / "absent"),
+    )
+    assert (gone.passed, gone.error) == (
+        False,
+        f"these k3s containerd paths are missing: ('{shims / 'runc' / 'absent'}',)",
+    )
