@@ -20,6 +20,17 @@ resolves all three from the committed play and role:
    create/get/list/watch/delete on batch jobs and pods and get on pods/log in
    one namespace; the admin kubeconfig grants the cluster.
 
+A FOURTH PROPERTY JOINED THEM (work-item livespec-dev-tooling-5iep7h, freeze
+ruling R78 of 2026-10-16): the ENDPOINTS one run probes are suppliable on the
+run-now apply. The committed
+`ci-runner/k3s/phase2/factory/factory-reach-endpoints.env` names the telemetry
+receiver at the dispatcher's EPHEMERAL per-dispatch port, recorded on
+2026-10-13 — the file's own comment says so — so an apply against that value
+proves nothing about a receiver that exists NOW. The override variable is what
+lets the host-captured leg name the receiver of a dispatch live at that moment,
+and it is forwarded as the renderer's OWN `--endpoint NAME=HOST:PORT` arguments
+rather than as a second mechanism beside them.
+
 WHY A STATIC RESOLVER AND NOT AN `ansible-playbook` RUN. The same reason
 `test_ci_pool_factory_only_agent_roles.py` records: this play reaches a real
 cluster, neither Ansible nor Jinja is importable in this suite (ansible-core is
@@ -97,6 +108,50 @@ _ROLE_ENTRY = re.compile(
 )
 _WHEN_LINE = re.compile(r"^      when: (?P<expression>.+)$", re.MULTILINE)
 
+# The run-time endpoint override (livespec-dev-tooling-5iep7h, ruling R78): the
+# variable an apply supplies, the argument list the role translates it into, and
+# the committed pattern every entry must match. Named here rather than read back
+# out of the role, for the reason this file's header records about the
+# credential: a reader that took the names from the role under test would agree
+# with any rename, and these three are the operator-facing surface.
+_ENDPOINTS_VAR = "factory_reach_check_endpoints"
+_ENDPOINT_ARGV_VAR = "factory_reach_check_endpoint_argv"
+_ENDPOINT_PATTERN_VAR = "factory_reach_check_endpoint_pattern"
+
+# The module key of the ONE task in this role that executes anything, which is
+# the boundary "before any Job is submitted" names. Everything ahead of it in
+# the file runs on the controller and submits nothing.
+_RUN_MODULE = "ansible.builtin.command"
+
+# The committed configuration the renderer falls back to, which is what "the
+# variable is absent" has to resolve to. It is also a member of the installed
+# artifact set above, so one file is both the default probe set and a shipped
+# file — asserted from both ends.
+_ENDPOINTS_FILE = "factory-reach-endpoints.env"
+
+# The role's pattern as the defaults commit it, so the cases below exercise the
+# COMMITTED regex rather than a copy of it. Single-quoted in YAML because the
+# shape carries a backslash class (`\S`), which a double-quoted scalar would
+# eat.
+_PATTERN_LINE = re.compile(rf"^{_ENDPOINT_PATTERN_VAR}: '(?P<pattern>.+)'$", re.MULTILINE)
+
+# One well-formed entry — the shape the host-captured leg passes — and the
+# malformed spellings an operator actually types. Each must be refused on the
+# CONTROLLER, before a Job exists: the renderer would refuse them too, but only
+# after being invoked once per covered node, and three identical exit-2 runs
+# read like a cluster fault rather than like the `-e` that is wrong.
+_WELL_FORMED_ENTRY = "telemetry-receiver=100.89.189.118:35129"
+_MALFORMED_ENTRIES = (
+    "telemetry-receiver",
+    "telemetry-receiver=100.89.189.118",
+    "telemetry-receiver=100.89.189.118:",
+    "telemetry-receiver=100.89.189.118:port",
+    "telemetry-receiver=:35129",
+    "Telemetry-Receiver=100.89.189.118:35129",
+    "telemetry receiver=100.89.189.118:35129",
+    "100.89.189.118:35129",
+)
+
 
 def _play_text() -> str:
     """The committed `ci-pool.yml`, as Ansible receives it."""
@@ -141,6 +196,42 @@ def _defaults_text() -> str:
         f"value spelled inline in a task is one no host can redirect and no test can read"
     )
     return _ROLE_DEFAULTS.read_text(encoding="utf-8")
+
+
+def _committed_endpoint_pattern() -> re.Pattern[str]:
+    """The role's committed entry-shape pattern, compiled as Ansible's `match` applies it.
+
+    `re.match` and not `re.fullmatch`, because the `match` TEST the role's
+    `reject('match', ...)` uses anchors at the START only — so the committed
+    pattern has to carry its own `$`, and a reader that anchored the end itself
+    would pass a pattern that admits trailing junk.
+    """
+    found = _PATTERN_LINE.search(_defaults_text())
+    assert found is not None, (
+        f"the role's defaults must commit `{_ENDPOINT_PATTERN_VAR}: '<regex>'` as a "
+        f"single-quoted scalar: the shape every override entry must match is a POOL FACT a "
+        f"reader has to be able to exercise, and a pattern spelled inline in the assert's "
+        f"`that:` is one no test can reach;\ndefaults={_defaults_text()!r}"
+    )
+    return re.compile(found["pattern"])
+
+
+def _run_task_text() -> str:
+    """The role's run task, from its module key to the credential it names.
+
+    Sliced rather than parsed because no YAML library is importable here. The
+    slice is what lets "the override reaches the RENDERER'S argv" be asserted
+    as something other than "the variable is mentioned somewhere in the file".
+
+    Anchored on the MODULE KEY and not on the script's filename: the role names
+    that script in prose too, and an index over prose would make the ordering
+    assertion below a fact about where a comment sits. `_RUN_MODULE` is the one
+    task in this role that executes anything, which is exactly the boundary
+    "before anything is submitted" is about.
+    """
+    tasks = _tasks_text()
+    start = tasks.index(_RUN_MODULE)
+    return tasks[start : tasks.index("KUBECONFIG", start)]
 
 
 def _factory_nodes_from_profiles() -> set[str]:
@@ -307,6 +398,99 @@ def test_the_run_refuses_rather_than_falling_back_when_the_credential_is_absent(
         f"and ASSERT on that read, so an absent credential refuses rather than reaching the "
         f"command and failing as an authentication error that reads like a cluster "
         f"problem;\ntasks={tasks!r}"
+    )
+
+
+# --- the run-time endpoint override (livespec-dev-tooling-5iep7h, R78) -------
+
+
+def test_the_role_forwards_each_endpoint_override_entry_as_an_endpoint_argument() -> None:
+    """One `--endpoint NAME=HOST:PORT` per entry; the committed file when there are none.
+
+    THE RENDERER'S OWN OVERRIDE SURFACE, not a second one beside it. The script
+    already accepts `--endpoint` and already lets a repeated NAME replace a
+    committed entry's target, so forwarding is all this role owes — and the
+    committed `factory-reach-endpoints.env` it installs stays the default,
+    because the empty variable produces no argument at all and the renderer
+    resolves that file relative to its own directory.
+
+    Why the override exists: the committed `telemetry-receiver` port is the
+    dispatcher's EPHEMERAL per-dispatch port recorded on 2026-10-13, so a
+    run-now apply against it proves nothing about a receiver that exists now.
+    R78 requires the live receiver to be suppliable at run time.
+    """
+    defaults = _defaults_text()
+    tasks = _tasks_text()
+    assert f"{_ENDPOINTS_VAR}: []" in defaults, (
+        f"`{_ENDPOINTS_VAR}` must default to the EMPTY list, which is what makes the "
+        f"committed {_ENDPOINTS_FILE} the default probe set and the variable an override;\n"
+        f"defaults={defaults!r}"
+    )
+    assert _ENDPOINTS_FILE in defaults, (
+        f"and that same {_ENDPOINTS_FILE} must stay a member of the installed artifact set: "
+        f"the default it falls back to is a file the role has to put on the node;\n"
+        f"defaults={defaults!r}"
+    )
+    assert f"{_ENDPOINT_ARGV_VAR}: []" in tasks, (
+        f"the role must start each host from NO override arguments: an accumulator that "
+        f"defaulted at its point of use would carry a previous play's entries into this "
+        f"run, and forwarding an endpoint nobody passed is the defect the committed-default "
+        f"half of this assertion forbids;\ntasks={tasks!r}"
+    )
+    assert f"{_ENDPOINT_ARGV_VAR} + ['--endpoint', item]" in tasks, (
+        f"each entry must become the PAIR `--endpoint <entry>` — the renderer's own flag "
+        f"and its value — rather than a joined string or a `--endpoints` file the role "
+        f"writes;\ntasks={tasks!r}"
+    )
+    assert f'loop: "{{{{ {_ENDPOINTS_VAR} }}}}"' in tasks, (
+        f"EACH entry, which means a loop over `{_ENDPOINTS_VAR}` itself: a step that read "
+        f"only its first element would silently probe one endpoint of a set the operator "
+        f"passed several of;\ntasks={tasks!r}"
+    )
+    assert _ENDPOINT_ARGV_VAR in _run_task_text(), (
+        f"and the translated arguments must reach the RENDERER'S argv, in the task that "
+        f"runs verify-factory-reach.sh — a fact built and never passed is an override the "
+        f"apply reports as applied and never applies;\nrun task={_run_task_text()!r}"
+    )
+    assert "--endpoints" not in tasks, (
+        f"the role must never pass `--endpoints FILE`: redirecting the whole file would "
+        f"take the committed default out of the run, and the Definition of Done asks for "
+        f"per-ENTRY override with that file as the default;\ntasks={tasks!r}"
+    )
+
+
+def test_the_role_refuses_a_malformed_endpoint_override_before_submitting_any_job() -> None:
+    """The committed shape, exercised; and the refusal sits BEFORE the run task.
+
+    Validated on the CONTROLLER rather than left to the renderer. The renderer
+    does refuse a malformed `--endpoint` with exit 2 and submits nothing — but
+    only after being invoked once per covered node, and an apply printing three
+    identical configuration errors reads like a cluster fault rather than like
+    the one `-e` that is wrong.
+    """
+    tasks = _tasks_text()
+    pattern = _committed_endpoint_pattern()
+    assert pattern.match(_WELL_FORMED_ENTRY) is not None, (
+        f"the committed pattern {pattern.pattern!r} must ADMIT `{_WELL_FORMED_ENTRY}`: a "
+        f"shape check that rejects the entry the host-captured leg passes refuses every "
+        f"run instead of the malformed ones"
+    )
+    for malformed in _MALFORMED_ENTRIES:
+        assert pattern.match(malformed) is None, (
+            f"the committed pattern {pattern.pattern!r} must REFUSE `{malformed}`: the "
+            f"renderer requires NAME=HOST:PORT with a lowercase `[a-z0-9-]` name and a "
+            f"numeric port, and an entry it would reject must never reach it"
+        )
+    assert f"{_ENDPOINTS_VAR} | reject('match', {_ENDPOINT_PATTERN_VAR})" in tasks, (
+        f"the role must ASSERT that no entry fails that pattern — `reject('match', ...)` "
+        f"over `{_ENDPOINTS_VAR}`, so the refusal names the shape rather than a count;\n"
+        f"tasks={tasks!r}"
+    )
+    assert tasks.index(_ENDPOINT_PATTERN_VAR) < tasks.index(_RUN_MODULE), (
+        f"and that assert must come BEFORE `{_RUN_MODULE}`, the one task in this role that "
+        f"executes anything: NOTHING may be submitted on a malformed override, and a "
+        f"validation after the run is a Job already in the live factory namespace;\n"
+        f"tasks={tasks!r}"
     )
 
 

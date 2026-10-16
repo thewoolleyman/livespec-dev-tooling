@@ -126,18 +126,64 @@
         success_msg: >-
           covering {{ factory_reach_check_covered_nodes | join(', ') }}
 
+    - name: Refuse an endpoint override entry the renderer could not parse
+      # VALIDATED ON THE CONTROLLER, before one Job exists (R78,
+      # livespec-dev-tooling-5iep7h). verify-factory-reach.sh refuses a
+      # malformed `--endpoint` itself with exit 2 and submits nothing — that is
+      # not the gap. The gap is WHERE the operator reads it: reaching the
+      # renderer means being invoked once per covered node, and an apply that
+      # prints three identical configuration errors reads like a cluster fault
+      # rather than like the one `-e` that is wrong. Refusing here names the
+      # entry once, with the shape it failed.
+      ansible.builtin.assert:
+        that:
+          - factory_reach_check_endpoints | reject('match', factory_reach_check_endpoint_pattern) | list | length == 0
+        fail_msg: >-
+          malformed factory_reach_check_endpoints entries:
+          {{ factory_reach_check_endpoints
+             | reject('match', factory_reach_check_endpoint_pattern) | join(', ') }}.
+          Each entry must be NAME=HOST:PORT with a lowercase [a-z0-9-] name and a numeric
+          port, matching {{ factory_reach_check_endpoint_pattern }} — the shape
+          verify-factory-reach.sh accepts. Nothing was submitted.
+        success_msg: >-
+          {{ factory_reach_check_endpoints | length }} endpoint override(s) accepted
+
+    - name: Start this host from no endpoint override arguments
+      # Reset EXPLICITLY rather than defaulted at the point of use: the step
+      # below APPENDS, and `set_fact` persists for the rest of the play on this
+      # host, so a second gated pass would forward the same override twice.
+      # Empty is also the ROUTINE state — it is what makes the installed
+      # factory-reach-endpoints.env the probe set a default apply reads.
+      ansible.builtin.set_fact:
+        factory_reach_check_endpoint_argv: []
+
+    - name: Translate the endpoint override into the renderer's own arguments
+      # One `--endpoint NAME=HOST:PORT` PAIR per entry, which keeps this role a
+      # forwarder: the script already owns the flag, the parse and the rule that
+      # a repeated NAME replaces a committed entry's target. A joined string or
+      # a file this role wrote would be a second override mechanism to keep in
+      # step with that one.
+      ansible.builtin.set_fact:
+        factory_reach_check_endpoint_argv: >-
+          {{ factory_reach_check_endpoint_argv + ['--endpoint', item] }}
+      loop: "{{ factory_reach_check_endpoints }}"
+
     - name: Prove the factory reach from a scheduled pod on each covered node
       # `failed_when: false` because the VERDICT is read and reported below:
       # a bare non-zero from this task would print Ansible's own stdout dump and
       # bury the one line that names the endpoint. `changed_when: false` because
       # the renderer deletes its Job on exit, so a run leaves nothing behind.
+      #
+      # The argv is BUILT rather than listed because the override is
+      # variable-length: the fixed head, then whatever `--endpoint` pairs the
+      # step above translated — an empty list on a routine apply, which leaves
+      # the renderer reading its installed factory-reach-endpoints.env.
       ansible.builtin.command:
-        argv:
-          - "{{ factory_reach_check_install_dir }}/verify-factory-reach.sh"
-          - --node
-          - "{{ item }}"
-          - --timeout-seconds
-          - "{{ factory_reach_check_timeout_seconds }}"
+        argv: >-
+          {{ [factory_reach_check_install_dir ~ '/verify-factory-reach.sh',
+              '--node', item,
+              '--timeout-seconds', factory_reach_check_timeout_seconds | string]
+             + factory_reach_check_endpoint_argv }}
       environment:
         # THE SCOPED CREDENTIAL, named on the TASK. Not left to whatever the
         # elevated account's environment holds: root on this node can read the
