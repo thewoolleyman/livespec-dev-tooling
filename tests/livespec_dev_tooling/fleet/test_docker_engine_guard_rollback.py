@@ -110,7 +110,11 @@ def test_rollback_records_rolling_back_first_and_closes_start_and_confirm(
 
     assert outcome.operation == "rollback"
     assert outcome.exit_code == 0
-    assert _phase_of(root=tmp_path, run="run-a") == "rolling-back"
+    # The fake stamps every seam call with the phase recorded when it
+    # arrived, so the phase in force at the driver's FIRST host action is
+    # the proof that the record came before it — and it stays the proof
+    # once the driver writes an outcome over `rolling-back`.
+    assert fake.calls[0].phase == "rolling-back"
     for closed in ("start", "confirm"):
         refused = guard.run_operation(
             operation=closed, run="run-a", env=_env(root=tmp_path, host=fake)
@@ -142,3 +146,29 @@ def test_a_later_firing_keeps_the_recorded_phase_until_it_writes_an_outcome(
 
         kept = _phase_of(root=root, run="run-a")
         assert kept == incoming or kept in _OUTCOME_PHASES, incoming
+
+
+def test_rollback_stops_the_observer_and_the_starter_before_revoking_the_permission(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback" / design H2: the two writers are fenced first.
+
+    The observer holds a Docker API request and the starter is mid-start;
+    either could still act on the daemon the revocation is meant to make
+    unstartable. Revoking first and stopping second would leave a window
+    in which a stopped-but-not-yet-inactive observer submits one more
+    request, so the order is the content of the rule rather than tidiness.
+    The 10 seconds is the SIGKILL the specification requires after the
+    SIGTERM.
+    """
+    rollback = _driver()
+    fake = _fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
+
+    assert [(call.name, call.detail) for call in fake.calls][:3] == [
+        ("stop_unit", ("docker-engine-guard-observe.service", "10")),
+        ("stop_unit", ("docker-engine-guard-start.service", "10")),
+        ("revoke_start_permission", ()),
+    ]
