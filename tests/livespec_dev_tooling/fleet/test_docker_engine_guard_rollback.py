@@ -81,6 +81,12 @@ def _phase_of(*, root: Path, run: str) -> Any:
     return state.read_phase(paths=_paths(root=root), run=run)
 
 
+# The two phases a firing may REPLACE the recorded phase with. Anything
+# else a firing leaves behind is a phase it overwrote without having
+# reached an outcome, which is the one thing a later firing must not do.
+_OUTCOME_PHASES = ("rolled-back", "rollback-partial")
+
+
 def test_rollback_records_rolling_back_first_and_closes_start_and_confirm(
     tmp_path: Path,
 ) -> None:
@@ -110,3 +116,29 @@ def test_rollback_records_rolling_back_first_and_closes_start_and_confirm(
             operation=closed, run="run-a", env=_env(root=tmp_path, host=fake)
         )
         assert refused.verdict == "refuse", closed
+
+
+def test_a_later_firing_keeps_the_recorded_phase_until_it_writes_an_outcome(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": a firing on the rollback path keeps the phase.
+
+    The dead-man re-fires every 60 seconds after each rollback it runs,
+    so most firings arrive on a run that is already `rolling-back` or
+    already `rollback-partial`. A firing that re-recorded `rolling-back`
+    over a `rollback-partial` would erase the one record an operator
+    reads while deciding whether the host needs a repair, and would do
+    it silently. The phase a firing leaves behind is therefore either the
+    phase it came in with or the outcome it reached, never a third thing.
+    """
+    rollback = _driver()
+
+    for incoming in ("rolling-back", "rollback-partial"):
+        root = tmp_path / incoming
+        fake = _fake(root=root)
+        _record_phase(root=root, run="run-a", phase=incoming)
+
+        _ = rollback.run_rollback(run="run-a", env=_env(root=root, host=fake), decision=_decision())
+
+        kept = _phase_of(root=root, run="run-a")
+        assert kept == incoming or kept in _OUTCOME_PHASES, incoming
