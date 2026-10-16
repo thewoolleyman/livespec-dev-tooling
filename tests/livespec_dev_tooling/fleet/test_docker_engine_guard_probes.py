@@ -1061,3 +1061,82 @@ def test_the_k3s_witness_fails_a_sample_when_the_pid_moved_or_a_path_is_missing(
         False,
         f"these k3s containerd paths are missing: ('{shims / 'runc' / 'absent'}',)",
     )
+
+
+_SCOPE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_scope"
+_SCOPE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_scope.py")
+
+# What `systemctl show -p ControlGroup fabro-sandbox.slice` answers on
+# this fleet: the slice is NESTED under `fabro.slice`, which is why the
+# path is resolved rather than written down (design R8).
+_SANDBOX_CONTROL_GROUP = "/fabro.slice/fabro-sandbox.slice"
+
+
+def test_the_canarys_cgroup_is_resolved_through_the_sandbox_slices_control_group(
+    tmp_path: Path,
+) -> None:
+    """Through `systemctl show -p ControlGroup`, never against a literal path.
+
+    The sandbox slice is NESTED on this fleet -- its control group is
+    `/fabro.slice/fabro-sandbox.slice` -- so a probe comparing the
+    canary's cgroup with a hand-written `/fabro-sandbox.slice` would
+    fail every sample of a correctly-configured host, and one comparing
+    with a bare suffix would pass a container the daemon had placed
+    somewhere else entirely.
+    """
+    assert _SCOPE_PATH.is_file()
+    scope = importlib.import_module(_SCOPE_MODULE)
+    assert scope.CONTROL_GROUP_ARGV == (
+        "systemctl",
+        "show",
+        "-p",
+        "ControlGroup",
+        "--value",
+        "fabro-sandbox.slice",
+    )
+    pid_argv = scope.canary_pid_argv(canary="docker-engine-guard-canary")
+    assert pid_argv == (
+        "docker",
+        "inspect",
+        "--format",
+        "{{.State.Pid}}",
+        "docker-engine-guard-canary",
+    )
+
+    def _bus() -> _Commands:
+        return _Commands(
+            answers={
+                scope.CONTROL_GROUP_ARGV: _lines(_SANDBOX_CONTROL_GROUP),
+                pid_argv: _lines("7211"),
+            }
+        )
+
+    inside = _proc_tree(
+        root=tmp_path / "inside",
+        cgroups={"7211": f"0::{_SANDBOX_CONTROL_GROUP}/docker-abc123.scope"},
+    )
+    placed = scope.canary_cgroup_probe(
+        runner=_bus(), canary="docker-engine-guard-canary", proc_root=inside
+    )
+    assert (placed.name, placed.passed, placed.error) == (scope.CANARY_CGROUP_PROBE, True, "")
+
+    outside = _proc_tree(
+        root=tmp_path / "outside",
+        cgroups={"7211": "0::/system.slice/docker.service/docker-abc123.scope"},
+    )
+    misplaced = scope.canary_cgroup_probe(
+        runner=_bus(), canary="docker-engine-guard-canary", proc_root=outside
+    )
+    assert (misplaced.passed, misplaced.error) == (
+        False,
+        "the canary's cgroup is 0::/system.slice/docker.service/docker-abc123.scope, "
+        f"not under {_SANDBOX_CONTROL_GROUP}",
+    )
+
+    unread = scope.canary_cgroup_probe(
+        runner=_bus(), canary="docker-engine-guard-canary", proc_root=tmp_path / "empty"
+    )
+    assert (unread.passed, unread.error) == (
+        False,
+        f"the canary's cgroup is unreadable, not under {_SANDBOX_CONTROL_GROUP}",
+    )
