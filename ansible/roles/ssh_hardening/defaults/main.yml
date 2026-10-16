@@ -1,4 +1,31 @@
 ---
+# --- Per-host values. Empty here ON PURPOSE; the role refuses to run until
+# host_vars sets them (HOST_VARS.md). Each is a property of the machine, not a
+# fleet default, and a guessed value here would bind the public daemon to the
+# wrong address or open a password path for the wrong account.
+
+# The public IPv4 address the daemon listens on. sshd_config's ListenAddress,
+# the ssh.socket ListenStream and the password Match's LocalAddress all render
+# from this one value, so they cannot disagree.
+ssh_hardening_public_address: ""
+
+# The ONE account allowed to authenticate with a password, and only on the
+# public address above. Its password is set out of band, never by this role.
+ssh_hardening_password_user: ""
+
+# Local addresses on which the effective-configuration proof requires password
+# authentication to be OFF for the password user, as negative controls. The
+# loopback is always meaningful; host_vars adds the tailnet address.
+ssh_hardening_negative_control_addresses:
+  - 127.0.0.1
+
+# --- Fleet defaults.
+
+ssh_hardening_port: 22
+ssh_hardening_max_auth_tries: 3
+ssh_hardening_login_grace_time: 30
+ssh_hardening_max_startups: "10:30:30"
+
 # The drop-in directory the OS sshd_config Includes, and the name this role
 # writes into it. The `00-` prefix is load-bearing: sshd takes the FIRST value
 # it obtains for each keyword and the Include glob expands lexically, so this
@@ -10,6 +37,33 @@ ssh_hardening_dropin_name: 00-ssh-hardening.conf
 # An earlier hand-applied name for the same settings. Left in place it is a
 # second, unmanaged source of truth at the same sort position.
 ssh_hardening_legacy_dropin_name: 00-disable-password-auth.conf
+
+# The main configuration file, and the password Match file it Includes as its
+# LAST active directive. The Match file is deliberately NOT under
+# sshd_config.d: that glob is Included near the top of sshd_config, and a
+# Match block there would swallow every global directive that follows it.
+#
+# The `vps-` names below are the paths vps-info's installer created on the
+# live host. They are kept so the role converges that host with no change;
+# they are file names, not a binding of this role to a machine.
+ssh_hardening_sshd_config: /etc/ssh/sshd_config
+ssh_hardening_password_match_path: /etc/ssh/vps-ubuntu-password.conf
+
+# The ssh.socket drop-in that owns the listening address under socket
+# activation.
+ssh_hardening_socket_name: ssh.socket
+ssh_hardening_socket_dropin_dir: /etc/systemd/system/ssh.socket.d
+ssh_hardening_socket_dropin_name: vps-listen.conf
+
+# fail2ban's sshd jail. `python3-systemd` is what `backend = systemd` reads
+# the journal through; `nftables` is what `nftables-multiport` bans with.
+ssh_hardening_fail2ban_packages:
+  - fail2ban
+  - python3-systemd
+  - nftables
+ssh_hardening_fail2ban_jail_path: /etc/fail2ban/jail.d/vps-sshd.local
+ssh_hardening_fail2ban_service_name: fail2ban.service
+ssh_hardening_fail2ban_client_bin: /usr/bin/fail2ban-client
 
 # Debian and Ubuntu name the daemon's unit `ssh.service`; the RHEL family uses
 # `sshd.service`. This role configures an OS unit it does not own, so it

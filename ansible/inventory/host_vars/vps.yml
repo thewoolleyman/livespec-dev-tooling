@@ -95,6 +95,13 @@ honeycomb_mcp_checkout: /data/projects/vps-info
 # --- honeycomb_trigger_recipients_check ---
 honeycomb_trigger_recipients_check_checkout: /data/projects/vps-info
 
+# --- ssh_hardening ---
+ssh_hardening_public_address: 66.94.121.15
+ssh_hardening_password_user: ubuntu
+ssh_hardening_negative_control_addresses:
+  - 127.0.0.1
+  - 100.89.189.118
+
 # --- storage_reclaim ---
 storage_reclaim_canonical_host: vps.perch-rudd.ts.net
 # NOT the tailnet label. Tailscale serves vps.perch-rudd.ts.net, but

@@ -1,13 +1,91 @@
 ---
+# Every handler here fires ONLY when a task above reported a change, so
+# converging a host whose files already match reloads and restarts nothing.
+# They are reached only after the effective-configuration proof in
+# tasks/main.yml has passed, so the running daemon is never asked to adopt a
+# configuration that has not been proven.
+
+# A listener change. Ubuntu runs OpenSSH socket-activated, so a new
+# ListenStream takes effect only when ssh.socket is restarted, and the
+# socket cannot be restarted while ssh.service holds it. Stopping
+# ssh.service under KillMode=process kills only the listening parent:
+# established sessions are separate processes and survive. This is the
+# sequence vps-info's installer used, with KillMode checked first.
+- name: Reload systemd for the ssh.socket drop-in
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  listen: Replace the ssh listeners
+
+- name: Read ssh.service KillMode
+  ansible.builtin.command:
+    argv: [systemctl, show, "{{ ssh_hardening_service_name }}", -p, KillMode, --value]
+  changed_when: false
+  register: ssh_hardening_killmode
+  listen: Replace the ssh listeners
+
+- name: Refuse to stop ssh.service unless established sessions survive it
+  ansible.builtin.assert:
+    that:
+      - ssh_hardening_killmode.stdout == 'process'
+    fail_msg: >-
+      {{ ssh_hardening_service_name }} has KillMode={{ ssh_hardening_killmode.stdout }},
+      under which stopping it would end every established session. The
+      listener drop-in is on disk but the daemon has NOT been restarted.
+    quiet: true
+  listen: Replace the ssh listeners
+
+- name: Stop ssh.service and ssh.socket
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+  become: true
+  loop:
+    - "{{ ssh_hardening_service_name }}"
+    - "{{ ssh_hardening_socket_name }}"
+  listen: Replace the ssh listeners
+
+- name: Start ssh.socket and ssh.service on the new listener
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+  become: true
+  loop:
+    - "{{ ssh_hardening_socket_name }}"
+    - "{{ ssh_hardening_service_name }}"
+  listen: Replace the ssh listeners
+
 - name: Reload sshd
-  # Reload, never restart: a restart drops every established session, and this
-  # is the daemon every remote session on the host depends on. sshd re-reads
-  # its configuration on SIGHUP and leaves existing connections alone.
-  #
-  # This handler is reached only after the lockout guard in tasks/main.yml has
-  # passed, so the running daemon is never asked to adopt a configuration that
-  # has not been proven to still accept public keys.
+  # Reload, never restart, for a configuration-only change: sshd re-reads its
+  # configuration on SIGHUP and leaves existing connections alone.
   ansible.builtin.systemd_service:
     name: "{{ ssh_hardening_service_name }}"
     state: reloaded
   become: true
+
+# fail2ban 1.1.0 on this fleet dropped the jail's actions on a reload, so a
+# jail change restarts it and then waits until the ban action is attached.
+- name: Test the fail2ban configuration
+  ansible.builtin.command:
+    argv: ["{{ ssh_hardening_fail2ban_client_bin }}", -t]
+  become: true
+  changed_when: false
+  listen: Restart fail2ban
+
+- name: Restart the fail2ban service
+  ansible.builtin.systemd_service:
+    name: "{{ ssh_hardening_fail2ban_service_name }}"
+    state: restarted
+  become: true
+  listen: Restart fail2ban
+
+- name: Wait for the sshd jail's nftables action
+  ansible.builtin.command:
+    argv: ["{{ ssh_hardening_fail2ban_client_bin }}", get, sshd, actions]
+  become: true
+  changed_when: false
+  register: ssh_hardening_jail_actions
+  until: ssh_hardening_jail_actions.stdout is search('nftables-multiport')
+  retries: 20
+  delay: 1
+  listen: Restart fail2ban
