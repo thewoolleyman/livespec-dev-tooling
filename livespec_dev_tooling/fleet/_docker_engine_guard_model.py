@@ -31,10 +31,14 @@ __all__: list[str] = [
     "PHASES",
     "ROLLBACK_PHASES",
     "Deadline",
+    "Decision",
+    "GuardOutcome",
     "GuardPaths",
+    "Holder",
     "MarkerState",
     "Operation",
     "Phase",
+    "Verdict",
     "operation_budget_seconds",
 ]
 
@@ -178,3 +182,45 @@ class Deadline:
 
     boot_id: str
     monotonic: float
+
+
+# What an operation's row decided to do about this invocation. `finish`
+# and `proceed` both reach the handler; they are distinguished because a
+# committed run's handler does only the idempotent post-commit steps,
+# with no challenge and no deadline.
+Verdict = Literal["proceed", "finish", "noop", "refuse"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class Decision:
+    """What the dispatch table decided, and the reason it gives an operator."""
+
+    verdict: Verdict
+    reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class Holder:
+    """The run a refused `reserve` reports: its id, its phase and its deadline.
+
+    All three, because an operator reading "refused" needs to know which
+    run holds the host, how far it got, and when the dead-man will take
+    it back — and the deadline is the only one of the three that says
+    whether waiting is the right move.
+    """
+
+    run: str
+    phase: Phase | None
+    deadline: Deadline | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class GuardOutcome:
+    """One operation's result: what it decided, why, and what an operator must see."""
+
+    operation: Operation
+    run: str
+    verdict: Verdict
+    reason: str
+    holder: Holder | None = None
+    blocking_units: tuple[str, ...] = ()
