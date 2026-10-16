@@ -26,6 +26,7 @@ lifecycle tests already use.
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -812,4 +813,68 @@ def test_the_https_probe_resolves_on_the_host_then_sends_sni_explicitly() -> Non
     assert (unreached.passed, unreached.error) == (
         False,
         "the HEAD of https://archive.ubuntu.com/ubuntu/ from the pod namespace exited 1",
+    )
+
+
+_WITNESS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_witness"
+_WITNESS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_witness.py")
+_NETSTATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_netstate"
+
+# The five watched values as gmktec reports them before the install
+# (design, measured state 2026-10-15): forwarding on for both families,
+# bridge-netfilter on for iptables and ip6tables, off for arptables.
+_SYSCTLS_BEFORE = {
+    "net.bridge.bridge-nf-call-arptables": "0",
+    "net.bridge.bridge-nf-call-ip6tables": "1",
+    "net.bridge.bridge-nf-call-iptables": "1",
+    "net.ipv4.ip_forward": "1",
+    "net.ipv6.conf.all.forwarding": "1",
+}
+
+
+def _sysctl_snapshot(*, root: Path, values: dict[str, str] = _SYSCTLS_BEFORE) -> Path:
+    """A recorded `before/` directory holding the five watched sysctls."""
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    root.mkdir(parents=True, exist_ok=True)
+    _ = (root / netstate.SYSCTL_SNAPSHOT).write_text(
+        json.dumps(values, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return root
+
+
+def _sysctl_bus(*, values: dict[str, str]) -> _Commands:
+    """A bus answering `sysctl -n` for each watched value."""
+    return _Commands(
+        answers={("sysctl", "-n", name): _lines(value) for name, value in values.items()}
+    )
+
+
+def test_the_sysctl_probe_requires_the_five_watched_values_to_equal_the_snapshot(
+    tmp_path: Path,
+) -> None:
+    """All five, against the snapshot taken before the first package step.
+
+    A Docker install flips several of these, and a flipped one that
+    survives is how k3s's pod network silently stops forwarding -- so
+    the probe compares every sample against the recorded baseline
+    rather than against what the value ought to be, because the
+    baseline is the only record of what this host was.
+    """
+    assert _WITNESS_PATH.is_file()
+    witness = importlib.import_module(_WITNESS_MODULE)
+    snapshot = _sysctl_snapshot(root=tmp_path / "before")
+
+    unchanged = witness.sysctl_probe(runner=_sysctl_bus(values=_SYSCTLS_BEFORE), snapshot=snapshot)
+    assert (unchanged.name, unchanged.passed, unchanged.error) == (
+        witness.SYSCTL_PROBE,
+        True,
+        "",
+    )
+
+    flipped = dict(_SYSCTLS_BEFORE)
+    flipped["net.bridge.bridge-nf-call-iptables"] = "0"
+    moved = witness.sysctl_probe(runner=_sysctl_bus(values=flipped), snapshot=snapshot)
+    assert (moved.passed, moved.error) == (
+        False,
+        "net.bridge.bridge-nf-call-iptables 1 -> 0",
     )
