@@ -41,6 +41,11 @@ _OPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_ops"
 _OPS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_ops.py")
 _CLI_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_cli"
 _CLI_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_cli.py")
+# 1b's two modules, reached from here only where 1a's own operations
+# delegate to them: `recover` of a committed run performs the post-commit
+# steps, and the marker it reads carries the owned keys' digest.
+_COMMIT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_commit"
+_RECORDS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_records"
 
 # The observation window the design derives at preflight from the effective
 # k3s resync periods (420 s at the measured defaults). Only `observe`'s
@@ -1365,6 +1370,91 @@ def test_recover_rolls_back_a_run_in_any_other_uncommitted_phase(tmp_path: Path)
         assert landed in model.ROLLBACK_PHASES, phase
 
 
+# A committed host's three guarded units, in the two states the
+# post-commit validation reads: enablement carries the engine across the
+# next boot, the active state says it is running now, and neither
+# implies the other.
+_GUARDED_UNITS_RUNNING = {
+    "containerd.service": "active",
+    "docker.service": "active",
+    "docker.socket": "active",
+}
+_GUARDED_UNITS_ENABLED = {
+    "containerd.service": "enabled",
+    "docker.service": "enabled",
+    "docker.socket": "enabled",
+}
+
+
+def _committed_host(*, root: Path, run: str) -> Any:
+    """A `FakeHost` for a committed run: marker, phase, and the units up.
+
+    The state a crash past the commit point leaves behind, which is the
+    only state `recover`'s finish branch is ever reached from. The
+    marker carries the owned keys' digest because the post-commit
+    validation reads it back -- a marker vouching for some other
+    configuration is its own case, driven in 1b's own file.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    paths = _paths(root=root)
+    _record_phase(root=root, run=run, phase="committed")
+    records.publish_marker(
+        paths=paths, run=run, digest=records.owned_keys_digest(paths=paths, run=run)
+    )
+    fake = _fake(root=root)
+    fake.unit_states = dict(_GUARDED_UNITS_RUNNING)
+    fake.unit_file_states = dict(_GUARDED_UNITS_ENABLED)
+    return fake
+
+
+def test_recover_on_a_run_the_commit_marker_names_finishes_the_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Design H5: recovery of a committed run FINISHES the confirmation.
+
+    The marker names the run, so the run is committed whatever its phase
+    reads -- the state a crash between the commit rename and the phase
+    update leaves, and the state a reboot after a failed directory fsync
+    leaves. There is nothing left to prove and nothing to roll back: a
+    committed run must never be rolled back, and the rollback verifier
+    is never run for one.
+
+    So `recover` performs `confirm`'s post-commit steps, every one of
+    them idempotent, and leaves the run `confirmed`. They are ONE
+    implementation reached by two operations rather than two copies of a
+    sequence whose ORDER is load-bearing -- the start permission goes
+    first because the marker already satisfies the start condition, and
+    the dead-man is stopped last because until it is, a run that died
+    mid-way would be rolled back by it.
+    """
+    _entry(name="recover")
+    guard = _guard_surface()
+    model = importlib.import_module(_MODEL_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    commit = importlib.import_module(_COMMIT_MODULE)
+    # The post-commit steps are one PUBLIC entry point for that reason,
+    # and this is the assertion that fails while they are not: the
+    # operations module cannot reach a private helper in a sibling.
+    assert "finish_post_commit" in commit.__all__
+    fake = _committed_host(root=tmp_path, run="run-a")
+
+    outcome = guard.run_operation(
+        operation="recover", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert outcome.operation == "recover"
+    assert outcome.verdict == "finish"
+    assert outcome.exit_code == 0
+    assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "confirmed"
+    assert fake.calls_named(name="revoke_start_permission") != ()
+    assert fake.calls_named(name="enable_units")[0].detail == model.GUARDED_UNITS
+    started = [call.detail[0] for call in fake.calls_named(name="start_unit")]
+    assert started == list(model.GUARDED_UNITS)
+    stopped = [call.detail[0] for call in fake.calls_named(name="stop_unit")]
+    assert stopped == ["docker-engine-deadman-run-a.timer"]
+    assert fake.calls_named(name="run_phase_child") == ()
+
+
 def test_recover_takes_the_same_lock_and_decides_through_the_same_table(
     tmp_path: Path,
 ) -> None:
@@ -1401,9 +1491,14 @@ def test_recover_takes_the_same_lock_and_decides_through_the_same_table(
     fake = _fake(root=committed)
     _record_phase(root=committed, run="run-a", phase="committed")
     _write_marker(root=committed, run="run-a")
-    with pytest.raises(NotImplementedError) as caught:
-        guard.run_operation(operation="recover", run="run-a", env=_env(root=committed, host=fake))
-    assert caught.traceback[-1].path.name == "_docker_engine_guard_ops.py"
+    outcome = guard.run_operation(
+        operation="recover", run="run-a", env=_env(root=committed, host=fake)
+    )
+    # Nowhere near the driver, and the run ends on the install path: the
+    # marker names it, so it is committed whatever its phase reads.
+    assert outcome.operation == "recover"
+    assert fake.calls_named(name="run_phase_child") == ()
+    assert state.read_phase(paths=_paths(root=committed), run="run-a") == "confirmed"
 
 
 def test_the_command_line_parses_an_operation_a_run_and_the_state_roots(

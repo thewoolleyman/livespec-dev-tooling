@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.fleet._docker_engine_guard_commit import finish_post_commit
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     START_ORDER,
     UNIT_WAIT_SECONDS,
@@ -240,12 +241,20 @@ def recover(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     because the install it interrupted is inert by construction. Every
     other uncommitted phase has granted something, so the only safe
     direction is back.
+
+    A run the commit marker NAMES goes neither way: it is committed
+    whatever its phase reads, so design H5 sends it to the post-commit
+    steps and never to the rollback verifier.
     """
     if decision.verdict == "finish":
         # The marker names this run, so recovery FINISHES the
         # confirmation rather than repeating it: `confirm`'s idempotent
-        # post-commit steps, which child 1b owns.
-        raise NotImplementedError
+        # post-commit steps, reached through the ONE public entry point
+        # that owns their order. Reported under `recover`, because that
+        # is the operation the operator invoked.
+        return finish_post_commit(
+            operation="recover", run=run, env=env, decision=decision, warning=""
+        )
     if read_phase(paths=env.paths, run=run) == "publishing":
         return publish(run=run, env=env, decision=decision)
     return run_rollback(run=run, env=env, decision=decision)
