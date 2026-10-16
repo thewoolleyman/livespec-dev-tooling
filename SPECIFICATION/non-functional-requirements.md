@@ -214,6 +214,18 @@ and queued demand remains pending while the circuit is open.
 
 **Facts in the host record, the procedure here.** The per-host information repository for a node MUST carry the node's hardware facts and its profile's values and MUST NOT carry the procedure or any copy of it; this tree MUST NOT carry a host's hardware facts beyond what its profile consumes. A backup-and-restore artifact for a node MAY be kept beside the procedure for data recovery and MUST NOT be documented or used as the way the node's configuration is reproduced.
 
+## Consent-gated pool-node disruption
+
+**Scope.** This section covers deliberately disrupting a runner-pool node, such as rebooting the control-plane node or taking an agent node's k3s agent down to exercise node loss. That is a host action, and this section states how this repository performs it. Rebuilding a node from empty storage is governed by §"Runner-pool node rebuild recipe", not by this section.
+
+**Committed and consent-gated.** Every deliberate disruption of a pool node MUST be performed by a committed playbook applied from the control node `vps` with `just ansible-apply`, and MUST NOT be performed by a command run by hand on any host. Such a playbook MUST act only on the single host named by an explicit confirmation variable equal to that host's inventory name. It MUST change nothing when the confirmation is absent or names another host.
+
+**A node-loss drill refuses the hosts it must not disturb.** A playbook that takes a node's k3s agent down to exercise node loss MUST refuse the control-plane node and every Fabro factory host. It MUST identify those hosts from inventory, not from host names spelled in the play.
+
+**It waits for CI, never for its subject.** Before it takes the agent down, a node-loss drill MUST wait until the node carries no CI runner pod and no gate Job pod, or until the runner pool reads idle. It MUST NOT cordon, drain, evict or delete any pod, because a workload left on the node is what the drill exists to observe.
+
+**It restores and verifies.** A node-loss drill MUST restore the node after its configured hold. It MUST fail unless the node returns Ready with its taints, its factory label and its admission capacity unchanged, and it MUST report the UTC times at which the API first showed the node NotReady and Ready again.
+
 ## Fabro factory host provisioning
 
 **Scope.** This section states this repository's obligation as the repository that provisions the fleet's Fabro factory hosts: the hosts that run a Fabro server and the sandbox containers its runs execute in. The play is `ansible/fabro-hosts.yml`; per-host values live in `ansible/inventory/host_vars/<host>.yml`, which is generated from the owning role's `HOST_VARS.md`.

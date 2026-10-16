@@ -516,6 +516,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Consent-gated pool-node disruption",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-raynnh owns it.",
+    "work_item": "livespec-dev-tooling-raynnh"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pool node is rebuilt from bare metal by the recipe and its profile",
     "test": "tests.consumer.test_pool_node_rebuild_scenario.test_a_pool_node_is_rebuilt_from_bare_metal_by_the_recipe_and_its_profile",
@@ -529,6 +537,14 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-izlx4g owns it.",
     "work_item": "livespec-dev-tooling-izlx4g"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-raynnh owns it.",
+    "work_item": "livespec-dev-tooling-raynnh"
   },
   {
     "spec_root": "SPECIFICATION",

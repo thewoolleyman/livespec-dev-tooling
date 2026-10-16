@@ -2,6 +2,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Consent-gated pool-node disruption",
+    "work_item": "livespec-dev-tooling-raynnh",
+    "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
     "work_item": "livespec-dev-tooling-ubpufs",
     "first_seen": "2026-10-15"
@@ -11,6 +18,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
+    "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads",
+    "work_item": "livespec-dev-tooling-raynnh",
     "first_seen": "2026-10-16"
   }
 ]
