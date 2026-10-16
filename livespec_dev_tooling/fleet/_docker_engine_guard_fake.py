@@ -60,6 +60,7 @@ class FakeHost:
     deleted_interfaces: tuple[str, ...] = ()
     sysctl_differences: tuple[str, ...] = ()
     postconditions: dict[str, bool] = field(default_factory=dict)
+    failing_phase_children: set[str] = field(default_factory=set)
     calls: list[FakeCall] = field(default_factory=list)
 
     # --- recording ---
@@ -184,3 +185,10 @@ class FakeHost:
     def read_postconditions(self, *, snapshot: Path) -> Mapping[str, bool]:
         self._record(name="read_postconditions", detail=(str(snapshot),))
         return self.postconditions
+
+    def run_phase_child(self, *, argv: Sequence[str]) -> bool:
+        # The driver puts `--phase <name>` last, so the phase a test
+        # wants this child to fail at is read off the tail rather than
+        # re-parsed out of the whole command line.
+        self._record(name="run_phase_child", detail=tuple(argv))
+        return argv[-1] not in self.failing_phase_children
