@@ -58,6 +58,35 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.107.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.106.0...v1.107.0) (2026-10-16)
+
+
+### Features
+
+* accept the guard's own and the fleet sandbox_storage drop-ins ([beb0a5d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/beb0a5dc9eca05a05359fe58bc332b9f4ffd72d1))
+* cancel exactly the guarded units' queued jobs, by id ([c78893f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c78893fdbb1e2429d203eae2b7c2f676b18f27f5))
+* delete docker0 and every veth mastered by it ([b82bcbc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b82bcbc18ce8265ea9655b8b8169fc54a50d7fd4))
+* disable the three guarded units, one command each ([fd74d09](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fd74d0980f0fa0d2b81b702dee0558eb2a222b24))
+* kill the Docker cgroups and the sandbox slice, then stop them ([c43d7fb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c43d7fb2e25f3df74baedab6f2bacee9d290ec10))
+* leave every rule and chain the snapshot holds out of the footprint ([2e31587](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e315870f0c06b72ea49082298a5decc294a30c9))
+* plan exactly Docker's firewall footprint and nothing of k3s's ([3b966d2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3b966d2cd4e77ac510dfa36fe8123dbfaa1a2027))
+* put each address family's recorded FORWARD policy back ([e20c694](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e20c694558dc4e5081e7a3f401f7c02829760ed2))
+* re-read the footprint, repeat it boundedly and report the residue ([48fcb5c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/48fcb5ce8caa68ce1f4f97ffc0e8720443af9899))
+* read each guarded unit's effective conditions through busctl ([47901a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/47901a61e9978f744f40d43c585e1bf1d9a732b3))
+* read every rollback postcondition as one record ([1676cc9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1676cc97fb328b06bdac6cca092df28451356325))
+* refuse any drop-in outside the sanctioned set, and name it ([0dc3e1d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0dc3e1d7265ebf73a4f83954b1011daf0d5f77d2))
+* remove Docker's firewall footprint rule by rule, then chain by chain ([ed0bbcb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ed0bbcbe2a95e78f933a0fffb5c38dfc9eb51821))
+* report each watched sysctl that moved away from the snapshot ([187a02a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/187a02aa3c03d9dc9dfda5d596fa4fb3630298d7))
+* run the dead-man recipe through the host's one bounded runner ([c0904e6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c0904e6e192ab3533932da5ff26ebc2880bb1e39))
+* snapshot the guarded host's firewall, policies and sysctls ([f529784](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f5297847ba63fdc08ee740f1402518c8c7ed2064))
+* stop docker.socket before docker.service ([43f588e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/43f588eb3073dcdc28ab2b1f9decbde6c0e389c8))
+* stop the guard's own observer and starter, then wait for both ([6909d5f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6909d5f50efe8dba23f04f4c1dae1fe529ae915b))
+
+
+### Bug Fixes
+
+* keep the Docker engine guard's real host a complete HostOps ([191932f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/191932f1cd922a3d2d99c4422dcd278fbf42bc8a))
+
 ## [1.106.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.105.0...v1.106.0) (2026-10-16)
 
 
