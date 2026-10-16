@@ -103,13 +103,28 @@ ROLLBACK_PHASE_ORDER: Final[tuple[str, ...]] = (
     "interface-deletion",
     "sysctl-comparison",
 )
-# Every phase is bounded identically for now: one flat `timeout -k 10`
-# bound per child. The apportionment between the cheap phases and the
-# expensive ones is its own rule and lands with its own table.
-_FLAT_PHASE_BUDGET_SECONDS: Final[int] = 60
-
+# Each phase's own `timeout -k 10` bound, apportioned so the eight SUM
+# to 600 of the rollback operation's 900-second budget. The remaining 300
+# is what the lock wait and the final all-postconditions check run in,
+# and that margin is the point: eight generously-bounded phases would
+# leave the final check to be SIGKILLed by the rollback unit's own
+# `TimeoutStartSec`, and a rollback killed before its final check writes
+# no outcome at all.
+#
+# The apportionment is not flat, because the phases are not alike. The
+# footprint phase parses and deletes rules in up to three passes with a
+# per-command `iptables -w 5`, so it carries half the total; the cgroup
+# kill waits on four bounded stops; the rest are single `systemctl` or
+# `ip` calls and take the floor.
 PHASE_BUDGET_SECONDS: Final[dict[str, int]] = {
-    phase: _FLAT_PHASE_BUDGET_SECONDS for phase in ROLLBACK_PHASE_ORDER
+    "socket-stop": 30,
+    "job-cancel": 30,
+    "forward-restore": 30,
+    "cgroup-kill": 120,
+    "unit-disable": 30,
+    "footprint-removal": 300,
+    "interface-deletion": 30,
+    "sysctl-comparison": 30,
 }
 
 # What `timeout` is given between the SIGTERM at the budget and the
