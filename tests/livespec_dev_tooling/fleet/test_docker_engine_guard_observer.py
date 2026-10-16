@@ -31,6 +31,9 @@ _OBSERVER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_observer"
 _OBSERVER_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_observer.py")
 _RECORDS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_records"
 _RECORDS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_records.py")
+_COMMIT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_commit"
+_COMMIT_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_commit.py")
+_GUARD_MODULE = "livespec_dev_tooling.fleet.docker_engine_guard"
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
 _STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
@@ -273,3 +276,144 @@ def test_each_passing_window_issues_a_nonce_no_earlier_window_issued(tmp_path: P
 
     assert len(set(issued)) == 3
     assert [len(nonce) for nonce in issued] == [records.NONCE_BYTES * 2] * 3
+
+
+def _ready_to_confirm(
+    *,
+    root: Path,
+    nonce: str = "nonce-of-the-current-window",
+    answer: str | None = None,
+    boot: str = "boot-a",
+    issued: float = 0.0,
+    passed: bool = True,
+    deadline: float = 10_000.0,
+) -> None:
+    """Put `run-a` at `observed` carrying everything a `confirm` reads.
+
+    Written by hand rather than by running the observer, so each clause
+    of the commit rule can be falsified one at a time: a window that
+    failed, a challenge from another boot, an answer carrying the wrong
+    nonce. Driving the observer would make every clause true at once,
+    which is the one arrangement that proves nothing about any of them.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    paths = _paths(root=root)
+    _record_phase(root=root, run="run-a", phase="observed")
+    state.write_deadline(
+        paths=paths,
+        run="run-a",
+        deadline=model.Deadline(boot_id="boot-a", monotonic=deadline),
+    )
+    paths.inputs_dir(run="run-a").mkdir(parents=True, exist_ok=True)
+    paths.runtime_root.mkdir(parents=True, exist_ok=True)
+    (paths.inputs_dir(run="run-a") / "challenge-answer").write_text(
+        nonce if answer is None else answer, encoding="utf-8"
+    )
+    records.write_challenge(
+        paths=paths,
+        challenge=records.Challenge(
+            run="run-a", boot_id=boot, nonce=nonce, issued_monotonic=issued
+        ),
+    )
+    records.write_evidence(
+        paths=paths,
+        run="run-a",
+        evidence=records.Evidence(
+            run="run-a",
+            boot_id="boot-a",
+            digest=records.owned_keys_digest(paths=paths, run="run-a"),
+            window_start=0.0,
+            window_end=1.0,
+            samples=({"passed": True},),
+            passed=passed,
+            failure="" if passed else "sample 1 of the observation window failed",
+        ),
+    )
+
+
+def _confirm_refuses(*, root: Path, clause: str) -> None:
+    """Require a `confirm` on this host to refuse and to commit nothing.
+
+    "Commit nothing" is the half worth asserting: a refusal that had
+    already written the marker would have committed a host it then
+    reported as refused, and the marker is the one fact every later
+    dispatch reads.
+    """
+    commit = importlib.import_module(_COMMIT_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=root)
+    fake.clock = 1.0
+
+    outcome = commit.confirm(run="run-a", env=_env(root=root, host=fake), decision=_decision())
+
+    assert outcome.verdict == "refuse", clause
+    assert state.read_marker(paths=_paths(root=root), run="run-a") == "absent", clause
+    assert clause in outcome.reason, clause
+
+
+def _confirm_through_the_guard(*, root: Path) -> Any:
+    """Run a `confirm` through the lock and the dispatch table, as the role does.
+
+    The deadline clause lives in the table rather than in the handler, so
+    a case that exercises it has to come through the whole guard rather
+    than straight to `confirm`.
+    """
+    guard = importlib.import_module(_GUARD_MODULE)
+    fake = _fake(root=root)
+    fake.clock = 1.0
+    return guard.run_operation(operation="confirm", run="run-a", env=_env(root=root, host=fake))
+
+
+def test_confirm_commits_only_with_passing_evidence_and_this_boots_matching_nonce(
+    tmp_path: Path,
+) -> None:
+    """Specification "Commit", the first sentence, clause by clause.
+
+    Each clause is falsified on its own, because each is a different way
+    for a confirmation to be worthless. Evidence that does not record a
+    pass means nobody watched the host. A challenge from another boot
+    means the answer was prepared against a machine that has since
+    rebooted. An answer carrying the wrong nonce means it was prepared
+    before this window ran at all. And an expired deadline means the
+    dead-man has already won the race -- `confirm` re-reads the deadline
+    under the lock precisely so that it loses it.
+
+    Every refusal is required to name its own clause: on a host reachable
+    only over Tailscale, "refused" without the reason leaves an operator
+    with no next step, and the right next step differs per clause (re-run
+    the observer for a stale challenge; never re-run it for evidence that
+    recorded a failure).
+    """
+    assert _COMMIT_PATH.is_file()
+    state = importlib.import_module(_STATE_MODULE)
+
+    failing_evidence = tmp_path / "failing-evidence"
+    _ready_to_confirm(root=failing_evidence, passed=False)
+    _confirm_refuses(root=failing_evidence, clause="evidence")
+
+    no_challenge = tmp_path / "no-challenge"
+    _ready_to_confirm(root=no_challenge)
+    importlib.import_module(_RECORDS_MODULE).challenge_path(
+        paths=_paths(root=no_challenge)
+    ).unlink()
+    _confirm_refuses(root=no_challenge, clause="challenge")
+
+    another_boot = tmp_path / "another-boot"
+    _ready_to_confirm(root=another_boot, boot="boot-b")
+    _confirm_refuses(root=another_boot, clause="challenge")
+
+    wrong_nonce = tmp_path / "wrong-nonce"
+    _ready_to_confirm(root=wrong_nonce, answer="the-nonce-of-some-earlier-window")
+    _confirm_refuses(root=wrong_nonce, clause="nonce")
+
+    out_of_time = tmp_path / "out-of-time"
+    _ready_to_confirm(root=out_of_time, deadline=-1.0)
+    assert _confirm_through_the_guard(root=out_of_time).verdict == "refuse"
+    assert state.read_marker(paths=_paths(root=out_of_time), run="run-a") == "absent"
+
+    committed = tmp_path / "committed"
+    _ready_to_confirm(root=committed)
+    assert _confirm_through_the_guard(root=committed).verdict != "refuse"
+    assert state.read_marker(paths=_paths(root=committed), run="run-a") == "self"
