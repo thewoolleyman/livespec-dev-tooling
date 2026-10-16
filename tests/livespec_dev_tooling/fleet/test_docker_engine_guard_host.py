@@ -243,3 +243,66 @@ def test_the_snapshot_action_stores_both_families_rules_policies_and_sysctls(
         actions.FIREWALL_TIMEOUT_SECONDS,
         netstate.SYSCTL_TIMEOUT_SECONDS,
     }
+
+
+# The same family and table once the Docker packages have run: the two
+# `DOCKER*` chains, the four FORWARD rules and the isolation rule Docker
+# adds -- and ONE rule a reconciler added in the same window
+# (`-A ts-forward -i tailscale0 ...`), which is present now, absent from
+# the snapshot, and MUST NOT be mistaken for Docker's.
+_IPV4_FILTER_AFTER = (
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD DROP [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    ":DOCKER - [0:0]",
+    ":DOCKER-ISOLATION-STAGE-1 - [0:0]",
+    ":ts-forward - [0:0]",
+    ":ts-input - [0:0]",
+    "-A INPUT -j ts-input",
+    "-A FORWARD -j ts-forward",
+    "-A FORWARD -j DOCKER-ISOLATION-STAGE-1",
+    "-A FORWARD -o docker0 -j DOCKER",
+    "-A FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
+    "-A FORWARD -i docker0 ! -o docker0 -j ACCEPT",
+    "-A DOCKER-ISOLATION-STAGE-1 -i docker0 ! -o docker0 -j RETURN",
+    "-A ts-forward -i tailscale0 -j MARK --set-xmark 0x40000/0xff0000",
+    "COMMIT",
+)
+
+_IPV4_FILTER_DOCKER_RULES = (
+    "-A FORWARD -j DOCKER-ISOLATION-STAGE-1",
+    "-A FORWARD -o docker0 -j DOCKER",
+    "-A FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
+    "-A FORWARD -i docker0 ! -o docker0 -j ACCEPT",
+    "-A DOCKER-ISOLATION-STAGE-1 -i docker0 ! -o docker0 -j RETURN",
+)
+
+
+def _table(*, module: Any, lines: tuple[str, ...]) -> Any:
+    """One parsed table, from recorded `*-save` lines."""
+    return module.parse_table(dump="\n".join(lines) + "\n")
+
+
+def test_the_footprint_planner_selects_exactly_the_rules_docker_added() -> None:
+    """Docker's footprint is a THREE-part test, and every part is load-bearing.
+
+    A rule belongs to it only when it is present now, absent from the
+    snapshot, AND references `docker0`, `172.17.0.0/16` or a chain absent
+    from the snapshot whose name starts with `DOCKER`. Dropping the last
+    part would make the guard delete the `ts-forward` rule Tailscale's
+    reconciler added inside the same window, and dropping the "absent from
+    the snapshot" part is what the next assertion is about. The scope is
+    the default bridge only, which is why the marks are exactly those two
+    literals plus the chain set.
+    """
+    firewall = importlib.import_module(_FIREWALL_MODULE)
+    assert hasattr(firewall, "plan_footprint")
+
+    plan = firewall.plan_footprint(
+        current=_table(module=firewall, lines=_IPV4_FILTER_AFTER),
+        snapshot=_table(module=firewall, lines=_IPV4_FILTER_BEFORE),
+    )
+
+    assert plan.delete_rules == _IPV4_FILTER_DOCKER_RULES
+    assert plan.delete_chains == ("DOCKER", "DOCKER-ISOLATION-STAGE-1")
