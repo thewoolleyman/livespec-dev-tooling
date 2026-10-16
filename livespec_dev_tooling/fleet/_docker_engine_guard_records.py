@@ -50,6 +50,7 @@ __all__: list[str] = [
     "evidence_passed",
     "evidence_path",
     "fresh_nonce",
+    "marker_digest",
     "owned_daemon_keys",
     "owned_keys_digest",
     "publish_marker",
@@ -259,6 +260,19 @@ def publish_marker(*, paths: GuardPaths, run: str, digest: str) -> str:
     except OSError as failure:
         return f"{type(failure).__name__}: {failure}"
     return ""
+
+
+def marker_digest(*, paths: GuardPaths) -> str:
+    """The owned-keys digest the commit marker carries, or an empty string.
+
+    An empty string for an absent or digest-less marker, which cannot
+    equal any real digest -- so a caller comparing the two is fail-closed
+    without a second branch for "no marker to compare against".
+    """
+    payload: dict[str, object] = (
+        json.loads(paths.marker.read_text(encoding="utf-8")) if paths.marker.is_file() else {}
+    )
+    return str(payload.get("digest", ""))
 
 
 def owned_daemon_keys(*, paths: GuardPaths, run: str) -> dict[str, object]:

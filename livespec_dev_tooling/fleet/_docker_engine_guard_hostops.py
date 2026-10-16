@@ -134,6 +134,12 @@ class HostOps(Protocol):
     # the post-commit steps issue both (rider point 9).
     def enable_units(self, *, units: Sequence[str]) -> None: ...
 
+    # Every guard-relevant unit mapped to its `UnitFileState`. Read beside
+    # `guard_unit_states` above by the post-commit validation, which needs
+    # BOTH: enablement carries the engine across the next boot, the active
+    # state says it is running now, and neither implies the other.
+    def unit_enabled_states(self) -> Mapping[str, str]: ...
+
     # --- rollback phases (child 2) ---
 
     # Remove the start permission. The first act of any rollback.

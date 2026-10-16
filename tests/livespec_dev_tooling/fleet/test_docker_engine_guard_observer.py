@@ -354,6 +354,34 @@ def _confirm_refuses(*, root: Path, clause: str) -> None:
     assert clause in outcome.reason, clause
 
 
+_GUARDED_UNITS_RUNNING = {
+    "containerd.service": "active",
+    "docker.service": "active",
+    "docker.socket": "active",
+}
+_GUARDED_UNITS_ENABLED = {
+    "containerd.service": "enabled",
+    "docker.service": "enabled",
+    "docker.socket": "enabled",
+}
+
+
+def _host_after_the_commit(*, root: Path) -> Any:
+    """A `FakeHost` whose three guarded units are enabled and running.
+
+    `confirm` validates exactly that once its post-commit steps are
+    done, so every case that gets past the commit point needs it. A
+    committed host whose units are NOT up is the state that validation
+    exists to catch, and it is driven on its own below rather than
+    arrived at by accident here.
+    """
+    fake = _fake(root=root)
+    fake.clock = 1.0
+    fake.unit_states = dict(_GUARDED_UNITS_RUNNING)
+    fake.unit_file_states = dict(_GUARDED_UNITS_ENABLED)
+    return fake
+
+
 def _confirm_through_the_guard(*, root: Path) -> Any:
     """Run a `confirm` through the lock and the dispatch table, as the role does.
 
@@ -362,9 +390,11 @@ def _confirm_through_the_guard(*, root: Path) -> Any:
     than straight to `confirm`.
     """
     guard = importlib.import_module(_GUARD_MODULE)
-    fake = _fake(root=root)
-    fake.clock = 1.0
-    return guard.run_operation(operation="confirm", run="run-a", env=_env(root=root, host=fake))
+    return guard.run_operation(
+        operation="confirm",
+        run="run-a",
+        env=_env(root=root, host=_host_after_the_commit(root=root)),
+    )
 
 
 def test_confirm_commits_only_with_passing_evidence_and_this_boots_matching_nonce(
@@ -619,8 +649,7 @@ def test_a_confirm_on_a_run_the_marker_names_repeats_the_post_commit_steps(
     )
     records.challenge_path(paths=paths).unlink()
     _record_phase(root=root, run="run-a", phase="committed")
-    fake = _fake(root=root)
-    fake.clock = 1.0
+    fake = _host_after_the_commit(root=root)
 
     outcome = importlib.import_module(_GUARD_MODULE).run_operation(
         operation="confirm", run="run-a", env=_env(root=root, host=fake)
@@ -634,3 +663,60 @@ def test_a_confirm_on_a_run_the_marker_names_repeats_the_post_commit_steps(
     assert started == list(model.GUARDED_UNITS)
     stopped = [call.detail[0] for call in fake.calls_named(name="stop_unit")]
     assert stopped == ["docker-engine-deadman-run-a.timer"]
+
+
+def _confirm_on_a_committed_host(*, root: Path, host: Any) -> Any:
+    """Run a `confirm` whose run the marker already names, against `host`."""
+    guard = importlib.import_module(_GUARD_MODULE)
+    return guard.run_operation(operation="confirm", run="run-a", env=_env(root=root, host=host))
+
+
+def test_after_the_post_commit_steps_confirm_validates_the_committed_installation(
+    tmp_path: Path,
+) -> None:
+    """Specification "Commit", the validation sentence.
+
+    The post-commit steps are issued, not observed. Enabling and
+    starting a unit says what was asked for; it does not say the engine
+    came up, and on a committed host nothing is watching any more -- the
+    dead-man has been stopped, by design, because a committed run must
+    never be rolled back. So the validation is the only thing left that
+    can notice a committed host whose engine is not actually running.
+
+    It REPORTS rather than acts, and that is the point worth asserting:
+    a validation that rolled back what it found would undo a commitment
+    the guarded units' start condition already honours. The run stays
+    committed and stays `confirmed`; only the exit code and the reason
+    tell the operator what to repair.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+
+    down = tmp_path / "engine-not-running"
+    _ready_to_confirm(root=down)
+    host = _host_after_the_commit(root=down)
+    host.unit_states = {**_GUARDED_UNITS_RUNNING, "docker.service": "failed"}
+    outcome = _confirm_on_a_committed_host(root=down, host=host)
+
+    assert outcome.verdict == "refuse"
+    assert "docker.service" in outcome.reason
+    assert state.read_marker(paths=_paths(root=down), run="run-a") == "self"
+    assert state.read_phase(paths=_paths(root=down), run="run-a") == "confirmed"
+
+    not_enabled = tmp_path / "engine-not-enabled"
+    _ready_to_confirm(root=not_enabled)
+    host = _host_after_the_commit(root=not_enabled)
+    host.unit_file_states = {**_GUARDED_UNITS_ENABLED, "docker.socket": "disabled"}
+    assert "docker.socket" in _confirm_on_a_committed_host(root=not_enabled, host=host).reason
+
+    drifted = tmp_path / "keys-drifted"
+    _ready_to_confirm(root=drifted)
+    records.publish_marker(
+        paths=_paths(root=drifted), run="run-a", digest="the-digest-of-another-configuration"
+    )
+    _record_phase(root=drifted, run="run-a", phase="committed")
+    outcome = _confirm_on_a_committed_host(root=drifted, host=_host_after_the_commit(root=drifted))
+
+    assert outcome.verdict == "refuse"
+    assert "digest" in outcome.reason
+    assert state.read_phase(paths=_paths(root=drifted), run="run-a") == "confirmed"
