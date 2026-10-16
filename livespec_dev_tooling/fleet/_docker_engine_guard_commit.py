@@ -50,6 +50,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_records import (
     consumed_nonces,
     evidence_passed,
     marker_digest,
+    owned_daemon_keys,
     owned_keys_digest,
     publish_marker,
     read_challenge,
@@ -72,8 +73,14 @@ __all__: list[str] = [
     "committed_installation_fault",
     "confirm",
     "deadman_timer_unit",
+    "reconfigure",
     "verify",
 ]
+
+# The unit whose restart a post-commit reconfiguration DEFERS. After the
+# commit point the host is running sandbox containers under Docker, so
+# restarting it here would kill the work the host exists to do.
+_DRAINED_RESTART_UNIT: Final[str] = "docker.service"
 
 # What the post-commit validation requires of each guarded unit, and it
 # requires BOTH: enablement carries the engine across the next boot, the
@@ -274,4 +281,29 @@ def verify(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         run=run,
         verdict=decision.verdict,
         reason="every rollback postcondition holds",
+    )
+
+
+def reconfigure(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
+    """Apply a post-commit configuration change, and nothing else.
+
+    Reached only when the commit marker names this run and the run is
+    `confirmed` -- the dispatch table's `reconfigure` row -- which is
+    the whole of H3's "after a confirmation the guarded transition is
+    closed". There is no path from here back into the guarded sequence:
+    no permission is granted, no dead-man is armed, no evidence is read,
+    and the marker is neither removed nor rewritten.
+
+    Only the OWNED keys are written. A key this role does not own
+    belongs to whoever wrote it, and the digest the marker carries
+    covers the owned set alone, so writing more would make a foreign
+    key's change read as a guarded reconfiguration on the next converge.
+    """
+    env.host.write_daemon_keys(keys=owned_daemon_keys(paths=env.paths, run=run))
+    env.host.record_pending_drained_restart(unit=_DRAINED_RESTART_UNIT)
+    return GuardOutcome(
+        operation="reconfigure",
+        run=run,
+        verdict=decision.verdict,
+        reason="the owned daemon keys are written and a drained restart is pending",
     )

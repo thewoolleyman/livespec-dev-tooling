@@ -822,3 +822,68 @@ def test_verify_reads_the_postconditions_against_the_runs_own_snapshot(tmp_path:
     assert fake.calls_named(name="read_postconditions")[0].detail == (
         str(_paths(root=tmp_path).snapshot_dir(run="run-a")),
     )
+
+
+def _reconfigure_run(*, root: Path, host: Any) -> Any:
+    """Run `reconfigure` through the whole guard, as a post-commit converge does."""
+    guard = importlib.import_module(_GUARD_MODULE)
+    return guard.run_operation(operation="reconfigure", run="run-a", env=_env(root=root, host=host))
+
+
+def test_reconfigure_writes_the_owned_keys_only_for_the_run_the_marker_names(
+    tmp_path: Path,
+) -> None:
+    """Specification "After the commit", and design H3: the one post-commit change.
+
+    After a confirmation the guarded transition is closed -- `reserve`
+    refuses while the marker exists -- so `reconfigure` is the only way
+    a later converge changes anything, and it is deliberately the
+    smallest possible way: write the owned keys, record a pending
+    DRAINED restart, and stop. It grants no permission, arms no
+    dead-man, and does not rewrite the marker, which is why the marker's
+    bytes are asserted unchanged: rewriting it would re-open the one
+    question the marker exists to have already answered.
+
+    The restart is DEFERRED rather than issued, exactly as the slice
+    role defers one. Restarting Docker here would kill the sandbox
+    containers running under it, on a host whose whole purpose is to run
+    them.
+
+    The two refusals are the table's, and both matter: a marker naming
+    ANOTHER run means this host's commitment is not this run's, and no
+    marker at all means the host never committed, so there is no
+    post-commit path to take.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    _commit_entry(name="reconfigure")
+    confirmed = tmp_path / "confirmed"
+    _record_phase(root=confirmed, run="run-a", phase="confirmed")
+    paths = _paths(root=confirmed)
+    paths.inputs_dir(run="run-a").mkdir(parents=True, exist_ok=True)
+    (paths.inputs_dir(run="run-a") / "daemon.json").write_text(
+        json.dumps({**_OWNED_DAEMON_CONFIGURATION, "log-driver": "json-file"}), encoding="utf-8"
+    )
+    records.publish_marker(paths=paths, run="run-a", digest="the-digest-committed-earlier")
+    marker_before = paths.marker.read_text(encoding="utf-8")
+    host = _fake(root=confirmed)
+
+    outcome = _reconfigure_run(root=confirmed, host=host)
+
+    assert outcome.verdict == "proceed"
+    assert host.daemon_keys == _OWNED_DAEMON_CONFIGURATION
+    assert host.calls_named(name="record_pending_drained_restart")[0].detail == ("docker.service",)
+    assert paths.marker.read_text(encoding="utf-8") == marker_before
+    assert host.calls_named(name="grant_start_permission") == ()
+
+    foreign = tmp_path / "another-runs-marker"
+    _record_phase(root=foreign, run="run-a", phase="confirmed")
+    records.publish_marker(paths=_paths(root=foreign), run="run-other", digest="d")
+    other_host = _fake(root=foreign)
+    assert _reconfigure_run(root=foreign, host=other_host).verdict == "refuse"
+    assert other_host.calls_named(name="write_daemon_keys") == ()
+
+    uncommitted = tmp_path / "never-committed"
+    _record_phase(root=uncommitted, run="run-a", phase="confirmed")
+    bare_host = _fake(root=uncommitted)
+    assert _reconfigure_run(root=uncommitted, host=bare_host).verdict == "refuse"
+    assert bare_host.calls_named(name="write_daemon_keys") == ()
