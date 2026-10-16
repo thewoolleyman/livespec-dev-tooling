@@ -214,6 +214,13 @@ class Holder:
     deadline: Deadline | None
 
 
+def _deadline_text(*, deadline: Deadline | None) -> str:
+    """A deadline rendered for an operator, or the fact that none was recorded."""
+    if deadline is None:
+        return "none recorded"
+    return f"{deadline.boot_id}@{deadline.monotonic:.0f}"
+
+
 @dataclass(frozen=True, kw_only=True)
 class GuardOutcome:
     """One operation's result: what it decided, why, and what an operator must see."""
@@ -229,3 +236,21 @@ class GuardOutcome:
     def exit_code(self) -> int:
         """Non-zero exactly when the operation refused, so its unit fails with it."""
         return 1 if self.verdict == "refuse" else 0
+
+    def report_lines(self) -> tuple[str, ...]:
+        """What the operator reads: the verdict, the holder, and what blocked it.
+
+        A refusal that does not name the holding run leaves an operator
+        with no next step, and the holder's DEADLINE is the field that
+        says whether waiting is one — a deadline already past means the
+        dead-man is about to take the host back by itself.
+        """
+        lines = [f"{self.operation} {self.verdict}: {self.reason}"]
+        if self.holder is not None:
+            lines.append(
+                f"holder: run={self.holder.run} phase={self.holder.phase} "
+                f"deadline={_deadline_text(deadline=self.holder.deadline)}"
+            )
+        if self.blocking_units:
+            lines.append(f"not quiescent: {', '.join(self.blocking_units)}")
+        return tuple(lines)

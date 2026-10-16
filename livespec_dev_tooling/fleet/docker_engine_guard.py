@@ -45,14 +45,14 @@ from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     Operation,
     Phase,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_ops import reserve
 from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     GuardEnv,
     acquire_lock,
     deadline_passed,
     ensure_runtime_dir,
-    read_deadline,
+    holder_of,
     read_marker,
-    read_phase,
     read_reservation,
     release_lock,
 )
@@ -147,7 +147,7 @@ _MARKER_FOREIGN: Final[str] = (
 DISPATCH_TABLE: Final[tuple[DispatchRow, ...]] = (
     DispatchRow(
         operation="reserve",
-        handler=_pending,
+        handler=reserve,
         marker_self="refuse",
         allowed_from=("rolled-back",),
         allowed_without_reservation=True,
@@ -292,23 +292,6 @@ def decide(
     return _uncommitted_decision(row=row, phase=phase, deadline_passed=deadline_passed)
 
 
-def _holder(*, env: GuardEnv, run: str | None) -> Holder | None:
-    """Who holds this host, how far they got, and when their time runs out.
-
-    `None` when nothing holds it. Reported on every refusal, because a
-    refusal that does not name the holding run leaves an operator with no
-    next step, and the deadline is the field that says whether waiting is
-    one.
-    """
-    if run is None:
-        return None
-    return Holder(
-        run=run,
-        phase=read_phase(paths=env.paths, run=run),
-        deadline=read_deadline(paths=env.paths, run=run),
-    )
-
-
 def _decided(
     *, operation: Operation, run: str, decision: Decision, holder: Holder | None
 ) -> GuardOutcome:
@@ -333,7 +316,7 @@ def _locked_operation(*, operation: Operation, run: str, env: GuardEnv) -> Guard
     """
     row = row_for(operation=operation)
     reservation = read_reservation(paths=env.paths)
-    holder = _holder(env=env, run=reservation)
+    holder = holder_of(env=env, run=reservation)
     if not row.allowed_without_reservation and reservation != run:
         return GuardOutcome(
             operation=operation,
