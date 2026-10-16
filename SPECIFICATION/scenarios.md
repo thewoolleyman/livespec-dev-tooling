@@ -438,6 +438,18 @@ And re-running the procedure against the finished node MUST change nothing and M
 
 And the rehearsal's outcome MUST be recorded naming the procedure revision and the profile
 
+## Scenario: a factory node keeps its factory label across a control-plane reboot
+
+Given every pool node's committed profile declares `FACTORY_NODE`
+
+And every node whose profile declares `FACTORY_NODE=true` carries the `ci-runner.io/factory=true` label
+
+When the control-plane node is rebooted by the committed reboot playbook and every node re-registers
+
+Then once every node is Ready again, each node whose profile declares `FACTORY_NODE=true` MUST carry `ci-runner.io/factory=true`, and each node whose profile declares `FACTORY_NODE=false` MUST NOT carry it
+
+And that MUST hold with no playbook applied and no command run on any host between the reboot and that observation
+
 ## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier
 
 Given a contributor's staged change adds a `test: "TODO"` heading-coverage row that is not present in the repository's `tests/heading-coverage-debt.json` register
