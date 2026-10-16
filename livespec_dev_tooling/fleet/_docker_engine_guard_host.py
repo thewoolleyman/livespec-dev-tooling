@@ -37,6 +37,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_netstate import write_sysct
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
+    kill_cgroup,
     read_queued_jobs,
     stop_unit,
 )
@@ -166,7 +167,7 @@ class RealHost:
 
     def kill_cgroup(self, *, units: Sequence[str]) -> None:
         """SIGKILL every process in the named cgroups, then stop them."""
-        raise NotImplementedError
+        kill_cgroup(runner=self.runner, units=units)
 
     def disable_units(self, *, units: Sequence[str]) -> None:
         """Disable the three guarded units."""

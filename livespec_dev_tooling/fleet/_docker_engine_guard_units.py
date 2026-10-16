@@ -31,14 +31,18 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "CGROUP_KILL_ARGV",
     "DOCKER_SOCKET",
     "DOCKER_STOP_ORDER",
+    "KILL_TARGETS",
     "LIST_JOBS_ARGV",
+    "SANDBOX_SLICE",
     "SYSTEMCTL",
     "UNIT_ACTION_TIMEOUT_SECONDS",
     "UNIT_READ_TIMEOUT_SECONDS",
     "cancel_jobs",
     "guarded_job_ids",
+    "kill_cgroup",
     "read_queued_jobs",
     "stop_docker",
     "stop_unit",
@@ -70,6 +74,21 @@ DOCKER_SOCKET: Final[str] = "docker.socket"
 # whose start permission has just been revoked, and the condition gate
 # would not refuse them (rider point 1).
 DOCKER_STOP_ORDER: Final[tuple[str, ...]] = (DOCKER_SOCKET, "docker.service")
+
+# The Fabro sandbox slice. It is killed with the daemons because a sandbox
+# holding the Docker API open outlives a plain stop of the daemon it is
+# talking to.
+SANDBOX_SLICE: Final[str] = "fabro-sandbox.slice"
+
+# The ONLY cgroups this host ever kills. Measured on gmktec: every k3s
+# shim lives in `k3s-agent.service` and the kubepods slices, so none is
+# reachable from this set -- and the set being FIXED, rather than taken
+# from the caller, is what keeps it that way through any later refactor.
+KILL_TARGETS: Final[tuple[str, ...]] = ("docker.service", "containerd.service", SANDBOX_SLICE)
+
+# Control-group wide, and SIGKILL rather than SIGTERM: a container holding
+# the Docker API open does not answer a polite stop.
+CGROUP_KILL_ARGV: Final[tuple[str, ...]] = ("kill", "--kill-whom=all", "--signal=SIGKILL")
 
 
 def read_queued_jobs(*, runner: GuardCommandRunner) -> tuple[QueuedJob, ...]:
@@ -125,4 +144,24 @@ def stop_unit(*, runner: GuardCommandRunner, unit: str, timeout_seconds: int) ->
 def stop_docker(*, runner: GuardCommandRunner) -> None:
     """Stop the Docker socket, then the Docker service, in that order."""
     for unit in DOCKER_STOP_ORDER:
+        stop_unit(runner=runner, unit=unit, timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS)
+
+
+def kill_cgroup(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
+    """SIGKILL each named cgroup in the fixed set, then stop it and the socket.
+
+    The kill comes first and the stop second: a stop of a unit whose
+    processes are already gone completes immediately and clears the
+    service manager's own record of it, which is what the postcondition
+    read then checks. `docker.socket` is stopped unconditionally because a
+    listening socket re-triggers the service whatever its cgroup holds.
+    """
+    named = set(units)
+    targets = tuple(unit for unit in KILL_TARGETS if unit in named)
+    for unit in targets:
+        _ = runner(
+            argv=(SYSTEMCTL, *CGROUP_KILL_ARGV, unit),
+            timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
+        )
+    for unit in (*targets, DOCKER_SOCKET):
         stop_unit(runner=runner, unit=unit, timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS)

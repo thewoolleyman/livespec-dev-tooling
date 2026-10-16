@@ -728,3 +728,50 @@ def test_the_docker_stop_action_stops_the_socket_before_the_service(
 
     assert tuple(one.argvs) == (("systemctl", "stop", "containerd.service"),)
     assert one.timeouts == [42]
+
+
+def test_the_cgroup_kill_names_only_the_two_daemons_and_the_sandbox_slice(
+    tmp_path: Path,
+) -> None:
+    """SIGKILL the whole control group, then stop it -- and reach nothing else.
+
+    A container holding the Docker API open survives a plain stop, so the
+    kill is by CGROUP. That makes the TARGET SET the only thing standing
+    between this action and a stopped `k3s-agent.service`: every k3s shim
+    on this host lives in that unit and in the kubepods slices, so the set
+    is fixed at the two Docker daemons plus the Fabro sandbox slice, and a
+    caller naming anything else is narrowed away rather than obeyed.
+    """
+    units = importlib.import_module(_UNITS_MODULE)
+    assert hasattr(units, "kill_cgroup")
+    commands = _Commands()
+    host = _real_host(root=tmp_path, commands=commands)
+
+    host.kill_cgroup(
+        units=(
+            "docker.service",
+            "containerd.service",
+            "fabro-sandbox.slice",
+            "k3s-agent.service",
+        )
+    )
+
+    assert tuple(commands.argvs) == (
+        ("systemctl", "kill", "--kill-whom=all", "--signal=SIGKILL", "docker.service"),
+        ("systemctl", "kill", "--kill-whom=all", "--signal=SIGKILL", "containerd.service"),
+        ("systemctl", "kill", "--kill-whom=all", "--signal=SIGKILL", "fabro-sandbox.slice"),
+        ("systemctl", "stop", "docker.service"),
+        ("systemctl", "stop", "containerd.service"),
+        ("systemctl", "stop", "fabro-sandbox.slice"),
+        ("systemctl", "stop", "docker.socket"),
+    )
+    assert commands.argvs_with(flag="k3s-agent.service") == ()
+
+    narrow = _Commands()
+    units.kill_cgroup(runner=narrow, units=("containerd.service",))
+
+    assert tuple(narrow.argvs) == (
+        ("systemctl", "kill", "--kill-whom=all", "--signal=SIGKILL", "containerd.service"),
+        ("systemctl", "stop", "containerd.service"),
+        ("systemctl", "stop", "docker.socket"),
+    )
