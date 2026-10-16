@@ -1,0 +1,104 @@
+---
+# The post-commit path (design H3, spec "After the commit"). The guarded
+# transition exists to install the engine once; on a host carrying the commit
+# marker it is closed. A converge validates the owned daemon keys, the drop-ins
+# and the units, and applies a needed key change ONLY through the guard's
+# `reconfigure`, which writes the owned keys and records a pending drained
+# restart. Nothing here reserves, starts, stops or restarts anything, and the
+# commit marker is never removed or rewritten.
+
+- name: Hold the run the commit marker names
+  ansible.builtin.set_fact:
+    docker_engine_committed_run: "{{ (docker_engine_marker_raw.content | b64decode | from_json).run }}"
+
+- name: Prove the drop-ins are still exactly the guard's
+  # Compared, never rewritten: on a committed host the drop-ins' only remaining
+  # job is to let the marker satisfy the start condition, and a rewrite here
+  # would be an unguarded change to every guarded unit's start rule.
+  ansible.builtin.template:
+    src: 50-docker-engine-guard.conf.j2
+    dest: "/etc/systemd/system/{{ item }}.d/50-docker-engine-guard.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    docker_engine_dropin_permission: "{{ docker_engine_runtime_root }}/allow-start"
+  loop: [containerd.service, docker.service, docker.socket]
+  register: docker_engine_dropin_drift
+  become: true
+  check_mode: true
+
+- name: Refuse drifted drop-ins on a committed host
+  ansible.builtin.assert:
+    that:
+      - docker_engine_dropin_drift.results | selectattr('changed') | list | length == 0
+    fail_msg: >-
+      The guard drop-ins on {{ docker_engine_dropin_drift.results | selectattr('changed')
+      | map(attribute='item') | list }} differ from the role's. Restore them by hand
+      and daemon-reload; the role does not rewrite a committed host's start rule.
+    success_msg: the guard drop-ins are unchanged
+
+- name: Read the guarded units' enablement and state
+  ansible.builtin.command:
+    argv: [systemctl, show, "{{ item }}", -p, UnitFileState, -p, ActiveState]
+  loop: [containerd.service, docker.service, docker.socket]
+  register: docker_engine_committed_units
+  become: true
+  changed_when: false
+
+- name: Report a committed host whose engine is not enabled and running
+  # Reported and failed, never repaired: on a committed host the dead-man is
+  # stopped by design, so this read is the one thing left that notices a dead
+  # engine, and starting it here would be an unguarded start.
+  ansible.builtin.assert:
+    that:
+      - docker_engine_committed_units.results
+        | rejectattr('stdout_lines', 'contains', 'UnitFileState=enabled') | list | length == 0
+      - docker_engine_committed_units.results
+        | rejectattr('stdout_lines', 'contains', 'ActiveState=active') | list | length == 0
+    fail_msg: >-
+      Committed run {{ docker_engine_committed_run }}: not every guarded unit is
+      enabled and active: {{ docker_engine_committed_units.results
+      | map(attribute='stdout_lines') | list }}
+    success_msg: every guarded unit is enabled and active
+
+- name: Read the daemon configuration
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_daemon_config_path }}"
+  register: docker_engine_daemon_raw
+  become: true
+
+- name: Hold the owned keys the daemon configuration carries now
+  # Only the owned keys are compared; every other key belongs to whoever wrote
+  # it, and docker_sandbox_slice's re-serialization changes none of these.
+  ansible.builtin.set_fact:
+    docker_engine_owned_current: >-
+      {{ docker_engine_daemon_raw.content | b64decode | from_json | dict2items
+         | selectattr('key', 'in', docker_engine_daemon_config.keys() | list) | items2dict }}
+
+- name: Apply a changed owned key through the guard's reconfigure
+  when: docker_engine_owned_current != docker_engine_daemon_config
+  block:
+    - name: Upload the owned keys into the committed run's inputs
+      # The guard reads the owned keys from the run's inputs/ and writes them
+      # into place itself (design G3: the controller never writes into place).
+      ansible.builtin.copy:
+        content: "{{ docker_engine_daemon_config | to_nice_json }}\n"
+        dest: "{{ docker_engine_state_root }}/runs/{{ docker_engine_committed_run }}/inputs/daemon.json"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+
+    - name: Reconfigure through the guard
+      ansible.builtin.include_tasks: guard_op.yml
+      vars:
+        docker_engine_op: reconfigure
+        docker_engine_op_run: "{{ docker_engine_committed_run }}"
+
+    - name: Report the drained restart now owed
+      ansible.builtin.debug:
+        msg: >-
+          The owned daemon keys were rewritten. dockerd is still running the old
+          ones; a drained restart is pending (see docker_sandbox_slice's
+          HOST_VARS.md "The drained restart").

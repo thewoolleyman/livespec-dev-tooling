@@ -1,0 +1,118 @@
+---
+# The preflight: read-only, and every check fails toward a refusal before the
+# host is touched. A baseline that does not pass now is not one a guarded run
+# could be judged against later (design Mechanism 3, F7).
+#
+# The guard's own preflight (the k3s resync intervals read from
+# /etc/rancher/k3s/config.yaml, the 172.17.0.0/16 overlap refusal, Node Ready,
+# the pod-network probes) belongs to guard child 4 and is not restated here;
+# the role passes its inputs through the run's probes.json. What is here is
+# what the role is asked to refuse on before `reserve`.
+
+- name: Hold the units that must be active before, during and after the change
+  ansible.builtin.set_fact:
+    docker_engine_required_units: >-
+      {{ ([docker_engine_tailscale_unit, docker_engine_k3s_agent_unit]
+          + docker_engine_must_stay_running) | unique }}
+
+- name: Read whether each required unit is active
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "{{ item }}"]
+  loop: "{{ docker_engine_required_units }}"
+  register: docker_engine_required_states
+  become: true
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse a host on which a required unit is not active
+  ansible.builtin.assert:
+    that:
+      - docker_engine_required_states.results | rejectattr('stdout', 'equalto', 'active') | list | length == 0
+    fail_msg: >-
+      Refusing to change this host: these units must be active and are not:
+      {{ docker_engine_required_states.results | rejectattr('stdout', 'equalto', 'active')
+         | map(attribute='item') | list }}. Nothing has been changed.
+    success_msg: "{{ docker_engine_required_units | join(', ') }} active"
+
+- name: Read the sandbox slice the daemon's cgroup-parent names
+  ansible.builtin.command:
+    argv: [systemctl, show, "{{ docker_engine_sandbox_slice }}", -p, LoadState, -p, ActiveState]
+  register: docker_engine_slice_state
+  become: true
+  changed_when: false
+  check_mode: false
+
+- name: Refuse a host whose sandbox slice is not installed and started
+  # Its unit must exist before the daemon's first start, or the daemon would
+  # place the canary in a slice systemd creates implicitly, with no limits.
+  ansible.builtin.assert:
+    that:
+      - "'LoadState=loaded' in docker_engine_slice_state.stdout_lines"
+      - "'ActiveState=active' in docker_engine_slice_state.stdout_lines"
+    fail_msg: >-
+      {{ docker_engine_sandbox_slice }} must be loaded and active before the
+      engine is installed (docker_sandbox_slice's systemd half); it reports
+      {{ docker_engine_slice_state.stdout_lines }}.
+    success_msg: "{{ docker_engine_sandbox_slice }} loaded and active"
+
+- name: Read the docker group and every account's primary group
+  ansible.builtin.command:
+    argv: [getent, group, docker]
+  register: docker_engine_docker_group
+  changed_when: false
+  failed_when: docker_engine_docker_group.rc not in [0, 2]
+  check_mode: false
+
+- name: Read every account
+  ansible.builtin.command:
+    argv: [getent, passwd]
+  register: docker_engine_accounts
+  changed_when: false
+  check_mode: false
+
+- name: Refuse a host on which any account could reach the Docker API
+  # Design F7 / I1: until the commit point the API is admitted to nobody but
+  # the guard. The group does not exist on a fresh host; when it does, it must
+  # be empty both as a supplementary and as a primary group.
+  vars:
+    docker_engine_group_fields: "{{ docker_engine_docker_group.stdout.split(':') }}"
+    docker_engine_group_members: >-
+      {{ (docker_engine_group_fields[3] | default('')).split(',') | select | list
+         if docker_engine_docker_group.rc == 0 else [] }}
+    docker_engine_primary_members: >-
+      {{ docker_engine_accounts.stdout_lines | map('split', ':')
+         | selectattr(3, 'equalto', docker_engine_group_fields[2] | default('-'))
+         | map('first') | list
+         if docker_engine_docker_group.rc == 0 else [] }}
+  ansible.builtin.assert:
+    that:
+      - docker_engine_group_members | length == 0
+      - docker_engine_primary_members | length == 0
+    fail_msg: >-
+      Accounts in the docker group: {{ docker_engine_group_members
+      + docker_engine_primary_members }}. Nothing has been changed.
+    success_msg: no account is in the docker group
+
+- name: Read each family's FORWARD policy before the change
+  # The role's own record, independent of the guard's snapshot, so the claim
+  # "FORWARD is as it was" after a confirmation or a rollback is checked by an
+  # instrument the guard did not write.
+  ansible.builtin.command:
+    argv: ["{{ item }}", -w, "5", -S, FORWARD]
+  loop: [iptables, ip6tables]
+  register: docker_engine_forward_before
+  become: true
+  changed_when: false
+  check_mode: false
+
+- name: Hold the FORWARD policies read before the change
+  ansible.builtin.set_fact:
+    docker_engine_forward_policies_before: >-
+      {{ docker_engine_forward_before.results
+         | map(attribute='stdout_lines') | map('select', 'match', '^-P FORWARD ') | map('join', '') | list }}
+
+- name: Prove every controller-side path works before anything changes
+  ansible.builtin.include_tasks: controller_probes.yml
+  vars:
+    docker_engine_probe_stage: preflight
