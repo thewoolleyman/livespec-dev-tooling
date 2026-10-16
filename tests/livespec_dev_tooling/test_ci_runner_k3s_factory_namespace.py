@@ -56,9 +56,11 @@ _NAMESPACE_NAME = "factory"
 # gate Job is reaped by its own ttlSecondsAfterFinished, while the backend owns
 # its sandboxes' whole lifetime.
 _EXPECTED_POD_VERBS: dict[tuple[str, str], frozenset[str]] = {
-    ("", "pods"): frozenset({"create", "get", "list", "watch", "delete"}),
+    # `patch` relabels a live sandbox pod (bd-ib-ad6dby).
+    ("", "pods"): frozenset({"create", "get", "list", "watch", "delete", "patch"}),
     ("", "pods/log"): frozenset({"get"}),
-    ("", "pods/exec"): frozenset({"create"}),
+    # `get` because a WebSocket exec upgrade is an HTTP GET (bd-ib-ad6dby).
+    ("", "pods/exec"): frozenset({"create", "get"}),
 }
 _JOBS_RULE_KEY = ("batch", "jobs")
 _CLUSTER_SCOPED_KINDS = frozenset({"ClusterRole", "ClusterRoleBinding"})

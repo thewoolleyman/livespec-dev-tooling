@@ -24,10 +24,10 @@
 # land.
 #
 # LEAST PRIVILEGE, and every grant is here because a sandbox lifecycle needs
-# it: create / get / list / watch / DELETE on `pods` (the backend owns its
+# it: create / get / list / watch / DELETE / patch on `pods` (the backend owns its
 # sandboxes' whole lifetime, unlike a gate Job which is reaped by the Job
 # controller's own ttlSecondsAfterFinished), `get` on `pods/log` as the output
-# channel, `create` on `pods/exec` because a sandbox is driven by exec rather
+# channel, `create` and `get` on `pods/exec` because a sandbox is driven by exec rather
 # than by its command line, the SAME verbs on batch `jobs` the gates Role
 # grants, and the three the lifecycle proofs added — `networkpolicies`,
 # `events` and a cluster-scoped read of `nodes` — each derived in
@@ -74,15 +74,26 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["create", "get", "list", "watch"]
+  # `patch` relabels a live sandbox pod with a merge patch (the plugin's
+  # lifecycle.labels capability, which Petri uses to retag a lease;
+  # bd-ib-ad6dby, 2026-10-16). It adds no power the namespace's create and
+  # delete do not already hold.
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["create", "get", "list", "watch", "delete"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  # `get` as well as `create`: exec streams over WebSocket, and the upgrade
+  # request is an HTTP GET, which the API server authorizes as `get` on
+  # `pods/exec`. With `create` alone every WebSocket exec answers 403, which
+  # is what the kubernetes-sandbox-backend lifecycle proof (bd-ib-ad6dby)
+  # observed live on 2026-10-16. Check it with
+  # `kubectl auth can-i get pods --subresource=exec`: the slash form
+  # `get pods/exec` names a POD called "exec" and answers for `get pods`.
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["create", "get"]
   # PER-POD EGRESS, and no verb that can rewrite the baseline in place
   # (livespec-dev-tooling-pvykv7). A sandbox's allowed egress is a
   # NetworkPolicy the plugin creates beside the pod and deletes with it, each
