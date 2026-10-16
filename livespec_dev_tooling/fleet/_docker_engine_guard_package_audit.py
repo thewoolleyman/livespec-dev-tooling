@@ -19,6 +19,7 @@ bare interpreter, where the `returns` railway is not importable.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -72,6 +73,10 @@ QUERY_ARGV: Final[tuple[str, ...]] = (
     "${binary:Package} ${Version} ${db:Status-Status}\n",
 )
 
+# The field of an `apt-cache show` stanza that carries the archive's own
+# statement about the file's bytes.
+_INDEX_DIGEST_FIELD: Final[str] = "SHA256:"
+
 # How many fields a line of that output carries when dpkg holds the
 # package. A line with fewer is a package dpkg knows of and holds nothing
 # for; `read_installed` records why that is not a parse failure.
@@ -80,11 +85,17 @@ _QUERY_FIELD_COUNT: Final[int] = 3
 
 @dataclass(frozen=True, kw_only=True)
 class PackageSpec:
-    """One committed allowlist row: a package, its version, its archive file."""
+    """One committed allowlist row: a package, its version, its archive file.
+
+    `scripts` maps a maintainer-script name to the SHA256 a human read and
+    committed for it. Those scripts are the programs the install runs as
+    root, so they are the one thing here no archive statement vouches for.
+    """
 
     package: str
     version: str
     deb: str
+    scripts: Mapping[str, str]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -124,7 +135,12 @@ def load_package_inputs(*, inputs: Path) -> PackageInputs | str:
     if not declared:
         return f"the run's package inputs at {path} declare no package allowlist"
     specs = tuple(
-        PackageSpec(package=row["package"], version=row["version"], deb=row["deb"])
+        PackageSpec(
+            package=row["package"],
+            version=row["version"],
+            deb=row["deb"],
+            scripts=dict(row["scripts"]),
+        )
         for row in declared
     )
     return PackageInputs(specs=specs, cache=Path(payload["cache"]))
@@ -186,20 +202,85 @@ def _simulation_refusal(*, output: str, allow: Mapping[str, str]) -> str | None:
     return None
 
 
+def _read(*, runner: TimedRunner, argv: tuple[str, ...], cwd: Path | None = None) -> str:
+    """One bounded read through the runner, answered as its standard output."""
+    answer = runner(
+        command=TimedCommand(argv=argv, timeout_seconds=COMMAND_TIMEOUT_SECONDS, cwd=cwd)
+    )
+    return answer.stdout
+
+
+def _index_digest(*, spec: PackageSpec, runner: TimedRunner) -> str | None:
+    """The `SHA256:` the archive index carries for this exact package and version.
+
+    `None` when the index entry carries none at all, which a source that
+    publishes no checksums produces — and which must refuse rather than
+    read as "nothing to compare against".
+    """
+    shown = _read(runner=runner, argv=("apt-cache", "show", f"{spec.package}={spec.version}"))
+    for line in shown.splitlines():
+        if line.startswith(_INDEX_DIGEST_FIELD):
+            return line[len(_INDEX_DIGEST_FIELD) :].strip()
+    return None
+
+
+def _verification_refusal(*, spec: PackageSpec, deb: Path, runner: TimedRunner) -> str | None:
+    """Why this downloaded archive may not be installed, or `None` if it may.
+
+    The download happens here because it changes no dpkg state, so it is
+    safe on either side of the lock (design R6), and the whole point of
+    doing it at all is that the installed transaction is then the audited
+    FILE rather than a resolver decision repeated later.
+
+    The SHA256 is compared against the ARCHIVE INDEX entry for that exact
+    (package, version) rather than against a digest committed in the role:
+    the index is the archive's own statement about the file, so a mirror
+    serving different bytes under the pinned version is caught without the
+    role re-committing a digest at every security update. The maintainer
+    scripts go the other way, against digests a human read and committed.
+    """
+    _ = _read(
+        runner=runner,
+        argv=("apt-get", "download", f"{spec.package}={spec.version}"),
+        cwd=deb.parent,
+    )
+    if not deb.is_file():
+        # `apt-get download` exits 0 having written nothing when the
+        # pinned version has fallen out of the index.
+        return f"`apt-get download` left no {deb.name} in {deb.parent}"
+    index = _index_digest(spec=spec, runner=runner)
+    if index is None:
+        return f"the archive index entry for {spec.package}={spec.version} carries no SHA256"
+    if hashlib.sha256(deb.read_bytes()).hexdigest() != index:
+        return f"{deb.name}'s SHA256 differs from the archive index entry for it"
+    control = _read(runner=runner, argv=("dpkg-deb", "-f", str(deb), "Version")).strip()
+    if control != spec.version:
+        # A file name collision in the cache: the right name, another version.
+        return f"{deb.name} carries control version {control}, not {spec.version}"
+    for script, committed in sorted(spec.scripts.items()):
+        shown = _read(runner=runner, argv=("dpkg-deb", "-I", str(deb), script))
+        if hashlib.sha256(shown.encode("utf-8")).hexdigest() != committed:
+            return f"{deb.name}'s {script} differs from its committed digest"
+    return None
+
+
 def audit_transaction(*, declared: PackageInputs, runner: TimedRunner) -> Audit | str:
     """Prove what the install may touch, before the step has touched anything."""
-    simulated = runner(
-        command=TimedCommand(
-            argv=(*SIMULATE_ARGV, *(f"{spec.package}={spec.version}" for spec in declared.specs)),
-            timeout_seconds=COMMAND_TIMEOUT_SECONDS,
-        )
+    simulated = _read(
+        runner=runner,
+        argv=(*SIMULATE_ARGV, *(f"{spec.package}={spec.version}" for spec in declared.specs)),
     )
     refusal = _simulation_refusal(
-        output=simulated.stdout,
+        output=simulated,
         allow={spec.package: spec.version for spec in declared.specs},
     )
     if refusal is not None:
         return refusal
+    debs = tuple(declared.cache / spec.deb for spec in declared.specs)
+    for spec, deb in zip(declared.specs, debs, strict=True):
+        unvouched = _verification_refusal(spec=spec, deb=deb, runner=runner)
+        if unvouched is not None:
+            return unvouched
     return Audit(
         debs=tuple(declared.cache / spec.deb for spec in declared.specs),
         additions=tuple(sorted(f"{spec.package}={spec.version}" for spec in declared.specs)),
