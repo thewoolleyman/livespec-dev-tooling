@@ -852,3 +852,45 @@ def test_the_interface_action_deletes_docker0_and_every_veth_mastered_by_it(
     )
     assert commands.argvs_with(flag="tailscale0") == ()
     assert commands.argvs_with(flag="flannel.1") == ()
+
+
+def _write_sysctl_snapshot(*, root: Path) -> Path:
+    """A run's `before/` directory holding only the five recorded sysctls."""
+    snapshot = root / "var" / "runs" / "run-a" / "before"
+    snapshot.mkdir(parents=True, exist_ok=True)
+    _ = (snapshot / "sysctl.json").write_text(json.dumps(_SYSCTL_BEFORE), encoding="utf-8")
+    return snapshot
+
+
+def test_the_sysctl_action_reports_each_watched_value_that_moved(
+    tmp_path: Path,
+) -> None:
+    """Five values compared with the snapshot, and every difference named.
+
+    A flipped `bridge-nf-call-iptables` or a cleared `ip_forward` is
+    exactly the kind of damage that is invisible until a pod on another
+    node stops answering, so the comparison reports BOTH the recorded and
+    the current value: an operator reading `rollback-partial` needs to
+    know which way the value moved to put it back. Values that match are
+    silent -- a report that named all five every time would bury the one
+    that matters.
+    """
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    assert hasattr(netstate, "compare_sysctls")
+    snapshot = _write_sysctl_snapshot(root=tmp_path)
+    moved = dict(_SYSCTL_BEFORE)
+    moved["net.ipv4.ip_forward"] = "0"
+    moved["net.bridge.bridge-nf-call-iptables"] = "0"
+    commands = _Commands(
+        answers={("sysctl", "-n", name): f"{value}\n" for name, value in moved.items()}
+    )
+    host = _real_host(root=tmp_path, commands=commands)
+
+    assert host.compare_sysctls(snapshot=snapshot) == (
+        "net.bridge.bridge-nf-call-iptables 1 -> 0",
+        "net.ipv4.ip_forward 1 -> 0",
+    )
+
+    quiet = _Commands(answers=_sysctl_answers())
+
+    assert _real_host(root=tmp_path, commands=quiet).compare_sysctls(snapshot=snapshot) == ()

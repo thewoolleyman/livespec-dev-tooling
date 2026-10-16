@@ -34,6 +34,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
     write_firewall_snapshot,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
+    compare_sysctls,
     delete_bridge_interfaces,
     write_sysctl_snapshot,
 )
@@ -187,7 +188,7 @@ class RealHost:
 
     def compare_sysctls(self, *, snapshot: Path) -> tuple[str, ...]:
         """Compare the watched sysctls with the snapshot; report each difference."""
-        raise NotImplementedError
+        return compare_sysctls(runner=self.runner, snapshot=snapshot)
 
     def read_postconditions(self, *, snapshot: Path) -> Mapping[str, bool]:
         """The whole postcondition set read as one record."""
