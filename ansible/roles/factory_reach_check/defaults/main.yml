@@ -89,3 +89,38 @@ factory_reach_check_nodes: []
 # stated so a slow first image pull on a rebuilt node is an operator variable
 # rather than an edit to a committed script.
 factory_reach_check_timeout_seconds: 300
+
+# WHICH ENDPOINTS ONE RUN PROBES (livespec-dev-tooling-5iep7h, freeze ruling R78
+# of 2026-10-16). Empty means the committed
+# ci-runner/k3s/phase2/factory/factory-reach-endpoints.env the install step
+# above puts on the node, which the renderer resolves relative to its OWN
+# directory — so a ROUTINE apply reads the committed set and nothing else.
+#
+# WHY IT IS OVERRIDABLE AT ALL, which is the whole of R78's second half. The
+# committed `telemetry-receiver` entry carries the DISPATCHER'S EPHEMERAL
+# per-dispatch port, read on 2026-10-13 and recorded as a measurement rather
+# than as a durable address — that file's own comment says so. A run-now apply
+# against it therefore proves the tailnet PATH to the dispatcher host and
+# nothing about a receiver that exists NOW. Name the live one with
+# `-e '{"factory_reach_check_endpoints": ["telemetry-receiver=HOST:PORT"]}'`,
+# read out of what a dispatch live at that moment projects into its sandbox as
+# `LIVESPEC_SANDBOX_OTEL_ENDPOINT`.
+#
+# Each entry becomes the renderer's own `--endpoint NAME=HOST:PORT` pair, so an
+# entry REUSING a committed NAME replaces that endpoint's target rather than
+# adding a second probe under the same name — the script's own override
+# semantics, not a second mechanism beside them. `--endpoints FILE` is
+# deliberately NOT exposed: redirecting the whole file would take the committed
+# default out of the run, and what an operator needs to move is one target.
+factory_reach_check_endpoints: []
+
+# The shape every entry must have before anything is submitted — `NAME=HOST:PORT`
+# with a lowercase `[a-z0-9-]` name and a numeric port, which is what
+# verify-factory-reach.sh's own `add_endpoint` enforces. HOST is `\S+` and the
+# port is anchored, matching how the script splits on the LAST colon: a stricter
+# host class here would refuse an entry the renderer accepts, and a shape check
+# that refuses every run rather than the malformed ones is worse than none.
+#
+# Single-quoted because the class carries a backslash, which a double-quoted
+# YAML scalar would eat and leave a pattern admitting whitespace in a host.
+factory_reach_check_endpoint_pattern: '^[a-z0-9-]+=\S+:[0-9]+$'
