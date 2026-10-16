@@ -26,6 +26,7 @@ from __future__ import annotations
 import importlib
 import json
 import subprocess
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +53,8 @@ _CONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_conditi
 _POSTCONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_postconditions"
 _POSTCONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_postconditions.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
+_CLOCK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_clock"
+_CLOCK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_clock.py")
 
 # What the guarded host's two address families look like BEFORE any Docker
 # package exists: the k3s and Tailscale rule sets the snapshot has to
@@ -194,12 +197,22 @@ def _bus() -> _Commands:
     return _Commands(answers=_sysctl_answers(), tables=_before_tables())
 
 
-def _real_host(*, root: Path, commands: _Commands) -> Any:
-    """The real host rooted under `root`, with every command on the recorded bus."""
+def _guard_paths(*, root: Path) -> Any:
+    """The guard's two roots under `root`, as every test here lays them out."""
     model = importlib.import_module(_MODEL_MODULE)
+    return model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+
+
+def _real_host(*, root: Path, commands: _Commands, **overrides: Any) -> Any:
+    """The real host rooted under `root`, with every command on the recorded bus.
+
+    `overrides` carries the host's injected locations -- the `/proc` root,
+    the daemon configuration, the pending-restart marker, the package
+    runner -- for the seams that read or write somewhere other than
+    through the command bus.
+    """
     host_module = importlib.import_module(_HOST_MODULE)
-    paths = model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
-    return host_module.build_real_host(paths=paths, runner=commands)
+    return host_module.build_real_host(paths=_guard_paths(root=root), runner=commands, **overrides)
 
 
 def test_the_one_runner_carries_an_explicit_timeout_to_every_command(
@@ -1336,6 +1349,48 @@ def test_the_dead_man_recipe_reaches_systemd_run_with_collect_and_both_budgets(
     assert "--on-active=360" in emitted
     assert emitted[-2:] == ("rollback", "run-a")
     assert commands.timeouts == [units.UNIT_ACTION_TIMEOUT_SECONDS]
+
+
+def test_the_clock_seam_reads_this_boot_s_id_and_the_monotonic_clock(tmp_path: Path) -> None:
+    """A deadline is a CLOCK_MONOTONIC instant plus the boot it was taken on.
+
+    Neither half is substitutable. The wall clock cannot carry a
+    deadline at all -- an NTP step would move it under a run already in
+    flight, in either direction -- and a monotonic instant means nothing
+    across a reboot, which is why the boot id rides with it and a
+    differing one counts as passed outright.
+
+    The boot id is read from `/proc` through the host's own injected
+    root, exactly as the k3s witness and the canary's cgroup are, so the
+    read is drivable against a recorded tree with no real `/proc` in it.
+    The newline the kernel writes after the id is dropped, and that is
+    load-bearing: the recorded deadline's boot id is compared for
+    EQUALITY with a later read, so a stray newline on one side would
+    make every deadline read as taken on another boot -- which the
+    dispatch table treats as passed.
+
+    The bounded wait is the third of the set because it is the one place
+    the guard spends time rather than measuring it: the lock poll.
+    """
+    assert _CLOCK_PATH.is_file()
+    clock = importlib.import_module(_CLOCK_MODULE)
+    recorded = tmp_path / "proc" / clock.BOOT_ID_PATH
+    recorded.parent.mkdir(parents=True)
+    _ = recorded.write_text("4f9a1f0e-0d4c-4a34-9a0e-7f3c2b5d6e11\n", encoding="utf-8")
+    commands = _Commands()
+    host = _real_host(root=tmp_path, commands=commands, proc_root=tmp_path / "proc")
+
+    assert host.boot_id() == "4f9a1f0e-0d4c-4a34-9a0e-7f3c2b5d6e11"
+
+    before = host.monotonic()
+    host.sleep(seconds=0.05)
+    after = host.monotonic()
+
+    assert after - before >= 0.05
+    assert abs(before - time.clock_gettime(time.CLOCK_MONOTONIC)) < 1.0
+    # A kernel file and a clock call: neither is an external command, so
+    # neither reaches the bus every other action on this host goes through.
+    assert commands.argvs == []
 
 
 def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:

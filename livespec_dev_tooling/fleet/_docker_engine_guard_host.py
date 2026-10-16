@@ -6,13 +6,14 @@ without reopening the guard module. Child 3a supplied the snapshot, the
 firewall footprint, unit and job control, the effective-condition check,
 the postcondition read and the dead-man recipe; child 4 adds the
 PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
-resync refusal) and the observation `sample`. The seams that still
-raise, each saying so where it stands, are the clock and boot identity,
-the runtime directory's ownership, the admission reads of guard-unit
-state and this invocation's own unit, the start permission, the unit
-start, the dead-man timer reads, the post-commit and reconfigure seams
-child 1b added, the rollback phase child child 2 added, and child 3b's
-package step.
+resync refusal) and the observation `sample`; child 5 answers the seams
+left over, beginning with the clock and the boot identity. The seams
+that still raise, each saying so where it stands, are the runtime
+directory's ownership, the admission reads of guard-unit state and this
+invocation's own unit, the start permission, the unit start, the
+dead-man timer reads, the post-commit and reconfigure seams child 1b
+added, the rollback phase child child 2 added, and child 3b's package
+step.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -41,6 +42,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from livespec_dev_tooling.fleet._docker_engine_guard_clock import (
+    monotonic_seconds,
+    pause,
+    read_boot_id,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_conditions import condition_check_passed
 from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
     remove_footprint,
@@ -106,16 +112,16 @@ class RealHost:
     # --- clock, boot identity and the guard's own runtime directory ---
 
     def monotonic(self) -> float:
-        """CHILD 4: CLOCK_MONOTONIC seconds, the clock a deadline is recorded against."""
-        raise NotImplementedError
+        """CLOCK_MONOTONIC seconds, the clock a deadline is recorded against."""
+        return monotonic_seconds()
 
     def boot_id(self) -> str:
-        """CHILD 4: this boot's id, carried with every recorded deadline."""
-        raise NotImplementedError
+        """This boot's id, carried with every recorded deadline."""
+        return read_boot_id(proc_root=self.proc_root)
 
     def sleep(self, *, seconds: float) -> None:
-        """CHILD 4: the bounded wait the lock acquisition uses."""
-        raise NotImplementedError
+        """The bounded wait the lock acquisition uses."""
+        pause(seconds=seconds)
 
     def set_owner_root(self, *, path: Path) -> None:
         """CHILD 4: make the runtime directory root-owned."""
