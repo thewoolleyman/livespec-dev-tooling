@@ -16,6 +16,7 @@ fires.
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ _HOSTOPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_hostops"
 _HOSTOPS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_hostops.py")
 _FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
 _FAKE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_fake.py")
+_STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
+_STATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_state.py")
 
 # The observation window the design derives at preflight from the effective
 # k3s resync periods (420 s at the measured defaults). Only `observe`'s
@@ -261,3 +264,138 @@ def test_the_fake_host_answers_the_admission_clock_and_package_seams(
 
     assert fake.calls_named(name="systemd_run")[0].detail == ("systemd-run", "--collect")
     assert fake.calls_named(name="set_owner_root")[0].detail == (str(tmp_path / "run"),)
+
+
+def _paths(*, root: Path) -> Any:
+    """`GuardPaths` for the two state roots `_fake` also uses."""
+    model = importlib.import_module(_MODEL_MODULE)
+    return model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+
+
+def test_the_guard_paths_name_every_durable_and_runtime_location(tmp_path: Path) -> None:
+    """Specification scope: durable state under /var/lib, runtime state under /run.
+
+    /run is tmpfs, so the start permission and the lock vanish on a reboot
+    while the commit marker and the run records do not. The split is the
+    whole reason a reboot before the commit point cannot start Docker.
+    """
+    model = importlib.import_module(_MODEL_MODULE)
+    assert "GuardPaths" in model.__all__
+
+    assert str(model.DEFAULT_STATE_ROOT) == "/var/lib/docker-engine-guard"
+    assert str(model.DEFAULT_RUNTIME_ROOT) == "/run/docker-engine-guard"
+
+    paths = _paths(root=tmp_path)
+    var = tmp_path / "var"
+    run = tmp_path / "run"
+    assert paths.marker == var / "confirmed"
+    assert paths.reservation == var / "run"
+    assert paths.run_dir(run="run-a") == var / "runs" / "run-a"
+    assert paths.phase_path(run="run-a") == var / "runs" / "run-a" / "phase"
+    assert paths.deadline_path(run="run-a") == var / "runs" / "run-a" / "deadline.json"
+    assert paths.snapshot_dir(run="run-a") == var / "runs" / "run-a" / "before"
+    assert paths.inputs_dir(run="run-a") == var / "runs" / "run-a" / "inputs"
+    assert paths.lock == run / "lock"
+    assert paths.permission == run / "allow-start"
+
+
+def test_a_durable_write_replaces_the_target_and_leaves_no_temporary_behind(
+    tmp_path: Path,
+) -> None:
+    """Specification section "Phases": write, fsync, rename, then fsync the directory.
+
+    A reader therefore sees a complete prior record or a complete new one,
+    never a half-written phase. The observable halves are the ones asserted
+    here: the rename lands, and no `.tmp` sibling survives to be mistaken
+    for a record.
+    """
+    assert _STATE_PATH.is_file()
+    state = importlib.import_module(_STATE_MODULE)
+    target = tmp_path / "records" / "phase"
+
+    state.write_durable(path=target, data="reserved")
+    assert target.read_text(encoding="utf-8") == "reserved"
+
+    state.write_durable(path=target, data="publishing")
+    assert target.read_text(encoding="utf-8") == "publishing"
+    assert sorted(p.name for p in target.parent.iterdir()) == ["phase"]
+
+
+def test_the_phase_record_and_the_reservation_round_trip_through_the_run_directory(
+    tmp_path: Path,
+) -> None:
+    """Each run records exactly one phase, in its own directory under the state root."""
+    assert _STATE_PATH.is_file()
+    state = importlib.import_module(_STATE_MODULE)
+    paths = _paths(root=tmp_path)
+
+    assert state.read_phase(paths=paths, run="run-a") is None
+    assert state.read_reservation(paths=paths) is None
+
+    state.record_phase(paths=paths, run="run-a", phase="reserved")
+    state.write_reservation(paths=paths, run="run-a")
+    assert state.read_phase(paths=paths, run="run-a") == "reserved"
+    assert state.read_reservation(paths=paths) == "run-a"
+
+    state.record_phase(paths=paths, run="run-a", phase="publishing")
+    assert state.read_phase(paths=paths, run="run-a") == "publishing"
+
+
+def test_the_commit_marker_reads_as_absent_self_other_or_unreadable(tmp_path: Path) -> None:
+    """Specification dispatch table: the marker, not the phase, decides commitment.
+
+    The three columns of that table are exactly these states, and an
+    unreadable marker joins "names another run" rather than "absent" --
+    fail-closed, because a marker that cannot be read is not evidence that
+    no run committed.
+    """
+    assert _STATE_PATH.is_file()
+    state = importlib.import_module(_STATE_MODULE)
+    paths = _paths(root=tmp_path)
+    paths.marker.parent.mkdir(parents=True, exist_ok=True)
+
+    assert state.read_marker(paths=paths, run="run-a") == "absent"
+
+    state.write_durable(path=paths.marker, data=json.dumps({"run": "run-a", "digest": "d"}))
+    assert state.read_marker(paths=paths, run="run-a") == "self"
+    assert state.read_marker(paths=paths, run="run-b") == "other"
+
+    state.write_durable(path=paths.marker, data="{not json")
+    assert state.read_marker(paths=paths, run="run-a") == "unreadable"
+    state.write_durable(path=paths.marker, data="[]")
+    assert state.read_marker(paths=paths, run="run-a") == "unreadable"
+    state.write_durable(path=paths.marker, data=json.dumps({"digest": "d"}))
+    assert state.read_marker(paths=paths, run="run-a") == "unreadable"
+
+
+def test_a_deadline_recorded_under_another_boot_id_has_passed(tmp_path: Path) -> None:
+    """Design H4: the deadline is a boot id plus a CLOCK_MONOTONIC instant.
+
+    A monotonic instant means nothing across a reboot, so a differing boot
+    id counts as passed outright -- which is what makes a reboot before the
+    commit point end in a rollback rather than in a run that believes it
+    still has time.
+    """
+    assert _STATE_PATH.is_file()
+    state = importlib.import_module(_STATE_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    paths = _paths(root=tmp_path)
+    fake = _fake(root=tmp_path)
+
+    assert state.read_deadline(paths=paths, run="run-a") is None
+    assert state.deadline_passed(deadline=None, host=fake) is True
+
+    state.write_deadline(
+        paths=paths, run="run-a", deadline=model.Deadline(boot_id="boot-a", monotonic=100.0)
+    )
+    recorded = state.read_deadline(paths=paths, run="run-a")
+    assert recorded == model.Deadline(boot_id="boot-a", monotonic=100.0)
+
+    fake.clock = 99.0
+    assert state.deadline_passed(deadline=recorded, host=fake) is False
+    fake.clock = 100.0
+    assert state.deadline_passed(deadline=recorded, host=fake) is True
+
+    fake.clock = 1.0
+    fake.boot = "boot-b"
+    assert state.deadline_passed(deadline=recorded, host=fake) is True
