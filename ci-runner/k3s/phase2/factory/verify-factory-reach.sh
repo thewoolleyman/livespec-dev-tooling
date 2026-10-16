@@ -20,17 +20,24 @@
 #
 # WHY THE ENDPOINTS AND THE IMAGE ARE NEVER SPELLED IN THIS FILE. The endpoints
 # come from ./factory-reach-endpoints.env (or `--endpoint` / `--endpoints`), and
-# the image is READ from this repository's own `.github/workflows/ci.yml`
-# `container:` block — the fleet sandbox image pin, which the release fan-out
-# rewrites there and which moves with every release. A constant for either would
-# make this check prove a reach to an endpoint nobody uses, with a toolchain
-# nobody runs, while still printing green. ../gates/render-gate-job.sh reads the
-# image the same way and for the same reason.
+# the image from ./factory-reach-image.env (or `--image` / `--image-file`). A
+# constant for either would make this check prove a reach to an endpoint nobody
+# uses, with a toolchain nobody runs, while still printing green.
+#
+# BOTH OF THOSE FILES SHIP WITH THIS ONE, AND THAT IS THE POINT. This check is a
+# CONVERGE ARTIFACT (livespec-dev-tooling-jvnqwv, freeze ruling R70 of
+# 2026-10-16): ../../../../ansible/roles/factory_reach_check installs this
+# script, the probe and both configuration files into the node's installed tree,
+# and that tree carries NO repository checkout. The first version READ the image
+# out of `.github/workflows/ci.yml`, as ../gates/render-gate-job.sh still does —
+# correct there, because that renderer runs from a checkout on the control node,
+# and unresolvable here. ./factory-reach-image.env records why the shipped pin
+# stays equal to the workflow's, and which check fails when it does not.
 #
 # Usage:
 #   verify-factory-reach.sh --node NAME [--dry-run]
 #                           [--endpoints FILE] [--endpoint NAME=HOST:PORT]...
-#                           [--image REF] [--workflow FILE]
+#                           [--image REF] [--image-file FILE]
 #                           [--job-name NAME] [--timeout-seconds N]
 #
 # `--dry-run` prints the manifest to stdout and contacts NOTHING — no cluster,
@@ -47,7 +54,10 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROBE="${SCRIPT_DIR}/factory-reach-probe.sh"
 endpoints_file="${SCRIPT_DIR}/factory-reach-endpoints.env"
-workflow="${SCRIPT_DIR}/../../../../.github/workflows/ci.yml"
+image_file="${SCRIPT_DIR}/factory-reach-image.env"
+# The key ./factory-reach-image.env carries the reference under. Named once
+# because the file's own comment and the reader below have to agree.
+IMAGE_KEY=FACTORY_REACH_SANDBOX_IMAGE
 
 # The namespace, the identity and the taint key are ./factory-namespace.yaml's,
 # ./factory-rbac.yaml's and the committed hp profile's respectively. They are
@@ -86,7 +96,7 @@ while [ $# -gt 0 ]; do
     --endpoints) endpoints_file="$2"; shift 2 ;;
     --endpoint) overrides+=("$2"); shift 2 ;;
     --image) image="$2"; shift 2 ;;
-    --workflow) workflow="$2"; shift 2 ;;
+    --image-file) image_file="$2"; shift 2 ;;
     --job-name) job_name="$2"; shift 2 ;;
     --timeout-seconds) timeout_seconds="$2"; shift 2 ;;
     *) fatal "unknown argument $1" ;;
@@ -155,17 +165,20 @@ fi
   || fatal "no endpoints to probe: ${endpoints_file} names none and no --endpoint was given"
 
 # --- the image ----------------------------------------------------------------
-# Every `image:` that is the first field of a `container:` block, exactly as
-# ../gates/render-gate-job.sh resolves it. SEVERAL distinct images is a REFUSAL
-# rather than a pick: which toolchain the probe should run is then a real
-# question, and guessing it wrong proves a pull nobody performs.
+# Every `FACTORY_REACH_SANDBOX_IMAGE=` value the shipped pin file names. SEVERAL
+# distinct values is a REFUSAL rather than a pick: which toolchain the probe
+# should run is then a real question, and guessing it wrong proves a pull nobody
+# performs. A MISSING file is the same refusal — this is the only pin present on
+# a pool node, so falling back to anything would render an image no dispatch
+# uses while still printing green.
 if [ -z "${image}" ]; then
-  [ -f "${workflow}" ] || fatal "cannot resolve the sandbox image: ${workflow} not found"
-  mapfile -t images < <(grep -A1 -E '^[[:space:]]*container:[[:space:]]*$' "${workflow}" \
-    | grep -oE 'image:[[:space:]]*[^[:space:]]+' \
-    | sed -E 's/^image:[[:space:]]*//' | sort -u)
+  [ -f "${image_file}" ] \
+    || fatal "cannot resolve the sandbox image: ${image_file} not found"
+  mapfile -t images < <(grep -E "^[[:space:]]*${IMAGE_KEY}=[^[:space:]]" "${image_file}" \
+    | sed -E "s/^[[:space:]]*${IMAGE_KEY}=//" \
+    | sed -E 's/[[:space:]]+$//' | sort -u)
   [ "${#images[@]}" -eq 1 ] \
-    || fatal "${workflow} declares ${#images[@]} distinct container images; refusing to guess"
+    || fatal "${image_file} names ${#images[@]} distinct ${IMAGE_KEY} values; refusing to guess"
   image="${images[0]}"
 fi
 
