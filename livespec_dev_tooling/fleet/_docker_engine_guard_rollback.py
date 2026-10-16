@@ -230,6 +230,24 @@ def _rollback_dir(*, run: str, env: GuardEnv) -> Path:
     return env.paths.run_dir(run=run) / "rollback"
 
 
+def _attempts(*, run: str, env: GuardEnv, phase: str) -> int:
+    """How many times this phase has been ENTERED, across every firing.
+
+    Absent reads as zero, which is the only safe reading: the record is
+    written before the phase is entered, so no record means no entry.
+    """
+    record = _rollback_dir(run=run, env=env) / f"{phase}.attempts"
+    return int(record.read_text(encoding="utf-8")) if record.is_file() else 0
+
+
+def _record_attempt(*, run: str, env: GuardEnv, phase: str, attempts: int) -> None:
+    """Advance this phase's attempt count durably, before the phase is entered."""
+    write_durable(
+        path=_rollback_dir(run=run, env=env) / f"{phase}.attempts",
+        data=str(attempts + 1),
+    )
+
+
 def phase_child_argv(*, run: str, env: GuardEnv, phase: str) -> tuple[str, ...]:
     """The command line the driver spawns for one phase.
 
@@ -310,6 +328,20 @@ def _fence_and_revoke(*, env: GuardEnv) -> None:
     env.host.revoke_start_permission()
 
 
+def _enter_phase(*, run: str, env: GuardEnv, phase: str) -> None:
+    """Record one attempt at `phase`, then spawn the child that runs it.
+
+    Recording FIRST is what bounds a phase that keeps killing the driver:
+    such a phase never returns to record anything, so an attempt written
+    after the spawn would never be written for exactly the phase the
+    budget exists to bound.
+    """
+    _record_attempt(
+        run=run, env=env, phase=phase, attempts=_attempts(run=run, env=env, phase=phase)
+    )
+    _ = env.host.run_phase_child(argv=phase_child_argv(run=run, env=env, phase=phase))
+
+
 def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     """Run every rollback phase for `run` and record its outcome.
 
@@ -328,7 +360,7 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
         record_phase(paths=env.paths, run=run, phase="rolling-back")
     _fence_and_revoke(env=env)
     for phase in ROLLBACK_PHASE_ORDER:
-        _ = env.host.run_phase_child(argv=phase_child_argv(run=run, env=env, phase=phase))
+        _enter_phase(run=run, env=env, phase=phase)
     failed = _failed_postconditions(run=run, env=env)
     return GuardOutcome(
         operation="rollback",
