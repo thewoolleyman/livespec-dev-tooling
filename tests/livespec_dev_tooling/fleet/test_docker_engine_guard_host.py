@@ -775,3 +775,33 @@ def test_the_cgroup_kill_names_only_the_two_daemons_and_the_sandbox_slice(
         ("systemctl", "stop", "containerd.service"),
         ("systemctl", "stop", "docker.socket"),
     )
+
+
+def test_the_disable_action_disables_exactly_the_three_guarded_units(
+    tmp_path: Path,
+) -> None:
+    """One `disable` per guarded unit, and the set is fixed, not the caller's.
+
+    Disabling is what stops the next BOOT from starting what this rollback
+    just stopped -- the start permission lives on tmpfs and is gone by
+    then, but a `WantedBy` is durable. One command per unit rather than
+    one carrying all three, so a unit whose disable fails does not take
+    the other two down with it.
+    """
+    units = importlib.import_module(_UNITS_MODULE)
+    assert hasattr(units, "disable_units")
+    commands = _Commands()
+    host = _real_host(root=tmp_path, commands=commands)
+
+    host.disable_units(units=("docker.service", "docker.socket", "containerd.service"))
+
+    assert tuple(commands.argvs) == (
+        ("systemctl", "disable", "containerd.service"),
+        ("systemctl", "disable", "docker.service"),
+        ("systemctl", "disable", "docker.socket"),
+    )
+
+    narrow = _Commands()
+    units.disable_units(runner=narrow, units=("docker.socket", "k3s-agent.service"))
+
+    assert tuple(narrow.argvs) == (("systemctl", "disable", "docker.socket"),)
