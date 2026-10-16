@@ -33,7 +33,10 @@ from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
     restore_forward_policy,
     write_firewall_snapshot,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_netstate import write_sysctl_snapshot
+from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
+    delete_bridge_interfaces,
+    write_sysctl_snapshot,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
@@ -180,7 +183,7 @@ class RealHost:
 
     def delete_bridge_interfaces(self) -> tuple[str, ...]:
         """Delete `docker0` and every veth mastered by it; report what went."""
-        raise NotImplementedError
+        return delete_bridge_interfaces(runner=self.runner)
 
     def compare_sysctls(self, *, snapshot: Path) -> tuple[str, ...]:
         """Compare the watched sysctls with the snapshot; report each difference."""

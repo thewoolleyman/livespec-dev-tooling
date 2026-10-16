@@ -20,16 +20,33 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from livespec_dev_tooling.fleet._docker_engine_guard_firewall import DOCKER_BRIDGE
+
 if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "IP_COMMAND",
+    "LINK_SHOW_ARGV",
+    "LINK_TIMEOUT_SECONDS",
     "SYSCTL_SNAPSHOT",
     "SYSCTL_TIMEOUT_SECONDS",
     "WATCHED_SYSCTLS",
+    "delete_bridge_interfaces",
+    "read_bridge_links",
     "read_sysctls",
     "write_sysctl_snapshot",
 ]
+
+IP_COMMAND: Final[str] = "ip"
+
+# `-o` puts each link on ONE line, which is what makes `master docker0`
+# readable per link at all: the default multi-line form puts the master on
+# a continuation line and a line-wise scan would attribute it to the wrong
+# interface.
+LINK_SHOW_ARGV: Final[tuple[str, ...]] = (IP_COMMAND, "-o", "link", "show")
+
+LINK_TIMEOUT_SECONDS: Final[int] = 15
 
 # The five values, sorted, so a snapshot and a report list them the same
 # way: both families' forwarding, and the three bridge-netfilter hooks
@@ -51,6 +68,9 @@ SYSCTL_TIMEOUT_SECONDS: Final[int] = 10
 
 SYSCTL_SNAPSHOT: Final[str] = "sysctl.json"
 
+# The index and the name are the only columns every `ip -o link` row has.
+_LINK_COLUMNS: Final[int] = 2
+
 
 def read_sysctls(*, runner: GuardCommandRunner) -> Mapping[str, str]:
     """Each watched value as the kernel reports it right now."""
@@ -68,3 +88,38 @@ def write_sysctl_snapshot(*, destination: Path, runner: GuardCommandRunner) -> N
         json.dumps(read_sysctls(runner=runner), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def read_bridge_links(*, runner: GuardCommandRunner) -> tuple[str, ...]:
+    """Every link mastered by `docker0`, then `docker0` itself.
+
+    The bridge comes LAST so no veth is left orphaned if the deletion
+    stops part way. Selection is by `master docker0` and not by a name
+    prefix: a veth's name is random, and `flannel.1` -- mastered by `cni0`
+    -- is exactly the shape a prefix or substring match gets wrong, which
+    on this host means deleting a link k3s's pod network runs over.
+    """
+    answer = runner(argv=LINK_SHOW_ARGV, timeout_seconds=LINK_TIMEOUT_SECONDS)
+    mastered: list[str] = []
+    bridge: list[str] = []
+    for raw in answer.stdout.splitlines():
+        fields = raw.split()
+        if len(fields) < _LINK_COLUMNS:
+            continue
+        name = fields[1].rstrip(":").split("@")[0]
+        if name == DOCKER_BRIDGE:
+            bridge.append(name)
+        elif f"master {DOCKER_BRIDGE}" in raw:
+            mastered.append(name)
+    return (*mastered, *bridge)
+
+
+def delete_bridge_interfaces(*, runner: GuardCommandRunner) -> tuple[str, ...]:
+    """Delete `docker0` and every veth mastered by it; report what went."""
+    going = read_bridge_links(runner=runner)
+    for name in going:
+        _ = runner(
+            argv=(IP_COMMAND, "link", "delete", name),
+            timeout_seconds=LINK_TIMEOUT_SECONDS,
+        )
+    return going
