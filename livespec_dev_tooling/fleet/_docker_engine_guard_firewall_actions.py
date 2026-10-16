@@ -45,6 +45,7 @@ __all__: list[str] = [
     "FIREWALL_TIMEOUT_SECONDS",
     "FLUSH_CHAIN",
     "FOOTPRINT_PASSES",
+    "current_forward_policies",
     "read_current_table",
     "read_snapshot_table",
     "remove_footprint",
@@ -207,3 +208,13 @@ def restore_forward_policy(*, runner: GuardCommandRunner, snapshot: Path) -> Non
             argv=forward_policy_argv(family=family, policy=policies[family]),
             timeout_seconds=FIREWALL_TIMEOUT_SECONDS,
         )
+
+
+def current_forward_policies(*, runner: GuardCommandRunner) -> Mapping[str, str]:
+    """Each family's FORWARD policy as it stands right now."""
+    return {
+        family: read_current_table(runner=runner, family=family, table=POLICY_TABLE).policies[
+            FORWARD_CHAIN
+        ]
+        for family in FAMILIES
+    }

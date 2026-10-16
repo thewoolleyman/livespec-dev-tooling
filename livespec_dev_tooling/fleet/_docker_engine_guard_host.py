@@ -38,6 +38,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
     delete_bridge_interfaces,
     write_sysctl_snapshot,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_postconditions import read_postconditions
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
@@ -192,7 +193,7 @@ class RealHost:
 
     def read_postconditions(self, *, snapshot: Path) -> Mapping[str, bool]:
         """The whole postcondition set read as one record."""
-        raise NotImplementedError
+        return read_postconditions(runner=self.runner, paths=self.paths, snapshot=snapshot)
 
 
 def build_real_host(*, paths: GuardPaths, runner: GuardCommandRunner = run_command) -> HostOps:
