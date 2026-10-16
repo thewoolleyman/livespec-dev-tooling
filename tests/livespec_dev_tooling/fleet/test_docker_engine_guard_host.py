@@ -47,6 +47,8 @@ _NETSTATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_netstate"
 _NETSTATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_netstate.py")
 _UNITS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_units"
 _UNITS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_units.py")
+_POSTCONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_postconditions"
+_POSTCONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_postconditions.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -960,3 +962,111 @@ def test_the_unit_stop_action_kills_the_observer_and_starter_then_waits() -> Non
 
     assert units.stop_guard_units(runner=stuck, sleep=waited) == (_GUARD_OWN_UNITS[0],)
     assert waited.seconds == [units.GUARD_UNIT_POLL_SECONDS] * units.GUARD_UNIT_WAIT_POLLS
+
+
+_SS_ARGV = ("ss", "-lx", "--no-header")
+_SS_WITHOUT_DOCKER = "u_str LISTEN 0 4096 /run/systemd/private 12345 * 0\n"
+_SS_WITH_DOCKER = _SS_WITHOUT_DOCKER + "u_str LISTEN 0 4096 /run/docker.sock 54321 * 0\n"
+
+_ONLY_K3S_JOB = "  12 k3s-agent.service  start running\n\n1 jobs listed.\n"
+
+_LINK_SHOW_WITHOUT_BRIDGE = (
+    "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 state UNKNOWN\\    link/loopback\n"
+    "3: tailscale0: <POINTOPOINT,MULTICAST,NOARP,UP> mtu 1280 state UNKNOWN\\    link/none\n"
+)
+
+
+def _tasks_argv(*, unit: str) -> tuple[str, ...]:
+    """The read of one unit's current control-group task count."""
+    return ("systemctl", "show", "--property", "TasksCurrent", "--value", unit)
+
+
+def _postcondition_answers(
+    *, tasks: str, sockets: str, jobs: str, links: str
+) -> dict[tuple[str, ...], str]:
+    """The recorded replies every postcondition read needs."""
+    answers = {
+        _SS_ARGV: sockets,
+        _LIST_JOBS_ARGV: jobs,
+        _LINK_SHOW_ARGV: links,
+    }
+    for unit in ("containerd.service", "docker.service", "docker.socket"):
+        answers[_tasks_argv(unit=unit)] = tasks
+    return answers
+
+
+def test_the_postcondition_read_reports_all_eight_facts_as_one_record(
+    tmp_path: Path,
+) -> None:
+    """One record, read after every stop phase, naming each postcondition.
+
+    ONE record and not eight calls, because the driver writes
+    `rolled-back` only when EVERY postcondition holds and names each
+    failing one otherwise -- a partial answer assembled from separate
+    reads could report a host as clean while a later read was still
+    pending. The eight are the specification's own set: the permission,
+    the socket, the processes, the queued jobs, both FORWARD policies, the
+    Docker rules, `docker0`, and the watched sysctls.
+    """
+    assert _POSTCONDITIONS_PATH.is_file()
+    clean_root = tmp_path / "clean"
+    snapshot = _write_snapshot(root=clean_root)
+    _ = (snapshot / "sysctl.json").write_text(json.dumps(_SYSCTL_BEFORE), encoding="utf-8")
+    clean = _Commands(
+        answers={
+            **_sysctl_answers(),
+            **_postcondition_answers(
+                tasks="0",
+                sockets=_SS_WITHOUT_DOCKER,
+                jobs=_ONLY_K3S_JOB,
+                links=_LINK_SHOW_WITHOUT_BRIDGE,
+            ),
+        },
+        tables=_before_tables(),
+    )
+
+    assert _real_host(root=clean_root, commands=clean).read_postconditions(snapshot=snapshot) == {
+        "no_start_permission": True,
+        "no_docker_socket": True,
+        "no_guarded_process": True,
+        "no_queued_job": True,
+        "forward_policies_restored": True,
+        "no_docker_rule": True,
+        "no_docker0": True,
+        "sysctls_restored": True,
+    }
+
+    dirty_root = tmp_path / "dirty"
+    dirty_snapshot = _write_snapshot(root=dirty_root)
+    _ = (dirty_snapshot / "sysctl.json").write_text(json.dumps(_SYSCTL_BEFORE), encoding="utf-8")
+    (dirty_root / "run").mkdir(parents=True, exist_ok=True)
+    _ = (dirty_root / "run" / "allow-start").write_text("run-a\n", encoding="utf-8")
+    opened = dict(_after_tables())
+    opened[("iptables-save", "filter")] = [
+        line.replace(":FORWARD DROP", ":FORWARD ACCEPT") for line in _IPV4_FILTER_AFTER
+    ]
+    dirty = _Commands(
+        answers={
+            **{("sysctl", "-n", name): "0\n" for name in _SYSCTL_BEFORE},
+            **_postcondition_answers(
+                tasks="7",
+                sockets=_SS_WITH_DOCKER,
+                jobs=_LIST_JOBS,
+                links=_LINK_SHOW,
+            ),
+        },
+        tables=opened,
+    )
+
+    assert _real_host(root=dirty_root, commands=dirty).read_postconditions(
+        snapshot=dirty_snapshot
+    ) == {
+        "no_start_permission": False,
+        "no_docker_socket": False,
+        "no_guarded_process": False,
+        "no_queued_job": False,
+        "forward_policies_restored": False,
+        "no_docker_rule": False,
+        "no_docker0": False,
+        "sysctls_restored": False,
+    }
