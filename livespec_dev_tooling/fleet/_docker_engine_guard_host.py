@@ -23,10 +23,12 @@ machine anything.
 
 This module is deliberately THIN. Every action it exposes is one line of
 delegation to a cohesive sibling — the firewall actions, the unit
-actions, the condition reads, the kernel network state, the postcondition
-record, the preflight and the probe set — because `HostOps` is a WIDE
-protocol and a host that also held the work would be one file holding
-eight unrelated concerns.
+actions and the unit-state reads, the condition reads, the kernel
+network state, the postcondition record, the preflight and the probe
+set, the clock, the start permission, the daemon configuration, the
+rollback phase child and the package fence — because `HostOps` is a
+WIDE protocol and a host that also held the work would be one file
+holding a dozen unrelated concerns.
 
 Governing specification: `SPECIFICATION/non-functional-requirements.md`
 section "Docker engine install guard", "Host actions", "Preflight" and
