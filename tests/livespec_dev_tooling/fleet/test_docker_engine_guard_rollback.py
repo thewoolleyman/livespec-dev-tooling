@@ -697,3 +697,40 @@ def test_the_final_check_clears_the_success_of_every_failing_postcondition(
         "interface-deletion",
         "sysctl-comparison",
     }
+
+
+def test_rolled_back_is_written_only_when_every_postcondition_holds(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": `rolled-back` is the claim, so it must be earned.
+
+    `rolled-back` is final, and it is what makes every later dead-man
+    firing a no-op and what lets a later `reserve` take the host again.
+    Written while one postcondition still failed it would retire the
+    dead-man over a host that still has a Docker rule or a `docker0`, and
+    nothing would come back to look. So it is written only when the final
+    check finds all six holding — and when one does not, the run is left
+    on the rollback path for the next firing.
+    """
+    rollback = _driver()
+
+    clean = tmp_path / "clean"
+    fake = _reporting_fake(root=clean)
+    fake.postconditions = dict.fromkeys(_SPECIFIED_POSTCONDITIONS, True)
+    _record_phase(root=clean, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=clean, host=fake), decision=_decision())
+
+    assert _phase_of(root=clean, run="run-a") == "rolled-back"
+
+    for failing in _SPECIFIED_POSTCONDITIONS:
+        root = tmp_path / failing.replace(" ", "-")[:24]
+        other = _reporting_fake(root=root)
+        other.postconditions = _postconditions_except(failing=failing)
+        _record_phase(root=root, run="run-a", phase="started")
+
+        _ = rollback.run_rollback(
+            run="run-a", env=_env(root=root, host=other), decision=_decision()
+        )
+
+        assert _phase_of(root=root, run="run-a") != "rolled-back", failing

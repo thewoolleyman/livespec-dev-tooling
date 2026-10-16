@@ -473,6 +473,13 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     for phase in ROLLBACK_PHASE_ORDER:
         _enter_phase(run=run, env=env, phase=phase)
     failed = _final_check(run=run, env=env)
+    if not failed:
+        # `rolled-back` is FINAL: it makes every later dead-man firing a
+        # no-op and lets a later `reserve` take the host. Written while
+        # one postcondition still failed it would retire the dead-man
+        # over a host that still has a Docker rule or a `docker0`, and
+        # nothing would come back to look.
+        record_phase(paths=env.paths, run=run, phase="rolled-back")
     return GuardOutcome(
         operation="rollback",
         run=run,
