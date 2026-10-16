@@ -59,6 +59,9 @@ _UNIT_STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_unit_state
 _UNIT_STATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_unit_state.py")
 _DAEMON_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_daemon"
 _DAEMON_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_daemon.py")
+_PHASE_CHILD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_phase_child"
+_PHASE_CHILD_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_phase_child.py")
+_ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -139,7 +142,10 @@ class _Commands:
     would; `answers` holds every other command's recorded reply.
     `undeletable` is the one lever a test needs that a real host has no
     switch for -- a rule the host will not drop, which is the only way to
-    reach residual reporting at all. Each call is recorded with the
+    reach residual reporting at all. `returncodes` is the second such
+    lever: a command's EXIT STATUS, for the one seam that reads it
+    rather than its output, and the only way to record a child killed
+    by its own `timeout` or by a signal. Each call is recorded with the
     timeout it carried, which is how "every command is bounded" is
     asserted.
     """
@@ -147,6 +153,7 @@ class _Commands:
     answers: dict[tuple[str, ...], str] = field(default_factory=dict)
     tables: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     undeletable: tuple[str, ...] = ()
+    returncodes: dict[tuple[str, ...], int] = field(default_factory=dict)
     argvs: list[tuple[str, ...]] = field(default_factory=list)
     timeouts: list[int] = field(default_factory=list)
 
@@ -154,7 +161,9 @@ class _Commands:
         key = tuple(argv)
         self.argvs.append(key)
         self.timeouts.append(timeout_seconds)
-        return _result(argv=key, returncode=0, stdout=self._answer(key=key))
+        return _result(
+            argv=key, returncode=self.returncodes.get(key, 0), stdout=self._answer(key=key)
+        )
 
     def _answer(self, *, key: tuple[str, ...]) -> str:
         if key[0].endswith("-save"):
@@ -1753,3 +1762,65 @@ def test_the_reconfigure_seams_merge_the_owned_keys_and_only_record_a_restart(
     fresh.write_daemon_keys(keys=_OWNED_DAEMON_KEYS)
 
     assert json.loads(fresh_config.read_text(encoding="utf-8")) == _OWNED_DAEMON_KEYS
+
+
+# One phase's command line as the rollback driver builds it: the whole
+# `timeout -k 10 <budget>` fence, the run, the forwarded state roots and
+# the `--phase` the child reads off the tail.
+_PHASE_CHILD_ARGV = (
+    "timeout",
+    "-k",
+    "10",
+    "300",
+    "/usr/local/libexec/docker-engine-guard",
+    "rollback",
+    "run-a",
+    "--phase",
+    "footprint-removal",
+)
+
+
+def test_the_rollback_phase_child_completes_only_on_a_zero_exit(
+    tmp_path: Path,
+) -> None:
+    """Every way a phase did not finish answers the same `False`.
+
+    The driver treats a non-zero exit, a timeout and a signal
+    identically -- record no success and enter the next phase -- so the
+    seam collapses all three rather than reporting which it was. A
+    `True` on anything but a clean exit is the dangerous direction: it
+    would write a success record for a phase that never ran, and the
+    later firings of the dead-man would then SKIP the teardown step
+    that did not happen.
+
+    The argv is passed THROUGH unchanged, because the fence inside it
+    is the driver's: `timeout -k 10 <budget>` is what makes a phase
+    that hangs cost its own budget and nothing more. The bound this
+    seam puts on the call therefore has to OUTLIVE that fence -- a
+    runner bound shorter than the child's own would kill a phase that
+    was still within its budget, and the driver would read the kill as
+    a failed phase.
+    """
+    assert _PHASE_CHILD_PATH.is_file()
+    phase_child = importlib.import_module(_PHASE_CHILD_MODULE)
+    rollback = importlib.import_module(_ROLLBACK_MODULE)
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+
+    fenced = max(rollback.PHASE_BUDGET_SECONDS.values()) + rollback.PHASE_KILL_AFTER_SECONDS
+
+    assert fenced < phase_child.PHASE_CHILD_TIMEOUT_SECONDS
+
+    for returncode, completed in (
+        (0, True),
+        (1, False),
+        (runner_module.TIMEOUT_RETURNCODE, False),
+        (-9, False),
+    ):
+        commands = _Commands(returncodes={_PHASE_CHILD_ARGV: returncode})
+
+        assert (
+            _real_host(root=tmp_path, commands=commands).run_phase_child(argv=_PHASE_CHILD_ARGV)
+            is completed
+        )
+        assert tuple(commands.argvs) == (_PHASE_CHILD_ARGV,)
+        assert commands.timeouts == [phase_child.PHASE_CHILD_TIMEOUT_SECONDS]
