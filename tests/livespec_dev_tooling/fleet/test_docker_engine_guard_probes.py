@@ -748,3 +748,68 @@ def test_the_api_probe_completes_a_tls_handshake_to_the_api_service_clusterip() 
         False,
         "the TLS handshake to 10.43.0.1:443 from the pod namespace exited 124",
     )
+
+
+# `getent ahostsv4 archive.ubuntu.com` on the host. The second row is
+# the same address under a different socket type, which is why only the
+# FIRST row's address is taken.
+_ARCHIVE_ADDRESSES = _lines(
+    "185.125.190.83  STREAM archive.ubuntu.com",
+    "185.125.190.83  DGRAM",
+    "185.125.190.83  RAW",
+)
+
+
+def test_the_https_probe_resolves_on_the_host_then_sends_sni_explicitly() -> None:
+    """Resolved on the HOST, connected from the pod namespace, SNI sent by hand.
+
+    The pod namespace has no resolver, so the name is resolved on the
+    host and only the ADDRESS crosses into the namespace -- which then
+    makes the SNI something the probe has to send itself, because a
+    connection opened to an address carries no name. Design R8 also
+    fixes the endpoint: an Ubuntu archive mirror, which has no per-hour
+    quota, rather than the GitHub API, which rate-limits an
+    unauthenticated caller at sixty an hour and would start failing
+    samples part way through a window.
+    """
+    assert "https_probe" in importlib.import_module(_POD_MODULE).__all__
+    pod_probes = importlib.import_module(_POD_MODULE)
+    resolve = pod_probes.resolve_argv(host=pod_probes.UBUNTU_ARCHIVE_HOST)
+    assert resolve == ("getent", "ahostsv4", "archive.ubuntu.com")
+
+    resolving = _Commands(answers={resolve: _ARCHIVE_ADDRESSES})
+    assert (
+        pod_probes.resolve_on_host(runner=resolving, host=pod_probes.UBUNTU_ARCHIVE_HOST)
+        == "185.125.190.83"
+    )
+    assert pod_probes.resolve_on_host(runner=_Commands(), host="nowhere.invalid") == ""
+
+    argv = pod_probes.https_probe_argv(
+        pid="40127",
+        address="185.125.190.83",
+        host=pod_probes.UBUNTU_ARCHIVE_HOST,
+        path=pod_probes.UBUNTU_ARCHIVE_PATH,
+    )
+    assert argv[:5] == ("nsenter", "--target", "40127", "--net", "--")
+    assert argv[8:] == ("185.125.190.83", "archive.ubuntu.com", pod_probes.UBUNTU_ARCHIVE_PATH)
+    script = argv[7]
+    assert "server_hostname=host" in script
+    assert "'HEAD '" in script
+
+    passing = _Commands(answers={resolve: _ARCHIVE_ADDRESSES})
+    reached = pod_probes.https_probe(runner=passing, pid="40127")
+    assert (reached.name, reached.passed, reached.error) == (pod_probes.HTTPS_PROBE, True, "")
+    assert tuple(passing.argvs) == (resolve, argv)
+
+    unresolved = pod_probes.https_probe(runner=_Commands(), pid="40127")
+    assert (unresolved.passed, unresolved.error) == (
+        False,
+        "archive.ubuntu.com did not resolve on the host",
+    )
+
+    refusing = _Commands(answers={resolve: _ARCHIVE_ADDRESSES}, codes={argv: 1})
+    unreached = pod_probes.https_probe(runner=refusing, pid="40127")
+    assert (unreached.passed, unreached.error) == (
+        False,
+        "the HEAD of https://archive.ubuntu.com/ubuntu/ from the pod namespace exited 1",
+    )

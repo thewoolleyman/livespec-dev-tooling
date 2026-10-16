@@ -42,16 +42,25 @@ __all__: list[str] = [
     "CRICTL_TIMEOUT_SECONDS",
     "DNS_PROBE",
     "DNS_SCRIPT",
+    "HTTPS_PROBE",
+    "HTTPS_SCRIPT",
     "POD_LIST_ARGV",
     "POD_NAMESPACE",
     "POD_PROBE_TIMEOUT_SECONDS",
+    "RESOLVE_TIMEOUT_SECONDS",
+    "UBUNTU_ARCHIVE_HOST",
+    "UBUNTU_ARCHIVE_PATH",
     "api_probe",
     "api_probe_argv",
     "dns_probe",
     "dns_probe_argv",
+    "https_probe",
+    "https_probe_argv",
     "inspect_pod_argv",
     "nsenter_argv",
     "pod_namespace_pid",
+    "resolve_argv",
+    "resolve_on_host",
 ]
 
 # k3s's own `crictl`, which talks to the embedded containerd rather than
@@ -210,6 +219,96 @@ def api_probe(*, runner: GuardCommandRunner, pid: str, address: str, port: int) 
     )
     return ProbeResult(
         name=API_PROBE,
+        passed=answer.returncode == 0,
+        error="" if answer.returncode == 0 else failure,
+    )
+
+
+# The egress endpoint, fixed by design R8: an Ubuntu archive mirror,
+# which carries no per-hour quota. The GitHub API it replaced
+# rate-limits an unauthenticated caller at sixty requests an hour, so a
+# window sampling every fifteen seconds would begin failing part way
+# through on a host whose network was perfectly fine. The canary's own
+# egress check uses the same endpoint for the same reason.
+UBUNTU_ARCHIVE_HOST: Final[str] = "archive.ubuntu.com"
+UBUNTU_ARCHIVE_PATH: Final[str] = "/ubuntu/"
+
+HTTPS_PROBE: Final[str] = "https"
+
+# `ahostsv4` rather than `hosts`: the probe needs an IPv4 address to
+# hand to a namespace whose forwarding path is IPv4, and `hosts` would
+# answer an AAAA record on a host with IPv6 resolution.
+RESOLVE_TIMEOUT_SECONDS: Final[int] = 10
+
+# An HTTPS HEAD whose SNI is sent EXPLICITLY. The connection is opened
+# to an address, because the pod namespace cannot resolve a name -- and
+# an address carries no name, so both the TLS server name and the HTTP
+# `Host` header have to be supplied by hand or the mirror answers a
+# redirect or a 400 that has nothing to do with this host's network.
+# `Connection: close` so the reply ends without a second round trip.
+HTTPS_SCRIPT: Final[str] = (
+    "import socket, ssl, sys\n"
+    "address, host, path = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+    "context = ssl.create_default_context()\n"
+    "request = 'HEAD ' + path + ' HTTP/1.1\\r\\n'\n"
+    "request += 'Host: ' + host + '\\r\\nConnection: close\\r\\n\\r\\n'\n"
+    "with socket.create_connection((address, 443), timeout=10) as raw:\n"
+    "    with context.wrap_socket(raw, server_hostname=host) as secured:\n"
+    "        secured.sendall(request.encode())\n"
+    "        status = secured.recv(64).split(b' ')[1:2]\n"
+    "        assert status, 'the mirror sent no status line'\n"
+    "        assert status[0][:1] in (b'2', b'3'), 'the mirror answered ' + repr(status[0])\n"
+)
+
+
+def resolve_argv(*, host: str) -> tuple[str, ...]:
+    """The HOST-side resolution of `host`, run outside any pod namespace."""
+    return ("getent", "ahostsv4", host)
+
+
+def resolve_on_host(*, runner: GuardCommandRunner, host: str) -> str:
+    """`host`'s first IPv4 address as the HOST resolves it, or nothing.
+
+    Resolved here and not inside the namespace, for the reason the
+    module docstring records. Only the FIRST row's address is taken:
+    `getent` repeats each address once per socket type, so a caller
+    reading every row would get the same address three times.
+    """
+    answer = runner(argv=resolve_argv(host=host), timeout_seconds=RESOLVE_TIMEOUT_SECONDS)
+    addresses = tuple(field for raw in answer.stdout.splitlines() for field in raw.split()[:1])
+    return addresses[0] if addresses else ""
+
+
+def https_probe_argv(*, pid: str, address: str, host: str, path: str) -> tuple[str, ...]:
+    """The HEAD, run inside the pod namespace against a host-resolved address."""
+    return nsenter_argv(pid=pid, argv=(sys.executable, "-c", HTTPS_SCRIPT, address, host, path))
+
+
+def https_probe(
+    *,
+    runner: GuardCommandRunner,
+    pid: str,
+    host: str = UBUNTU_ARCHIVE_HOST,
+    path: str = UBUNTU_ARCHIVE_PATH,
+) -> ProbeResult:
+    """Whether this pod's namespace still reaches the internet over HTTPS.
+
+    A name that does not resolve on the host is reported as its own
+    failure rather than as a failed request: the two have different
+    causes and only one of them is about the pod network.
+    """
+    address = resolve_on_host(runner=runner, host=host)
+    if not address:
+        return ProbeResult(
+            name=HTTPS_PROBE, passed=False, error=f"{host} did not resolve on the host"
+        )
+    answer = runner(
+        argv=https_probe_argv(pid=pid, address=address, host=host, path=path),
+        timeout_seconds=POD_PROBE_TIMEOUT_SECONDS,
+    )
+    failure = f"the HEAD of https://{host}{path} from the pod namespace exited {answer.returncode}"
+    return ProbeResult(
+        name=HTTPS_PROBE,
         passed=answer.returncode == 0,
         error="" if answer.returncode == 0 else failure,
     )
