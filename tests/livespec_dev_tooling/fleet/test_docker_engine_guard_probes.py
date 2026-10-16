@@ -26,6 +26,7 @@ lifecycle tests already use.
 from __future__ import annotations
 
 import importlib
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -632,3 +633,82 @@ def test_the_dns_placement_read_reports_a_same_node_backend_as_not_counting() ->
     )
     assert (missing.passed, missing.counts_toward_confirmation) == (False, True)
     assert missing.error == "no running CoreDNS backend was found through the k3s server"
+
+
+_POD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_pod_probes"
+_POD_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_pod_probes.py")
+
+# `k3s crictl pods --state Ready -o json`: the service-load-balancer pod
+# is HOST-network and must be skipped, and the CI job pod behind it is
+# the one a probe may enter.
+_READY_PODS = '{"items": [{"id": "svclb0001"}, {"id": "cijob0002"}]}'
+_HOST_NETWORK_POD = (
+    '{"status": {"linux": {"namespaces": {"options": {"network": "NODE"}}}},'
+    ' "info": {"pid": 991}}'
+)
+_POD_NETWORK_POD = (
+    '{"status": {"linux": {"namespaces": {"options": {"network": "POD"}}}},'
+    ' "info": {"pid": 40127}}'
+)
+
+
+def _crictl_bus(*, pods: str = _READY_PODS) -> _Commands:
+    """A bus answering the pod list and each sandbox's `inspectp`."""
+    pod_probes = importlib.import_module(_POD_MODULE)
+    return _Commands(
+        answers={
+            pod_probes.POD_LIST_ARGV: pods,
+            pod_probes.inspect_pod_argv(sandbox="svclb0001"): _HOST_NETWORK_POD,
+            pod_probes.inspect_pod_argv(sandbox="cijob0002"): _POD_NETWORK_POD,
+        }
+    )
+
+
+def test_the_dns_probe_queries_kube_dns_from_the_pod_namespace_without_a_resolver() -> None:
+    """The query goes to the kube-dns service address, from inside a pod's namespace.
+
+    The pod's namespace has no resolver file, which is why design R8
+    has the query SENT AND PARSED by a host script rather than by a
+    resolver: a probe that called `getaddrinfo` there would fail for
+    want of `/etc/resolv.conf` on a perfectly healthy host. A
+    host-network pod is skipped, because entering one proves nothing
+    about the pod network -- the network a Docker install can break.
+    """
+    assert _POD_PATH.is_file()
+    pod_probes = importlib.import_module(_POD_MODULE)
+
+    selected = _crictl_bus()
+    assert pod_probes.pod_namespace_pid(runner=selected) == "40127"
+    assert tuple(selected.argvs) == (
+        pod_probes.POD_LIST_ARGV,
+        pod_probes.inspect_pod_argv(sandbox="svclb0001"),
+        pod_probes.inspect_pod_argv(sandbox="cijob0002"),
+    )
+    assert pod_probes.pod_namespace_pid(runner=_crictl_bus(pods='{"items": []}')) == ""
+
+    argv = pod_probes.dns_probe_argv(pid="40127", server="10.43.0.10", name="kubernetes.default")
+    assert argv[:5] == ("nsenter", "--target", "40127", "--net", "--")
+    assert argv[5:7] == (sys.executable, "-c")
+    assert argv[8:] == ("10.43.0.10", "kubernetes.default")
+    script = argv[7]
+    assert "socket.SOCK_DGRAM" in script
+    assert "struct.unpack" in script
+    for resolver in ("getaddrinfo", "gethostbyname", "resolv.conf"):
+        assert resolver not in script
+
+    passing = _Commands()
+    answered = pod_probes.dns_probe(
+        runner=passing, pid="40127", server="10.43.0.10", name="kubernetes.default"
+    )
+    assert (answered.name, answered.passed, answered.error) == (pod_probes.DNS_PROBE, True, "")
+    assert tuple(passing.argvs) == (argv,)
+    assert set(passing.timeouts) == {pod_probes.POD_PROBE_TIMEOUT_SECONDS}
+
+    refusing = _Commands(codes={argv: 1})
+    unanswered = pod_probes.dns_probe(
+        runner=refusing, pid="40127", server="10.43.0.10", name="kubernetes.default"
+    )
+    assert (unanswered.passed, unanswered.error) == (
+        False,
+        "the DNS query to 10.43.0.10 from the pod namespace exited 1",
+    )
