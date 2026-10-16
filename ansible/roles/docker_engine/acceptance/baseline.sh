@@ -37,6 +37,13 @@ LLM_PORT="${LLM_PORT:-8080}"
 update-alternatives --set iptables /usr/sbin/iptables-nft >/dev/null
 update-alternatives --set ip6tables /usr/sbin/ip6tables-nft >/dev/null
 
+# gmktec has no needrestart (measured 2026-10-15). The cloud image ships it,
+# and its dpkg hook can restart services after a package transaction, which
+# would make the guest behave unlike the host it stands in for.
+if dpkg-query -W -f='${Status}' needrestart 2>/dev/null | grep -q 'install ok installed'; then
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y -q needrestart >/dev/null
+fi
+
 # Sysctls and the bridge netfilter module, as measured on gmktec.
 modprobe br_netfilter
 cat >/etc/modules-load.d/guard-baseline.conf <<'EOF'
@@ -111,14 +118,26 @@ write_unit k3s-agent.service "k3s agent stub" "/usr/local/lib/guard-baseline/k3s
 write_unit local-homelab-llama-server.service "LLM health stub" \
   "/usr/bin/python3 /usr/local/lib/guard-baseline/llm_health.py ${LLM_PORT}"
 
+# The sandbox slice the daemon's cgroup-parent names must be loaded and active
+# before the guard's first start (design "The daemon configuration"). On a
+# factory host the docker_sandbox_slice role's systemd-only half installs it;
+# here a minimal slice stands in, without that role's sizing.
+cat >/etc/systemd/system/fabro-sandbox.slice <<'EOF'
+[Unit]
+Description=Fabro sandbox slice (docker_engine acceptance STUB)
+
+[Slice]
+EOF
+
 systemctl daemon-reload
 systemctl enable --now tailscaled.service k3s-agent.service local-homelab-llama-server.service
 systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+systemctl start fabro-sandbox.slice
 
 # Refuse to call the baseline done unless it actually holds: the same facts the
 # role's preflight and the design's measured state read.
 fail=0
-for unit in tailscaled.service k3s-agent.service local-homelab-llama-server.service; do
+for unit in tailscaled.service k3s-agent.service local-homelab-llama-server.service fabro-sandbox.slice; do
   systemctl is-active --quiet "$unit" || {
     echo "baseline.sh: $unit is not active" >&2
     fail=1
