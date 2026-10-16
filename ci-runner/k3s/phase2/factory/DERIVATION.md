@@ -277,6 +277,24 @@ Read-only on purpose — the plugin never writes an Event. `watch` is granted
 beside `list` because the interesting Event arrives AFTER the pod is created,
 and polling a list for it is the same read with worse latency.
 
+### 4. `pods/exec` — `get` beside `create`, and `pods` — `patch`, in `factory`
+
+Both were found live on 2026-10-16 by the kubernetes-sandbox-backend lifecycle
+proof (bd-ib-ad6dby). The plugin's own kind CI runs as cluster-admin, so it never
+saw the gap.
+
+- **`get` on `pods/exec`.** Exec streams over WebSocket, and the upgrade
+  request is an HTTP GET, which the API server authorizes as `get` on the
+  `exec` subresource. With `create` alone, every exec from hp answered 403
+  (`cannot get resource "pods/exec"`) on both the v5 and v4 channel protocols.
+  To check this, use `kubectl auth can-i get pods --subresource=exec -n factory`.
+  The slash form `get pods/exec` names a pod called `exec` and answers for
+  plain `get pods`, so it reports yes even while the grant is missing.
+- **`patch` on `pods`.** The plugin relabels a live sandbox pod with a merge
+  patch (its `lifecycle.labels` capability, which Petri uses to retag a lease).
+  It adds no power that `create` and `delete` in the same namespace do not
+  already hold.
+
 ### Still no secrets, at either scope
 
 The one grant that stays absent, and the only one with no question behind it
