@@ -748,6 +748,10 @@ def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     host, child 3b the package step. Each is reached by name from the
     guard module, which resolves siblings package-qualified when imported
     and bare when run as a script on the guarded host.
+
+    The real host is no longer a stub — child 3a built it — so what is
+    asserted of it here is only that the guard module's entry point still
+    hands back a `HostOps`; its own tests own its actions.
     """
     guard = _guard_surface()
     assert guard.sibling_module_name(package="pkg", name="_mod") == "pkg._mod"
@@ -766,9 +770,12 @@ def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     with pytest.raises(NotImplementedError):
         rollback.run_rollback(run="run-a", env=env, decision=decision)
     with pytest.raises(NotImplementedError):
-        host_module.build_real_host(paths=_paths(root=tmp_path))
-    with pytest.raises(NotImplementedError):
         packages.run_package_step(inputs=tmp_path / "inputs")
+
+    hostops = importlib.import_module(_HOSTOPS_MODULE)
+    real = host_module.build_real_host(paths=_paths(root=tmp_path))
+    declared = {name for name in dir(hostops.HostOps) if not name.startswith("_")}
+    assert declared <= set(dir(real))
 
 
 def test_on_a_host_that_holds_no_reservation_only_reserve_gets_past_the_table(
