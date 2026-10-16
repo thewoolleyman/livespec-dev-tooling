@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from livespec_dev_tooling.fleet._docker_engine_guard_runner import (
+from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
     COMMAND_TIMEOUT_SECONDS,
     TimedCommand,
     TimedRunner,
