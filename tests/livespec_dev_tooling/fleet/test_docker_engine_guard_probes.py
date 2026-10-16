@@ -558,3 +558,77 @@ def test_the_node_ready_probe_reads_the_nodes_own_status_subresource() -> None:
     refused = _Commands(codes={argv: 1})
     unread = cluster.node_ready_probe(runner=refused, node="gmktec-xubuntu")
     assert (unread.passed, unread.error) == (False, "the node status read exited 1")
+
+
+# `k3s kubectl get pods -n kube-system -o wide` on the k3s server. The
+# header, a non-CoreDNS pod and a CoreDNS replica that is Terminating
+# are all in the fixture: each is a row the placement read must not
+# count, and each is wrong in a different way.
+_KUBE_SYSTEM_WIDE_CROSS_NODE = _lines(
+    "NAME                     READY STATUS      RESTARTS AGE IP          NODE              NOMINATED READINESS",
+    "coredns-6b9d4d9d4d-ab1   1/1   Running     0        12d 10.42.0.88  poweredge-xubuntu <none>    <none>",
+    "coredns-6b9d4d9d4d-ol1   0/1   Terminating 0        12d 10.42.3.9   gmktec-xubuntu    <none>    <none>",
+    "local-path-provisioner-1 1/1   Running     0        12d 10.42.0.5   poweredge-xubuntu <none>    <none>",
+)
+_KUBE_SYSTEM_WIDE_SAME_NODE = _lines(
+    "NAME                     READY STATUS      RESTARTS AGE IP          NODE              NOMINATED READINESS",
+    "coredns-6b9d4d9d4d-ab1   1/1   Running     0        12d 10.42.3.14  gmktec-xubuntu    <none>    <none>",
+)
+
+
+def test_the_dns_placement_read_reports_a_same_node_backend_as_not_counting() -> None:
+    """Every CoreDNS backend must be on ANOTHER node, read through the k3s server.
+
+    CoreDNS is not pinned to a node, so a reschedule onto this one is
+    ordinary cluster behaviour and not evidence about Docker -- design
+    F7 therefore reports a same-node placement as "same-node" that does
+    NOT count toward confirmation, rather than failing the sample and
+    rolling back a healthy install. A read that found no running
+    backend at all IS a failure: the cluster then has no DNS to prove
+    anything with.
+    """
+    assert "dns_placement_probe" in importlib.import_module(_CLUSTER_MODULE).__all__
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+    argv = cluster.coredns_placement_argv(server="poweredge-xubuntu")
+    assert argv == (
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "poweredge-xubuntu",
+        "k3s",
+        "kubectl",
+        "get",
+        "pods",
+        "-n",
+        "kube-system",
+        "-o",
+        "wide",
+    )
+
+    cross = _Commands(answers={argv: _KUBE_SYSTEM_WIDE_CROSS_NODE})
+    assert cluster.coredns_nodes(runner=cross, server="poweredge-xubuntu") == ("poweredge-xubuntu",)
+    elsewhere = cluster.dns_placement_probe(
+        runner=cross, server="poweredge-xubuntu", node="gmktec-xubuntu"
+    )
+    assert (elsewhere.name, elsewhere.passed, elsewhere.error) == (
+        cluster.DNS_PLACEMENT_PROBE,
+        True,
+        "",
+    )
+    assert elsewhere.counts_toward_confirmation is True
+
+    here = _Commands(answers={argv: _KUBE_SYSTEM_WIDE_SAME_NODE})
+    same = cluster.dns_placement_probe(
+        runner=here, server="poweredge-xubuntu", node="gmktec-xubuntu"
+    )
+    assert (same.passed, same.counts_toward_confirmation) == (True, False)
+    assert same.error == (
+        "CoreDNS answers from this node ('gmktec-xubuntu',), so the DNS probe is same-node"
+    )
+
+    none = _Commands(answers={argv: _lines("NAME READY STATUS RESTARTS AGE IP NODE")})
+    missing = cluster.dns_placement_probe(
+        runner=none, server="poweredge-xubuntu", node="gmktec-xubuntu"
+    )
+    assert (missing.passed, missing.counts_toward_confirmation) == (False, True)
+    assert missing.error == "no running CoreDNS backend was found through the k3s server"

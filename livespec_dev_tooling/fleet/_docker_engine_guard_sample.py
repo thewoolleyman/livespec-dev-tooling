@@ -39,3 +39,14 @@ class ProbeResult:
     name: str
     passed: bool
     error: str = ""
+
+    # Whether this result is EVIDENCE, as distinct from whether it
+    # passed. The two come apart in exactly one place (design F7): a
+    # DNS probe answered by a CoreDNS replica that has been rescheduled
+    # onto this node did not fail -- the reschedule is ordinary cluster
+    # behaviour and says nothing about Docker -- but it stopped proving
+    # that the pod network reaches ANOTHER node, which is the property
+    # the probe exists to establish. Reporting that as a failure would
+    # roll back a healthy install; reporting it as a pass would confirm
+    # one on evidence that was not gathered.
+    counts_toward_confirmation: bool = True
