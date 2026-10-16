@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +77,19 @@ QUERY_ARGV: Final[tuple[str, ...]] = (
 # The field of an `apt-cache show` stanza that carries the archive's own
 # statement about the file's bytes.
 _INDEX_DIGEST_FIELD: Final[str] = "SHA256:"
+
+# One member of the control archive, as `dpkg-deb -I <deb>` lists it
+# before printing the control stanza: a byte count, a line count, an
+# ASTERISK when the member is executable, and the member's name.
+#
+# The asterisk is what picks the maintainer scripts out, and it is the
+# right test rather than a list of the names dpkg happens to run today:
+# an executable member of the control archive is a program, and a
+# program nobody read is exactly what this audit exists to refuse. The
+# unmarked members a real listing also carries (`control`, `md5sums`,
+# `conffiles`, `templates`) are data, and the control stanza's own lines
+# match nothing here because they carry neither count.
+_CONTROL_MEMBER: Final[re.Pattern[str]] = re.compile(r"^\s*\d+ bytes,\s+\d+ lines\s+\*\s+(\S+)")
 
 # How many fields a line of that output carries when dpkg holds the
 # package. A line with fewer is a package dpkg knows of and holds nothing
@@ -241,6 +255,53 @@ def _index_digest(*, spec: PackageSpec, runner: TimedRunner) -> str | None:
     return None
 
 
+def _maintainer_scripts(*, deb: Path, runner: TimedRunner) -> frozenset[str]:
+    """Every program the control archive of `deb` carries, read from its own listing.
+
+    `dpkg-deb -I` with no member named prints the control archive's
+    member listing before the control stanza, and the executable members
+    of it are the maintainer scripts. Read as a SET rather than looked up
+    one name at a time, because the question this answers is what the
+    archive holds and not whether it holds something already named.
+    """
+    listing = _read(runner=runner, argv=("dpkg-deb", "-I", str(deb)))
+    return frozenset(
+        match.group(1)
+        for match in (_CONTROL_MEMBER.match(line) for line in listing.splitlines())
+        if match is not None
+    )
+
+
+def _script_refusal(*, spec: PackageSpec, deb: Path, runner: TimedRunner) -> str | None:
+    """Why this archive's maintainer scripts may not be run, or `None` if they may.
+
+    These are the programs the install runs AS ROOT, and the one thing in
+    the archive that no statement by the archive itself can vouch for:
+    the SHA256 above is compared against the index, which the same mirror
+    serves. So they go the other way, against digests a human read and
+    committed.
+
+    The SET is compared before any digest, and that half is the one a
+    digest loop structurally cannot cover: the loop walks the names the
+    ALLOWLIST carries, so a script the archive holds and the allowlist
+    does not is never read at all. Both directions refuse — an allowlist
+    naming a script the archive no longer carries is a committed audit
+    that has gone stale, and a digest with nothing to check is not a
+    digest that passed.
+    """
+    present = _maintainer_scripts(deb=deb, runner=runner)
+    if present != frozenset(spec.scripts):
+        return (
+            f"{deb.name} carries the maintainer scripts {tuple(sorted(present))}, not the "
+            f"{tuple(sorted(spec.scripts))} the committed allowlist names for {spec.package}"
+        )
+    for script, committed in sorted(spec.scripts.items()):
+        shown = _read(runner=runner, argv=("dpkg-deb", "-I", str(deb), script))
+        if hashlib.sha256(shown.encode("utf-8")).hexdigest() != committed:
+            return f"{deb.name}'s {script} differs from its committed digest"
+    return None
+
+
 def _verification_refusal(*, spec: PackageSpec, deb: Path, runner: TimedRunner) -> str | None:
     """Why this downloaded archive may not be installed, or `None` if it may.
 
@@ -254,7 +315,8 @@ def _verification_refusal(*, spec: PackageSpec, deb: Path, runner: TimedRunner) 
     the index is the archive's own statement about the file, so a mirror
     serving different bytes under the pinned version is caught without the
     role re-committing a digest at every security update. The maintainer
-    scripts go the other way, against digests a human read and committed.
+    scripts go the other way, and `_script_refusal` beside this records
+    why they must.
     """
     _ = _read(
         runner=runner,
@@ -274,11 +336,7 @@ def _verification_refusal(*, spec: PackageSpec, deb: Path, runner: TimedRunner) 
     if control != spec.version:
         # A file name collision in the cache: the right name, another version.
         return f"{deb.name} carries control version {control}, not {spec.version}"
-    for script, committed in sorted(spec.scripts.items()):
-        shown = _read(runner=runner, argv=("dpkg-deb", "-I", str(deb), script))
-        if hashlib.sha256(shown.encode("utf-8")).hexdigest() != committed:
-            return f"{deb.name}'s {script} differs from its committed digest"
-    return None
+    return _script_refusal(spec=spec, deb=deb, runner=runner)
 
 
 def _configuration_refusal(*, declared: PackageInputs) -> str | None:
