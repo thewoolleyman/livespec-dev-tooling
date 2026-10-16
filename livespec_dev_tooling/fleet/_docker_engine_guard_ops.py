@@ -16,6 +16,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (
+    START_ORDER,
+    UNIT_WAIT_SECONDS,
     Deadline,
     GuardOutcome,
     deadline_seconds,
@@ -41,6 +43,7 @@ __all__: list[str] = [
     "arm",
     "publish",
     "reserve",
+    "start",
 ]
 
 _QUIESCENT = "inactive"
@@ -187,3 +190,33 @@ def arm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         env.host.systemd_run(argv=deadman_argv(run=run, on_active_seconds=remaining))
     record_phase(paths=env.paths, run=run, phase="armed")
     return GuardOutcome(operation="arm", run=run, verdict=decision.verdict, reason="dead-man armed")
+
+
+def start(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
+    """Grant the start permission and bring the two daemons up behind it.
+
+    The dead-man must be LIVE first. It is the only thing that takes the
+    host back if the controller dies, so granting the permission without
+    one would leave a Docker daemon that nothing is watching on a
+    machine nobody can reach physically.
+
+    The phase reaches `started` BEFORE the permission exists, which is
+    what makes a duplicate or delayed `start` refuse: the second
+    invocation finds `started`, a phase its row does not admit. Granting
+    first would leave a window in which a second `start` could grant
+    again over a run already running.
+    """
+    if not env.host.deadman_timer_active(run=run):
+        return GuardOutcome(
+            operation="start",
+            run=run,
+            verdict="refuse",
+            reason="the run's dead-man timer is not active, so nothing would take the host back",
+        )
+    record_phase(paths=env.paths, run=run, phase="started")
+    env.host.grant_start_permission()
+    for unit in START_ORDER:
+        env.host.start_unit(unit=unit, timeout_seconds=UNIT_WAIT_SECONDS)
+    return GuardOutcome(
+        operation="start", run=run, verdict=decision.verdict, reason="the engine is running"
+    )

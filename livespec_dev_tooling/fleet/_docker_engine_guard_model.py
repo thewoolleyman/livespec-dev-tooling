@@ -28,11 +28,14 @@ __all__: list[str] = [
     "DEFAULT_RUNTIME_ROOT",
     "DEFAULT_STATE_ROOT",
     "DEFAULT_WINDOW_SECONDS",
+    "GUARDED_UNITS",
     "GUARD_EXECUTABLE",
     "INSTALL_PHASES",
     "OPERATIONS",
     "PHASES",
     "ROLLBACK_PHASES",
+    "START_ORDER",
+    "UNIT_WAIT_SECONDS",
     "Deadline",
     "Decision",
     "GuardOutcome",
@@ -114,6 +117,26 @@ def operation_budget_seconds(*, operation: Operation, window_seconds: int) -> in
     window = window_seconds if operation == "observe" else 0
     return _BASE_BUDGET_SECONDS[operation] + window
 
+
+# The three units the guard drop-ins condition, in sorted order. Every
+# kill, stop and disable the guard issues names one of exactly these, so
+# k3s-agent.service and its own containerd are never reachable.
+GUARDED_UNITS: Final[tuple[str, ...]] = (
+    "containerd.service",
+    "docker.service",
+    "docker.socket",
+)
+
+# `start` brings these two up, in this order: docker needs containerd's
+# socket, so the reverse order is a docker.service that fails its start.
+# docker.socket is deliberately absent — the guard never starts it.
+START_ORDER: Final[tuple[str, ...]] = ("containerd.service", "docker.service")
+
+# The bounded wait on each guarded unit start. Two of them plus the lock
+# wait fit inside `start`'s own 180-second budget, so a daemon that never
+# becomes ready ends as a refusal rather than as a transient unit
+# SIGKILLed with no verdict at all.
+UNIT_WAIT_SECONDS: Final[int] = 60
 
 # Where the role installs this executable on the guarded host, and so the
 # command every transient unit the guard arms runs.
