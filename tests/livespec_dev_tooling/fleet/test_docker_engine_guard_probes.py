@@ -926,3 +926,50 @@ def test_a_failed_probe_is_re_run_once_and_counts_as_failed_only_when_it_fails_t
     assert (failed.name, failed.passed) == ("dns", False)
     assert failed.error == "attempt 1 saw no answer; then attempt 2 saw no answer"
     assert twice.calls == 2
+
+
+def test_every_probe_failure_is_recorded_with_its_probe_name_and_its_error() -> None:
+    """One sample record: every result, every failure named, one `passed` verdict.
+
+    The failure list is what an operator has after a rolled-back run,
+    and it is the only thing that tells "Docker broke the pod network"
+    from "CoreDNS restarted" -- so each entry carries the probe's own
+    name and its own error rather than a count. The record also carries
+    whether the sample counts toward confirmation, which is NOT the
+    same as whether it passed: a same-node DNS placement passes and
+    proves nothing.
+    """
+    assert "build_sample" in importlib.import_module(_SAMPLE_MODULE).__all__
+    sample_module = importlib.import_module(_SAMPLE_MODULE)
+
+    def _passing() -> Any:
+        return sample_module.ProbeResult(name="services", passed=True)
+
+    def _failing() -> Any:
+        return sample_module.ProbeResult(name="dns", passed=False, error="no answer")
+
+    def _uncounted() -> Any:
+        return sample_module.ProbeResult(
+            name="dns-placement", passed=True, counts_toward_confirmation=False
+        )
+
+    whole = sample_module.build_sample(probes=(_passing, _uncounted))
+    assert whole[sample_module.PASSED_KEY] is True
+    assert whole[sample_module.COUNTS_KEY] is False
+    assert whole[sample_module.PROBES_KEY] == (
+        {"name": "services", "passed": True, "error": "", "counts_toward_confirmation": True},
+        {
+            "name": "dns-placement",
+            "passed": True,
+            "error": "",
+            "counts_toward_confirmation": False,
+        },
+    )
+    assert whole[sample_module.FAILURES_KEY] == ()
+
+    broken = sample_module.build_sample(probes=(_passing, _failing))
+    assert broken[sample_module.PASSED_KEY] is False
+    assert broken[sample_module.COUNTS_KEY] is True
+    assert broken[sample_module.FAILURES_KEY] == (
+        {"probe": "dns", "error": "no answer; then no answer"},
+    )
