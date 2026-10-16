@@ -39,13 +39,16 @@ __all__: list[str] = [
     "DOCKER_CHAIN_PREFIX",
     "DOCKER_SUBNET",
     "FAMILIES",
+    "FORWARD_CHAIN",
     "FORWARD_POLICY_SNAPSHOT",
+    "POLICY_TABLE",
     "SAVE_COMMAND",
     "SNAPSHOT_TABLES",
     "FirewallTable",
     "FootprintPlan",
     "chain_argv",
     "delete_argv",
+    "forward_policy_argv",
     "parse_table",
     "plan_footprint",
     "save_argv",
@@ -82,6 +85,12 @@ CHANGE_COMMAND: Final[Mapping[str, str]] = {
     "ipv4": "iptables-nft",
     "ipv6": "ip6tables-nft",
 }
+
+# The chain whose policy a rollback has to put back, and the one table it
+# lives in. Both are named rather than left implicit so every emitted
+# argv says which chain of which table it means.
+FORWARD_CHAIN: Final[str] = "FORWARD"
+POLICY_TABLE: Final[str] = "filter"
 
 # Where the snapshot records each family's FORWARD policy. It is derived
 # from the family's own `filter` dump rather than read with a second
@@ -197,3 +206,8 @@ def delete_argv(*, family: str, table: str, rule: str) -> tuple[str, ...]:
 def chain_argv(*, family: str, table: str, verb: str, chain: str) -> tuple[str, ...]:
     """A whole-chain verb (`-F`, `-X`) against one chain of one table."""
     return (CHANGE_COMMAND[family], "-t", table, verb, chain)
+
+
+def forward_policy_argv(*, family: str, policy: str) -> tuple[str, ...]:
+    """The `-P FORWARD` that puts one family's recorded policy back."""
+    return (CHANGE_COMMAND[family], "-t", POLICY_TABLE, "-P", FORWARD_CHAIN, policy)

@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
     remove_footprint,
+    restore_forward_policy,
     write_firewall_snapshot,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_netstate import write_sysctl_snapshot
@@ -156,7 +157,7 @@ class RealHost:
 
     def restore_forward_policy(self, *, snapshot: Path) -> None:
         """One `-P FORWARD` per family, with the policy the snapshot recorded."""
-        raise NotImplementedError
+        restore_forward_policy(runner=self.runner, snapshot=snapshot)
 
     def kill_cgroup(self, *, units: Sequence[str]) -> None:
         """SIGKILL every process in the named cgroups, then stop them."""

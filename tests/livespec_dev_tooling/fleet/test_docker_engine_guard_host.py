@@ -81,6 +81,12 @@ _IPV6_NAT_BEFORE = (
     "COMMIT",
 )
 
+# Each family's FORWARD policy on the pre-Docker host. They DIFFER on
+# purpose: a restore that put one family's policy on both would pass a
+# fixture where they matched and open the other family's forwarding on
+# the real one.
+_FORWARD_POLICIES_BEFORE = {"ipv4": "DROP", "ipv6": "ACCEPT"}
+
 # The five watched values as gmktec reports them (design, measured state
 # 2026-10-15): forwarding on for both families, bridge-netfilter on for
 # iptables and ip6tables and off for arptables.
@@ -520,11 +526,14 @@ def _after_tables() -> dict[tuple[str, str], list[str]]:
 
 
 def _write_snapshot(*, root: Path) -> Path:
-    """A run's `before/` directory holding the pre-Docker dumps."""
+    """A run's `before/` directory holding the pre-Docker dumps and policies."""
     snapshot = root / "var" / "runs" / "run-a" / "before"
     snapshot.mkdir(parents=True, exist_ok=True)
     for (command, table), lines in _before_tables().items():
         _ = (snapshot / f"{command}.{table}").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _ = (snapshot / "forward-policy.json").write_text(
+        json.dumps(_FORWARD_POLICIES_BEFORE), encoding="utf-8"
+    )
     return snapshot
 
 
@@ -601,3 +610,28 @@ def test_footprint_removal_repeats_at_most_three_passes_and_reports_the_residue(
     assert residue == (f"ipv4 filter {stubborn}",)
     assert stuck.argvs.count(_EXPECTED_DELETES[3]) == actions.FOOTPRINT_PASSES
     assert len(stuck.argvs_with(flag="-D")) == len(_EXPECTED_DELETES) + 2
+
+
+def test_forward_restore_puts_each_family_s_recorded_policy_back(tmp_path: Path) -> None:
+    """One `-P FORWARD` per family, with the policy the SNAPSHOT recorded.
+
+    The policy is read from the snapshot rather than inferred, and that is
+    the whole point: Docker sets FORWARD to DROP and adds the rules that
+    make its own traffic work, so a rollback that removed the rules and
+    left the policy would leave k3s's pod traffic dropped by a chain with
+    nothing in it. Each family carries its own recorded value -- they
+    differ on this host -- so neither is restored from the other's.
+    """
+    actions = importlib.import_module(_ACTIONS_MODULE)
+    assert hasattr(actions, "restore_forward_policy")
+    snapshot = _write_snapshot(root=tmp_path)
+    commands = _Commands(tables=_after_tables())
+    host = _real_host(root=tmp_path, commands=commands)
+
+    host.restore_forward_policy(snapshot=snapshot)
+
+    assert tuple(commands.argvs) == (
+        ("iptables-nft", "-t", "filter", "-P", "FORWARD", "DROP"),
+        ("ip6tables-nft", "-t", "filter", "-P", "FORWARD", "ACCEPT"),
+    )
+    assert set(commands.timeouts) == {actions.FIREWALL_TIMEOUT_SECONDS}
