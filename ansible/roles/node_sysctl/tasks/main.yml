@@ -73,14 +73,35 @@
     label: "{{ item.1.key }}"
   when: not ansible_check_mode
 
-- name: Refuse a running value that does not match the shipped intent
+- name: Refuse a running value below the budget this role installs
+  # A FLOOR, not an equality. Every value in this role's drop-ins is a kernel
+  # BUDGET — a minimum derived from the pool's peak concurrent containers (see
+  # each shipped file's SIZING header) — so a live ceiling at or above it meets
+  # the requirement and one below it does not. The refusing arm is what still
+  # catches the failure the equality was written for: a later-sorting drop-in,
+  # or a `sysctl -p` of a single file, can leave the live value LOW while this
+  # role reports a clean apply.
+  #
+  # The equality cost a real outage. `keyring_quota` (ansible/fabro-hosts.yml)
+  # co-owns kernel.keys.* on hp-xubuntu, which joined ci_pool as a factory-only
+  # agent on 2026-10-14 while remaining a Fabro sandbox host; its 99- drop-in
+  # sorts after this role's 60-, so the live reading came back ABOVE the budget
+  # and this task refused task 24 of every ci-pool apply on that host on
+  # 2026-10-16 (work-item livespec-dev-tooling-5lqito).
+  #
+  # ⛔ This loosens the LIVE reading only. What the role INSTALLS stays exact:
+  # the first task of this file refuses, controller-side, a drop-in whose
+  # declared values disagree with `node_sysctl_dropins`, so the floor is never
+  # a licence for the shipped file to drift.
   ansible.builtin.assert:
     that:
-      - item.stdout | int == item.item.1.value | int
+      - item.stdout | int >= item.item.1.value | int
     fail_msg: >-
       {{ item.item.1.key }} is {{ item.stdout }} after apply,
-      expected {{ item.item.1.value }}
-    success_msg: "{{ item.item.1.key }} = {{ item.stdout }}"
+      below this role's budget of {{ item.item.1.value }}
+    success_msg: >-
+      {{ item.item.1.key }} = {{ item.stdout }},
+      at or above this role's budget of {{ item.item.1.value }}
   loop: "{{ node_sysctl_running.results | default([]) }}"
   loop_control:
     label: "{{ item.item.1.key }}"
