@@ -104,6 +104,13 @@ class PackageInputs:
 
     specs: tuple[PackageSpec, ...]
     cache: Path
+    # Absolute host path mapped to the SHA256 committed for it: the apt
+    # hook files and the dpkg configuration the install rides on.
+    config_digests: Mapping[str, str]
+    # The directories whose EVERY file one of those digests has to cover,
+    # so a configuration file that was ADDED refuses as well as one
+    # altered. An absent directory is zero uncovered files, not a refusal.
+    config_dirs: tuple[str, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -143,7 +150,12 @@ def load_package_inputs(*, inputs: Path) -> PackageInputs | str:
         )
         for row in declared
     )
-    return PackageInputs(specs=specs, cache=Path(payload["cache"]))
+    return PackageInputs(
+        specs=specs,
+        cache=Path(payload["cache"]),
+        config_digests=dict(payload["config_digests"]),
+        config_dirs=tuple(payload["config_dirs"]),
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -264,8 +276,45 @@ def _verification_refusal(*, spec: PackageSpec, deb: Path, runner: TimedRunner) 
     return None
 
 
+def _configuration_refusal(*, declared: PackageInputs) -> str | None:
+    """The host apt or dpkg configuration file a committed digest does not vouch for.
+
+    Neither kind is incidental to a fenced install: an apt hook is a
+    program apt runs around every transaction, and a `dpkg.cfg.d`
+    fragment can rewrite what unpacking MEANS — a `force-all`, a
+    `path-exclude` — so an unexpected one is exactly the gap between the
+    transaction that was audited and what the host does with it.
+
+    Both halves are checked, and the second is the one that matters: a
+    check verifying only the files it already knew about would be
+    entirely silent about one that was ADDED to either directory.
+    """
+    for path_text, committed in sorted(declared.config_digests.items()):
+        path = Path(path_text)
+        if not path.is_file():
+            return f"the committed configuration file {path} is absent from this host"
+        if hashlib.sha256(path.read_bytes()).hexdigest() != committed:
+            return f"{path} differs from its committed digest"
+    for directory in declared.config_dirs:
+        # `glob` rather than `iterdir`: a host carrying no fragment
+        # directory at all is zero uncovered files, not an error.
+        for found in sorted(Path(directory).glob("*")):
+            if found.as_posix() not in declared.config_digests:
+                return f"{found} is a configuration file no committed digest covers"
+    return None
+
+
 def audit_transaction(*, declared: PackageInputs, runner: TimedRunner) -> Audit | str:
-    """Prove what the install may touch, before the step has touched anything."""
+    """Prove what the install may touch, before the step has touched anything.
+
+    The host's own apt and dpkg configuration is checked FIRST, before a
+    single command runs: it decides what every later command in this
+    transaction would MEAN, so simulating against it would be simulating
+    against an unknown.
+    """
+    unvouched_configuration = _configuration_refusal(declared=declared)
+    if unvouched_configuration is not None:
+        return unvouched_configuration
     simulated = _read(
         runner=runner,
         argv=(*SIMULATE_ARGV, *(f"{spec.package}={spec.version}" for spec in declared.specs)),
