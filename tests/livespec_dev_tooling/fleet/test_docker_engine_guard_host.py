@@ -306,3 +306,62 @@ def test_the_footprint_planner_selects_exactly_the_rules_docker_added() -> None:
 
     assert plan.delete_rules == _IPV4_FILTER_DOCKER_RULES
     assert plan.delete_chains == ("DOCKER", "DOCKER-ISOLATION-STAGE-1")
+
+
+# A baseline that ALREADY carries a `docker0` rule and a `DOCKER`-prefixed
+# chain of its own -- an operator's, or a previously confirmed run's. They
+# are in the snapshot, so they are the host's state and not this run's
+# footprint, and a rollback that removed them would take away something it
+# never installed.
+_IPV4_FILTER_BRIDGED_BEFORE = (
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD DROP [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    ":DOCKER-USER - [0:0]",
+    ":ts-input - [0:0]",
+    "-A INPUT -j ts-input",
+    "-A FORWARD -j DOCKER-USER",
+    "-A FORWARD -o docker0 -j ACCEPT",
+    "COMMIT",
+)
+_IPV4_FILTER_BRIDGED_AFTER = (
+    "*filter",
+    ":INPUT ACCEPT [0:0]",
+    ":FORWARD DROP [0:0]",
+    ":OUTPUT ACCEPT [0:0]",
+    ":DOCKER - [0:0]",
+    ":DOCKER-ISOLATION-STAGE-1 - [0:0]",
+    ":DOCKER-USER - [0:0]",
+    ":ts-input - [0:0]",
+    "-A INPUT -j ts-input",
+    "-A FORWARD -j DOCKER-USER",
+    "-A FORWARD -o docker0 -j ACCEPT",
+    "-A FORWARD -o docker0 -j DOCKER",
+    "COMMIT",
+)
+
+
+def test_the_planned_deletion_set_excludes_everything_the_snapshot_holds() -> None:
+    """ "Absent from the snapshot" is a SEPARATE filter from "looks like Docker's".
+
+    The two are easy to conflate and the cost of conflating them is
+    asymmetric: a rule or chain the snapshot already holds is the HOST's,
+    and removing it is damage the rollback cannot undo, because the
+    snapshot is the only record of what the host looked like and it does
+    not say who put each line there. So the snapshot's own rules survive
+    even when they reference `docker0`, and its own `DOCKER`-prefixed
+    chains survive even though their names match.
+    """
+    firewall = importlib.import_module(_FIREWALL_MODULE)
+    snapshot = _table(module=firewall, lines=_IPV4_FILTER_BRIDGED_BEFORE)
+
+    plan = firewall.plan_footprint(
+        current=_table(module=firewall, lines=_IPV4_FILTER_BRIDGED_AFTER),
+        snapshot=snapshot,
+    )
+
+    assert plan.delete_rules == ("-A FORWARD -o docker0 -j DOCKER",)
+    assert plan.delete_chains == ("DOCKER", "DOCKER-ISOLATION-STAGE-1")
+    assert set(plan.delete_rules).isdisjoint(snapshot.rules)
+    assert set(plan.delete_chains).isdisjoint(snapshot.chains)
