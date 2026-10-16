@@ -8,10 +8,10 @@ the postcondition read and the dead-man recipe; child 4 adds the
 PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
 resync refusal) and the observation `sample`; child 5 adds the clock
 and boot identity, the runtime directory's ownership and the start
-permission, the admission reads, the unit start and the post-commit
-enable. The seams that still raise, each saying so where it stands,
-are the reconfigure seams child 1b added, the rollback phase child
-child 2 added, and child 3b's package step.
+permission, the admission reads, the unit start, the post-commit
+enable and the reconfigure seams. The seams that still raise, each
+saying so where it stands, are the rollback phase child child 2
+added, and child 3b's package step.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -46,6 +46,12 @@ from livespec_dev_tooling.fleet._docker_engine_guard_clock import (
     wait_seconds,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_conditions import condition_check_passed
+from livespec_dev_tooling.fleet._docker_engine_guard_daemon import (
+    DAEMON_CONFIG,
+    PENDING_RESTART_MARKER,
+    record_pending_drained_restart,
+    write_daemon_keys,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
     remove_footprint,
     restore_forward_policy,
@@ -120,6 +126,14 @@ class RealHost:
     # tree, exactly as the runner makes every command drivable.
     proc_root: Path = PROC_ROOT
     containerd_paths: Sequence[Path] = CONTAINERD_PATHS
+
+    # The two locations the RECONFIGURE seams write, both shared with
+    # the `docker_sandbox_slice` Ansible role. Fields with the real
+    # defaults for the same reason the two above are: a write that
+    # cannot be redirected is a write no test can assert without
+    # reconfiguring the machine it runs on.
+    daemon_config: Path = DAEMON_CONFIG
+    restart_marker: Path = PENDING_RESTART_MARKER
 
     # --- clock, boot identity and the guard's own runtime directory ---
 
@@ -251,12 +265,12 @@ class RealHost:
     # --- reconfigure (child 1b) ---
 
     def write_daemon_keys(self, *, keys: Mapping[str, object]) -> None:
-        """CHILD 4: write the role-owned daemon keys, leaving every other key alone."""
-        raise NotImplementedError
+        """Write the role-owned daemon keys, leaving every other key alone."""
+        write_daemon_keys(keys=keys, config=self.daemon_config)
 
     def record_pending_drained_restart(self, *, unit: str) -> None:
-        """CHILD 4: record that `unit` needs a drained restart, restarting nothing."""
-        raise NotImplementedError
+        """Record that `unit` needs a drained restart, restarting nothing."""
+        record_pending_drained_restart(unit=unit, marker=self.restart_marker)
 
     # --- rollback phases ---
 
@@ -311,6 +325,8 @@ def build_real_host(
     runner: GuardCommandRunner = run_command,
     proc_root: Path = PROC_ROOT,
     containerd_paths: Sequence[Path] = CONTAINERD_PATHS,
+    daemon_config: Path = DAEMON_CONFIG,
+    restart_marker: Path = PENDING_RESTART_MARKER,
 ) -> RealHost:
     """The `HostOps` that actually touches this host, rooted at `paths`.
 
@@ -321,5 +337,10 @@ def build_real_host(
     reach them.
     """
     return RealHost(
-        paths=paths, runner=runner, proc_root=proc_root, containerd_paths=containerd_paths
+        paths=paths,
+        runner=runner,
+        proc_root=proc_root,
+        containerd_paths=containerd_paths,
+        daemon_config=daemon_config,
+        restart_marker=restart_marker,
     )

@@ -57,6 +57,8 @@ _PERMISSION_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_permission
 _PERMISSION_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_permission.py")
 _UNIT_STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_unit_state"
 _UNIT_STATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_unit_state.py")
+_DAEMON_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_daemon"
+_DAEMON_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_daemon.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -1657,3 +1659,97 @@ def test_the_start_and_enable_actions_reach_only_the_guarded_units(
     _real_host(root=tmp_path, commands=partial).enable_units(units=("docker.service",))
 
     assert tuple(partial.argvs) == (("systemctl", "enable", "docker.service"),)
+
+
+# A daemon configuration this role does NOT own, plus one owned key
+# carrying a stale value. Both halves matter: the foreign keys prove the
+# write is a merge, and the stale owned key proves the merge is not an
+# append.
+_FOREIGN_DAEMON_KEYS = {
+    "insecure-registries": [],
+    "log-driver": "journald",
+}
+_STALE_OWNED_KEYS = {"cgroup-parent": "a-previous-run.slice"}
+
+_OWNED_DAEMON_KEYS = {
+    "cgroup-parent": "fabro-sandbox.slice",
+    "live-restore": True,
+}
+
+
+def _configuring_host(*, root: Path, commands: _Commands, config: Path, marker: Path) -> Any:
+    """The real host with its daemon configuration and restart marker redirected."""
+    model = importlib.import_module(_MODEL_MODULE)
+    host_module = importlib.import_module(_HOST_MODULE)
+    paths = model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+    return host_module.build_real_host(
+        paths=paths, runner=commands, daemon_config=config, restart_marker=marker
+    )
+
+
+def test_the_reconfigure_seams_merge_the_owned_keys_and_only_record_a_restart(
+    tmp_path: Path,
+) -> None:
+    """Keys this role does not own survive, and nothing is restarted.
+
+    Two properties, and both are the specification's rather than this
+    module's taste:
+
+    - Only the OWNED keys are written. A key this role did not write
+      belongs to whoever did, and the digest the commit marker carries
+      covers the owned set alone -- so a write that replaced the file
+      would make a foreign key's disappearance read as a guarded
+      reconfiguration on the next converge. An owned key already in the
+      file is OVERWRITTEN, which is the whole point of reconfiguring.
+    - The restart is RECORDED, never performed. After the commit point
+      the host is running sandbox containers under this very daemon, so
+      an immediate restart would kill the work the host exists to do;
+      the marker is the `docker_sandbox_slice` role's own deferred-
+      restart mechanism, and the operator who opens the drained window
+      is not necessarily the one who ran the converge.
+
+    The two real locations are asserted by value, because they are
+    shared with an Ansible role: the configuration is
+    `/etc/docker/daemon.json` and the marker is that role's
+    `docker_sandbox_slice_pending_restart_marker` default. A host
+    writing either one somewhere else would leave the role's own
+    converge reading a file nothing updates.
+    """
+    assert _DAEMON_PATH.is_file()
+    daemon = importlib.import_module(_DAEMON_MODULE)
+
+    assert Path("/etc/docker/daemon.json") == daemon.DAEMON_CONFIG
+    assert Path("/var/lib/docker-sandbox-slice/restart-pending") == daemon.PENDING_RESTART_MARKER
+
+    config = tmp_path / "etc" / "docker" / "daemon.json"
+    marker = tmp_path / "var-lib" / "docker-sandbox-slice" / "restart-pending"
+    config.parent.mkdir(parents=True)
+    _ = config.write_text(
+        json.dumps({**_FOREIGN_DAEMON_KEYS, **_STALE_OWNED_KEYS}), encoding="utf-8"
+    )
+    commands = _Commands()
+    host = _configuring_host(root=tmp_path, commands=commands, config=config, marker=marker)
+
+    host.write_daemon_keys(keys=_OWNED_DAEMON_KEYS)
+
+    assert json.loads(config.read_text(encoding="utf-8")) == {
+        **_FOREIGN_DAEMON_KEYS,
+        **_OWNED_DAEMON_KEYS,
+    }
+
+    host.record_pending_drained_restart(unit="docker.service")
+
+    assert "docker.service" in marker.read_text(encoding="utf-8")
+    assert commands.argvs == []
+
+    fresh_config = tmp_path / "fresh" / "daemon.json"
+    fresh = _configuring_host(
+        root=tmp_path / "fresh-root",
+        commands=commands,
+        config=fresh_config,
+        marker=marker,
+    )
+
+    fresh.write_daemon_keys(keys=_OWNED_DAEMON_KEYS)
+
+    assert json.loads(fresh_config.read_text(encoding="utf-8")) == _OWNED_DAEMON_KEYS
