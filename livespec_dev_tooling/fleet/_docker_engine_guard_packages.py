@@ -21,13 +21,17 @@ already held — see `_FENCED_ENV`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_package_audit import (
+    Audit,
+    InstalledPackage,
     audit_transaction,
     load_package_inputs,
+    read_installed,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
     INSTALL_TIMEOUT_SECONDS,
@@ -56,17 +60,45 @@ class PackageStepResult:
     installed: tuple[str, ...] = ()
 
 
+def _difference_refusal(
+    *,
+    audit: Audit,
+    before: Mapping[str, InstalledPackage],
+    after: Mapping[str, InstalledPackage],
+) -> str | None:
+    """The post-install difference, unless it is exactly the audited additions.
+
+    The audit cleared ONE transaction, and this difference is the only
+    evidence that the transaction which actually ran was that one. So it
+    is COMPARED with the additions rather than merely inspected for them:
+    a dpkg run that also landed a package nobody audited — a dependency
+    unpacked from a stale archive left in the cache, a resolver decision
+    the simulation did not predict — raises no other signal at all.
+    """
+    difference = tuple(
+        sorted(f"{name}={row.version}" for name, row in after.items() if name not in before)
+    )
+    if difference != audit.additions:
+        return (
+            f"the post-install package difference {difference} is not the audited "
+            f"additions {audit.additions}"
+        )
+    return None
+
+
 def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> PackageStepResult:
     """Install exactly the audited package set named by this run's `inputs`.
 
     `dpkg -i` is issued on the audited `.deb` SET and nothing else, so
     the transaction that runs is byte-for-byte the one the audit cleared
-    with no resolver decision left to apt.
+    with no resolver decision left to apt. dpkg's own table is read on
+    both sides of it, and the difference has to be the additions.
     """
     declared = load_package_inputs(inputs=inputs)
     if isinstance(declared, str):
         return PackageStepResult(refusal=declared)
     audit = audit_transaction(declared=declared)
+    before = read_installed(runner=runner)
     _ = runner(
         command=TimedCommand(
             argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),
@@ -74,4 +106,9 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
             env=_FENCED_ENV,
         )
     )
+    difference = _difference_refusal(
+        audit=audit, before=before, after=read_installed(runner=runner)
+    )
+    if difference is not None:
+        return PackageStepResult(refusal=difference)
     return PackageStepResult(installed=audit.additions)
