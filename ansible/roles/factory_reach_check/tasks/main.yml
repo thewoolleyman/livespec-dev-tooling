@@ -1,0 +1,185 @@
+---
+# factory_reach_check — install the factory reach proof into the converge's tree,
+# and RUN it only when one apply consents.
+#
+# livespec-dev-tooling-jvnqwv, freeze ruling R70 (2026-10-16). See
+# defaults/main.yml for why this role exists and what the credential grants.
+#
+# THIS ROLE INSTALLS, AND — ON CONSENT — MEASURES. The install half is the
+# ordinary refresh step `ci_converge_unit` is for the rest of the tree. The run
+# half is a MEASUREMENT: it submits a short-lived Job per covered node, reads
+# the verdict out of its log, and leaves nothing behind (the renderer deletes
+# the Job on exit). Nothing about the cluster's desired state moves here.
+
+- name: Create the installed artifact directory
+  # Owned here rather than left to the copies below: `--check` cannot see past a
+  # missing parent, so an unguarded copy is reported as a would-be change and
+  # fails only on a real apply. `ci_converge_unit` creates the same directory
+  # for its own members; both are idempotent and neither depends on the other
+  # having run.
+  ansible.builtin.file:
+    path: "{{ factory_reach_check_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the factory reach artifact set
+  # COPIED out of this repository, never rendered and never fetched: the
+  # repository stays the source of truth and this role is the refresh step. The
+  # renderer embeds the probe VERBATIM, so the bytes the pod runs are the bytes
+  # a test in this repository runs — a rendered copy would break that tie.
+  ansible.builtin.copy:
+    src: "{{ factory_reach_check_factory_dir }}/{{ item.src }}"
+    dest: "{{ factory_reach_check_install_dir }}/{{ item.src }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  become: true
+  loop: "{{ factory_reach_check_files }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Prove each covered node's factory reach, on this apply only
+  # CONSENT-GATED by factory_reach_check_run_now (default false; pass
+  # `-e factory_reach_check_run_now=true` on ONE apply). The default apply
+  # INSTALLS and measures nothing, because each run submits a Job into the live
+  # `factory` namespace and takes a slot of the ResourceQuota that is the only
+  # bound on what factory runs take from the CI pool this node also serves.
+  #
+  # Never under --check: there is no dry form of submitting a Job, so a drift
+  # report shows these tasks skipped whatever the switch says. The renderer's
+  # own `--dry-run` is the dry form, and it is a thing an operator reads rather
+  # than something an apply should print.
+  when:
+    - factory_reach_check_run_now | bool
+    - not ansible_check_mode
+  block:
+    - name: Read whether the scoped factory credential is in place
+      # Read BEFORE anything is submitted. This node's k3s datastore is a tmpfs,
+      # so the sandbox-launcher ServiceAccount and its token Secret are
+      # recreated at every boot and converge step 10e re-renders this file —
+      # which means its absence is a real state, not a misconfiguration.
+      ansible.builtin.stat:
+        path: "{{ factory_reach_check_kubeconfig }}"
+      register: factory_reach_check_credential
+      become: true
+
+    - name: Refuse a run with no scoped credential to run it under
+      # REFUSE, never degrade. The admin kubeconfig sits on this same node and
+      # is readable by the account this apply elevates to, so "fall back" would
+      # be one line — and it is the thing R70 rejected: a reach proved as
+      # cluster admin is the reach of a credential no factory pod holds, which
+      # answers a different question while printing the same green.
+      ansible.builtin.assert:
+        that:
+          - factory_reach_check_credential.stat.exists
+        fail_msg: >-
+          {{ factory_reach_check_kubeconfig }} is absent on {{ inventory_hostname }}, so
+          there is no sandbox-launcher credential to run the reach check under. It is
+          rendered by converge-ci-stack.sh step 10e at every boot — run the converge
+          (`-e ci_converge_unit_run_now=true`) and re-run this with
+          `-e factory_reach_check_run_now=true`. Do NOT substitute the admin kubeconfig:
+          this check exists to prove what the sandbox backend's own identity can reach.
+        success_msg: "{{ factory_reach_check_kubeconfig }}: present"
+
+    - name: Read each pool node's FACTORY_NODE posture from its committed profile
+      # Read on the CONTROLLER, because the profile lives in this repository and
+      # no target carries a checkout — the same `lookup` + `regex_findall |
+      # first` chain every role in this tree reads a profile with. The default
+      # is the profile parser's own, so a node whose profile predates the key
+      # resolves to the posture it already has rather than to an error.
+      ansible.builtin.set_fact:
+        factory_reach_check_postures: >-
+          {{ factory_reach_check_postures | default({}) | combine({
+               item: (lookup('ansible.builtin.file',
+                             factory_reach_check_profile_dir ~ '/' ~ item ~ '.env')
+                      | regex_findall('^FACTORY_NODE=(.*)$', multiline=True)
+                      | first | default('false'))
+             }) }}
+      loop: "{{ groups['ci_pool'] | sort }}"
+
+    - name: Resolve the nodes this run covers
+      # The variable NARROWS; the profiles are the default. Expressed this way
+      # round so the covered set cannot drift from the set of nodes that
+      # advertise factory capacity: it is read from the same FACTORY_NODE key
+      # the node_labels role renders the factory label from.
+      ansible.builtin.set_fact:
+        factory_reach_check_covered_nodes: >-
+          {{ factory_reach_check_nodes if (factory_reach_check_nodes | length > 0)
+             else (factory_reach_check_postures | dict2items
+                   | selectattr('value', 'equalto', 'true')
+                   | map(attribute='key') | list | sort) }}
+
+    - name: Refuse a run that would cover no node
+      # A run that probed nothing has proved nothing, and reporting failed=0 for
+      # it is the one green this check must never print — the same refusal the
+      # probe itself makes when handed no endpoints.
+      ansible.builtin.assert:
+        that:
+          - factory_reach_check_covered_nodes | length > 0
+        fail_msg: >-
+          no node to cover: factory_reach_check_nodes is empty and no ci_pool profile
+          declares FACTORY_NODE=true. An apply that measured nothing must not report
+          success.
+        success_msg: >-
+          covering {{ factory_reach_check_covered_nodes | join(', ') }}
+
+    - name: Prove the factory reach from a scheduled pod on each covered node
+      # `failed_when: false` because the VERDICT is read and reported below:
+      # a bare non-zero from this task would print Ansible's own stdout dump and
+      # bury the one line that names the endpoint. `changed_when: false` because
+      # the renderer deletes its Job on exit, so a run leaves nothing behind.
+      ansible.builtin.command:
+        argv:
+          - "{{ factory_reach_check_install_dir }}/verify-factory-reach.sh"
+          - --node
+          - "{{ item }}"
+          - --timeout-seconds
+          - "{{ factory_reach_check_timeout_seconds }}"
+      environment:
+        # THE SCOPED CREDENTIAL, named on the TASK. Not left to whatever the
+        # elevated account's environment holds: root on this node can read the
+        # admin kubeconfig, and kubectl's own default search would find it. The
+        # credential this check runs under has to be a property of the task a
+        # reader can see, which is also what makes it assertable off-host.
+        KUBECONFIG: "{{ factory_reach_check_kubeconfig }}"
+      register: factory_reach_check_runs
+      failed_when: false
+      changed_when: false
+      become: true
+      loop: "{{ factory_reach_check_covered_nodes }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Report each covered node's reach verdict
+      # The exit CODE and the probe's own verdict lines, per node. An apply that
+      # ran the check and reported only failed=0 would hide exactly the
+      # measurement it was run to take, and the endpoint NAME lives in the
+      # probe's `UNREACHABLE <name> at <host>:<port>` line.
+      ansible.builtin.debug:
+        msg: >-
+          verify-factory-reach.sh --node {{ item.item }}: rc={{ item.rc }} —
+          {{ (item.stdout_lines | default([]) + item.stderr_lines | default([]))
+             | select('match', '^(OK|FATAL|UNREACHABLE)')
+             | join(' | ') | default('no verdict line', true) }}
+      loop: "{{ factory_reach_check_runs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Refuse a node whose factory reach the check could not prove
+      ansible.builtin.assert:
+        that:
+          - factory_reach_check_runs.results | rejectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: >-
+          the factory reach check failed for
+          {{ factory_reach_check_runs.results | rejectattr('rc', 'equalto', 0)
+             | map(attribute='item') | join(', ') }}
+          on {{ inventory_hostname }}. Read the per-node verdict above: exit 1 names the
+          first unreachable endpoint or an image this node could not pull, and exit 2 is a
+          configuration error with nothing submitted. The check is idempotent — fix the
+          cause and re-run with factory_reach_check_run_now=true.
+        success_msg: >-
+          every covered node reached every endpoint:
+          {{ factory_reach_check_covered_nodes | join(', ') }}

@@ -133,6 +133,22 @@ apply a committed change to the cluster stack now, pass `-e
 ci_converge_unit_run_now=true` on one `just ansible-apply ansible/ci-pool.yml`
 (it starts the converge, waits for it, and fails unless it succeeded).
 
+`factory_reach_check` takes the same consent shape, and right after it in the
+play. It installs `../ci-runner/k3s/phase2/factory/verify-factory-reach.sh`, the
+probe it embeds and its two configuration files into the converge's installed
+tree on the server, and measures nothing by default. To RUN the proof, pass `-e
+factory_reach_check_run_now=true` on one apply: it submits a short-lived Job per
+covered node, reports each node's exit code and the probe's own verdict line,
+and refuses the apply unless every node reached every endpoint. The covered set
+is every `ci_pool` node whose profile declares `FACTORY_NODE=true`; narrow it
+with `-e '{"factory_reach_check_nodes": ["hp-xubuntu"]}'`. The run authenticates
+as the `factory` namespace's scoped `sandbox-launcher` credential
+(`/etc/ci-runner/factory.kubeconfig`, which `converge-ci-stack.sh` step 10e
+renders here at every boot) and NEVER as the admin kubeconfig — a reach proved as
+cluster admin is the reach of a credential no factory pod holds. Absent that
+file the role refuses and names the converge that renders it, rather than
+falling back (freeze ruling R70, `livespec-dev-tooling-jvnqwv`).
+
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that
 genuinely vary by machine live in `inventory/host_vars/<host>.yml` rather than
