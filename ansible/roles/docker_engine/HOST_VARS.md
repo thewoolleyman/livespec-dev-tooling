@@ -74,7 +74,11 @@ VM acceptance carries the respawn test.
 | `docker_engine_lan_fallback_port` | `22022` | defaults | the `lan_ssh_fallback` port |
 | `docker_engine_lan_fallback_ssh_argv` | `ssh … -p 22022 <host>-lan true` | defaults (VM: override) | the controller's LAN-fallback login |
 | `docker_engine_probe_timeout_seconds` | `15` | defaults | the health read's timeout |
-| `docker_engine_probe_parameters` | node-status kubeconfig, `10.43.0.10`, `10.43.0.1`, `archive.ubuntu.com` | defaults (VM: override) | uploaded as the run's `inputs/probes.json` for the guard's host-side probes |
+| `docker_engine_k3s_node` | `inventory_hostname` | defaults | the k3s node name the observer's node-Ready and DNS-placement probes read (gmktec: `gmktec-xubuntu`, measured 2026-10-16) |
+| `docker_engine_k3s_server` | none, REFUSED while empty | host_vars | the k3s server the DNS-placement probe asks where CoreDNS runs (gmktec: `poweredge-xubuntu`, the control plane) |
+| `docker_engine_k3s_server_argv` | `[]` | host_vars | the command prefix that reaches that server with `k3s kubectl` rights (guard child 9, livespec-dev-tooling-tceepc); gmktec: `[sudo, -u, cwoolley, -H, ssh, -o, BatchMode=yes, poweredge-xubuntu, sudo]`, node_status_credential's proven route |
+| `docker_engine_canary_name` / `docker_engine_canary_image` | `docker-engine-guard-canary` / busybox 1.37.0 by digest | defaults | the ONE canary container run between `start` and `observe` and removed after `confirm` |
+| `docker_engine_probe_parameters` | the guard's ProbeParameters: node, k3s_server, `10.43.0.10`, `kubernetes.default.svc.cluster.local`, `10.43.0.1:443`, canary | defaults | uploaded as the run's `inputs/probes.json`, with `must_stay_running` and any `k3s_server_argv` merged in |
 | `docker_engine_postinst_started_units` | the three guarded units | defaults | units whose condition-skip the post-install check requires in the journal |
 | `docker_engine_apt_timers` | `apt-daily.timer`, `apt-daily-upgrade.timer` | defaults | stopped for the run, restored to their prior state |
 | `docker_engine_lock_wait_seconds` | `600` | defaults | bound on the apt/dpkg lock wait |

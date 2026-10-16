@@ -10,16 +10,23 @@
 # `runc/` and `s/` because k3s's embedded containerd keeps its shims there; the
 # apt timers active.
 #
-# WHAT IT STUBS, and why. The VM runs no Tailscale, no k3s and no LLM, but the
-# role refuses to touch a host on which tailscaled, the k3s agent or a declared
-# must-stay-running unit is not active, and confirms only after the LLM's
-# /health answers. So each is a stub unit with the REAL unit name, which the
-# acceptance driver can stop to make the matching probe fail:
-#   - tailscaled.service, k3s-agent.service: long-running no-ops;
+# WHAT IT STUBS, and why. The VM runs no Tailscale and no LLM, but the role
+# refuses to touch a host on which tailscaled or a declared must-stay-running
+# unit is not active, and confirms only after the LLM's /health answers. So each
+# is a stub unit with the REAL unit name, which the acceptance driver can stop to
+# make the matching probe fail:
+#   - tailscaled.service: a long-running no-op;
 #   - local-homelab-llama-server.service: a stdlib HTTP server answering
 #     GET /health with 200 on the port the role's probe is pointed at.
-# A stub k3s-agent holds open the two /run/containerd paths the guard's k3s
-# witness records, so the witness has a PID and paths to compare.
+#
+# WHAT IS REAL: k3s. The guard's observer samples a live node (guard child 4):
+# the node-status read, the DNS-placement read delegated to the k3s server, a
+# running pod's network namespace through `k3s crictl`, and the witness that
+# finds k3s's containerd in `k3s-agent.service`'s cgroup. A stub cannot answer
+# any of those (measured 2026-10-16, H-01). So the guest runs a real single-node
+# k3s SERVER, installed under the unit name k3s-agent.service, at the cluster's
+# own version. It is its own k3s server: root reaches it over ssh as `guard-vm`,
+# and its admin kubeconfig stands at the node-status path.
 #
 # Idempotent: a second run leaves the guest as the first run left it.
 
@@ -96,15 +103,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
 http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), Handler).serve_forever()
 EOF
 
-cat >/usr/local/lib/guard-baseline/k3s_agent_stub.sh <<'EOF'
-#!/bin/sh
-# Stand-in for k3s's embedded containerd: hold the two paths the guard's
-# k3s witness records, and stay alive as the unit's main PID.
-mkdir -p /run/containerd/s /run/containerd/runc/k8s.io
-exec sleep infinity
-EOF
-chmod 0755 /usr/local/lib/guard-baseline/k3s_agent_stub.sh
-
 write_unit() {
   local name="$1" description="$2" exec_start="$3"
   cat >"/etc/systemd/system/${name}" <<EOF
@@ -123,7 +121,6 @@ EOF
 }
 
 write_unit tailscaled.service "tailscaled stub" "/bin/sleep infinity"
-write_unit k3s-agent.service "k3s agent stub" "/usr/local/lib/guard-baseline/k3s_agent_stub.sh"
 write_unit local-homelab-llama-server.service "LLM health stub" \
   "/usr/bin/python3 /usr/local/lib/guard-baseline/llm_health.py ${LLM_PORT}"
 
@@ -151,7 +148,38 @@ WantedBy=slices.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now tailscaled.service k3s-agent.service local-homelab-llama-server.service
+systemctl enable --now tailscaled.service local-homelab-llama-server.service
+
+# A real single-node k3s, as k3s-agent.service (INSTALL_K3S_NAME=agent), so
+# its embedded containerd runs in the cgroup the guard's witness reads. The
+# version is the cluster's own (`kubectl get nodes` on poweredge-xubuntu,
+# 2026-10-16). Skipped when this exact k3s is already running.
+K3S_VERSION="${K3S_VERSION:-v1.36.2+k3s1}"
+if ! { systemctl is-active --quiet k3s-agent.service \
+       && /usr/local/bin/k3s --version 2>/dev/null | grep -qF "${K3S_VERSION}"; }; then
+  curl -sfL https://get.k3s.io \
+    | INSTALL_K3S_VERSION="${K3S_VERSION}" INSTALL_K3S_NAME=agent \
+      INSTALL_K3S_EXEC="server --node-name guard-vm --write-kubeconfig-mode 600 --disable traefik --disable servicelb --disable metrics-server" \
+      sh -s - >/dev/null
+fi
+for _ in $(seq 1 60); do
+  if k3s kubectl get pods -n kube-system --no-headers 2>/dev/null \
+       | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {exit !found}'; then
+    break
+  fi
+  sleep 5
+done
+install -m 0600 /etc/rancher/k3s/k3s.yaml /etc/rancher/k3s/node-status-kubeconfig
+
+# The guard delegates its pod listing as `ssh -o BatchMode=yes <k3s_server>
+# k3s kubectl ...`, run as root. The guest is its own server, so root gets a
+# key it trusts for itself, and `guard-vm` in root's known_hosts.
+install -d -m 0700 /root/.ssh
+[[ -f /root/.ssh/id_ed25519 ]] || ssh-keygen -q -t ed25519 -N '' -f /root/.ssh/id_ed25519
+grep -qxF "$(cat /root/.ssh/id_ed25519.pub)" /root/.ssh/authorized_keys 2>/dev/null \
+  || cat /root/.ssh/id_ed25519.pub >>/root/.ssh/authorized_keys
+chmod 0600 /root/.ssh/authorized_keys
+ssh-keyscan -q -t ed25519 guard-vm >/root/.ssh/known_hosts 2>/dev/null
 systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
 systemctl enable --now fabro-sandbox.slice
 
@@ -190,6 +218,15 @@ fi
 }
 curl -sf "http://127.0.0.1:${LLM_PORT}/health" >/dev/null || {
   echo "baseline.sh: the LLM health stub does not answer" >&2
+  fail=1
+}
+k3s kubectl get pods -n kube-system --no-headers 2>/dev/null \
+  | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {exit !found}' || {
+  echo "baseline.sh: no Running CoreDNS pod on the guest's k3s" >&2
+  fail=1
+}
+ssh -o BatchMode=yes guard-vm k3s kubectl get --raw /api/v1/nodes/guard-vm/status >/dev/null 2>&1 || {
+  echo "baseline.sh: root cannot reach the guest's k3s server as guard-vm" >&2
   fail=1
 }
 [[ "$fail" -eq 0 ]] || exit 1

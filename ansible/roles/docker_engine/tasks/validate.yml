@@ -10,10 +10,12 @@
       - docker_engine_tailscale_unit | length > 0
       - docker_engine_k3s_agent_unit | length > 0
       - docker_engine_window_seconds | int > 0
+      - docker_engine_k3s_server | length > 0
     fail_msg: >-
-      docker_engine needs docker_engine_llm_health_url and
-      docker_engine_dpkg_config_digests from this host's host_vars (see the
-      role's HOST_VARS.md), and non-empty unit names and window.
+      docker_engine needs docker_engine_llm_health_url,
+      docker_engine_dpkg_config_digests and docker_engine_k3s_server from this
+      host's host_vars (see the role's HOST_VARS.md), and non-empty unit names
+      and window.
     success_msg: every per-host value is set
 
 - name: Refuse owned daemon keys that differ from the guard's owned set

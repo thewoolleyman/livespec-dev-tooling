@@ -73,6 +73,9 @@
       ansible.builtin.copy:
         content: >-
           {{ docker_engine_probe_parameters
+             | combine({'must_stay_running': docker_engine_must_stay_running})
+             | combine({'k3s_server_argv': docker_engine_k3s_server_argv}
+                       if docker_engine_k3s_server_argv | length > 0 else {})
              | combine({'services': docker_engine_required_units,
                         'window_seconds': docker_engine_window_seconds | int,
                         'bridge_cidr': docker_engine_bridge_cidr,
@@ -137,6 +140,27 @@
         docker_engine_op: start
         docker_engine_op_run: "{{ docker_engine_run }}"
 
+    - name: Run the canary container
+      # Design Mechanism 1, phase `canary`: ONE container from a pinned image on
+      # the default bridge, which exercises the endpoint, veth and per-container
+      # rules the observer's canary-cgroup, exclusive-scope and interface probes
+      # read. No guard operation runs it, so the role does, between `start` and
+      # `observe`; the daemon's cgroup-parent places it in the sandbox slice.
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --detach
+          - --name
+          - "{{ docker_engine_canary_name }}"
+          - --network
+          - bridge
+          - "{{ docker_engine_canary_image }}"
+          - sleep
+          - "{{ (docker_engine_window_seconds | int) * 4 }}"
+      become: true
+      changed_when: true
+
     - name: Observe the host across the whole window
       # On a failed sample the observer starts the rollback itself and refuses;
       # the rescue below then waits for that rollback rather than racing it.
@@ -153,6 +177,15 @@
       vars:
         docker_engine_op: confirm
         docker_engine_op_run: "{{ docker_engine_run }}"
+
+    - name: Remove the canary container
+      # Design Mechanism 1, phase `confirm`: the canary exists only to be
+      # observed. After a rollback the engine is stopped, which removes it with
+      # the daemon's state, so only the committed path needs this.
+      ansible.builtin.command:
+        argv: [docker, rm, --force, "{{ docker_engine_canary_name }}"]
+      become: true
+      changed_when: true
 
     - name: Prove the run committed and the host is as it was
       ansible.builtin.include_tasks: after_outcome.yml
