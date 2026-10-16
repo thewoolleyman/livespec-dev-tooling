@@ -22,6 +22,8 @@ import stat
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 __all__: list[str] = []
 
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
@@ -32,6 +34,10 @@ _FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
 _FAKE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_fake.py")
 _STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _STATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_state.py")
+_GUARD_MODULE_UNDER_TEST = "livespec_dev_tooling.fleet.docker_engine_guard"
+_ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
+_HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
+_PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
 
 # The observation window the design derives at preflight from the effective
 # k3s resync periods (420 s at the measured defaults). Only `observe`'s
@@ -489,3 +495,290 @@ def test_the_lock_wait_expires_after_sixty_seconds_without_acting(tmp_path: Path
     regained = state.acquire_lock(paths=paths, host=fake)
     assert regained is not None
     state.release_lock(fd=regained)
+
+
+_OPERATIONS = (
+    "reserve",
+    "publish",
+    "arm",
+    "start",
+    "observe",
+    "confirm",
+    "rollback",
+    "recover",
+    "verify",
+    "reconfigure",
+)
+
+
+def _guard_surface() -> Any:
+    """The guard module, with the operation entry point this child owes it."""
+    guard = importlib.import_module(_GUARD_MODULE_UNDER_TEST)
+    assert "run_operation" in guard.__all__
+    assert "sibling_module_name" in guard.__all__
+    return guard
+
+
+def _env(*, root: Path, host: Any) -> Any:
+    """A `GuardEnv` over the same two state roots `_fake` and `_paths` use."""
+    state = importlib.import_module(_STATE_MODULE)
+    return state.GuardEnv(paths=_paths(root=root), host=host)
+
+
+def _write_marker(*, root: Path, run: str) -> None:
+    """Publish a commit marker naming `run`, the way `confirm` would."""
+    state = importlib.import_module(_STATE_MODULE)
+    paths = _paths(root=root)
+    state.write_durable(path=paths.marker, data=json.dumps({"run": run, "digest": "d"}))
+
+
+def _arm_deadline(*, root: Path, run: str, boot: str, at: float) -> None:
+    """Record a deadline for `run` the way `arm` would."""
+    state = importlib.import_module(_STATE_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    state.write_deadline(
+        paths=_paths(root=root), run=run, deadline=model.Deadline(boot_id=boot, monotonic=at)
+    )
+
+
+def test_every_operation_ensures_the_runtime_directory_and_opens_the_one_lock(
+    tmp_path: Path,
+) -> None:
+    """Design I4: the runtime directory and the lock come before any decision.
+
+    Asserted for every operation rather than for one, because the
+    specification states it of every operation and a helper that skipped
+    it would work perfectly until the first reboot cleared /run.
+    """
+    guard = _guard_surface()
+
+    for operation in _OPERATIONS:
+        root = tmp_path / operation
+        fake = _fake(root=root)
+        _record_phase(root=root, run="run-a", phase="started")
+        _write_marker(root=root, run="run-other")
+        paths = _paths(root=root)
+
+        outcome = guard.run_operation(
+            operation=operation, run="run-a", env=_env(root=root, host=fake)
+        )
+
+        assert paths.runtime_root.is_dir()
+        assert stat.S_IMODE(paths.runtime_root.stat().st_mode) == 0o700
+        assert paths.lock.is_file()
+        assert fake.calls_named(name="set_owner_root")[0].detail == (str(paths.runtime_root),)
+        assert outcome.verdict == "refuse", operation
+        assert outcome.exit_code == 1, operation
+
+
+def test_every_operation_refuses_without_acting_when_the_lock_wait_expires(
+    tmp_path: Path,
+) -> None:
+    """Specification: exit non-zero without acting once the 60-second wait expires.
+
+    "Without acting" is the half worth asserting: the refusal must leave
+    the reservation and the phase exactly as it found them, so a second
+    controller that merely lost the race changes nothing.
+    """
+    state = importlib.import_module(_STATE_MODULE)
+    guard = _guard_surface()
+
+    for operation in _OPERATIONS:
+        root = tmp_path / operation
+        fake = _fake(root=root)
+        paths = _paths(root=root)
+        _record_phase(root=root, run="run-a", phase="started")
+        state.ensure_runtime_dir(paths=paths, host=fake)
+        held = state.acquire_lock(paths=paths, host=fake)
+        assert held is not None
+
+        outcome = guard.run_operation(
+            operation=operation, run="run-a", env=_env(root=root, host=fake)
+        )
+
+        assert outcome.verdict == "refuse", operation
+        assert outcome.exit_code == 1, operation
+        assert state.read_reservation(paths=paths) == "run-a"
+        assert state.read_phase(paths=paths, run="run-a") == "started"
+        state.release_lock(fd=held)
+
+
+def test_every_operation_on_a_run_that_is_not_the_current_reservation_refuses(
+    tmp_path: Path,
+) -> None:
+    """Specification: an operation on a run that is not the current reservation refuses.
+
+    `reserve` is the one operation that is not on the current run -- it
+    is how a run becomes one -- so it is excluded here and governed by
+    its own admission rule instead. The refusal names the holder, because
+    an operator who reached the wrong host needs to know which run has it.
+    """
+    guard = _guard_surface()
+
+    for operation in _OPERATIONS:
+        if operation == "reserve":
+            continue
+        root = tmp_path / operation
+        fake = _fake(root=root)
+        _record_phase(root=root, run="run-a", phase="started")
+
+        outcome = guard.run_operation(
+            operation=operation, run="run-b", env=_env(root=root, host=fake)
+        )
+
+        assert outcome.verdict == "refuse", operation
+        assert outcome.holder is not None
+        assert outcome.holder.run == "run-a"
+        assert outcome.holder.phase == "started"
+        assert "run-a" in outcome.reason or outcome.holder.run == "run-a"
+
+
+def test_a_deadline_from_an_earlier_boot_stops_start_from_granting_the_permission(
+    tmp_path: Path,
+) -> None:
+    """Acceptance scenario: a deadline recorded on an earlier boot counts as passed.
+
+    The run is `armed`, its dead-man timer is live and its monotonic
+    instant is still far away -- the only thing wrong is the boot id, and
+    that alone must stop it.
+    """
+    guard = _guard_surface()
+    root = tmp_path / "earlier-boot"
+    fake = _fake(root=root)
+    fake.boot = "boot-b"
+    fake.clock = 1.0
+    fake.deadman_units = {"docker-engine-deadman-run-a"}
+    fake.active_deadman_units = {"docker-engine-deadman-run-a"}
+    _record_phase(root=root, run="run-a", phase="armed")
+    _arm_deadline(root=root, run="run-a", boot="boot-a", at=10_000.0)
+
+    outcome = guard.run_operation(operation="start", run="run-a", env=_env(root=root, host=fake))
+
+    assert outcome.verdict == "refuse"
+    assert not _paths(root=root).permission.exists()
+    assert fake.calls_named(name="grant_start_permission") == ()
+
+
+def test_the_operations_a_later_child_owns_reach_their_decision_and_stop_there(
+    tmp_path: Path,
+) -> None:
+    """1b fills in observe, confirm, verify and reconfigure; 1a decides them.
+
+    Each is driven into the state its row admits and must get PAST the
+    table -- the `NotImplementedError` is the proof that the decision was
+    reached, and that nothing but the work is missing.
+    """
+    guard = _guard_surface()
+    admitted = {
+        "observe": "started",
+        "confirm": "observed",
+        "verify": "rolled-back",
+    }
+
+    for operation, phase in admitted.items():
+        root = tmp_path / operation
+        fake = _fake(root=root)
+        _record_phase(root=root, run="run-a", phase=phase)
+        _arm_deadline(root=root, run="run-a", boot="boot-a", at=10_000.0)
+        with pytest.raises(NotImplementedError):
+            guard.run_operation(operation=operation, run="run-a", env=_env(root=root, host=fake))
+
+    root = tmp_path / "reconfigure"
+    fake = _fake(root=root)
+    _record_phase(root=root, run="run-a", phase="confirmed")
+    _write_marker(root=root, run="run-a")
+    with pytest.raises(NotImplementedError):
+        guard.run_operation(operation="reconfigure", run="run-a", env=_env(root=root, host=fake))
+
+
+def test_rollback_hands_a_decided_run_to_child_two_and_no_ops_a_finished_one(
+    tmp_path: Path,
+) -> None:
+    """Specification: rollback's entry decides here, and the driver lives next door.
+
+    A committed run and an already rolled-back run both exit 0 having
+    done nothing -- neither reaches the driver at all, which is what
+    makes "a committed run is never rolled back" a property of the table
+    rather than of the driver's good behaviour.
+    """
+    guard = _guard_surface()
+
+    decided = tmp_path / "decided"
+    fake = _fake(root=decided)
+    _record_phase(root=decided, run="run-a", phase="started")
+    with pytest.raises(NotImplementedError):
+        guard.run_operation(operation="rollback", run="run-a", env=_env(root=decided, host=fake))
+
+    committed = tmp_path / "committed"
+    fake = _fake(root=committed)
+    _record_phase(root=committed, run="run-a", phase="committed")
+    _write_marker(root=committed, run="run-a")
+    outcome = guard.run_operation(
+        operation="rollback", run="run-a", env=_env(root=committed, host=fake)
+    )
+    assert outcome.verdict == "noop"
+    assert outcome.exit_code == 0
+
+    finished = tmp_path / "finished"
+    fake = _fake(root=finished)
+    _record_phase(root=finished, run="run-a", phase="rolled-back")
+    outcome = guard.run_operation(
+        operation="rollback", run="run-a", env=_env(root=finished, host=fake)
+    )
+    assert outcome.verdict == "noop"
+    assert outcome.exit_code == 0
+
+
+def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
+    tmp_path: Path,
+) -> None:
+    """Three stub modules, so no sibling ever has to reopen the guard module.
+
+    Child 2 replaces the rollback driver, children 3a and 4 the real
+    host, child 3b the package step. Each is reached by name from the
+    guard module, which resolves siblings package-qualified when imported
+    and bare when run as a script on the guarded host.
+    """
+    guard = _guard_surface()
+    assert guard.sibling_module_name(package="pkg", name="_mod") == "pkg._mod"
+    assert guard.sibling_module_name(package="", name="_mod") == "_mod"
+
+    rollback = importlib.import_module(_ROLLBACK_MODULE)
+    host_module = importlib.import_module(_HOST_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    env = _env(root=tmp_path, host=_fake(root=tmp_path))
+    model = importlib.import_module(_MODEL_MODULE)
+    decision = model.Decision(verdict="proceed", reason="decided")
+
+    with pytest.raises(NotImplementedError):
+        rollback.run_rollback(run="run-a", env=env, decision=decision)
+    with pytest.raises(NotImplementedError):
+        host_module.build_real_host(paths=_paths(root=tmp_path))
+    with pytest.raises(NotImplementedError):
+        packages.run_package_step(inputs=tmp_path / "inputs")
+
+
+def test_on_a_host_that_holds_no_reservation_only_reserve_gets_past_the_table(
+    tmp_path: Path,
+) -> None:
+    """The boundary case of the reservation check: nothing holds the host at all.
+
+    Every operation but `reserve` is an operation ON a run, so with no
+    reservation recorded each refuses and reports no holder -- there is
+    genuinely nobody to name, which is different from naming the wrong
+    run and must read differently to an operator.
+    """
+    guard = _guard_surface()
+
+    for operation in _OPERATIONS:
+        if operation == "reserve":
+            continue
+        root = tmp_path / operation
+        fake = _fake(root=root)
+
+        outcome = guard.run_operation(
+            operation=operation, run="run-a", env=_env(root=root, host=fake)
+        )
+
+        assert outcome.verdict == "refuse", operation
+        assert outcome.holder is None, operation

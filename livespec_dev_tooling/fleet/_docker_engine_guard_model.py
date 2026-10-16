@@ -224,3 +224,8 @@ class GuardOutcome:
     reason: str
     holder: Holder | None = None
     blocking_units: tuple[str, ...] = ()
+
+    @property
+    def exit_code(self) -> int:
+        """Non-zero exactly when the operation refused, so its unit fails with it."""
+        return 1 if self.verdict == "refuse" else 0
