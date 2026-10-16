@@ -20,33 +20,43 @@ Stdlib only, Python 3.10 syntax.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Protocol
 
 from livespec_dev_tooling.fleet._docker_engine_guard_hostops import QueuedJob
 from livespec_dev_tooling.fleet._docker_engine_guard_model import GUARDED_UNITS
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "ACTIVE_STATE",
     "CGROUP_KILL_ARGV",
     "DOCKER_SOCKET",
     "DOCKER_STOP_ORDER",
+    "GUARD_OWN_UNITS",
+    "GUARD_UNIT_POLL_SECONDS",
+    "GUARD_UNIT_SIGKILL_SECONDS",
+    "GUARD_UNIT_WAIT_POLLS",
+    "INACTIVE",
     "KILL_TARGETS",
     "LIST_JOBS_ARGV",
     "SANDBOX_SLICE",
     "SYSTEMCTL",
     "UNIT_ACTION_TIMEOUT_SECONDS",
     "UNIT_READ_TIMEOUT_SECONDS",
+    "GuardSleeper",
     "cancel_jobs",
     "disable_units",
     "guarded_job_ids",
     "kill_cgroup",
     "read_queued_jobs",
     "stop_docker",
+    "stop_guard_units",
     "stop_unit",
+    "unit_active_states",
+    "unit_property",
 ]
 
 SYSTEMCTL: Final[str] = "systemctl"
@@ -90,6 +100,27 @@ KILL_TARGETS: Final[tuple[str, ...]] = ("docker.service", "containerd.service", 
 # Control-group wide, and SIGKILL rather than SIGTERM: a container holding
 # the Docker API open does not answer a polite stop.
 CGROUP_KILL_ARGV: Final[tuple[str, ...]] = ("kill", "--kill-whom=all", "--signal=SIGKILL")
+
+# The guard's OWN two fixed-identity units (design I3). A rollback stops
+# these before it revokes the start permission (H2).
+GUARD_OWN_UNITS: Final[tuple[str, ...]] = (
+    "docker-engine-guard-observe.service",
+    "docker-engine-guard-start.service",
+)
+
+# Ten seconds for the polite stop, then the control-group SIGKILL: the
+# observer may be blocked inside the very Docker API request that makes
+# it dangerous to leave running.
+GUARD_UNIT_SIGKILL_SECONDS: Final[int] = 10
+
+# The wait for both to read `inactive`, bounded: a unit that will not go
+# is REPORTED, because a rollback phase that hangs here is killed by its
+# own `timeout -k 10` with nothing recorded at all.
+GUARD_UNIT_WAIT_POLLS: Final[int] = 6
+GUARD_UNIT_POLL_SECONDS: Final[float] = 2.0
+
+ACTIVE_STATE: Final[str] = "ActiveState"
+INACTIVE: Final[str] = "inactive"
 
 
 def read_queued_jobs(*, runner: GuardCommandRunner) -> tuple[QueuedJob, ...]:
@@ -184,3 +215,53 @@ def disable_units(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
                 argv=(SYSTEMCTL, "disable", unit),
                 timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
             )
+
+
+class GuardSleeper(Protocol):
+    """The bounded wait a poll uses, injected so no test ever really waits."""
+
+    def __call__(self, *, seconds: float) -> None: ...
+
+
+def unit_property(*, runner: GuardCommandRunner, unit: str, name: str) -> str:
+    """One property of one unit, as the service manager reports it."""
+    answer = runner(
+        argv=(SYSTEMCTL, "show", "--property", name, "--value", unit),
+        timeout_seconds=UNIT_READ_TIMEOUT_SECONDS,
+    )
+    return answer.stdout.strip()
+
+
+def unit_active_states(*, runner: GuardCommandRunner, units: Sequence[str]) -> Mapping[str, str]:
+    """Each named unit's `ActiveState`, read one unit at a time.
+
+    Per unit rather than in one call: a single `systemctl show` over
+    several units interleaves their properties, and a unit the manager
+    does not know is simply absent from the output -- so a mis-parse
+    would silently report a running unit as stopped.
+    """
+    return {unit: unit_property(runner=runner, unit=unit, name=ACTIVE_STATE) for unit in units}
+
+
+def stop_guard_units(*, runner: GuardCommandRunner, sleep: GuardSleeper) -> tuple[str, ...]:
+    """Stop the observer and the starter, then wait for both to be inactive.
+
+    Reports whichever of the two never reached `inactive` within the
+    bound, which is the signal that lets the driver write
+    `rollback-partial` rather than revoke the start permission while an
+    observer still holds a request it could submit.
+    """
+    for unit in GUARD_OWN_UNITS:
+        stop_unit(runner=runner, unit=unit, timeout_seconds=GUARD_UNIT_SIGKILL_SECONDS)
+        _ = runner(
+            argv=(SYSTEMCTL, *CGROUP_KILL_ARGV, unit),
+            timeout_seconds=GUARD_UNIT_SIGKILL_SECONDS,
+        )
+    busy = GUARD_OWN_UNITS
+    for _ in range(GUARD_UNIT_WAIT_POLLS):
+        states = unit_active_states(runner=runner, units=GUARD_OWN_UNITS)
+        busy = tuple(unit for unit in GUARD_OWN_UNITS if states[unit] != INACTIVE)
+        if not busy:
+            return ()
+        sleep(seconds=GUARD_UNIT_POLL_SECONDS)
+    return busy

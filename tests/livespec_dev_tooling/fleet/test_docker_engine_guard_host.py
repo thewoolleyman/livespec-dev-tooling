@@ -894,3 +894,69 @@ def test_the_sysctl_action_reports_each_watched_value_that_moved(
     quiet = _Commands(answers=_sysctl_answers())
 
     assert _real_host(root=tmp_path, commands=quiet).compare_sysctls(snapshot=snapshot) == ()
+
+
+_GUARD_OWN_UNITS = (
+    "docker-engine-guard-observe.service",
+    "docker-engine-guard-start.service",
+)
+
+
+@dataclass(kw_only=True)
+class _Sleeps:
+    """A recorded sleeper, so a bounded wait is asserted without one."""
+
+    seconds: list[float] = field(default_factory=list)
+
+    def __call__(self, *, seconds: float) -> None:
+        self.seconds.append(seconds)
+
+
+def _active_state_argv(*, unit: str) -> tuple[str, ...]:
+    """The read of one unit's `ActiveState`."""
+    return ("systemctl", "show", "--property", "ActiveState", "--value", unit)
+
+
+def test_the_unit_stop_action_kills_the_observer_and_starter_then_waits() -> None:
+    """The observer and the starter go first, and the rollback WAITS for them.
+
+    Design H2: a still-running observer has a Docker API request it may
+    yet submit, so revoking the start permission before it is gone leaves
+    a sample that can touch a later run's daemon. `systemctl stop` is
+    bounded at ten seconds and followed by a control-group SIGKILL
+    because the observer may be blocked inside that very request, and the
+    wait is BOUNDED too -- a unit that will not go inactive is reported so
+    the driver can write `rollback-partial` instead of hanging.
+    """
+    units = importlib.import_module(_UNITS_MODULE)
+    assert hasattr(units, "stop_guard_units")
+    assert units.GUARD_OWN_UNITS == _GUARD_OWN_UNITS
+
+    gone = _Commands(
+        answers={_active_state_argv(unit=unit): "inactive\n" for unit in _GUARD_OWN_UNITS}
+    )
+    patient = _Sleeps()
+
+    assert units.stop_guard_units(runner=gone, sleep=patient) == ()
+    assert tuple(gone.argvs) == (
+        ("systemctl", "stop", _GUARD_OWN_UNITS[0]),
+        ("systemctl", "kill", "--kill-whom=all", "--signal=SIGKILL", _GUARD_OWN_UNITS[0]),
+        ("systemctl", "stop", _GUARD_OWN_UNITS[1]),
+        ("systemctl", "kill", "--kill-whom=all", "--signal=SIGKILL", _GUARD_OWN_UNITS[1]),
+        _active_state_argv(unit=_GUARD_OWN_UNITS[0]),
+        _active_state_argv(unit=_GUARD_OWN_UNITS[1]),
+    )
+    assert gone.timeouts[:4] == [units.GUARD_UNIT_SIGKILL_SECONDS] * 4
+    assert gone.timeouts[4:] == [units.UNIT_READ_TIMEOUT_SECONDS] * 2
+    assert patient.seconds == []
+
+    stuck = _Commands(
+        answers={
+            _active_state_argv(unit=_GUARD_OWN_UNITS[0]): "active\n",
+            _active_state_argv(unit=_GUARD_OWN_UNITS[1]): "inactive\n",
+        }
+    )
+    waited = _Sleeps()
+
+    assert units.stop_guard_units(runner=stuck, sleep=waited) == (_GUARD_OWN_UNITS[0],)
+    assert waited.seconds == [units.GUARD_UNIT_POLL_SECONDS] * units.GUARD_UNIT_WAIT_POLLS
