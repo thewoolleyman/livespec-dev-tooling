@@ -60,6 +60,23 @@ _FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
 # anywhere in the install leaves behind what it intended to install.
 INTENDED_FILE: Final[str] = "intended.json"
 
+# The three states an interrupted UNPACK leaves a package in, and the only
+# ones design F6 allows `dpkg --configure` to be aimed at. Narrow on
+# purpose: `--configure -a` would adopt whatever else the host has left
+# pending, which is the one thing the recovery branch must not do.
+_RECOVERABLE_STATES: Final[frozenset[str]] = frozenset(
+    {
+        "half-configured",
+        "half-installed",
+        "unpacked",
+    }
+)
+
+# What a package dpkg holds nothing for reads as. A name `dpkg --audit`
+# reported that the query did not carry then falls into no recovery state
+# at all, rather than needing a second branch at every comparison.
+_UNHELD: Final[InstalledPackage] = InstalledPackage(version="", status="")
+
 
 @dataclass(frozen=True, kw_only=True)
 class PackageStepResult:
@@ -147,6 +164,45 @@ def _unaccounted_refusal(*, flagged: tuple[str, ...], runs: Path) -> str | None:
     return None
 
 
+def _in_states(
+    *,
+    flagged: tuple[str, ...],
+    installed: Mapping[str, InstalledPackage],
+    states: frozenset[str],
+) -> tuple[str, ...]:
+    """The flagged packages dpkg holds in one of `states`, sorted."""
+    return tuple(sorted(name for name in flagged if installed.get(name, _UNHELD).status in states))
+
+
+def _recover_interrupted(
+    *,
+    runner: TimedRunner,
+    flagged: tuple[str, ...],
+    installed: Mapping[str, InstalledPackage],
+) -> None:
+    """Finish what an interrupted install left, and only for those packages.
+
+    Design F6's recovery branch. It runs BEFORE this run's own
+    transaction because dpkg refuses to unpack over a database that
+    still holds an unfinished one, and it is aimed at named packages
+    rather than issued as `--configure -a`, which would adopt whatever
+    else the host has left pending.
+
+    Every name here has already been accounted for against the recorded
+    intended sets, so the narrowness that remains is by STATE: only the
+    three an interrupted unpack leaves.
+    """
+    recoverable = _in_states(flagged=flagged, installed=installed, states=_RECOVERABLE_STATES)
+    if recoverable:
+        _ = runner(
+            command=TimedCommand(
+                argv=("dpkg", "--configure", *recoverable),
+                timeout_seconds=INSTALL_TIMEOUT_SECONDS,
+                env=_FENCED_ENV,
+            )
+        )
+
+
 def _drift_refusal(*, audit: Audit, installed: Mapping[str, InstalledPackage]) -> str | None:
     """Every version the audit relied on that has moved since it read them.
 
@@ -197,11 +253,11 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     drift = _drift_refusal(audit=audit, installed=before)
     if drift is not None:
         return PackageStepResult(refusal=drift)
-    unaccounted = _unaccounted_refusal(
-        flagged=_flagged_packages(runner=runner), runs=run_dir.parent
-    )
+    flagged = _flagged_packages(runner=runner)
+    unaccounted = _unaccounted_refusal(flagged=flagged, runs=run_dir.parent)
     if unaccounted is not None:
         return PackageStepResult(refusal=unaccounted)
+    _recover_interrupted(runner=runner, flagged=flagged, installed=before)
     _ = runner(
         command=TimedCommand(
             argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),

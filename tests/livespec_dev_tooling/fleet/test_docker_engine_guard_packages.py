@@ -236,7 +236,7 @@ def _record_earlier_runs(*, root: Path) -> None:
     earlier = root / "runs" / "run-earlier"
     earlier.mkdir(parents=True, exist_ok=True)
     (earlier / "intended.json").write_text(
-        json.dumps({"run": "run-earlier", "additions": ["runc=1.4.0-0ubuntu1"]}),
+        json.dumps({"run": "run-earlier", "additions": ["runc=1.4.0-0ubuntu1", "tini=0.19.0-1"]}),
         encoding="utf-8",
     )
     broken = root / "runs" / "run-broken"
@@ -244,18 +244,21 @@ def _record_earlier_runs(*, root: Path) -> None:
     (broken / "intended.json").write_text("{half-written", encoding="utf-8")
 
 
-def _audit_report(*, package: str) -> str:
-    """`dpkg --audit`'s recorded output naming one package, headers and all.
+def _audit_report(*, packages: tuple[str, ...]) -> str:
+    """`dpkg --audit`'s recorded output naming `packages`, headers and all.
 
     The shape is load-bearing: the headers wrap onto unindented
     continuation lines and only the package rows are indented, which is
     the whole of how the names are picked out of it.
     """
+    rows = "".join(
+        f" {name}                        a package this host carries\n" for name in packages
+    )
     return (
         "The following packages have been unpacked but not yet configured.\n"
         "They must be configured using dpkg --configure or the configure\n"
         "menu option in dselect for them to work:\n"
-        f" {package}                         a package this host carries\n"
+        f"{rows}"
         "\n"
     )
 
@@ -524,7 +527,7 @@ def test_the_package_step_refuses_a_dpkg_audit_no_recorded_intended_set_accounts
 
     foreign = _RecordedRunner(
         result=runner_module.CommandOutput,
-        outputs=[(("dpkg", "--audit"), [_audit_report(package="nginx")]), *_fenced_outputs()],
+        outputs=[(("dpkg", "--audit"), [_audit_report(packages=("nginx",))]), *_fenced_outputs()],
     )
     refused = packages.run_package_step(inputs=inputs, runner=foreign)
 
@@ -541,10 +544,56 @@ def test_the_package_step_refuses_a_dpkg_audit_no_recorded_intended_set_accounts
     # so the union accounts for it and the step carries on.
     neighbour = _RecordedRunner(
         result=runner_module.CommandOutput,
-        outputs=[(("dpkg", "--audit"), [_audit_report(package="runc")]), *_fenced_outputs()],
+        outputs=[(("dpkg", "--audit"), [_audit_report(packages=("runc",))]), *_fenced_outputs()],
     )
 
     assert packages.run_package_step(inputs=inputs, runner=neighbour).refusal is None
+
+
+def test_the_package_step_configures_only_part_installed_packages_a_run_intended(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": `dpkg --configure` on those three states only.
+
+    This is design F6's recovery branch, and both halves of its
+    narrowness are asserted. It is `dpkg --configure <those packages>`
+    and never `--configure -a`, which would adopt whatever else the host
+    has left pending. And it covers only the three states an interrupted
+    UNPACK leaves — `half-installed`, `unpacked`, `half-configured` — so
+    a package merely awaiting triggers is left to the trigger completion
+    rather than configured underneath it.
+
+    `runc` here belongs to the EARLIER run, which is the case rider
+    point 4 names: that run rolled back from `publishing` and left its
+    own package unpacked, and this run completes it instead of refusing.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    interrupted = _QUERY_BEFORE + "runc 1.4.0-0ubuntu1 unpacked\ntini 0.19.0-1 triggers-pending\n"
+    settled = _QUERY_AFTER + "runc 1.4.0-0ubuntu1 installed\ntini 0.19.0-1 installed\n"
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("dpkg", "--audit"), [_audit_report(packages=("runc", "tini"))]),
+            (("dpkg-query",), [interrupted, interrupted, settled]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
+    assert len(configured) == 1
+    assert tuple(configured[0].argv) == ("dpkg", "--configure", "runc")
+    assert configured[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
+    # Completed BEFORE this run's own transaction: dpkg refuses to unpack
+    # over a database that still holds an unfinished one.
+    installed = _calls_named(runner=runner, argv=("dpkg", "-i"))
+    assert runner.calls.index(configured[0]) < runner.calls.index(installed[0])
 
 
 def test_the_package_step_refuses_when_an_installed_version_moved_under_the_audit(
