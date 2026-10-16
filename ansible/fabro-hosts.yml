@@ -49,6 +49,14 @@
     # docker or containerd.
     - role: sandbox_storage
       tags: [sandbox_storage]
+    # The `factory` namespace credential the Kubernetes sandbox backend
+    # launches a run's pod with (livespec-dev-tooling-sqobqv). Reached through
+    # this GROUP play rather than named per host, so a machine that joins the
+    # group inherits it. Its own tag converges the credential alone, which is
+    # the repair an operator wants after a control-plane rebuild. Ordered last
+    # because it depends on nothing above it and the fetch reaches off-host.
+    - role: factory_kubeconfig
+      tags: [factory_kubeconfig]
   tasks:
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:
