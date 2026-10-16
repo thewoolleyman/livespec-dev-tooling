@@ -43,7 +43,14 @@ set -euo pipefail
 # Roots this script must never measure or treat as a store, even if a daemon
 # reports one of them. A misconfigured or spoofed data-root must not turn a
 # `du` loose on the whole filesystem.
-readonly DENY_ROOTS=(/ /srv /tmp /var /usr /etc /boot /nix /opt /home /root /data /var/lib)
+#
+# /srv/factory-workspaces is here for the same reason it is in the sibling
+# storage-reclaim.sh (livespec-dev-tooling-due2h6): `path_is_denied` is an EXACT
+# match, so /srv does not cover it, and this is the ONE workspace root every
+# factory-labelled k3s node offers the kubernetes-sandbox-backend
+# (ansible/roles/factory_workspace_root/). A daemon reporting it as its store
+# root is a daemon this script must refuse rather than walk.
+readonly DENY_ROOTS=(/ /srv /srv/factory-workspaces /tmp /var /usr /etc /boot /nix /opt /home /root /data /var/lib)
 
 log()      { printf '%s\n' "$*"; }
 warn()     { printf '%s\n' "$*" >&2; }

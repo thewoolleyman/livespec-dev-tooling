@@ -43,7 +43,16 @@ set -euo pipefail
 # Roots this script must never touch even if misconfigured to point at them.
 # /srv is a backup snapshot and /tmp holds live agent scratchpads; both sit in
 # the same `du` output as the target and both look like obvious wins.
-readonly DENY_ROOTS=(/ /srv /tmp /var /usr /etc /boot /nix /opt /home /root /data)
+#
+# /srv/factory-workspaces is here BECAUSE /srv ALONE DOES NOT COVER IT
+# (livespec-dev-tooling-due2h6). `path_is_denied` is an EXACT match, so a root
+# of /srv/factory-workspaces is not itself denied and every other guard below
+# passes it — the hazard `safe_to_delete`'s own comment records for
+# "/srv/anything". It is the ONE workspace root every factory-labelled k3s node
+# offers the kubernetes-sandbox-backend (ansible/roles/factory_workspace_root/),
+# it holds LIVE run state this script cannot tell from a dead build artifact,
+# and `ansible/fabro-hosts.yml` applies this reclaimer to a factory host.
+readonly DENY_ROOTS=(/ /srv /srv/factory-workspaces /tmp /var /usr /etc /boot /nix /opt /home /root /data)
 
 # Candidate build-artifact directory names. This list only NOMINATES; git's
 # check-ignore decides. A tracked directory of any of these names survives.

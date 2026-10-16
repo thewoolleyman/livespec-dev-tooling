@@ -38,10 +38,11 @@
   # factory_workspace_root_lineage by exact membership, so a lineage that is
   # shorter than the path is deep would silently resolve a shallower ancestor's
   # filesystem and report it as the answer — a measurement of the wrong mount,
-  # which is worse than no measurement. `/srv/factory-workspaces` splits into
-  # three parts ('', 'srv', 'factory-workspaces') and has three ancestors
-  # counting itself and `/`, so the two lengths agree exactly while the lineage
-  # is complete.
+  # which is worse than no measurement. A two-component path splits into three
+  # parts (the empty string before the leading slash, then each component) and
+  # has three ancestors counting itself and `/`, so the two lengths agree
+  # exactly while the lineage is complete. The path itself is NOT restated here:
+  # defaults/main.yml is its one spelling in this role.
   ansible.builtin.assert:
     that:
       - factory_workspace_root_lineage | length
