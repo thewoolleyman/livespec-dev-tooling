@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.111.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.110.1...v1.111.0) (2026-10-16)
+
+
+### Features
+
+* **fleet:** grant and revoke the guard host's start permission ([2f74f1b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2f74f1b4a4e39c4f60897b517552172c81ce91cf))
+* **fleet:** read every guard unit's state from the real host ([df56011](https://github.com/thewoolleyman/livespec-dev-tooling/commit/df560112c33daabc6d4a769b65ef0a24b0c6dc3b))
+* **fleet:** read the guard host's clock and boot identity ([7bbd511](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7bbd511d874c46b81dcdce513a368c8ec5ca52ac))
+* **fleet:** run one rollback phase as its own child from the real host ([bd254e7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bd254e7b151748725ac079114c07f3996fb3b81a))
+* **fleet:** run the fenced package step from the real host ([7400e16](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7400e16d3eb5c034e6a501b1838741dc331e329c))
+* **fleet:** start and enable the guarded units from the real host ([2b20715](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2b207150a9c78927fa77fb75bb3437fab8ae3e16))
+* **fleet:** write the owned daemon keys and record a pending restart ([6c58f63](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6c58f63e07331c98c33ab6aad12578b1bac638f4))
+
 ## [1.110.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.110.0...v1.110.1) (2026-10-16)
 
 
