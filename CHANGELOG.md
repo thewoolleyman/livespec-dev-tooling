@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.111.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.1...v1.111.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **guard:** read an absent rollback snapshot file as a failing postcondition ([19d6347](https://github.com/thewoolleyman/livespec-dev-tooling/commit/19d6347b55323c2e1582dffa9787de001f1e3161))
+* **guard:** release an unsnapshotted run's reservation on rollback ([a7dd65e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a7dd65eaac92c464c84e56bace3cd197f9e0298e))
+
 ## [1.111.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.0...v1.111.1) (2026-10-16)
 
 
