@@ -55,6 +55,7 @@ if str(_PACKAGE_ROOT) not in sys.path:
 # than name by name. Each is a table HANDLER and nothing else in this
 # file calls it, so a module alias keeps the table reading as the
 # registry it is instead of growing an import line per operation.
+from livespec_dev_tooling.fleet import _docker_engine_guard_commit as commit  # noqa: E402
 from livespec_dev_tooling.fleet import _docker_engine_guard_observer as observer  # noqa: E402
 from livespec_dev_tooling.fleet._docker_engine_guard_cli import (  # noqa: E402
     CliRequest,
@@ -186,7 +187,7 @@ DISPATCH_TABLE: Final[tuple[DispatchRow, ...]] = (
     ),
     DispatchRow(
         operation="confirm",
-        handler=_pending,
+        handler=commit.confirm,
         marker_self="finish",
         allowed_from=("observed",),
         needs_deadline=True,

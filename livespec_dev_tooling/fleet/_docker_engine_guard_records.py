@@ -44,10 +44,14 @@ __all__: list[str] = [
     "Challenge",
     "Evidence",
     "challenge_path",
+    "evidence_passed",
     "evidence_path",
     "fresh_nonce",
     "owned_daemon_keys",
     "owned_keys_digest",
+    "publish_marker",
+    "read_challenge",
+    "submitted_nonce",
     "write_challenge",
     "write_evidence",
 ]
@@ -130,6 +134,61 @@ def write_challenge(*, paths: GuardPaths, challenge: Challenge) -> None:
     write_durable(
         path=challenge_path(paths=paths), data=json.dumps(asdict(challenge), sort_keys=True)
     )
+
+
+def read_challenge(*, paths: GuardPaths) -> Challenge | None:
+    """The outstanding challenge, or `None` when none is outstanding.
+
+    `None` where a reboot has cleared the runtime root, which is the
+    answer that matters: no challenge is not a stale challenge, and both
+    refuse a `confirm`.
+    """
+    path = challenge_path(paths=paths)
+    if not path.is_file():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return Challenge(
+        run=str(payload["run"]),
+        boot_id=str(payload["boot_id"]),
+        nonce=str(payload["nonce"]),
+        issued_monotonic=float(payload["issued_monotonic"]),
+    )
+
+
+def submitted_nonce(*, paths: GuardPaths, run: str) -> str:
+    """The nonce the controller answered with, or an empty string for none.
+
+    The answer arrives in the run's own `inputs/` directory like every
+    other input, because the controller never writes into place (design
+    G3). An empty string rather than a `None` so that the one comparison
+    that matters -- against the outstanding challenge's nonce -- has a
+    single shape: no answer simply does not match.
+    """
+    path = paths.inputs_dir(run=run) / "challenge-answer"
+    return path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+
+
+def evidence_passed(*, paths: GuardPaths, run: str) -> bool:
+    """True only when this run's evidence record is present and records a pass.
+
+    Fail-closed on both unknowns: an absent record and a record whose
+    `passed` is anything but exactly `True` are each read as "the window
+    did not pass", because neither is evidence that it did.
+    """
+    path = evidence_path(paths=paths, run=run)
+    payload: dict[str, object] = (
+        json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    )
+    return payload.get("passed") is True
+
+
+def publish_marker(*, paths: GuardPaths, run: str) -> None:
+    """Write the commit marker: the guard's one commit point.
+
+    The moment the rename inside `write_durable` returns, the run is
+    committed, and no failure after that point ever rolls it back.
+    """
+    write_durable(path=paths.marker, data=json.dumps({"run": run}, sort_keys=True))
 
 
 def owned_daemon_keys(*, paths: GuardPaths, run: str) -> dict[str, object]:
