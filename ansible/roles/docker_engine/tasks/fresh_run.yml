@@ -15,6 +15,60 @@
   ansible.builtin.set_fact:
     docker_engine_run: "r{{ now(utc=true, fmt='%Y%m%d%H%M%S') }}{{ '%04x' | format(65535 | random) }}"
 
+- name: Make a file for the declared ranges
+  # A private temporary file: nothing of the guard's own state exists yet.
+  ansible.builtin.tempfile:
+    suffix: .preflight-declared.json
+  register: docker_engine_preflight_declared
+  become: true
+
+- name: Write the declared ranges the guard's preflight checks for overlaps
+  # The Docker bridge and every range the cluster and the tailnet already use,
+  # each under a name the refusal can print.
+  ansible.builtin.copy:
+    content: >-
+      {{ {'docker bridge': docker_engine_bridge_cidr}
+         | combine(dict(docker_engine_reserved_cidrs | zip(docker_engine_reserved_cidrs))) | to_nice_json }}
+    dest: "{{ docker_engine_preflight_declared.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+
+- name: Ask the guard for every reason this host may not reserve
+  # The guard's own preflight (guard child 4: subnet overlaps, docker-group
+  # members, k3s resync intervals), run through its command-line entry (guard
+  # child 10, livespec-dev-tooling-26w6d2) because it reads this machine BEFORE
+  # any run exists. Every refusal is printed at once, and nothing is changed.
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -B
+      - "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/_docker_engine_guard_preflight_cli.py"
+      - refusals
+      - --declared
+      - "{{ docker_engine_preflight_declared.path }}"
+  register: docker_engine_guard_preflight
+  become: true
+  changed_when: false
+  failed_when: false
+
+- name: Remove the declared-ranges file
+  ansible.builtin.file:
+    path: "{{ docker_engine_preflight_declared.path }}"
+    state: absent
+  become: true
+
+- name: Refuse the host on any guard preflight refusal
+  ansible.builtin.assert:
+    that:
+      - docker_engine_guard_preflight.rc == 0
+    fail_msg: >-
+      The guard refuses this host before reserving (nothing has been changed):
+      {{ docker_engine_guard_preflight.stdout_lines + docker_engine_guard_preflight.stderr_lines }}
+    success_msg: the guard's preflight found no reason to refuse
+
 - name: Reserve the host for this run
   # The guard's admission (design I1): no marker, no reservation that is not
   # rolled-back, every guard unit quiescent, nobody in the docker group. A
@@ -29,6 +83,26 @@
   vars:
     docker_engine_apt_restore_unit: "docker-engine-apt-restore-{{ docker_engine_run }}"
   block:
+    - name: Record the preflight baselines the observer compares against
+      # k3s's containerd witness and this host's interfaces, into the run's own
+      # before/ directory, before the first package step (guard child 4's
+      # record_preflight, through guard child 10's command-line entry). Without
+      # it every real `observe` fails on the missing k3s-witness.json (measured
+      # 2026-10-16, H-01).
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -I
+          - -B
+          - "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/_docker_engine_guard_preflight_cli.py"
+          - record
+          - --state-root
+          - "{{ docker_engine_state_root }}"
+          - --run
+          - "{{ docker_engine_run }}"
+      become: true
+      changed_when: true
+
     - name: Write the start condition and prove it, before any package exists
       ansible.builtin.include_tasks: dropins.yml
 
