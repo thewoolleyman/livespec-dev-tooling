@@ -53,6 +53,7 @@ __all__: list[str] = [
     "UnitCondition",
     "condition_check_passed",
     "conditions_argv",
+    "dropin_check_passed",
     "expected_conditions",
     "read_conditions",
     "sanctioned_dropins",
@@ -202,3 +203,14 @@ def unexpected_dropins(*, unit_directory: Path = DEFAULT_UNIT_DIRECTORY) -> tupl
             if entry.name not in allowed
         )
     return tuple(sorted(found))
+
+
+def dropin_check_passed(*, unit_directory: Path = DEFAULT_UNIT_DIRECTORY) -> bool:
+    """Whether the three guarded units carry nothing but sanctioned drop-ins.
+
+    The verdict half of the survey above, shaped like
+    `condition_check_passed` because the role consumes the two the same
+    way. A caller that has to REPORT what it refused on calls
+    `unexpected_dropins` instead; this one is for the decision.
+    """
+    return not unexpected_dropins(unit_directory=unit_directory)
