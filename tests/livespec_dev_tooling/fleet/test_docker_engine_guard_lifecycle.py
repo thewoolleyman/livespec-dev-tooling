@@ -37,7 +37,6 @@ _STATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_state.py")
 _GUARD_MODULE_UNDER_TEST = "livespec_dev_tooling.fleet.docker_engine_guard"
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
-_PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
 _OPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_ops"
 _OPS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_ops.py")
 _CLI_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_cli"
@@ -715,17 +714,14 @@ def test_rollback_hands_a_decided_run_to_child_two_and_no_ops_a_finished_one(
 def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     tmp_path: Path,
 ) -> None:
-    """Stub modules, so no sibling ever has to reopen the guard module.
+    """No stub modules remain, so no sibling ever had to reopen the guard module.
 
-    Child 3b replaces the package step; child 2 has already replaced the
-    rollback driver and child 3a the real host, which is why neither is
-    asserted as a stub here. Each is reached by name from the guard
-    module, which resolves siblings package-qualified when imported and
-    bare when run as a script on the guarded host.
-
-    The real host is no longer a stub — child 3a built it — so what is
-    asserted of it here is only that the guard module's entry point still
-    hands back a `HostOps`; its own tests own its actions.
+    Child 2 replaced the rollback driver, child 3a the real host and child
+    3b the package step; each is asserted on by that child's own tests.
+    Each is reached by name from the guard module, which resolves siblings
+    package-qualified when imported and bare when run as a script on the
+    guarded host, so what is asserted here is that resolution, and that
+    the guard module's entry point still hands back a `HostOps`.
     """
     guard = _guard_surface()
     assert guard.sibling_module_name(package="pkg", name="_mod") == "pkg._mod"
@@ -735,10 +731,6 @@ def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     assert guard.sibling_module_name(package="", name="_mod") == "livespec_dev_tooling.fleet._mod"
 
     host_module = importlib.import_module(_HOST_MODULE)
-    packages = importlib.import_module(_PACKAGES_MODULE)
-
-    with pytest.raises(NotImplementedError):
-        packages.run_package_step(inputs=tmp_path / "inputs")
 
     hostops = importlib.import_module(_HOSTOPS_MODULE)
     real = host_module.build_real_host(paths=_paths(root=tmp_path))
