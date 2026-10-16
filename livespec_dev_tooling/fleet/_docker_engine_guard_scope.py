@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
+from livespec_dev_tooling.fleet._docker_engine_guard_netstate import LINK_SHOW_ARGV
+from livespec_dev_tooling.fleet._docker_engine_guard_pod_probes import nsenter_argv
 from livespec_dev_tooling.fleet._docker_engine_guard_sample import ProbeResult
 from livespec_dev_tooling.fleet._docker_engine_guard_units import SANDBOX_SLICE, SYSTEMCTL
 from livespec_dev_tooling.fleet._docker_engine_guard_witness import PROC_ROOT
@@ -41,7 +43,9 @@ __all__: list[str] = [
     "NETWORK_LIST_ARGV",
     "SCOPE_TIMEOUT_SECONDS",
     "canary_cgroup_probe",
+    "canary_link_argv",
     "canary_pid_argv",
+    "canary_veth_index",
     "exclusive_scope_probe",
     "slice_control_group",
 ]
@@ -67,6 +71,11 @@ NETWORK_LIST_ARGV: Final[tuple[str, ...]] = ("docker", "network", "ls", "--forma
 BUILT_IN_NETWORKS: Final[frozenset[str]] = frozenset({"bridge", "host", "none"})
 
 EXCLUSIVE_SCOPE_PROBE: Final[str] = "exclusive-scope"
+
+# What a container-side interface name puts before the HOST-side index
+# of its veth pair: `eth0@if12` is one half of the pair whose other
+# half is interface 12 on the host.
+_PEER: Final[str] = "@if"
 
 DOCKER: Final[str] = "docker"
 
@@ -159,3 +168,30 @@ def exclusive_scope_probe(*, runner: GuardCommandRunner, canary: str) -> ProbeRe
     if added:
         faults += (f"Docker networks beyond the built-in three exist: {added}",)
     return ProbeResult(name=EXCLUSIVE_SCOPE_PROBE, passed=not faults, error="; ".join(faults))
+
+
+def canary_link_argv(*, pid: str) -> tuple[str, ...]:
+    """The canary's OWN view of its interfaces, read inside its namespace."""
+    return nsenter_argv(pid=pid, argv=LINK_SHOW_ARGV)
+
+
+def canary_veth_index(*, runner: GuardCommandRunner, pid: str) -> str:
+    """The HOST-side interface index of the canary's one veth pair, or nothing.
+
+    Taken from the canary's OWN endpoint -- its `eth0` is written
+    `eth0@if<index>`, naming the host-side half of the pair -- because
+    a veth's host-side NAME is random. A name-prefix match is the wrong
+    instrument in both directions here: it would miss the pair on a
+    host that named it something else, and on this host it would sweep
+    in `vethf00d01`, which is mastered by `cni0` and carries k3s's pod
+    traffic.
+    """
+    answer = runner(argv=canary_link_argv(pid=pid), timeout_seconds=SCOPE_TIMEOUT_SECONDS)
+    peers = tuple(
+        peer
+        for raw in answer.stdout.splitlines()
+        for name in raw.split()[1:2]
+        for peer in name.rstrip(":").partition(_PEER)[2:3]
+        if peer
+    )
+    return peers[0] if peers else ""

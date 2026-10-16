@@ -1192,3 +1192,98 @@ def test_a_sample_fails_on_any_container_or_network_outside_the_guarded_scope() 
         "containers other than the canary exist: ('fabro-sandbox-01M5',); "
         "Docker networks beyond the built-in three exist: ('fabro_default',)",
     )
+
+
+# `ip -o link show` on the host before the install: k3s's own bridge and
+# flannel link are in it, which is why the comparison is against the
+# RECORDED set and not against a list of names the guard knows.
+_LINKS_BEFORE = _lines(
+    "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN",
+    "2: enp2s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP",
+    "3: tailscale0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1280 state UNKNOWN",
+    "4: cni0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UP",
+    "5: flannel.1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 state UNKNOWN",
+    "6: vethf00d01@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 master cni0 state UP",
+)
+
+# The same read during the window: Docker's bridge and the canary's one
+# veth pair have appeared, and nothing else.
+_LINKS_WITH_CANARY = _LINKS_BEFORE + _lines(
+    "11: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN",
+    "12: veth9f0c1d@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master docker0 state UP",
+)
+
+# And the same read on a host where something else made an interface
+# during the window -- outside the `docker0`-only cleanup entirely.
+_LINKS_WITH_INTRUDER = _LINKS_WITH_CANARY + _lines(
+    "13: br-lab: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN",
+)
+
+# The canary's OWN view of its namespace: its `eth0` names the host-side
+# index of its veth pair after `@if`, which is how the pair is
+# identified by the canary's endpoint rather than guessed from a name.
+_CANARY_LINKS = _lines(
+    "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN",
+    "2: eth0@if12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP",
+)
+
+
+def test_a_sample_fails_on_an_interface_that_appeared_outside_the_guarded_pair(
+    tmp_path: Path,
+) -> None:
+    """`docker0` and the canary's ONE veth pair are expected; anything else is not.
+
+    The pair is identified by the canary's own endpoint -- its `eth0`
+    names the host-side index after `@if` -- because a veth's host-side
+    name is random and a name-prefix match would either miss it or
+    sweep in `flannel.1` and `vethf00d01`, links k3s's pod network runs
+    over.
+    """
+    assert "interface_probe" in importlib.import_module(_WITNESS_MODULE).__all__
+    witness = importlib.import_module(_WITNESS_MODULE)
+    scope = importlib.import_module(_SCOPE_MODULE)
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+
+    inside = _Commands(
+        answers={
+            tuple(scope.canary_link_argv(pid="7211")): _CANARY_LINKS,
+        }
+    )
+    assert scope.canary_veth_index(runner=inside, pid="7211") == "12"
+    assert scope.canary_veth_index(runner=_Commands(), pid="7211") == ""
+
+    snapshot = tmp_path / "before"
+    witness.write_interface_snapshot(
+        destination=snapshot, runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_BEFORE})
+    )
+
+    expected = witness.interface_probe(
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_WITH_CANARY}),
+        snapshot=snapshot,
+        canary_veth_index="12",
+    )
+    assert (expected.name, expected.passed, expected.error) == (
+        witness.INTERFACE_PROBE,
+        True,
+        "",
+    )
+
+    unidentified = witness.interface_probe(
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_WITH_CANARY}),
+        snapshot=snapshot,
+        canary_veth_index="",
+    )
+    assert (unidentified.passed, unidentified.error) == (
+        False,
+        "these interfaces appeared since the snapshot: ('veth9f0c1d',)",
+    )
+
+    intruded = witness.interface_probe(
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_WITH_INTRUDER}),
+        snapshot=snapshot,
+        canary_veth_index="12",
+    )
+    assert (intruded.passed, intruded.error) == (
+        False,
+        "these interfaces appeared since the snapshot: ('br-lab',)",
+    )

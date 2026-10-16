@@ -19,11 +19,16 @@ Stdlib only, Python 3.10 syntax.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from livespec_dev_tooling.fleet._docker_engine_guard_netstate import compare_sysctls
+from livespec_dev_tooling.fleet._docker_engine_guard_firewall import DOCKER_BRIDGE
+from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
+    LINK_SHOW_ARGV,
+    LINK_TIMEOUT_SECONDS,
+    compare_sysctls,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_sample import ProbeResult
 
 if TYPE_CHECKING:
@@ -32,6 +37,8 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "CONTAINERD_PATHS",
     "CONTAINERD_PROCESS",
+    "INTERFACE_PROBE",
+    "INTERFACE_SNAPSHOT",
     "K3S_AGENT_UNIT",
     "K3S_WITNESS_PROBE",
     "PGREP_CONTAINERD_ARGV",
@@ -40,8 +47,11 @@ __all__: list[str] = [
     "WITNESS_SNAPSHOT",
     "WITNESS_TIMEOUT_SECONDS",
     "containerd_pid",
+    "interface_probe",
     "k3s_witness_probe",
+    "read_links",
     "sysctl_probe",
+    "write_interface_snapshot",
     "write_witness_snapshot",
 ]
 
@@ -65,7 +75,9 @@ CONTAINERD_PATHS: Final[tuple[Path, ...]] = (
 PROC_ROOT: Final[Path] = Path("/proc")
 
 WITNESS_SNAPSHOT: Final[str] = "k3s-witness.json"
+INTERFACE_SNAPSHOT: Final[str] = "interfaces.json"
 K3S_WITNESS_PROBE: Final[str] = "k3s-witness"
+INTERFACE_PROBE: Final[str] = "interfaces"
 
 # A process-table scan the kernel answers from memory.
 WITNESS_TIMEOUT_SECONDS: Final[int] = 15
@@ -154,3 +166,67 @@ def k3s_witness_probe(
     if missing:
         faults += (f"these k3s containerd paths are missing: {missing}",)
     return ProbeResult(name=K3S_WITNESS_PROBE, passed=not faults, error="; ".join(faults))
+
+
+def read_links(*, runner: GuardCommandRunner) -> Mapping[str, str]:
+    """Every interface on the host, its INDEX mapped to its name.
+
+    The index is carried because that is how the canary's veth pair is
+    identified: the container side names the host-side INDEX, never the
+    host-side name, which is random. Any `@peer` suffix is stripped from
+    the name so a veth reads as the name a deletion would take.
+
+    Each row contributes a pair by ZIPPING two one-element slices, so a
+    row with fewer than two fields contributes nothing and needs no
+    length guard -- and a guard no recorded output can reach is a line
+    no test can cover.
+    """
+    answer = runner(argv=LINK_SHOW_ARGV, timeout_seconds=LINK_TIMEOUT_SECONDS)
+    return {
+        index.rstrip(":"): name.rstrip(":").partition("@")[0]
+        for raw in answer.stdout.splitlines()
+        # `strict=False` is REQUIRED and not a relaxation: a row with
+        # fewer than two fields pairs with nothing, which is the whole
+        # point -- `strict=True` would raise on it instead.
+        for index, name in zip(raw.split()[:1], raw.split()[1:2], strict=False)
+    }
+
+
+def write_interface_snapshot(*, destination: Path, runner: GuardCommandRunner) -> None:
+    """Record every interface NAME on the host in the run's `before/` directory."""
+    destination.mkdir(parents=True, exist_ok=True)
+    _ = (destination / INTERFACE_SNAPSHOT).write_text(
+        json.dumps(sorted(read_links(runner=runner).values()), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def interface_probe(
+    *, runner: GuardCommandRunner, snapshot: Path, canary_veth_index: str
+) -> ProbeResult:
+    """Whether anything but `docker0` and the canary's veth has appeared.
+
+    Compared against the RECORDED set rather than against names the
+    guard knows, because this host already carries `cni0`, `flannel.1`
+    and k3s's own veths -- a probe that listed the interfaces it
+    expected would have to enumerate another subsystem's, and would go
+    wrong the moment that subsystem added one.
+
+    An UNIDENTIFIED canary veth is a failure rather than a wildcard:
+    the pair is allowed because the guard created it and can delete it,
+    and a pair the guard cannot point at is a pair its cleanup cannot
+    find either.
+    """
+    links = read_links(runner=runner)
+    recorded: set[str] = {
+        str(name)
+        for name in json.loads((snapshot / INTERFACE_SNAPSHOT).read_text(encoding="utf-8"))
+    }
+    pair: set[str] = {links[canary_veth_index]} if canary_veth_index in links else set()
+    allowed: set[str] = recorded | {DOCKER_BRIDGE} | pair
+    appeared = tuple(sorted(name for name in links.values() if name not in allowed))
+    return ProbeResult(
+        name=INTERFACE_PROBE,
+        passed=not appeared,
+        error=("" if not appeared else f"these interfaces appeared since the snapshot: {appeared}"),
+    )
