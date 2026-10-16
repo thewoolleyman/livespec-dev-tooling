@@ -19,13 +19,20 @@ nothing here uses newer syntax.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, Literal, get_args
 
 __all__: list[str] = [
+    "DEFAULT_RUNTIME_ROOT",
+    "DEFAULT_STATE_ROOT",
     "INSTALL_PHASES",
     "OPERATIONS",
     "PHASES",
     "ROLLBACK_PHASES",
+    "Deadline",
+    "GuardPaths",
+    "MarkerState",
     "Operation",
     "Phase",
     "operation_budget_seconds",
@@ -96,3 +103,78 @@ def operation_budget_seconds(*, operation: Operation, window_seconds: int) -> in
     """
     window = window_seconds if operation == "observe" else 0
     return _BASE_BUDGET_SECONDS[operation] + window
+
+
+# How the commit marker reads for the run an operation was invoked on.
+# `unreadable` sits with `other` rather than with `absent`, fail-closed: a
+# marker that cannot be read is not evidence that no run committed.
+MarkerState = Literal["absent", "self", "other", "unreadable"]
+
+DEFAULT_STATE_ROOT: Final[Path] = Path("/var/lib/docker-engine-guard")
+DEFAULT_RUNTIME_ROOT: Final[Path] = Path("/run/docker-engine-guard")
+
+
+@dataclass(frozen=True, kw_only=True)
+class GuardPaths:
+    """Every durable and runtime location the guard reads or writes.
+
+    The split is load-bearing rather than tidy. `runtime_root` is tmpfs, so
+    the start permission and the lock vanish on a reboot while the commit
+    marker and the run records under `state_root` do not — which is why a
+    reboot before the commit point leaves no guarded unit able to start.
+    """
+
+    state_root: Path
+    runtime_root: Path
+
+    @property
+    def marker(self) -> Path:
+        """The commit marker. Its presence, not any phase, decides commitment."""
+        return self.state_root / "confirmed"
+
+    @property
+    def reservation(self) -> Path:
+        """The host's current reservation: one run id, or absent."""
+        return self.state_root / "run"
+
+    @property
+    def lock(self) -> Path:
+        """The one lock every operation takes. Created once, never replaced."""
+        return self.runtime_root / "lock"
+
+    @property
+    def permission(self) -> Path:
+        """The start permission the guarded units' start condition reads."""
+        return self.runtime_root / "allow-start"
+
+    def run_dir(self, *, run: str) -> Path:
+        """One run's own directory: its phase, deadline, snapshot and inputs."""
+        return self.state_root / "runs" / run
+
+    def phase_path(self, *, run: str) -> Path:
+        """The run's single phase record."""
+        return self.run_dir(run=run) / "phase"
+
+    def deadline_path(self, *, run: str) -> Path:
+        """The run's boot-scoped monotonic deadline."""
+        return self.run_dir(run=run) / "deadline.json"
+
+    def snapshot_dir(self, *, run: str) -> Path:
+        """The host snapshot `publish` takes once, before the first package step."""
+        return self.run_dir(run=run) / "before"
+
+    def inputs_dir(self, *, run: str) -> Path:
+        """Where the controller uploads this run's inputs, and nowhere else."""
+        return self.run_dir(run=run) / "inputs"
+
+
+@dataclass(frozen=True, kw_only=True)
+class Deadline:
+    """A boot id and a CLOCK_MONOTONIC instant on that boot.
+
+    A monotonic instant means nothing across a reboot, so the boot id is
+    carried with it and a differing one counts as passed outright.
+    """
+
+    boot_id: str
+    monotonic: float
