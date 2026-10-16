@@ -240,3 +240,36 @@ def test_a_passing_window_issues_a_challenge_under_the_runtime_root_then_observe
     assert len(challenge["nonce"]) >= 32
     assert outcome.verdict == "proceed"
     assert outcome.exit_code == 0
+
+
+def test_each_passing_window_issues_a_nonce_no_earlier_window_issued(tmp_path: Path) -> None:
+    """Specification "Observe and the challenge": a fresh nonce every window.
+
+    Freshness is what stops a replay. An answer carrying a nonce from an
+    earlier window is an answer the controller could have prepared
+    before this window ran -- so it would vouch for a host nobody
+    observed, which is the one thing the challenge exists to prevent.
+    Rider point 5 states the same rule from the other side: a challenge
+    is RE-ISSUED rather than reused.
+
+    Three windows rather than two, because a generator that alternated
+    between two values would pass a two-window check.
+    """
+    observer = importlib.import_module(_OBSERVER_MODULE)
+    records = importlib.import_module(_RECORDS_MODULE)
+    paths = _paths(root=tmp_path)
+    paths.runtime_root.mkdir(parents=True, exist_ok=True)
+    issued: list[str] = []
+
+    for _window in range(3):
+        fake = _fake(root=tmp_path)
+        fake.sample_result = {"passed": True}
+        _record_phase(root=tmp_path, run="run-a", phase="started")
+        outcome = observer.observe(
+            run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision()
+        )
+        assert outcome.verdict == "proceed"
+        issued.append(_challenge(root=tmp_path)["nonce"])
+
+    assert len(set(issued)) == 3
+    assert [len(nonce) for nonce in issued] == [records.NONCE_BYTES * 2] * 3
