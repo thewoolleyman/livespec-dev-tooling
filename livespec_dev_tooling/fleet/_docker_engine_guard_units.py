@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "DOCKER_SOCKET",
+    "DOCKER_STOP_ORDER",
     "LIST_JOBS_ARGV",
     "SYSTEMCTL",
     "UNIT_ACTION_TIMEOUT_SECONDS",
@@ -38,6 +40,8 @@ __all__: list[str] = [
     "cancel_jobs",
     "guarded_job_ids",
     "read_queued_jobs",
+    "stop_docker",
+    "stop_unit",
 ]
 
 SYSTEMCTL: Final[str] = "systemctl"
@@ -55,6 +59,17 @@ UNIT_ACTION_TIMEOUT_SECONDS: Final[int] = 60
 
 # A `list-jobs` row's exact column count: JOB, UNIT, TYPE, STATE.
 _JOB_COLUMNS: Final[int] = 4
+
+DOCKER_SOCKET: Final[str] = "docker.socket"
+
+# The socket BEFORE the service, and the order is load-bearing rather
+# than tidy. A `Restart=` respawn does not re-evaluate
+# `ConditionPathExists` on systemd 259 -- an auto-restart maps to
+# `activating` and `unit_start` skips the condition test there -- so a
+# listening socket left up would keep re-triggering starts of a service
+# whose start permission has just been revoked, and the condition gate
+# would not refuse them (rider point 1).
+DOCKER_STOP_ORDER: Final[tuple[str, ...]] = (DOCKER_SOCKET, "docker.service")
 
 
 def read_queued_jobs(*, runner: GuardCommandRunner) -> tuple[QueuedJob, ...]:
@@ -100,3 +115,14 @@ def cancel_jobs(*, runner: GuardCommandRunner, job_ids: Sequence[str]) -> None:
             argv=(SYSTEMCTL, "cancel", *selected),
             timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
         )
+
+
+def stop_unit(*, runner: GuardCommandRunner, unit: str, timeout_seconds: int) -> None:
+    """Stop one unit, bounded by the caller's own budget."""
+    _ = runner(argv=(SYSTEMCTL, "stop", unit), timeout_seconds=timeout_seconds)
+
+
+def stop_docker(*, runner: GuardCommandRunner) -> None:
+    """Stop the Docker socket, then the Docker service, in that order."""
+    for unit in DOCKER_STOP_ORDER:
+        stop_unit(runner=runner, unit=unit, timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS)

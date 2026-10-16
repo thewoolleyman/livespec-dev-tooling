@@ -698,3 +698,33 @@ def test_job_cancellation_names_only_the_guarded_units_queued_job_ids(
     _real_host(root=tmp_path, commands=quiet).cancel_jobs(job_ids=("12",))
 
     assert tuple(quiet.argvs) == (_LIST_JOBS_ARGV,)
+
+
+def test_the_docker_stop_action_stops_the_socket_before_the_service(
+    tmp_path: Path,
+) -> None:
+    """Socket first, and rider point 1 is why the order is load-bearing.
+
+    A `Restart=` respawn does NOT re-evaluate `ConditionPathExists` on
+    systemd 259 -- an auto-restart maps to `activating` and `unit_start`
+    skips the condition test there -- so a listening `docker.socket` left
+    up would keep re-triggering starts of a service the guard has just
+    revoked permission for, and the condition gate would not stop them.
+    """
+    units = importlib.import_module(_UNITS_MODULE)
+    assert hasattr(units, "stop_docker")
+    commands = _Commands()
+
+    units.stop_docker(runner=commands)
+
+    assert tuple(commands.argvs) == (
+        ("systemctl", "stop", "docker.socket"),
+        ("systemctl", "stop", "docker.service"),
+    )
+    assert set(commands.timeouts) == {units.UNIT_ACTION_TIMEOUT_SECONDS}
+
+    one = _Commands()
+    _real_host(root=tmp_path, commands=one).stop_unit(unit="containerd.service", timeout_seconds=42)
+
+    assert tuple(one.argvs) == (("systemctl", "stop", "containerd.service"),)
+    assert one.timeouts == [42]
