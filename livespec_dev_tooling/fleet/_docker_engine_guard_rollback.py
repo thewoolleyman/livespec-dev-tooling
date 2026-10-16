@@ -16,18 +16,25 @@ expected refusal is RETURNED in a `GuardOutcome` rather than raised.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardOutcome
-from livespec_dev_tooling.fleet._docker_engine_guard_state import record_phase
+from livespec_dev_tooling.fleet._docker_engine_guard_state import read_phase, record_phase
 
 if TYPE_CHECKING:
-    from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision
+    from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision, Phase
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
 __all__: list[str] = [
     "run_rollback",
 ]
+
+# The phases a run is already ON the rollback path in. A firing that
+# arrives on one of them records nothing: the dead-man re-fires every 60
+# seconds, so most firings land here, and re-recording `rolling-back`
+# over a `rollback-partial` would erase the one record an operator reads
+# while deciding whether the host needs a repair.
+_ROLLBACK_PATH_PHASES: Final[tuple[Phase, ...]] = ("rolling-back", "rollback-partial")
 
 
 def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
@@ -41,9 +48,11 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     from a phase this run no longer has — so recording it first is what
     makes a driver killed immediately afterwards leave a run nothing can
     carry forward, rather than one that was acted on and still looks
-    startable.
+    startable. A run already on the rollback path keeps the phase it
+    arrived with until this firing writes an outcome.
     """
-    record_phase(paths=env.paths, run=run, phase="rolling-back")
+    if read_phase(paths=env.paths, run=run) not in _ROLLBACK_PATH_PHASES:
+        record_phase(paths=env.paths, run=run, phase="rolling-back")
     return GuardOutcome(
         operation="rollback",
         run=run,
