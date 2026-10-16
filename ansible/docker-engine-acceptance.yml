@@ -52,10 +52,23 @@
           action must be one of stage, baseline, up, down or teardown, and the
           instance count must be between 1 and 8 (R59's bound)
 
+    # The access check goes through stat's `readable`/`writeable`, which ask
+    # os.access as this user and so honour ACLs. On Ubuntu 26.04 /usr/bin/test
+    # is the uutils build, and it refused /dev/kvm on the acceptance host while
+    # this user held the device through a logind ACL (not the kvm group), which
+    # is exactly how QEMU opens it.
+    - name: Read this user's access to /dev/kvm
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: docker_engine_acceptance_kvm
+
     - name: Refuse a host where this user cannot open /dev/kvm
-      ansible.builtin.command:
-        argv: [test, -r, /dev/kvm, -a, -w, /dev/kvm]
-      changed_when: false
+      ansible.builtin.assert:
+        that:
+          - docker_engine_acceptance_kvm.stat.exists
+          - docker_engine_acceptance_kvm.stat.readable
+          - docker_engine_acceptance_kvm.stat.writeable
+        fail_msg: this user cannot open /dev/kvm for reading and writing
 
     - name: Stage the harness
       when: docker_engine_acceptance_action == 'stage'
