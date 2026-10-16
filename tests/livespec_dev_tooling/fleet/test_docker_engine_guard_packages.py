@@ -41,14 +41,51 @@ def _deb_name(*, package: str, version: str) -> str:
 
 @dataclass(kw_only=True)
 class _RecordedRunner:
-    """The one injectable runner, answering nothing and recording every call."""
+    """The one injectable runner, answering RECORDED output and recording each call.
+
+    `outputs` pairs an argv prefix with the output measured for it on a
+    real host. A prefix carrying more than one output answers them in
+    order and then repeats the last, which is how the SAME `dpkg-query`
+    the fence runs on both sides of the install answers the host before
+    the engine landed and then the host after it.
+    """
 
     result: Any
+    outputs: list[tuple[tuple[str, ...], list[str]]] = field(default_factory=list)
     calls: list[Any] = field(default_factory=list)
 
     def __call__(self, *, command: Any) -> Any:
         self.calls.append(command)
+        for prefix, queued in self.outputs:
+            if tuple(command.argv[: len(prefix)]) == prefix:
+                return self.result(
+                    returncode=0,
+                    stdout=queued.pop(0) if len(queued) > 1 else queued[0],
+                )
         return self.result(returncode=0, stdout="")
+
+
+# `dpkg-query`'s recorded output in the format the fence asks for: the host
+# before the engine lands, and the same host after it. The third line is
+# measured output and not padding — `dpkg-query -W` lists a package dpkg
+# merely KNOWS OF, from some dependency, with an EMPTY version field and
+# the status `not-installed`. Admitted as a package at some version it
+# would be a phantom in both the difference and the drift comparison.
+_QUERY_BEFORE = """adduser 3.137ubuntu1 installed
+libc6 2.39-0ubuntu8.4 installed
+docker-compose-v2  not-installed
+"""
+_QUERY_AFTER = """adduser 3.137ubuntu1 installed
+libc6 2.39-0ubuntu8.4 installed
+docker-compose-v2  not-installed
+containerd 2.2.2-0ubuntu1.1 installed
+docker.io 29.1.3-0ubuntu4.1 installed
+"""
+
+
+def _fenced_outputs() -> list[tuple[tuple[str, ...], list[str]]]:
+    """The output a clean fenced transaction measures, command by command."""
+    return [(("dpkg-query",), [_QUERY_BEFORE, _QUERY_AFTER])]
 
 
 def _payload(*, cache: Path) -> dict[str, Any]:
@@ -106,7 +143,7 @@ def test_the_package_step_installs_exactly_the_audited_debs_under_the_frontend_l
     runner_module = importlib.import_module(_RUNNER_MODULE)
     packages = importlib.import_module(_PACKAGES_MODULE)
     inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
-    runner = _RecordedRunner(result=runner_module.CommandOutput)
+    runner = _RecordedRunner(result=runner_module.CommandOutput, outputs=_fenced_outputs())
 
     outcome = packages.run_package_step(inputs=inputs, runner=runner)
 
@@ -121,6 +158,37 @@ def test_the_package_step_installs_exactly_the_audited_debs_under_the_frontend_l
     )
     assert installed[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
     assert installed[0].timeout_seconds == runner_module.INSTALL_TIMEOUT_SECONDS
+
+
+def test_the_package_step_requires_the_post_install_difference_to_be_the_additions(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the difference MUST be the audited additions.
+
+    The audit cleared one transaction; the `dpkg-query` difference across
+    the install is the only evidence that the transaction which actually
+    ran was that one. A dpkg run that landed a package nobody audited — a
+    dependency unpacked from a stale archive in the cache, a resolver
+    decision the simulation did not predict — leaves the host carrying it
+    and raises no other signal whatever, so the difference is compared
+    against the additions rather than merely inspected for the ones
+    expected.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    unaudited = _QUERY_AFTER + "runc 1.4.0-0ubuntu1 installed\n"
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[(("dpkg-query",), [_QUERY_BEFORE, unaudited])],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is not None
+    assert "runc=1.4.0-0ubuntu1" in outcome.refusal
+    assert outcome.installed == ()
 
 
 def test_the_package_step_refuses_when_the_runs_committed_inputs_are_unreadable(
