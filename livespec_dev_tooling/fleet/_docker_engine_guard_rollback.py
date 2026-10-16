@@ -472,6 +472,36 @@ def _fence_and_revoke(*, env: GuardEnv) -> None:
     env.host.revoke_start_permission()
 
 
+def _deadman_is_done(*, run: str, env: GuardEnv, outcome: Phase) -> bool:
+    """Whether the dead-man has nothing left to come back to this run for.
+
+    Two ways that is true, and they are different reasons. A
+    `rolled-back` run is finished: every postcondition holds, so a later
+    firing would find nothing to do and the timer's own 60-second repeat
+    would run forever over a recovered host.
+
+    A `rollback-partial` run is finished too once no phase is left that
+    a later firing WOULD enter — every phase either holding a success or
+    having spent its three attempts. The run then rests at
+    `rollback-partial` and waits for an operator: the defect is real,
+    the record names it, and nothing automatic is going to fix it.
+    """
+    if outcome == "rolled-back":
+        return True
+    return not any(_enterable(run=run, env=env, phase=phase) for phase in ROLLBACK_PHASE_ORDER)
+
+
+def _enterable(*, run: str, env: GuardEnv, phase: str) -> bool:
+    """Whether a later firing would still ENTER this phase.
+
+    The two skip rules of `_enter_phase`, read as a question rather than
+    acted on, so the driver can ask what work is left without doing any.
+    """
+    return not _succeeded(run=run, env=env, phase=phase) and (
+        _attempts(run=run, env=env, phase=phase) < MAX_ATTEMPTS
+    )
+
+
 def _enter_phase(*, run: str, env: GuardEnv, phase: str) -> None:
     """Record one attempt at `phase`, then spawn the child that runs it.
 
@@ -497,12 +527,11 @@ def _enter_phase(*, run: str, env: GuardEnv, phase: str) -> None:
     it is what stops one crashing phase from standing between the
     dead-man and the later ones.
     """
-    if _succeeded(run=run, env=env, phase=phase):
+    if not _enterable(run=run, env=env, phase=phase):
         return
-    attempts = _attempts(run=run, env=env, phase=phase)
-    if attempts >= MAX_ATTEMPTS:
-        return
-    _record_attempt(run=run, env=env, phase=phase, attempts=attempts)
+    _record_attempt(
+        run=run, env=env, phase=phase, attempts=_attempts(run=run, env=env, phase=phase)
+    )
     if env.host.run_phase_child(argv=phase_child_argv(run=run, env=env, phase=phase)):
         _record_success(run=run, env=env, phase=phase)
 
@@ -528,11 +557,11 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
         _enter_phase(run=run, env=env, phase=phase)
     failed = _final_check(run=run, env=env)
     outcome = _record_outcome(run=run, env=env, failed=failed)
-    if outcome == "rolled-back":
-        # LAST, and only on a clean recovery. The dead-man is the only
-        # thing that comes back to this run — no `confirm` is coming for
-        # a run on the rollback path — so retiring it is safe exactly
-        # when there is nothing left for a later firing to do.
+    if _deadman_is_done(run=run, env=env, outcome=outcome):
+        # LAST, after the outcome that earned it. The dead-man is the
+        # only thing that comes back to a run on the rollback path — no
+        # `confirm` is coming — so retiring it is safe exactly when
+        # there is nothing left for a later firing to do.
         env.host.stop_unit(unit=deadman_timer_unit(run=run), timeout_seconds=UNIT_STOP_SECONDS)
     return GuardOutcome(
         operation="rollback",

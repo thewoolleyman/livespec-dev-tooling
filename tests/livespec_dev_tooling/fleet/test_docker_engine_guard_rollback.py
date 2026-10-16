@@ -910,3 +910,69 @@ def test_a_partial_outcome_re_runs_only_failing_phases_with_attempts_left(
     ) == {"outcome": "rollback-partial", "failed_postconditions": list(residual)}
     for name in residual:
         assert name in outcome.reason
+
+
+def _seed_attempts(*, root: Path, run: str, phase: str, count: int) -> None:
+    """Pre-seed a phase's attempt record partway through its budget."""
+    record = _rollback_record(root=root, run=run, name=f"{phase}.attempts")
+    record.parent.mkdir(parents=True, exist_ok=True)
+    _ = record.write_text(str(count), encoding="utf-8")
+
+
+def test_the_dead_man_stops_itself_once_every_failing_phase_is_exhausted(
+    tmp_path: Path,
+) -> None:
+    """Design G5: an exhausted partial stops the timer and waits for an operator.
+
+    A `rollback-partial` run keeps the dead-man firing because a later
+    firing might still finish the work. Once no phase is left that a
+    later firing WOULD enter — every failing phase having spent its
+    three attempts — that reason is gone, and a timer still firing every
+    60 seconds would re-read the same postconditions and re-write the
+    same record forever. So the driver retires it and the run rests at
+    `rollback-partial`, which is the state an operator acknowledges and
+    then `verify`s after repairing the host by hand.
+
+    The phase is deliberately NOT advanced to `rolled-back`: the host
+    still has a defect, and the record an operator reads has to say so.
+    """
+    rollback = _driver()
+    root = tmp_path / "exhausting"
+    timer = "docker-engine-deadman-run-a.timer"
+    _record_phase(root=root, run="run-a", phase="started")
+    # The interface deletion has had one try already and keeps failing.
+    _seed_attempts(root=root, run="run-a", phase="interface-deletion", count=1)
+
+    first = _reporting_fake(root=root)
+    first.postconditions = _postconditions_except(failing="no docker0")
+    first.failing_phase_children = {"interface-deletion"}
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=root, host=first), decision=_decision())
+
+    # Two of three attempts spent: a later firing still has work, so the
+    # dead-man must keep firing.
+    assert _phase_of(root=root, run="run-a") == "rollback-partial"
+    assert timer not in _stopped_units(fake=first)
+
+    second = _reporting_fake(root=root)
+    second.postconditions = _postconditions_except(failing="no docker0")
+    second.failing_phase_children = {"interface-deletion"}
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=root, host=second), decision=_decision())
+
+    assert [call.detail[-1] for call in second.calls_named(name="run_phase_child")] == [
+        "interface-deletion"
+    ]
+    assert (
+        _rollback_record(root=root, run="run-a", name="interface-deletion.attempts").read_text(
+            encoding="utf-8"
+        )
+        == "3"
+    )
+    # Nothing is left for a later firing to enter, so the timer goes —
+    # and the run still reads `rollback-partial`, naming its defect.
+    assert timer in _stopped_units(fake=second)
+    assert _phase_of(root=root, run="run-a") == "rollback-partial"
+    assert json.loads(
+        _rollback_record(root=root, run="run-a", name="outcome.json").read_text(encoding="utf-8")
+    ) == {"outcome": "rollback-partial", "failed_postconditions": ["no docker0"]}
