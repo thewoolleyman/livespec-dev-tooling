@@ -194,17 +194,23 @@ def test_preflight_refuses_every_overlap_of_the_docker_subnet() -> None:
     )
 
 
-def _real_host(*, root: Path, commands: _Commands) -> Any:
+def _guard_paths(*, root: Path) -> Any:
+    """The guard's durable and runtime roots, under a recorded tree."""
+    model = importlib.import_module(_MODEL_MODULE)
+    return model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+
+
+def _real_host(*, root: Path, commands: _Commands, **roots: Any) -> Any:
     """The guard's REAL host, rooted under `root` and driven by `commands`.
 
     The same object the guard's command line builds, so what is asserted
     is the host layer the factory actually runs -- not a second
-    implementation standing in for it.
+    implementation standing in for it. `roots` carries the two
+    filesystem locations the host reads directly (`/proc` and k3s's
+    containerd paths) when a test has to point them at a recorded tree.
     """
     host_module = importlib.import_module(_HOST_MODULE)
-    model = importlib.import_module(_MODEL_MODULE)
-    paths = model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
-    return host_module.build_real_host(paths=paths, runner=commands)
+    return host_module.build_real_host(paths=_guard_paths(root=root), runner=commands, **roots)
 
 
 # `getent group docker` on a host where the install has already created
@@ -1461,4 +1467,161 @@ def test_the_sample_firewall_comparison_covers_the_scope_r4_fixed_and_no_more(
         "ipv4 filter policy FORWARD: DROP -> ACCEPT; "
         "ipv4 filter appeared -A INPUT -p tcp -m tcp --dport 2375 -j ACCEPT; "
         "ipv4 filter disappeared -A ts-input -i tailscale0 -j ACCEPT"
+    )
+
+
+_PROBE_SET_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_probe_set"
+_PROBE_SET_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_probe_set.py")
+
+# The probe parameters the controller uploads into the run's own inputs
+# directory, and that `publish` installs into place.
+_PROBE_PARAMETERS = {
+    "api_address": "10.43.0.1",
+    "api_port": 443,
+    "canary": "docker-engine-guard-canary",
+    "dns_name": "kubernetes.default.svc.cluster.local",
+    "k3s_server": "poweredge-xubuntu",
+    "kube_dns_address": "10.43.0.10",
+    "must_stay_running": ["local-homelab-llama-server.service", "k3s-agent.service"],
+    "node": "gmktec-xubuntu",
+}
+
+_RUN = "run-a"
+
+
+def _before_bus() -> _Commands:
+    """Every read the preflight snapshot takes, on the host before the install."""
+    firewall = importlib.import_module("livespec_dev_tooling.fleet._docker_engine_guard_firewall")
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    witness = importlib.import_module(_WITNESS_MODULE)
+    answers: dict[tuple[str, ...], str] = {
+        firewall.save_argv(family="ipv4", table="filter"): _FILTER_BEFORE,
+        firewall.save_argv(family="ipv4", table="nat"): _NAT_BEFORE,
+        firewall.save_argv(family="ipv6", table="filter"): _IPV6_FILTER,
+        firewall.save_argv(family="ipv6", table="nat"): _IPV6_NAT,
+        netstate.LINK_SHOW_ARGV: _LINKS_BEFORE,
+        witness.PGREP_CONTAINERD_ARGV: _CONTAINERD_PIDS,
+    }
+    answers.update(
+        {("sysctl", "-n", name): _lines(value) for name, value in _SYSCTLS_BEFORE.items()}
+    )
+    return _Commands(answers=answers)
+
+
+def _sample_bus(*, sysctls: dict[str, str] = _SYSCTLS_BEFORE) -> _Commands:
+    """Every read ONE sample takes, on the host during a healthy window."""
+    firewall = importlib.import_module("livespec_dev_tooling.fleet._docker_engine_guard_firewall")
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    witness = importlib.import_module(_WITNESS_MODULE)
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+    pod_probes = importlib.import_module(_POD_MODULE)
+    scope = importlib.import_module(_SCOPE_MODULE)
+    answers: dict[tuple[str, ...], str] = {
+        cluster.node_status_argv(node="gmktec-xubuntu"): _NODE_STATUS_READY,
+        cluster.coredns_placement_argv(server="poweredge-xubuntu"): (_KUBE_SYSTEM_WIDE_CROSS_NODE),
+        pod_probes.POD_LIST_ARGV: _READY_PODS,
+        pod_probes.inspect_pod_argv(sandbox="svclb0001"): _HOST_NETWORK_POD,
+        pod_probes.inspect_pod_argv(sandbox="cijob0002"): _POD_NETWORK_POD,
+        pod_probes.resolve_argv(host=pod_probes.UBUNTU_ARCHIVE_HOST): _ARCHIVE_ADDRESSES,
+        witness.PGREP_CONTAINERD_ARGV: _CONTAINERD_PIDS,
+        scope.CONTROL_GROUP_ARGV: _lines(_SANDBOX_CONTROL_GROUP),
+        scope.canary_pid_argv(canary="docker-engine-guard-canary"): _lines("7211"),
+        scope.CONTAINER_LIST_ARGV: _lines("docker-engine-guard-canary"),
+        scope.NETWORK_LIST_ARGV: _lines("bridge", "host", "none"),
+        tuple(scope.canary_link_argv(pid="7211")): _CANARY_LINKS,
+        netstate.LINK_SHOW_ARGV: _LINKS_WITH_CANARY,
+        firewall.save_argv(family="ipv4", table="filter"): _FILTER_HEALTHY,
+        firewall.save_argv(family="ipv4", table="nat"): _NAT_HEALTHY,
+        firewall.save_argv(family="ipv6", table="filter"): _IPV6_FILTER,
+        firewall.save_argv(family="ipv6", table="nat"): _IPV6_NAT,
+    }
+    answers.update(
+        {
+            _active_state_argv(unit=unit): _lines("active")
+            for unit in ("k3s-agent.service", "tailscaled.service", *_MUST_STAY_RUNNING)
+        }
+    )
+    answers.update({("sysctl", "-n", name): _lines(value) for name, value in sysctls.items()})
+    return _Commands(answers=answers)
+
+
+def _guarded_tree(*, root: Path, proc: Path, shims: tuple[Path, ...]) -> Any:
+    """A reserved run with its probe parameters and its preflight snapshot."""
+    paths = _guard_paths(root=root)
+    paths.state_root.mkdir(parents=True, exist_ok=True)
+    _ = paths.reservation.write_text(_lines(_RUN), encoding="utf-8")
+    inputs = paths.inputs_dir(run=_RUN)
+    inputs.mkdir(parents=True, exist_ok=True)
+    _ = (inputs / "probes.json").write_text(json.dumps(_PROBE_PARAMETERS), encoding="utf-8")
+    host = _real_host(root=root, commands=_before_bus(), proc_root=proc, containerd_paths=shims)
+    host.take_snapshot(destination=paths.snapshot_dir(run=_RUN))
+    host.record_preflight(destination=paths.snapshot_dir(run=_RUN))
+    return paths
+
+
+def test_the_real_hosts_sample_composes_every_probe_against_recorded_output(
+    tmp_path: Path,
+) -> None:
+    """`HostOps.sample` IS the probe set, assembled from this run's own records.
+
+    The observer reads one record per sample and treats anything that
+    is not exactly `passed` as the window's failure, so this seam is
+    where every probe, the retry rule and the failure record meet. It
+    reads the run from the host's own reservation and its baseline from
+    that run's `before/` directory, because a sample compared against
+    some other run's snapshot would be comparing this host with a
+    different one.
+    """
+    assert _PROBE_SET_PATH.is_file()
+    proc = _proc_tree(
+        root=tmp_path / "proc",
+        cgroups={
+            **_CONTAINERD_CGROUPS,
+            "7211": f"0::{_SANDBOX_CONTROL_GROUP}/docker-abc123.scope",
+        },
+    )
+    shims = (tmp_path / "containerd" / "s", tmp_path / "containerd" / "runc" / "k8s.io")
+    for directory in shims:
+        directory.mkdir(parents=True, exist_ok=True)
+    root = tmp_path / "guard"
+    _ = _guarded_tree(root=root, proc=proc, shims=shims)
+
+    sample_module = importlib.import_module(_SAMPLE_MODULE)
+    host = _real_host(root=root, commands=_sample_bus(), proc_root=proc, containerd_paths=shims)
+    healthy = host.sample()
+
+    assert healthy[sample_module.PASSED_KEY] is True
+    assert healthy[sample_module.COUNTS_KEY] is True
+    assert healthy[sample_module.FAILURES_KEY] == ()
+    recorded = healthy[sample_module.PROBES_KEY]
+    assert isinstance(recorded, tuple)
+    assert tuple(str(probe["name"]) for probe in recorded) == (
+        "services",
+        "node-ready",
+        "dns-placement",
+        "dns",
+        "api",
+        "https",
+        "sysctls",
+        "k3s-witness",
+        "canary-cgroup",
+        "exclusive-scope",
+        "interfaces",
+        "firewall",
+    )
+
+    flipped = dict(_SYSCTLS_BEFORE)
+    flipped["net.ipv4.ip_forward"] = "0"
+    broken = _real_host(
+        root=root,
+        commands=_sample_bus(sysctls=flipped),
+        proc_root=proc,
+        containerd_paths=shims,
+    ).sample()
+    assert broken[sample_module.PASSED_KEY] is False
+    assert broken[sample_module.FAILURES_KEY] == (
+        {
+            "probe": "sysctls",
+            "error": "net.ipv4.ip_forward 1 -> 0; then net.ipv4.ip_forward 1 -> 0",
+        },
     )

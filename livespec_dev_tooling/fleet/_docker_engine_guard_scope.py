@@ -44,6 +44,7 @@ __all__: list[str] = [
     "SCOPE_TIMEOUT_SECONDS",
     "canary_cgroup_probe",
     "canary_link_argv",
+    "canary_pid",
     "canary_pid_argv",
     "canary_veth_index",
     "exclusive_scope_probe",
@@ -112,6 +113,19 @@ def canary_pid_argv(*, canary: str) -> tuple[str, ...]:
     return (DOCKER, "inspect", "--format", "{{.State.Pid}}", canary)
 
 
+def canary_pid(*, runner: GuardCommandRunner, canary: str) -> str:
+    """The canary's main PID, as the daemon running it reports it.
+
+    Public, and resolved ONCE per sample by the probe set: both the
+    cgroup check and the veth identification need it, and two reads
+    could answer two different PIDs if the canary were replaced
+    between them.
+    """
+    return runner(
+        argv=canary_pid_argv(canary=canary), timeout_seconds=SCOPE_TIMEOUT_SECONDS
+    ).stdout.strip()
+
+
 def canary_cgroup_probe(
     *, runner: GuardCommandRunner, canary: str, proc_root: Path = PROC_ROOT
 ) -> ProbeResult:
@@ -125,10 +139,7 @@ def canary_cgroup_probe(
     whether the rollback's cgroup kill reaches this container.
     """
     control_group = slice_control_group(runner=runner)
-    pid = runner(
-        argv=canary_pid_argv(canary=canary), timeout_seconds=SCOPE_TIMEOUT_SECONDS
-    ).stdout.strip()
-    cgroup = proc_root / pid / "cgroup"
+    cgroup = proc_root / canary_pid(runner=runner, canary=canary) / "cgroup"
     placement = cgroup.read_text(encoding="utf-8").strip() if cgroup.is_file() else ""
     inside = bool(control_group) and control_group in placement
     return ProbeResult(
