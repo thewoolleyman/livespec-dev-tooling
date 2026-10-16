@@ -445,3 +445,59 @@ def test_the_real_host_answers_the_whole_preflight(tmp_path: Path) -> None:
         f"kube-router-arg {resync.SYNC_PERIOD_ARGUMENT} is 420s in "
         f"{slow['dropins'] / '10-slow.yaml'}, above the {resync.MAX_RESYNC_SECONDS}s maximum",
     )
+
+
+_CLUSTER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_cluster_probes"
+_CLUSTER_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_cluster_probes.py")
+_SAMPLE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_sample"
+_SAMPLE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_sample.py")
+
+# What the fleet's `docker_engine_must_stay_running` holds on gmktec:
+# the LLM server, plus the k3s agent named a second time, which must not
+# be read twice.
+_MUST_STAY_RUNNING = ("local-homelab-llama-server.service", "k3s-agent.service")
+
+
+def _active_state_argv(*, unit: str) -> tuple[str, ...]:
+    """The service manager read of one unit's `ActiveState`."""
+    return ("systemctl", "show", "--property", "ActiveState", "--value", unit)
+
+
+def test_the_services_probe_requires_the_agent_the_tailnet_and_every_named_unit() -> None:
+    """k3s-agent, tailscaled and every `docker_engine_must_stay_running` unit.
+
+    These three are the host's own life: the CI pool agent, the only
+    remote access path, and whatever else the fleet declared must not
+    stop. A sample that passed with one of them inactive would confirm
+    an install that had already taken the machine out of service.
+    """
+    assert _CLUSTER_PATH.is_file()
+    assert _SAMPLE_PATH.is_file()
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+
+    running = _Commands(
+        answers={
+            _active_state_argv(unit=unit): _lines("active")
+            for unit in ("k3s-agent.service", "tailscaled.service", *_MUST_STAY_RUNNING)
+        }
+    )
+    passing = cluster.services_probe(runner=running, must_stay_running=_MUST_STAY_RUNNING)
+    assert (passing.name, passing.passed, passing.error) == (cluster.SERVICES_PROBE, True, "")
+    assert tuple(running.argvs) == (
+        _active_state_argv(unit="k3s-agent.service"),
+        _active_state_argv(unit="tailscaled.service"),
+        _active_state_argv(unit="local-homelab-llama-server.service"),
+    )
+
+    stopped = _Commands(
+        answers={
+            _active_state_argv(unit="k3s-agent.service"): _lines("active"),
+            _active_state_argv(unit="tailscaled.service"): _lines("activating"),
+            _active_state_argv(unit="local-homelab-llama-server.service"): _lines("failed"),
+        }
+    )
+    failing = cluster.services_probe(runner=stopped, must_stay_running=_MUST_STAY_RUNNING)
+    assert (failing.name, failing.passed) == (cluster.SERVICES_PROBE, False)
+    assert failing.error == (
+        "tailscaled.service is activating; local-homelab-llama-server.service is failed"
+    )
