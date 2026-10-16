@@ -22,6 +22,8 @@ import importlib
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 __all__: list[str] = []
 
 _OBSERVER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_observer"
@@ -96,3 +98,44 @@ def test_observe_claims_the_run_before_it_takes_its_first_sample(tmp_path: Path)
 
     assert [call.phase for call in fake.calls_named(name="sample")] == ["observing", "observing"]
     assert outcome.operation == "observe"
+
+
+def test_observe_stops_sampling_once_the_run_has_left_observing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Specification "Observe and the challenge": a lock-held check ends the window.
+
+    The observation window outlasts every other operation's whole
+    budget, so the run genuinely can be taken away under it: a rollback
+    records `rolling-back` before anything else, and from that moment
+    nothing about this run may be carried forward. The observer
+    therefore re-READS the phase record between samples rather than
+    trusting the phase it claimed, and stops at the first reading that
+    is no longer `observing`.
+    """
+    assert _OBSERVER_PATH.is_file()
+    observer = importlib.import_module(_OBSERVER_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+    taken: list[str] = []
+
+    def sample_then_take_the_run_away() -> dict[str, object]:
+        """Answer one passing sample, and move the run out of `observing` with it."""
+        taken.append("sample")
+        _record_phase(root=tmp_path, run="run-a", phase="rolling-back")
+        return {"passed": True}
+
+    monkeypatch.setattr(fake, "sample", sample_then_take_the_run_away)
+
+    outcome = observer.observe(
+        run="run-a", env=_env(root=tmp_path, host=fake, window=300), decision=_decision()
+    )
+
+    assert taken == ["sample"]
+    assert outcome.verdict == "refuse"
+    assert outcome.exit_code == 1
+    assert "observing" in outcome.reason
+    # The observer records nothing over the run it no longer owns: the
+    # phase it reads is the one the rollback wrote, untouched.
+    assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "rolling-back"
