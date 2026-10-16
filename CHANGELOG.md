@@ -58,6 +58,29 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.103.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.102.0...v1.103.0) (2026-10-16)
+
+
+### Features
+
+* admit one Docker engine install guard reservation at a time ([0f0113f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f0113fb7c4a9d2f7ac55f915b327c634f4b7ea4))
+* arm the Docker engine install guard's dead-man once, against a boot-scoped clock ([7f255cb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7f255cb47dae4dbd051c444195446a1b5ef8746c))
+* bound the Docker engine install guard's lock wait and runtime directory ([f514c63](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f514c63a3f56bb1670b28f3821951b8be664fcca))
+* declare the Docker engine install guard's host seam and its fake ([1d5f2cb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1d5f2cbe975a1afb8e0f2ada694874872f3a5ce0))
+* drive every Docker engine install guard operation through one entry ([2a3615b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2a3615b71204a1266a59111767231da4b9cb8e32))
+* give the Docker engine install guard durable run records ([923c4dc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/923c4dc4658a32b3c8ce4e4c23924975f0e17b1a))
+* give the Docker engine install guard its command line ([273bab3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/273bab34b4a3f3068eefc7ac4f8ac8b97016cdfc))
+* give the Docker engine install guard one dispatch table ([9848731](https://github.com/thewoolleyman/livespec-dev-tooling/commit/98487319e20c7cd9f0c3bd7423cedaa10a563e81))
+* grant the Docker engine start permission only behind a live dead-man ([bc41eeb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bc41eeb3dd59c5e488a77cbc0b1ca4a044613327))
+* let an operator recover a Docker engine install guard run in place ([31e14e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/31e14e9207acb608c83f5a95fefa62cfb1ef2a58))
+* record the Docker engine install guard's operation budget table ([993586c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/993586c8dc0be951bb4e6eaaa389b86785d82692))
+* snapshot once and install inert in the Docker engine install guard ([79ea50b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/79ea50bfd1bc4cbea05ef669d8b7efb0fb83e6f8))
+
+
+### Refactoring
+
+* split the Docker engine install guard's admission rule from its table ([eee33aa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eee33aad05d95dbdb5661cb42e4a02d2df2defa2))
+
 ## [1.102.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.101.2...v1.102.0) (2026-10-15)
 
 
