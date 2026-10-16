@@ -1,0 +1,559 @@
+---
+# node-loss-drill.yml — the ONE sanctioned way to take a pool AGENT node's k3s
+# agent down, hold the node NotReady for a configured window, and bring it back.
+#
+# WHY IT EXISTS (livespec-dev-tooling-raynnh, freeze-driver ruling R71,
+# 2026-10-16). The livespec-orchestrator-beads-fabro plan
+# `kubernetes-sandbox-backend` proves its sandbox lifecycle assertion
+# `bd-ib-ad6dby` assertion 3 against ONE NotReady instance of an agent node: a
+# sandbox held by a long-lived plugin process must see no replacement pod while
+# its node is NotReady, and must exec again once the node is back. Stopping
+# `k3s-agent` over ssh by hand is a hand change to a fleet host — the Driver's
+# `fleet_host_guard.py` refuses it, and
+# `SPECIFICATION/non-functional-requirements.md` §"Consent-gated pool-node
+# disruption" now forbids it outright. No committed path existed, so this is
+# that gap closed, in the shape ansible/reboot-ci-server.yml already uses for
+# the control-plane node that the same spec section governs.
+#
+# THE FENCE IS A VARIABLE, NOT OMISSION FROM A LIST. This play is reachable by
+# `just ansible-apply ansible/node-loss-drill.yml` and by nothing else that
+# matters: without `node_loss_drill_confirm=<this host's inventory name>` it
+# reads nothing, changes nothing and exits 0. A playbook kept safe by being left
+# out of a sweep's argument list is one edit away from being swept; a playbook
+# kept safe by a confirmation variable cannot be reached by a bare apply, by a
+# drift report, by a fleet-wide converge, or by a typo — including a typo that
+# names another pool node, since the confirmation must equal the host's own
+# inventory name.
+#
+# AND CONSENT IS NOT SUFFICIENT. Two members of this pool must never have their
+# agent taken down however explicitly an operator asks, so a confirmation that
+# names one of them is a LOUD refusal rather than a quiet skip:
+#
+#   - the CONTROL-PLANE node, whose loss is a cluster outage and not a node-loss
+#     drill — rebooting it is ansible/reboot-ci-server.yml's job;
+#   - every FABRO FACTORY host, which runs a Fabro server and the factory
+#     sandbox plugin: the machinery the drill is being run FOR. Taking its
+#     kubelet away kills the process that is supposed to be OBSERVING the drill.
+#
+# BOTH ARE READ FROM THE INVENTORY, NEVER FROM A HOST NAME SPELLED HERE — the
+# server by its `cluster_role`, the factory hosts by their membership of
+# `sandbox_hosts`, the group ansible/fabro-hosts.yml targets. That is what
+# `just check-ansible-hostname-free` requires of every play in this tree
+# (livespec-dev-tooling-prdxxe), and it is also what makes the refusal survive
+# the Fabro cutover: a second pool node joining `sandbox_hosts` becomes refused
+# by the same clause with no edit here.
+#
+# IT WAITS FOR CI, AND NEVER FOR ITS OWN SUBJECT. Before the agent goes down the
+# play waits until the target carries no CI runner pod and no gate Job pod, read
+# twice, exactly as reboot-ci-server.yml waits — a node taken down mid-job takes
+# that job with it, and that is not undoable by a later task. The wait is
+# FIELD-SELECTED to this node: a wait on a whole namespace would hold this
+# drill open for a job executing somewhere else, which is not a reason to delay
+# it and on a busy pool is a wait that never ends.
+#
+# NOTHING HERE CORDONS THE NODE OR REMOVES A POD FROM IT, and that is the whole
+# point rather than an omission. The factory sandbox pod on the target is the
+# drill's SUBJECT: the proof asks whether a held sandbox sees a replacement pod
+# while its node is NotReady. Take that pod away first and the drill answers a
+# different question with a clean-looking pass. So this play's only cluster
+# calls are reads, and `tests/livespec_dev_tooling/test_node_loss_drill_playbook.py`
+# asserts that over this file's own executable text as well as over a run.
+#
+# IT RESTORES THE NODE EVEN WHEN THE DRILL FAILS. The start and the Ready wait
+# live in an `always:`, so a hold that errors or a NotReady observation that
+# never arrives still ends with the agent back up. A play that failed partway
+# and left a pool node down would convert a drill into an outage.
+#
+# Governing clause: `SPECIFICATION/non-functional-requirements.md` §"Consent-gated
+# pool-node disruption". Scenario: `SPECIFICATION/scenarios.md` §"Scenario: a
+# node-loss drill holds one agent node NotReady and restores it without touching
+# its workloads".
+
+- name: Hold one agent node NotReady for a configured window and restore it
+  hosts: ci_pool
+  # NO FACT GATHERING. Nothing in this play reads a fact, and a playbook that
+  # takes a fleet node's kubelet away should ask the host for as little as it
+  # can — an unconfirmed run then genuinely touches the host with zero commands
+  # rather than with a setup module's worth.
+  gather_facts: false
+  # ESCALATED AT THE PLAY, deliberately, rather than task by task. The play
+  # connects as the pool's unprivileged login user; the admin kubeconfig the
+  # reads need is root-owned on the server and stopping a unit is root's. The
+  # reboot playbook granted this per task and the ONE task that mattered was
+  # missed, so its reboot was refused by the host with `Access denied as the
+  # requested operation requires interactive authentication`
+  # (livespec-dev-tooling-rh6io2, measured 2026-10-13T02:39:00Z). Granting it
+  # once at the top means a task added to this play tomorrow cannot arrive the
+  # same way. The controller-side modules below (`debug`, `fail`, `assert`)
+  # reach no host, so the grant is inert for them.
+  become: true
+  vars:
+    # The ONLY two namespaces this play reads: ARC's runner pods (one per CI job
+    # execution) and the offloaded `just check` gate Jobs. A factory sandbox pod
+    # is in neither, which is why it is never waited for.
+    node_loss_drill_runner_namespace: arc-runners
+    node_loss_drill_gate_namespace: gates
+    # Read on the server under its admin kubeconfig, which is the same
+    # `delegate_to` shape the node_labels, node_taints and gates_kubeconfig
+    # roles use. An agent holds no credential that may read a Node object, and
+    # during the drill the target's kubelet is down anyway.
+    node_loss_drill_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    # The k3s server, resolved from the inventory and never named here: the
+    # ci_pool member whose cluster_role is server.
+    node_loss_drill_server_host: >-
+      {{ groups['ci_pool'] | map('extract', hostvars)
+         | selectattr('cluster_role', 'defined')
+         | selectattr('cluster_role', 'equalto', 'server')
+         | map(attribute='inventory_hostname') | first }}
+    # The unit whose absence IS the node loss.
+    node_loss_drill_agent_unit: k3s-agent
+    # The three axes the restore is verified against, as this repository spells
+    # them: the factory label the sandbox backend's selector reads, and the
+    # finite extended resource the pool's admission budget is apportioned
+    # against. The node's taints are the third and need no key — they are read
+    # whole.
+    node_loss_drill_factory_key: ci-runner.io/factory
+    node_loss_drill_churn_slot_resource: ci-runner.io/churn-slot
+    # The gap between the two reads of an idle pair, and between one attempt at
+    # the pair and the next. ADDITIONAL attempts: ansible's `retries` is on top
+    # of the first run, so 15 means 16 attempts and — with the 60 s interval
+    # spent twice per attempt — a bounded wait of roughly 31 minutes before the
+    # refusal.
+    node_loss_drill_idle_interval: 60
+    node_loss_drill_idle_retries: 15
+    # The node-status waits. The node controller marks a silent node's Ready
+    # condition Unknown after its monitor grace period, and a restarted agent
+    # re-registers and posts status within a few seconds of that, so 10 s reads
+    # over 31 attempts bound each side at roughly five minutes.
+    node_loss_drill_status_interval: 10
+    node_loss_drill_status_retries: 30
+    # How long the node stays NotReady. This is the drill's one knob: the
+    # observer needs a window long enough to watch for a replacement pod that
+    # must not appear.
+    node_loss_drill_hold_minutes: 5
+    # The restored node's posture is re-read until it matches the recorded one,
+    # because the node lifecycle controller's own `unreachable` / `not-ready`
+    # taints are removed a moment AFTER the Ready condition flips back. A single
+    # read taken the instant the node reads Ready would convict the drill of
+    # changing taints it never touched; a bounded retry gives that controller
+    # its moment and still fails a node that really came back different.
+    node_loss_drill_posture_interval: 10
+    node_loss_drill_posture_retries: 12
+    # THE TWO HALVES OF THE GATE, kept apart because they mean different things
+    # to an operator. `named` is consent: this run is about THIS host. `refused`
+    # is policy: this host may never be a drill subject, whatever the
+    # confirmation says. A run that is not named reports and ends; a run that is
+    # named but refused FAILS.
+    #
+    # `| bool` on each half is load-bearing: these resolve to the strings
+    # 'True' / 'False', and a non-empty string is truthy in Jinja, so composing
+    # them without it would make 'False' true.
+    node_loss_drill_named: >-
+      {{ node_loss_drill_confirm | default('') == inventory_hostname }}
+    node_loss_drill_refused: >-
+      {{ cluster_role | default('') == 'server'
+         or inventory_hostname in (groups['sandbox_hosts'] | default([])) }}
+    node_loss_drill_requested: >-
+      {{ (node_loss_drill_named | bool) and not (node_loss_drill_refused | bool) }}
+    # The node as it stood before the agent was stopped, and as it stands after
+    # the restore. Written out TWICE rather than once over a parameter: the
+    # comparison has to hold the CURRENT read against a value taken before the
+    # stop, and a single expression parameterised by a variable would evaluate
+    # against whichever read was registered last. Both read off a register that
+    # is written exactly once, so the "before" values cannot drift under the
+    # play.
+    node_loss_drill_before_object: >-
+      {{ node_loss_drill_node_before.stdout | default('{}', true) | from_json }}
+    node_loss_drill_before_taints: >-
+      {{ node_loss_drill_before_object.spec.taints | default([], true)
+         | sort(attribute='key') }}
+    node_loss_drill_before_factory: >-
+      {{ node_loss_drill_before_object.metadata.labels[node_loss_drill_factory_key]
+         | default('<absent>') }}
+    node_loss_drill_before_churn_slots: >-
+      {{ node_loss_drill_before_object.status.capacity[node_loss_drill_churn_slot_resource]
+         | default('<absent>') }}
+    node_loss_drill_after_object: >-
+      {{ node_loss_drill_node_after.stdout | default('{}', true) | from_json }}
+    node_loss_drill_after_taints: >-
+      {{ node_loss_drill_after_object.spec.taints | default([], true)
+         | sort(attribute='key') }}
+    node_loss_drill_after_factory: >-
+      {{ node_loss_drill_after_object.metadata.labels[node_loss_drill_factory_key]
+         | default('<absent>') }}
+    node_loss_drill_after_churn_slots: >-
+      {{ node_loss_drill_after_object.status.capacity[node_loss_drill_churn_slot_resource]
+         | default('<absent>') }}
+    # The two instants the drill exists to produce, lifted out of the reads that
+    # observed them. `| first | default(...)` rather than a bare `| first`: a
+    # read whose window ran out has no instant to report and must say so instead
+    # of erroring over the report.
+    node_loss_drill_notready_at: >-
+      {{ node_loss_drill_notready_reads.stdout | default('')
+         | regex_findall('observed-at=(\S+)') | first | default('unobserved') }}
+    node_loss_drill_ready_at: >-
+      {{ node_loss_drill_ready_reads.stdout | default('')
+         | regex_findall('observed-at=(\S+)') | first | default('unobserved') }}
+  tasks:
+    - name: Report a run that carries no node-loss confirmation for this host
+      # The refusal an operator meets most often, and it has to be LEGIBLE: a
+      # play that silently did nothing reads exactly like a play whose drill
+      # silently failed. So the unconfirmed path SAYS what it did not do and
+      # prints the invocation that would.
+      ansible.builtin.debug:
+        msg: >-
+          Not drilling {{ inventory_hostname }}: this run does not carry
+          `node_loss_drill_confirm={{ inventory_hostname }}` (it carries
+          `{{ node_loss_drill_confirm | default('<unset>') }}`). Nothing was
+          read and nothing was changed. To hold this node NotReady, run from the
+          control node: just ansible-apply ansible/node-loss-drill.yml -e
+          node_loss_drill_confirm={{ inventory_hostname }}
+      when: not (node_loss_drill_named | bool)
+
+    - name: Refuse a node-loss drill on the control-plane node or a Fabro factory host
+      # NAMED BUT REFUSED, and therefore a FAILURE rather than a skip. An
+      # operator who asked for this host by name has to be told the request was
+      # rejected; a quiet skip would read as a drill under way. It is the first
+      # task after the consent note on purpose — nothing has been read yet, so a
+      # refused run touches the cluster and the host with zero commands.
+      ansible.builtin.fail:
+        msg: >-
+          Refusing a node-loss drill on {{ inventory_hostname }}: this host is
+          the pool's control plane (cluster_role
+          `{{ cluster_role | default('<unset>') }}`) or a member of the
+          `sandbox_hosts` group, which runs a Fabro server and the factory
+          sandbox plugin. Taking the control plane's agent down is a cluster
+          outage, not a node-loss drill — reboot it with
+          ansible/reboot-ci-server.yml; taking a factory host's agent down kills
+          the process that would be observing the drill. Both sets are read from
+          the inventory, so this refusal follows the groups rather than a name.
+          Nothing was read and nothing was changed.
+      when:
+        - node_loss_drill_named | bool
+        - node_loss_drill_refused | bool
+
+    - name: Drive the node-loss drill on the confirmed agent node
+      when: node_loss_drill_requested | bool
+      block:
+        - name: Hold the drill until the node's CI pods are idle
+          block:
+            - name: Wait for two consecutive idle reads of the node's CI runner and gate pods
+              # ONE TASK, because "idle on two consecutive reads" is ONE claim:
+              # the pair is retried as a unit, so an attempt whose first read was
+              # quiet and whose second was not can never contribute its quiet
+              # half to a later attempt's verdict.
+              #
+              # `shell` rather than `command`, and bash rather than sh: the two
+              # namespaces, the two reads, the interval between them and the
+              # fail-closed error handling below are shell constructs, and
+              # `set -o pipefail` needs bash.
+              ansible.builtin.shell:
+                executable: /bin/bash
+                # FAIL CLOSED ON A READ THAT DID NOT HAPPEN. `local` and the
+                # assignment are SEPARATE statements on purpose: `local
+                # pods="$(...)"` would return the status of `local`, masking a
+                # kubectl that failed, and a masked failure here reads as an
+                # empty pod list — which reads as an idle node, which takes the
+                # agent down under a running CI job. Split, the substitution's
+                # status reaches `set -e` and the whole read fails.
+                #
+                # The `|| true` applies to grep ALONE, whose exit 1 means "no
+                # busy pods" — the idle answer, not an error.
+                #
+                # A pod is BUSY unless it has finished. `.status.phase` is the
+                # API's word (`Succeeded`, `Failed`); `Completed` is the word
+                # kubectl's STATUS column shows for a succeeded pod, and it is
+                # matched too so this read keeps meaning the same thing if it is
+                # ever pointed at that column. `Failed` counts as finished
+                # rather than busy: a pod that has already failed is not work
+                # this node is still doing, and treating it as busy would hold
+                # every later drill on a leftover.
+                cmd: |
+                  set -euo pipefail
+                  busy_pods() {
+                    local namespace pods
+                    for namespace in '{{ node_loss_drill_runner_namespace }}' \
+                                     '{{ node_loss_drill_gate_namespace }}'; do
+                      pods="$(kubectl get pods \
+                        --namespace "${namespace}" \
+                        --field-selector 'spec.nodeName={{ inventory_hostname }}' \
+                        --output 'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}={.status.phase}{"\n"}{end}')"
+                      printf '%s\n' "${pods}" \
+                        | { grep -v -E '^$|=(Succeeded|Failed|Completed)$' || true; }
+                    done
+                  }
+                  first="$(busy_pods)"
+                  sleep '{{ node_loss_drill_idle_interval }}'
+                  second="$(busy_pods)"
+                  printf '%s\n%s\n' "${first}" "${second}" \
+                    | { grep -v -E '^$' || true; }
+              delegate_to: "{{ node_loss_drill_server_host }}"
+              environment:
+                KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
+              register: node_loss_drill_pod_reads
+              # The gate is a READ, so it runs under `--check` too: a drift
+              # report of this playbook — given the confirmation — should say
+              # whether the node's CI work would let the drill through, not skip
+              # the question. It mutates nothing.
+              check_mode: false
+              changed_when: false
+              # THE PREDICATE, STATED IN BOTH SENSES, deliberately. `until`
+              # governs the LOOP: busy pods and a read that failed outright both
+              # keep retrying inside the bounded window, so a transient kubectl
+              # error does not spend the drill. `failed_when` owns the VERDICT,
+              # so the window running out is THIS play's refusal rather than an
+              # internal of ansible's retry loop — which marks an exhausted loop
+              # failed only when `retries > 1`, and a node loss must never ride
+              # on that detail.
+              until: >-
+                node_loss_drill_pod_reads.rc == 0
+                and node_loss_drill_pod_reads.stdout == ''
+              failed_when: >-
+                node_loss_drill_pod_reads.rc != 0
+                or node_loss_drill_pod_reads.stdout != ''
+              retries: "{{ node_loss_drill_idle_retries }}"
+              delay: "{{ node_loss_drill_idle_interval }}"
+          rescue:
+            # A rescue that SUCCEEDED would mark the block handled and let the
+            # stop below run — the exact opposite of what this one is for. It
+            # fails, so the host leaves the play failed and every task after it
+            # is unreachable.
+            - name: Refuse a node-loss drill on a node whose CI pods never went idle
+              ansible.builtin.fail:
+                msg: >-
+                  Refusing to take {{ node_loss_drill_agent_unit }} down on
+                  {{ inventory_hostname }}: its
+                  {{ node_loss_drill_runner_namespace }} and
+                  {{ node_loss_drill_gate_namespace }} pods did not read idle on
+                  two consecutive reads
+                  {{ node_loss_drill_idle_interval }}s apart, over
+                  {{ node_loss_drill_idle_retries | int + 1 }} attempts. Busy
+                  pods on the last read:
+                  {{ node_loss_drill_pod_reads.stdout_lines | default([]) | join(', ') }}
+                  (last read rc
+                  {{ node_loss_drill_pod_reads.rc | default('unknown') }},
+                  stderr `{{ node_loss_drill_pod_reads.stderr | default('') }}`).
+                  Nothing was stopped and nothing on this host was changed;
+                  re-run once the node's CI work has finished.
+
+        - name: Read the node's taints, factory label and churn-slot capacity
+          # The RECORDED posture, taken after the idle gate opened and
+          # immediately before the stop, so it is the state the restore is held
+          # to. Read as whole JSON rather than through a jsonpath: the factory
+          # label and the churn-slot resource are dotted, slashed keys, and a
+          # jsonpath that has to escape them is a second place their spelling
+          # lives. Here the keys are the variables above, subscripted.
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - get
+              - node
+              - "{{ inventory_hostname }}"
+              - "-o"
+              - json
+          delegate_to: "{{ node_loss_drill_server_host }}"
+          environment:
+            KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
+          register: node_loss_drill_node_before
+          changed_when: false
+          check_mode: false
+
+        - name: Note that a check run withholds the node loss itself
+          # WHAT `--check` IS FOR HERE, stated rather than left to be inferred.
+          # The two tasks above are real reads and they answer the question a
+          # drift report of this playbook should answer: would this node's CI
+          # work let the drill through, and what posture would the restore be
+          # held to. Everything below mutates the node or depends on that
+          # mutation having happened, so a check run withholds it — a NotReady
+          # wait against a node whose agent was never stopped cannot be
+          # satisfied, and running it would redden every drift read.
+          ansible.builtin.debug:
+            msg: >-
+              `--check`: {{ inventory_hostname }} would be drilled. Its CI
+              runner and gate pods read idle and its posture was recorded, but
+              {{ node_loss_drill_agent_unit }} is NOT being stopped, so the
+              hold, the restore and the verification are withheld. Re-run
+              without `--check` to perform the drill.
+          when: ansible_check_mode
+
+        - name: Perform the node loss and verify the restore
+          # Withheld WHOLE under `--check`, rather than task by task: the
+          # NotReady observation, the hold, the restore and the three-axis
+          # verification are one unit of work whose every step reads the state
+          # the step before it created. A check run that executed the reads and
+          # skipped the mutations would compare a node that was never taken down
+          # against itself and report a verdict it had not earned.
+          when: not ansible_check_mode
+          block:
+            - name: Take the node's k3s agent down and hold it there
+              block:
+                - name: Stop the node's k3s agent
+                  # THE NODE LOSS ITSELF, and the only task in this play that
+                  # changes anything on any host. It runs on the TARGET, not on the
+                  # server: the unit is the target's.
+                  ansible.builtin.systemd_service:
+                    name: "{{ node_loss_drill_agent_unit }}"
+                    state: stopped
+
+                - name: Wait until the API first reports the node NotReady
+                  # The observation, and it is the API's rather than the host's: the
+                  # claim the proof rests on is what the CLUSTER believed about this
+                  # node, so the instant recorded here is the instant the API first
+                  # said so, not the instant the unit stopped.
+                  ansible.builtin.shell:
+                    executable: /bin/bash
+                    # Same fail-closed split assignment as the idle gate above, for
+                    # the same reason: a masked kubectl failure would print an empty
+                    # status, and an empty status is not `True`, so it would read as
+                    # NotReady and end the wait on a read that never happened.
+                    cmd: |
+                      set -euo pipefail
+                      ready_condition() {
+                        local status
+                        status="$(kubectl get node '{{ inventory_hostname }}' \
+                          --output 'jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}')"
+                        printf '%s' "${status}"
+                      }
+                      observed="$(ready_condition)"
+                      printf 'ready=%s observed-at=%s\n' \
+                        "${observed:-missing}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  delegate_to: "{{ node_loss_drill_server_host }}"
+                  environment:
+                    KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
+                  register: node_loss_drill_notready_reads
+                  changed_when: false
+                  until: >-
+                    node_loss_drill_notready_reads.rc == 0
+                    and 'ready=True' not in node_loss_drill_notready_reads.stdout
+                  failed_when: >-
+                    node_loss_drill_notready_reads.rc != 0
+                    or 'ready=True' in node_loss_drill_notready_reads.stdout
+                  retries: "{{ node_loss_drill_status_retries }}"
+                  delay: "{{ node_loss_drill_status_interval }}"
+
+                - name: Hold the node NotReady for the configured window
+                  # The window the observer watches, and the drill's one knob.
+                  #
+                  # `wait_for` WITH ONLY A TIMEOUT, NEVER `ansible.builtin.pause`.
+                  # `pause` sets `BYPASS_HOST_LOOP`: it is evaluated for the
+                  # FIRST host of the play and its result applied to every other
+                  # one. The first host here is whichever `ci_pool` member the
+                  # inventory happens to list first, which the confirmation
+                  # almost never names — so the task skipped on that host and
+                  # the hold never happened on the host being drilled. Measured
+                  # while building this playbook's own suite, and the shape of
+                  # the defect is the dangerous one: the output carried a
+                  # `skipping:` line naming a DIFFERENT host and no error at all,
+                  # so a zero-length hold read exactly like a held one. A
+                  # per-host module cannot be bypassed that way.
+                  ansible.builtin.wait_for:
+                    timeout: "{{ (node_loss_drill_hold_minutes | float * 60) | round | int }}"
+              always:
+                # ALWAYS, NOT A LATER TASK. A hold that errors, or a NotReady
+                # observation whose window runs out, must still end with this node's
+                # agent back up: a play that failed partway and left a pool node
+                # down would have converted a drill into an outage.
+                - name: Start the node's k3s agent again
+                  ansible.builtin.systemd_service:
+                    name: "{{ node_loss_drill_agent_unit }}"
+                    state: started
+
+                - name: Wait until the API reports the node Ready again
+                  ansible.builtin.shell:
+                    executable: /bin/bash
+                    cmd: |
+                      set -euo pipefail
+                      ready_condition() {
+                        local status
+                        status="$(kubectl get node '{{ inventory_hostname }}' \
+                          --output 'jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}')"
+                        printf '%s' "${status}"
+                      }
+                      observed="$(ready_condition)"
+                      printf 'ready=%s observed-at=%s\n' \
+                        "${observed:-missing}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  delegate_to: "{{ node_loss_drill_server_host }}"
+                  environment:
+                    KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
+                  register: node_loss_drill_ready_reads
+                  changed_when: false
+                  until: >-
+                    node_loss_drill_ready_reads.rc == 0
+                    and 'ready=True' in node_loss_drill_ready_reads.stdout
+                  failed_when: >-
+                    node_loss_drill_ready_reads.rc != 0
+                    or 'ready=True' not in node_loss_drill_ready_reads.stdout
+                  retries: "{{ node_loss_drill_status_retries }}"
+                  delay: "{{ node_loss_drill_status_interval }}"
+
+            - name: Read the node's posture again and wait for it to match the recorded one
+              # RETRIED, and the verdict is NOT here. `until` gives the node
+              # lifecycle controller its moment to take its own `unreachable` /
+              # `not-ready` taints back off a node that has just returned; the
+              # `failed_when` covers only a read that failed, so an exhausted window
+              # leaves this task `ok` and the assert below — which can say WHICH
+              # axis moved — owns the refusal.
+              ansible.builtin.command:
+                argv:
+                  - kubectl
+                  - get
+                  - node
+                  - "{{ inventory_hostname }}"
+                  - "-o"
+                  - json
+              delegate_to: "{{ node_loss_drill_server_host }}"
+              environment:
+                KUBECONFIG: "{{ node_loss_drill_admin_kubeconfig }}"
+              register: node_loss_drill_node_after
+              changed_when: false
+              until: >-
+                node_loss_drill_node_after.rc == 0
+                and (node_loss_drill_after_taints == node_loss_drill_before_taints)
+                and (node_loss_drill_after_factory == node_loss_drill_before_factory)
+                and (node_loss_drill_after_churn_slots == node_loss_drill_before_churn_slots)
+              failed_when: node_loss_drill_node_after.rc != 0
+              retries: "{{ node_loss_drill_posture_retries }}"
+              delay: "{{ node_loss_drill_posture_interval }}"
+
+            - name: Report the UTC times the API first showed the node NotReady and Ready again
+              # BEFORE the verification, not after. These two instants are the
+              # artifact the drill is run to produce, and a run whose verification
+              # fails is exactly the run an operator needs them from.
+              ansible.builtin.debug:
+                msg: >-
+                  Node-loss drill on {{ inventory_hostname }}: the API first showed
+                  the node NotReady at {{ node_loss_drill_notready_at }} and Ready
+                  again at {{ node_loss_drill_ready_at }}, after a configured hold
+                  of {{ node_loss_drill_hold_minutes }} minute(s).
+                  {{ node_loss_drill_agent_unit }} was stopped and started on the
+                  node itself, and no workload on it was touched.
+
+            - name: Fail unless the node's taints, factory label and churn-slot capacity are unchanged
+              # The restore is not "the node answers again" — it is the node being
+              # the node it was. None of these three raises an error on its own: a
+              # factory selector that matches one node fewer simply schedules less,
+              # an admission budget short a slot simply admits less, and an extra
+              # taint simply repels. Silence is why they are asserted.
+              ansible.builtin.assert:
+                that:
+                  - node_loss_drill_after_taints == node_loss_drill_before_taints
+                  - node_loss_drill_after_factory == node_loss_drill_before_factory
+                  - node_loss_drill_after_churn_slots == node_loss_drill_before_churn_slots
+                fail_msg: >-
+                  {{ inventory_hostname }} came back from the node-loss drill
+                  DIFFERENT. Taints before
+                  {{ node_loss_drill_before_taints }}, after
+                  {{ node_loss_drill_after_taints }};
+                  {{ node_loss_drill_factory_key }} before
+                  `{{ node_loss_drill_before_factory }}`, after
+                  `{{ node_loss_drill_after_factory }}`;
+                  {{ node_loss_drill_churn_slot_resource }} capacity before
+                  `{{ node_loss_drill_before_churn_slots }}`, after
+                  `{{ node_loss_drill_after_churn_slots }}`. The agent is running
+                  again; reconcile the node with
+                  `just ansible-apply ansible/ci-pool.yml` and read the result
+                  before running another drill.
+                success_msg: >-
+                  {{ inventory_hostname }} is Ready again with its taints,
+                  {{ node_loss_drill_factory_key }} label and
+                  {{ node_loss_drill_churn_slot_resource }} capacity unchanged.
