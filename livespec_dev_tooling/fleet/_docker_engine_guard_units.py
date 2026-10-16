@@ -41,6 +41,7 @@ __all__: list[str] = [
     "UNIT_ACTION_TIMEOUT_SECONDS",
     "UNIT_READ_TIMEOUT_SECONDS",
     "cancel_jobs",
+    "disable_units",
     "guarded_job_ids",
     "kill_cgroup",
     "read_queued_jobs",
@@ -165,3 +166,21 @@ def kill_cgroup(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
         )
     for unit in (*targets, DOCKER_SOCKET):
         stop_unit(runner=runner, unit=unit, timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS)
+
+
+def disable_units(*, runner: GuardCommandRunner, units: Sequence[str]) -> None:
+    """Disable each named guarded unit, one command per unit.
+
+    Disabling is what stops the NEXT BOOT from starting what this rollback
+    just stopped: the start permission lives on tmpfs and is gone by then,
+    but a `WantedBy` is durable. One command per unit rather than one
+    carrying all three, so a unit whose disable fails does not take the
+    other two down with it.
+    """
+    named = set(units)
+    for unit in GUARDED_UNITS:
+        if unit in named:
+            _ = runner(
+                argv=(SYSTEMCTL, "disable", unit),
+                timeout_seconds=UNIT_ACTION_TIMEOUT_SECONDS,
+            )
