@@ -72,6 +72,16 @@ _RECOVERABLE_STATES: Final[frozenset[str]] = frozenset(
     }
 )
 
+# The two states a helper killed during trigger processing leaves behind.
+# Neither is broken enough for `--configure` nor finished enough to be
+# installed over, so design G7 completes them with `--triggers-only`.
+_TRIGGER_STATES: Final[frozenset[str]] = frozenset(
+    {
+        "triggers-awaited",
+        "triggers-pending",
+    }
+)
+
 # What a package dpkg holds nothing for reads as. A name `dpkg --audit`
 # reported that the query did not carry then falls into no recovery state
 # at all, rather than needing a second branch at every comparison.
@@ -189,14 +199,27 @@ def _recover_interrupted(
     else the host has left pending.
 
     Every name here has already been accounted for against the recorded
-    intended sets, so the narrowness that remains is by STATE: only the
-    three an interrupted unpack leaves.
+    intended sets, so the narrowness that remains is by STATE: the three
+    an interrupted unpack leaves go to `--configure`, and the two a
+    helper killed during trigger processing leaves go to
+    `--triggers-only`. A package is in exactly one of those positions,
+    and completing an unpacked package's triggers would skip the
+    configuration it is actually waiting for.
     """
     recoverable = _in_states(flagged=flagged, installed=installed, states=_RECOVERABLE_STATES)
     if recoverable:
         _ = runner(
             command=TimedCommand(
                 argv=("dpkg", "--configure", *recoverable),
+                timeout_seconds=INSTALL_TIMEOUT_SECONDS,
+                env=_FENCED_ENV,
+            )
+        )
+    awaiting = _in_states(flagged=flagged, installed=installed, states=_TRIGGER_STATES)
+    if awaiting:
+        _ = runner(
+            command=TimedCommand(
+                argv=("dpkg", "--triggers-only", *awaiting),
                 timeout_seconds=INSTALL_TIMEOUT_SECONDS,
                 env=_FENCED_ENV,
             )
