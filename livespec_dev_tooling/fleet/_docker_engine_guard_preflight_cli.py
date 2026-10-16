@@ -149,7 +149,7 @@ def main(
     logger = logging.getLogger(LOGGER_NAME)
     for refusal in refusals:
         logger.error(refusal)
-    return 1
+    return 1 if refusals else 0
 
 
 if __name__ == "__main__":

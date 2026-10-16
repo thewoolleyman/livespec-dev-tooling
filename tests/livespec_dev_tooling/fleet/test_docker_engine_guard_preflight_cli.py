@@ -229,3 +229,39 @@ def test_the_preflight_command_line_prints_every_refusal_and_exits_non_zero(
     ]
     preflight = importlib.import_module(_PREFLIGHT_MODULE)
     assert set(bus.timeouts) == {preflight.PREFLIGHT_TIMEOUT_SECONDS}
+
+
+def test_the_preflight_command_line_is_silent_and_exits_zero_on_a_clear_host(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The pass, which is what makes the refusal above mean anything.
+
+    The exit code is the ONLY verdict channel the role's step has, so a
+    command line that exited non-zero whatever the host said would be
+    indistinguishable from the refusal arm -- and the install would
+    never run on a host that is perfectly ready for it. The silence is
+    asserted for the mirror reason: a line on a clear host is a reason
+    an operator would go looking for and never find.
+
+    The host driven here is clear of all three refusal families at
+    once: no interface address or route inside Docker's subnet, no
+    declared range containing it, an EMPTY `docker` group, and k3s's
+    own configuration carrying no interval above the ceiling -- the
+    effective intervals are then the component defaults, which the
+    ceiling admits.
+    """
+    cli = _cli()
+    ordinary = _k3s_tree(root=tmp_path / "k3s", dropins={})
+    declared = _declared_file(path=tmp_path / "declared.json", declared=_DECLARED_CLEAR)
+    bus = _preflight_bus()
+
+    with caplog.at_level("ERROR"):
+        code = cli.main(
+            argv=["refusals", "--declared", str(declared)],
+            runner=bus,
+            config=ordinary["config"],
+            dropins=ordinary["dropins"],
+        )
+
+    assert code == 0
+    assert caplog.records == []
