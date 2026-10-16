@@ -87,6 +87,12 @@ _TRIGGER_STATES: Final[frozenset[str]] = frozenset(
 # at all, rather than needing a second branch at every comparison.
 _UNHELD: Final[InstalledPackage] = InstalledPackage(version="", status="")
 
+# The one dpkg status that means a package is finished: not merely
+# present, but unpacked AND configured. Every other status an audited
+# package can hold is a transaction somebody did not complete, so it is
+# the recovery branch's business and never evidence of an install.
+_SETTLED: Final[str] = "installed"
+
 
 @dataclass(frozen=True, kw_only=True)
 class PackageStepResult:
@@ -96,28 +102,84 @@ class PackageStepResult:
     installed: tuple[str, ...] = ()
 
 
+def _addition_pairs(*, audit: Audit) -> tuple[tuple[str, str], ...]:
+    """Each audited addition split back into its package name and its version.
+
+    The additions are carried as `package=version` because that is the
+    shape the post-install difference is compared in; the two halves are
+    needed separately wherever dpkg's own table is indexed by name.
+    """
+    return tuple(
+        (name, version)
+        for name, _, version in (addition.partition("=") for addition in audit.additions)
+    )
+
+
+def _already_settled(*, audit: Audit, installed: Mapping[str, InstalledPackage]) -> bool:
+    """Whether the host already holds every audited addition, finished.
+
+    Design Mechanism 6's "packages installed" row, and the condition that
+    makes this step idempotent. EVERY addition has to be settled at the
+    audited version, not merely some: a host holding one of two is a
+    transaction that has to finish, and finishing it is the install's own
+    job rather than something to report as already done.
+
+    The STATUS is part of the comparison and not an afterthought. A
+    package left `unpacked` or `half-configured` by an interrupted
+    install sits in dpkg's table at exactly the audited version, so a
+    version-only test would read it as finished and skip the very
+    transaction that has to complete it.
+    """
+    return all(
+        installed.get(name, _UNHELD) == InstalledPackage(version=version, status=_SETTLED)
+        for name, version in _addition_pairs(audit=audit)
+    )
+
+
+def _expected_difference(
+    *, audit: Audit, before: Mapping[str, InstalledPackage]
+) -> tuple[str, ...]:
+    """The audited additions that can still APPEAR in dpkg's table, sorted.
+
+    The difference below is computed as "in the after side, absent from
+    the before side", so an audited package dpkg already holds a row for
+    can never appear in it — whether that row is a settled install from
+    an earlier run or the `unpacked` remains of an interrupted one. The
+    whole audited set is therefore the wrong comparand on any host that
+    is not bare, which is what made every re-run refuse.
+    """
+    return tuple(
+        sorted(
+            f"{name}={version}"
+            for name, version in _addition_pairs(audit=audit)
+            if name not in before
+        )
+    )
+
+
 def _difference_refusal(
     *,
-    audit: Audit,
+    expected: tuple[str, ...],
     before: Mapping[str, InstalledPackage],
     after: Mapping[str, InstalledPackage],
 ) -> str | None:
-    """The post-install difference, unless it is exactly the audited additions.
+    """The post-install difference, unless it is exactly the additions expected.
 
     The audit cleared ONE transaction, and this difference is the only
     evidence that the transaction which actually ran was that one. So it
-    is COMPARED with the additions rather than merely inspected for them:
-    a dpkg run that also landed a package nobody audited — a dependency
-    unpacked from a stale archive left in the cache, a resolver decision
-    the simulation did not predict — raises no other signal at all.
+    is COMPARED with those additions rather than merely inspected for
+    them: a dpkg run that also landed a package nobody audited — a
+    dependency unpacked from a stale archive left in the cache, a
+    resolver decision the simulation did not predict — raises no other
+    signal at all.
     """
     difference = tuple(
         sorted(f"{name}={row.version}" for name, row in after.items() if name not in before)
     )
-    if difference != audit.additions:
+    if difference != expected:
         return (
             f"the post-install package difference {difference} is not the audited "
-            f"additions {audit.additions}"
+            f"additions {expected} this host did not already hold"
         )
     return None
 
@@ -247,13 +309,30 @@ def _drift_refusal(*, audit: Audit, installed: Mapping[str, InstalledPackage]) -
     return None
 
 
+def _audited(*, inputs: Path, runner: TimedRunner) -> Audit | str:
+    """This run's cleared transaction, or the refusal that stops it being one.
+
+    The two refusals reachable with no dpkg state read at all — inputs
+    that cannot be read, and a transaction the audit will not clear —
+    are answered together here, because that is the line this module set
+    already draws: one half PROVES and the other MUTATES, and a refusal
+    on the proving side must be reachable without touching the other.
+    """
+    declared = load_package_inputs(inputs=inputs)
+    if isinstance(declared, str):
+        return declared
+    return audit_transaction(declared=declared, runner=runner)
+
+
 def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> PackageStepResult:
     """Install exactly the audited package set named by this run's `inputs`.
 
     `dpkg -i` is issued on the audited `.deb` SET and nothing else, so
     the transaction that runs is byte-for-byte the one the audit cleared
     with no resolver decision left to apt. dpkg's own table is read on
-    both sides of it, and the difference has to be the additions.
+    both sides of it, and the difference has to be the additions the
+    host did not already hold — which on a host that holds all of them
+    is no transaction at all.
 
     The intended record is written once the audit has cleared and before
     anything is mutated (design R7), so a run interrupted anywhere in
@@ -261,10 +340,7 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     what lets the NEXT run tell its own unfinished work from somebody
     else's.
     """
-    declared = load_package_inputs(inputs=inputs)
-    if isinstance(declared, str):
-        return PackageStepResult(refusal=declared)
-    audit = audit_transaction(declared=declared, runner=runner)
+    audit = _audited(inputs=inputs, runner=runner)
     if isinstance(audit, str):
         return PackageStepResult(refusal=audit)
     run_dir = inputs.parent
@@ -276,6 +352,12 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     drift = _drift_refusal(audit=audit, installed=before)
     if drift is not None:
         return PackageStepResult(refusal=drift)
+    if _already_settled(audit=audit, installed=before):
+        # Nothing to install, so nothing is mutated and no recovery is
+        # anybody's business: the step returns having only READ. Issuing
+        # `dpkg -i` again over a host that already matches the audit
+        # would be a mutation with no transaction behind it.
+        return PackageStepResult(installed=audit.additions)
     flagged = _flagged_packages(runner=runner)
     unaccounted = _unaccounted_refusal(flagged=flagged, runs=run_dir.parent)
     if unaccounted is not None:
@@ -289,7 +371,9 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
         )
     )
     difference = _difference_refusal(
-        audit=audit, before=before, after=read_installed(runner=runner)
+        expected=_expected_difference(audit=audit, before=before),
+        before=before,
+        after=read_installed(runner=runner),
     )
     if difference is not None:
         return PackageStepResult(refusal=difference)

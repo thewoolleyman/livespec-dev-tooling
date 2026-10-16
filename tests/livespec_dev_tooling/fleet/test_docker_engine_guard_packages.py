@@ -154,6 +154,20 @@ Conf docker.io (29.1.3-0ubuntu4.1 Ubuntu:24.04/noble-updates [amd64])
 """
 
 
+# The same simulation on a host that ALREADY carries both audited
+# packages at their audited versions — the re-run case. apt reports each
+# as already the newest version and emits no `Inst` line at all, so the
+# simulation clears and the step reaches the install with nothing to do.
+_SIMULATION_SETTLED = """NOTE: This is only a simulation!
+      apt-get needs root privileges for real execution.
+Reading package lists...
+Building dependency tree...
+containerd is already the newest version (2.2.2-0ubuntu1.1).
+docker.io is already the newest version (29.1.3-0ubuntu4.1).
+0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+"""
+
+
 def _fenced_outputs() -> list[tuple[tuple[str, ...], list[str]]]:
     """The output a clean fenced transaction measures, command by command.
 
@@ -698,6 +712,45 @@ def test_the_package_step_requires_the_post_install_difference_to_be_the_additio
     assert outcome.refusal is not None
     assert "runc=1.4.0-0ubuntu1" in outcome.refusal
     assert outcome.installed == ()
+
+
+def test_the_package_step_installs_nothing_when_the_audited_set_is_already_installed(
+    tmp_path: Path,
+) -> None:
+    """Design Mechanism 6's "packages installed, new run" row, and F6's recovery.
+
+    Every new run after a rollback reaches here, because a rollback
+    never purges packages — and so does the `recover` of a run
+    interrupted between `dpkg -i` and `published`. On such a host the
+    post-install difference is EMPTY, so comparing it with the whole
+    audited set refused every one of them: the install had already
+    happened and the evidence for it was the absence of a change.
+
+    So the step re-reads dpkg's table, finds every audited addition
+    already settled at its audited version, and completes without
+    issuing `dpkg -i` again — which is the half worth asserting
+    separately from the verdict, because re-issuing it would mutate a
+    host that already matches the audit. What it reports as installed is
+    the audited set, since that is what the host now carries.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+            (("dpkg-query",), [_QUERY_AFTER]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    assert outcome.installed == ("containerd=2.2.2-0ubuntu1.1", "docker.io=29.1.3-0ubuntu4.1")
+    assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
 def test_the_package_step_refuses_when_the_runs_committed_inputs_are_unreadable(
