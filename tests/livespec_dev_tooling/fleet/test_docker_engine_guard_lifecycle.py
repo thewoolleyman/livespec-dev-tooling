@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
+from typing import Any
 
 __all__: list[str] = []
 
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
 _MODEL_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_model.py")
+_HOSTOPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_hostops"
+_HOSTOPS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_hostops.py")
+_FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
+_FAKE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_fake.py")
 
 # The observation window the design derives at preflight from the effective
 # k3s resync periods (420 s at the measured defaults). Only `observe`'s
@@ -85,3 +90,174 @@ def test_the_phase_vocabulary_names_both_paths_and_keeps_them_disjoint() -> None
     assert model.ROLLBACK_PHASES == ("rolling-back", "rolled-back", "rollback-partial")
     assert set(model.INSTALL_PHASES).isdisjoint(model.ROLLBACK_PHASES)
     assert model.PHASES == model.INSTALL_PHASES + model.ROLLBACK_PHASES
+
+
+def _fake(*, root: Path) -> Any:
+    """A `FakeHost` rooted at `root`, with the two guard state roots under it."""
+    fake_module = importlib.import_module(_FAKE_MODULE)
+    return fake_module.FakeHost(state_root=root / "var", runtime_root=root / "run")
+
+
+def _record_phase(*, root: Path, run: str, phase: str) -> None:
+    """Put a reservation and a phase on disk the way the guard's records read."""
+    state_root = root / "var"
+    (state_root / "runs" / run).mkdir(parents=True, exist_ok=True)
+    (state_root / "run").write_text(run, encoding="utf-8")
+    (state_root / "runs" / run / "phase").write_text(phase, encoding="utf-8")
+
+
+def test_the_fake_host_implements_every_seam_the_host_ops_protocol_declares(
+    tmp_path: Path,
+) -> None:
+    """The fake is the shared harness all six guard children test against.
+
+    1b's `sample` and child 2's rollback-phase seams are declared here even
+    though nothing in 1a calls them, precisely so that no sibling has to
+    reopen `docker_engine_guard.py` to add one later.
+    """
+    assert _HOSTOPS_PATH.is_file()
+    assert _FAKE_PATH.is_file()
+    hostops = importlib.import_module(_HOSTOPS_MODULE)
+
+    declared = {name for name in dir(hostops.HostOps) if not name.startswith("_")}
+    assert declared >= {
+        "boot_id",
+        "cancel_jobs",
+        "compare_sysctls",
+        "condition_check_passed",
+        "deadman_timer_active",
+        "deadman_timer_exists",
+        "delete_bridge_interfaces",
+        "disable_units",
+        "docker_group_members",
+        "grant_start_permission",
+        "guard_unit_states",
+        "install_packages",
+        "invoking_unit",
+        "kill_cgroup",
+        "monotonic",
+        "queued_jobs",
+        "read_postconditions",
+        "remove_firewall_footprint",
+        "restore_forward_policy",
+        "revoke_start_permission",
+        "sample",
+        "set_owner_root",
+        "sleep",
+        "start_unit",
+        "stop_unit",
+        "systemd_run",
+        "take_snapshot",
+    }
+    assert declared <= set(dir(_fake(root=tmp_path)))
+
+
+def test_the_fake_host_records_each_seam_call_with_the_phase_in_force_then(
+    tmp_path: Path,
+) -> None:
+    """Call ordering against the phase record is what 1a's own assertions read.
+
+    `start` must reach `started` BEFORE it grants the start permission, and
+    `publish` must reach `publishing` BEFORE its package step; both are
+    orderings between a durable record and a host call, so the fake stamps
+    every call with the phase that was recorded when it arrived.
+    """
+    assert _FAKE_PATH.is_file()
+    fake = _fake(root=tmp_path)
+
+    fake.boot_id()
+    _record_phase(root=tmp_path, run="run-a", phase="publishing")
+    fake.take_snapshot(destination=tmp_path / "before")
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+    fake.grant_start_permission()
+    fake.start_unit(unit="containerd.service", timeout_seconds=60)
+
+    assert [(call.name, call.phase) for call in fake.calls] == [
+        ("boot_id", None),
+        ("take_snapshot", "publishing"),
+        ("grant_start_permission", "started"),
+        ("start_unit", "started"),
+    ]
+    assert fake.calls_named(name="start_unit")[0].detail == ("containerd.service", "60")
+
+
+def test_the_fake_host_answers_the_seams_children_1b_and_2_will_drive(
+    tmp_path: Path,
+) -> None:
+    """Every declared seam answers and records, so no sibling edits the fake's shape.
+
+    The values are injected rather than computed: 1a ships no real host
+    action, so the fake's job is to record the call and hand back whatever
+    the test decided the host would say.
+    """
+    assert _FAKE_PATH.is_file()
+    hostops = importlib.import_module(_HOSTOPS_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.sample_result = {"node_ready": True}
+    fake.firewall_residue = ("DOCKER rule",)
+    fake.deleted_interfaces = ("docker0",)
+    fake.sysctl_differences = ("net.ipv4.ip_forward",)
+    fake.postconditions = {"no start permission": True}
+    fake.jobs = (hostops.QueuedJob(job_id="41", unit="docker.service"),)
+    snapshot = tmp_path / "before"
+
+    assert fake.sample() == {"node_ready": True}
+    assert fake.remove_firewall_footprint(snapshot=snapshot) == ("DOCKER rule",)
+    assert fake.delete_bridge_interfaces() == ("docker0",)
+    assert fake.compare_sysctls(snapshot=snapshot) == ("net.ipv4.ip_forward",)
+    assert fake.read_postconditions(snapshot=snapshot) == {"no start permission": True}
+    assert fake.queued_jobs() == (hostops.QueuedJob(job_id="41", unit="docker.service"),)
+    fake.revoke_start_permission()
+    fake.stop_unit(unit="docker.socket", timeout_seconds=30)
+    fake.cancel_jobs(job_ids=("41",))
+    fake.restore_forward_policy(snapshot=snapshot)
+    fake.kill_cgroup(units=("docker.service",))
+    fake.disable_units(units=("docker.service",))
+
+    assert [call.name for call in fake.calls] == [
+        "sample",
+        "remove_firewall_footprint",
+        "delete_bridge_interfaces",
+        "compare_sysctls",
+        "read_postconditions",
+        "queued_jobs",
+        "revoke_start_permission",
+        "stop_unit",
+        "cancel_jobs",
+        "restore_forward_policy",
+        "kill_cgroup",
+        "disable_units",
+    ]
+
+
+def test_the_fake_host_answers_the_admission_clock_and_package_seams(
+    tmp_path: Path,
+) -> None:
+    """The seams 1a's own decisions read, each injected and each recorded."""
+    assert _FAKE_PATH.is_file()
+    fake = _fake(root=tmp_path)
+    fake.clock = 12.5
+    fake.boot = "boot-b"
+    fake.unit_states = {"docker-engine-guard-start.service": "failed"}
+    fake.docker_group = ("ci",)
+    fake.deadman_units = {"docker-engine-deadman-run-a"}
+    fake.active_deadman_units = {"docker-engine-deadman-run-a"}
+    fake.condition_check = False
+
+    assert fake.monotonic() == 12.5
+    fake.sleep(seconds=2.5)
+    assert fake.monotonic() == 15.0
+    assert fake.boot_id() == "boot-b"
+    assert fake.guard_unit_states() == {"docker-engine-guard-start.service": "failed"}
+    assert fake.invoking_unit() == fake.unit_of_invocation
+    assert fake.docker_group_members() == ("ci",)
+    assert fake.deadman_timer_exists(run="run-a") is True
+    assert fake.deadman_timer_active(run="run-a") is True
+    assert fake.deadman_timer_exists(run="run-b") is False
+    assert fake.condition_check_passed() is False
+    fake.set_owner_root(path=tmp_path / "run")
+    fake.install_packages(inputs=tmp_path / "inputs")
+    fake.systemd_run(argv=("systemd-run", "--collect"))
+
+    assert fake.calls_named(name="systemd_run")[0].detail == ("systemd-run", "--collect")
+    assert fake.calls_named(name="set_owner_root")[0].detail == (str(tmp_path / "run"),)
