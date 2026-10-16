@@ -15,6 +15,7 @@ the one that proves the default runner is wired to `subprocess` at all.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 from dataclasses import dataclass, field
@@ -33,10 +34,37 @@ _PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
 _ENGINE = ("docker.io", "29.1.3-0ubuntu4.1")
 _SHIM = ("containerd", "2.2.2-0ubuntu1.1")
 
+# What stands in for the downloaded archives. The bytes themselves are
+# arbitrary; what matters is that the recorded archive-index stanza and the
+# committed maintainer-script digests are taken FROM them, so a test that
+# alters either side is the test that proves the comparison happens.
+_DEB_BYTES = b"deb bytes"
+_POSTINST = {
+    _ENGINE[0]: "#!/bin/sh\nset -e\n# docker.io postinst, as read at the audit\n",
+    _SHIM[0]: "#!/bin/sh\nset -e\n# containerd postinst, as read at the audit\n",
+}
+
+
+def _digest(*, data: bytes) -> str:
+    """The SHA256 the fence compares, in the hex spelling the index uses."""
+    return hashlib.sha256(data).hexdigest()
+
 
 def _deb_name(*, package: str, version: str) -> str:
     """The archive file name `apt-get download` writes for one allowlist row."""
     return f"{package}_{version}_amd64.deb"
+
+
+def _index_stanza(*, package: str, version: str, digest: str) -> str:
+    """One `apt-cache show` stanza, in the shape the archive index carries it."""
+    return (
+        f"Package: {package}\n"
+        f"Version: {version}\n"
+        "Architecture: amd64\n"
+        f"Filename: pool/universe/d/{package}/{_deb_name(package=package, version=version)}\n"
+        "Size: 20418432\n"
+        f"SHA256: {digest}\n"
+    )
 
 
 @dataclass(kw_only=True)
@@ -102,9 +130,25 @@ Conf docker.io (29.1.3-0ubuntu4.1 Ubuntu:24.04/noble-updates [amd64])
 
 
 def _fenced_outputs() -> list[tuple[tuple[str, ...], list[str]]]:
-    """The output a clean fenced transaction measures, command by command."""
+    """The output a clean fenced transaction measures, command by command.
+
+    Three of these are QUEUED per-package rather than answered once,
+    because the fence asks each question once per allowlist row and the
+    answers differ by row: the index stanza, the control version and the
+    maintainer script. They are queued in the order the allowlist
+    declares, which is the order the audit walks it in.
+    """
     return [
         (("apt-get", "-s"), [_SIMULATION_CLEAN]),
+        (
+            ("apt-cache", "show"),
+            [
+                _index_stanza(package=package, version=version, digest=_digest(data=_DEB_BYTES))
+                for package, version in (_ENGINE, _SHIM)
+            ],
+        ),
+        (("dpkg-deb", "-f"), [f"{_ENGINE[1]}\n", f"{_SHIM[1]}\n"]),
+        (("dpkg-deb", "-I"), [_POSTINST[_ENGINE[0]], _POSTINST[_SHIM[0]]]),
         (("dpkg-query",), [_QUERY_BEFORE, _QUERY_AFTER]),
     ]
 
@@ -118,6 +162,7 @@ def _payload(*, cache: Path) -> dict[str, Any]:
                 "package": package,
                 "version": version,
                 "deb": _deb_name(package=package, version=version),
+                "scripts": {"postinst": _digest(data=_POSTINST[package].encode("utf-8"))},
             }
             for package, version in (_ENGINE, _SHIM)
         ],
@@ -134,7 +179,7 @@ def _declare(*, root: Path, payload: dict[str, Any]) -> Path:
     cache = Path(str(payload["cache"]))
     cache.mkdir(parents=True, exist_ok=True)
     for package, version in (_ENGINE, _SHIM):
-        (cache / _deb_name(package=package, version=version)).write_bytes(b"deb bytes")
+        (cache / _deb_name(package=package, version=version)).write_bytes(_DEB_BYTES)
     inputs = root / "runs" / "run-a" / "inputs"
     inputs.mkdir(parents=True, exist_ok=True)
     (inputs / "packages.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -237,6 +282,104 @@ def test_the_package_step_refuses_a_simulated_transaction_the_allowlist_does_not
         assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
+def test_the_package_step_refuses_a_deb_the_archive_index_and_digests_do_not_vouch_for(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the two ways a downloaded archive refuses.
+
+    The SHA256 is compared against the ARCHIVE INDEX entry for that exact
+    (package, version) rather than against a digest committed in the role,
+    which is the point of design R6: the index is the archive's own
+    statement about the file, so the comparison catches a mirror serving
+    different bytes under the pinned version without the role having to
+    re-commit a digest at every security update. The maintainer scripts go
+    the other way — they are compared against digests a human read and
+    COMMITTED, because those are the programs the install will run as
+    root, and no archive statement about them is worth anything here.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    clean = _RecordedRunner(result=runner_module.CommandOutput, outputs=_fenced_outputs())
+
+    assert packages.run_package_step(inputs=inputs, runner=clean).refusal is None
+    downloaded = _calls_named(runner=clean, argv=("apt-get", "download"))
+    assert [tuple(call.argv) for call in downloaded] == [
+        ("apt-get", "download", "docker.io=29.1.3-0ubuntu4.1"),
+        ("apt-get", "download", "containerd=2.2.2-0ubuntu1.1"),
+    ]
+    # Into the role's cache, which is where the audited set is read from —
+    # `apt-get download` writes to its working directory and nowhere else.
+    assert {call.cwd for call in downloaded} == {tmp_path / "cache"}
+
+    other_bytes = _digest(data=b"bytes some mirror served instead")
+    for outputs, expected in (
+        (
+            [
+                (
+                    ("apt-cache", "show"),
+                    [
+                        _index_stanza(package=_ENGINE[0], version=_ENGINE[1], digest=other_bytes),
+                    ],
+                )
+            ],
+            "differs from the archive index",
+        ),
+        (
+            [(("dpkg-deb", "-I"), ["#!/bin/sh\nrm -rf /\n"])],
+            "postinst differs from its committed digest",
+        ),
+    ):
+        runner = _RecordedRunner(
+            result=runner_module.CommandOutput, outputs=[*outputs, *_fenced_outputs()]
+        )
+
+        outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+        assert outcome.refusal is not None
+        assert expected in outcome.refusal
+        assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
+def test_the_package_step_refuses_a_download_the_archive_cannot_account_for(
+    tmp_path: Path,
+) -> None:
+    """The three ways the download itself fails to produce an auditable archive.
+
+    None of them is exotic and none of them raises: `apt-get download`
+    exits 0 having written nothing when the pinned version has fallen out
+    of the index; `apt-cache show` prints a stanza with no `SHA256:` when
+    the index entry came from a source that carries none; and a `.deb`
+    whose control version is not the pinned one is a cache collision on
+    the file NAME. Each must stop the step rather than reach `dpkg -i`.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    payload = _payload(cache=tmp_path / "cache")
+    inputs = _declare(root=tmp_path, payload=payload)
+    indexless = "Package: docker.io\nVersion: 29.1.3-0ubuntu4.1\nArchitecture: amd64\n"
+
+    for outputs, drop, expected in (
+        ([], True, "left no docker.io_29.1.3-0ubuntu4.1_amd64.deb"),
+        ([(("apt-cache", "show"), [indexless])], False, "carries no SHA256"),
+        ([(("dpkg-deb", "-f"), ["29.1.2-0ubuntu4\n"])], False, "control version"),
+    ):
+        if drop:
+            (tmp_path / "cache" / _deb_name(package=_ENGINE[0], version=_ENGINE[1])).unlink()
+        runner = _RecordedRunner(
+            result=runner_module.CommandOutput, outputs=[*outputs, *_fenced_outputs()]
+        )
+
+        outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+        assert outcome.refusal is not None
+        assert expected in outcome.refusal
+        assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+        inputs = _declare(root=tmp_path, payload=payload)
+
+
 def test_the_package_step_requires_the_post_install_difference_to_be_the_additions(
     tmp_path: Path,
 ) -> None:
@@ -258,7 +401,7 @@ def test_the_package_step_requires_the_post_install_difference_to_be_the_additio
     unaudited = _QUERY_AFTER + "runc 1.4.0-0ubuntu1 installed\n"
     runner = _RecordedRunner(
         result=runner_module.CommandOutput,
-        outputs=[(("dpkg-query",), [_QUERY_BEFORE, unaudited])],
+        outputs=[(("dpkg-query",), [_QUERY_BEFORE, unaudited]), *_fenced_outputs()],
     )
 
     outcome = packages.run_package_step(inputs=inputs, runner=runner)
