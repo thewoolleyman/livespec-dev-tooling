@@ -225,6 +225,41 @@ def _calls_named(*, runner: _RecordedRunner, argv: tuple[str, ...]) -> list[Any]
     return [call for call in runner.calls if tuple(call.argv[: len(argv)]) == argv]
 
 
+def _record_earlier_runs(*, root: Path) -> None:
+    """Two neighbours of this run: one that recorded an intended set, one broken.
+
+    The first is what implementation rider point 4 is about — a run that
+    rolled back from `publishing` leaving its own packages part-installed.
+    The second is a record interrupted mid-write, which must be skipped
+    rather than read as a reason to stop.
+    """
+    earlier = root / "runs" / "run-earlier"
+    earlier.mkdir(parents=True, exist_ok=True)
+    (earlier / "intended.json").write_text(
+        json.dumps({"run": "run-earlier", "additions": ["runc=1.4.0-0ubuntu1"]}),
+        encoding="utf-8",
+    )
+    broken = root / "runs" / "run-broken"
+    broken.mkdir(parents=True, exist_ok=True)
+    (broken / "intended.json").write_text("{half-written", encoding="utf-8")
+
+
+def _audit_report(*, package: str) -> str:
+    """`dpkg --audit`'s recorded output naming one package, headers and all.
+
+    The shape is load-bearing: the headers wrap onto unindented
+    continuation lines and only the package rows are indented, which is
+    the whole of how the names are picked out of it.
+    """
+    return (
+        "The following packages have been unpacked but not yet configured.\n"
+        "They must be configured using dpkg --configure or the configure\n"
+        "menu option in dselect for them to work:\n"
+        f" {package}                         a package this host carries\n"
+        "\n"
+    )
+
+
 def test_the_package_step_installs_exactly_the_audited_debs_under_the_frontend_lock(
     tmp_path: Path,
 ) -> None:
@@ -463,6 +498,53 @@ def test_the_package_step_refuses_a_download_the_archive_cannot_account_for(
         assert expected in outcome.refusal
         assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
         inputs = _declare(root=tmp_path, payload=payload)
+
+
+def test_the_package_step_refuses_a_dpkg_audit_no_recorded_intended_set_accounts_for(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": a flagged package outside EVERY intended set.
+
+    `dpkg --audit` naming something is not by itself a reason to stop: a
+    rollback from `publishing` leaves the packages of a guard run part
+    installed, and the next run has to be able to finish them. What it
+    may never do is step over a package no guard run ever intended —
+    somebody else's interrupted transaction — so the test is membership
+    in the union of every run's recorded set, which is implementation
+    rider point 4: recovery must NOT be keyed to this run's id alone.
+
+    The intended record itself is written before the mutation (design
+    R7), which this proves by refusing after it and finding it there.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+
+    foreign = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[(("dpkg", "--audit"), [_audit_report(package="nginx")]), *_fenced_outputs()],
+    )
+    refused = packages.run_package_step(inputs=inputs, runner=foreign)
+
+    assert refused.refusal is not None
+    assert "nginx" in refused.refusal
+    assert _calls_named(runner=foreign, argv=("dpkg", "-i")) == []
+    recorded = json.loads((inputs.parent / "intended.json").read_text(encoding="utf-8"))
+    assert recorded == {
+        "run": "run-a",
+        "additions": ["containerd=2.2.2-0ubuntu1.1", "docker.io=29.1.3-0ubuntu4.1"],
+    }
+
+    # `runc` is in no intended set of THIS run and in the earlier run's,
+    # so the union accounts for it and the step carries on.
+    neighbour = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[(("dpkg", "--audit"), [_audit_report(package="runc")]), *_fenced_outputs()],
+    )
+
+    assert packages.run_package_step(inputs=inputs, runner=neighbour).refusal is None
 
 
 def test_the_package_step_refuses_when_an_installed_version_moved_under_the_audit(
