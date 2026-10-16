@@ -5,5 +5,12 @@
     "heading": "## Docker engine install guard",
     "work_item": "livespec-dev-tooling-ubpufs",
     "first_seen": "2026-10-15"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
+    "work_item": "livespec-dev-tooling-izlx4g",
+    "first_seen": "2026-10-16"
   }
 ]

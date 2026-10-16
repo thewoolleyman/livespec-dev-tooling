@@ -525,6 +525,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-izlx4g owns it.",
+    "work_item": "livespec-dev-tooling-izlx4g"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier",
     "test": "tests.livespec_dev_tooling.checks.test_heading_coverage_debt_register.test_the_scope_lever_still_refuses_a_newly_authored_unregistered_todo",
     "reason": "Integration-tier: drives the shipped ratchet's `main()` against a real git repository whose staged change ADDS a `TODO` row absent from the register, with the authoring-time lever `LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF` set — the armed tier this scenario names — and asserts the run fails naming the row as an `unregistered_todo` cop-out outside the frozen baseline. Control arm `test_an_inherited_registered_todo_does_not_fail_an_unrelated_commit` runs the same lever over a registered row and passes, so a narrowing that simply stopped judging satisfies neither (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-joyx5c)."
