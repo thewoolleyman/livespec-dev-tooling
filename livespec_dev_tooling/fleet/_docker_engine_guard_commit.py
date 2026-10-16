@@ -24,7 +24,7 @@ Stdlib only, for the reason the model module records.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     GUARDED_UNITS,
@@ -35,6 +35,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_records import (
     CHALLENGE_MAX_AGE_SECONDS,
     consumed_nonces,
     evidence_passed,
+    marker_digest,
     owned_keys_digest,
     publish_marker,
     read_challenge,
@@ -50,9 +51,16 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "commit_refusal",
+    "committed_installation_fault",
     "confirm",
     "deadman_timer_unit",
 ]
+
+# What the post-commit validation requires of each guarded unit, and it
+# requires BOTH: enablement carries the engine across the next boot, the
+# active state says it is running now, and neither implies the other.
+_ENABLED: Final[str] = "enabled"
+_ACTIVE: Final[str] = "active"
 
 
 def deadman_timer_unit(*, run: str) -> str:
@@ -94,6 +102,41 @@ def _committed_reason(*, warning: str) -> str:
     return f"the run is committed; {warning}" if warning else "the run is committed"
 
 
+def committed_installation_fault(*, run: str, env: GuardEnv) -> str:
+    """What is wrong with the committed installation, or an empty string.
+
+    Read AFTER the post-commit steps, because it is their only proof.
+    Enabling and starting a unit says what was ASKED for; it does not say
+    the engine came up. And on a committed host nothing else is watching
+    any more -- the dead-man has been stopped, by design, because a
+    committed run must never be rolled back -- so this read is the one
+    thing left that can notice a committed host whose engine is not
+    actually running.
+
+    It REPORTS and never acts. A validation that undid what it found
+    would roll back a commitment the guarded units' start condition
+    already honours, which is the one move design F4 forbids outright.
+    """
+    enabled = env.host.unit_enabled_states()
+    active = env.host.guard_unit_states()
+    adrift = tuple(
+        unit
+        for unit in GUARDED_UNITS
+        if enabled.get(unit) != _ENABLED or active.get(unit) != _ACTIVE
+    )
+    if adrift:
+        return f"these guarded units are not both enabled and running: {', '.join(adrift)}"
+    recorded = marker_digest(paths=env.paths)
+    if read_marker(paths=env.paths, run=run) == "self" and recorded == owned_keys_digest(
+        paths=env.paths, run=run
+    ):
+        return ""
+    return (
+        "the commit marker does not name this run with the owned keys' digest; "
+        f"it holds {recorded!r}"
+    )
+
+
 def _finish(*, run: str, env: GuardEnv, decision: Decision, warning: str) -> GuardOutcome:
     """The post-commit steps, in the order the specification sets them.
 
@@ -111,6 +154,7 @@ def _finish(*, run: str, env: GuardEnv, decision: Decision, warning: str) -> Gua
     committed host is an engine that only comes back at a reboot. The
     dead-man is stopped last, because until it is, a run that died mid
     way would be rolled back by it, and a committed run must never be.
+    The validation comes after all of them, because it is their proof.
     """
     record_phase(paths=env.paths, run=run, phase="committed")
     env.host.revoke_start_permission()
@@ -119,6 +163,9 @@ def _finish(*, run: str, env: GuardEnv, decision: Decision, warning: str) -> Gua
         env.host.start_unit(unit=unit, timeout_seconds=UNIT_WAIT_SECONDS)
     env.host.stop_unit(unit=deadman_timer_unit(run=run), timeout_seconds=UNIT_WAIT_SECONDS)
     record_phase(paths=env.paths, run=run, phase="confirmed")
+    fault = committed_installation_fault(run=run, env=env)
+    if fault:
+        return GuardOutcome(operation="confirm", run=run, verdict="refuse", reason=fault)
     return GuardOutcome(
         operation="confirm",
         run=run,

@@ -49,6 +49,7 @@ class FakeHost:
     clock: float = 0.0
     boot: str = "boot-a"
     unit_states: dict[str, str] = field(default_factory=dict)
+    unit_file_states: dict[str, str] = field(default_factory=dict)
     jobs: tuple[QueuedJob, ...] = ()
     unit_of_invocation: str = "docker-engine-guard-reserve-run-a-1.service"
     docker_group: tuple[str, ...] = ()
@@ -153,6 +154,9 @@ class FakeHost:
 
     def enable_units(self, *, units: Sequence[str]) -> None:
         self._record(name="enable_units", detail=tuple(units))
+
+    def unit_enabled_states(self) -> Mapping[str, str]:
+        return self.unit_file_states
 
     # --- rollback phases (child 2) ---
 
