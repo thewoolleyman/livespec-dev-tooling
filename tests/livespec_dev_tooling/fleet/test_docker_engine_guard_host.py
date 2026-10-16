@@ -55,6 +55,8 @@ _POSTCONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_pos
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 _CLOCK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_clock"
 _CLOCK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_clock.py")
+_PERMISSION_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_permission"
+_PERMISSION_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_permission.py")
 
 # What the guarded host's two address families look like BEFORE any Docker
 # package exists: the k3s and Tailscale rule sets the snapshot has to
@@ -1391,6 +1393,54 @@ def test_the_clock_seam_reads_this_boot_s_id_and_the_monotonic_clock(tmp_path: P
     # A kernel file and a clock call: neither is an external command, so
     # neither reaches the bus every other action on this host goes through.
     assert commands.argvs == []
+
+
+def test_the_start_permission_is_granted_where_the_paths_name_it_and_revoked_twice(
+    tmp_path: Path,
+) -> None:
+    """The one file standing between an installed engine and a running one.
+
+    Both actions are asserted at the location `GuardPaths` names rather
+    than at a path spelled out here, because the guarded units' two
+    OR'd `ConditionPathExists` are written from that same property: a
+    permission created anywhere else satisfies no condition at all, and
+    the install would read as inert while being merely broken.
+
+    GRANTING IS IDEMPOTENT because `start` is -- a retried invocation
+    finds the permission already there and must still reach its unit
+    starts. REVOKING AN ABSENT PERMISSION IS A SUCCESS because the
+    dead-man re-fires a rollback every sixty seconds: after the first
+    firing the file is gone, and a second firing that raised here would
+    never reach the steps that still have work to do.
+
+    The permission lands on the RUNTIME side and the durable side is
+    not touched at all, which is what makes a reboot before the commit
+    point leave a host no guarded unit can start on: /run is tmpfs.
+    """
+    assert _PERMISSION_PATH.is_file()
+    commands = _Commands()
+    host = _real_host(root=tmp_path, commands=commands)
+    paths = _guard_paths(root=tmp_path)
+
+    host.grant_start_permission()
+    host.grant_start_permission()
+
+    assert paths.permission.is_file()
+    assert not paths.state_root.exists()
+
+    host.revoke_start_permission()
+    host.revoke_start_permission()
+
+    assert not paths.permission.exists()
+
+    # The runtime directory's ownership is the one half of I4 the guard
+    # cannot set in-process, so it goes out as a bounded command like
+    # every other action this host takes.
+    host.set_owner_root(path=paths.runtime_root)
+
+    permission = importlib.import_module(_PERMISSION_MODULE)
+    assert commands.argvs == [("chown", permission.ROOT_OWNER, str(paths.runtime_root))]
+    assert commands.timeouts == [permission.OWNERSHIP_TIMEOUT_SECONDS]
 
 
 def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:
