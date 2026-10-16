@@ -1227,3 +1227,67 @@ def test_the_dropin_check_accepts_the_guards_own_and_the_sandbox_storage_dropins
     # A host whose drop-in directories do not exist at all: the read is a
     # survey, so nothing to survey is not a finding.
     assert conditions.unexpected_dropins(unit_directory=tmp_path / "absent") == ()
+
+
+def test_the_dropin_check_refuses_a_dropin_outside_that_set(tmp_path: Path) -> None:
+    """Design G6: anything but the sanctioned set is refused, and NAMED.
+
+    This is the other half of the start-condition proof. The two OR'd
+    conditions only hold while nothing else edits these units: a drop-in
+    that systemd loads after the guard's can add a start path the guard
+    never granted, and the condition read would still report exactly two
+    because the addition is not a condition. So an unknown drop-in is
+    refused on sight, before any package is installed.
+
+    `docker.socket` is the discriminating case. It mounts no store, so
+    `sandbox_storage` never writes a drop-in for it -- a sandbox drop-in
+    there was installed by something else and is refused even though the
+    SAME FILENAME is sanctioned on the two services. A check that held one
+    flat filename allow-list would miss it.
+
+    The refusal NAMES each offender because "a drop-in is unexpected" is
+    not something an operator can act on at 2am.
+    """
+    conditions = importlib.import_module(_CONDITIONS_MODULE)
+    assert hasattr(conditions, "dropin_check_passed")
+
+    tampered = _dropin_tree(
+        root=tmp_path / "tampered",
+        dropins={
+            "containerd.service": (_GUARD_DROPIN, _SANDBOX_STORAGE_DROPIN),
+            "docker.service": (_GUARD_DROPIN, "99-operator-override.conf"),
+            "docker.socket": (_GUARD_DROPIN, _SANDBOX_STORAGE_DROPIN),
+        },
+    )
+
+    assert conditions.dropin_check_passed(unit_directory=tampered) is False
+    assert conditions.unexpected_dropins(unit_directory=tampered) == (
+        "docker.service.d/99-operator-override.conf",
+        f"docker.socket.d/{_SANDBOX_STORAGE_DROPIN}",
+    )
+
+    # The sanctioned tree still passes the verdict, not just the survey.
+    sanctioned = _dropin_tree(
+        root=tmp_path / "sanctioned",
+        dropins={
+            "containerd.service": (_GUARD_DROPIN, _SANDBOX_STORAGE_DROPIN),
+            "docker.service": (_GUARD_DROPIN, _SANDBOX_STORAGE_DROPIN),
+            "docker.socket": (_GUARD_DROPIN,),
+        },
+    )
+
+    assert conditions.dropin_check_passed(unit_directory=sanctioned) is True
+
+    # A file systemd does not load from a `.d` directory is not a drop-in:
+    # refusing on a leftover `.conf.bak` would block the install on
+    # something that cannot affect a start at all.
+    ignored = _dropin_tree(
+        root=tmp_path / "ignored",
+        dropins={
+            "containerd.service": (_GUARD_DROPIN, "99-disabled.conf.bak"),
+            "docker.service": (_GUARD_DROPIN,),
+            "docker.socket": (_GUARD_DROPIN,),
+        },
+    )
+
+    assert conditions.dropin_check_passed(unit_directory=ignored) is True
