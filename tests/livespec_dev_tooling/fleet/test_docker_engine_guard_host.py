@@ -55,6 +55,8 @@ _CLOCK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_clock"
 _CLOCK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_clock.py")
 _PERMISSION_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_permission"
 _PERMISSION_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_permission.py")
+_UNIT_STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_unit_state"
+_UNIT_STATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_unit_state.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -1473,3 +1475,132 @@ def test_the_start_permission_is_created_removed_and_its_directory_root_owned(
 
     assert tuple(commands.argvs) == (("chown", "root:root", str(paths.runtime_root)),)
     assert commands.timeouts == [permission.OWNERSHIP_TIMEOUT_SECONDS]
+
+
+# The three globs the admission read asks the service manager to expand:
+# the guard's own fixed-identity units and any other
+# `docker-engine-guard-*.service`, plus the dead-man's timer and the
+# service it triggers (design I1).
+_GUARD_SHOW_ARGV = (
+    "systemctl",
+    "show",
+    "--property",
+    "Id",
+    "--property",
+    "ActiveState",
+    "docker-engine-guard-*.service",
+    "docker-engine-deadman-*.service",
+    "docker-engine-deadman-*.timer",
+)
+
+# What that read answers on a host mid-run: the observer quiet, the
+# starter FAILED -- not inactive, and admission has to name it -- and
+# this run's dead-man in the air. Records are separated by a blank line
+# and each opens with the `Id=` the read asked for first.
+_GUARD_SHOW = (
+    "Id=docker-engine-guard-observe.service\n"
+    "ActiveState=inactive\n"
+    "\n"
+    "Id=docker-engine-guard-start.service\n"
+    "ActiveState=failed\n"
+    "\n"
+    "Id=docker-engine-deadman-run-a.timer\n"
+    "ActiveState=active\n"
+)
+
+# Enablement and running state are INDEPENDENT facts, so the recorded
+# tree makes them disagree: the socket is installed but not enabled,
+# which a reader conflating the two would report as fine.
+_ENABLED_STATES = {
+    "containerd.service": "enabled",
+    "docker.service": "enabled",
+    "docker.socket": "disabled",
+}
+
+_DEADMAN_TIMER = "docker-engine-deadman-run-a.timer"
+_OTHER_DEADMAN_TIMER = "docker-engine-deadman-run-b.timer"
+
+_INVOKING_CGROUP = "0::/system.slice/docker-engine-guard-start.service\n"
+
+
+def _enabled_state_argv(*, unit: str) -> tuple[str, ...]:
+    """The read of one unit's `UnitFileState`."""
+    return ("systemctl", "show", "--property", "UnitFileState", "--value", unit)
+
+
+def _load_state_argv(*, unit: str) -> tuple[str, ...]:
+    """The read of whether the service manager has one unit loaded at all."""
+    return ("systemctl", "show", "--property", "LoadState", "--value", unit)
+
+
+def _with_cgroup(*, proc_root: Path, text: str) -> Path:
+    """The same recorded `/proc`, carrying this invocation's own cgroup line."""
+    (proc_root / "self").mkdir(parents=True, exist_ok=True)
+    _ = (proc_root / "self" / "cgroup").write_text(text, encoding="utf-8")
+    return proc_root
+
+
+def test_the_admission_reads_name_every_guard_unit_its_state_and_this_invocation(
+    tmp_path: Path,
+) -> None:
+    """Design I1's four reads, and each one's trap.
+
+    - The guard units are ENUMERATED by glob, never listed. The set
+      includes the dead-man units of whatever run holds the host, whose
+      names carry a run id this invocation does not know, so a fixed
+      list would be blind to exactly the unit that says an earlier run
+      is still being torn down.
+    - `failed` is reported as itself. It is not `inactive`, and a read
+      that folded the two together would admit a reservation beside a
+      dead-man service that tried to roll a host back and could not.
+    - Enablement is read SEPARATELY from running state and they are
+      allowed to disagree: enabling carries the engine across the next
+      boot and running carries it across this one, and neither implies
+      the other.
+    - This invocation's own unit comes from its cgroup, because it is
+      necessarily active while it runs and every admission check has to
+      exclude it. A `/proc/self/cgroup` with no unified line names no
+      unit at all rather than guessing one.
+    """
+    assert _UNIT_STATE_PATH.is_file()
+    unit_state = importlib.import_module(_UNIT_STATE_MODULE)
+    units = importlib.import_module(_UNITS_MODULE)
+    commands = _Commands(
+        answers={
+            _GUARD_SHOW_ARGV: _GUARD_SHOW,
+            _load_state_argv(unit=_DEADMAN_TIMER): "loaded\n",
+            _active_state_argv(unit=_DEADMAN_TIMER): "active\n",
+            _load_state_argv(unit=_OTHER_DEADMAN_TIMER): "not-found\n",
+            _active_state_argv(unit=_OTHER_DEADMAN_TIMER): "inactive\n",
+            **{
+                _enabled_state_argv(unit=unit): f"{state}\n"
+                for unit, state in _ENABLED_STATES.items()
+            },
+        }
+    )
+    host = _host_on(
+        root=tmp_path,
+        commands=commands,
+        proc_root=_with_cgroup(proc_root=_proc_tree(root=tmp_path), text=_INVOKING_CGROUP),
+    )
+
+    assert host.guard_unit_states() == {
+        "docker-engine-guard-observe.service": "inactive",
+        "docker-engine-guard-start.service": "failed",
+        _DEADMAN_TIMER: "active",
+    }
+    assert host.unit_enabled_states() == _ENABLED_STATES
+    assert host.invoking_unit() == "docker-engine-guard-start.service"
+    assert host.deadman_timer_exists(run="run-a") is True
+    assert host.deadman_timer_active(run="run-a") is True
+    assert host.deadman_timer_exists(run="run-b") is False
+    assert host.deadman_timer_active(run="run-b") is False
+    assert commands.argvs[0] == _GUARD_SHOW_ARGV
+    assert set(commands.timeouts) == {units.UNIT_READ_TIMEOUT_SECONDS}
+
+    legacy = _with_cgroup(
+        proc_root=_proc_tree(root=tmp_path / "legacy"),
+        text="1:name=systemd:/user.slice/user-1000.slice\n",
+    )
+
+    assert unit_state.invoking_unit(proc_root=legacy) == ""
