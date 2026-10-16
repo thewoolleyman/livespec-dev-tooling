@@ -35,9 +35,10 @@ from livespec_dev_tooling.fleet._docker_engine_guard_records import (
     publish_marker,
     read_challenge,
     record_consumed_nonce,
+    record_durability_warning,
     submitted_nonce,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_state import record_phase
+from livespec_dev_tooling.fleet._docker_engine_guard_state import read_marker, record_phase
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision
@@ -73,6 +74,11 @@ def commit_refusal(*, run: str, env: GuardEnv, answer: str) -> str:
     return ""
 
 
+def _committed_reason(*, warning: str) -> str:
+    """The committed outcome's reason, carrying a durability warning if there is one."""
+    return f"the run is committed; {warning}" if warning else "the run is committed"
+
+
 def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     """Commit the run, or refuse and name the clause that stopped it.
 
@@ -88,8 +94,21 @@ def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     if refusal:
         return GuardOutcome(operation="confirm", run=run, verdict="refuse", reason=refusal)
     record_consumed_nonce(paths=env.paths, run=run, nonce=answer)
-    publish_marker(paths=env.paths, run=run, digest=owned_keys_digest(paths=env.paths, run=run))
+    failure = publish_marker(
+        paths=env.paths, run=run, digest=owned_keys_digest(paths=env.paths, run=run)
+    )
+    if read_marker(paths=env.paths, run=run) != "self":
+        return GuardOutcome(
+            operation="confirm",
+            run=run,
+            verdict="refuse",
+            reason=f"the commit marker is not in place, so this run is not committed: {failure}",
+        )
+    warning = record_durability_warning(paths=env.paths, run=run, failure=failure)
     record_phase(paths=env.paths, run=run, phase="committed")
     return GuardOutcome(
-        operation="confirm", run=run, verdict=decision.verdict, reason="the run is committed"
+        operation="confirm",
+        run=run,
+        verdict=decision.verdict,
+        reason=_committed_reason(warning=warning),
     )

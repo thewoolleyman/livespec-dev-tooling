@@ -46,6 +46,7 @@ __all__: list[str] = [
     "Evidence",
     "challenge_path",
     "consumed_nonces",
+    "durability_warning_path",
     "evidence_passed",
     "evidence_path",
     "fresh_nonce",
@@ -54,6 +55,7 @@ __all__: list[str] = [
     "publish_marker",
     "read_challenge",
     "record_consumed_nonce",
+    "record_durability_warning",
     "submitted_nonce",
     "write_challenge",
     "write_evidence",
@@ -215,21 +217,48 @@ def record_consumed_nonce(*, paths: GuardPaths, run: str, nonce: str) -> None:
     write_durable(path=_consumed_path(paths=paths, run=run), data="\n".join(spent))
 
 
-def publish_marker(*, paths: GuardPaths, run: str, digest: str) -> None:
-    """Write the commit marker: the guard's one commit point.
+def durability_warning_path(*, paths: GuardPaths, run: str) -> Path:
+    """Where a run's durability warning is recorded, for an operator to find."""
+    return paths.run_dir(run=run) / "durability-warning"
 
-    The moment the rename inside `write_durable` returns, the run is
-    committed, and no failure after that point ever rolls it back.
 
-    It carries two things and needs both. The run id is what lets every
-    later dispatch tell this host's own commitment from another run's.
-    The digest is what lets a later converge tell a post-commit
-    reconfiguration from a no-op, without reading the daemon
-    configuration's bytes.
+def record_durability_warning(*, paths: GuardPaths, run: str, failure: str) -> str:
+    """Record a durability warning for `run`, and hand back what it says.
+
+    An empty `failure` records nothing and says nothing: the ordinary
+    commit, where every fsync returned, leaves no warning behind, and a
+    warning file that was always written would make the one case that
+    matters invisible among the ones that do not.
     """
-    write_durable(
-        path=paths.marker, data=json.dumps({"digest": digest, "run": run}, sort_keys=True)
-    )
+    if not failure:
+        return ""
+    warning = f"the commit marker is in place but a durability step after it failed: {failure}"
+    write_durable(path=durability_warning_path(paths=paths, run=run), data=warning)
+    return warning
+
+
+def publish_marker(*, paths: GuardPaths, run: str, digest: str) -> str:
+    """Write the commit marker, and report what if anything went wrong.
+
+    The marker carries two things and needs both. The run id is what
+    lets every later dispatch tell this host's own commitment from
+    another run's. The digest is what lets a later converge tell a
+    post-commit reconfiguration from a no-op without reading the daemon
+    configuration's bytes.
+
+    The return value is the failure a durable step met, or an empty
+    string. It deliberately does NOT say whether the run committed: the
+    rename is the commit point, and a failure can fall on either side of
+    it, so the caller reads the MARKER back to learn which. Reporting
+    "failed" for both would roll back a host whose marker is already
+    visible -- and the guarded units' start condition reads that marker.
+    """
+    payload = json.dumps({"digest": digest, "run": run}, sort_keys=True)
+    try:
+        write_durable(path=paths.marker, data=payload)
+    except OSError as failure:
+        return f"{type(failure).__name__}: {failure}"
+    return ""
 
 
 def owned_daemon_keys(*, paths: GuardPaths, run: str) -> dict[str, object]:

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -512,3 +513,75 @@ def test_the_commit_marker_carries_the_run_and_the_canonical_owned_keys_digest(
         json.dumps({"log-driver": "syslog", **reordered}, indent=4), encoding="utf-8"
     )
     assert records.owned_keys_digest(paths=paths, run="run-a") == marker["digest"]
+
+
+def _fsync_failing_for(*, target: Path) -> Any:
+    """An `os.fsync` that fails for exactly `target`, resolved through /proc/self/fd.
+
+    Scoped to ONE path rather than to a file type, because a single
+    `confirm` fsyncs several files and more than one directory, and a
+    blanket failure would stop the first of them rather than the one
+    under test.
+    """
+    real_fsync = os.fsync
+
+    def fsync(fd: int) -> None:
+        """Fail for the one path under test; pass every other fsync through."""
+        if Path(f"/proc/self/fd/{fd}").readlink() == target:
+            raise OSError(5, "simulated fsync failure")
+        real_fsync(fd)
+
+    return fsync
+
+
+def test_a_failed_directory_fsync_after_the_rename_leaves_the_run_committed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Specification "Commit", and design F4: a visible marker is never rolled back.
+
+    The run is committed the moment the rename returns, so a directory
+    fsync that fails AFTER it has not failed to commit -- it has failed
+    to make the commitment survive a power loss. Treating it as a failed
+    commit would roll back a host whose marker is already visible, and
+    the guarded units' start condition already reads that marker. So the
+    failure is recorded as a durability warning, where an operator can
+    find it, and the run stands.
+
+    The complement is the half that keeps the rule from becoming a
+    blanket "any fsync failure is fine": a failure BEFORE the rename
+    leaves no marker, and that run is NOT committed. `confirm` tells the
+    two apart by reading the marker back rather than by trusting what
+    the write reported.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    ordinary = tmp_path / "ordinary"
+    _ready_to_confirm(root=ordinary)
+
+    assert records.publish_marker(paths=_paths(root=ordinary), run="run-a", digest="a-digest") == ""
+
+    after = tmp_path / "after-the-rename"
+    _ready_to_confirm(root=after)
+    paths = _paths(root=after)
+    monkeypatch.setattr(os, "fsync", _fsync_failing_for(target=paths.state_root))
+    outcome = _confirm_through_the_guard(root=after)
+    monkeypatch.undo()
+
+    assert outcome.verdict != "refuse"
+    assert state.read_marker(paths=paths, run="run-a") == "self"
+    warning = records.durability_warning_path(paths=paths, run="run-a")
+    assert "durability" in warning.read_text(encoding="utf-8")
+    assert warning.read_text(encoding="utf-8") in outcome.reason
+
+    before = tmp_path / "before-the-rename"
+    _ready_to_confirm(root=before)
+    uncommitted = _paths(root=before)
+    monkeypatch.setattr(
+        os, "fsync", _fsync_failing_for(target=uncommitted.marker.with_suffix(".tmp"))
+    )
+    refused = _confirm_through_the_guard(root=before)
+    monkeypatch.undo()
+
+    assert refused.verdict == "refuse"
+    assert state.read_marker(paths=uncommitted, run="run-a") == "absent"
+    assert state.read_phase(paths=uncommitted, run="run-a") == "observed"
