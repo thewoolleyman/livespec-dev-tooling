@@ -52,12 +52,26 @@ def _env(*, root: Path, host: Any) -> Any:
     return state.GuardEnv(paths=_paths(root=root), host=host)
 
 
-def _record_phase(*, root: Path, run: str, phase: str) -> None:
-    """Put a reservation and a phase on disk the way the guard's records read."""
+def _record_phase(*, root: Path, run: str, phase: str, snapshot_taken: bool = True) -> None:
+    """Put a reservation, a phase and the snapshot marker on disk as the guard writes them.
+
+    `snapshot_taken` is the marker `publish` writes once the host
+    snapshot has COMPLETED, and it defaults to present because every
+    phase from `published` on has one: a run that reached `started` was
+    published, and publishing is what takes the snapshot. A scenario
+    modelling a crash after `reserve` and before `publish` passes
+    `False`, which is the state the design's reserve-and-attach rule is
+    about — a reserved run with no snapshot and nothing started behind
+    it.
+    """
     state_root = root / "var"
     (state_root / "runs" / run).mkdir(parents=True, exist_ok=True)
     _ = (state_root / "run").write_text(run, encoding="utf-8")
     _ = (state_root / "runs" / run / "phase").write_text(phase, encoding="utf-8")
+    if snapshot_taken:
+        snapshot = state_root / "runs" / run / "before"
+        snapshot.mkdir(parents=True, exist_ok=True)
+        _ = (snapshot / "taken").write_text(run, encoding="utf-8")
 
 
 def _decision() -> Any:
@@ -976,3 +990,113 @@ def test_the_dead_man_stops_itself_once_every_failing_phase_is_exhausted(
     assert json.loads(
         _rollback_record(root=root, run="run-a", name="outcome.json").read_text(encoding="utf-8")
     ) == {"outcome": "rollback-partial", "failed_postconditions": ["no docker0"]}
+
+
+# Every seam a rollback phase, the fence or the final check would reach.
+# A run with no snapshot must touch NONE of them: the assertion is on the
+# whole set rather than on the phase children alone, because exiting 0
+# having silently fenced and revoked is the easy half.
+_ACTING_SEAMS = (
+    "run_phase_child",
+    "revoke_start_permission",
+    "stop_unit",
+    "kill_cgroup",
+    "disable_units",
+    "restore_forward_policy",
+    "read_postconditions",
+)
+
+
+def test_a_rollback_with_no_snapshot_releases_the_reservation_and_runs_no_phase(
+    tmp_path: Path,
+) -> None:
+    """Design G3: a crash between `reserve` and `publish` leaves nothing to undo.
+
+    `publish` is what takes the snapshot, and it is also what installs
+    the first package, so a run with no snapshot has had NOTHING started
+    behind it: no package, no permission, no daemon. The design's
+    reserve-and-attach rule says so outright — "a crash after `reserve`
+    and before `publish` leaves a `reserved` run with no snapshot;
+    `rollback` on it only releases the reservation (nothing was
+    started)".
+
+    Running the phases over such a run is not merely wasted work: every
+    comparison phase and the final check read the snapshot the run never
+    took, so the firing dies in its final check having written no
+    outcome, and the run is left `rolling-back` holding the host's one
+    reservation until an operator intervenes. `rolled-back` is therefore
+    reached directly, and it is reached by the ordinary outcome record
+    so a later `verify` and an operator read the same file they always
+    do.
+    """
+    rollback = _driver()
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="reserved", snapshot_taken=False)
+
+    outcome = rollback.run_rollback(
+        run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision()
+    )
+
+    assert _phase_of(root=tmp_path, run="run-a") == "rolled-back"
+    for untouched in _ACTING_SEAMS:
+        assert fake.calls_named(name=untouched) == (), untouched
+    assert outcome.exit_code == 0
+    assert json.loads(
+        _rollback_record(root=tmp_path, run="run-a", name="outcome.json").read_text(
+            encoding="utf-8"
+        )
+    ) == {"outcome": "rolled-back", "failed_postconditions": []}
+
+
+def test_reserve_takes_the_host_again_once_an_unsnapshotted_run_is_rolled_back(
+    tmp_path: Path,
+) -> None:
+    """Design G3: releasing the reservation is the whole point of that rollback.
+
+    The host holds ONE reservation and `reserve` is admitted only from
+    `rolled-back`, so a run parked anywhere else refuses every later
+    converge on that machine. This is the assertion the defect was
+    reported against: the run was left `rolling-back`, and every
+    subsequent converge on the host was refused until a human cleared it
+    by hand. Reaching `rolled-back` is only worth anything if the next
+    run can then take the host, so the release is asserted through
+    `reserve` itself rather than through the phase record alone.
+    """
+    rollback = _driver()
+    guard = importlib.import_module(_GUARD_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="reserved", snapshot_taken=False)
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
+    taken = guard.run_operation(
+        operation="reserve", run="run-b", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert taken.verdict == "proceed"
+    assert state.read_reservation(paths=_paths(root=tmp_path)) == "run-b"
+    assert _phase_of(root=tmp_path, run="run-b") == "reserved"
+
+
+def test_a_run_left_rolling_back_with_no_snapshot_still_reaches_rolled_back(
+    tmp_path: Path,
+) -> None:
+    """The run the defect already stranded is recovered by the same rule.
+
+    A host that met this defect before it was fixed is not `reserved`
+    any more: the first firing recorded `rolling-back` and then died in
+    its final check, so the run rests on the rollback path with no
+    snapshot and no outcome. That state has to be recoverable without a
+    hand repair, which is why the rule is read BEFORE the phase record
+    rather than after it — a check that only admitted `reserved` would
+    leave exactly the hosts the defect stranded still stranded.
+    """
+    rollback = _driver()
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="rolling-back", snapshot_taken=False)
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
+
+    assert _phase_of(root=tmp_path, run="run-a") == "rolled-back"
+    for untouched in _ACTING_SEAMS:
+        assert fake.calls_named(name=untouched) == (), untouched

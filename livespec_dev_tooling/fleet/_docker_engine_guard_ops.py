@@ -52,11 +52,6 @@ __all__: list[str] = [
 
 _QUIESCENT = "inactive"
 
-# Written inside the run's snapshot directory once the host snapshot has
-# COMPLETED, so a resumed publish can tell "already snapshotted" from
-# "interrupted part way through snapshotting".
-_SNAPSHOT_TAKEN = "taken"
-
 
 def _busy_guard_units(*, host: HostOps) -> tuple[str, ...]:
     """Guard units that are not quiescent, excluding this invocation's own.
@@ -133,7 +128,7 @@ def publish(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     free to start on its own.
     """
     record_phase(paths=env.paths, run=run, phase="publishing")
-    taken = env.paths.snapshot_dir(run=run) / _SNAPSHOT_TAKEN
+    taken = env.paths.snapshot_taken_path(run=run)
     if not taken.is_file():
         env.host.take_snapshot(destination=env.paths.snapshot_dir(run=run))
         # Written only AFTER the host returns, so a snapshot interrupted
