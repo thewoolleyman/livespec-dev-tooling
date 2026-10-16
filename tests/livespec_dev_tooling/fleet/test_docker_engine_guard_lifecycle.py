@@ -40,6 +40,8 @@ _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 _PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
 _OPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_ops"
 _OPS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_ops.py")
+_CLI_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_cli"
+_CLI_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_cli.py")
 
 # The observation window the design derives at preflight from the effective
 # k3s resync periods (420 s at the measured defaults). Only `observe`'s
@@ -521,6 +523,12 @@ def _guard_surface() -> Any:
     return guard
 
 
+def _cli() -> Any:
+    """The command-line surface: parsing the request and reporting the outcome."""
+    assert _CLI_PATH.is_file()
+    return importlib.import_module(_CLI_MODULE)
+
+
 def _env(*, root: Path, host: Any) -> Any:
     """A `GuardEnv` over the same two state roots `_fake` and `_paths` use."""
     state = importlib.import_module(_STATE_MODULE)
@@ -743,7 +751,10 @@ def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     """
     guard = _guard_surface()
     assert guard.sibling_module_name(package="pkg", name="_mod") == "pkg._mod"
-    assert guard.sibling_module_name(package="", name="_mod") == "_mod"
+    # Run as a plain script on the guarded host there is no package at
+    # all, and the preamble has put the package ROOT on sys.path, so the
+    # guard's own package name is the one that resolves.
+    assert guard.sibling_module_name(package="", name="_mod") == "livespec_dev_tooling.fleet._mod"
 
     rollback = importlib.import_module(_ROLLBACK_MODULE)
     host_module = importlib.import_module(_HOST_MODULE)
@@ -1421,3 +1432,107 @@ def test_recover_takes_the_same_lock_and_decides_through_the_same_table(
     with pytest.raises(NotImplementedError) as caught:
         guard.run_operation(operation="recover", run="run-a", env=_env(root=committed, host=fake))
     assert caught.traceback[-1].path.name == "_docker_engine_guard_ops.py"
+
+
+def test_the_command_line_parses_an_operation_a_run_and_the_state_roots(
+    tmp_path: Path,
+) -> None:
+    """The role invokes the guard as `<guard> <op> <run>`; the roots are overridable.
+
+    The defaults are the specification's two locations, so an operator
+    typing the short form reaches the real host state; the overrides
+    exist so a disposable acceptance host can be driven somewhere else.
+    """
+    cli = _cli()
+    assert "parse_request" in cli.__all__
+
+    default = cli.parse_request(argv=["reserve", "run-a"])
+    assert default.operation == "reserve"
+    assert default.run == "run-a"
+    assert str(default.paths.state_root) == "/var/lib/docker-engine-guard"
+    assert str(default.paths.runtime_root) == "/run/docker-engine-guard"
+    assert default.window_seconds == _WINDOW_SECONDS
+
+    overridden = cli.parse_request(
+        argv=[
+            "rollback",
+            "run-b",
+            "--state-root",
+            str(tmp_path / "var"),
+            "--runtime-root",
+            str(tmp_path / "run"),
+            "--window-seconds",
+            "600",
+        ]
+    )
+    assert overridden.operation == "rollback"
+    assert overridden.paths.state_root == tmp_path / "var"
+    assert overridden.paths.runtime_root == tmp_path / "run"
+    assert overridden.window_seconds == 600
+
+
+def test_the_command_line_reports_the_outcome_and_exits_with_its_code(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A refusal has to reach the operator, not just the exit code.
+
+    The exit code alone says "no" without saying which run holds the
+    host or until when, and the dead-man means the right next step
+    depends on exactly that.
+    """
+    cli = _cli()
+    guard = _guard_surface()
+    assert "run_request" in guard.__all__
+    fake = _fake(root=tmp_path)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+    _record_phase(root=tmp_path, run="run-a", phase="observing")
+    _arm_deadline(root=tmp_path, run="run-a", boot="boot-a", at=9_000.0)
+    request = cli.parse_request(
+        argv=[
+            "reserve",
+            "run-b",
+            "--state-root",
+            str(tmp_path / "var"),
+            "--runtime-root",
+            str(tmp_path / "run"),
+        ]
+    )
+
+    with caplog.at_level("INFO"):
+        code = guard.run_request(request=request, host=fake)
+
+    assert code == 1
+    reported = "\n".join(record.getMessage() for record in caplog.records)
+    assert "run-a" in reported
+    assert "observing" in reported
+    assert "boot-a" in reported
+
+
+def test_the_entry_point_builds_the_real_host_child_3a_will_supply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`main` parses, builds the real host from the stub next door, and runs.
+
+    Child 1a ships no real host action at all, so the entry point stops
+    exactly where child 3a takes over -- which is also the proof that
+    the command line reaches that seam rather than some private path.
+    """
+    guard = _guard_surface()
+    assert "main" in guard.__all__
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "docker-engine-guard",
+            "reserve",
+            "run-a",
+            "--state-root",
+            str(tmp_path / "var"),
+            "--runtime-root",
+            str(tmp_path / "run"),
+        ],
+    )
+
+    with pytest.raises(NotImplementedError) as caught:
+        guard.main()
+
+    assert caught.traceback[-1].path.name == "_docker_engine_guard_host.py"
