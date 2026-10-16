@@ -58,6 +58,22 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.109.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.108.1...v1.109.0) (2026-10-16)
+
+
+### Features
+
+* **fleet:** docker engine guard budgets read on the control node, as JSON ([3a43e76](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3a43e76f239b8ca92e0578d32805b87a21bacde2))
+* **fleet:** docker engine guard holds the dpkg frontend lock as its own helper ([6d65034](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d6503448cc6a248010113c84623506d6d8fc2c2))
+
+
+### Bug Fixes
+
+* **fleet:** docker engine guard package audit compares the whole maintainer-script set ([719f179](https://github.com/thewoolleyman/livespec-dev-tooling/commit/719f1799ecdc98864d05f251997ed54c48e1afc1))
+* **fleet:** docker engine guard package step completes an already-installed audited set ([2e16743](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e167439281408b03ed4b9b830c5f9b7669e6a34))
+* **fleet:** docker engine guard reconfiguration records its digest beside the marker ([372629a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/372629aff74bce257f0b7eca34bbf491eadbfcce))
+* **fleet:** docker engine guard recover finishes a committed run's confirmation ([be55dab](https://github.com/thewoolleyman/livespec-dev-tooling/commit/be55dab4b5aaa40c7fa0f04aed58077a94929431))
+
 ## [1.108.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.108.0...v1.108.1) (2026-10-16)
 
 
