@@ -785,3 +785,58 @@ def test_rollback_partial_is_written_naming_each_failed_postcondition(
     assert json.loads(
         _rollback_record(root=clean, run="run-a", name="outcome.json").read_text(encoding="utf-8")
     ) == {"outcome": "rolled-back", "failed_postconditions": []}
+
+
+def _stopped_units(*, fake: Any) -> tuple[str, ...]:
+    """Every unit the firing issued a bounded `systemctl stop` for, in order."""
+    return tuple(call.detail[0] for call in fake.calls_named(name="stop_unit"))
+
+
+def test_a_rolled_back_outcome_stops_the_drivers_own_dead_man_timer(
+    tmp_path: Path,
+) -> None:
+    """Design G5: on `rolled-back` the dead-man retires itself, by `stop`.
+
+    The dead-man re-fires every 60 seconds forever, so SOMETHING has to
+    end it, and on the rollback path there is no `confirm` coming to do
+    it: the run is never going to commit. The driver that reached a clean
+    recovery is therefore the thing that stops the timer, and it must be
+    `stop` rather than `disable` — a transient unit has no unit file to
+    disable, so `disable` is an error that would leave the timer firing.
+
+    Conditioning it on the outcome is the other half of the rule. A
+    driver that stopped the timer whatever it found would retire the
+    dead-man over a host that still has a Docker rule or a `docker0`,
+    and nothing would ever come back to look.
+    """
+    rollback = _driver()
+    clean = tmp_path / "clean"
+    fake = _reporting_fake(root=clean)
+    fake.postconditions = dict.fromkeys(_SPECIFIED_POSTCONDITIONS, True)
+    _record_phase(root=clean, run="run-a", phase="started")
+
+    outcome = rollback.run_rollback(
+        run="run-a", env=_env(root=clean, host=fake), decision=_decision()
+    )
+
+    assert _phase_of(root=clean, run="run-a") == "rolled-back"
+    assert outcome.exit_code == 0
+    assert "docker-engine-deadman-run-a.timer" in _stopped_units(fake=fake)
+    # Never `disable`: the timer is transient and has no unit file.
+    assert not any(
+        "docker-engine-deadman-run-a.timer" in call.detail
+        for call in fake.calls_named(name="disable_units")
+    )
+    # The stop is the LAST host action, after the final check that earned it.
+    assert fake.calls[-1].name == "stop_unit"
+    assert fake.calls[-1].detail[0] == "docker-engine-deadman-run-a.timer"
+
+    partial = tmp_path / "partial"
+    other = _reporting_fake(root=partial)
+    other.postconditions = _postconditions_except(failing="no docker0")
+    _record_phase(root=partial, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=partial, host=other), decision=_decision())
+
+    assert _phase_of(root=partial, run="run-a") == "rollback-partial"
+    assert "docker-engine-deadman-run-a.timer" not in _stopped_units(fake=other)

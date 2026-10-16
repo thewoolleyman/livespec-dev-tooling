@@ -45,6 +45,7 @@ __all__: list[str] = [
     "POSTCONDITIONS",
     "POSTCONDITION_OF_PHASE",
     "ROLLBACK_PHASE_ORDER",
+    "deadman_timer_unit",
     "phase_child_argv",
     "run_phase",
     "run_rollback",
@@ -66,6 +67,19 @@ GUARD_START_UNIT: Final[str] = "docker-engine-guard-start.service"
 
 # How long each fenced unit gets between its SIGTERM and its SIGKILL.
 FENCE_KILL_SECONDS: Final[int] = 10
+
+
+def deadman_timer_unit(*, run: str) -> str:
+    """This run's dead-man TIMER unit — the unit a finished driver stops.
+
+    The timer, not the service: the service is what this driver is
+    running inside, and stopping that would kill the firing before it
+    recorded anything. `systemd-run --unit=docker-engine-deadman-<run>
+    --on-active=…` creates both, which is why the suffix has to be
+    spelled out rather than taken from the `--unit=` value.
+    """
+    return f"docker-engine-deadman-{run}.timer"
+
 
 # The bounded wait on each `systemctl stop` a rollback phase issues. Every
 # stop is bounded because a rollback that blocked on one would hold the
@@ -499,7 +513,13 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     for phase in ROLLBACK_PHASE_ORDER:
         _enter_phase(run=run, env=env, phase=phase)
     failed = _final_check(run=run, env=env)
-    _ = _record_outcome(run=run, env=env, failed=failed)
+    outcome = _record_outcome(run=run, env=env, failed=failed)
+    if outcome == "rolled-back":
+        # LAST, and only on a clean recovery. The dead-man is the only
+        # thing that comes back to this run — no `confirm` is coming for
+        # a run on the rollback path — so retiring it is safe exactly
+        # when there is nothing left for a later firing to do.
+        env.host.stop_unit(unit=deadman_timer_unit(run=run), timeout_seconds=UNIT_STOP_SECONDS)
     return GuardOutcome(
         operation="rollback",
         run=run,
