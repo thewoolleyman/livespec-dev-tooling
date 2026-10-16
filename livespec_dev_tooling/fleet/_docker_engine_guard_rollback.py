@@ -36,6 +36,32 @@ __all__: list[str] = [
 # while deciding whether the host needs a repair.
 _ROLLBACK_PATH_PHASES: Final[tuple[Phase, ...]] = ("rolling-back", "rollback-partial")
 
+# The two guard units that can still write to the Docker daemon when a
+# rollback begins: the observer, which may hold an API request, and the
+# starter, which may be mid-start. Both are fixed unit names (design I3),
+# so the service manager refuses a second activation of either.
+GUARD_OBSERVE_UNIT: Final[str] = "docker-engine-guard-observe.service"
+GUARD_START_UNIT: Final[str] = "docker-engine-guard-start.service"
+
+# How long each fenced unit gets between its SIGTERM and its SIGKILL.
+FENCE_KILL_SECONDS: Final[int] = 10
+
+
+def _fence_and_revoke(*, env: GuardEnv) -> None:
+    """Stop both writers, then take the start permission back.
+
+    The ORDER is the content of this step. Revoking first would leave a
+    window in which an observer that has been told to stop, but is not
+    yet inactive, submits one more Docker request against a daemon the
+    revocation was meant to close; a `systemctl stop` returns only once
+    the unit is inactive, so stopping first is what closes it. The
+    revocation itself is what makes `Restart=always` unable to respawn
+    the daemon, which is why nothing else may precede it either.
+    """
+    env.host.stop_unit(unit=GUARD_OBSERVE_UNIT, timeout_seconds=FENCE_KILL_SECONDS)
+    env.host.stop_unit(unit=GUARD_START_UNIT, timeout_seconds=FENCE_KILL_SECONDS)
+    env.host.revoke_start_permission()
+
 
 def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     """Run every rollback phase for `run` and record its outcome.
@@ -53,6 +79,7 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     """
     if read_phase(paths=env.paths, run=run) not in _ROLLBACK_PATH_PHASES:
         record_phase(paths=env.paths, run=run, phase="rolling-back")
+    _fence_and_revoke(env=env)
     return GuardOutcome(
         operation="rollback",
         run=run,
