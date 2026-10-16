@@ -55,6 +55,7 @@ __all__: list[str] = [
     "configuration_files",
     "declared_intervals",
     "duration_seconds",
+    "excessive_resync_intervals",
     "read_resync_intervals",
     "resync_window_seconds",
 ]
@@ -233,3 +234,19 @@ def resync_window_seconds(*, intervals: Sequence[ResyncInterval]) -> int:
     """The observation window: the largest effective interval plus two minutes."""
     longest = max((interval.seconds for interval in intervals), default=0.0)
     return round(longest) + WINDOW_MARGIN_SECONDS
+
+
+def excessive_resync_intervals(*, intervals: Sequence[ResyncInterval]) -> tuple[str, ...]:
+    """Every effective interval above five minutes, named with its source.
+
+    Above that ceiling the window the guard would have to hold open --
+    and with it the time Docker runs unconfirmed on a host nobody can
+    reach physically -- grows past what the dead-man's budgets cover, so
+    the install is refused rather than stretched to fit.
+    """
+    return tuple(
+        f"{interval.setting} is {interval.seconds:g}s in {interval.source}, "
+        f"above the {MAX_RESYNC_SECONDS}s maximum"
+        for interval in intervals
+        if interval.seconds > MAX_RESYNC_SECONDS
+    )

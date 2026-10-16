@@ -28,9 +28,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from ipaddress import IPv4Network, ip_network
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_firewall import DOCKER_SUBNET, FAMILIES
+from livespec_dev_tooling.fleet._docker_engine_guard_resync import (
+    K3S_CONFIG,
+    K3S_CONFIG_DROPINS,
+    excessive_resync_intervals,
+    read_resync_intervals,
+)
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
@@ -47,6 +54,7 @@ __all__: list[str] = [
     "overlapping_addresses",
     "overlapping_declared_ranges",
     "overlapping_routes",
+    "preflight_refusals",
     "subnet_overlaps",
 ]
 
@@ -260,4 +268,34 @@ def subnet_overlaps(*, runner: GuardCommandRunner, declared: Mapping[str, str]) 
         *overlapping_addresses(runner=runner),
         *overlapping_routes(runner=runner),
         *overlapping_declared_ranges(declared=declared),
+    )
+
+
+def preflight_refusals(
+    *,
+    runner: GuardCommandRunner,
+    declared: Mapping[str, str],
+    config: Path = K3S_CONFIG,
+    dropins: Path = K3S_CONFIG_DROPINS,
+) -> tuple[str, ...]:
+    """Every reason this host may not reserve a Docker engine install run.
+
+    ONE answer rather than a first refusal, because the preflight is one
+    decision and an operator reading it over Tailscale has to be able to
+    fix the host in a single pass: a check that stopped at the first
+    reason would hand back a bridge to delete, then a group member to
+    remove, then a drop-in to edit, one converge apart each.
+    """
+    accounts = docker_group_accounts(runner=runner)
+    admitted = (
+        (f"these accounts are in the {DOCKER_GROUP} group and could reach the API: {accounts}",)
+        if accounts
+        else ()
+    )
+    return (
+        *subnet_overlaps(runner=runner, declared=declared),
+        *admitted,
+        *excessive_resync_intervals(
+            intervals=read_resync_intervals(config=config, dropins=dropins)
+        ),
     )

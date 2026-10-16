@@ -41,7 +41,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
     write_sysctl_snapshot,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_postconditions import read_postconditions
-from livespec_dev_tooling.fleet._docker_engine_guard_preflight import docker_group_accounts
+from livespec_dev_tooling.fleet._docker_engine_guard_preflight import (
+    docker_group_accounts,
+    preflight_refusals,
+)
+from livespec_dev_tooling.fleet._docker_engine_guard_resync import K3S_CONFIG, K3S_CONFIG_DROPINS
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
@@ -111,6 +115,27 @@ class RealHost:
     def docker_group_members(self) -> tuple[str, ...]:
         """Every account the `docker` group admits, by either kind of membership."""
         return docker_group_accounts(runner=self.runner)
+
+    # --- preflight (design F7) ---
+
+    def preflight_refusals(
+        self,
+        *,
+        declared: Mapping[str, str],
+        config: Path = K3S_CONFIG,
+        dropins: Path = K3S_CONFIG_DROPINS,
+    ) -> tuple[str, ...]:
+        """Every reason this host may not reserve a run, read before `reserve`.
+
+        Not a `HostOps` seam: the specification puts the preflight
+        BEFORE `reserve`, so it is the role's own read rather than a
+        step of an operation the dispatch table admits. It lives on the
+        real host all the same, because it is host state and nothing
+        else, and the role has one place to ask this machine anything.
+        """
+        return preflight_refusals(
+            runner=self.runner, declared=declared, config=config, dropins=dropins
+        )
 
     # --- publish ---
 
