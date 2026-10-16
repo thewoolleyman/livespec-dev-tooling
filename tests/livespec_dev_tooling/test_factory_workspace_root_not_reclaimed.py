@@ -57,6 +57,9 @@ _ROLE_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "factory_workspace_root" / "
 _ROLE_CAPACITY = _REPO_ROOT / "ansible" / "roles" / "factory_workspace_root" / "CAPACITY.md"
 _STORAGE_RECLAIM = _REPO_ROOT / "ansible/roles/storage_reclaim/files/storage-reclaim.sh"
 _CONTAINER_RECLAIM = _REPO_ROOT / "ansible/roles/container_reclaim/files/container-reclaim.sh"
+_SANDBOX_DRIVER_DEFAULTS = (
+    _REPO_ROOT / "ansible" / "roles" / "sandbox_driver_kubernetes" / "defaults/main.yml"
+)
 _SCRATCH_SWEEP = _REPO_ROOT / "ci-runner/k3s/phase2/storage-sweep/sweep-runner-scratch.sh"
 _BOOT_CONVERGE = _REPO_ROOT / "ci-runner/k3s/phase2/reconstruct/converge-ci-stack.sh"
 _PHASE0_LAYOUT = _REPO_ROOT / "ci-runner/k3s/phase0-bare-metal/storage-layout.sh"
@@ -261,8 +264,10 @@ def test_the_workspace_root_is_named_only_where_it_is_declared_documented_or_den
 
     A literal reader cannot see `"${root}/factory-workspaces"`, so rather than
     trying, this arm establishes that NO other artifact in either tree names the
-    path at all. The four that may: the role's own declaration, the capacity
-    record beside it, and the two reclaimers' deny lists. A new mount unit, an
+    path at all. The five that may: the role's own declaration, the capacity
+    record beside it, the two reclaimers' deny lists, and the Kubernetes
+    sandbox-driver plugin's configuration, which hands the path to the plugin
+    as its workspace_root and so CONSUMES it. A new mount unit, an
     fstab line or a sweep root naming the path fails here.
     """
     root = _workspace_root()
@@ -281,6 +286,7 @@ def test_the_workspace_root_is_named_only_where_it_is_declared_documented_or_den
         str(_ROLE_CAPACITY.relative_to(_REPO_ROOT)),
         str(_STORAGE_RECLAIM.relative_to(_REPO_ROOT)),
         str(_CONTAINER_RECLAIM.relative_to(_REPO_ROOT)),
+        str(_SANDBOX_DRIVER_DEFAULTS.relative_to(_REPO_ROOT)),
     }
     assert naming == expected, (
         f"{root} must be named only where it is declared, documented or DENIED.\n"
