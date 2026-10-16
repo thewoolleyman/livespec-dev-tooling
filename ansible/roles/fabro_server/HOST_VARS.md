@@ -118,6 +118,14 @@ hand. That re-run works because the refusing run RECORDED the deferral on the
 host — see "The deferred restart" below for what it wrote and what the re-run
 does with it.
 
+On a host with several instances, that re-run probes EVERY instance it visits,
+so a busy sibling refuses it even when the instance you want is idle. Narrow it
+with the playbook's `fabro_server_target_units`, passed as JSON:
+`-e '{"fabro_server_target_units": ["fabro-server-candidate"]}'
+-e fabro_server_restart_allowed=true`. See the header of
+`ansible/fabro-hosts.yml` for why the probe stays broad and the loop is narrowed
+instead.
+
 Rollback is step 4 in reverse and needs no role change: move the `.bak` over
 `binary_path` by hand, or point `binary_source` at the build you want and declare
 its digest. Both the `.incoming` and `.bak` siblings are left on the host
