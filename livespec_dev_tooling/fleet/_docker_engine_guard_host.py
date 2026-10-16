@@ -35,6 +35,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_netstate import write_sysctl_snapshot
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
+from livespec_dev_tooling.fleet._docker_engine_guard_units import cancel_jobs, read_queued_jobs
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps, QueuedJob
@@ -85,8 +86,8 @@ class RealHost:
         raise NotImplementedError
 
     def queued_jobs(self) -> tuple[QueuedJob, ...]:
-        """CHILD 4: the whole job queue, as admission reads it."""
-        raise NotImplementedError
+        """The whole job queue, as both admission and cancellation read it."""
+        return read_queued_jobs(runner=self.runner)
 
     def invoking_unit(self) -> str:
         """CHILD 4: this invocation's own transient unit."""
@@ -153,7 +154,7 @@ class RealHost:
 
     def cancel_jobs(self, *, job_ids: Sequence[str]) -> None:
         """Cancel exactly the guarded units' queued jobs, by id."""
-        raise NotImplementedError
+        cancel_jobs(runner=self.runner, job_ids=job_ids)
 
     def restore_forward_policy(self, *, snapshot: Path) -> None:
         """One `-P FORWARD` per family, with the policy the snapshot recorded."""
