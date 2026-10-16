@@ -450,6 +450,22 @@ Then once every node is Ready again, each node whose profile declares `FACTORY_N
 
 And that MUST hold with no playbook applied and no command run on any host between the reboot and that observation
 
+## Scenario: a node-loss drill holds one agent node NotReady and restores it without touching its workloads
+
+Given an agent node that is neither the control-plane node nor a Fabro factory host
+
+And a factory sandbox pod runs on that node
+
+When an operator applies the node-loss drill with its confirmation naming that node
+
+Then the drill MUST wait until the node carries no CI runner pod and no gate Job pod before it takes the node's k3s agent down
+
+And the API MUST report the node NotReady for the configured hold, after which the drill MUST restore the node to Ready
+
+And the drill MUST NOT have cordoned, drained, evicted or deleted the factory sandbox pod
+
+And the drill MUST report the times the node went NotReady and became Ready again, and MUST fail unless the node's taints, factory label and admission capacity are unchanged
+
 ## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier
 
 Given a contributor's staged change adds a `test: "TODO"` heading-coverage row that is not present in the repository's `tests/heading-coverage-debt.json` register
