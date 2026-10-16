@@ -37,9 +37,13 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "ADDRESS_SHOW_ARGV",
+    "DOCKER_GROUP",
+    "GETENT_GROUP_ARGV",
+    "GETENT_PASSWD_ARGV",
     "PREFLIGHT_TIMEOUT_SECONDS",
     "ROUTE_SHOW_ARGV",
     "ROUTE_TYPES",
+    "docker_group_accounts",
     "overlapping_addresses",
     "overlapping_declared_ranges",
     "overlapping_routes",
@@ -92,6 +96,33 @@ _DOCKER_NETWORK: Final[IPv4Network] = IPv4Network(DOCKER_SUBNET)
 # `inet6` row carries a different one and so is skipped by this parse
 # rather than by a rule of its own.
 _INET: Final[str] = "inet"
+
+# The group `docker.socket` is owned by (design R9). It does not exist
+# before the install creates it, which is why the group read below
+# tolerates an empty answer instead of requiring a row.
+DOCKER_GROUP: Final[str] = "docker"
+
+_GETENT: Final[str] = "getent"
+
+# Both tables are read through `getent` rather than from `/etc/group` and
+# `/etc/passwd` directly, so an account that reaches this host through
+# LDAP, SSSD or any other NSS source is seen too: a file-only read would
+# pass a host whose directory-supplied CI account is in the group.
+GETENT_GROUP_ARGV: Final[tuple[str, ...]] = (_GETENT, "group", DOCKER_GROUP)
+GETENT_PASSWD_ARGV: Final[tuple[str, ...]] = (_GETENT, "passwd")
+
+# The colon-separated positions each table carries: `getent group` is
+# `name:password:gid:members` and `getent passwd` is
+# `name:password:uid:gid:…`.
+_GROUP_GID: Final[int] = 2
+_GROUP_MEMBERS: Final[int] = 3
+_PASSWD_NAME: Final[int] = 0
+_PASSWD_GID: Final[int] = 3
+
+# Padding appended before a row's fields are indexed, so a short or
+# empty row answers empty strings instead of needing a length guard --
+# and a guard no recorded output can reach is a line no test can cover.
+_FIELD_PADDING: Final[tuple[str, ...]] = ("", "", "", "", "")
 
 
 def _ipv4_network(*, text: str) -> IPv4Network | None:
@@ -182,6 +213,45 @@ def overlapping_declared_ranges(*, declared: Mapping[str, str]) -> tuple[str, ..
         for label in sorted(declared)
         if _overlaps(text=declared[label])
     )
+
+
+def _fields(*, row: str, table: tuple[int, ...]) -> tuple[str, ...]:
+    """The named positions of one colon-separated row, padded so none is missing."""
+    padded = (*row.split(":"), *_FIELD_PADDING)
+    return tuple(padded[position] for position in table)
+
+
+def docker_group_accounts(*, runner: GuardCommandRunner) -> tuple[str, ...]:
+    """Every account the `docker` group admits, by either kind of membership.
+
+    TWO reads, because the two kinds of membership live in two different
+    tables and neither table holds the other's. A supplementary member
+    is named in the group's own member list; an account whose PRIMARY
+    group is `docker` is named nowhere in that list and is only visible
+    as a passwd row whose gid is the group's. A check that read the
+    member list alone would pass a host whose CI builder has `docker`
+    as its login group -- and that account can reach the Docker API the
+    moment the socket appears.
+
+    Sorted and de-duplicated, so the refusal an operator reads names
+    each account once and in the same order twice.
+    """
+    group = runner(argv=GETENT_GROUP_ARGV, timeout_seconds=PREFLIGHT_TIMEOUT_SECONDS)
+    rows = tuple(
+        _fields(row=row, table=(_GROUP_GID, _GROUP_MEMBERS)) for row in group.stdout.splitlines()
+    )
+    gids = {gid for gid, _ in rows}
+    admitted = {name for _, members in rows for name in members.split(",") if name}
+    passwd = runner(argv=GETENT_PASSWD_ARGV, timeout_seconds=PREFLIGHT_TIMEOUT_SECONDS)
+    admitted.update(
+        name
+        for name, gid in (
+            _fields(row=row, table=(_PASSWD_NAME, _PASSWD_GID))
+            for row in passwd.stdout.splitlines()
+        )
+        if gid in gids
+    )
+    return tuple(sorted(admitted))
 
 
 def subnet_overlaps(*, runner: GuardCommandRunner, declared: Mapping[str, str]) -> tuple[str, ...]:
