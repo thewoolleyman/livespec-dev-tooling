@@ -3,6 +3,7 @@ kubeconfig = "{{ sandbox_driver_kubernetes_kubeconfig }}"
 namespace = "{{ sandbox_driver_kubernetes_namespace }}"
 service_account = "{{ sandbox_driver_kubernetes_service_account }}"
 workspace_root = "{{ sandbox_driver_kubernetes_workspace_root }}"
+apparmor_localhost_profile = "{{ sandbox_driver_kubernetes_apparmor_profile }}"
 factory = "{{ sandbox_driver_kubernetes_factory }}"
 refresh_command = [{% for arg in sandbox_driver_kubernetes_refresh_command %}"{{ arg }}"{{ ", " if not loop.last }}{% endfor %}]
 

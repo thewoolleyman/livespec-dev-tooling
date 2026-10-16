@@ -60,7 +60,11 @@ def test_the_play_installs_the_plugin_after_the_factory_credential() -> None:
 
 
 def test_both_binaries_are_pinned_by_a_committed_digest() -> None:
-    for name in ("sandbox_driver_kubernetes_sha256", "sandbox_driver_kubernetes_cli_sha256"):
+    for name in (
+        "sandbox_driver_kubernetes_sha256",
+        "sandbox_driver_kubernetes_cli_sha256",
+        "sandbox_driver_kubernetes_proof_sha256",
+    ):
         assert _SHA256.match(_default(name=name)), (
             f"{name} must be a committed 64-hex SHA-256: a digest fetched beside the "
             f"download proves only that the download is internally consistent"
@@ -81,7 +85,14 @@ def test_the_cli_profile_pins_the_plugin_digest() -> None:
 
 def test_the_plugin_reads_the_factory_credential_and_refreshes_it_on_a_rejection() -> None:
     template = _read(path=_PLUGIN_TEMPLATE)
-    for key in ("kubeconfig", "namespace", "service_account", "workspace_root", "refresh_command"):
+    for key in (
+        "kubeconfig",
+        "namespace",
+        "service_account",
+        "workspace_root",
+        "refresh_command",
+        "apparmor_localhost_profile",
+    ):
         assert re.search(rf"^{key} = ", template, re.MULTILINE), f"the plugin config must set {key}"
     assert "[[tolerations]]" in template
     assert "[node_selector]" in template
@@ -90,6 +101,7 @@ def test_the_plugin_reads_the_factory_credential_and_refreshes_it_on_a_rejection
     assert _default(name="sandbox_driver_kubernetes_namespace") == "factory"
     assert _default(name="sandbox_driver_kubernetes_service_account") == "sandbox-launcher"
     assert _default(name="sandbox_driver_kubernetes_workspace_root") == "/srv/factory-workspaces"
+    assert _default(name="sandbox_driver_kubernetes_apparmor_profile") == "ci-runner-workflow"
 
 
 def test_no_machine_is_named() -> None:
