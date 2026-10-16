@@ -1324,3 +1324,100 @@ def test_start_starts_containerd_then_docker_each_with_a_bounded_wait(tmp_path: 
     )
     names = [call.name for call in fake.calls]
     assert names.index("grant_start_permission") < names.index("start_unit")
+
+
+def test_recover_resumes_publish_for_a_run_interrupted_in_publishing(tmp_path: Path) -> None:
+    """Acceptance scenario: recover resumes an interrupted publish, snapshot intact.
+
+    `publishing` is the one pre-commit phase a recovery can carry
+    FORWARD, because the install it interrupted is inert by
+    construction: no unit can start behind it. Every other phase has
+    granted something, so recovery can only go back.
+    """
+    _entry(name="recover")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="reserved")
+    first = guard.run_operation(
+        operation="publish", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+    assert first.exit_code == 0
+    paths = _paths(root=tmp_path)
+    (paths.snapshot_dir(run="run-a") / "iptables-save").write_text("# first\n", encoding="utf-8")
+    state.record_phase(paths=paths, run="run-a", phase="publishing")
+
+    resumed = _fake(root=tmp_path)
+    outcome = guard.run_operation(
+        operation="recover", run="run-a", env=_env(root=tmp_path, host=resumed)
+    )
+
+    assert outcome.exit_code == 0
+    assert resumed.calls_named(name="take_snapshot") == ()
+    assert len(resumed.calls_named(name="install_packages")) == 1
+    assert state.read_phase(paths=paths, run="run-a") == "published"
+    assert (paths.snapshot_dir(run="run-a") / "iptables-save").read_text(
+        encoding="utf-8"
+    ) == "# first\n"
+
+
+def test_recover_rolls_back_a_run_in_any_other_uncommitted_phase(tmp_path: Path) -> None:
+    """Acceptance scenario: recover rolls back any other uncommitted run.
+
+    Reaching child 2's DRIVER is the proof, and the test asserts where
+    the call landed rather than merely that something was unimplemented:
+    an uncommitted run in `reserved`, `started` or `observed` has no
+    forward path at all, whatever its records say, because the commit
+    marker is what decides commitment and it is absent.
+    """
+    _entry(name="recover")
+    guard = _guard_surface()
+
+    for phase in ("reserved", "started", "observed"):
+        root = tmp_path / phase
+        fake = _fake(root=root)
+        _record_phase(root=root, run="run-a", phase=phase)
+        with pytest.raises(NotImplementedError) as caught:
+            guard.run_operation(operation="recover", run="run-a", env=_env(root=root, host=fake))
+        assert caught.traceback[-1].path.name == "_docker_engine_guard_rollback.py", phase
+
+
+def test_recover_takes_the_same_lock_and_decides_through_the_same_table(
+    tmp_path: Path,
+) -> None:
+    """Design rider 8: recover delegates to the locked helper, with no path of its own.
+
+    It is an operator's invocation, which is exactly the one that would
+    be tempting to let bypass the lock "just to fix things". It does
+    not: a busy lock refuses it, a run that is not the current
+    reservation refuses it, and a committed run goes to the post-commit
+    finish instead of anywhere near the rollback driver.
+    """
+    _entry(name="recover")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+
+    busy = tmp_path / "busy"
+    fake = _fake(root=busy)
+    paths = _paths(root=busy)
+    _record_phase(root=busy, run="run-a", phase="started")
+    state.ensure_runtime_dir(paths=paths, host=fake)
+    held = state.acquire_lock(paths=paths, host=fake)
+    assert held is not None
+    outcome = guard.run_operation(operation="recover", run="run-a", env=_env(root=busy, host=fake))
+    assert outcome.verdict == "refuse"
+    state.release_lock(fd=held)
+
+    other = tmp_path / "other-run"
+    fake = _fake(root=other)
+    _record_phase(root=other, run="run-a", phase="started")
+    outcome = guard.run_operation(operation="recover", run="run-b", env=_env(root=other, host=fake))
+    assert outcome.verdict == "refuse"
+
+    committed = tmp_path / "committed"
+    fake = _fake(root=committed)
+    _record_phase(root=committed, run="run-a", phase="committed")
+    _write_marker(root=committed, run="run-a")
+    with pytest.raises(NotImplementedError) as caught:
+        guard.run_operation(operation="recover", run="run-a", env=_env(root=committed, host=fake))
+    assert caught.traceback[-1].path.name == "_docker_engine_guard_ops.py"
