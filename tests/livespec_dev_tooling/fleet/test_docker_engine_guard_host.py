@@ -805,3 +805,50 @@ def test_the_disable_action_disables_exactly_the_three_guarded_units(
     units.disable_units(runner=narrow, units=("docker.socket", "k3s-agent.service"))
 
     assert tuple(narrow.argvs) == (("systemctl", "disable", "docker.socket"),)
+
+
+# `ip -o link show` on the host mid-install: the loopback and the physical
+# link (neither Docker's), the tailnet and k3s links (which a wrong answer
+# would take the host off the network with), `docker0`, and two veths
+# mastered by it.
+_LINK_SHOW = (
+    "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 state UNKNOWN\\    link/loopback\n"
+    "2: enp2s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP\\    link/ether\n"
+    "3: tailscale0: <POINTOPOINT,MULTICAST,NOARP,UP> mtu 1280 state UNKNOWN\\    link/none\n"
+    "4: flannel.1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 master cni0 state UNKNOWN\n"
+    "5: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 state DOWN\\    link/ether\n"
+    "7: veth1a2b3c@if6: <BROADCAST,MULTICAST,UP> mtu 1500 master docker0 state UP\n"
+    "9: veth4d5e6f@if8: <BROADCAST,MULTICAST,UP> mtu 1500 master docker0 state UP\n"
+    "\n"
+)
+
+_LINK_SHOW_ARGV = ("ip", "-o", "link", "show")
+
+
+def test_the_interface_action_deletes_docker0_and_every_veth_mastered_by_it(
+    tmp_path: Path,
+) -> None:
+    """The bridge and its veths go, and nothing the host needs to stay up does.
+
+    `docker0` is deleted LAST, after the links mastered by it, so no veth
+    is left orphaned if the pass stops part way. The selection is by
+    `master docker0` rather than by a name prefix, because a veth's name is
+    random and `flannel.1` -- mastered by `cni0` -- is exactly the shape a
+    prefix or substring match would get wrong.
+    """
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    assert hasattr(netstate, "delete_bridge_interfaces")
+    commands = _Commands(answers={_LINK_SHOW_ARGV: _LINK_SHOW})
+    host = _real_host(root=tmp_path, commands=commands)
+
+    deleted = host.delete_bridge_interfaces()
+
+    assert deleted == ("veth1a2b3c", "veth4d5e6f", "docker0")
+    assert tuple(commands.argvs) == (
+        _LINK_SHOW_ARGV,
+        ("ip", "link", "delete", "veth1a2b3c"),
+        ("ip", "link", "delete", "veth4d5e6f"),
+        ("ip", "link", "delete", "docker0"),
+    )
+    assert commands.argvs_with(flag="tailscale0") == ()
+    assert commands.argvs_with(flag="flannel.1") == ()
