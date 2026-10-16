@@ -58,6 +58,21 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.108.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.107.0...v1.108.0) (2026-10-16)
+
+
+### Features
+
+* account for a flagged package against every recorded intended set ([a84e737](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a84e737a5d01197a8306791716ae3cca2995c240))
+* audit the Docker engine transaction before it is allowed to run ([9659011](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9659011268cc8cefc82bc0fd72f790761112b0c1))
+* complete an interrupted install for the intended packages only ([b40ecbd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b40ecbd1141198007c335ea8c38e92c929795958))
+* complete interrupted triggers for a run's recorded packages only ([59bd046](https://github.com/thewoolleyman/livespec-dev-tooling/commit/59bd046461366bbfcc2528a564d69546abc32bc6))
+* digest-check the host apt and dpkg configuration the install rides on ([8589455](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8589455cbe96d795ecbb91e47bfbf169508e7b73))
+* fence the Docker engine install guard's package transaction ([9e6408a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9e6408a893e119a348d1e49745dab872404f5fdb))
+* prove the Docker engine install against the dpkg-query difference ([8fd43a7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8fd43a7e7246f09f6a2b3ae68a3d16deb578fac2))
+* re-read dpkg's table under the fence before the Docker engine install ([f991525](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f9915253e8d9cb33d92dbfa85b77c97d153fb0d5))
+* vouch for every Docker engine archive before it is unpacked ([7055440](https://github.com/thewoolleyman/livespec-dev-tooling/commit/70554408be08903d3b9bfe959600f8ea89401e27))
+
 ## [1.107.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.106.0...v1.107.0) (2026-10-16)
 
 
