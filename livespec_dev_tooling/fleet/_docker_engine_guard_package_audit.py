@@ -24,19 +24,44 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from livespec_dev_tooling.fleet._docker_engine_guard_runner import (
+    COMMAND_TIMEOUT_SECONDS,
+    TimedCommand,
+    TimedRunner,
+)
+
 __all__: list[str] = [
     "INPUTS_FILE",
+    "QUERY_ARGV",
     "Audit",
+    "InstalledPackage",
     "PackageInputs",
     "PackageSpec",
     "audit_transaction",
     "load_package_inputs",
+    "read_installed",
 ]
 
 # The controller writes a run's inputs only into that run's own `inputs/`
 # directory, so this name is resolved against the directory the step was
 # handed and never against a path the inputs themselves carry.
 INPUTS_FILE: Final[str] = "packages.json"
+
+# The one package query the fence makes, in the one format it parses. Both
+# fields are asked for together because dpkg's table is read once per side
+# of the install: the VERSION is what the post-install difference compares,
+# and the STATUS is what tells a half-installed package from a settled one.
+QUERY_ARGV: Final[tuple[str, ...]] = (
+    "dpkg-query",
+    "-W",
+    "-f",
+    "${binary:Package} ${Version} ${db:Status-Status}\n",
+)
+
+# How many fields a line of that output carries when dpkg holds the
+# package. A line with fewer is a package dpkg knows of and holds nothing
+# for; `read_installed` records why that is not a parse failure.
+_QUERY_FIELD_COUNT: Final[int] = 3
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -89,6 +114,33 @@ def load_package_inputs(*, inputs: Path) -> PackageInputs | str:
         for row in declared
     )
     return PackageInputs(specs=specs, cache=Path(payload["cache"]))
+
+
+@dataclass(frozen=True, kw_only=True)
+class InstalledPackage:
+    """One row of dpkg's own table: the version it holds, and the state it is in."""
+
+    version: str
+    status: str
+
+
+def read_installed(*, runner: TimedRunner) -> dict[str, InstalledPackage]:
+    """Every package dpkg knows, mapped to the version and status it holds.
+
+    A line dpkg emits without all three fields is dropped rather than
+    guessed at, and that case is measured rather than defensive:
+    `dpkg-query -W` lists a package dpkg merely KNOWS OF, pulled in by
+    some dependency, with an EMPTY version field and the status
+    `not-installed`. Admitted as a package at some version it would be a
+    phantom in both the post-install difference and the drift comparison.
+    """
+    answer = runner(command=TimedCommand(argv=QUERY_ARGV, timeout_seconds=COMMAND_TIMEOUT_SECONDS))
+    rows: dict[str, InstalledPackage] = {}
+    for line in answer.stdout.splitlines():
+        fields = line.split()
+        if len(fields) == _QUERY_FIELD_COUNT:
+            rows[fields[0]] = InstalledPackage(version=fields[1], status=fields[2])
+    return rows
 
 
 def audit_transaction(*, declared: PackageInputs) -> Audit:
