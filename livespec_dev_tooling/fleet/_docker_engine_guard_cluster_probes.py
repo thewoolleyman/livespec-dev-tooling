@@ -16,6 +16,8 @@ Stdlib only, Python 3.10 syntax.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_sample import ProbeResult
@@ -28,8 +30,14 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "ACTIVE",
+    "NODE_READY_PROBE",
+    "NODE_STATUS_KUBECONFIG",
+    "NODE_STATUS_TIMEOUT_SECONDS",
+    "READY_CONDITION",
     "REQUIRED_UNITS",
     "SERVICES_PROBE",
+    "node_ready_probe",
+    "node_status_argv",
     "services_probe",
 ]
 
@@ -45,6 +53,24 @@ REQUIRED_UNITS: Final[tuple[str, ...]] = (
 ACTIVE: Final[str] = "active"
 
 SERVICES_PROBE: Final[str] = "services"
+NODE_READY_PROBE: Final[str] = "node-ready"
+
+# The pool's node-status credential, which the k3s agent already carries
+# (design, measured state 2026-10-15).
+NODE_STATUS_KUBECONFIG: Final[Path] = Path("/etc/rancher/k3s/node-status-kubeconfig")
+
+# One API round trip. Long enough for a server under a reconciler's
+# sweep, short enough that a sample cannot outlive its own interval.
+NODE_STATUS_TIMEOUT_SECONDS: Final[int] = 15
+
+READY_CONDITION: Final[str] = "Ready"
+
+# How the API server spells a satisfied condition. It is a STRING and
+# not a boolean in the Node object, and the third value -- `Unknown` --
+# is exactly what a node whose kubelet has stopped reporting shows, so
+# the comparison is against this one spelling rather than against
+# anything falsy.
+_TRUE: Final[str] = "True"
 
 
 def services_probe(*, runner: GuardCommandRunner, must_stay_running: Sequence[str]) -> ProbeResult:
@@ -64,3 +90,56 @@ def services_probe(*, runner: GuardCommandRunner, must_stay_running: Sequence[st
     states = unit_active_states(runner=runner, units=units)
     stopped = tuple(f"{unit} is {states[unit]}" for unit in units if states[unit] != ACTIVE)
     return ProbeResult(name=SERVICES_PROBE, passed=not stopped, error="; ".join(stopped))
+
+
+def node_status_argv(*, node: str) -> tuple[str, ...]:
+    """The node-status credential's ONE authorized read: this node's own status.
+
+    `get --raw` rather than `get node`, because the committed grant is
+    `get`/`patch` on `nodes/status` for this node alone (design R8) --
+    an ordinary `get node` is a read of the `nodes` collection the
+    credential cannot make, and a probe that attempted it would report
+    the host as unhealthy on every sample of a perfectly healthy run.
+    """
+    return (
+        "k3s",
+        "kubectl",
+        "--kubeconfig",
+        str(NODE_STATUS_KUBECONFIG),
+        "get",
+        "--raw",
+        f"/api/v1/nodes/{node}/status",
+    )
+
+
+def node_ready_probe(*, runner: GuardCommandRunner, node: str) -> ProbeResult:
+    """Whether the cluster still reports this node's own `Ready` condition true.
+
+    Reported as Node Ready and NEVER substituted by a kubelet healthz:
+    healthz answers that the kubelet process is alive, while `Ready` is
+    the cluster's own verdict on whether this node can take work -- and
+    a Docker install that broke the pod network leaves the first true
+    and the second false.
+
+    The condition is selected by its TYPE. A node carries several
+    conditions in an order the API server does not promise, so a probe
+    reading the first or the only one would read `MemoryPressure` on
+    some samples and `Ready` on others.
+    """
+    answer = runner(argv=node_status_argv(node=node), timeout_seconds=NODE_STATUS_TIMEOUT_SECONDS)
+    if answer.returncode != 0:
+        return ProbeResult(
+            name=NODE_READY_PROBE,
+            passed=False,
+            error=f"the node status read exited {answer.returncode}",
+        )
+    conditions = json.loads(answer.stdout)["status"]["conditions"]
+    reported = tuple(
+        str(condition["status"]) for condition in conditions if condition["type"] == READY_CONDITION
+    )
+    ready = reported == (_TRUE,)
+    return ProbeResult(
+        name=NODE_READY_PROBE,
+        passed=ready,
+        error="" if ready else f"the node's Ready condition reads {reported}",
+    )

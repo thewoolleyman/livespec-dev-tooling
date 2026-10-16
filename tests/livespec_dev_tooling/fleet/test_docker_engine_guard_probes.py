@@ -501,3 +501,60 @@ def test_the_services_probe_requires_the_agent_the_tailnet_and_every_named_unit(
     assert failing.error == (
         "tailscaled.service is activating; local-homelab-llama-server.service is failed"
     )
+
+
+# What `get --raw /api/v1/nodes/gmktec-xubuntu/status` answers. The
+# second condition is in the fixture on purpose: the Ready condition has
+# to be SELECTED by its type, not taken as the first or the only one.
+_NODE_STATUS_READY = (
+    '{"status": {"conditions": ['
+    '{"type": "MemoryPressure", "status": "False"}, '
+    '{"type": "Ready", "status": "True"}'
+    "]}}"
+)
+_NODE_STATUS_NOT_READY = (
+    '{"status": {"conditions": ['
+    '{"type": "MemoryPressure", "status": "False"}, '
+    '{"type": "Ready", "status": "Unknown"}'
+    "]}}"
+)
+
+
+def test_the_node_ready_probe_reads_the_nodes_own_status_subresource() -> None:
+    """Through the node-status credential, and through `get --raw` on that node.
+
+    Design R8 is explicit about the instrument: the committed grant is
+    `get`/`patch` on `nodes/status` for THIS node only, so the probe
+    reads the node's own status subresource and attempts nothing else
+    with that credential. It is reported as Node Ready and never
+    substituted by a kubelet healthz, which answers that the kubelet is
+    alive rather than that the cluster still has this node.
+    """
+    assert "node_ready_probe" in importlib.import_module(_CLUSTER_MODULE).__all__
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+    argv = cluster.node_status_argv(node="gmktec-xubuntu")
+    assert argv == (
+        "k3s",
+        "kubectl",
+        "--kubeconfig",
+        str(cluster.NODE_STATUS_KUBECONFIG),
+        "get",
+        "--raw",
+        "/api/v1/nodes/gmktec-xubuntu/status",
+    )
+
+    ready = _Commands(answers={argv: _NODE_STATUS_READY})
+    passing = cluster.node_ready_probe(runner=ready, node="gmktec-xubuntu")
+    assert (passing.name, passing.passed, passing.error) == (cluster.NODE_READY_PROBE, True, "")
+    assert tuple(ready.argvs) == (argv,)
+
+    unknown = _Commands(answers={argv: _NODE_STATUS_NOT_READY})
+    failing = cluster.node_ready_probe(runner=unknown, node="gmktec-xubuntu")
+    assert (failing.passed, failing.error) == (
+        False,
+        "the node's Ready condition reads ('Unknown',)",
+    )
+
+    refused = _Commands(codes={argv: 1})
+    unread = cluster.node_ready_probe(runner=refused, node="gmktec-xubuntu")
+    assert (unread.passed, unread.error) == (False, "the node status read exited 1")
