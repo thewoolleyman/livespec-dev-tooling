@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.111.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.2...v1.111.3) (2026-10-16)
+
+
+### Bug Fixes
+
+* **fleet:** carry the declared k3s-server route from probes.json into the sample ([b2cf7aa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2cf7aa5a1b4198aa021e5b873952761eef67730))
+* **fleet:** declare the route the DNS-placement probe reaches the k3s server by ([6986e60](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6986e60aa66d80774b812caac08bdfdfb1f6e36a))
+* **fleet:** refuse a k3s-server route the placement read cannot run ([793751f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/793751fef64ed87c2d8a437be6a0bfdbb4f49aeb))
+
 ## [1.111.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.1...v1.111.2) (2026-10-16)
 
 
