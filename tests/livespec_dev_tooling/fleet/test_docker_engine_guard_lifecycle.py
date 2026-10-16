@@ -1226,3 +1226,101 @@ def test_arm_refuses_and_triggers_a_rollback_when_any_account_is_in_the_docker_g
     assert state.read_phase(paths=paths, run="run-a") == "published"
     assert state.read_deadline(paths=paths, run="run-a") is None
     assert fake.calls_named(name="systemd_run")[0].detail == model.rollback_argv(run="run-a")
+
+
+def test_start_refuses_when_the_dead_man_timer_unit_is_not_active(tmp_path: Path) -> None:
+    """Acceptance scenario: the guard refuses to start without a live dead-man.
+
+    The dead-man is the only thing that takes the host back if the
+    controller dies, so granting the start permission without one would
+    leave a Docker daemon nothing is watching. The run is `armed` and
+    its deadline has not passed -- the missing timer alone must stop it.
+    """
+    _entry(name="start")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.clock = 10.0
+    _record_phase(root=tmp_path, run="run-a", phase="armed")
+    _arm_deadline(root=tmp_path, run="run-a", boot="boot-a", at=10_000.0)
+
+    outcome = guard.run_operation(
+        operation="start", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    paths = _paths(root=tmp_path)
+    assert outcome.verdict == "refuse"
+    assert state.read_phase(paths=paths, run="run-a") == "armed"
+    assert fake.calls_named(name="grant_start_permission") == ()
+    assert fake.calls_named(name="start_unit") == ()
+
+
+def test_start_reaches_started_before_it_grants_the_start_permission(tmp_path: Path) -> None:
+    """Specification "Start": `started` is recorded BEFORE the permission exists.
+
+    That ordering is what makes a duplicate or delayed `start` refuse:
+    the second invocation finds `started`, which its row does not admit.
+    Granting first and recording after would leave a window in which a
+    second `start` could grant again over a run already running.
+    """
+    _entry(name="start")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.clock = 10.0
+    fake.active_deadman_units = {"docker-engine-deadman-run-a"}
+    _record_phase(root=tmp_path, run="run-a", phase="armed")
+    _arm_deadline(root=tmp_path, run="run-a", boot="boot-a", at=10_000.0)
+
+    outcome = guard.run_operation(
+        operation="start", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    paths = _paths(root=tmp_path)
+    assert outcome.exit_code == 0
+    assert state.read_phase(paths=paths, run="run-a") == "started"
+    assert fake.calls_named(name="grant_start_permission")[0].phase == "started"
+
+    duplicate = guard.run_operation(
+        operation="start", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+    assert duplicate.verdict == "refuse"
+    assert len(fake.calls_named(name="grant_start_permission")) == 1
+
+
+def test_start_starts_containerd_then_docker_each_with_a_bounded_wait(tmp_path: Path) -> None:
+    """Specification "Start": containerd first, docker second, both bounded.
+
+    The order is not cosmetic -- docker needs containerd's socket -- and
+    the bound is what keeps the whole operation inside its unit's
+    budget, so a daemon that never becomes ready is a refusal rather
+    than a transient unit SIGKILLed with no verdict.
+    """
+    _entry(name="start")
+    guard = _guard_surface()
+    model = importlib.import_module(_MODEL_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.clock = 10.0
+    fake.active_deadman_units = {"docker-engine-deadman-run-a"}
+    _record_phase(root=tmp_path, run="run-a", phase="armed")
+    _arm_deadline(root=tmp_path, run="run-a", boot="boot-a", at=10_000.0)
+
+    outcome = guard.run_operation(
+        operation="start", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert outcome.exit_code == 0
+    assert model.START_ORDER == ("containerd.service", "docker.service")
+    started = [call.detail for call in fake.calls_named(name="start_unit")]
+    assert started == [
+        ("containerd.service", str(model.UNIT_WAIT_SECONDS)),
+        ("docker.service", str(model.UNIT_WAIT_SECONDS)),
+    ]
+    assert model.UNIT_WAIT_SECONDS == 60
+    assert model.GUARDED_UNITS == (
+        "containerd.service",
+        "docker.service",
+        "docker.socket",
+    )
+    names = [call.name for call in fake.calls]
+    assert names.index("grant_start_permission") < names.index("start_unit")
