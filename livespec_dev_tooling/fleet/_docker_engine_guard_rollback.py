@@ -25,6 +25,14 @@ from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     GUARDED_UNITS,
     GuardOutcome,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_postconditions import (
+    BRIDGE_GONE,
+    FORWARD_RESTORED,
+    POSTCONDITIONS,
+    RULES_GONE,
+    SYSCTLS_MATCH,
+    UNITS_QUIET,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     read_phase,
     record_phase,
@@ -155,45 +163,26 @@ MAX_ATTEMPTS: Final[int] = 3
 # SIGKILL that follows it, so a phase ignoring the first still ends.
 PHASE_KILL_AFTER_SECONDS: Final[int] = 10
 
-# The specification's postcondition set, read as ONE record by the final
-# check. Each name is the key the host answers under, and each is phrased
-# as the property that must HOLD, so a failing one reads as the sentence
-# an operator needs: "no docker0" failing says the bridge is still there.
-_PERMISSION_GONE: Final[str] = "no start permission"
-_UNITS_QUIET: Final[str] = "no socket, process, queued job or pending start for the guarded units"
-_FORWARD_RESTORED: Final[str] = "each FORWARD policy as snapshotted"
-_RULES_GONE: Final[str] = "no Docker rule"
-_BRIDGE_GONE: Final[str] = "no docker0"
-_SYSCTLS_MATCH: Final[str] = "each watched sysctl as snapshotted"
-
-POSTCONDITIONS: Final[tuple[str, ...]] = (
-    _PERMISSION_GONE,
-    _UNITS_QUIET,
-    _FORWARD_RESTORED,
-    _RULES_GONE,
-    _BRIDGE_GONE,
-    _SYSCTLS_MATCH,
-)
-
 # Which postcondition each phase exists to establish, so the final check
 # can make a phase eligible again when its own postcondition regresses.
 #
-# Four phases share `_UNITS_QUIET` and that is not a modelling
+# Four phases share `UNITS_QUIET` and that is not a modelling
 # compromise: the check reads one record of the guarded units, so it
 # genuinely cannot tell which of the four a regression belongs to, and
-# re-running all four is the only sound answer. `_PERMISSION_GONE` has no
+# re-running all four is the only sound answer. `PERMISSION_GONE` has no
 # phase at all — the driver revokes the permission itself, in-process,
 # before the phases — so a failing permission is retried by the next
-# firing's revocation rather than by any phase.
+# firing's revocation rather than by any phase, and the name is therefore
+# not imported here.
 POSTCONDITION_OF_PHASE: Final[dict[str, str]] = {
-    "socket-stop": _UNITS_QUIET,
-    "job-cancel": _UNITS_QUIET,
-    "forward-restore": _FORWARD_RESTORED,
-    "cgroup-kill": _UNITS_QUIET,
-    "unit-disable": _UNITS_QUIET,
-    "footprint-removal": _RULES_GONE,
-    "interface-deletion": _BRIDGE_GONE,
-    "sysctl-comparison": _SYSCTLS_MATCH,
+    "socket-stop": UNITS_QUIET,
+    "job-cancel": UNITS_QUIET,
+    "forward-restore": FORWARD_RESTORED,
+    "cgroup-kill": UNITS_QUIET,
+    "unit-disable": UNITS_QUIET,
+    "footprint-removal": RULES_GONE,
+    "interface-deletion": BRIDGE_GONE,
+    "sysctl-comparison": SYSCTLS_MATCH,
 }
 
 
@@ -410,6 +399,12 @@ def _failed_postconditions(*, run: str, env: GuardEnv) -> tuple[str, ...]:
     postcondition the host did not answer at all counts as failing, so a
     narrowed or broken read reports a partial recovery rather than a
     clean one.
+
+    Which makes the NAMES load-bearing, and is why they are imported
+    from the module that answers under them rather than restated here: a
+    second spelling of this set would not narrow the check, it would
+    make every lookup miss and report a wholly rolled-back host as
+    partial. That is exactly what two spellings did on 2026-10-16.
     """
     read = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
     return tuple(name for name in POSTCONDITIONS if not read.get(name, False))
