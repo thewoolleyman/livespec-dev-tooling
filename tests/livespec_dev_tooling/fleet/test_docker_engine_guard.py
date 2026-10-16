@@ -24,6 +24,8 @@ __all__: list[str] = []
 _GUARD_MODULE = "livespec_dev_tooling.fleet.docker_engine_guard"
 _GUARD_PATH = Path("livespec_dev_tooling/fleet/docker_engine_guard.py")
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
+_DISPATCH_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_dispatch"
+_DISPATCH_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_dispatch.py")
 
 _INSTALL_PHASES = (
     "reserved",
@@ -81,10 +83,16 @@ def _guard() -> Any:
     return importlib.import_module(_GUARD_MODULE)
 
 
+def _dispatch() -> Any:
+    """The admission rule: the row type and the decision it yields."""
+    assert _DISPATCH_PATH.is_file()
+    return importlib.import_module(_DISPATCH_MODULE)
+
+
 def _verdict(*, operation: str, marker: str, phase: str | None, expired: bool = False) -> str:
-    guard = _guard()
-    row = guard.row_for(operation=operation)
-    return guard.decide(row=row, marker=marker, phase=phase, deadline_passed=expired).verdict
+    row = _guard().row_for(operation=operation)
+    decide = _dispatch().decide
+    return decide(row=row, marker=marker, phase=phase, deadline_passed=expired).verdict
 
 
 def test_the_dispatch_table_registers_every_operation_exactly_once() -> None:
@@ -215,9 +223,34 @@ def test_every_decision_carries_a_reason_an_operator_can_act_on() -> None:
     model = importlib.import_module(_MODEL_MODULE)
     guard = _guard()
 
+    decide = _dispatch().decide
     for operation in model.OPERATIONS:
         row = guard.row_for(operation=operation)
         for marker in ("absent", "self", "other", "unreadable"):
             for phase in (*_ALL_PHASES, None):
-                decision = guard.decide(row=row, marker=marker, phase=phase, deadline_passed=False)
+                decision = decide(row=row, marker=marker, phase=phase, deadline_passed=False)
                 assert decision.reason.strip() != ""
+
+
+def test_the_admission_rule_lives_in_its_own_module_beside_the_table() -> None:
+    """The rule and the registry are two concerns, and the rule moved out.
+
+    `docker_engine_guard.py` keeps the one TABLE -- the registry of
+    operations, their phase transitions and their handlers -- and the
+    entry that runs an operation through it. The row TYPE and the
+    `decide` that reads a row are the rule itself, and they are what
+    `observe`, `confirm`, `verify` and `reconfigure` will be read
+    against as later children fill them in, so they get a module of
+    their own rather than more lines in the entry point.
+    """
+    dispatch = _dispatch()
+    guard = _guard()
+
+    assert "decide" in dispatch.__all__
+    assert "DispatchRow" in dispatch.__all__
+    assert "OperationHandler" in dispatch.__all__
+    assert "decide" not in guard.__all__
+    assert "DispatchRow" not in guard.__all__
+    assert "DISPATCH_TABLE" in guard.__all__
+    assert "row_for" in guard.__all__
+    assert all(isinstance(row, dispatch.DispatchRow) for row in guard.DISPATCH_TABLE)
