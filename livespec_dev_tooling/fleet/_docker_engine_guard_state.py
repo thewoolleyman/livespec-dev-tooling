@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from livespec_dev_tooling.fleet._docker_engine_guard_model import PHASES, Deadline, GuardPaths
+from livespec_dev_tooling.fleet._docker_engine_guard_model import (
+    PHASES,
+    Deadline,
+    GuardPaths,
+    Holder,
+)
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps
@@ -32,6 +37,7 @@ __all__: list[str] = [
     "acquire_lock",
     "deadline_passed",
     "ensure_runtime_dir",
+    "holder_of",
     "read_deadline",
     "read_marker",
     "read_phase",
@@ -234,3 +240,20 @@ def acquire_lock(*, paths: GuardPaths, host: HostOps) -> int | None:
 def release_lock(*, fd: int) -> None:
     """Close the descriptor, which releases the lock with it."""
     os.close(fd)
+
+
+def holder_of(*, env: GuardEnv, run: str | None) -> Holder | None:
+    """Who holds this host, how far they got, and when their time runs out.
+
+    `None` when nothing holds it. Reported on every refusal, because a
+    refusal that does not name the holding run leaves an operator with no
+    next step, and the deadline is the field that says whether waiting is
+    one.
+    """
+    if run is None:
+        return None
+    return Holder(
+        run=run,
+        phase=read_phase(paths=env.paths, run=run),
+        deadline=read_deadline(paths=env.paths, run=run),
+    )

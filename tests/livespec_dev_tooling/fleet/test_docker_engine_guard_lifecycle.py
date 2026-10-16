@@ -38,6 +38,8 @@ _GUARD_MODULE_UNDER_TEST = "livespec_dev_tooling.fleet.docker_engine_guard"
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 _PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
+_OPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_ops"
+_OPS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_ops.py")
 
 # The observation window the design derives at preflight from the effective
 # k3s resync periods (420 s at the measured defaults). Only `observe`'s
@@ -782,3 +784,201 @@ def test_on_a_host_that_holds_no_reservation_only_reserve_gets_past_the_table(
 
         assert outcome.verdict == "refuse", operation
         assert outcome.holder is None, operation
+
+
+_GUARD_UNITS_QUIET = {
+    "docker-engine-guard-start.service": "inactive",
+    "docker-engine-guard-observe.service": "inactive",
+    "docker-engine-deadman-run-a.timer": "inactive",
+    "docker-engine-deadman-run-a.service": "inactive",
+}
+
+
+def _ops_surface() -> Any:
+    """The operations module, with the five entries child 1a owes the table."""
+    assert _OPS_PATH.is_file()
+    ops = importlib.import_module(_OPS_MODULE)
+    assert "reserve" in ops.__all__
+    return ops
+
+
+def test_reserve_creates_the_reservation_on_a_quiet_unused_host(tmp_path: Path) -> None:
+    """Design I1, the admitted case: no marker, no holder, no guard unit, no group.
+
+    Reserving is what gives a controller the right to touch Docker on
+    this host at all, so the inputs directory is created with it: the
+    controller uploads only into its own run, and only `publish` ever
+    installs anything from there.
+    """
+    _ops_surface()
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+
+    outcome = guard.run_operation(
+        operation="reserve", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    paths = _paths(root=tmp_path)
+    assert outcome.exit_code == 0
+    assert state.read_reservation(paths=paths) == "run-a"
+    assert state.read_phase(paths=paths, run="run-a") == "reserved"
+    assert paths.inputs_dir(run="run-a").is_dir()
+
+
+def test_reserve_replaces_a_rolled_back_reservation_and_refuses_any_other(
+    tmp_path: Path,
+) -> None:
+    """Design I1: the current reservation must be absent or `rolled-back`.
+
+    A committed host is closed to the guarded transition entirely (H3),
+    and a run still in a live phase keeps the host — those are the two
+    ways a second controller is turned away, and neither changes a byte
+    of the run it found.
+    """
+    _ops_surface()
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+
+    after_rollback = tmp_path / "after-rollback"
+    fake = _fake(root=after_rollback)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+    _record_phase(root=after_rollback, run="run-a", phase="rolled-back")
+    outcome = guard.run_operation(
+        operation="reserve", run="run-b", env=_env(root=after_rollback, host=fake)
+    )
+    assert outcome.exit_code == 0
+    assert state.read_reservation(paths=_paths(root=after_rollback)) == "run-b"
+
+    committed = tmp_path / "committed"
+    fake = _fake(root=committed)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+    _write_marker(root=committed, run="run-a")
+    outcome = guard.run_operation(
+        operation="reserve", run="run-b", env=_env(root=committed, host=fake)
+    )
+    assert outcome.verdict == "refuse"
+    assert state.read_reservation(paths=_paths(root=committed)) is None
+
+    busy = tmp_path / "busy"
+    fake = _fake(root=busy)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+    _record_phase(root=busy, run="run-a", phase="observing")
+    outcome = guard.run_operation(operation="reserve", run="run-b", env=_env(root=busy, host=fake))
+    assert outcome.verdict == "refuse"
+    assert state.read_reservation(paths=_paths(root=busy)) == "run-a"
+
+
+def test_reserve_refuses_while_any_account_is_in_the_docker_group(tmp_path: Path) -> None:
+    """Design F7 and I1: the Docker API is admitted to nobody but the guard.
+
+    `docker.socket` is group-owned, so a single member of the `docker`
+    group is a second party that could reach the daemon during the
+    guarded window — and the window is precisely when nothing else may.
+    """
+    _ops_surface()
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+    fake.docker_group = ("ci",)
+
+    outcome = guard.run_operation(
+        operation="reserve", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert outcome.verdict == "refuse"
+    assert "ci" in outcome.reason
+    assert state.read_reservation(paths=_paths(root=tmp_path)) is None
+    # Nothing holds the host and no unit is busy, so the report is the
+    # verdict line alone: a holder line naming nobody, or an empty
+    # not-quiescent line, would each invite a wrong next step.
+    assert outcome.report_lines() == (f"reserve refuse: {outcome.reason}",)
+
+
+def test_a_refused_reserve_names_the_holding_run_its_phase_and_its_deadline(
+    tmp_path: Path,
+) -> None:
+    """Acceptance scenario: a second controller cannot reserve while a run is unfinished.
+
+    The refusal has to be actionable. The run id says which controller
+    owns the host, the phase says how far it got, and the deadline is the
+    only one of the three that tells an operator whether waiting is the
+    right move or whether the dead-man has already been and gone.
+    """
+    _ops_surface()
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    root = tmp_path / "second-controller"
+    fake = _fake(root=root)
+    fake.unit_states = dict(_GUARD_UNITS_QUIET)
+    fake.deadman_units = {"docker-engine-deadman-run-a"}
+    fake.active_deadman_units = {"docker-engine-deadman-run-a"}
+    _record_phase(root=root, run="run-a", phase="observing")
+    _arm_deadline(root=root, run="run-a", boot="boot-a", at=9_000.0)
+
+    outcome = guard.run_operation(operation="reserve", run="run-b", env=_env(root=root, host=fake))
+
+    assert outcome.verdict == "refuse"
+    assert outcome.holder is not None
+    assert outcome.holder.run == "run-a"
+    assert outcome.holder.phase == "observing"
+    assert outcome.holder.deadline is not None
+    assert outcome.holder.deadline.boot_id == "boot-a"
+    assert outcome.holder.deadline.monotonic == 9_000.0
+    report = "\n".join(outcome.report_lines())
+    assert "run-a" in report
+    assert "observing" in report
+    assert "boot-a" in report
+    assert "9000" in report
+
+    paths = _paths(root=root)
+    assert state.read_reservation(paths=paths) == "run-a"
+    assert state.read_phase(paths=paths, run="run-a") == "observing"
+    assert state.read_deadline(paths=paths, run="run-a").monotonic == 9_000.0
+    assert fake.deadman_timer_active(run="run-a") is True
+
+
+def test_a_refused_reserve_names_each_guard_unit_found_in_the_failed_state(
+    tmp_path: Path,
+) -> None:
+    """Design I1: a guard unit in `failed` is not `inactive`, and the refusal names it.
+
+    "Quiescent" means inactive with no queued job. A failed dead-man
+    service is the case worth naming explicitly: it means a rollback was
+    attempted and did not finish, which is exactly when a fresh
+    reservation would be most damaging.
+    """
+    _ops_surface()
+    guard = _guard_surface()
+    hostops = importlib.import_module(_HOSTOPS_MODULE)
+    root = tmp_path / "units-busy"
+    fake = _fake(root=root)
+    fake.unit_of_invocation = "docker-engine-guard-reserve-run-b-1.service"
+    fake.unit_states = {
+        "docker-engine-guard-start.service": "inactive",
+        "docker-engine-guard-observe.service": "activating",
+        "docker-engine-deadman-run-a.service": "failed",
+        "docker-engine-deadman-run-a.timer": "inactive",
+        "docker-engine-guard-reserve-run-b-1.service": "activating",
+    }
+    fake.jobs = (hostops.QueuedJob(job_id="7", unit="docker-engine-guard-start.service"),)
+    _record_phase(root=root, run="run-a", phase="rolled-back")
+
+    outcome = guard.run_operation(operation="reserve", run="run-b", env=_env(root=root, host=fake))
+
+    assert outcome.verdict == "refuse"
+    assert outcome.blocking_units == (
+        "docker-engine-deadman-run-a.service",
+        "docker-engine-guard-observe.service",
+        "docker-engine-guard-start.service",
+    )
+    report = "\n".join(outcome.report_lines())
+    assert "docker-engine-deadman-run-a.service" in report
+    assert "docker-engine-guard-reserve-run-b-1.service" not in report
+    # The holder rolled back and so never armed a deadline. The report has
+    # to say that in words rather than leave the field blank, which would
+    # read as "no deadline has passed yet".
+    assert "run-a" in report
+    assert "none recorded" in report
