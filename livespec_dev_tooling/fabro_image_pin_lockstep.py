@@ -20,6 +20,24 @@ pin sources:
 - `ARG GH_VERSION` ↔ the supported GitHub CLI pin required by the
   Fabro PR orchestration surface.
 
+ONE OBLIGATION HERE IS NOT AN IMAGE-BAKED ARG AT ALL, and it belongs in
+this module for the same reason the others do — it asks whether a copy of
+a Fabro sandbox image pin still equals the pin it was copied from.
+`ci-runner/k3s/phase2/factory/factory-reach-image.env` SHIPS the sandbox
+image reference to a CI-pool node, because the factory reach check is a
+converge artifact and the installed tree it runs from carries no
+repository checkout (work-item `livespec-dev-tooling-jvnqwv`, freeze
+ruling R70). The reference it ships is the same one the release fan-out
+rewrites in `.github/workflows/ci.yml`'s job `container:` blocks — so the
+shipped file must name exactly one image, the workflow must declare
+exactly one distinct container image, and the two must be EQUAL. Both
+files are REQUIRED inputs: treating either absence as "nothing to
+compare" would make the obligation vanish on a rename, which is the
+laxer-by-accident shape every arm here is written to avoid. Nothing on
+the node can notice the drift by itself — the check renders a Job, the
+Job pulls a superseded image, and it reports green for a toolchain no
+dispatch runs.
+
 These ARGs live in DIFFERENT layer files (`JUST_VERSION` /
 `LEFTHOOK_VERSION` / `SHELLCHECK_VERSION` in `base`;
 `UV_VERSION` / `PYTHON_VERSION` in `python`;
@@ -75,8 +93,24 @@ __all__: list[str] = []
 _LAYER_DIR = Path("docker") / "fabro-sandbox"
 _MISE_PATH = Path(".mise.toml")
 _PYTHON_VERSION_PATH = Path(".python-version")
+# The factory reach check's shipped copy of the fleet sandbox image pin, and
+# the workflow surface the release fan-out rewrites that same reference at.
+_FACTORY_REACH_PIN_PATH = (
+    Path("ci-runner") / "k3s" / "phase2" / "factory" / "factory-reach-image.env"
+)
+_CI_WORKFLOW_PATH = Path(".github") / "workflows" / "ci.yml"
+_FACTORY_REACH_PIN_KEY = "FACTORY_REACH_SANDBOX_IMAGE"
 
 _ARG_LINE = re.compile(r"^ARG\s+([A-Z0-9_]+)=(\S+)\s*$")
+_FACTORY_REACH_PIN_LINE = re.compile(rf"^[ \t]*{_FACTORY_REACH_PIN_KEY}=(\S+)[ \t]*$", re.MULTILINE)
+# An `image:` that is the FIRST field of a job's `container:` block — the one
+# surface the release fan-out's `fabro_sandbox_docker_image` rewrite touches in
+# a workflow, and the shape every containerized job in this repo's ci.yml uses.
+# Matched as a two-line pattern so a stray `image:` elsewhere in the workflow
+# (a service container, a step input) contributes nothing.
+_WORKFLOW_CONTAINER_IMAGE = re.compile(
+    r"^[ \t]*container:[ \t]*\n[ \t]*image:[ \t]*(\S+)[ \t]*$", re.MULTILINE
+)
 _TOOLS_TABLE_HEADER = re.compile(r"^\[tools\]\s*$")
 _TOOL_LINE = re.compile(r'^\s*([\w-]+)\s*=\s*"([^"]+)"\s*$')
 
@@ -249,6 +283,40 @@ def _lockstep_issues(
     return issues
 
 
+def _factory_reach_pin_issues(*, shipped_source: str, workflow_source: str) -> list[str]:
+    """Compare the SHIPPED factory-reach image pin against the workflow's pin.
+
+    Three findings, and the two refusals come before the comparison because
+    neither has an answer to compare: a shipped file naming no image (or two)
+    leaves the reach check unable to render a Job at all, and a workflow
+    declaring two distinct container images makes "which one must the shipped
+    pin equal" a real question that picking would silently answer wrong.
+    """
+    shipped = set(_FACTORY_REACH_PIN_LINE.findall(shipped_source))
+    workflow = set(_WORKFLOW_CONTAINER_IMAGE.findall(workflow_source))
+    if len(shipped) != 1:
+        return [
+            f"{_FACTORY_REACH_PIN_KEY}: {_FACTORY_REACH_PIN_PATH} names {len(shipped)} "
+            f"distinct image references {sorted(shipped)}; it must name exactly one — it "
+            f"is the ONLY sandbox image pin present on a CI-pool node"
+        ]
+    if len(workflow) != 1:
+        return [
+            f"{_FACTORY_REACH_PIN_KEY}: {_CI_WORKFLOW_PATH} declares {len(workflow)} "
+            f"distinct job `container:` images {sorted(workflow)}; refusing to guess which "
+            f"one {_FACTORY_REACH_PIN_PATH} must equal"
+        ]
+    shipped_image = shipped.pop()
+    workflow_image = workflow.pop()
+    if shipped_image != workflow_image:
+        return [
+            f"{_FACTORY_REACH_PIN_KEY}: {_FACTORY_REACH_PIN_PATH} ships "
+            f"{shipped_image!r} but {_CI_WORKFLOW_PATH} pins {workflow_image!r} — the "
+            f"shipped copy is what a pool node pulls, so bump BOTH in the same change"
+        ]
+    return []
+
+
 def _gh_install_issues(*, dockerfile_source: str) -> list[str]:
     issues: list[str] = []
     if (
@@ -285,7 +353,12 @@ def main() -> int:
             glob=str(_LAYER_DIR / "*" / "Dockerfile"),
         )
         return 1
-    pin_sources = (cwd / _MISE_PATH, cwd / _PYTHON_VERSION_PATH)
+    pin_sources = (
+        cwd / _MISE_PATH,
+        cwd / _PYTHON_VERSION_PATH,
+        cwd / _FACTORY_REACH_PIN_PATH,
+        cwd / _CI_WORKFLOW_PATH,
+    )
     missing = [path for path in pin_sources if not path.is_file()]
     if missing:
         for path in missing:
@@ -303,6 +376,12 @@ def main() -> int:
         mise_tools=_parse_mise_tools(source=mise_source),
         python_version=python_source.strip(),
         dockerfile_source="\n".join(dockerfile_sources),
+    )
+    issues.extend(
+        _factory_reach_pin_issues(
+            shipped_source=(cwd / _FACTORY_REACH_PIN_PATH).read_text(encoding="utf-8"),
+            workflow_source=(cwd / _CI_WORKFLOW_PATH).read_text(encoding="utf-8"),
+        )
     )
     if issues:
         for issue in issues:

@@ -131,6 +131,39 @@ _LOCKSTEP_MISE_TOML = (
 
 _LOCKSTEP_PYTHON_VERSION = "3.10.16\n"
 
+# The factory reach check's SHIPPED copy of the fleet sandbox image pin, and the
+# workflow pin it has to equal (work-item livespec-dev-tooling-jvnqwv). The
+# shipped file exists because that check is a converge artifact: it runs from an
+# installed tree on a pool node, where `.github/workflows/ci.yml` is not present,
+# so the image it renders cannot be read out of the workflow. A second copy of a
+# pin the release fan-out rewrites is a drift source by construction, and this
+# check is the only thing standing between the two.
+_FACTORY_REACH_PIN_PATH = Path("ci-runner") / "k3s" / "phase2" / "factory"
+_FACTORY_REACH_PIN_NAME = "factory-reach-image.env"
+_CI_WORKFLOW_PATH = Path(".github") / "workflows" / "ci.yml"
+_LOCKSTEP_SANDBOX_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.42.0"
+_LOCKSTEP_FACTORY_REACH_PIN = (
+    "# fixture pin file\n" "\n" f"FACTORY_REACH_SANDBOX_IMAGE={_LOCKSTEP_SANDBOX_IMAGE}\n"
+)
+# TWO `container:` blocks naming the SAME image, because that is the real shape:
+# GitHub Actions has no workflow-level `container:`, so this repository's ci.yml
+# repeats the block in every containerized job. The reader must therefore
+# de-duplicate rather than count lines.
+_LOCKSTEP_CI_WORKFLOW = (
+    "name: ci fixture\n"
+    "jobs:\n"
+    "  check-python:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    container:\n"
+    f"      image: {_LOCKSTEP_SANDBOX_IMAGE}\n"
+    "    steps:\n"
+    "      - uses: actions/checkout@v5\n"
+    "  gate:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    container:\n"
+    f"      image: {_LOCKSTEP_SANDBOX_IMAGE}\n"
+)
+
 
 def _write_fixture(
     *,
@@ -138,8 +171,14 @@ def _write_fixture(
     layers: dict[str, str] | None,
     mise_toml: str | None,
     python_version: str | None,
+    factory_reach_pin: str | None = _LOCKSTEP_FACTORY_REACH_PIN,
+    ci_workflow: str | None = _LOCKSTEP_CI_WORKFLOW,
 ) -> None:
-    """Write the layer Dockerfiles + pin sources; `None` omits that input."""
+    """Write the layer Dockerfiles + pin sources; `None` omits that input.
+
+    The two factory-reach inputs default to an IN-LOCKSTEP pair, so every case
+    that is about the image's own ARG pins keeps exercising only what it names.
+    """
     if layers is not None:
         for layer_name, content in layers.items():
             dockerfile_path = root / _LAYER_DIR / layer_name / "Dockerfile"
@@ -149,6 +188,14 @@ def _write_fixture(
         _ = (root / ".mise.toml").write_text(mise_toml, encoding="utf-8")
     if python_version is not None:
         _ = (root / ".python-version").write_text(python_version, encoding="utf-8")
+    if factory_reach_pin is not None:
+        pin_path = root / _FACTORY_REACH_PIN_PATH / _FACTORY_REACH_PIN_NAME
+        pin_path.parent.mkdir(parents=True, exist_ok=True)
+        _ = pin_path.write_text(factory_reach_pin, encoding="utf-8")
+    if ci_workflow is not None:
+        workflow_path = root / _CI_WORKFLOW_PATH
+        workflow_path.parent.mkdir(parents=True, exist_ok=True)
+        _ = workflow_path.write_text(ci_workflow, encoding="utf-8")
 
 
 def _load_check_module() -> ModuleType:
@@ -579,6 +626,138 @@ def test_rejects_mise_toml_missing_tool_pin(
     combined = result.stdout + result.stderr
     assert "just" in combined, (
         f"diagnostic should name the missing tool pin; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_a_shipped_factory_reach_pin_drifted_from_the_workflow(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The shipped factory-reach pin must equal the workflow's sandbox image pin.
+
+    The failure the obligation exists for: a release fan-out rewrites the
+    `container:` pin in `.github/workflows/ci.yml` and leaves the copy that
+    SHIPS to the pool node behind. Nothing on the node can notice — the check
+    renders a Job, the Job pulls the superseded image, and it reports green for
+    a toolchain no dispatch runs. So the drift has to redden here.
+    """
+    _write_fixture(
+        root=tmp_path,
+        layers=_LOCKSTEP_LAYERS,
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+        factory_reach_pin=_LOCKSTEP_FACTORY_REACH_PIN.replace(
+            _LOCKSTEP_SANDBOX_IMAGE,
+            "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.41.0",
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a shipped factory-reach pin drifted from the workflow pin should fail; got "
+        f"returncode={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "python-v1.41.0" in combined and _LOCKSTEP_SANDBOX_IMAGE in combined, (
+        f"diagnostic should name BOTH references, so the operator sees which way to bump; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_a_shipped_pin_file_naming_no_sandbox_image(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pin file with no `FACTORY_REACH_SANDBOX_IMAGE=` line is drift, not a pass.
+
+    The file is the ONLY pin present on a pool node, so a copy that names
+    nothing leaves the reach check unable to render a Job at all — and an
+    obligation that treated "no value" as "no disagreement" would pass exactly
+    the state nothing else catches.
+    """
+    _write_fixture(
+        root=tmp_path,
+        layers=_LOCKSTEP_LAYERS,
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+        factory_reach_pin="# a pin file that pins nothing\n",
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"a shipped pin file naming no image should fail; got "
+        f"returncode={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert _FACTORY_REACH_PIN_NAME in combined, (
+        f"diagnostic should name the pin file; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_a_workflow_declaring_two_distinct_container_images(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two distinct workflow container images is a refusal, never a pick.
+
+    Which of them the shipped pin is supposed to equal is then a real question,
+    and answering it by picking one would silently bless whichever happened to
+    sort first.
+    """
+    _write_fixture(
+        root=tmp_path,
+        layers=_LOCKSTEP_LAYERS,
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+        ci_workflow=_LOCKSTEP_CI_WORKFLOW.replace(
+            f"  gate:\n    runs-on: ubuntu-latest\n    container:\n"
+            f"      image: {_LOCKSTEP_SANDBOX_IMAGE}\n",
+            "  gate:\n    runs-on: ubuntu-latest\n    container:\n"
+            "      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-v1.42.0\n",
+        ),
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"two distinct workflow container images should fail; got "
+        f"returncode={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "ci.yml" in combined, (
+        f"diagnostic should name the workflow whose pins disagree; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_missing_factory_reach_pin_and_ci_workflow(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both halves of the factory-reach obligation are REQUIRED inputs.
+
+    Treating either absence as "nothing to compare" would make the obligation
+    disappear the moment a file was renamed or deleted — the laxer-by-accident
+    shape every lockstep arm here is written to avoid.
+    """
+    _write_fixture(
+        root=tmp_path,
+        layers=_LOCKSTEP_LAYERS,
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+        factory_reach_pin=None,
+        ci_workflow=None,
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"missing factory-reach inputs should fail; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert _FACTORY_REACH_PIN_NAME in combined and "ci.yml" in combined, (
+        f"diagnostic should name BOTH missing inputs; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
