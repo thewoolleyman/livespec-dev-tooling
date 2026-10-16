@@ -338,3 +338,44 @@ def test_the_phase_child_reaches_its_phase_through_the_guard_command_line(
     refused = rollback.run_phase(run="run-a", env=_env(root=tmp_path, host=fake), phase="nope")
     assert refused.verdict == "refuse"
     assert refused.exit_code == 1
+
+
+# The specification's postcondition set, written out here so a renamed
+# or dropped postcondition is a failing test rather than a silently
+# narrower final check.
+_SPECIFIED_POSTCONDITIONS = (
+    "no start permission",
+    "no socket, process, queued job or pending start for the guarded units",
+    "each FORWARD policy as snapshotted",
+    "no Docker rule",
+    "no docker0",
+    "each watched sysctl as snapshotted",
+)
+
+
+def test_the_final_check_reads_every_postcondition_together_after_the_stop_phases(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": ONE read, after every stop phase, of all of them.
+
+    Read earlier or phase by phase, each answer would be about a host
+    something was still writing to: a `docker0` read while the daemon is
+    being killed says nothing about whether the bridge is gone, and a
+    rule set read before the footprint phase says nothing at all. One
+    read after every writer has stopped is what makes the outcome a fact
+    rather than a race.
+    """
+    rollback = _driver()
+    assert "POSTCONDITIONS" in rollback.__all__
+    assert rollback.POSTCONDITIONS == _SPECIFIED_POSTCONDITIONS
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
+
+    reads = fake.calls_named(name="read_postconditions")
+    assert len(reads) == 1
+    assert reads[0].detail == (str(tmp_path / "var" / "runs" / "run-a" / "before"),)
+    names = [call.name for call in fake.calls]
+    last_phase = max(index for index, name in enumerate(names) if name == "run_phase_child")
+    assert names.index("read_postconditions") > last_phase
