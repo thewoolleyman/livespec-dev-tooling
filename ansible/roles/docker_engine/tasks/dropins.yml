@@ -165,6 +165,17 @@
         success_msg: the probe ran with its permission
 
   always:
+    - name: Stop the probe
+      # It stays active after a permitted start (RemainAfterExit), and a unit
+      # whose file is deleted while active lingers as not-found but active.
+      # Stopping an inactive or unknown unit exits 0, so this is safe on every
+      # path into `always`.
+      ansible.builtin.command:
+        argv: [systemctl, stop, docker-engine-guard-probe.service]
+      become: true
+      changed_when: true
+      failed_when: false
+
     - name: Remove the probe's permission, unit and drop-in
       ansible.builtin.file:
         path: "{{ item }}"
