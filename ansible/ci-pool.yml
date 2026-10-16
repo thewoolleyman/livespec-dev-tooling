@@ -60,6 +60,17 @@
 # whole subject is a CI tier or a CI job's execution environment are gated on
 # it below.
 #
+# A FOURTH AXIS, AND IT IS A DIFFERENT QUESTION AGAIN (livespec-dev-tooling-due2h6).
+# `cluster_role` answers "server or agent"; `CI_NODE_FACILITIES` answers "does
+# this node execute CI jobs". NEITHER answers "can this node take a FACTORY
+# pod", and all three current answers to that are `true` — including
+# poweredge-xubuntu, which is the server, carries every CI tier, and runs factory
+# pods too (maintainer ruling 2026-10-13). That posture is the profile's own
+# `FACTORY_NODE`, the same key the factory node LABEL is rendered from, and
+# `factory_workspace_root` is gated on it below: the node that advertises factory
+# capacity is exactly the node that must already carry the ONE workspace root the
+# kubernetes-sandbox-backend plugin's single `workspace_root` names.
+#
 # THE GATES LIVE HERE, IN THE ONE PLAY, rather than in a second play or a
 # self-gate inside each role (maintainer ruling 2026-10-13). §"Runner-pool node
 # rebuild recipe" requires ONE procedure, and a reader asking "what does this
@@ -92,17 +103,20 @@
   hosts: ci_pool
   gather_facts: true
   vars:
-    # The node's own committed profile, and the ONE posture fact read out of it.
+    # The node's own committed profile, and the TWO posture facts read out of it.
     # Read on the CONTROLLER, because the profile lives in this repository and
     # the target has no checkout — the same `lookup` + `regex_findall | first`
-    # chain every role in this tree reads a profile with. The default is the
-    # parser's own (`full`), so a profile written before the key existed
-    # resolves to the posture it already has rather than to an error.
+    # chain every role in this tree reads a profile with. Each default is the
+    # parser's own, so a profile written before the key existed resolves to the
+    # posture it already has rather than to an error.
     ci_pool_profile: >-
       {{ playbook_dir }}/../ci-runner/k3s/phase0-bare-metal/profiles/{{ inventory_hostname }}.env
     ci_pool_ci_node_facilities: >-
       {{ lookup('ansible.builtin.file', ci_pool_profile)
       | regex_findall('^CI_NODE_FACILITIES=(.*)$', multiline=True) | first | default('full') }}
+    ci_pool_factory_node: >-
+      {{ lookup('ansible.builtin.file', ci_pool_profile)
+      | regex_findall('^FACTORY_NODE=(.*)$', multiline=True) | first | default('false') }}
   roles:
     # 1/10 — k3s config (server or agent); self-gated.
     - role: k3s_config
@@ -141,6 +155,17 @@
     # server's converge, not this role).
     - role: apparmor_profile
       tags: [apparmor_profile]
+    # Beside it, and for the same reason it runs on a node that executes no CI
+    # job: the ONE workspace root a factory pod's `workspace_root` resolves to.
+    # A pod whose hostPath root the node has not prepared fails for a reason
+    # nothing in the pod explains, exactly as one naming an unloaded confinement
+    # profile does — so the directory exists BEFORE the credential -> capacity ->
+    # taint chain below opens this node for scheduling. Gated on the THIRD axis
+    # (see the header): FACTORY_NODE, not `cluster_role` and not
+    # CI_NODE_FACILITIES.
+    - role: factory_workspace_root
+      tags: [factory_workspace_root]
+      when: ci_pool_factory_node == 'true'
     # Before 4/10 — mint+deliver the agent's scoped node-status credential, so
     # the reapply timer below has something to authenticate with (agent-only,
     # self-gated).

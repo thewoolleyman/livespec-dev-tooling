@@ -1,0 +1,61 @@
+---
+# Defaults for factory_workspace_root — the ONE workspace directory every
+# FACTORY-labelled `ci_pool` node offers the kubernetes-sandbox-backend plugin.
+#
+# WHY THE PATH IS A DEFAULT AND NOT A LITERAL IN THE TASK. The plugin takes ONE
+# `workspace_root` for the whole backend (livespec-orchestrator-beads-fabro plan
+# `kubernetes-sandbox-backend`, epic bd-ib-nmuyjc, research note 003 §7.3), so
+# this value is an agreement with another repository rather than a local
+# preference: every node that can take a factory pod must answer to the SAME
+# absolute path, and a reader asking "which path" must be able to resolve it
+# without parsing a task body. The same reasoning ../node_labels/defaults holds
+# its factory label key and value under.
+factory_workspace_root_path: /srv/factory-workspaces
+
+# ROOT-OWNED AND 0755, because of what runs in the pod rather than what is tidy.
+# The sandbox image's `Config.User` is EMPTY (the backend plan's 2026-10-16
+# correction), so a factory pod runs as root until the plugin's pod spec says
+# otherwise: root:root is writable by the pod as it stands today, and 0755 keeps
+# it readable for an operator reading a workspace after a run without making it
+# world-writable scratch that anything on the node may fill.
+factory_workspace_root_owner: root
+factory_workspace_root_group: root
+# QUOTED, and the quoting is load-bearing rather than stylistic: an unquoted
+# 0755 is YAML's octal-looking INTEGER 755, which `ansible.builtin.file` applies
+# as mode 0o1363 (`-wx-wx-wt`) — a mode that reads plausible in a diff and is
+# nothing anyone meant.
+factory_workspace_root_mode: "0755"
+
+# THE PATH'S OWN ANCESTRY, longest-last. The role resolves the filesystem
+# SERVING the workspace root out of the play's gathered `ansible_mounts` by
+# EXACT membership in this list, then takes the longest match — the mount whose
+# target is the deepest ancestor of the path is the one that serves it, and for
+# a chain of prefixes a lexicographic sort is a depth sort.
+#
+# Exact membership rather than a prefix test, because the obvious prefix tests
+# are both wrong here: Jinja's `in` test against the path STRING is a SUBSTRING
+# match, which a mount at `/factory-workspaces` would satisfy, and a
+# `match` test would need the path regex-escaped at every use.
+#
+# IT MUST BE THE PATH'S WHOLE ANCESTRY: the role REFUSES when this list is not
+# as long as the path is deep, so deepening `factory_workspace_root_path`
+# without extending this list fails loudly instead of resolving a shallower
+# ancestor's filesystem and reporting it as the answer.
+#
+# DECLARED AS A FLOW SEQUENCE, on one line, deliberately: it is one fact (an
+# ancestry) rather than a list of independent values, and the repository test
+# reads both this and the fstype list below as a `key: value` line.
+factory_workspace_root_lineage: [/srv/factory-workspaces, /srv, /]
+
+# The filesystem types a workspace root must NOT be served from. The work-item
+# requires the path to be persistent and non-tmpfs, and that is a property of
+# the HOST, so the role measures it rather than asserting it in prose.
+#
+# `tmpfs` and `ramfs` lose every byte at a reboot. `devtmpfs` is the kernel's
+# own device filesystem and nothing may put state there. `overlay` is here
+# because a root filesystem that is an overlay is a container's, not a node's:
+# on such a host the directory would be created inside an ephemeral upper layer.
+# Measured 2026-10-16 (work-item livespec-dev-tooling-due2h6): /srv is on each
+# pool node's ext4 root filesystem, so this refusal fires on none of the three
+# and would fire the moment one of them changed.
+factory_workspace_root_volatile_fstypes: [tmpfs, ramfs, devtmpfs, overlay]
