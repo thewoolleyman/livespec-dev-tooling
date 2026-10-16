@@ -36,6 +36,7 @@ import pytest
 __all__: list[str] = []
 
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
+_HOSTOPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_hostops"
 _RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_runner"
 _RUNNER_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_runner.py")
 _FIREWALL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_firewall"
@@ -44,6 +45,8 @@ _ACTIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_firewall_acti
 _ACTIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_firewall_actions.py")
 _NETSTATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_netstate"
 _NETSTATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_netstate.py")
+_UNITS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_units"
+_UNITS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_units.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -635,3 +638,63 @@ def test_forward_restore_puts_each_family_s_recorded_policy_back(tmp_path: Path)
         ("ip6tables-nft", "-t", "filter", "-P", "FORWARD", "ACCEPT"),
     )
     assert set(commands.timeouts) == {actions.FIREWALL_TIMEOUT_SECONDS}
+
+
+# `systemctl list-jobs` as the real tool prints it: four columns, leading
+# whitespace, and a footer line that is NOT a job. The k3s row is the
+# control -- cancelling it would stop the very agent the guard exists to
+# protect.
+_LIST_JOBS = (
+    "  11 docker.service     start waiting\n"
+    "  12 k3s-agent.service  start running\n"
+    "  13 containerd.service start waiting\n"
+    "  14 docker.socket      start waiting\n"
+    "\n"
+    "4 jobs listed.\n"
+)
+
+_LIST_JOBS_ARGV = ("systemctl", "list-jobs", "--no-legend", "--no-pager")
+
+
+def _unit_bus(*, answers: dict[tuple[str, ...], str] | None = None) -> _Commands:
+    """A recorded bus answering the unit reads this host performs."""
+    return _Commands(answers={_LIST_JOBS_ARGV: _LIST_JOBS, **(answers or {})})
+
+
+def test_job_cancellation_names_only_the_guarded_units_queued_job_ids(
+    tmp_path: Path,
+) -> None:
+    """`systemctl cancel` with ids, never bare, and never k3s's id.
+
+    A bare `systemctl cancel` cancels the WHOLE queue, which on this host
+    includes `k3s-agent.service` -- the unit whose death is the lockout the
+    guard exists to prevent. So the ids are read from the live queue and
+    intersected with the guarded units, and a cancellation with nothing to
+    cancel issues no command at all rather than a bare one.
+    """
+    assert _UNITS_PATH.is_file()
+    commands = _unit_bus()
+    host = _real_host(root=tmp_path, commands=commands)
+
+    assert host.queued_jobs() == tuple(
+        importlib.import_module(_HOSTOPS_MODULE).QueuedJob(job_id=job_id, unit=unit)
+        for job_id, unit in (
+            ("11", "docker.service"),
+            ("12", "k3s-agent.service"),
+            ("13", "containerd.service"),
+            ("14", "docker.socket"),
+        )
+    )
+
+    host.cancel_jobs(job_ids=("11", "12", "13", "14", "15"))
+
+    assert tuple(commands.argvs) == (
+        _LIST_JOBS_ARGV,
+        _LIST_JOBS_ARGV,
+        ("systemctl", "cancel", "11", "13", "14"),
+    )
+
+    quiet = _unit_bus()
+    _real_host(root=tmp_path, commands=quiet).cancel_jobs(job_ids=("12",))
+
+    assert tuple(quiet.argvs) == (_LIST_JOBS_ARGV,)
