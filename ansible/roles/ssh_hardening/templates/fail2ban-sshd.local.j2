@@ -1,0 +1,12 @@
+# Protect the public OpenSSH endpoint without changing other firewall policy.
+[sshd]
+enabled = true
+backend = systemd
+port = {{ ssh_hardening_port }}
+banaction = nftables-multiport
+maxretry = 5
+findtime = 10m
+bantime = 1h
+bantime.increment = true
+bantime.maxtime = 1d
+usedns = no

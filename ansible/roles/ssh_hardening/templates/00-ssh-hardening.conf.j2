@@ -1,0 +1,23 @@
+{#
+  Rendered byte-for-byte as the live drop-in on the vps host (installed there
+  on 2026-10-02 by vps-info services/ssh-hardening/install.sh, the approved
+  design). The first comment line still names that installer ON PURPOSE: any
+  change to the rendered bytes is a change the role must apply and a reload it
+  must perform, so rewording it is a deliberate follow-up, not a side effect.
+
+  The 00- prefix is load-bearing: sshd takes the FIRST value it obtains for
+  each keyword and the Include glob expands lexically, so this file must sort
+  ahead of cloud-init's 50- drop-in, which sets PasswordAuthentication.
+#}
+# Managed by vps-info/services/ssh-hardening/install.sh.
+# Public IPv4 only; Tailscale SSH owns incoming tailnet port 22 independently.
+# The 00- prefix takes precedence over Ubuntu cloud-init defaults.
+ListenAddress {{ ssh_hardening_public_address }}:{{ ssh_hardening_port }}
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+PermitEmptyPasswords no
+PubkeyAuthentication yes
+MaxAuthTries {{ ssh_hardening_max_auth_tries }}
+LoginGraceTime {{ ssh_hardening_login_grace_time }}
+MaxStartups {{ ssh_hardening_max_startups }}

@@ -1,32 +1,50 @@
 ---
-# ssh_hardening — key-only public SSH on the vps host.
+# ssh_hardening — the public OpenSSH endpoint on the dev host: key-only except
+# for one named account, bound to the public address only, behind fail2ban.
 #
-# Replaces vps-info services/ssh-hardening/install.sh. ROOT-SCOPE: it writes
-# into /etc/ssh/sshd_config.d and reloads a system unit; the shell installer
-# refuses unless EUID is 0.
+# Replaces vps-info services/ssh-hardening/install.sh (commits 011bb42 and
+# 92d265d, 2026-10-02) and renders exactly the files that installer left on
+# the live host, so converging a host it already installed changes nothing and
+# reloads nothing. ROOT-SCOPE: it writes under /etc and reloads system units.
 #
-# CONFIG-ONLY SERVICE. This role tunes an OS unit through a drop-in. It does
-# NOT own that unit's enablement, so nothing here enables ssh.service — the
-# daemon's presence and enablement are the operating system's business, and
-# claiming them would make this role responsible for a state it never set.
+# What it owns: the sshd drop-in, the password Match file and the Include
+# line that makes it the last directive of sshd_config, the ssh.socket
+# listener drop-in, and the fail2ban sshd jail together with fail2ban's
+# packages and enablement. What it does NOT own: ssh.service and ssh.socket
+# enablement (the operating system's), the password itself (out of band,
+# HOST_VARS.md), and Tailscale SSH (tailscale-admin/policy.hujson).
 #
 # THE RISK THIS ROLE CARRIES. A bad sshd configuration locks every remote
-# session out of the host. Three separate things stand in the way, in order:
+# session out of the host. Four separate things stand in the way, in order:
 #
-#   1. `validate:` on the copy below runs `sshd -t` against the STAGED file, so
-#      a syntactically bad drop-in is never installed at all. The shell wrote
-#      the file first and tested afterwards, which leaves the broken file on
-#      disk when the test fails.
-#   2. The effective-configuration assert runs while the daemon is still
-#      running its OLD configuration, because the reload is a HANDLER and
-#      handlers are flushed after it. A failed assert therefore leaves the
-#      running daemon untouched.
-#   3. That assert refuses to let the reload proceed unless public-key
-#      authentication is still enabled — the one setting whose loss, combined
-#      with password authentication being off, is unrecoverable over SSH.
+#   1. `validate:` on every sshd file below runs `sshd -t` against the STAGED
+#      file, so a syntactically bad file is never installed at all.
+#   2. The effective-configuration proof runs while the daemon is still
+#      running its OLD configuration, because every reload and restart is a
+#      HANDLER and handlers are flushed after it. A failed proof therefore
+#      leaves the running daemon untouched.
+#   3. That proof evaluates the configuration per connection context
+#      (`sshd -T -C`), the way the Match block sees it: the password account on
+#      the public address must get password authentication, and root, any
+#      other account, and the password account on every other local address
+#      must not. Public-key authentication must survive in every context.
+#   4. A listener change restarts ssh.socket only after confirming
+#      ssh.service runs with KillMode=process, the setting under which a stop
+#      leaves established sessions alive.
 #
 # Tailscale SSH is an independent recovery path that does not read this
-# configuration at all; it is governed by tailscale-admin/policy.hujson.
+# configuration at all.
+
+- name: Require the per-host values
+  ansible.builtin.assert:
+    that:
+      - ssh_hardening_public_address | length > 0
+      - ssh_hardening_password_user | length > 0
+    fail_msg: >-
+      ssh_hardening_public_address and ssh_hardening_password_user must be set
+      in this host's host_vars (see the role's HOST_VARS.md). Nothing has been
+      changed.
+    quiet: true
 
 - name: Remove the legacy hand-applied sshd drop-in
   ansible.builtin.file:
@@ -36,12 +54,11 @@
   notify: Reload sshd
 
 - name: Install the sshd hardening drop-in
-  # `validate:` is the shell's `sshd -t`, moved to before the file exists.
-  # It parses the staged copy as a configuration in its own right, which is
-  # what catches a malformed directive; the effective-value check below is
-  # what catches a drop-in that parses but does not win.
-  ansible.builtin.copy:
-    src: "{{ ssh_hardening_dropin_name }}"
+  # `validate:` parses the staged copy as a configuration in its own right,
+  # which is what catches a malformed directive; the effective-value proof
+  # below is what catches a drop-in that parses but does not win.
+  ansible.builtin.template:
+    src: 00-ssh-hardening.conf.j2
     dest: "{{ ssh_hardening_dropin_dir }}/{{ ssh_hardening_dropin_name }}"
     owner: root
     group: root
@@ -50,60 +67,161 @@
   become: true
   notify: Reload sshd
 
+- name: Install the password Match file
+  ansible.builtin.template:
+    src: password-match.conf.j2
+    dest: "{{ ssh_hardening_password_match_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "{{ ssh_hardening_sshd_bin }} -t -f %s"
+  become: true
+  notify: Reload sshd
+
+- name: Include the password Match file at the end of sshd_config
+  # Appended only when absent; the ordering assert below refuses a file in
+  # which the line exists but is no longer last.
+  ansible.builtin.lineinfile:
+    path: "{{ ssh_hardening_sshd_config }}"
+    line: "Include {{ ssh_hardening_password_match_path }}"
+    insertafter: EOF
+    validate: "{{ ssh_hardening_sshd_bin }} -t -f %s"
+  become: true
+  register: ssh_hardening_include
+  notify: Reload sshd
+
+- name: Prove the Match Include is the last active directive
+  # A Match block applies to every directive after it until the next Match,
+  # so a global directive appended after the Include would apply only to the
+  # password account's connections. Runs under --check too, except when the
+  # dry run itself withheld the append.
+  when: not (ansible_check_mode and ssh_hardening_include is changed)
+  block:
+    - name: Read sshd_config
+      ansible.builtin.slurp:
+        src: "{{ ssh_hardening_sshd_config }}"
+      become: true
+      register: ssh_hardening_sshd_config_raw
+
+    - name: Refuse unless the Include is the last active line
+      vars:
+        active_lines: >-
+          {{ (ssh_hardening_sshd_config_raw.content | b64decode).splitlines()
+             | map('trim') | reject('equalto', '')
+             | reject('match', '#') | list }}
+      ansible.builtin.assert:
+        that:
+          - active_lines | last == 'Include ' ~ ssh_hardening_password_match_path
+        fail_msg: >-
+          {{ ssh_hardening_sshd_config }} has active directives after
+          `Include {{ ssh_hardening_password_match_path }}`. Move them above it.
+          The daemon has NOT been reloaded.
+        quiet: true
+
+- name: Create the ssh.socket drop-in directory
+  ansible.builtin.file:
+    path: "{{ ssh_hardening_socket_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Bind ssh.socket to the public address only
+  ansible.builtin.template:
+    src: ssh-socket-listen.conf.j2
+    dest: "{{ ssh_hardening_socket_dropin_dir }}/{{ ssh_hardening_socket_dropin_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Replace the ssh listeners
+
 - name: Prove the new configuration before reloading the daemon
-  # Deliberately skipped under --check. This is a POST-INSTALL verification,
-  # not a precondition: `sshd -T` reports the effective configuration of the
-  # drop-in set ON DISK, and under a dry run this role's drop-in is a would-be
-  # write. On an un-hardened host it would report the pre-hardening values and
-  # this assert would blame the host for the dry run's own restraint.
-  #
-  # This does NOT weaken the pre-activation gate. That gate is the `validate:`
-  # argument on the copy above, which runs against the candidate file before
-  # the module writes anything, INCLUDING under --check. The two mechanisms
-  # are separate: `validate:` proves the drop-in parses, this proves it wins.
+  # Deliberately skipped under --check. `sshd -T` reports the effective
+  # configuration of the files ON DISK, and under a dry run this role's files
+  # are would-be writes, so on an unconverged host it would report the old
+  # values and blame the host for the dry run's own restraint. The
+  # pre-activation gate under --check is `validate:` on each file above.
   when: not ansible_check_mode
   block:
-    - name: Read the effective sshd configuration
-      # Kept as a command rather than folded into `validate:`, deliberately.
-      # `sshd -T` resolves the WHOLE include set — this drop-in together with
-      # cloud-init's and anything else in the directory — so it answers a
-      # question the staged-file validation structurally cannot: which value
-      # actually wins. It reads from disk, not from the running daemon, so it
-      # describes the configuration the pending reload is about to adopt.
+    - name: Read the effective sshd configuration per connection context
+      # Each context is [user, local address, expected PasswordAuthentication].
+      # host and addr describe the client and are arbitrary (TEST-NET-1);
+      # laddr and lport are what the Match block keys on.
       ansible.builtin.command:
         argv:
           - "{{ ssh_hardening_sshd_bin }}"
           - -T
+          - -C
+          - "user={{ item[0] }},host=client,addr=192.0.2.10,laddr={{ item[1] }},lport={{ ssh_hardening_port }}"
       become: true
-      register: ssh_hardening_effective
       changed_when: false
+      register: ssh_hardening_effective
+      loop: >-
+        {{ [[ssh_hardening_password_user, ssh_hardening_public_address, 'yes'],
+            ['root', ssh_hardening_public_address, 'no'],
+            ['nobody', ssh_hardening_public_address, 'no']]
+           + ([ssh_hardening_password_user]
+              | product(ssh_hardening_negative_control_addresses, ['no'])
+              | map('list') | list) }}
+      loop_control:
+        label: "{{ item[0] }}@{{ item[1] }} expects password {{ item[2] }}"
 
-    - name: Refuse to reload unless the hardening took and key auth survives
+    - name: Refuse to reload unless every context gets the intended settings
       # `sshd -T` canonicalises `prohibit-password` to its older synonym
       # `without-password`, so both spellings are accepted.
       ansible.builtin.assert:
         that:
-          - ssh_hardening_effective.stdout is search('(?im)^passwordauthentication no$')
-          - ssh_hardening_effective.stdout is search('(?im)^kbdinteractiveauthentication no$')
+          - item.stdout is search('(?im)^passwordauthentication ' ~ item.item[2] ~ '$')
+          - item.stdout is search('(?im)^pubkeyauthentication yes$')
+          - item.stdout is search('(?im)^kbdinteractiveauthentication no$')
+          - item.stdout is search('(?im)^permitemptypasswords no$')
+          - item.stdout is search('(?im)^permitrootlogin (prohibit-password|without-password)$')
           - >-
-            ssh_hardening_effective.stdout is
-            search('(?im)^permitrootlogin (prohibit-password|without-password)$')
-          - ssh_hardening_effective.stdout is search('(?im)^pubkeyauthentication yes$')
+            item.stdout | regex_findall('(?im)^listenaddress .*$')
+            == ['listenaddress ' ~ ssh_hardening_public_address ~ ':' ~ ssh_hardening_port]
         fail_msg: >-
-          the effective sshd configuration is not what this role installs, or
-          public-key authentication is off. The daemon has NOT been reloaded and
-          is still running its previous configuration. Inspect
-          `{{ ssh_hardening_sshd_bin }} -T` and the other drop-ins in
+          the effective sshd configuration for {{ item.item[0] }} on
+          {{ item.item[1] }} is not what this role installs, or public-key
+          authentication is off. The daemon has NOT been reloaded and is still
+          running its previous configuration. Inspect
+          `{{ ssh_hardening_sshd_bin }} -T -C ...` and the other files in
           {{ ssh_hardening_dropin_dir }} before disconnecting.
-        success_msg: >-
-          public SSH will be key-only, root login key-only, public-key auth intact
+        quiet: true
+      loop: "{{ ssh_hardening_effective.results }}"
+      loop_control:
+        label: "{{ item.item[0] }}@{{ item.item[1] }}"
 
-- name: Reload sshd now that the configuration is proven
-  # Flushed inside the role rather than at the end of the play, so the reload
-  # and the check that follows it belong to the same unit of work.
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name: "{{ ssh_hardening_fail2ban_packages }}"
+    state: present
+  become: true
+
+- name: Install the fail2ban sshd jail
+  ansible.builtin.template:
+    src: fail2ban-sshd.local.j2
+    dest: "{{ ssh_hardening_fail2ban_jail_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart fail2ban
+
+- name: Enable fail2ban
+  ansible.builtin.systemd_service:
+    name: "{{ ssh_hardening_fail2ban_service_name }}"
+    enabled: true
+    state: started
+  become: true
+
+- name: Apply pending sshd and fail2ban changes now that they are proven
+  # Flushed inside the role rather than at the end of the play, so the
+  # reload and the checks that follow it belong to the same unit of work.
   ansible.builtin.meta: flush_handlers
 
-- name: Confirm the daemon survived the reload
+- name: Confirm the daemons survived
   # Deliberately skipped under --check: a dry run performs no reload, so there
   # is no reload for this to have survived.
   when: not ansible_check_mode
@@ -112,12 +230,32 @@
       ansible.builtin.service_facts:
       become: true
 
-    - name: Require the ssh daemon to still be running
+    - name: Require the ssh daemon and fail2ban to still be running
       ansible.builtin.assert:
         that:
           - ssh_hardening_service_name in ansible_facts['services']
           - ansible_facts['services'][ssh_hardening_service_name]['state'] == 'running'
+          - ssh_hardening_fail2ban_service_name in ansible_facts['services']
+          - ansible_facts['services'][ssh_hardening_fail2ban_service_name]['state'] == 'running'
         fail_msg: >-
-          {{ ssh_hardening_service_name }} is not running after the reload. Do not
-          disconnect: recover over Tailscale SSH or the provider console.
-        success_msg: "{{ ssh_hardening_service_name }} is running"
+          {{ ssh_hardening_service_name }} or {{ ssh_hardening_fail2ban_service_name }}
+          is not running. Do not disconnect: recover over Tailscale SSH or the
+          provider console.
+        success_msg: "{{ ssh_hardening_service_name }} and {{ ssh_hardening_fail2ban_service_name }} are running"
+
+    - name: Read the TCP listeners on the ssh port
+      ansible.builtin.command:
+        argv: [ss, -H, -ltn, "sport = :{{ ssh_hardening_port }}"]
+      changed_when: false
+      register: ssh_hardening_listeners
+
+    - name: Require exactly the public listener
+      ansible.builtin.assert:
+        that:
+          - >-
+            ssh_hardening_listeners.stdout_lines | map('split') | map(attribute=3) | list
+            == [ssh_hardening_public_address ~ ':' ~ ssh_hardening_port]
+        fail_msg: >-
+          port {{ ssh_hardening_port }} is not served by exactly
+          {{ ssh_hardening_public_address }}: {{ ssh_hardening_listeners.stdout_lines }}
+        quiet: true

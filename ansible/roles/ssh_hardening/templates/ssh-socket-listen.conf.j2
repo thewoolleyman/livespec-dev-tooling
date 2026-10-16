@@ -1,0 +1,11 @@
+{#
+  Ubuntu runs OpenSSH socket-activated: ssh.socket, not sshd_config, owns the
+  listening sockets. The empty ListenStream= clears the distro's wildcard
+  listeners, so the daemon is reachable only on the public address. Tailscale
+  SSH answers the tailnet address in tailscaled's own network stack and is not
+  affected.
+#}
+# Reset the distro wildcard listeners; keep public IPv4 port {{ ssh_hardening_port }} only.
+[Socket]
+ListenStream=
+ListenStream={{ ssh_hardening_public_address }}:{{ ssh_hardening_port }}
