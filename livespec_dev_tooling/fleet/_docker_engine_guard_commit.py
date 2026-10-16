@@ -31,6 +31,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_records import (
     CHALLENGE_MAX_AGE_SECONDS,
     consumed_nonces,
     evidence_passed,
+    owned_keys_digest,
     publish_marker,
     read_challenge,
     record_consumed_nonce,
@@ -87,7 +88,7 @@ def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     if refusal:
         return GuardOutcome(operation="confirm", run=run, verdict="refuse", reason=refusal)
     record_consumed_nonce(paths=env.paths, run=run, nonce=answer)
-    publish_marker(paths=env.paths, run=run)
+    publish_marker(paths=env.paths, run=run, digest=owned_keys_digest(paths=env.paths, run=run))
     record_phase(paths=env.paths, run=run, phase="committed")
     return GuardOutcome(
         operation="confirm", run=run, verdict=decision.verdict, reason="the run is committed"
