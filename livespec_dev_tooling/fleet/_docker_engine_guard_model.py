@@ -24,8 +24,11 @@ from pathlib import Path
 from typing import Final, Literal, get_args
 
 __all__: list[str] = [
+    "DEADLINE_MARGIN_SECONDS",
     "DEFAULT_RUNTIME_ROOT",
     "DEFAULT_STATE_ROOT",
+    "DEFAULT_WINDOW_SECONDS",
+    "GUARD_EXECUTABLE",
     "INSTALL_PHASES",
     "OPERATIONS",
     "PHASES",
@@ -39,7 +42,10 @@ __all__: list[str] = [
     "Operation",
     "Phase",
     "Verdict",
+    "deadline_seconds",
+    "deadman_argv",
     "operation_budget_seconds",
+    "rollback_argv",
 ]
 
 Phase = Literal[
@@ -107,6 +113,97 @@ def operation_budget_seconds(*, operation: Operation, window_seconds: int) -> in
     """
     window = window_seconds if operation == "observe" else 0
     return _BASE_BUDGET_SECONDS[operation] + window
+
+
+# Where the role installs this executable on the guarded host, and so the
+# command every transient unit the guard arms runs.
+GUARD_EXECUTABLE: Final[Path] = Path("/usr/local/libexec/docker-engine-guard")
+
+# The observation window at the resync periods measured on 2026-10-15. The
+# role overrides it with the window its preflight derives from the host's
+# own effective k3s intervals; this is the value a guard invoked without
+# one assumes, and it is deliberately the LONGER of the measured defaults.
+DEFAULT_WINDOW_SECONDS: Final[int] = 420
+
+# Slack between the work the deadline has to cover and the deadline
+# itself, so an operation that runs to the end of its own budget does not
+# lose the run to the dead-man by seconds.
+DEADLINE_MARGIN_SECONDS: Final[int] = 300
+
+# How often the dead-man re-fires after each rollback it runs, until a
+# rollback outcome or a confirmation stops it.
+DEADMAN_REPEAT_SECONDS: Final[int] = 60
+
+
+def deadline_seconds(*, window_seconds: int) -> int:
+    """N: how far ahead of arming the run's deadline is recorded.
+
+    Derived from the same budget table the role passes to each
+    operation's unit rather than written down beside it, so a budget
+    that moves moves the deadline with it instead of leaving a dead-man
+    that fires in the middle of an observation window.
+    """
+    covered = ("start", "observe", "confirm")
+    return (
+        sum(
+            operation_budget_seconds(operation=operation, window_seconds=window_seconds)
+            for operation in covered
+        )
+        + DEADLINE_MARGIN_SECONDS
+    )
+
+
+def deadman_argv(*, run: str, on_active_seconds: int) -> tuple[str, ...]:
+    """The `systemd-run` that arms this run's dead-man.
+
+    `--on-active` is the interval REMAINING to the already-recorded
+    deadline, not N, so a delayed arming still fires at the recorded
+    instant. `--on-unit-inactive` makes it re-fire after each rollback
+    it runs, which is what lets a rollback killed half way simply be
+    repeated a minute later. Its service budget is the whole rollback
+    budget, so the primary rollback is never killed before its final
+    postcondition check.
+    """
+    rollback_budget = operation_budget_seconds(operation="rollback", window_seconds=0)
+    return (
+        "systemd-run",
+        "--collect",
+        f"--unit=docker-engine-deadman-{run}",
+        f"--on-active={on_active_seconds}",
+        f"--on-unit-inactive={DEADMAN_REPEAT_SECONDS}",
+        "--timer-property=AccuracySec=1s",
+        f"--property=TimeoutStartSec={rollback_budget}",
+        str(GUARD_EXECUTABLE),
+        "rollback",
+        run,
+    )
+
+
+def rollback_argv(*, run: str) -> tuple[str, ...]:
+    """The `systemd-run` that starts a rollback as its own transient unit.
+
+    Used where a rollback must be TRIGGERED by something already holding
+    the lock, which cannot call the rollback entry in-process without
+    deadlocking on that lock. `--no-block` so the trigger does not wait
+    on it, and the unit name carries the run so a second trigger while
+    one is already running is refused by the service manager rather than
+    starting a second driver.
+    """
+    rollback_budget = operation_budget_seconds(operation="rollback", window_seconds=0)
+    return (
+        "systemd-run",
+        "--collect",
+        "--no-block",
+        f"--unit=docker-engine-guard-rollback-{run}",
+        "--property=Type=oneshot",
+        f"--property=TimeoutStartSec={rollback_budget}",
+        "--property=TimeoutStopSec=30",
+        "--property=KillMode=control-group",
+        "--property=SendSIGKILL=yes",
+        str(GUARD_EXECUTABLE),
+        "rollback",
+        run,
+    )
 
 
 # How the commit marker reads for the run an operation was invoked on.

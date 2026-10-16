@@ -1085,3 +1085,144 @@ def test_publish_stays_at_publishing_when_the_post_install_condition_check_fails
     assert outcome.verdict == "refuse"
     assert outcome.exit_code == 1
     assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "publishing"
+
+
+def test_the_deadline_interval_covers_start_observe_and_confirm_plus_a_margin(
+    tmp_path: Path,
+) -> None:
+    """Design H4: N is what `arm` records ahead of now, and it is derived, not guessed.
+
+    Derived from the same budget table the role passes to each
+    operation's unit, so a budget that moves moves the deadline with it
+    rather than leaving a dead-man that fires mid-observation.
+    """
+    assert tmp_path.is_dir()
+    model = importlib.import_module(_MODEL_MODULE)
+    assert "deadline_seconds" in model.__all__
+
+    assert model.DEFAULT_WINDOW_SECONDS == _WINDOW_SECONDS
+    expected = 180 + (_WINDOW_SECONDS + 300) + 120 + model.DEADLINE_MARGIN_SECONDS
+    assert model.deadline_seconds(window_seconds=_WINDOW_SECONDS) == expected
+
+
+def test_arm_records_the_deadline_as_this_boot_plus_a_monotonic_instant(
+    tmp_path: Path,
+) -> None:
+    """Specification "Deadline": a boot id and a CLOCK_MONOTONIC instant N ahead.
+
+    Not a wall-clock time: the wall clock can step, and a dead-man that
+    can be moved by NTP is not a dead-man. The boot id rides with it so
+    that a reboot invalidates the instant rather than reinterpreting it.
+    """
+    _entry(name="arm")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.clock = 1_000.0
+    _record_phase(root=tmp_path, run="run-a", phase="published")
+
+    outcome = guard.run_operation(operation="arm", run="run-a", env=_env(root=tmp_path, host=fake))
+
+    paths = _paths(root=tmp_path)
+    assert outcome.exit_code == 0
+    assert state.read_phase(paths=paths, run="run-a") == "armed"
+    recorded = state.read_deadline(paths=paths, run="run-a")
+    assert recorded.boot_id == "boot-a"
+    assert recorded.monotonic == 1_000.0 + model.deadline_seconds(window_seconds=_WINDOW_SECONDS)
+
+
+def test_arm_passes_the_remaining_interval_and_the_sixty_second_repeat_to_the_dead_man(
+    tmp_path: Path,
+) -> None:
+    """Specification "Arm and the dead-man": on-active is RECOMPUTED at arming.
+
+    A run whose deadline was recorded and whose arming was then delayed
+    must not get the full interval over again -- the timer has to fire
+    at the instant already recorded, which is the only instant every
+    later decision compares against.
+    """
+    _entry(name="arm")
+    guard = _guard_surface()
+    model = importlib.import_module(_MODEL_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.clock = 1_100.0
+    _record_phase(root=tmp_path, run="run-a", phase="published")
+    total = model.deadline_seconds(window_seconds=_WINDOW_SECONDS)
+    _arm_deadline(root=tmp_path, run="run-a", boot="boot-a", at=1_000.0 + total)
+
+    outcome = guard.run_operation(operation="arm", run="run-a", env=_env(root=tmp_path, host=fake))
+
+    assert outcome.exit_code == 0
+    argv = fake.calls_named(name="systemd_run")[0].detail
+    assert argv[0] == "systemd-run"
+    assert "--collect" in argv
+    assert "--unit=docker-engine-deadman-run-a" in argv
+    assert f"--on-active={total - 100}" in argv
+    assert "--on-unit-inactive=60" in argv
+    assert "--timer-property=AccuracySec=1s" in argv
+    assert "--property=TimeoutStartSec=900" in argv
+    assert argv[-2:] == ("rollback", "run-a")
+    assert argv[-3] == str(model.GUARD_EXECUTABLE)
+
+
+def test_a_retried_arm_keeps_the_first_deadline_and_creates_no_second_timer(
+    tmp_path: Path,
+) -> None:
+    """Specification "Arm and the dead-man": idempotent, and the deadline never extends.
+
+    A retry that re-armed would push the deadline out every time it ran,
+    which is the one failure mode a dead-man cannot have: the run would
+    keep buying itself time by retrying.
+    """
+    _entry(name="arm")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.clock = 1_000.0
+    _record_phase(root=tmp_path, run="run-a", phase="published")
+
+    first = guard.run_operation(operation="arm", run="run-a", env=_env(root=tmp_path, host=fake))
+    assert first.exit_code == 0
+    paths = _paths(root=tmp_path)
+    recorded = state.read_deadline(paths=paths, run="run-a")
+
+    state.record_phase(paths=paths, run="run-a", phase="published")
+    fake.clock = 1_500.0
+    fake.deadman_units = {"docker-engine-deadman-run-a"}
+
+    retried = guard.run_operation(operation="arm", run="run-a", env=_env(root=tmp_path, host=fake))
+
+    assert retried.exit_code == 0
+    assert state.read_deadline(paths=paths, run="run-a") == recorded
+    assert len(fake.calls_named(name="systemd_run")) == 1
+    assert state.read_phase(paths=paths, run="run-a") == "armed"
+
+
+def test_arm_refuses_and_triggers_a_rollback_when_any_account_is_in_the_docker_group(
+    tmp_path: Path,
+) -> None:
+    """Specification "Arm and the dead-man": the install created the group; re-check it.
+
+    `reserve` checked the group before the packages existed, so this is
+    the FIRST moment the check can see what the install created. Nothing
+    may be granted past it: a member of the `docker` group is a second
+    party on the API, and the run is rolled back rather than merely
+    stopped, because the inert install is already on the host.
+    """
+    _entry(name="arm")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.docker_group = ("ci",)
+    _record_phase(root=tmp_path, run="run-a", phase="published")
+
+    outcome = guard.run_operation(operation="arm", run="run-a", env=_env(root=tmp_path, host=fake))
+
+    paths = _paths(root=tmp_path)
+    assert outcome.verdict == "refuse"
+    assert "ci" in outcome.reason
+    assert state.read_phase(paths=paths, run="run-a") == "published"
+    assert state.read_deadline(paths=paths, run="run-a") is None
+    assert fake.calls_named(name="systemd_run")[0].detail == model.rollback_argv(run="run-a")
