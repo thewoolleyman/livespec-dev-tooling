@@ -37,10 +37,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardOutcome
+from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardOutcome, rollback_argv
+from livespec_dev_tooling.fleet._docker_engine_guard_records import (
+    Evidence,
+    owned_keys_digest,
+    write_evidence,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_state import read_phase, record_phase
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
@@ -61,6 +68,64 @@ SAMPLE_INTERVAL_SECONDS: Final[int] = 15
 # carried forward.
 _CLAIMED: Final[str] = "observing"
 
+# The one key a sample's own record has to carry for the window to go on.
+# Read fail-closed: anything that is not exactly `True` -- a `False`, a
+# missing key, a truthy string -- is a failed sample.
+_PASSED: Final[str] = "passed"
+
+
+def _record_window(
+    *,
+    run: str,
+    env: GuardEnv,
+    window_start: float,
+    samples: Sequence[Mapping[str, object]],
+    failure: str,
+) -> None:
+    """Write this window's evidence record, pass or fail.
+
+    The record carries the run, the boot it ran on, the configuration
+    digest and the window's two ends as well as the samples, because a
+    `confirm` arriving later has to be able to tell this window from one
+    that ran on another boot or against another configuration.
+    """
+    write_evidence(
+        paths=env.paths,
+        run=run,
+        evidence=Evidence(
+            run=run,
+            boot_id=env.host.boot_id(),
+            digest=owned_keys_digest(paths=env.paths, run=run),
+            window_start=window_start,
+            window_end=env.host.monotonic(),
+            samples=tuple(samples),
+            passed=not failure,
+            failure=failure,
+        ),
+    )
+
+
+def _failed_sample(
+    *,
+    run: str,
+    env: GuardEnv,
+    window_start: float,
+    samples: Sequence[Mapping[str, object]],
+) -> GuardOutcome:
+    """Record the failure, start the rollback as its own unit, and exit.
+
+    The rollback cannot be called in process: this invocation holds the
+    guard's one lock and the rollback entry takes that same lock. It is
+    started as its own transient unit instead, and NOT waited for
+    (design H2) -- the observer has nothing left to submit, so
+    rollback's own stop of the observer unit is a no-op and neither
+    waits on the other.
+    """
+    failure = f"sample {len(samples)} of the observation window failed: {dict(samples[-1])}"
+    _record_window(run=run, env=env, window_start=window_start, samples=samples, failure=failure)
+    env.host.systemd_run(argv=rollback_argv(run=run))
+    return GuardOutcome(operation="observe", run=run, verdict="refuse", reason=failure)
+
 
 def observe(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     """Claim the run, then sample the host across the whole observation window.
@@ -72,7 +137,9 @@ def observe(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     admitted from.
     """
     record_phase(paths=env.paths, run=run, phase="observing")
-    window_end = env.host.monotonic() + env.window_seconds
+    window_start = env.host.monotonic()
+    window_end = window_start + env.window_seconds
+    samples: list[Mapping[str, object]] = []
     while env.host.monotonic() < window_end:
         if read_phase(paths=env.paths, run=run) != _CLAIMED:
             return GuardOutcome(
@@ -81,7 +148,9 @@ def observe(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
                 verdict="refuse",
                 reason="the run is no longer observing, so this window is not its window",
             )
-        _ = env.host.sample()
+        samples.append(env.host.sample())
+        if samples[-1].get(_PASSED) is not True:
+            return _failed_sample(run=run, env=env, window_start=window_start, samples=samples)
         env.host.sleep(seconds=SAMPLE_INTERVAL_SECONDS)
     return GuardOutcome(
         operation="observe",
