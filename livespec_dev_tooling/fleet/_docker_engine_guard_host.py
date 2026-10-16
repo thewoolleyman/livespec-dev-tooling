@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions import (
+    remove_footprint,
     write_firewall_snapshot,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_netstate import write_sysctl_snapshot
@@ -167,7 +168,7 @@ class RealHost:
 
     def remove_firewall_footprint(self, *, snapshot: Path) -> tuple[str, ...]:
         """Remove Docker's rule footprint; report every residual Docker rule."""
-        raise NotImplementedError
+        return remove_footprint(runner=self.runner, snapshot=snapshot)
 
     def delete_bridge_interfaces(self) -> tuple[str, ...]:
         """Delete `docker0` and every veth mastered by it; report what went."""
