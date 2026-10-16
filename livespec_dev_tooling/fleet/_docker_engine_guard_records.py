@@ -39,11 +39,13 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardPaths
 
 __all__: list[str] = [
+    "CHALLENGE_MAX_AGE_SECONDS",
     "NONCE_BYTES",
     "OWNED_DAEMON_KEYS",
     "Challenge",
     "Evidence",
     "challenge_path",
+    "consumed_nonces",
     "evidence_passed",
     "evidence_path",
     "fresh_nonce",
@@ -51,10 +53,17 @@ __all__: list[str] = [
     "owned_keys_digest",
     "publish_marker",
     "read_challenge",
+    "record_consumed_nonce",
     "submitted_nonce",
     "write_challenge",
     "write_evidence",
 ]
+
+# How long an answer may take to come back. The controller runs its own
+# probes (a fresh Tailscale SSH session, the LLM health read, a LAN
+# fallback login) only after reading the challenge, so a longer answer
+# than this vouches for a host as it was rather than as it is.
+CHALLENGE_MAX_AGE_SECONDS: Final[int] = 120
 
 # How much entropy a nonce carries. Each passing window's nonce has to
 # differ from every earlier one, and the record of earlier nonces is on
@@ -180,6 +189,30 @@ def evidence_passed(*, paths: GuardPaths, run: str) -> bool:
         json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     )
     return payload.get("passed") is True
+
+
+def _consumed_path(*, paths: GuardPaths, run: str) -> Path:
+    """Where this run's spent nonces are recorded, durably and cumulatively."""
+    return paths.run_dir(run=run) / "consumed-nonces"
+
+
+def consumed_nonces(*, paths: GuardPaths, run: str) -> tuple[str, ...]:
+    """Every nonce a `confirm` of this run has already spent."""
+    path = _consumed_path(paths=paths, run=run)
+    return tuple(path.read_text(encoding="utf-8").split()) if path.is_file() else ()
+
+
+def record_consumed_nonce(*, paths: GuardPaths, run: str, nonce: str) -> None:
+    """Spend `nonce`, durably, BEFORE the commit point.
+
+    Before rather than after, and that order is the whole of the
+    already-spent rule: a `confirm` that died between spending the nonce
+    and the commit rename must not be replayable with the same answer.
+    Recording it afterwards would leave exactly that hole, and the run
+    would then be committed by an answer prepared for an earlier attempt.
+    """
+    spent = (*consumed_nonces(paths=paths, run=run), nonce)
+    write_durable(path=_consumed_path(paths=paths, run=run), data="\n".join(spent))
 
 
 def publish_marker(*, paths: GuardPaths, run: str) -> None:
