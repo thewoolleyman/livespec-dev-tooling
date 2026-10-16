@@ -58,6 +58,31 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.110.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.109.0...v1.110.0) (2026-10-16)
+
+
+### Features
+
+* answer the Docker engine guard's observation sample from the real host ([23383b6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/23383b6faf3c37ba552304e39a36456cf50731ba))
+* complete a TLS handshake to the API service address from the pod namespace ([56a53c0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/56a53c04b3e4b8d7fcae090c83285456532280be))
+* derive the Docker engine guard's window from k3s's effective resync intervals ([51ca890](https://github.com/thewoolleyman/livespec-dev-tooling/commit/51ca890e4bc839ebc2bf04db82328c338a0c5e8b))
+* fail a Docker engine guard sample on any container or network outside its scope ([ed1dfeb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ed1dfeb65b3d4f78db055d262025d1cff0e9e0f9))
+* fail a guard sample on an interface outside docker0 and the canary's pair ([5b45b30](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5b45b309bb3a76aff9019c5e3545c00e26acc55f))
+* query kube-dns from a pod's network namespace without a resolver file ([0c1ca51](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0c1ca5195366130fb7e6c2fcc55820e99c5e66f9))
+* re-run a failed guard probe once and count it failed only when it fails twice ([703683d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/703683d1396a1a6c17fdec97b7d503996be9c0cd))
+* reach an Ubuntu archive mirror from the pod namespace with explicit SNI ([a0905cd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a0905cd5feae58bd305eea914e17a03f15f9ae88))
+* read Node Ready through the node's own status subresource ([e9dca4b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e9dca4b069a41e729bc4c32b5e088c2ac66d01eb))
+* record every Docker engine guard probe failure with its name and its error ([43e610e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/43e610ecfb560f61fc3cf50341877ad51026bd0c))
+* refuse a Docker engine install behind a k3s resync slower than five minutes ([614d118](https://github.com/thewoolleyman/livespec-dev-tooling/commit/614d118be3ada7d3c58913ed1360084e7aa0aec1))
+* refuse the Docker engine install for every account the docker group admits ([7a5be7a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7a5be7a10a50ecd466ebc8c56b97e3f809194fd2))
+* refuse the Docker engine install on any overlap of its default subnet ([380ac6a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/380ac6a4a7d86a10e899ebe3e301a22bce118d5a))
+* report a same-node CoreDNS backend as not counting toward confirmation ([ae5c2dc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae5c2dc4924d2ac1442aa4fe38038248e7741fac))
+* require the agent, the tailnet and every named unit in each guard sample ([43adc1a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/43adc1a9c11b681625128a101d9cb4f881363702))
+* require the five watched sysctls to equal the Docker engine guard's snapshot ([0247ad8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0247ad899c8f5d80f5c0db9eaf029e3ce5e83bdc))
+* resolve the Docker engine guard canary's cgroup through the sandbox slice ([40b464d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/40b464d5d74e36e198be992b5a679370c6f9740c))
+* scope a guard sample's firewall comparison to what nobody should change ([40ec0b6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/40ec0b6d987e60c00fdba4e2e1398f1736928f1d))
+* witness k3s's own containerd across the Docker engine guard's window ([d2055de](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d2055de95e52b04ba30b72644e7c0acfd32772e5))
+
 ## [1.109.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.108.1...v1.109.0) (2026-10-16)
 
 
