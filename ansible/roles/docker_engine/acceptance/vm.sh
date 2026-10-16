@@ -31,6 +31,9 @@ VM_DIR="${DOCKER_ENGINE_VM_DIR:-$HOME/.cache/docker-engine-guard-vm}"
 IMAGE_URL_BASE="https://cloud-images.ubuntu.com/releases/26.04/release"
 IMAGE_NAME="ubuntu-26.04-server-cloudimg-amd64.img"
 SSH_PORT="${DOCKER_ENGINE_VM_SSH_PORT:-2229}"
+# The guest's LLM-health stub (baseline.sh, port 8080), forwarded so the
+# role's CONTROLLER-SIDE probe, which runs on the control node, can reach it.
+LLM_PORT="${DOCKER_ENGINE_VM_LLM_PORT:-2280}"
 MEMORY="${DOCKER_ENGINE_VM_MEMORY:-4096}"
 SMP="${DOCKER_ENGINE_VM_SMP:-4}"
 DISK_SIZE="${DOCKER_ENGINE_VM_DISK:-20G}"
@@ -147,7 +150,7 @@ cmd_up() {
     -machine q35 -accel tcg,thread=multi -cpu max \
     -m "$MEMORY" -smp "$SMP" \
     -drive "file=$(overlay),if=virtio,format=qcow2" \
-    -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22" \
+    -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22,hostfwd=tcp:127.0.0.1:${LLM_PORT}-:8080" \
     -device virtio-net-pci,netdev=net0 \
     -smbios "type=1,serial=ds=nocloud;s=http://10.0.2.2:${seed_port}/" \
     -display none -serial "file:$VM_DIR/serial.log" \
