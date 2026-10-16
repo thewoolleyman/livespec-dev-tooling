@@ -58,6 +58,24 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.104.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.103.0...v1.104.0) (2026-10-16)
+
+
+### Features
+
+* apply a Docker engine install guard change only through reconfigure ([c159901](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c1599016d914b505353bf154cc566f29c0aa0c54))
+* carry the owned-keys digest in the Docker engine install guard's marker ([79b1d87](https://github.com/thewoolleyman/livespec-dev-tooling/commit/79b1d8748b6015d99faaa1f30ea61cbe9fdecfc7))
+* claim the Docker engine install guard's run before its first sample ([1e51b5a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1e51b5af622779b1cba98068a6297004117b471b))
+* commit the Docker engine install guard only on this boot's answered challenge ([6fd4f27](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6fd4f276060736cb61318c02deb921190f987992))
+* issue the Docker engine install guard's challenge on a passing window ([d797d92](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d797d924976906f3256f62363b3ab780c762041a))
+* keep a Docker engine install guard run committed past a failed dir fsync ([02741f8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/02741f8975e31da051795983e376d184535eefcb))
+* re-read the Docker engine install guard's rollback postconditions ([a88f0ee](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a88f0ee5cf468f97b119e47dbc0dbc28bff92f76))
+* record a failed Docker engine guard sample and trigger its own rollback ([4e0402d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4e0402d52d423909433fa5ba798e240c5f4ebe3d))
+* refuse a Docker engine install guard confirm on a stale or spent challenge ([ad1db91](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ad1db91d2bdd72706f424c2b48a840d3ba868325))
+* repeat the Docker engine install guard's post-commit steps idempotently ([4fe29cd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4fe29cd006bdf9145da7180abd0f3bb56671e81f))
+* stop the Docker engine install guard's observer when its run is taken away ([fab8cd1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fab8cd169d4056497942df6acb9c5b10ed368e99))
+* validate the Docker engine install guard's installation after the commit ([48d4853](https://github.com/thewoolleyman/livespec-dev-tooling/commit/48d4853dffaa2cd4071d31729ca2db665cd5e56a))
+
 ## [1.103.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.102.0...v1.103.0) (2026-10-16)
 
 
