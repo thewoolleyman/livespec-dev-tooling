@@ -54,8 +54,10 @@ from livespec_dev_tooling.fleet._docker_engine_guard_records import (
     owned_keys_digest,
     publish_marker,
     read_challenge,
+    reconfigured_digest,
     record_consumed_nonce,
     record_durability_warning,
+    record_reconfigured_digest,
     submitted_nonce,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_state import (
@@ -142,6 +144,15 @@ def committed_installation_fault(*, run: str, env: GuardEnv) -> str:
     It REPORTS and never acts. A validation that undid what it found
     would roll back a commitment the guarded units' start condition
     already honours, which is the one move design F4 forbids outright.
+
+    TWO digests are accepted and both are needed. The marker's is what
+    the run COMMITTED; the reconfigured one is what the last
+    `reconfigure` wrote, recorded beside the marker because the marker
+    may not be rewritten. Accepting only the first would report a
+    mismatch on every converge after a reconfiguration, forever, and
+    accepting anything at all would give up the one fault this read
+    exists to find: owned keys nobody committed and no reconfiguration
+    ever wrote.
     """
     enabled = env.host.unit_enabled_states()
     active = env.host.guard_unit_states()
@@ -152,14 +163,15 @@ def committed_installation_fault(*, run: str, env: GuardEnv) -> str:
     )
     if adrift:
         return f"these guarded units are not both enabled and running: {', '.join(adrift)}"
-    recorded = marker_digest(paths=env.paths)
-    if read_marker(paths=env.paths, run=run) == "self" and recorded == owned_keys_digest(
-        paths=env.paths, run=run
-    ):
+    committed = marker_digest(paths=env.paths)
+    reconfigured = reconfigured_digest(paths=env.paths)
+    owned = owned_keys_digest(paths=env.paths, run=run)
+    if read_marker(paths=env.paths, run=run) == "self" and owned in {committed, reconfigured}:
         return ""
     return (
-        "the commit marker does not name this run with the owned keys' digest; "
-        f"it holds {recorded!r}"
+        "the owned keys' digest matches neither this run's commit marker nor the latest "
+        f"reconfiguration; the marker holds {committed!r} and the reconfiguration "
+        f"{reconfigured!r}"
     )
 
 
@@ -298,12 +310,24 @@ def reconfigure(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     belongs to whoever wrote it, and the digest the marker carries
     covers the owned set alone, so writing more would make a foreign
     key's change read as a guarded reconfiguration on the next converge.
+
+    The digest of what was written is recorded beside the marker, and
+    that record is what makes this operation repeatable at all: the
+    marker still vouches for the configuration the run COMMITTED, so
+    without a second record the post-commit validation would report the
+    reconfigured keys as a mismatch on every later converge.
     """
     env.host.write_daemon_keys(keys=owned_daemon_keys(paths=env.paths, run=run))
+    record_reconfigured_digest(
+        paths=env.paths, run=run, digest=owned_keys_digest(paths=env.paths, run=run)
+    )
     env.host.record_pending_drained_restart(unit=_DRAINED_RESTART_UNIT)
     return GuardOutcome(
         operation="reconfigure",
         run=run,
         verdict=decision.verdict,
-        reason="the owned daemon keys are written and a drained restart is pending",
+        reason=(
+            "the owned daemon keys are written, their digest is recorded beside the "
+            "commit marker, and a drained restart is pending"
+        ),
     )
