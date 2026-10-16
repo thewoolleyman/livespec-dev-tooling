@@ -62,6 +62,9 @@ _UNIT_READS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_unit_re
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
 _DAEMON_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_daemon"
 _DAEMON_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_daemon.py")
+_STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
+_PHASE_CHILD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_phase_child"
+_PHASE_CHILD_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_phase_child.py")
 
 # What the guarded host's two address families look like BEFORE any Docker
 # package exists: the k3s and Tailscale rule sets the snapshot has to
@@ -149,6 +152,10 @@ class _Commands:
     answers: dict[tuple[str, ...], str] = field(default_factory=dict)
     tables: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     undeletable: tuple[str, ...] = ()
+    # The exit status a recorded command answers with, where a test needs
+    # one. An action that reads the EXIT rather than the output -- the
+    # rollback phase child -- cannot be driven from stdout at all.
+    codes: dict[tuple[str, ...], int] = field(default_factory=dict)
     argvs: list[tuple[str, ...]] = field(default_factory=list)
     timeouts: list[int] = field(default_factory=list)
 
@@ -156,7 +163,7 @@ class _Commands:
         key = tuple(argv)
         self.argvs.append(key)
         self.timeouts.append(timeout_seconds)
-        return _result(argv=key, returncode=0, stdout=self._answer(key=key))
+        return _result(argv=key, returncode=self.codes.get(key, 0), stdout=self._answer(key=key))
 
     def _answer(self, *, key: tuple[str, ...]) -> str:
         if key[0].endswith("-save"):
@@ -1760,6 +1767,56 @@ def test_the_reconfiguration_writes_the_owned_keys_and_records_a_restart_it_does
 
     assert json.loads(fresh.read_text(encoding="utf-8")) == _OWNED_KEYS_NOW
     assert json.loads(unloadable.read_text(encoding="utf-8")) == _OWNED_KEYS_NOW
+
+
+def test_the_rollback_phase_child_is_true_only_for_a_child_that_exited_zero(
+    tmp_path: Path,
+) -> None:
+    """One phase, one child, and three ways of not completing that read alike.
+
+    The driver spawns each phase rather than running it, so a phase
+    that hangs or crashes the guard's own parser costs its own budget
+    and nothing more -- the driver stays alive to run the remaining
+    phases and to write an outcome, which is the one thing a rollback
+    must always do.
+
+    The bound that matters rides in the ARGV: `timeout -k 10 <phase
+    budget>`, built beside the budget table those numbers come from.
+    The bound this seam passes to the runner is the whole ROLLBACK
+    budget, the outermost there is, because the guard's one command
+    seam requires an explicit timeout and a child outliving the entire
+    rollback is already past anything the driver could use.
+
+    A non-zero exit, an expiry and a signal all answer False, because
+    the driver treats all three identically: record no success and
+    enter the next phase. Distinguishing them would offer it a choice
+    it does not have.
+    """
+    assert _PHASE_CHILD_PATH.is_file()
+    phase_child = importlib.import_module(_PHASE_CHILD_MODULE)
+    rollback = importlib.import_module(_ROLLBACK_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    completed = _Commands()
+    host = _real_host(root=tmp_path, commands=completed)
+    argv = rollback.phase_child_argv(
+        run="run-a",
+        env=state.GuardEnv(paths=_guard_paths(root=tmp_path), host=host),
+        phase="cgroup-kill",
+    )
+
+    assert host.run_phase_child(argv=argv) is True
+    assert completed.argvs == [argv]
+    assert completed.timeouts == [phase_child.PHASE_CHILD_TIMEOUT_SECONDS]
+    assert argv[:4] == ("timeout", "-k", "10", "120")
+    assert phase_child.PHASE_CHILD_TIMEOUT_SECONDS == 900
+
+    # A phase that refused, one its own `timeout` cut off, and one a
+    # signal took: every one of them is "did not complete".
+    for code in (1, runner_module.TIMEOUT_RETURNCODE, -9):
+        failed = _Commands(codes={argv: code})
+
+        assert _real_host(root=tmp_path, commands=failed).run_phase_child(argv=argv) is False
 
 
 def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:
