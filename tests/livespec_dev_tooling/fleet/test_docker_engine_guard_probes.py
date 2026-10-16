@@ -33,6 +33,8 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 __all__: list[str] = []
 
 _RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_runner"
@@ -1767,3 +1769,48 @@ def test_the_declared_k3s_server_route_carries_from_probes_json_into_the_sample(
             cluster.coredns_placement_argv(server="poweredge-xubuntu", k3s_server_argv=route)
             in bus.argvs
         )
+
+
+# Every shape a declared route can be wrong in, and each is wrong in its
+# own way: an empty list reads as "no route declared" and silently
+# restores the prefix the declaration exists to replace, a bare string is
+# iterated character by character into one-letter words, a non-string
+# word is not a command argument at all, and an EMPTY word builds an argv
+# `ssh` reads as a host named "".
+_MALFORMED_K3S_SERVER_ROUTES: tuple[Any, ...] = (
+    [],
+    "sudo -u cwoolley -H ssh poweredge-xubuntu sudo",
+    ["ssh", "poweredge-xubuntu", 7],
+    ["ssh", "", "poweredge-xubuntu"],
+    None,
+)
+
+# What the refusal has to SAY, because the operator who wrote the
+# declaration is the one who has to fix it.
+_ROUTE_REFUSAL = "k3s_server_argv must be a non-empty list of non-empty strings"
+
+
+def test_reading_the_probe_parameters_refuses_an_unusable_k3s_server_route(
+    tmp_path: Path,
+) -> None:
+    """A declared route that cannot be RUN is refused where it is read.
+
+    Every malformed shape above would otherwise fail once per sample on
+    the one host nobody can reach by hand, and three of the four would
+    fail SILENTLY -- an empty list by quietly restoring the default, a
+    string by becoming one-letter words, an empty word by naming a host
+    called "". So the read refuses, which puts the failure in front of
+    the operator who wrote the declaration rather than inside the
+    observation window.
+    """
+    probe_set = importlib.import_module(_PROBE_SET_MODULE)
+    for index, malformed in enumerate(_MALFORMED_K3S_SERVER_ROUTES):
+        paths = _guard_paths(root=tmp_path / str(index))
+        inputs = paths.inputs_dir(run=_RUN)
+        inputs.mkdir(parents=True, exist_ok=True)
+        _ = (inputs / "probes.json").write_text(
+            json.dumps({**_PROBE_PARAMETERS, "k3s_server_argv": malformed}), encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match=_ROUTE_REFUSAL) as refused:
+            _ = probe_set.read_probe_parameters(paths=paths, run=_RUN)
+        assert str(inputs / "probes.json") in str(refused.value)
