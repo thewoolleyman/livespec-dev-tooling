@@ -28,17 +28,19 @@
 # sandboxes' whole lifetime, unlike a gate Job which is reaped by the Job
 # controller's own ttlSecondsAfterFinished), `get` on `pods/log` as the output
 # channel, `create` on `pods/exec` because a sandbox is driven by exec rather
-# than by its command line, and the SAME verbs on batch `jobs` the gates Role
-# grants. DELIBERATELY ABSENT: anything cluster-scoped (this is a Role, bound
-# by a RoleBinding to a Role — never a ClusterRole) and ANY verb on `secrets`.
-# The sandbox's own credentials are projected into it by the dispatcher, so a
-# grant on secrets would buy nothing and widen the blast radius of a leaked
-# token to every secret in the namespace.
+# than by its command line, the SAME verbs on batch `jobs` the gates Role
+# grants, and the three the lifecycle proofs added — `networkpolicies`,
+# `events` and a cluster-scoped read of `nodes` — each derived in
+# ./DERIVATION.md §"The widening". DELIBERATELY ABSENT: ANY verb on `secrets`,
+# at either scope. The sandbox's own credentials are projected into it by the
+# dispatcher, so a grant on secrets would buy nothing and widen the blast
+# radius of a leaked token to every secret in the namespace.
 #
-# A WIDENING IS A PR, NOT A HAND PATCH. The kubernetes-sandbox-backend plugin
-# (livespec-orchestrator-beads-fabro plan kubernetes-sandbox-backend, epic
-# bd-ib-nmuyjc) may need more as its design child lands; it widens this file
-# and re-converges, because a verb added live is gone at the next boot.
+# A WIDENING IS A PR, NOT A HAND PATCH, and the first one has landed. The
+# kubernetes-sandbox-backend plugin (livespec-orchestrator-beads-fabro plan
+# kubernetes-sandbox-backend, epic bd-ib-nmuyjc) asked for three grants through
+# livespec-dev-tooling-pvykv7; they widen this file and re-converge, because a
+# verb added live is gone at the next boot.
 #
 # APPLIED ON EVERY BOOT by ../reconstruct/converge-ci-stack.sh step 10e. WHY AT
 # BOOT: the k3s datastore is tmpfs and EMPTY on every boot
@@ -81,6 +83,26 @@ rules:
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["create"]
+  # PER-POD EGRESS, and no verb that can rewrite the baseline in place
+  # (livespec-dev-tooling-pvykv7). A sandbox's allowed egress is a
+  # NetworkPolicy the plugin creates beside the pod and deletes with it, each
+  # one punching a hole in ./factory-namespace.yaml's `factory-egress` default
+  # deny. `update` and `patch` are withheld deliberately: RBAC's resourceNames
+  # is an ALLOW list and does not apply to `create` at all, so there is no way
+  # to spell "every NetworkPolicy except factory-egress" — withholding the
+  # in-place-modify verbs is the nearest honest bound, and the boot converge
+  # re-applies the baseline in any case.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "get", "list", "delete"]
+  # WHY `Pending` IS NOT ONE OBSERVATION (livespec-dev-tooling-pvykv7). A pod
+  # held out by the namespace ResourceQuota and a pod no node can hold are both
+  # `Pending` with the same phase, and only the namespace's Events carry the
+  # `FailedCreate` / `FailedScheduling` reason that tells them apart. Read-only:
+  # the plugin never writes an Event.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -94,6 +116,56 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: sandbox-launcher
+subjects:
+  - kind: ServiceAccount
+    name: sandbox-launcher
+    namespace: factory
+---
+# THE ONE CLUSTER-SCOPED GRANT THIS CREDENTIAL HOLDS, and it is a read
+# (livespec-dev-tooling-pvykv7). A ClusterRole is not a choice here: `nodes` is
+# a cluster-scoped resource, so a namespaced Role cannot name it at all — the
+# same reasoning ../node-status-credential/node-status-patch-rbac.yaml's header
+# records for `nodes/status`.
+#
+# WHAT IT BUYS. From inside the namespace a NotReady NODE and a lost POD are
+# the same observation: the pod is gone and nothing says whether its machine
+# left the cluster. Without this read every node-loss check answers 403, which
+# is indistinguishable from a healthy cluster with a dead pod.
+#
+# THE NARROWING IS THE VERB SET, not a resourceNames list. `list` is not
+# restrictable by resourceNames at all (Kubernetes applies it only to requests
+# naming a single object), and the whole point of the read is to enumerate the
+# nodes the plugin has not been told about, so a name list would either break
+# the read or be a decoration. `get` and `list` and NOTHING else: no `watch`
+# (not asked for), and emphatically no `patch`, `update` or `delete`, any of
+# which would let a leaked sandbox token untaint, drain or evict a CI node.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: factory-sandbox-launcher-node-reader
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: pvykv7
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+# Bound to exactly ONE subject, the `factory` namespace's launcher. A binding's
+# grant is the UNION of its subjects, so an added Group — `system:serviceaccounts`
+# being the one that reads as harmless and is not — would hand a cluster-wide
+# node read to every identity in it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: factory-sandbox-launcher-node-reader
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: pvykv7
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: factory-sandbox-launcher-node-reader
 subjects:
   - kind: ServiceAccount
     name: sandbox-launcher
