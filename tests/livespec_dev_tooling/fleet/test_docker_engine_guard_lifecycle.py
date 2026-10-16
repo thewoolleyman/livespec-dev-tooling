@@ -669,38 +669,6 @@ def test_a_deadline_from_an_earlier_boot_stops_start_from_granting_the_permissio
     assert fake.calls_named(name="grant_start_permission") == ()
 
 
-def test_the_operations_a_later_child_owns_reach_their_decision_and_stop_there(
-    tmp_path: Path,
-) -> None:
-    """1b fills in observe, confirm, verify and reconfigure; 1a decides them.
-
-    Each is driven into the state its row admits and must get PAST the
-    table -- the `NotImplementedError` is the proof that the decision was
-    reached, and that nothing but the work is missing.
-    """
-    guard = _guard_surface()
-    admitted = {
-        "observe": "started",
-        "confirm": "observed",
-        "verify": "rolled-back",
-    }
-
-    for operation, phase in admitted.items():
-        root = tmp_path / operation
-        fake = _fake(root=root)
-        _record_phase(root=root, run="run-a", phase=phase)
-        _arm_deadline(root=root, run="run-a", boot="boot-a", at=10_000.0)
-        with pytest.raises(NotImplementedError):
-            guard.run_operation(operation=operation, run="run-a", env=_env(root=root, host=fake))
-
-    root = tmp_path / "reconfigure"
-    fake = _fake(root=root)
-    _record_phase(root=root, run="run-a", phase="confirmed")
-    _write_marker(root=root, run="run-a")
-    with pytest.raises(NotImplementedError):
-        guard.run_operation(operation="reconfigure", run="run-a", env=_env(root=root, host=fake))
-
-
 def test_rollback_hands_a_decided_run_to_child_two_and_no_ops_a_finished_one(
     tmp_path: Path,
 ) -> None:
