@@ -37,7 +37,6 @@ _STATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_state.py")
 _GUARD_MODULE_UNDER_TEST = "livespec_dev_tooling.fleet.docker_engine_guard"
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
-_PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
 _OPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_ops"
 _OPS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_ops.py")
 _CLI_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_cli"
@@ -742,12 +741,15 @@ def test_rollback_hands_a_decided_run_to_child_two_and_no_ops_a_finished_one(
 def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
     tmp_path: Path,
 ) -> None:
-    """Three stub modules, so no sibling ever has to reopen the guard module.
+    """Two stub modules, so no sibling ever has to reopen the guard module.
 
-    Child 2 replaces the rollback driver, children 3a and 4 the real
-    host, child 3b the package step. Each is reached by name from the
-    guard module, which resolves siblings package-qualified when imported
-    and bare when run as a script on the guarded host.
+    Child 2 replaces the rollback driver and children 3a and 4 the real
+    host. Each is reached by name from the guard module, which resolves
+    siblings package-qualified when imported and bare when run as a
+    script on the guarded host. The package step was the third of them
+    and is no longer a stub: child 3b landed it, which is why its
+    `run_package_step` is asserted on by that child's own tests instead
+    of here.
     """
     guard = _guard_surface()
     assert guard.sibling_module_name(package="pkg", name="_mod") == "pkg._mod"
@@ -758,7 +760,6 @@ def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
 
     rollback = importlib.import_module(_ROLLBACK_MODULE)
     host_module = importlib.import_module(_HOST_MODULE)
-    packages = importlib.import_module(_PACKAGES_MODULE)
     env = _env(root=tmp_path, host=_fake(root=tmp_path))
     model = importlib.import_module(_MODEL_MODULE)
     decision = model.Decision(verdict="proceed", reason="decided")
@@ -767,8 +768,6 @@ def test_the_sibling_stubs_each_sibling_replaces_are_present_and_unimplemented(
         rollback.run_rollback(run="run-a", env=env, decision=decision)
     with pytest.raises(NotImplementedError):
         host_module.build_real_host(paths=_paths(root=tmp_path))
-    with pytest.raises(NotImplementedError):
-        packages.run_package_step(inputs=tmp_path / "inputs")
 
 
 def test_on_a_host_that_holds_no_reservation_only_reserve_gets_past_the_table(
