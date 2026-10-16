@@ -457,3 +457,40 @@ def test_every_phase_child_runs_under_timeout_with_that_phases_budget(
         phase = call.detail[-1]
         budget = str(rollback.PHASE_BUDGET_SECONDS[phase])
         assert call.detail[:4] == ("timeout", "-k", "10", budget), phase
+
+
+def test_the_phase_budgets_are_apportioned_and_sum_to_six_hundred_seconds(
+    tmp_path: Path,
+) -> None:
+    """Design H6: the phase budgets sum to 600 s of the 900 s rollback budget.
+
+    The remaining 300 s is what the lock wait and the final
+    all-postconditions check run in. That is the whole reason the sum is
+    a rule: eight phases that each took their own generous bound would
+    leave the final check to be SIGKILLed by the rollback unit's own
+    `TimeoutStartSec`, and a rollback killed before its final check
+    writes no outcome at all.
+
+    The apportionment is not flat. The footprint phase parses and deletes
+    rules in up to three passes with a per-command `iptables -w 5`, so it
+    carries half the total; the socket stop and the job cancellation are
+    single `systemctl` calls and take the floor.
+    """
+    rollback = _driver()
+    model = importlib.import_module(_MODEL_MODULE)
+    budgets = rollback.PHASE_BUDGET_SECONDS
+
+    assert sum(budgets.values()) == 600
+    rollback_budget = model.operation_budget_seconds(operation="rollback", window_seconds=0)
+    assert rollback_budget - sum(budgets.values()) == 300
+    assert budgets["footprint-removal"] == max(budgets.values())
+    assert budgets["footprint-removal"] == 300
+    assert budgets["cgroup-kill"] == 120
+    assert min(budgets.values()) == 30
+    # The paid-for bound reaches the command line unchanged.
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+    argv = rollback.phase_child_argv(
+        run="run-a", env=_env(root=tmp_path, host=fake), phase="footprint-removal"
+    )
+    assert argv[:4] == ("timeout", "-k", "10", "300")
