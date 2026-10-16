@@ -12,6 +12,20 @@
 # DECLARATIVE, so the factory posture of a node is a fact of its committed
 # profile and of nothing else.
 #
+# AN APPLY IS NOT THE BOOT PATH, AND THIS ROLE IS ONLY THE APPLY HALF. Making
+# the converge declarative did NOT make it reboot-durable: this role reconciles
+# only when `ci-pool.yml` runs, so the 2026-10-16 reboot came back with the
+# label on hp-xubuntu alone — hp's own agent registration carries it, gmktec's
+# and poweredge's did not — and the sandbox backend's selector matched one node
+# of three until an operator ran an apply (livespec-dev-tooling-izlx4g). The
+# boot half is now
+# ../../../ci-runner/k3s/phase2/reconstruct/converge-factory-node-labels.sh,
+# step 10f of the boot converge, which performs THIS reconcile from the same
+# committed profiles with no operator and no agent restart. The two are
+# deliberately the same reconcile: this one is what an operator reaches for
+# mid-day, that one is what a reboot reaches for, and neither decides a posture
+# the profile does not state.
+#
 # It is a SEPARATE role because ../node_taints manages exactly ONE taint key and
 # nothing else, and that narrowness is the property that makes it safe — a role
 # that also managed labels would be a role whose scope a reader has to

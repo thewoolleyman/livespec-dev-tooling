@@ -95,6 +95,27 @@
   become: true
   loop: "{{ ci_converge_unit_arc_charts }}"
 
+- name: Copy every ci_pool node's committed profile into the installed tree
+  # The boot converge's step 10f reconciles each pool node's FACTORY label from
+  # its committed profile (livespec-dev-tooling-izlx4g), and the host carries no
+  # checkout — so the WHOLE pool's profiles have to be here, not just this
+  # node's. The reconcile runs on the server and decides for every member, which
+  # is what makes this the one role that installs more than one node's copy;
+  # ../../node_extended_resource installs THIS node's own copy, flat, for its
+  # churn-slot timer, and the subdirectory keeps the two from owning one path.
+  #
+  # 0644: the profiles are committed, non-secret per-node facts the converge
+  # READS. They are the same bytes the repository holds, so the boot path and an
+  # apply cannot disagree about any node's posture.
+  ansible.builtin.copy:
+    src: "{{ ci_converge_unit_profiles_dir }}/{{ item }}.env"
+    dest: "{{ ci_converge_unit_lib_dir }}/profiles/{{ item }}.env"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ ci_converge_unit_pool_profiles }}"
+
 - name: Copy the Kueue webhook probe's RBAC manifest
   # The ONE member of the installed set that comes from outside phase2/.
   ansible.builtin.copy:
