@@ -28,7 +28,13 @@ module the way it already runs the apt-lock helper --
 `python3 -I -B <module> <subcommand>` from the installed guard tree.
 
 Stdlib only, Python 3.10 syntax, for the reason the model module
-records.
+records. Unlike the apt-lock helper, which imports nothing from this
+package, this module DOES reach its siblings -- so it carries the same
+`sys.path` preamble `docker_engine_guard.py` does, and for the same
+reason: run as a script there is no package at all, while the sibling
+modules import each other package-qualified. Under `-I` nothing else
+can supply that path, since the flag ignores both `PYTHONPATH` and the
+user site directory.
 """
 
 from __future__ import annotations
@@ -40,15 +46,27 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from livespec_dev_tooling.fleet._docker_engine_guard_host import build_real_host
-from livespec_dev_tooling.fleet._docker_engine_guard_model import (
+# The guard tree is COPIED onto the guarded host and run there as a
+# plain script, where there is no package and the siblings'
+# package-qualified imports would not resolve. Putting the package ROOT
+# on `sys.path` makes them resolve from either side -- the same
+# preamble `docker_engine_guard.py` carries, for the same reason.
+_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+if str(_PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PACKAGE_ROOT))
+
+from livespec_dev_tooling.fleet._docker_engine_guard_host import build_real_host  # noqa: E402
+from livespec_dev_tooling.fleet._docker_engine_guard_model import (  # noqa: E402
     DEFAULT_RUNTIME_ROOT,
     DEFAULT_STATE_ROOT,
     GuardPaths,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_resync import K3S_CONFIG, K3S_CONFIG_DROPINS
-from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
-from livespec_dev_tooling.fleet._docker_engine_guard_witness import PROC_ROOT
+from livespec_dev_tooling.fleet._docker_engine_guard_resync import (  # noqa: E402
+    K3S_CONFIG,
+    K3S_CONFIG_DROPINS,
+)
+from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command  # noqa: E402
+from livespec_dev_tooling.fleet._docker_engine_guard_witness import PROC_ROOT  # noqa: E402
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
