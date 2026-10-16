@@ -5,16 +5,19 @@
 # local connection: a run needs no ssh credential toward it and no inbound
 # reachability to it.
 #
-# Order matters in two places, and both are expressed as role dependencies
-# rather than by position here, so a play that runs one role alone still gets
-# them: the editor backend precedes its progressive-web-app proxy, and the VNC
-# desktop precedes the two desktop applications that need its display.
+# Order matters in one place, and it is expressed as a role dependency rather
+# than by position here, so a play that runs one role alone still gets it: the
+# VNC desktop precedes the two desktop applications that need its display.
+#
+# The VS Code web editor (roles code_serve_web and code_pwa_proxy) was RETIRED
+# on 2026-10-16 by the maintainer: the service is shut down and will not be
+# restarted, so this play no longer converges it.
 
 # Each role is tagged so an operator can converge a subset. That matters here
 # because this host carries services with very different interruption costs --
-# a timer is free to restart, the editor backend is not -- and because a
+# a timer is free to restart, a desktop session is not -- and because a
 # failure in one role's package step must not be able to withhold the other
-# eighteen.
+# sixteen.
 - name: Dev host services
   hosts: dev_hosts
   gather_facts: true
@@ -37,10 +40,6 @@
       tags: [btop_loop]
     - role: fpart
       tags: [fpart]
-    - role: code_serve_web
-      tags: [code_serve_web]
-    - role: code_pwa_proxy
-      tags: [code_pwa_proxy]
     - role: ssh_hardening
       tags: [ssh_hardening]
     - role: keyring_quota
