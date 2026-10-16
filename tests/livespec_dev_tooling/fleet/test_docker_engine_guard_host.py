@@ -53,6 +53,8 @@ _POSTCONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_postco
 _POSTCONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_postconditions.py")
 _CLOCK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_clock"
 _CLOCK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_clock.py")
+_PERMISSION_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_permission"
+_PERMISSION_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_permission.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 
 # What the guarded host's two address families look like BEFORE any Docker
@@ -1412,3 +1414,62 @@ def test_the_clock_reads_monotonic_seconds_this_boots_id_and_waits_when_asked(
     # Reading a clock and waiting are not external commands, so neither
     # reaches the one timed runner and neither can be bounded by it.
     assert commands.argvs == []
+
+
+def _guard_paths(*, root: Path) -> Any:
+    """The same `GuardPaths` the recorded host below is rooted at."""
+    model = importlib.import_module(_MODEL_MODULE)
+    return model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+
+
+def test_the_start_permission_is_created_removed_and_its_directory_root_owned(
+    tmp_path: Path,
+) -> None:
+    """The one file between an unguarded host and a Docker daemon, and its directory.
+
+    Three properties, and each is the one a careless implementation
+    loses:
+
+    - The grant leaves NO temporary beside the permission. The guarded
+      units read it with `ConditionPathExists`, so a half-written file
+      under the final name would admit a start the guard has not
+      authorised; the write therefore lands under another name and is
+      RENAMED, and the directory holds exactly one entry afterwards.
+    - The revoke succeeds when the permission is already absent. It is
+      the FIRST act of every rollback, and a rollback re-fired by the
+      dead-man every sixty seconds meets an already-revoked permission
+      on all but its first firing -- raising there would abort the
+      teardown at step one, forever.
+    - Neither reaches the runner. They are filesystem acts on tmpfs, so
+      there is no command to bound; the ownership of the directory IS a
+      command, because the guard cannot change a file's owner without
+      leaving its own process.
+    """
+    assert _PERMISSION_PATH.is_file()
+    permission = importlib.import_module(_PERMISSION_MODULE)
+    paths = _guard_paths(root=tmp_path)
+    commands = _Commands()
+    host = _real_host(root=tmp_path, commands=commands)
+
+    host.revoke_start_permission()
+
+    assert not paths.permission.exists()
+
+    host.grant_start_permission()
+
+    assert paths.permission.is_file()
+    assert sorted(entry.name for entry in paths.runtime_root.iterdir()) == [paths.permission.name]
+
+    host.grant_start_permission()
+
+    assert paths.permission.is_file()
+
+    host.revoke_start_permission()
+
+    assert not paths.permission.exists()
+    assert commands.argvs == []
+
+    host.set_owner_root(path=paths.runtime_root)
+
+    assert tuple(commands.argvs) == (("chown", "root:root", str(paths.runtime_root)),)
+    assert commands.timeouts == [permission.OWNERSHIP_TIMEOUT_SECONDS]
