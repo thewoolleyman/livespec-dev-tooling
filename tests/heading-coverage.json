@@ -639,56 +639,56 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a second controller cannot reserve the Docker engine install guard while a run is unfinished",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "test": "tests.consumer.test_docker_engine_guard_scenarios.test_a_second_controller_cannot_reserve_while_a_run_is_unfinished",
+    "reason": "Consumer-tier: carries run A to `observing` through the guard's own `reserve`, `publish`, `arm`, `start` and `observe` and leaves it resting there by killing its observer mid-window, then drives a second controller's `reserve` over the command line and asserts the refusal's REPORT names run A, its phase and its recorded deadline, and that run A's phase, its deadline, its dead-man timer and the reservation itself are all unchanged (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the Docker engine install guard refuses to start without a live dead-man",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "test": "tests.consumer.test_docker_engine_guard_scenarios.test_the_guard_refuses_to_start_without_a_live_dead_man",
+    "reason": "Consumer-tier: drives `reserve`, `publish` and `arm` against a host whose `systemd-run` leaves the dead-man timer inactive, then drives `start` and asserts it refuses without granting the start permission or starting a guarded unit, with a paired control arm that grants once the same records' timer is active (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard deadline recorded on an earlier boot counts as passed",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "test": "tests.consumer.test_docker_engine_guard_scenarios.test_a_deadline_recorded_on_an_earlier_boot_counts_as_passed",
+    "reason": "Consumer-tier: arms a run through the guard's own operations, changes the host's boot id while leaving the recorded monotonic instant far ahead and the dead-man live, and asserts `start` refuses BECAUSE the deadline has passed and creates no start permission, with a paired control arm that grants once the boot id alone is restored (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard confirm that arrives after the deadline loses to the rollback",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "test": "tests.consumer.test_docker_engine_guard_scenarios.test_a_confirm_that_arrives_after_the_deadline_loses_to_the_rollback",
+    "reason": "Consumer-tier: drives a run to `observed` so the real observer writes its passing evidence and its challenge, answers that challenge, records the run out of time, and asserts `confirm` refuses with no commit marker written and no nonce spent — controlled by reading back that every other clause of the commit rule still held — after which `rollback` takes the run to `rolled-back` (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard run named by the commit marker is finished, never rolled back",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "test": "tests.consumer.test_docker_engine_guard_scenarios.test_a_run_named_by_the_commit_marker_is_finished_never_rolled_back",
+    "reason": "Consumer-tier: reaches the state a crash past the commit point leaves — the marker naming the run while its phase reads `committed` — then asserts `rollback` exits 0 having touched no acting seam, and that a challenge-free `confirm` enables and starts the three guarded units, stops the dead-man timer and moves the run to `confirmed` (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard rollback phase that keeps killing the driver does not stop the later phases",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "test": "tests.consumer.test_docker_engine_guard_scenarios.test_a_rollback_phase_that_keeps_killing_the_driver_does_not_stop_the_later_phases",
+    "reason": "Consumer-tier: fires `rollback` four times over a host whose job-cancellation child takes the driver down on every entry, asserting the first three firings end in that phase with no outcome written and the run left `rolling-back`, and that the fourth skips it at three recorded attempts, runs every later phase in order and writes the outcome its phase then reads (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the Docker engine install guard's recover resumes an interrupted publish and rolls back any other uncommitted run",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this scenario; livespec-dev-tooling-4on5pg owns it.",
+    "test": "tests.consumer.test_docker_engine_guard_scenarios.test_recover_resumes_an_interrupted_publish_and_rolls_back_any_other_run",
+    "reason": "Consumer-tier: interrupts a publish at its package step and asserts `recover` resumes it without retaking the snapshot, whose marked bytes survive, and separately drives `recover` for a `started` run and asserts it reaches the rollback driver and lands `rolled-back` (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
   }
 ]
