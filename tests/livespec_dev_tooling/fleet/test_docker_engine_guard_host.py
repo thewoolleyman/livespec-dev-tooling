@@ -47,6 +47,8 @@ _NETSTATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_netstate"
 _NETSTATE_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_netstate.py")
 _UNITS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_units"
 _UNITS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_units.py")
+_CONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_conditions"
+_CONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_conditions.py")
 _POSTCONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_postconditions"
 _POSTCONDITIONS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_postconditions.py")
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
@@ -1070,3 +1072,91 @@ def test_the_postcondition_read_reports_all_eight_facts_as_one_record(
         "no_docker0": False,
         "sysctls_restored": False,
     }
+
+
+# The three guarded units mapped to their systemd D-Bus object paths. The
+# escaping is the product's job, so the paths are written out here rather
+# than computed: a test that recomputed them would pass against the same
+# mistake it was meant to catch.
+_UNIT_OBJECT_PATHS = {
+    "containerd.service": "containerd_2eservice",
+    "docker.service": "docker_2eservice",
+    "docker.socket": "docker_2esocket",
+}
+
+
+def _conditions_argv(*, unit: str) -> tuple[str, ...]:
+    """The `busctl` read of one unit's effective `Conditions` property."""
+    return (
+        "busctl",
+        "--json=short",
+        "get-property",
+        "org.freedesktop.systemd1",
+        f"/org/freedesktop/systemd1/unit/{_UNIT_OBJECT_PATHS[unit]}",
+        "org.freedesktop.systemd1.Unit",
+        "Conditions",
+    )
+
+
+def _conditions_json(*, rows: list[list[object]]) -> str:
+    """`busctl --json=short` as it renders an `a(sbbsi)` property."""
+    return json.dumps({"type": "a(sbbsi)", "data": rows})
+
+
+def _guard_conditions(*, root: Path) -> list[list[object]]:
+    """The guard's own two OR'd path conditions, in the shape busctl reports."""
+    return [
+        ["ConditionPathExists", True, False, str(root / "run" / "allow-start"), 0],
+        ["ConditionPathExists", True, False, str(root / "var" / "confirmed"), 0],
+    ]
+
+
+def _conditions_bus(*, root: Path, overrides: dict[str, str] | None = None) -> _Commands:
+    """A bus answering each guarded unit's condition read, with overrides."""
+    answers = {
+        _conditions_argv(unit=unit): _conditions_json(rows=_guard_conditions(root=root))
+        for unit in _UNIT_OBJECT_PATHS
+    }
+    for unit, payload in (overrides or {}).items():
+        answers[_conditions_argv(unit=unit)] = payload
+    return _Commands(answers=answers)
+
+
+def test_the_condition_check_passes_only_on_exactly_the_two_or_path_conditions(
+    tmp_path: Path,
+) -> None:
+    """Effective conditions, read through busctl, and nothing else accepted.
+
+    Rider point 6: the conditions are read from the service manager's own
+    parsed list over D-Bus, because `systemctl show -p Conditions` renders
+    unprintable on gmktec's systemd 259 -- so a text scrape would compare
+    against garbage and pass. EXACTLY two is the requirement in both
+    directions: a third condition could admit a start the guard never
+    permitted, and a missing one means the OR has only one way to be
+    satisfied. An unreadable answer fails CLOSED, because "no conditions
+    reported" and "no conditions configured" are indistinguishable.
+    """
+    assert _CONDITIONS_PATH.is_file()
+    passing = _conditions_bus(root=tmp_path)
+
+    assert _real_host(root=tmp_path, commands=passing).condition_check_passed() is True
+    assert tuple(passing.argvs) == tuple(_conditions_argv(unit=unit) for unit in _UNIT_OBJECT_PATHS)
+
+    extra = _guard_conditions(root=tmp_path)
+    extra.append(["ConditionPathExists", True, False, "/run/somebody-elses-flag", 0])
+    third = _conditions_bus(
+        root=tmp_path, overrides={"docker.socket": _conditions_json(rows=extra)}
+    )
+
+    assert _real_host(root=tmp_path, commands=third).condition_check_passed() is False
+
+    only_one = _conditions_bus(
+        root=tmp_path,
+        overrides={"docker.service": _conditions_json(rows=_guard_conditions(root=tmp_path)[:1])},
+    )
+
+    assert _real_host(root=tmp_path, commands=only_one).condition_check_passed() is False
+
+    unreadable = _conditions_bus(root=tmp_path, overrides={"containerd.service": ""})
+
+    assert _real_host(root=tmp_path, commands=unreadable).condition_check_passed() is False
