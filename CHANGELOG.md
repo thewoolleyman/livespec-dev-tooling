@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.110.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.110.0...v1.110.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **checks:** hold the factory reach pin in lockstep with the ci.yml pin ([39e1cfa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/39e1cfa34e09f7add15e34316f2129eb9ca1afb2))
+
 ## [1.110.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.109.0...v1.110.0) (2026-10-16)
 
 
