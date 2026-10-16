@@ -60,6 +60,8 @@ _PERMISSION_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_permiss
 _UNIT_READS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_unit_reads"
 _UNIT_READS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_unit_reads.py")
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
+_DAEMON_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_daemon"
+_DAEMON_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_daemon.py")
 
 # What the guarded host's two address families look like BEFORE any Docker
 # package exists: the k3s and Tailscale rule sets the snapshot has to
@@ -1671,6 +1673,93 @@ def test_the_unit_start_takes_the_callers_bound_and_the_enable_takes_the_fixed_s
     units.enable_units(runner=narrow, units=("docker.service", "k3s-agent.service"))
 
     assert tuple(narrow.argvs) == (("systemctl", "enable", "docker.service"),)
+
+
+# A daemon configuration this host already carries when the guard
+# reconfigures it: one key the guard owns and will change, and two it
+# does not own at all -- the fleet's registry mirror and its log
+# rotation, which belong to whoever wrote them.
+_DAEMON_CONFIG_BEFORE = {
+    "cgroup-parent": "old.slice",
+    "log-driver": "json-file",
+    "registry-mirrors": ["https://mirror.example"],
+}
+
+# What `reconfigure` writes: the owned keys the controller uploaded for
+# this run.
+_OWNED_KEYS_NOW = {
+    "bip": "172.31.0.1/24",
+    "cgroup-parent": "fabro-sandbox.slice",
+    "live-restore": True,
+}
+
+
+def test_the_reconfiguration_writes_the_owned_keys_and_records_a_restart_it_does_not_take(
+    tmp_path: Path,
+) -> None:
+    """Preserve every key the role does not own; restart nothing; say so durably.
+
+    The merge is the specification's own rule for a role that edits
+    `/etc/docker/daemon.json`: a key this role does not own belongs to
+    whoever wrote it, and dropping it would both break that owner's
+    setting and make the next converge read a change nobody made. So
+    the file is READ and merged rather than rendered from the keys
+    given.
+
+    The marker is the other half of the same rule and is why the two
+    live in one module. `cgroup-parent` is not reloadable, so the file
+    just written describes a daemon that is NOT running -- and after the
+    commit point that daemon is carrying this host's sandbox containers,
+    so restarting it here would kill the work the host exists to do, at
+    a moment nobody chose. The marker is the operator's record that a
+    drained restart is owed, and it is the `docker_sandbox_slice` role's
+    OWN path: one host, one such record.
+
+    Its bytes carry no timestamp, so a second reconfiguration before the
+    window opens rewrites exactly what was there.
+    """
+    assert _DAEMON_PATH.is_file()
+    daemon = importlib.import_module(_DAEMON_MODULE)
+    assert str(daemon.DAEMON_CONFIG) == "/etc/docker/daemon.json"
+    assert str(daemon.PENDING_RESTART_MARKER) == "/var/lib/docker-sandbox-slice/restart-pending"
+
+    config = tmp_path / "etc" / "docker" / "daemon.json"
+    config.parent.mkdir(parents=True)
+    _ = config.write_text(json.dumps(_DAEMON_CONFIG_BEFORE), encoding="utf-8")
+    marker = tmp_path / "var-lib" / "docker-sandbox-slice" / "restart-pending"
+    commands = _Commands()
+    host = _real_host(root=tmp_path, commands=commands, daemon_config=config, restart_marker=marker)
+
+    host.write_daemon_keys(keys=_OWNED_KEYS_NOW)
+    host.record_pending_drained_restart(unit="docker.service")
+
+    assert json.loads(config.read_text(encoding="utf-8")) == {
+        **_DAEMON_CONFIG_BEFORE,
+        **_OWNED_KEYS_NOW,
+    }
+    recorded = marker.read_text(encoding="utf-8")
+    assert "docker.service" in recorded
+    assert "Drain" in recorded
+    # Not one command: a reconfiguration that restarted the daemon would
+    # take every sandbox container on this host down with it.
+    assert commands.argvs == []
+
+    host.record_pending_drained_restart(unit="docker.service")
+
+    assert marker.read_text(encoding="utf-8") == recorded
+
+    # A host with no daemon configuration yet gets one holding exactly
+    # the owned keys; one holding something that is not an object holds
+    # nothing to preserve, because no daemon ever loaded it.
+    fresh = tmp_path / "fresh.json"
+    unloadable = tmp_path / "unloadable.json"
+    _ = unloadable.write_text("[]", encoding="utf-8")
+
+    daemon.write_daemon_keys(keys=_OWNED_KEYS_NOW, config=fresh)
+    daemon.write_daemon_keys(keys=_OWNED_KEYS_NOW, config=unloadable)
+
+    assert json.loads(fresh.read_text(encoding="utf-8")) == _OWNED_KEYS_NOW
+    assert json.loads(unloadable.read_text(encoding="utf-8")) == _OWNED_KEYS_NOW
 
 
 def test_the_real_host_declares_every_seam_the_host_protocol_names() -> None:
