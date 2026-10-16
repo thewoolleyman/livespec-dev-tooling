@@ -123,6 +123,11 @@ class Audit:
     # `package=version` per allowlist row, sorted — the difference the
     # post-install query has to show, and nothing else.
     additions: tuple[str, ...]
+    # Every installed package mapped to the version it held WHILE the
+    # audit ran. The audit's verdict rests on these, because they are
+    # what apt resolved the pins against, so the fence re-reads them
+    # immediately before mutating and refuses on any that moved.
+    relied_on: Mapping[str, str]
 
 
 def load_package_inputs(*, inputs: Path) -> PackageInputs | str:
@@ -325,12 +330,14 @@ def audit_transaction(*, declared: PackageInputs, runner: TimedRunner) -> Audit 
     )
     if refusal is not None:
         return refusal
+    relied_on = {name: row.version for name, row in read_installed(runner=runner).items()}
     debs = tuple(declared.cache / spec.deb for spec in declared.specs)
     for spec, deb in zip(declared.specs, debs, strict=True):
         unvouched = _verification_refusal(spec=spec, deb=deb, runner=runner)
         if unvouched is not None:
             return unvouched
     return Audit(
-        debs=tuple(declared.cache / spec.deb for spec in declared.specs),
+        debs=debs,
         additions=tuple(sorted(f"{spec.package}={spec.version}" for spec in declared.specs)),
+        relied_on=relied_on,
     )

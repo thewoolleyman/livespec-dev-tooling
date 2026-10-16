@@ -174,7 +174,7 @@ def _fenced_outputs() -> list[tuple[tuple[str, ...], list[str]]]:
         ),
         (("dpkg-deb", "-f"), [f"{_ENGINE[1]}\n", f"{_SHIM[1]}\n"]),
         (("dpkg-deb", "-I"), [_POSTINST[_ENGINE[0]], _POSTINST[_SHIM[0]]]),
-        (("dpkg-query",), [_QUERY_BEFORE, _QUERY_AFTER]),
+        (("dpkg-query",), [_QUERY_BEFORE, _QUERY_BEFORE, _QUERY_AFTER]),
     ]
 
 
@@ -465,6 +465,36 @@ def test_the_package_step_refuses_a_download_the_archive_cannot_account_for(
         inputs = _declare(root=tmp_path, payload=payload)
 
 
+def test_the_package_step_refuses_when_an_installed_version_moved_under_the_audit(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": a version the audit relied on may not move.
+
+    The audit is not instantaneous — it simulates a transaction, then
+    downloads and digests every archive — and its verdict rests on the
+    versions the host held while it ran, because that is what apt
+    resolved the pins against. So dpkg's table is read again immediately
+    before the mutation and compared: an unattended upgrade that landed
+    libc6 in between did not break any committed digest, and would leave
+    the audited verdict resting on a host that no longer exists.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    moved = _QUERY_BEFORE.replace("libc6 2.39-0ubuntu8.4", "libc6 2.39-0ubuntu8.5")
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[(("dpkg-query",), [_QUERY_BEFORE, moved]), *_fenced_outputs()],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is not None
+    assert "libc6" in outcome.refusal
+    assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
 def test_the_package_step_requires_the_post_install_difference_to_be_the_additions(
     tmp_path: Path,
 ) -> None:
@@ -486,7 +516,7 @@ def test_the_package_step_requires_the_post_install_difference_to_be_the_additio
     unaudited = _QUERY_AFTER + "runc 1.4.0-0ubuntu1 installed\n"
     runner = _RecordedRunner(
         result=runner_module.CommandOutput,
-        outputs=[(("dpkg-query",), [_QUERY_BEFORE, unaudited]), *_fenced_outputs()],
+        outputs=[(("dpkg-query",), [_QUERY_BEFORE, _QUERY_BEFORE, unaudited]), *_fenced_outputs()],
     )
 
     outcome = packages.run_package_step(inputs=inputs, runner=runner)
