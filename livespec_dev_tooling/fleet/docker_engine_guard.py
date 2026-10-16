@@ -23,9 +23,10 @@ to learn whether the run is committed, and then consult exactly one
 table. Nothing acts before that table says so.
 
 Child 1a owns the lifecycle: the lock, the records, the deadline, the
-table, and `reserve`, `publish`, `arm`, `start` and `recover`. `observe`,
-`confirm`, `verify` and `reconfigure` reach their table decision here and
-raise `NotImplementedError` past it; child 1b fills them in. `rollback`'s
+table, and `reserve`, `publish`, `arm`, `start` and `recover`. Child 1b
+owns `observe`, `confirm`, `verify` and `reconfigure`, each in its own
+module beside this one; the rows that are still `_pending` reach their
+table decision here and raise `NotImplementedError` past it. `rollback`'s
 entry calls `run_rollback` in `_docker_engine_guard_rollback.py`, the
 real host lives in `_docker_engine_guard_host.py`, and the package step
 lives in `_docker_engine_guard_packages.py` — three stubs each sibling
@@ -50,6 +51,11 @@ _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 if str(_PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(_PACKAGE_ROOT))
 
+# Child 1b's operation bodies are reached through their MODULES rather
+# than name by name. Each is a table HANDLER and nothing else in this
+# file calls it, so a module alias keeps the table reading as the
+# registry it is instead of growing an import line per operation.
+from livespec_dev_tooling.fleet import _docker_engine_guard_observer as observer  # noqa: E402
 from livespec_dev_tooling.fleet._docker_engine_guard_cli import (  # noqa: E402
     CliRequest,
     emit,
@@ -172,7 +178,7 @@ DISPATCH_TABLE: Final[tuple[DispatchRow, ...]] = (
     ),
     DispatchRow(
         operation="observe",
-        handler=_pending,
+        handler=observer.observe,
         marker_self="refuse",
         allowed_from=("started",),
         needs_deadline=True,
