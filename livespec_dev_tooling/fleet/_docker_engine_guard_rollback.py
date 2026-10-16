@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "PHASE_BODIES",
+    "POSTCONDITIONS",
     "ROLLBACK_PHASE_ORDER",
     "phase_child_argv",
     "run_phase",
@@ -100,6 +101,19 @@ ROLLBACK_PHASE_ORDER: Final[tuple[str, ...]] = (
     "footprint-removal",
     "interface-deletion",
     "sysctl-comparison",
+)
+
+# The specification's postcondition set, read as ONE record by the final
+# check. Each name is the key the host answers under, and each is phrased
+# as the property that must HOLD, so a failing one reads as the sentence
+# an operator needs: "no docker0" failing says the bridge is still there.
+POSTCONDITIONS: Final[tuple[str, ...]] = (
+    "no start permission",
+    "no socket, process, queued job or pending start for the guarded units",
+    "each FORWARD policy as snapshotted",
+    "no Docker rule",
+    "no docker0",
+    "each watched sysctl as snapshotted",
 )
 
 
@@ -268,6 +282,18 @@ def run_phase(*, run: str, env: GuardEnv, phase: str) -> GuardOutcome:
     )
 
 
+def _failed_postconditions(*, run: str, env: GuardEnv) -> tuple[str, ...]:
+    """Every postcondition the final check finds failing, in specified order.
+
+    Read as ONE record after every stop phase, and read FAIL-CLOSED: a
+    postcondition the host did not answer at all counts as failing, so a
+    narrowed or broken read reports a partial recovery rather than a
+    clean one.
+    """
+    read = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
+    return tuple(name for name in POSTCONDITIONS if not read.get(name, False))
+
+
 def _fence_and_revoke(*, env: GuardEnv) -> None:
     """Stop both writers, then take the start permission back.
 
@@ -303,9 +329,10 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     _fence_and_revoke(env=env)
     for phase in ROLLBACK_PHASE_ORDER:
         _ = env.host.run_phase_child(argv=phase_child_argv(run=run, env=env, phase=phase))
+    failed = _failed_postconditions(run=run, env=env)
     return GuardOutcome(
         operation="rollback",
         run=run,
         verdict=decision.verdict,
-        reason="the run is on the rollback path",
+        reason=f"the rollback ran; these postconditions fail: {', '.join(failed) or 'none'}",
     )
