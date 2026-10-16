@@ -45,6 +45,8 @@ __all__: list[str] = []
 _RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_runner"
 _PREFLIGHT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_preflight"
 _RESYNC_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_resync"
+_NETSTATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_netstate"
+_WITNESS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_witness"
 _CLI_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_preflight_cli"
 _CLI_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_preflight_cli.py")
 
@@ -265,3 +267,116 @@ def test_the_preflight_command_line_is_silent_and_exits_zero_on_a_clear_host(
 
     assert code == 0
     assert caplog.records == []
+
+
+# The run the role reserves on the acceptance host, and the file name
+# `k3s_witness_probe` reads every sample -- spelled out rather than read
+# from the witness module, because the FileNotFoundError that sent this
+# work item to the factory named this exact path.
+_RUN = "run-a"
+_WITNESS_FILE = "k3s-witness.json"
+
+# `pgrep --exact containerd` before the install: a containerd that is
+# not k3s's, and k3s's own. The first is why the witness identifies its
+# process by CGROUP rather than by name -- after the install there are
+# two processes answering to this exact name, and only one of them must
+# survive the window.
+_CONTAINERD_PIDS = _lines("991", "512")
+_CONTAINERD_CGROUPS = {
+    "991": "0::/system.slice/containerd.service",
+    "512": "0::/system.slice/k3s-agent.service",
+}
+
+# `ip -o link show` on the pre-Docker host: the loopback, the wired
+# interface, the tailnet device, k3s's bridge and VXLAN device, and one
+# of k3s's own veths -- whose `@if3` peer suffix must be stripped, so
+# the record names what a deletion would take.
+_LINKS_BEFORE = _lines(
+    "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN",
+    "2: enp2s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP",
+    "3: tailscale0: <POINTOPOINT,MULTICAST,NOARP,UP,LOWER_UP> mtu 1280 state UNKNOWN",
+    "4: cni0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UP",
+    "5: flannel.1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 state UNKNOWN",
+    "6: vethf00d01@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 master cni0 state UP",
+)
+
+
+def _proc_tree(*, root: Path, cgroups: dict[str, str]) -> Path:
+    """A recorded `/proc` holding one `cgroup` file per named process."""
+    for pid, line in cgroups.items():
+        directory = root / pid
+        directory.mkdir(parents=True, exist_ok=True)
+        _ = (directory / "cgroup").write_text(_lines(line), encoding="utf-8")
+    return root
+
+
+def _witness_bus() -> _Commands:
+    """A bus answering both reads the preflight RECORD takes."""
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    witness = importlib.import_module(_WITNESS_MODULE)
+    return _Commands(
+        answers={
+            witness.PGREP_CONTAINERD_ARGV: _CONTAINERD_PIDS,
+            netstate.LINK_SHOW_ARGV: _LINKS_BEFORE,
+        }
+    )
+
+
+def test_the_preflight_command_line_records_the_k3s_witness_and_the_interfaces(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both baselines a sample compares against, into THIS run's own `before/`.
+
+    This is the assertion the failure that filed this work item was
+    about. `observe` on a real host raised FileNotFoundError on
+    `<state root>/runs/<run>/before/k3s-witness.json` because nothing
+    the role could invoke reached `RealHost.record_preflight`, so the
+    file the witness probe reads every sample was never written. The
+    subcommand is asserted to be ON the command line first -- an entry
+    the role cannot name is exactly the gap that was found -- and then
+    to write both records.
+
+    Both are taken before the first package step, which is why they
+    belong to the preflight rather than to an operation: a baseline
+    taken afterwards would already carry what it exists to detect.
+
+    The witness PID is the one identified by its CGROUP and not the
+    other containerd on the host, and the interface record carries the
+    veth's name with its `@if3` peer suffix stripped -- the name a
+    deletion would take.
+    """
+    cli = _cli()
+
+    with pytest.raises(SystemExit) as helped:
+        _ = cli.main(argv=["--help"])
+
+    assert helped.value.code == 0
+    assert "record" in capsys.readouterr().out
+
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    witness = importlib.import_module(_WITNESS_MODULE)
+    proc = _proc_tree(root=tmp_path / "proc", cgroups=_CONTAINERD_CGROUPS)
+    state_root = tmp_path / "var"
+    bus = _witness_bus()
+
+    code = cli.main(
+        argv=["record", "--state-root", str(state_root), "--run", _RUN],
+        runner=bus,
+        proc_root=proc,
+    )
+
+    assert code == 0
+    before = state_root / "runs" / _RUN / "before"
+    assert witness.WITNESS_SNAPSHOT == _WITNESS_FILE
+    assert json.loads((before / _WITNESS_FILE).read_text(encoding="utf-8")) == {
+        "containerd_pid": "512"
+    }
+    assert json.loads((before / witness.INTERFACE_SNAPSHOT).read_text(encoding="utf-8")) == [
+        "cni0",
+        "enp2s0",
+        "flannel.1",
+        "lo",
+        "tailscale0",
+        "vethf00d01",
+    ]
+    assert set(bus.timeouts) == {witness.WITNESS_TIMEOUT_SECONDS, netstate.LINK_TIMEOUT_SECONDS}
