@@ -122,17 +122,29 @@ write_unit local-homelab-llama-server.service "LLM health stub" \
 # before the guard's first start (design "The daemon configuration"). On a
 # factory host the docker_sandbox_slice role's systemd-only half installs it;
 # here a minimal slice stands in, without that role's sizing.
+#
+# The stub is WANTED at boot, which the real slice is not. That role starts the
+# slice when it converges and installs no [Install] section, so on a factory host
+# the slice is active only from that converge until the next reboot, and the
+# converge runs right before docker_engine's. Every acceptance case cold-boots
+# from the `baseline` snapshot, so the stub has to come up active on its own to
+# reproduce that state; without this every case refuses at preflight
+# (measured 2026-10-16, H-01 on poweredge: ActiveState=inactive after `up`).
 cat >/etc/systemd/system/fabro-sandbox.slice <<'EOF'
 [Unit]
 Description=Fabro sandbox slice (docker_engine acceptance STUB)
+Before=slices.target
 
 [Slice]
+
+[Install]
+WantedBy=slices.target
 EOF
 
 systemctl daemon-reload
 systemctl enable --now tailscaled.service k3s-agent.service local-homelab-llama-server.service
 systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
-systemctl start fabro-sandbox.slice
+systemctl enable --now fabro-sandbox.slice
 
 # Refuse to call the baseline done unless it actually holds: the same facts the
 # role's preflight and the design's measured state read.
