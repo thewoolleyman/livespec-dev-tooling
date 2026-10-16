@@ -7,12 +7,12 @@ firewall footprint, unit and job control, the effective-condition check,
 the postcondition read and the dead-man recipe; child 4 adds the
 PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
 resync refusal) and the observation `sample`; child 5 adds the clock
-and boot identity. The seams that still raise, each saying so where it
-stands, are the runtime directory's ownership, the admission reads of
-guard-unit state and this invocation's own unit, the start permission,
-the unit start, the dead-man timer reads, the post-commit and
-reconfigure seams child 1b added, the rollback phase child child 2
-added, and child 3b's package step.
+and boot identity, the runtime directory's ownership and the start
+permission. The seams that still raise, each saying so where it
+stands, are the admission reads of guard-unit state and this
+invocation's own unit, the unit start, the dead-man timer reads, the
+post-commit and reconfigure seams child 1b added, the rollback phase
+child child 2 added, and child 3b's package step.
 
 TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
 `preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
@@ -56,6 +56,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
     compare_sysctls,
     delete_bridge_interfaces,
     write_sysctl_snapshot,
+)
+from livespec_dev_tooling.fleet._docker_engine_guard_permission import (
+    grant_start_permission,
+    revoke_start_permission,
+    set_owner_root,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_postconditions import read_postconditions
 from livespec_dev_tooling.fleet._docker_engine_guard_preflight import (
@@ -123,8 +128,8 @@ class RealHost:
         wait_seconds(seconds=seconds)
 
     def set_owner_root(self, *, path: Path) -> None:
-        """CHILD 4: make the runtime directory root-owned."""
-        raise NotImplementedError
+        """Make the runtime directory root-owned."""
+        set_owner_root(runner=self.runner, path=path)
 
     # --- admission reads (design I1) ---
 
@@ -207,8 +212,8 @@ class RealHost:
     # --- start ---
 
     def grant_start_permission(self) -> None:
-        """CHILD 4: create the start permission the guarded units' condition reads."""
-        raise NotImplementedError
+        """Create the start permission the guarded units' condition reads."""
+        grant_start_permission(paths=self.paths)
 
     def start_unit(self, *, unit: str, timeout_seconds: int) -> None:
         """CHILD 4: start one guarded unit with a bounded wait."""
@@ -248,8 +253,8 @@ class RealHost:
     # --- rollback phases ---
 
     def revoke_start_permission(self) -> None:
-        """CHILD 4: remove the start permission. The first act of any rollback."""
-        raise NotImplementedError
+        """Remove the start permission. The first act of any rollback."""
+        revoke_start_permission(paths=self.paths)
 
     def stop_unit(self, *, unit: str, timeout_seconds: int) -> None:
         """Stop one unit with a bounded wait."""
