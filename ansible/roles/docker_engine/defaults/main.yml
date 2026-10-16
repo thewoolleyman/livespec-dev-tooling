@@ -183,14 +183,34 @@ docker_engine_llm_health_url: ""
 docker_engine_probe_timeout_seconds: 15
 
 # The HOST-SIDE probe parameters, uploaded into the run's inputs/ directory as
-# probes.json for the guard's observer. The observer's probes are guard child 4
-# (livespec-dev-tooling-bfzrq7); the file name and these keys are the role's
-# proposal until that child lands and fixes them.
+# probes.json for the guard's observer. The keys are exactly the guard's
+# ProbeParameters (livespec_dev_tooling/fleet/_docker_engine_guard_probe_set.py,
+# guard child 4, livespec-dev-tooling-bfzrq7); `observe` raises on a missing
+# one (measured 2026-10-16, H-01: KeyError 'node').
+#
+# The k3s node this host is, and the k3s server the DNS-placement probe asks
+# where CoreDNS runs (this node's own credential cannot list pods). The server
+# has no default and is REFUSED while empty: it is a fact about the cluster.
+docker_engine_k3s_node: "{{ inventory_hostname }}"
+docker_engine_k3s_server: ""
+# The command prefix that reaches that server and runs a command there with the
+# rights `k3s kubectl` needs (guard child 9, livespec-dev-tooling-tceepc).
+# Empty means the guard's own `ssh -o BatchMode=yes <server>`, which needs a
+# root-to-root credential this fleet does not provision.
+docker_engine_k3s_server_argv: []
+# The ONE canary container the role runs between `start` and `observe` (design
+# Mechanism 1, phase `canary`), pinned by digest. busybox 1.37.0's OCI index,
+# read from registry-1.docker.io on 2026-10-16.
+docker_engine_canary_name: docker-engine-guard-canary
+docker_engine_canary_image: busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
 docker_engine_probe_parameters:
-  node_status_kubeconfig: /etc/rancher/k3s/node-status-kubeconfig
+  node: "{{ docker_engine_k3s_node }}"
+  k3s_server: "{{ docker_engine_k3s_server }}"
   kube_dns_address: 10.43.0.10
-  kube_api_address: 10.43.0.1
-  https_probe_host: archive.ubuntu.com
+  dns_name: kubernetes.default.svc.cluster.local
+  api_address: 10.43.0.1
+  api_port: 443
+  canary: "{{ docker_engine_canary_name }}"
 
 # The units whose postinst start the post-install check expects to find
 # condition-skipped in the journal (design F5 step 3). Measured on the VM; a

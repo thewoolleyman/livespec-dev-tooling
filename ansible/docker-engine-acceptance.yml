@@ -164,6 +164,26 @@
       loop: "{{ range(0, docker_engine_acceptance_instances | int) | list }}"
       changed_when: true
 
+    - name: Wait for each instance's k3s to answer DNS again
+      # A cold boot from `baseline` restarts the guest's k3s, and the guard's
+      # DNS-placement probe fails while no CoreDNS pod is Running, so a case
+      # started before then would roll back for a reason that is not its own.
+      when: docker_engine_acceptance_action == 'up'
+      ansible.builtin.shell:
+        cmd: >-
+          set -euo pipefail;
+          ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers
+          | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {exit !found}'
+        chdir: "{{ docker_engine_acceptance_dir }}"
+        executable: /bin/bash
+      environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': item | string}) }}"
+      loop: "{{ range(0, docker_engine_acceptance_instances | int) | list }}"
+      register: docker_engine_acceptance_dns
+      until: docker_engine_acceptance_dns.rc == 0
+      retries: 36
+      delay: 5
+      changed_when: false
+
     - name: Stop every instance
       when: docker_engine_acceptance_action in ['down', 'teardown']
       ansible.builtin.command:
