@@ -44,6 +44,15 @@ if dpkg-query -W -f='${Status}' needrestart 2>/dev/null | grep -q 'install ok in
   DEBIAN_FRONTEND=noninteractive apt-get purge -y -q needrestart >/dev/null
 fi
 
+# gmktec's package index is kept current by its apt-daily timers, so its
+# docker.io candidate is the audited 29.1.3-0ubuntu4.1 from
+# resolute-updates/universe. The cloud image ships index lists that carry no
+# docker.io at all although its sources name universe, which made H-01's
+# audited download fail with "Version ... was not found" (measured
+# 2026-10-16). Refresh the index once here, so the snapshot holds a current
+# one; this changes no file under /etc/apt, which the role digests.
+apt-get update -q >/dev/null
+
 # Sysctls and the bridge netfilter module, as measured on gmktec.
 modprobe br_netfilter
 cat >/etc/modules-load.d/guard-baseline.conf <<'EOF'
