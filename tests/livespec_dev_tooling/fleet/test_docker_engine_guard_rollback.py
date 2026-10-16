@@ -379,3 +379,52 @@ def test_the_final_check_reads_every_postcondition_together_after_the_stop_phase
     names = [call.name for call in fake.calls]
     last_phase = max(index for index, name in enumerate(names) if name == "run_phase_child")
     assert names.index("read_postconditions") > last_phase
+
+
+def _rollback_record(*, root: Path, run: str, name: str) -> Path:
+    """One of a run's rollback bookkeeping files: an attempt, a success, an outcome."""
+    return root / "var" / "runs" / run / "rollback" / name
+
+
+def _attempts_at_entry(*, fake: Any, root: Path, run: str) -> dict[str, str]:
+    """Read each phase's attempt record AT THE MOMENT its child is spawned.
+
+    The ordering between the durable record and the spawn is the whole
+    assertion, and it cannot be read after the fact: a driver that
+    recorded the attempt after spawning would leave identical files
+    behind. Reading the record from inside the spawn is what tells the
+    two apart — and it is exactly what a phase child that kills the
+    driver sees.
+    """
+    seen: dict[str, str] = {}
+    spawn = fake.run_phase_child
+
+    def recording_spawn(*, argv: tuple[str, ...]) -> bool:
+        record = _rollback_record(root=root, run=run, name=f"{argv[-1]}.attempts")
+        seen[argv[-1]] = record.read_text(encoding="utf-8") if record.is_file() else "absent"
+        return spawn(argv=argv)
+
+    fake.run_phase_child = recording_spawn
+    return seen
+
+
+def test_the_driver_records_a_phase_attempt_durably_before_it_enters_the_phase(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback" / design H6: the attempt is recorded, then entered.
+
+    The order is the only thing that makes the attempt budget work at
+    all. A phase that kills the driver every time it is entered never
+    returns to record anything, so an attempt recorded AFTER the spawn
+    would never be written for exactly the phase the budget exists to
+    bound — and the dead-man would re-enter it forever. Recorded first,
+    the same crash still advances the count.
+    """
+    rollback = _driver()
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+    seen = _attempts_at_entry(fake=fake, root=tmp_path, run="run-a")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
+
+    assert seen == {phase: "1" for phase in _SPECIFIED_ORDER}
