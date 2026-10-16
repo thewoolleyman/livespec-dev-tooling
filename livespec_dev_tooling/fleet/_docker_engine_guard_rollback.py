@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "PHASE_BODIES",
+    "PHASE_BUDGET_SECONDS",
     "POSTCONDITIONS",
     "ROLLBACK_PHASE_ORDER",
     "phase_child_argv",
@@ -102,6 +103,18 @@ ROLLBACK_PHASE_ORDER: Final[tuple[str, ...]] = (
     "interface-deletion",
     "sysctl-comparison",
 )
+# Every phase is bounded identically for now: one flat `timeout -k 10`
+# bound per child. The apportionment between the cheap phases and the
+# expensive ones is its own rule and lands with its own table.
+_FLAT_PHASE_BUDGET_SECONDS: Final[int] = 60
+
+PHASE_BUDGET_SECONDS: Final[dict[str, int]] = {
+    phase: _FLAT_PHASE_BUDGET_SECONDS for phase in ROLLBACK_PHASE_ORDER
+}
+
+# What `timeout` is given between the SIGTERM at the budget and the
+# SIGKILL that follows it, so a phase ignoring the first still ends.
+PHASE_KILL_AFTER_SECONDS: Final[int] = 10
 
 # The specification's postcondition set, read as ONE record by the final
 # check. Each name is the key the host answers under, and each is phrased
@@ -251,6 +264,10 @@ def _record_attempt(*, run: str, env: GuardEnv, phase: str, attempts: int) -> No
 def phase_child_argv(*, run: str, env: GuardEnv, phase: str) -> tuple[str, ...]:
     """The command line the driver spawns for one phase.
 
+    `timeout -k 10 <budget>` is what makes a phase that hangs cost its
+    own budget and nothing more: SIGTERM at the budget, SIGKILL ten
+    seconds later, and a status back to the driver either way.
+
     The state roots are FORWARDED rather than left to default: the
     disposable acceptance host is driven somewhere other than `/var/lib`
     and `/run`, and a child that read the real locations there would act
@@ -258,6 +275,10 @@ def phase_child_argv(*, run: str, env: GuardEnv, phase: str) -> tuple[str, ...]:
     child's route reads it off the tail.
     """
     return (
+        "timeout",
+        "-k",
+        str(PHASE_KILL_AFTER_SECONDS),
+        str(PHASE_BUDGET_SECONDS[phase]),
         str(GUARD_EXECUTABLE),
         "rollback",
         run,
