@@ -220,6 +220,28 @@
     - role: ci_converge_unit
       tags: [ci_converge_unit]
       when: cluster_role == 'server'
+    # Beside it, and AFTER it on purpose: the factory reach proof as a converge
+    # artifact (livespec-dev-tooling-jvnqwv, freeze ruling R70 of 2026-10-16).
+    # It installs ci-runner/k3s/phase2/factory/verify-factory-reach.sh, its
+    # probe and its two configuration files into the same installed tree, and —
+    # only when `-e factory_reach_check_run_now=true` is passed on one apply —
+    # RUNS the check for every ci_pool node whose profile declares
+    # FACTORY_NODE=true, under the `factory` namespace's scoped
+    # sandbox-launcher credential rather than the admin kubeconfig.
+    #
+    # Gated on `cluster_role` and NOT on FACTORY_NODE, which is the one place
+    # this role differs from factory_workspace_root above: the artifact set is
+    # installed on the node that RUNS the check, and that node reaches every
+    # covered node through the API server. An agent gains nothing from a copy of
+    # a renderer it holds no credential to submit with — the credential converge
+    # step 10e renders lives here, root-only, on the server.
+    #
+    # After ci_converge_unit because that role's unit is what renders the
+    # credential's source and installs the rest of the tree, so ONE apply
+    # carrying both run-now switches converges and THEN proves, in that order.
+    - role: factory_reach_check
+      tags: [factory_reach_check]
+      when: cluster_role == 'server'
     # 9/10 — tmpfs datastore mount (server-only, STEP_SKIP; enable only).
     - role: datastore_tmpfs
       tags: [datastore_tmpfs]

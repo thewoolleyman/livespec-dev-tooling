@@ -119,6 +119,14 @@ _POWEREDGE_ROLES = (
     "cache_telemetry",
     "container_hook",
     "ci_converge_unit",
+    # The factory reach proof's install-and-consent-gated-run step
+    # (livespec-dev-tooling-jvnqwv, freeze ruling R70). Server-only, and the ONE
+    # role here gated on `cluster_role` rather than FACTORY_NODE despite being
+    # about factory pods: the artifact set lives on the node that RUNS the
+    # check, which is the node holding the scoped credential converge step 10e
+    # renders. `tests/livespec_dev_tooling/test_ci_pool_factory_reach_check.py`
+    # resolves the install, the consent gate and that credential.
+    "factory_reach_check",
     "datastore_tmpfs",
     "storage_sweep",
 )

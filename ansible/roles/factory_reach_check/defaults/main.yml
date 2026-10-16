@@ -1,0 +1,91 @@
+---
+# factory_reach_check — the factory reach proof as a CONVERGE ARTIFACT.
+#
+# livespec-dev-tooling-jvnqwv, livespec plan factory-worker-nodes-gitops (epic
+# livespec-sqvj7p), freeze ruling R70 of 2026-10-16.
+#
+# WHY THIS ROLE EXISTS AT ALL. livespec-dev-tooling-sszvvw committed
+# `verify-factory-reach.sh` and its two companions and left them with NO
+# sanctioned run path: nothing installed them on the control-plane node, and a
+# run would have needed the root-only admin kubeconfig. R70 rejected exporting
+# the tree and running it under sudo by hand — that is precisely what the GitOps
+# discipline forbids — and required the check to become a converge artifact like
+# every other proof on this plan. This role is that artifact's install step and
+# its consent-gated run.
+#
+# NO MACHINE IS NAMED HERE. A machine is bound only through the inventory's host
+# groups and host_vars (livespec-dev-tooling-prdxxe, enforced by
+# `just check-ansible-hostname-free`): `ansible/ci-pool.yml` gates this role on
+# `cluster_role == 'server'`, and the covered node set is read from each pool
+# node's own committed profile.
+
+# The repository's copy of the artifact set, and the installed tree it lands in.
+# Resolved from `role_path` exactly as ci_converge_unit resolves its own phase2
+# directory, so the two roles install out of the same checkout.
+factory_reach_check_factory_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2/factory"
+factory_reach_check_lib_dir: /usr/local/lib/ci-runner-k3s
+# BESIDE the factory manifests the boot converge already applies from this
+# subdirectory. That is what makes the installed layout MIRROR the repository
+# layout — and the renderer resolves the probe, the endpoints and the image pin
+# relative to its OWN directory, so a layout that did not mirror would make the
+# installed copy refuse at its first resolution.
+factory_reach_check_install_dir: "{{ factory_reach_check_lib_dir }}/factory"
+
+# The artifact set, with the mode each member is installed under. The two
+# executables are the renderer and the probe it embeds verbatim; the two 0644
+# files are configuration it READS, never runs. `ci_converge_unit` installs
+# factory-namespace.yaml and factory-rbac.yaml into the same directory and this
+# role installs none of them: one owner per file, the posture that role's header
+# records for patch-node-churn-capacity.sh.
+factory_reach_check_files:
+  - src: verify-factory-reach.sh
+    mode: "0755"
+  - src: factory-reach-probe.sh
+    mode: "0755"
+  - src: factory-reach-endpoints.env
+    mode: "0644"
+  - src: factory-reach-image.env
+    mode: "0644"
+
+# THE SCOPED CREDENTIAL THE RUN AUTHENTICATES AS, and the whole reason this role
+# can run the check at all without the admin kubeconfig R70 rejected. It is the
+# `factory` namespace's `sandbox-launcher` ServiceAccount — create/get/list/
+# watch/delete on pods and batch jobs and get on pods/log, in that namespace
+# only, declared in ci-runner/k3s/phase2/factory/factory-rbac.yaml — which is
+# exactly the identity a sandbox launch uses, so the check proves the reach of
+# the credential that actually places factory pods rather than of one no pod
+# holds. `reconstruct/converge-ci-stack.sh` step 10e renders it HERE, on the
+# control-plane node, at every boot; the sibling factory_kubeconfig role fetches
+# the same file for a Fabro-server host. Co-maintained with that role's
+# `factory_kubeconfig_remote_path`, which is the same file on the same node.
+factory_reach_check_kubeconfig: /etc/ci-runner/factory.kubeconfig
+
+# Where each pool node's committed posture is read from. The profile lives in
+# this repository and the target carries no checkout, so the read happens on the
+# CONTROLLER — the same `lookup` + `regex_findall | first` chain every role in
+# this tree reads a profile with.
+factory_reach_check_profile_dir: >-
+  {{ role_path }}/../../../ci-runner/k3s/phase0-bare-metal/profiles
+
+# CONSENT: default false, so a ROUTINE apply installs the artifact set and runs
+# nothing. Pass `-e factory_reach_check_run_now=true` on ONE apply to run it.
+# The run SUBMITS Jobs into the live `factory` namespace, each taking a slot of
+# the ResourceQuota that is the only bound on what factory runs take from the CI
+# pool poweredge also serves (maintainer ruling 2026-10-13, derived in
+# ci-runner/k3s/phase2/factory/DERIVATION.md). A drift report must never reach
+# that either, which is why the gate names `ansible_check_mode` as well: there
+# is no dry form of submitting a Job.
+factory_reach_check_run_now: false
+
+# WHICH NODES ONE RUN COVERS. Empty means every `ci_pool` node whose profile
+# declares FACTORY_NODE=true — the same fact the node_labels role renders the
+# factory label from, so the covered set cannot drift from the set of nodes that
+# advertise factory capacity. Narrow it with
+# `-e '{"factory_reach_check_nodes": ["hp-xubuntu"]}'` when one node is the
+# question.
+factory_reach_check_nodes: []
+
+# Handed to the renderer's own `--timeout-seconds`. Its default is 300; this is
+# stated so a slow first image pull on a rebuilt node is an operator variable
+# rather than an edit to a committed script.
+factory_reach_check_timeout_seconds: 300
