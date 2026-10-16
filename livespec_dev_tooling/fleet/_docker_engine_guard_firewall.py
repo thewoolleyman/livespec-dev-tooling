@@ -35,15 +35,30 @@ from typing import Final
 
 __all__: list[str] = [
     "CHANGE_COMMAND",
+    "DOCKER_BRIDGE",
+    "DOCKER_CHAIN_PREFIX",
+    "DOCKER_SUBNET",
     "FAMILIES",
     "FORWARD_POLICY_SNAPSHOT",
     "SAVE_COMMAND",
     "SNAPSHOT_TABLES",
     "FirewallTable",
+    "FootprintPlan",
     "parse_table",
+    "plan_footprint",
     "save_argv",
     "snapshot_name",
 ]
+
+# The three marks that make a rule Docker's. The guarded scope is the
+# DEFAULT bridge only -- the role refuses at preflight, and the actor
+# fails its probes, if any other Docker network, bridge or Docker-created
+# interface exists -- so these two literals plus the Docker chain set are
+# the whole vocabulary, and no wildcard that could reach a k3s rule is
+# ever needed.
+DOCKER_BRIDGE: Final[str] = "docker0"
+DOCKER_SUBNET: Final[str] = "172.17.0.0/16"
+DOCKER_CHAIN_PREFIX: Final[str] = "DOCKER"
 
 # The two address families, in the order every action walks them, so a
 # report reads the same way twice.
@@ -114,3 +129,41 @@ def parse_table(*, dump: str) -> FirewallTable:
         elif line.startswith("-A "):
             rules.append(line)
     return FirewallTable(chains=tuple(chains), policies=policies, rules=tuple(rules))
+
+
+@dataclass(frozen=True, kw_only=True)
+class FootprintPlan:
+    """What one family's one table has to give up: rules first, then chains.
+
+    The order is not cosmetic. A chain cannot be deleted while a rule
+    still jumps to it, and it cannot be deleted while it holds rules of
+    its own, so the removal issues every `-D` first, then flushes, then
+    deletes -- and the plan carries the two sets separately so that order
+    is a property of the plan rather than a habit of the caller.
+    """
+
+    delete_rules: tuple[str, ...]
+    delete_chains: tuple[str, ...]
+
+
+def plan_footprint(*, current: FirewallTable, snapshot: FirewallTable) -> FootprintPlan:
+    """Exactly Docker's rules and chains in this table, and nothing else's.
+
+    A chain is Docker's when its name starts with `DOCKER` and the
+    snapshot does not have it; a rule is Docker's when it references the
+    default bridge, the default subnet, or one of those chains. Matching
+    on a TOKEN rather than a substring is what keeps a hypothetical
+    `docker0-shim` interface or a `172.17.0.0/16`-prefixed string out of
+    the set: the canonical rule line is already whitespace-normalized, so
+    its tokens are the rule's actual arguments.
+    """
+    docker_chains = tuple(
+        chain
+        for chain in current.chains
+        if chain.startswith(DOCKER_CHAIN_PREFIX) and chain not in snapshot.chains
+    )
+    marks = {DOCKER_BRIDGE, DOCKER_SUBNET, *docker_chains}
+    return FootprintPlan(
+        delete_rules=tuple(rule for rule in current.rules if not marks.isdisjoint(rule.split())),
+        delete_chains=docker_chains,
+    )
