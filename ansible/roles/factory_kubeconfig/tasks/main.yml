@@ -1,0 +1,164 @@
+---
+# factory_kubeconfig — this host's cluster access for the `factory` namespace.
+#
+# livespec-dev-tooling-sqobqv, livespec plan factory-worker-nodes-gitops (epic
+# livespec-sqvj7p). The sibling of gates_kubeconfig; see defaults/main.yml for
+# why it is a sibling rather than a generalisation of it.
+#
+# WHAT THE CREDENTIAL GRANTS. It authenticates as the `factory` namespace's
+# `sandbox-launcher` ServiceAccount: create/get/list/watch/delete on pods, get
+# on pods/log, create on pods/exec, and create/get/list/watch on batch jobs, in
+# that namespace only. Nothing on secrets, nothing cluster-scoped. The Role is
+# this repo's ci-runner/k3s/phase2/factory/factory-rbac.yaml; the host holds
+# only the token.
+#
+# WHY IT IS FETCHED RATHER THAN MINTED HERE. The control-plane node's k3s
+# datastore is a tmpfs, so that ServiceAccount and its token Secret are
+# RECREATED at every boot and the credential a host holds is stale from that
+# moment. converge-ci-stack.sh step 10e re-renders the file on the node at
+# every boot; this role fetches whatever is rendered now, and the runtime tools
+# below re-fetch it on the first rejection after a reboot with no operator.
+
+- name: Install kubectl pinned to the cluster's k3s minor
+  # The checksum is the PUBLISHED one fetched from its own URL, not a digest
+  # computed from the file just downloaded — that would only prove the
+  # download was internally consistent, which is true of any tampered file.
+  ansible.builtin.get_url:
+    url: >-
+      https://dl.k8s.io/release/{{ factory_kubeconfig_kubectl_version }}/bin/linux/{{ _factory_kubeconfig_arch }}/kubectl
+    checksum: >-
+      sha256:https://dl.k8s.io/release/{{ factory_kubeconfig_kubectl_version }}/bin/linux/{{ _factory_kubeconfig_arch }}/kubectl.sha256
+    dest: "{{ factory_kubeconfig_bin_dir }}/kubectl"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  vars:
+    _factory_kubeconfig_arch: "{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else ansible_facts['architecture'] }}"
+
+- name: Install the factory-credential scripts
+  # These stay as shell because they are RUNTIME tools, not provisioning:
+  # with-factory-kubeconfig re-fetches on a rejection in the middle of a
+  # sandbox launch, long after any playbook has exited. The role owns their
+  # installation; it does not own their behaviour.
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ factory_kubeconfig_bin_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop:
+    - refresh-factory-kubeconfig
+    - with-factory-kubeconfig
+
+- name: Read the rendered factory kubeconfig from the control-plane node
+  # The read happens on the control-plane node under its own become, and the
+  # write happens here under ours, so no ssh credential has to cross between
+  # the two accounts at converge time. The RUNTIME refresh is the path that
+  # does need this host's own tailnet identity; see the env-file task below.
+  ansible.builtin.slurp:
+    src: "{{ factory_kubeconfig_remote_path }}"
+  become: true
+  delegate_to: "{{ factory_kubeconfig_remote_host }}"
+  register: factory_kubeconfig_rendered
+  changed_when: false
+  no_log: true
+
+- name: Refuse a fetched file that is not a kubeconfig
+  # A truthful-looking but malformed answer is worse than a failure, because it
+  # would overwrite a good credential with a useless one.
+  ansible.builtin.assert:
+    that:
+      - "'kind: Config' in (factory_kubeconfig_rendered.content | b64decode)"
+      - "'server:' in (factory_kubeconfig_rendered.content | b64decode)"
+    fail_msg: >-
+      {{ factory_kubeconfig_remote_host }}:{{ factory_kubeconfig_remote_path }} is not
+      a kubeconfig — refusing to overwrite {{ factory_kubeconfig_dest }}
+    success_msg: fetched content is a kubeconfig
+
+- name: Create the credential directory
+  # `--check` cannot see this: with the directory absent, the copy below is
+  # reported as a would-be change and fails only on a real apply. The role owns
+  # it here so a first apply on a fresh factory host succeeds.
+  ansible.builtin.file:
+    path: "{{ factory_kubeconfig_dest | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Create the group that may read the factory credential
+  # A DEDICATED group, never an existing one and never the gates group. The
+  # credential is a bearer token for the `factory` namespace, so widening it to
+  # a group the host already uses for something else would hand that token to
+  # every present and future member of that group. `system: true` keeps the GID
+  # out of the human range.
+  ansible.builtin.group:
+    name: "{{ factory_kubeconfig_group }}"
+    system: true
+    state: present
+  become: true
+
+- name: Put this host's Fabro service account in the factory-client group
+  # The account that LAUNCHES is the identity that has to be able to READ the
+  # credential — the same account whose tailnet ssh key the refresh fetch drops
+  # to. Root-only ownership would make the credential unusable from the Fabro
+  # server, which does not run as root.
+  #
+  # `append: true` is load-bearing: this role owns ONE of that user's groups,
+  # not the set. A bare `groups:` would silently REMOVE every other membership
+  # the account holds — `sudo` among them, which is also what the wrapper's
+  # `sudo -n refresh-factory-kubeconfig` depends on, and `docker` on a factory
+  # host, which is what runs the sandboxes.
+  ansible.builtin.user:
+    name: "{{ factory_kubeconfig_ssh_user }}"
+    groups: "{{ factory_kubeconfig_group }}"
+    append: true
+  become: true
+
+- name: Install the refresh tool's control-plane, ssh-identity and group env-file
+  # Three POOL FACTS the shipped script must not bake: which node renders the
+  # credential, which local account's tailnet identity can fetch it, and which
+  # group the replacement must carry. The control-plane node rides this file
+  # rather than a default inside the script because a hostname inside a role is
+  # the second, silent place a machine binding lives — the posture
+  # livespec-dev-tooling-prdxxe ratified — and because the script then has no
+  # wrong answer to fall back on: with no env-file it refuses rather than
+  # reaching for a machine that may not be the server any more.
+  #
+  # Not no_log and mode 0644 on purpose: it carries a hostname, a username and
+  # a group name, never a secret — the credential itself is the 0640 file below.
+  ansible.builtin.copy:
+    content: |
+      # Written by the factory_kubeconfig Ansible role. Read by
+      # refresh-factory-kubeconfig at runtime. Carries no secret.
+      FACTORY_REMOTE_HOST={{ factory_kubeconfig_remote_host }}
+      FACTORY_REMOTE_KUBECONFIG={{ factory_kubeconfig_remote_path }}
+      FACTORY_SSH_USER={{ factory_kubeconfig_ssh_user }}
+      FACTORY_GROUP={{ factory_kubeconfig_group }}
+    dest: "{{ factory_kubeconfig_refresh_env }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the factory kubeconfig
+  # no_log because the content is a bearer token. It must never reach a diff,
+  # a log line, or a terminal.
+  #
+  # ROOT-OWNED, FACTORY-CLIENT-GROUP-READABLE, 0640 — never world-readable, and
+  # never root-only either. Root-only would make the credential unreadable by
+  # the Fabro server that has to launch the pods; world-readable would hand a
+  # namespace-wide bearer token to every account on a host that runs untrusted
+  # sandbox workloads. The WRITE stays root's; a group member reads the token
+  # and cannot replace it.
+  ansible.builtin.copy:
+    content: "{{ factory_kubeconfig_rendered.content | b64decode }}"
+    dest: "{{ factory_kubeconfig_dest }}"
+    owner: root
+    group: "{{ factory_kubeconfig_group }}"
+    mode: "0640"
+  become: true
+  no_log: true

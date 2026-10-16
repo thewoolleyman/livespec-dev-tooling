@@ -17,6 +17,13 @@ container_reclaim_system_hostname: hp-xubuntu
 # --- disk_guard ---
 disk_guard_threshold_gb: 40
 
+# --- factory_kubeconfig ---
+# The LOCAL account whose tailnet ssh key reaches the control-plane node, and
+# the account put in the credential's read group. cwoolley, NOT ubuntu: the
+# tailnet ACL rejects the ubuntu account on this host, so the fleet default
+# would fail the refresh as an ssh timeout nobody is watching.
+factory_kubeconfig_ssh_user: cwoolley
+
 # --- fabro_server ---
 # The service account is cwoolley, NOT ubuntu: the tailnet ACL rejects the
 # ubuntu account on this host, and the checkout root is under $HOME rather

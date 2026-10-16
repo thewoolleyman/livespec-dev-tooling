@@ -1,0 +1,66 @@
+---
+# factory_kubeconfig — a Fabro-server host's cluster access for the `factory`
+# namespace. The sibling of gates_kubeconfig, and deliberately the same shape.
+#
+# WHY A SIBLING ROLE RATHER THAN ONE PARAMETERISED ROLE. The work-item prefers
+# a generalisation, and the generalisation is a propose-change rather than an
+# implementation choice: this repository's `SPECIFICATION/contracts.md` names
+# `gates_kubeconfig` BY ROLE NAME and names `with-gates-kubeconfig` and
+# `refresh-gates-kubeconfig` by file name, in the ratified clause governing the
+# delegated pre-push gate's credential — a clause whose registered coverage
+# (`tests/consumer/test_gates_credential_provisioning.py`) reads that role's own
+# tasks. Folding it into a differently-named role would
+# rewrite a ratified contract and the spec-registered coverage of the live
+# delegated pre-push gate every fleet repository pushes through — and this
+# work-item's Definition of Done requires that play's gates tasks to be
+# UNCHANGED. So the duplication is deliberate and bounded, the generalisation
+# is a follow-up that revises the spec clause first, and
+# `tests/livespec_dev_tooling/test_factory_kubeconfig_delivery.py` holds the
+# gates task list frozen so the preference is not taken by accident.
+#
+# NO MACHINE IS NAMED HERE. A machine is bound only through the inventory's
+# host groups and host_vars (livespec-dev-tooling-prdxxe, enforced by
+# `just check-ansible-hostname-free`): the control-plane node is resolved from
+# `ci_pool` by `cluster_role`, and the per-host facts come from host_vars.
+
+# The cluster's k3s minor. kubectl is supported within one minor of the API
+# server, but pinning to the cluster's own minor removes the question.
+# CO-MAINTAINED with gates_kubeconfig_kubectl_version: the two roles reach the
+# same API server, so a divergence between them is a silent-skew defect on
+# whichever host converged last. Bump both together when the cluster moves.
+factory_kubeconfig_kubectl_version: v1.36.2
+factory_kubeconfig_bin_dir: /usr/local/bin
+factory_kubeconfig_dest: /etc/ci-runner/factory.kubeconfig
+# The control-plane node that renders the credential on every boot. Resolved
+# from the inventory, never named here: the ci_pool member whose cluster_role
+# is server.
+factory_kubeconfig_remote_host: >-
+  {{ groups['ci_pool'] | map('extract', hostvars)
+     | selectattr('cluster_role', 'defined')
+     | selectattr('cluster_role', 'equalto', 'server')
+     | map(attribute='inventory_hostname') | first }}
+# Where converge-ci-stack.sh step 10e renders it on that node — beside the
+# gates credential, under the same directory, by the same renderer.
+factory_kubeconfig_remote_path: /etc/ci-runner/factory.kubeconfig
+# The LOCAL login user whose tailnet ssh key reaches the control-plane node.
+# The runtime refresh tool runs as root under the sandbox backend, and root on
+# a factory host has no tailnet identity, so it drops the FETCH to this user
+# via `sudo -u` (the WRITE stays root). Defaulted from the inventory's own
+# connection account, which IS this host's fleet account, so a factory host
+# added to the group is correct by construction rather than by remembering to
+# set it; host_vars may still state it explicitly, and on the host that runs
+# today's Fabro servers it does, because that account is `cwoolley` and not the
+# fleet's usual `ubuntu` (the tailnet ACL rejects `ubuntu` there).
+factory_kubeconfig_ssh_user: "{{ ansible_user | default('ubuntu') }}"
+# Where the runtime tools read this host's pool facts at runtime. Must match
+# the FACTORY_REFRESH_ENV default the shipped refresh-factory-kubeconfig reads.
+factory_kubeconfig_refresh_env: /etc/ci-runner/factory-refresh.env
+# The group that may READ the credential. The credential is a bearer token for
+# the whole `factory` namespace, so it is never world-readable; a DEDICATED
+# group is what lets the Fabro server's account read it without owning it and
+# without handing the token to every member of a group the host already uses
+# for something else. NEVER the gates group: the two credentials grant
+# different namespaces, and one group would silently widen each to the other's
+# readers. The WRITE stays root's. Must match the FACTORY_GROUP default the
+# shipped refresh-factory-kubeconfig reads.
+factory_kubeconfig_group: factory-client
