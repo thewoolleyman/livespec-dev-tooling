@@ -84,6 +84,12 @@ _HP_MUST_RUN = frozenset(
         # reconciled on every ci_pool node and `node_taints` owns exactly one
         # taint key and nothing else.
         "node_labels",
+        # And the workspace root that label's capacity is useless without
+        # (livespec-dev-tooling-due2h6): hp carries no CI tier and still has to
+        # offer the ONE path the sandbox backend's single `workspace_root`
+        # names, because it is the node the backend plan's lifecycle proofs run
+        # against.
+        "factory_workspace_root",
     }
 )
 
@@ -100,6 +106,7 @@ _POWEREDGE_ROLES = (
     "host_tools_ci",
     "fpart",
     "apparmor_profile",
+    "factory_workspace_root",
     "node_status_credential",
     "node_extended_resource",
     "node_taints",
@@ -123,6 +130,7 @@ _GMKTEC_ROLES = (
     "host_tools_ci",
     "fpart",
     "apparmor_profile",
+    "factory_workspace_root",
     "node_status_credential",
     "node_extended_resource",
     "node_taints",
@@ -308,10 +316,15 @@ def test_every_role_gate_stays_inside_the_vocabulary_this_test_can_resolve() -> 
 def test_the_posture_fact_the_gates_read_comes_from_the_profile_key_that_owns_it() -> None:
     """The play's own profile read, and the key it reads — asserted, not assumed."""
     facts = _profile_facts()
-    assert facts == {"ci_pool_ci_node_facilities": ("CI_NODE_FACILITIES", "full")}, (
-        f"the play must read exactly one posture fact, `ci_pool_ci_node_facilities`, from the "
-        f"profile's CI_NODE_FACILITIES, defaulting to the parser's own default `full` so a "
-        f"profile written before the key existed resolves to what it already is; got {facts}"
+    assert facts == {
+        "ci_pool_ci_node_facilities": ("CI_NODE_FACILITIES", "full"),
+        "ci_pool_factory_node": ("FACTORY_NODE", "false"),
+    }, (
+        f"the play must read exactly two posture facts from the profile — "
+        f"`ci_pool_ci_node_facilities` from CI_NODE_FACILITIES, defaulting to the parser's own "
+        f"default `full`, and `ci_pool_factory_node` from FACTORY_NODE, defaulting to the "
+        f"parser's own `false` — so a profile written before either key existed resolves to "
+        f"the posture it already has; got {facts}"
     )
 
 

@@ -1,0 +1,118 @@
+---
+# factory_workspace_root — create the ONE workspace root a factory pod's
+# `workspace_root` resolves to, on every node that can take a factory pod.
+#
+# WHY IT EXISTS. The kubernetes-sandbox-backend plugin takes a SINGLE
+# `workspace_root` for the whole backend, so the path is a fleet-wide constant
+# and every node that can be scheduled a factory pod must already carry a
+# directory at it. "Every node that can take a factory pod" is the FACTORY_NODE
+# axis of a node's committed phase0 profile — today all three pool nodes,
+# including the untainted server (maintainer ruling 2026-10-13) — which is why
+# ../../ci-pool.yml gates this role on that key and on neither `cluster_role`
+# nor `CI_NODE_FACILITIES`.
+#
+# WHY A ROLE AND NOT A TASK INSIDE ANOTHER ONE. It is the same shape as
+# ../node_labels: one fact of the node's profile, converged declaratively,
+# owning exactly one thing and nothing else. A directory created as a side
+# effect of a role about something else is a directory no reader can trace from
+# the profile.
+#
+# WHERE IT SITS IN THE PLAY, and the ordering is load-bearing: BEFORE the
+# credential -> capacity -> taint chain that opens a node for scheduling, beside
+# ../apparmor_profile and for the same reason that role gives for running on a
+# factory-only agent — a pod that names a facility the node has not prepared
+# fails to start for a reason nothing in the pod explains. A missing workspace
+# root is the hostPath form of exactly that.
+#
+# WHAT HOLDS THE DIRECTORY AFTERWARDS. Nothing in this repository may remove,
+# empty or remount it: no boot-time converge, no storage sweep, no reclaimer.
+# That is asserted, not hoped —
+# `tests/livespec_dev_tooling/test_factory_workspace_root_not_reclaimed.py`
+# resolves it over the whole committed tree, and the two reclaimers that run on
+# a Fabro factory host carry the path in their own deny lists. ./CAPACITY.md
+# records how the path is sized for the six concurrent pods the `factory-runs`
+# ResourceQuota admits.
+
+- name: Refuse a workspace root whose declared lineage is not its own ancestry
+  # The resolution below reads the SERVING filesystem out of
+  # factory_workspace_root_lineage by exact membership, so a lineage that is
+  # shorter than the path is deep would silently resolve a shallower ancestor's
+  # filesystem and report it as the answer — a measurement of the wrong mount,
+  # which is worse than no measurement. `/srv/factory-workspaces` splits into
+  # three parts ('', 'srv', 'factory-workspaces') and has three ancestors
+  # counting itself and `/`, so the two lengths agree exactly while the lineage
+  # is complete.
+  ansible.builtin.assert:
+    that:
+      - factory_workspace_root_lineage | length
+        == (factory_workspace_root_path.split('/') | length)
+    fail_msg: >-
+      factory_workspace_root_lineage has
+      {{ factory_workspace_root_lineage | length }} entries, which is not the
+      ancestry of {{ factory_workspace_root_path }}
+      ({{ factory_workspace_root_path.split('/') | length }} expected, longest
+      last). Extend the lineage in defaults/main.yml when the path gains depth.
+    success_msg: >-
+      {{ factory_workspace_root_path }}: lineage complete
+      ({{ factory_workspace_root_lineage | join(', ') }})
+
+- name: Create the factory workspace root
+  # The whole converge, and it is idempotent by construction: `state: directory`
+  # creates it once and reconciles the ownership and mode on every apply, so a
+  # by-hand `chmod` on a node drifts back at the next run and the drift report
+  # names it beforehand. Every value is a reference rather than a literal — two
+  # spellings is two facts the day one of them is edited, which is how a retired
+  # taint came back on gmktec-xubuntu (livespec-dev-tooling-yapwva).
+  ansible.builtin.file:
+    path: "{{ factory_workspace_root_path }}"
+    state: directory
+    owner: "{{ factory_workspace_root_owner }}"
+    group: "{{ factory_workspace_root_group }}"
+    mode: "{{ factory_workspace_root_mode }}"
+  become: true
+
+- name: Resolve the filesystem serving the factory workspace root
+  # READ FROM THE GATHERED FACTS, not from `findmnt`, and that is a decision
+  # about the DRIFT REPORT as much as about the host. ../../ci-pool.yml gathers
+  # facts, so `ansible_mounts` is already here; an `ansible.builtin.command`
+  # would be SKIPPED under `--check` (the silence
+  # tests/livespec_dev_tooling/test_ci_pool_drift_reports_pending_changes.py
+  # exists for) and would additionally exit non-zero on a first apply, where the
+  # directory does not exist yet and `findmnt -T` resolves nothing.
+  #
+  # The longest matching ancestor is the mount that serves the path: for a chain
+  # of prefixes a lexicographic sort is a depth sort, so `sort | last` is it.
+  # `default('')` keeps a host whose facts carry no mount at all from failing
+  # here with an undefined-variable error rather than at the refusal below.
+  ansible.builtin.set_fact:
+    factory_workspace_root_fstype: >-
+      {{ ansible_mounts
+      | selectattr('mount', 'in', factory_workspace_root_lineage)
+      | sort(attribute='mount') | map(attribute='fstype')
+      | list | last | default('') }}
+
+- name: Refuse a workspace root that is not on a persistent filesystem
+  # PERSISTENT AND NON-TMPFS IS A REQUIREMENT, so it is measured on the host at
+  # every apply. A factory workspace on a volatile filesystem loses a run's
+  # workspace at the next boot with nothing erroring anywhere — the
+  # silent-at-reboot shape this pool has already paid for twice
+  # (../../../ci-runner/k3s/phase2/factory/factory-namespace.yaml records the
+  # Namespace half, ../../../ci-runner/k3s/phase2/warm-cache/registry-mirror/
+  # the first one).
+  #
+  # An EMPTY resolution is refused too, and deliberately: it means no mount in
+  # the node's own facts is an ancestor of the path, so nothing here knows what
+  # the directory is on. "Unknown" must not read as "fine".
+  ansible.builtin.assert:
+    that:
+      - factory_workspace_root_fstype | length > 0
+      - factory_workspace_root_fstype not in factory_workspace_root_volatile_fstypes
+    fail_msg: >-
+      {{ factory_workspace_root_path }} resolves to filesystem type
+      '{{ factory_workspace_root_fstype }}', which is volatile or unknown
+      ({{ factory_workspace_root_volatile_fstypes | join(', ') }} are refused).
+      A factory workspace root must survive a reboot; see ./CAPACITY.md for the
+      filesystem each pool node serves it from.
+    success_msg: >-
+      {{ factory_workspace_root_path }}: {{ factory_workspace_root_fstype }}
+      (persistent)
