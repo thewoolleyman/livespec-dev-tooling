@@ -33,6 +33,10 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import shutil
+import subprocess
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -380,3 +384,99 @@ def test_the_preflight_command_line_records_the_k3s_witness_and_the_interfaces(
         "vethf00d01",
     ]
     assert set(bus.timeouts) == {witness.WITNESS_TIMEOUT_SECONDS, netstate.LINK_TIMEOUT_SECONDS}
+
+
+# The sibling the isolated arm below DELETES from the installed copy.
+# It is the one this module imports directly, so its absence from the
+# copy is what tells "the siblings resolved from the installed tree"
+# from "they resolved from somewhere else on the interpreter's path".
+_HOST_MODULE_FILE = "_docker_engine_guard_host.py"
+
+
+def _installed_tree(*, root: Path) -> Path:
+    """The guard tree as the role installs it; answers the module path inside it.
+
+    A COPY rather than this checkout, because the claim under test is
+    about the INSTALLED tree: the module has to find its siblings
+    there, and a run against the checkout would prove only that the
+    checkout is importable from a process that already has it on its
+    path.
+    """
+    package = root / "livespec_dev_tooling"
+    package.mkdir(parents=True, exist_ok=True)
+    _ = shutil.copy(Path("livespec_dev_tooling/__init__.py"), package / "__init__.py")
+    _ = shutil.copytree(
+        Path("livespec_dev_tooling/fleet"),
+        package / "fleet",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    return package / "fleet" / _CLI_PATH.name
+
+
+def _isolated(*, module: Path, cwd: Path, args: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    """`python3 -I -B <module> …`, exactly as the role runs the guard's helpers.
+
+    `-I` is the whole point of the invocation and not a tidiness flag:
+    it ignores `PYTHONPATH` and the user site directory, so nothing
+    this process's environment carries can put the guard's package root
+    on the child's import path -- only the module's own preamble can.
+    `-B` keeps the installed tree free of `__pycache__` directories the
+    role never put there.
+
+    A real child is the only way to assert this at all, since `-I`
+    changes interpreter STARTUP: by the time any in-process test could
+    look, this process's path is already built. The coverage variables
+    are scrubbed from its environment because a child that
+    self-instruments writes a `.coverage.*` that races the parallel
+    runner's own data file.
+    """
+    environment = {name: value for name, value in os.environ.items() if not name.startswith("COV")}
+    _ = environment.pop("PYTHONPATH", None)
+    return subprocess.run(
+        [sys.executable, "-I", "-B", str(module), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+
+def test_the_preflight_command_line_runs_from_the_installed_tree_under_isolated_python(
+    tmp_path: Path,
+) -> None:
+    """The invocation the role actually makes, with no import path but its own tree.
+
+    The guarded host has no virtual environment and no third-party
+    package: the guard tree is copied onto it and run against the
+    host's own bare interpreter. So this module is reached the way the
+    apt-lock helper already is -- `python3 -I -B <module>` -- and under
+    those flags nothing on the interpreter's path resolves the
+    package-qualified sibling imports every guard module uses. The
+    module's own `sys.path` preamble is what makes them resolve, and it
+    is the only thing that can.
+
+    THE SECOND ARM IS WHAT MAKES THE FIRST MEAN ANYTHING. A tree that
+    merely RAN proves nothing about where its siblings came from: this
+    test process has the repository importable, so a module with no
+    preamble at all would resolve them from the checkout and exit zero
+    just the same. Deleting one sibling from the INSTALLED COPY
+    discriminates: the invocation fails only if the copy is the tree
+    the imports were served from.
+    """
+    _ = _cli()
+    root = tmp_path / "libexec"
+    module = _installed_tree(root=root)
+
+    helped = _isolated(module=module, cwd=tmp_path, args=["--help"])
+
+    assert helped.returncode == 0, helped.stderr
+    assert "refusals" in helped.stdout
+    assert "record" in helped.stdout
+
+    (module.parent / _HOST_MODULE_FILE).unlink()
+
+    without = _isolated(module=module, cwd=tmp_path, args=["--help"])
+
+    assert without.returncode != 0
+    assert _HOST_MODULE_FILE.removesuffix(".py") in without.stderr
