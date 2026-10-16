@@ -15,8 +15,10 @@ fires.
 
 from __future__ import annotations
 
+import fcntl
 import importlib
 import json
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -399,3 +401,91 @@ def test_a_deadline_recorded_under_another_boot_id_has_passed(tmp_path: Path) ->
     fake.clock = 1.0
     fake.boot = "boot-b"
     assert state.deadline_passed(deadline=recorded, host=fake) is True
+
+
+def test_the_runtime_directory_is_ensured_mode_0700_and_root_owned(tmp_path: Path) -> None:
+    """Design I4: every helper first ensures /run/docker-engine-guard exists.
+
+    /run is tmpfs, so after a reboot the directory is simply gone and the
+    FIRST helper to run has to recreate it. Mode 0700 is set in-process;
+    the ownership goes through the host seam, because 1a ships no real
+    host action of its own.
+    """
+    state = importlib.import_module(_STATE_MODULE)
+    assert "ensure_runtime_dir" in state.__all__
+    paths = _paths(root=tmp_path)
+    fake = _fake(root=tmp_path)
+
+    assert not paths.runtime_root.exists()
+    state.ensure_runtime_dir(paths=paths, host=fake)
+
+    assert paths.runtime_root.is_dir()
+    assert stat.S_IMODE(paths.runtime_root.stat().st_mode) == 0o700
+    assert fake.calls_named(name="set_owner_root")[0].detail == (str(paths.runtime_root),)
+
+    state.ensure_runtime_dir(paths=paths, host=fake)
+    assert stat.S_IMODE(paths.runtime_root.stat().st_mode) == 0o700
+    assert len(fake.calls_named(name="set_owner_root")) == 2
+
+
+def test_the_lock_is_opened_with_o_creat_and_close_on_exec_and_never_replaced(
+    tmp_path: Path,
+) -> None:
+    """Specification: open the lock with O_CREAT and close-on-exec, never unlink it.
+
+    Close-on-exec matters because the guard spawns children: an inherited
+    lock descriptor would keep the lock alive past the process that took
+    it. Never unlinking matters because two helpers that each created
+    their own lock file would each hold a lock on a different inode and
+    both believe they were alone.
+    """
+    state = importlib.import_module(_STATE_MODULE)
+    assert "acquire_lock" in state.__all__
+    paths = _paths(root=tmp_path)
+    fake = _fake(root=tmp_path)
+    state.ensure_runtime_dir(paths=paths, host=fake)
+
+    assert not paths.lock.exists()
+    first = state.acquire_lock(paths=paths, host=fake)
+    assert first is not None
+    assert fcntl.fcntl(first, fcntl.F_GETFD) & fcntl.FD_CLOEXEC
+    created_inode = paths.lock.stat().st_ino
+    state.release_lock(fd=first)
+
+    assert paths.lock.is_file()
+    second = state.acquire_lock(paths=paths, host=fake)
+    assert second is not None
+    assert paths.lock.stat().st_ino == created_inode
+    state.release_lock(fd=second)
+    assert paths.lock.is_file()
+
+
+def test_the_lock_wait_expires_after_sixty_seconds_without_acting(tmp_path: Path) -> None:
+    """Specification: wait at most 60 seconds, then exit non-zero without acting.
+
+    A guard that blocked forever on the lock would hold its transient
+    unit open to its whole budget and be SIGKILLed with no verdict, which
+    is indistinguishable from a refusal. Bounding the wait makes the
+    refusal explicit and the run untouched.
+    """
+    state = importlib.import_module(_STATE_MODULE)
+    assert "LOCK_WAIT_SECONDS" in state.__all__
+    assert state.LOCK_WAIT_SECONDS == 60
+    paths = _paths(root=tmp_path)
+    fake = _fake(root=tmp_path)
+    state.ensure_runtime_dir(paths=paths, host=fake)
+
+    held = state.acquire_lock(paths=paths, host=fake)
+    assert held is not None
+    inode_while_held = paths.lock.stat().st_ino
+
+    started = fake.clock
+    assert state.acquire_lock(paths=paths, host=fake) is None
+    assert fake.clock - started <= state.LOCK_WAIT_SECONDS
+    assert fake.clock > started
+    assert paths.lock.stat().st_ino == inode_while_held
+
+    state.release_lock(fd=held)
+    regained = state.acquire_lock(paths=paths, host=fake)
+    assert regained is not None
+    state.release_lock(fd=regained)

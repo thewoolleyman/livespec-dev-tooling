@@ -12,6 +12,7 @@ this repository requires, carried in a shape that needs no dependency.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 from dataclasses import dataclass
@@ -25,19 +26,36 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_model import MarkerState, Phase
 
 __all__: list[str] = [
+    "LOCK_WAIT_SECONDS",
+    "RUNTIME_DIR_MODE",
     "GuardEnv",
+    "acquire_lock",
     "deadline_passed",
+    "ensure_runtime_dir",
     "read_deadline",
     "read_marker",
     "read_phase",
     "read_reservation",
     "record_phase",
+    "release_lock",
     "write_deadline",
     "write_durable",
     "write_reservation",
 ]
 
 _TMP_SUFFIX = ".tmp"
+
+# The runtime directory is root-only: the start permission inside it is
+# the one file standing between an unguarded host and a Docker daemon.
+RUNTIME_DIR_MODE: Final[int] = 0o700
+
+# The specification's bound. A guard that blocked indefinitely would hold
+# its transient unit open to its whole budget and then be SIGKILLed with
+# no verdict at all, which reads exactly like a refusal without being one.
+LOCK_WAIT_SECONDS: Final[int] = 60
+
+_LOCK_POLL_SECONDS: Final[float] = 0.5
+_LOCK_FILE_MODE: Final[int] = 0o600
 
 # Every phase name keyed by itself, so a recorded string narrows to a
 # `Phase` through an ordinary lookup rather than a cast, and an
@@ -167,3 +185,52 @@ def deadline_passed(*, deadline: Deadline | None, host: HostOps) -> bool:
     if deadline.boot_id != host.boot_id():
         return True
     return host.monotonic() >= deadline.monotonic
+
+
+def ensure_runtime_dir(*, paths: GuardPaths, host: HostOps) -> None:
+    """Make the runtime directory exist at mode 0700, owned by root.
+
+    The first act of every operation. /run is tmpfs, so after a reboot
+    nothing here exists and whichever helper runs first has to recreate
+    it; the mode is set in-process and the ownership through the host
+    seam, because 1a ships no real host action of its own.
+    """
+    paths.runtime_root.mkdir(parents=True, exist_ok=True)
+    paths.runtime_root.chmod(RUNTIME_DIR_MODE)
+    host.set_owner_root(path=paths.runtime_root)
+
+
+def _lock_held(*, fd: int) -> bool:
+    """Try once, without blocking, to take the exclusive lock on `fd`."""
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
+def acquire_lock(*, paths: GuardPaths, host: HostOps) -> int | None:
+    """Take the one guard lock, or answer `None` once the bounded wait expires.
+
+    The file is opened with `O_CREAT` and `FD_CLOEXEC` and is never
+    unlinked or replaced. Both halves matter: a child that inherited the
+    descriptor would hold the lock past the process that took it, and two
+    helpers that each created their own lock FILE would each hold a lock
+    on a different inode and both believe they were alone.
+
+    Returning `None` rather than raising is what lets the caller refuse
+    without acting, which is the behaviour the specification names.
+    """
+    expiry = host.monotonic() + LOCK_WAIT_SECONDS
+    fd = os.open(paths.lock, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, _LOCK_FILE_MODE)
+    while not _lock_held(fd=fd):
+        if host.monotonic() >= expiry:
+            os.close(fd)
+            return None
+        host.sleep(seconds=_LOCK_POLL_SECONDS)
+    return fd
+
+
+def release_lock(*, fd: int) -> None:
+    """Close the descriptor, which releases the lock with it."""
+    os.close(fd)
