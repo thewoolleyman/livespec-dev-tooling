@@ -192,3 +192,51 @@ def test_a_failed_sample_records_it_and_triggers_a_rollback_it_never_waits_for(
     assert "--no-block" in model.rollback_argv(run="run-a")
     assert outcome.verdict == "refuse"
     assert "dns" in outcome.reason
+
+
+def _challenge(*, root: Path) -> dict[str, Any]:
+    """The challenge the observer issued, read from the runtime root."""
+    records = importlib.import_module(_RECORDS_MODULE)
+    path = records.challenge_path(paths=_paths(root=root))
+    assert path.is_file()
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_a_passing_window_issues_a_challenge_under_the_runtime_root_then_observes(
+    tmp_path: Path,
+) -> None:
+    """Specification "Observe and the challenge", the passing-window sentence.
+
+    The challenge lives under the RUNTIME root rather than beside the
+    durable records, and that placement is the mechanism rather than a
+    filing convention: /run is tmpfs, so a reboot clears the challenge
+    and an answer issued before that reboot can never be accepted after
+    it. It carries the boot id for the same reason, so that a runtime
+    root which somehow survived still cannot vouch for another boot.
+
+    The run reaches `observed` only after the challenge is in place,
+    which is the phase a `confirm` is admitted from: the other order
+    would admit a `confirm` that had nothing to answer.
+    """
+    records = importlib.import_module(_RECORDS_MODULE)
+    observer = importlib.import_module(_OBSERVER_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    paths = _paths(root=tmp_path)
+    fake = _fake(root=tmp_path)
+    fake.sample_result = {"passed": True}
+    paths.runtime_root.mkdir(parents=True, exist_ok=True)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+
+    outcome = observer.observe(
+        run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision()
+    )
+
+    assert state.read_phase(paths=paths, run="run-a") == "observed"
+    assert _evidence(root=tmp_path, run="run-a")["passed"] is True
+    assert records.challenge_path(paths=paths) == paths.runtime_root / "challenge"
+    challenge = _challenge(root=tmp_path)
+    assert challenge["run"] == "run-a"
+    assert challenge["boot_id"] == "boot-a"
+    assert len(challenge["nonce"]) >= 32
+    assert outcome.verdict == "proceed"
+    assert outcome.exit_code == 0

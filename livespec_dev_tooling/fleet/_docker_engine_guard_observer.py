@@ -39,8 +39,11 @@ from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardOutcome, rollback_argv
 from livespec_dev_tooling.fleet._docker_engine_guard_records import (
+    Challenge,
     Evidence,
+    fresh_nonce,
     owned_keys_digest,
+    write_challenge,
     write_evidence,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_state import read_phase, record_phase
@@ -127,6 +130,41 @@ def _failed_sample(
     return GuardOutcome(operation="observe", run=run, verdict="refuse", reason=failure)
 
 
+def _passing_window(
+    *,
+    run: str,
+    env: GuardEnv,
+    window_start: float,
+    samples: Sequence[Mapping[str, object]],
+    decision: Decision,
+) -> GuardOutcome:
+    """Record the window, issue the challenge, and only then reach `observed`.
+
+    The ORDER of the last two is load-bearing. `observed` is the one
+    phase a `confirm` is admitted from, so reaching it before the
+    challenge exists would admit a `confirm` with nothing to answer --
+    and a `confirm` that found no challenge would refuse a run whose
+    window had in fact passed.
+    """
+    _record_window(run=run, env=env, window_start=window_start, samples=samples, failure="")
+    write_challenge(
+        paths=env.paths,
+        challenge=Challenge(
+            run=run,
+            boot_id=env.host.boot_id(),
+            nonce=fresh_nonce(),
+            issued_monotonic=env.host.monotonic(),
+        ),
+    )
+    record_phase(paths=env.paths, run=run, phase="observed")
+    return GuardOutcome(
+        operation="observe",
+        run=run,
+        verdict=decision.verdict,
+        reason="every sample of the observation window passed; the challenge is issued",
+    )
+
+
 def observe(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     """Claim the run, then sample the host across the whole observation window.
 
@@ -152,9 +190,6 @@ def observe(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         if samples[-1].get(_PASSED) is not True:
             return _failed_sample(run=run, env=env, window_start=window_start, samples=samples)
         env.host.sleep(seconds=SAMPLE_INTERVAL_SECONDS)
-    return GuardOutcome(
-        operation="observe",
-        run=run,
-        verdict=decision.verdict,
-        reason="every sample of the observation window passed",
+    return _passing_window(
+        run=run, env=env, window_start=window_start, samples=samples, decision=decision
     )

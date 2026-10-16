@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -38,13 +39,24 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardPaths
 
 __all__: list[str] = [
+    "NONCE_BYTES",
     "OWNED_DAEMON_KEYS",
+    "Challenge",
     "Evidence",
+    "challenge_path",
     "evidence_path",
+    "fresh_nonce",
     "owned_daemon_keys",
     "owned_keys_digest",
+    "write_challenge",
     "write_evidence",
 ]
+
+# How much entropy a nonce carries. Each passing window's nonce has to
+# differ from every earlier one, and the record of earlier nonces is on
+# a host whose /run is cleared by a reboot, so the guarantee rests on
+# the entropy rather than on a counter something could reset.
+NONCE_BYTES: Final[int] = 16
 
 # The daemon keys this role OWNS, and the only ones the digest covers.
 # Every other key in `daemon.json` belongs to whoever wrote it, so a
@@ -78,6 +90,46 @@ class Evidence:
     samples: tuple[Mapping[str, object], ...] = ()
     passed: bool = False
     failure: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
+class Challenge:
+    """One issued challenge: the run, the boot, the nonce and the instant.
+
+    The boot id and the instant are both carried because either alone
+    would accept an answer the other rejects: a monotonic instant means
+    nothing across a reboot, and a boot id says nothing about age.
+    """
+
+    run: str
+    boot_id: str
+    nonce: str
+    issued_monotonic: float
+
+
+def challenge_path(*, paths: GuardPaths) -> Path:
+    """The one challenge, under the RUNTIME root so a reboot clears it.
+
+    Placement is the mechanism, not a filing convention: /run is tmpfs,
+    so an answer issued before a reboot can never be accepted after one.
+    """
+    return paths.runtime_root / "challenge"
+
+
+def fresh_nonce() -> str:
+    """A nonce no earlier window issued."""
+    return secrets.token_hex(NONCE_BYTES)
+
+
+def write_challenge(*, paths: GuardPaths, challenge: Challenge) -> None:
+    """Replace any earlier challenge with this one.
+
+    Replaced rather than appended to, per rider point 5: a challenge is
+    RE-ISSUED and never reused, so at most one is ever outstanding.
+    """
+    write_durable(
+        path=challenge_path(paths=paths), data=json.dumps(asdict(challenge), sort_keys=True)
+    )
 
 
 def owned_daemon_keys(*, paths: GuardPaths, run: str) -> dict[str, object]:
