@@ -1140,3 +1140,55 @@ def test_the_canarys_cgroup_is_resolved_through_the_sandbox_slices_control_group
         False,
         f"the canary's cgroup is unreadable, not under {_SANDBOX_CONTROL_GROUP}",
     )
+
+
+def test_a_sample_fails_on_any_container_or_network_outside_the_guarded_scope() -> None:
+    """Only the canary, and only Docker's three built-in networks.
+
+    Design R9 admits the Docker API to nobody but the guard until the
+    commit point, so a second container or a fourth network means
+    something else reached the socket. It matters because the
+    rollback's cleanup is `docker0`-only: anything outside that scope
+    survives a rollback that would otherwise report a complete
+    recovery, so the sample fails and the run records that its cleanup
+    may not cover what it found.
+    """
+    assert "exclusive_scope_probe" in importlib.import_module(_SCOPE_MODULE).__all__
+    scope = importlib.import_module(_SCOPE_MODULE)
+    assert scope.CONTAINER_LIST_ARGV == (
+        "docker",
+        "ps",
+        "--all",
+        "--no-trunc",
+        "--format",
+        "{{.Names}}",
+    )
+    assert scope.NETWORK_LIST_ARGV == ("docker", "network", "ls", "--format", "{{.Name}}")
+
+    def _bus(*, containers: tuple[str, ...], networks: tuple[str, ...]) -> _Commands:
+        return _Commands(
+            answers={
+                scope.CONTAINER_LIST_ARGV: _lines(*containers),
+                scope.NETWORK_LIST_ARGV: _lines(*networks),
+            }
+        )
+
+    alone = _bus(containers=("docker-engine-guard-canary",), networks=("bridge", "host", "none"))
+    exclusive = scope.exclusive_scope_probe(runner=alone, canary="docker-engine-guard-canary")
+    assert (exclusive.name, exclusive.passed, exclusive.error) == (
+        scope.EXCLUSIVE_SCOPE_PROBE,
+        True,
+        "",
+    )
+    assert tuple(alone.argvs) == (scope.CONTAINER_LIST_ARGV, scope.NETWORK_LIST_ARGV)
+
+    crowded = _bus(
+        containers=("docker-engine-guard-canary", "fabro-sandbox-01M5"),
+        networks=("bridge", "host", "none", "fabro_default"),
+    )
+    shared = scope.exclusive_scope_probe(runner=crowded, canary="docker-engine-guard-canary")
+    assert (shared.passed, shared.error) == (
+        False,
+        "containers other than the canary exist: ('fabro-sandbox-01M5',); "
+        "Docker networks beyond the built-in three exist: ('fabro_default',)",
+    )

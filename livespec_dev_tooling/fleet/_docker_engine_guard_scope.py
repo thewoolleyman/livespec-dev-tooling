@@ -32,14 +32,41 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "BUILT_IN_NETWORKS",
     "CANARY_CGROUP_PROBE",
+    "CONTAINER_LIST_ARGV",
     "CONTROL_GROUP_ARGV",
     "DOCKER",
+    "EXCLUSIVE_SCOPE_PROBE",
+    "NETWORK_LIST_ARGV",
     "SCOPE_TIMEOUT_SECONDS",
     "canary_cgroup_probe",
     "canary_pid_argv",
+    "exclusive_scope_probe",
     "slice_control_group",
 ]
+
+# `--all` so a container that has EXITED still counts: it keeps its
+# writable layer and its network endpoint, so it is as far outside the
+# `docker0`-only cleanup as a running one. `--no-trunc` so a long name
+# is compared whole rather than against a daemon-truncated prefix.
+CONTAINER_LIST_ARGV: Final[tuple[str, ...]] = (
+    "docker",
+    "ps",
+    "--all",
+    "--no-trunc",
+    "--format",
+    "{{.Names}}",
+)
+
+NETWORK_LIST_ARGV: Final[tuple[str, ...]] = ("docker", "network", "ls", "--format", "{{.Name}}")
+
+# The three networks every Docker daemon has and no role created. The
+# guard's own configuration declares no address pools, so these three
+# plus the default bridge are the whole expected footprint.
+BUILT_IN_NETWORKS: Final[frozenset[str]] = frozenset({"bridge", "host", "none"})
+
+EXCLUSIVE_SCOPE_PROBE: Final[str] = "exclusive-scope"
 
 DOCKER: Final[str] = "docker"
 
@@ -105,3 +132,30 @@ def canary_cgroup_probe(
             f"not under {control_group}"
         ),
     )
+
+
+def exclusive_scope_probe(*, runner: GuardCommandRunner, canary: str) -> ProbeResult:
+    """Whether the canary is the ONLY container and no network was added.
+
+    Both halves are read on every sample rather than once, because the
+    thing they detect is a second party arriving MID-window: the
+    `docker` group is empty and no Docker client is installed, so
+    anything that appears here appeared after the socket did, and the
+    guard's `docker0`-only cleanup has no way to remove it.
+
+    Each finding is NAMED. A sample that said "something unexpected
+    exists" would leave an operator with a `rollback-partial` and no
+    way to tell what the rollback did not cover.
+    """
+    containers = runner(
+        argv=CONTAINER_LIST_ARGV, timeout_seconds=SCOPE_TIMEOUT_SECONDS
+    ).stdout.split()
+    networks = runner(argv=NETWORK_LIST_ARGV, timeout_seconds=SCOPE_TIMEOUT_SECONDS).stdout.split()
+    intruders = tuple(name for name in containers if name != canary)
+    added = tuple(name for name in networks if name not in BUILT_IN_NETWORKS)
+    faults: tuple[str, ...] = ()
+    if intruders:
+        faults += (f"containers other than the canary exist: {intruders}",)
+    if added:
+        faults += (f"Docker networks beyond the built-in three exist: {added}",)
+    return ProbeResult(name=EXCLUSIVE_SCOPE_PROBE, passed=not faults, error="; ".join(faults))
