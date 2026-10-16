@@ -712,3 +712,39 @@ def test_the_dns_probe_queries_kube_dns_from_the_pod_namespace_without_a_resolve
         False,
         "the DNS query to 10.43.0.10 from the pod namespace exited 1",
     )
+
+
+def test_the_api_probe_completes_a_tls_handshake_to_the_api_service_clusterip() -> None:
+    """A handshake, from the pod namespace, to the service ClusterIP.
+
+    A handshake is the right depth for this probe: it proves the pod
+    network carried a round trip through kube-proxy's service address
+    and back, which is exactly the path Docker's FORWARD and masquerade
+    rules sit in. It deliberately does NOT verify the server's identity
+    -- no credential is involved -- because identity is what the Node
+    Ready read proves, through the node-status kubeconfig.
+    """
+    assert "api_probe" in importlib.import_module(_POD_MODULE).__all__
+    pod_probes = importlib.import_module(_POD_MODULE)
+
+    argv = pod_probes.api_probe_argv(pid="40127", address="10.43.0.1", port=443)
+    assert argv[:5] == ("nsenter", "--target", "40127", "--net", "--")
+    assert argv[5:7] == (sys.executable, "-c")
+    assert argv[8:] == ("10.43.0.1", "443")
+    script = argv[7]
+    assert "ssl.SSLContext" in script
+    assert "wrap_socket" in script
+    assert "version()" in script
+
+    passing = _Commands()
+    shook = pod_probes.api_probe(runner=passing, pid="40127", address="10.43.0.1", port=443)
+    assert (shook.name, shook.passed, shook.error) == (pod_probes.API_PROBE, True, "")
+    assert tuple(passing.argvs) == (argv,)
+    assert set(passing.timeouts) == {pod_probes.POD_PROBE_TIMEOUT_SECONDS}
+
+    refusing = _Commands(codes={argv: 124})
+    unshaken = pod_probes.api_probe(runner=refusing, pid="40127", address="10.43.0.1", port=443)
+    assert (unshaken.passed, unshaken.error) == (
+        False,
+        "the TLS handshake to 10.43.0.1:443 from the pod namespace exited 124",
+    )

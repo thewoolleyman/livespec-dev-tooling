@@ -37,12 +37,16 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
 __all__: list[str] = [
+    "API_PROBE",
+    "API_SCRIPT",
     "CRICTL_TIMEOUT_SECONDS",
     "DNS_PROBE",
     "DNS_SCRIPT",
     "POD_LIST_ARGV",
     "POD_NAMESPACE",
     "POD_PROBE_TIMEOUT_SECONDS",
+    "api_probe",
+    "api_probe_argv",
     "dns_probe",
     "dns_probe_argv",
     "inspect_pod_argv",
@@ -162,6 +166,50 @@ def dns_probe(*, runner: GuardCommandRunner, pid: str, server: str, name: str) -
     failure = f"the DNS query to {server} from the pod namespace exited {answer.returncode}"
     return ProbeResult(
         name=DNS_PROBE,
+        passed=answer.returncode == 0,
+        error="" if answer.returncode == 0 else failure,
+    )
+
+
+# A TLS handshake and nothing beyond it. Verification is deliberately
+# OFF: no credential is involved here, and the identity of the API
+# server is what the Node Ready read proves through the node-status
+# kubeconfig. What this script proves is the PACKET PATH -- that the pod
+# namespace reached a service ClusterIP, that kube-proxy's rules carried
+# it to a real endpoint, and that the endpoint answered far enough to
+# negotiate a session. `version()` is the assertion because a wrapped
+# socket that never completed its handshake has none.
+API_SCRIPT: Final[str] = (
+    "import socket, ssl, sys\n"
+    "address, port = sys.argv[1], int(sys.argv[2])\n"
+    "context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n"
+    "context.check_hostname = False\n"
+    "context.verify_mode = ssl.CERT_NONE\n"
+    "with socket.create_connection((address, port), timeout=5) as raw:\n"
+    "    with context.wrap_socket(raw) as secured:\n"
+    "        assert secured.version() is not None, 'no TLS session was established'\n"
+)
+
+API_PROBE: Final[str] = "api"
+
+
+def api_probe_argv(*, pid: str, address: str, port: int) -> tuple[str, ...]:
+    """The handshake, run inside the pod namespace against a service address."""
+    return nsenter_argv(pid=pid, argv=(sys.executable, "-c", API_SCRIPT, address, str(port)))
+
+
+def api_probe(*, runner: GuardCommandRunner, pid: str, address: str, port: int) -> ProbeResult:
+    """Whether the Kubernetes API service address answers this pod's namespace."""
+    answer = runner(
+        argv=api_probe_argv(pid=pid, address=address, port=port),
+        timeout_seconds=POD_PROBE_TIMEOUT_SECONDS,
+    )
+    failure = (
+        f"the TLS handshake to {address}:{port} from the pod namespace "
+        f"exited {answer.returncode}"
+    )
+    return ProbeResult(
+        name=API_PROBE,
         passed=answer.returncode == 0,
         error="" if answer.returncode == 0 else failure,
     )
