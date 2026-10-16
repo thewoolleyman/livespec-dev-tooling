@@ -319,6 +319,31 @@ Three sessions independently lost a diagnostic cycle to this on 2026-08-19 and
 (1Password environment id, encrypted service-account token, wrapper factory
 repo) before changing anything about how the secrets are injected.
 
+### A second loud signature: the wrapper's own `op` call failed
+
+A `bd` command run through the wrapper can also fail with:
+
+```text
+[ERROR] <timestamp> (500) Internal Server Error: Server experienced a fatal error.
+```
+
+That signature belongs to the WRAPPER, not to the Dolt server. The wrapper
+calls the 1Password CLI to fetch the credential before `bd` starts. When the
+1Password service answers HTTP 500, the wrapper fails and `bd` never runs. The
+string is compiled into the 1Password CLI (`strings /usr/local/bin/op` contains
+it). A Dolt or MySQL failure looks different: it reads `Error NNNN (SQLSTATE)`,
+like the 1045 above.
+
+Remedy: check whether the write landed (read it back, with stderr kept
+separate), then retry once. Do not start diagnosing the Dolt server. Measured
+2026-10-16 at 23:02:07Z and 23:10:31Z on two `bd comment` writes to this
+tenant. Neither write landed, an immediate retry of each succeeded, reads kept
+working throughout, and `doltdb.service` logged no error, fatal or panic in
+either window. Reads keep working because the wrapper serves most calls from
+its five-minute cache and only calls 1Password on a cache miss. If this
+recurs often, it belongs to the 1password-env-wrapper owner (retry with
+backoff when `op` returns a 5xx), not to this repository or to dolt-server.
+
 ### Two SILENT signatures beside that loud one
 
 `Error 1045` is an ERROR: it stops the caller, so it teaches itself. The two
