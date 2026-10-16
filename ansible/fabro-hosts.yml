@@ -57,6 +57,11 @@
     # because it depends on nothing above it and the fetch reaches off-host.
     - role: factory_kubeconfig
       tags: [factory_kubeconfig]
+    # The Kubernetes sandbox-driver plugin and the CLI that drives it, both
+    # pinned by digest (bd-ib-nmuyjc.3). After factory_kubeconfig, whose
+    # credential the plugin is configured to read.
+    - role: sandbox_driver_kubernetes
+      tags: [sandbox_driver_kubernetes]
   tasks:
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:

@@ -1,0 +1,68 @@
+---
+# sandbox_driver_kubernetes — the Kubernetes sandbox-driver plugin on a
+# Fabro-server host, and the upstream CLI that drives it.
+#
+# Work-item bd-ib-nmuyjc.3 (livespec-orchestrator-beads-fabro plan
+# kubernetes-sandbox-backend, epic bd-ib-nmuyjc). The plugin is
+# thewoolleyman/sandbox-driver-kubernetes; it runs BESIDE the Fabro worker on
+# this host and reaches the cluster through the `factory` namespace credential
+# the factory_kubeconfig role delivers, so this role is ordered after it.
+#
+# BOTH BINARIES ARE PINNED BY A COMMITTED DIGEST, not by a checksum fetched
+# beside the download: a digest fetched from the same release proves only that
+# the download is internally consistent, which a replaced release asset also
+# is. The plugin's digest is ALSO written into the CLI's profile, because the
+# sandbox-driver protocol refuses to launch a plugin whose bytes do not match
+# the profile's `sha256` — so the host verifies the plugin at every launch,
+# not only at install.
+#
+# NO MACHINE IS NAMED HERE (livespec-dev-tooling-prdxxe). The account and home
+# come from fabro_server's own host_vars, which already state them for every
+# sandbox host.
+
+# The plugin release, and the digest of its x86_64 Linux asset.
+sandbox_driver_kubernetes_version: v0.1.0
+sandbox_driver_kubernetes_sha256: 78b1d9d73ac29973214bde5dd04cbd9b33fc4f737071eb73b2d670de57a7f099
+# The upstream CLI (`lithos-sandbox`, crate sandbox-driver-cli), built by the
+# plugin's release workflow at the sandbox-driver revision the plugin pins, so
+# the CLI and the plugin speak the same protocol revision.
+sandbox_driver_kubernetes_cli_rev: 90b0d825767105d4b42e59fdbd116c4d66b87d83
+sandbox_driver_kubernetes_cli_sha256: 5c17f37394b858e48cc2a8a4e9ae5744d1a4dbb455509fd3575cb57191464c98
+sandbox_driver_kubernetes_release_url: >-
+  https://github.com/thewoolleyman/sandbox-driver-kubernetes/releases/download/{{ sandbox_driver_kubernetes_version }}
+sandbox_driver_kubernetes_bin_dir: /usr/local/bin
+
+# The account the plugin runs as (the Fabro service account) and the homes
+# whose configuration it reads. The plugin starts from a scrubbed environment
+# and reads $HOME/.config/sandbox-driver-kubernetes/config.toml, so every HOME
+# a launcher runs under needs its own copy. Today that is the service
+# account's home, which is also the HOME of an operator's ssh session; a Fabro
+# instance with its own `home_env` adds its home here when it starts launching
+# the plugin.
+sandbox_driver_kubernetes_user: "{{ fabro_server_host_user }}"
+sandbox_driver_kubernetes_group: "{{ fabro_server_host_group }}"
+sandbox_driver_kubernetes_config_homes:
+  - "{{ fabro_server_host_home }}"
+
+# The cluster facts, from the factory delivery of plan factory-worker-nodes-gitops
+# (livespec-sqvj7p): the namespace and credential of livespec-dev-tooling-sqobqv,
+# the RBAC of -pvykv7, and the workspace root of -due2h6.
+sandbox_driver_kubernetes_kubeconfig: "{{ factory_kubeconfig_dest | default('/etc/ci-runner/factory.kubeconfig') }}"
+sandbox_driver_kubernetes_refresh_command:
+  - sudo
+  - -n
+  - "{{ factory_kubeconfig_bin_dir | default('/usr/local/bin') }}/refresh-factory-kubeconfig"
+sandbox_driver_kubernetes_namespace: factory
+sandbox_driver_kubernetes_service_account: sandbox-launcher
+sandbox_driver_kubernetes_node_selector:
+  ci-runner.io/factory: "true"
+# A factory node may carry node-role/ci=factory:NoSchedule; on an untainted
+# node the toleration is harmless.
+sandbox_driver_kubernetes_tolerations:
+  - key: node-role/ci
+    operator: Equal
+    value: factory
+    effect: NoSchedule
+sandbox_driver_kubernetes_workspace_root: /srv/factory-workspaces
+# The livespec.dispatch.factory label on every sandbox pod.
+sandbox_driver_kubernetes_factory: "{{ inventory_hostname_short }}"
