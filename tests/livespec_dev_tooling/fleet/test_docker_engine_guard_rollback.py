@@ -16,6 +16,7 @@ durable record and a host action be asserted at all.
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -734,3 +735,53 @@ def test_rolled_back_is_written_only_when_every_postcondition_holds(
         )
 
         assert _phase_of(root=root, run="run-a") != "rolled-back", failing
+
+
+def test_rollback_partial_is_written_naming_each_failed_postcondition(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": the partial outcome NAMES what still fails.
+
+    An operator reaching a `rollback-partial` host is deciding whether to
+    repair it by hand over Tailscale, and "something failed" does not
+    support that decision: a residual Docker rule, a surviving `docker0`
+    and a sysctl that no longer matches the snapshot need three different
+    repairs. The names are therefore recorded durably beside the run,
+    where a later `verify` reads them, as well as reported to whoever ran
+    the firing.
+    """
+    rollback = _driver()
+
+    for failing in ("no Docker rule", "no docker0"):
+        root = tmp_path / failing.replace(" ", "-")
+        fake = _reporting_fake(root=root)
+        fake.postconditions = _postconditions_except(failing=failing)
+        _record_phase(root=root, run="run-a", phase="started")
+
+        outcome = rollback.run_rollback(
+            run="run-a", env=_env(root=root, host=fake), decision=_decision()
+        )
+
+        assert _phase_of(root=root, run="run-a") == "rollback-partial", failing
+        recorded = json.loads(
+            _rollback_record(root=root, run="run-a", name="outcome.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert recorded == {
+            "outcome": "rollback-partial",
+            "failed_postconditions": [failing],
+        }, failing
+        assert failing in outcome.reason, failing
+        assert outcome.exit_code == 0, failing
+
+    clean = tmp_path / "clean"
+    other = _reporting_fake(root=clean)
+    other.postconditions = dict.fromkeys(_SPECIFIED_POSTCONDITIONS, True)
+    _record_phase(root=clean, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=clean, host=other), decision=_decision())
+
+    assert json.loads(
+        _rollback_record(root=clean, run="run-a", name="outcome.json").read_text(encoding="utf-8")
+    ) == {"outcome": "rolled-back", "failed_postconditions": []}

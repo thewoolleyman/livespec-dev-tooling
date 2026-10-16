@@ -16,6 +16,7 @@ expected refusal is RETURNED in a `GuardOutcome` rather than raised.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Protocol
 
@@ -416,6 +417,31 @@ def _final_check(*, run: str, env: GuardEnv) -> tuple[str, ...]:
     return failed
 
 
+def _record_outcome(*, run: str, env: GuardEnv, failed: tuple[str, ...]) -> Phase:
+    """Write this firing's outcome — as the run's phase AND durably beside it.
+
+    The phase is what every later operation dispatches on; the record is
+    what a later `verify` and an operator read, and it carries the NAMES.
+    "Something failed" does not support the decision an operator reaching
+    a partial host has to make: a residual Docker rule, a surviving
+    `docker0` and a sysctl that no longer matches the snapshot need three
+    different repairs, and only the names tell them apart.
+
+    `rolled-back` is FINAL: it makes every later dead-man firing a no-op
+    and lets a later `reserve` take the host. Written while one
+    postcondition still failed it would retire the dead-man over a host
+    that still has a Docker rule or a `docker0`, and nothing would come
+    back to look — which is why the partial outcome exists at all.
+    """
+    outcome: Phase = "rollback-partial" if failed else "rolled-back"
+    write_durable(
+        path=_rollback_dir(run=run, env=env) / "outcome.json",
+        data=json.dumps({"outcome": outcome, "failed_postconditions": list(failed)}),
+    )
+    record_phase(paths=env.paths, run=run, phase=outcome)
+    return outcome
+
+
 def _fence_and_revoke(*, env: GuardEnv) -> None:
     """Stop both writers, then take the start permission back.
 
@@ -473,13 +499,7 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     for phase in ROLLBACK_PHASE_ORDER:
         _enter_phase(run=run, env=env, phase=phase)
     failed = _final_check(run=run, env=env)
-    if not failed:
-        # `rolled-back` is FINAL: it makes every later dead-man firing a
-        # no-op and lets a later `reserve` take the host. Written while
-        # one postcondition still failed it would retire the dead-man
-        # over a host that still has a Docker rule or a `docker0`, and
-        # nothing would come back to look.
-        record_phase(paths=env.paths, run=run, phase="rolled-back")
+    _ = _record_outcome(run=run, env=env, failed=failed)
     return GuardOutcome(
         operation="rollback",
         run=run,
