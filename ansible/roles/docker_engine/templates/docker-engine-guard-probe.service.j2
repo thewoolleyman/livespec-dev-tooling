@@ -8,6 +8,15 @@
 [Unit]
 Description=docker-engine-guard start-condition probe
 
+#
+# RemainAfterExit keeps the unit loaded and active after /bin/true exits, so the
+# `systemctl show` read that follows sees THIS start. Without it the finished
+# oneshot is inactive and unreferenced, systemd garbage-collects it, and the
+# read loads a fresh copy whose ConditionResult and start timestamp are their
+# defaults: a start that ran reads as one that was skipped (measured
+# 2026-10-16, H-01 on an Ubuntu 26.04 guest, where the journal showed the
+# permitted start finishing while the read said ConditionResult=no).
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/bin/true
