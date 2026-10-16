@@ -1100,3 +1100,60 @@ def test_a_run_left_rolling_back_with_no_snapshot_still_reaches_rolled_back(
     assert _phase_of(root=tmp_path, run="run-a") == "rolled-back"
     for untouched in _ACTING_SEAMS:
         assert fake.calls_named(name=untouched) == (), untouched
+
+
+def _snapshot_file_missing(*, fake: Any) -> None:
+    """Make the postcondition read fail the way an absent snapshot file does.
+
+    The real read compares the host against the run's `before/`
+    directory and opens the recorded FORWARD policies outright, so a
+    snapshot file that is not there arrives at the driver as a
+    `FileNotFoundError` out of the seam. The fake answers injected
+    values and has no file to lose, so the error is injected instead —
+    carrying the path the real read names, which is the one an operator
+    would see.
+    """
+
+    def raising_read(*, snapshot: Path) -> dict[str, bool]:
+        raise FileNotFoundError(
+            2, "No such file or directory", str(snapshot / "forward-policy.json")
+        )
+
+    fake.read_postconditions = raising_read
+
+
+def test_the_final_check_reads_an_absent_snapshot_file_as_a_failing_postcondition(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": an unanswered postcondition counts as FAILING.
+
+    The final check is read fail-closed, and a snapshot file it cannot
+    open is the unanswered case — not an exception for the driver to
+    die on. Raising is worse than useless here twice over: the firing
+    writes no outcome at all and leaves the run holding the host's one
+    reservation, and the one thing an unanswered read must never do is
+    let the host read as clean. So every postcondition reports as
+    failing, the run rests at `rollback-partial`, and the names reach
+    both the durable record and the operator — which is the state a
+    `verify` after a hand repair promotes.
+    """
+    rollback = _driver()
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+    _snapshot_file_missing(fake=fake)
+
+    outcome = rollback.run_rollback(
+        run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision()
+    )
+
+    assert _phase_of(root=tmp_path, run="run-a") == "rollback-partial"
+    assert json.loads(
+        _rollback_record(root=tmp_path, run="run-a", name="outcome.json").read_text(
+            encoding="utf-8"
+        )
+    ) == {
+        "outcome": "rollback-partial",
+        "failed_postconditions": list(_SPECIFIED_POSTCONDITIONS),
+    }
+    for name in _SPECIFIED_POSTCONDITIONS:
+        assert name in outcome.reason
