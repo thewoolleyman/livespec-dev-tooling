@@ -21,6 +21,7 @@ already held — see `_FENCED_ENV`.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,13 +35,16 @@ from livespec_dev_tooling.fleet._docker_engine_guard_package_audit import (
     read_installed,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
+    COMMAND_TIMEOUT_SECONDS,
     INSTALL_TIMEOUT_SECONDS,
     TimedCommand,
     TimedRunner,
     default_runner,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_state import write_durable
 
 __all__: list[str] = [
+    "INTENDED_FILE",
     "PackageStepResult",
     "run_package_step",
 ]
@@ -50,6 +54,11 @@ __all__: list[str] = [
 # role's lock-holding helper has held that lock since before the audit,
 # so without this the install would block on the fence protecting it.
 _FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
+
+# The provenance record design R7 requires: written into the run's own
+# directory BEFORE the first package mutation, so a run interrupted
+# anywhere in the install leaves behind what it intended to install.
+INTENDED_FILE: Final[str] = "intended.json"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -86,6 +95,58 @@ def _difference_refusal(
     return None
 
 
+def _recorded_packages(*, runs: Path) -> frozenset[str]:
+    """Every package ANY guard run on this host recorded as intended.
+
+    The union, not this run's own record, and that is implementation
+    rider point 4: a rollback from `publishing` leaves the PREVIOUS run's
+    packages part-installed, and a recovery keyed to the current run's id
+    would read them as foreign and strand the host for every later run.
+
+    A record that cannot be parsed is skipped rather than refused on: an
+    intended record interrupted mid-write is not evidence of a foreign
+    package, and the names it would have carried are already covered by
+    the refusal below if nothing else accounts for them.
+    """
+    names: set[str] = set()
+    for record in sorted(runs.glob(f"*/{INTENDED_FILE}")):
+        try:
+            payload = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        names.update(str(addition).split("=")[0] for addition in payload["additions"])
+    return frozenset(names)
+
+
+def _flagged_packages(*, runner: TimedRunner) -> tuple[str, ...]:
+    """Every package `dpkg --audit` names as needing attention.
+
+    The report's headers wrap onto unindented continuation lines and only
+    the package rows are indented, so the indent is what picks the names
+    out of it.
+    """
+    report = runner(
+        command=TimedCommand(argv=("dpkg", "--audit"), timeout_seconds=COMMAND_TIMEOUT_SECONDS)
+    )
+    return tuple(line.split()[0] for line in report.stdout.splitlines() if line.startswith(" "))
+
+
+def _unaccounted_refusal(*, flagged: tuple[str, ...], runs: Path) -> str | None:
+    """Every flagged package no guard run's recorded intended set accounts for.
+
+    `dpkg --audit` naming something is not by itself a reason to stop: a
+    rollback from `publishing` leaves a guard run's packages part
+    installed and the next run has to be able to finish them. What the
+    step may never do is step over somebody else's interrupted
+    transaction, so membership in the union is the test.
+    """
+    recorded = _recorded_packages(runs=runs)
+    foreign = tuple(sorted(name for name in flagged if name not in recorded))
+    if foreign:
+        return f"dpkg --audit names {foreign}, which no guard run recorded as intended"
+    return None
+
+
 def _drift_refusal(*, audit: Audit, installed: Mapping[str, InstalledPackage]) -> str | None:
     """Every version the audit relied on that has moved since it read them.
 
@@ -114,6 +175,12 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     the transaction that runs is byte-for-byte the one the audit cleared
     with no resolver decision left to apt. dpkg's own table is read on
     both sides of it, and the difference has to be the additions.
+
+    The intended record is written once the audit has cleared and before
+    anything is mutated (design R7), so a run interrupted anywhere in
+    the install leaves behind the set it meant to install — which is
+    what lets the NEXT run tell its own unfinished work from somebody
+    else's.
     """
     declared = load_package_inputs(inputs=inputs)
     if isinstance(declared, str):
@@ -121,10 +188,20 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     audit = audit_transaction(declared=declared, runner=runner)
     if isinstance(audit, str):
         return PackageStepResult(refusal=audit)
+    run_dir = inputs.parent
+    write_durable(
+        path=run_dir / INTENDED_FILE,
+        data=json.dumps({"run": run_dir.name, "additions": list(audit.additions)}),
+    )
     before = read_installed(runner=runner)
     drift = _drift_refusal(audit=audit, installed=before)
     if drift is not None:
         return PackageStepResult(refusal=drift)
+    unaccounted = _unaccounted_refusal(
+        flagged=_flagged_packages(runner=runner), runs=run_dir.parent
+    )
+    if unaccounted is not None:
+        return PackageStepResult(refusal=unaccounted)
     _ = runner(
         command=TimedCommand(
             argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),
