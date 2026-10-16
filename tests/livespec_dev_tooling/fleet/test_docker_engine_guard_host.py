@@ -1160,3 +1160,70 @@ def test_the_condition_check_passes_only_on_exactly_the_two_or_path_conditions(
     unreadable = _conditions_bus(root=tmp_path, overrides={"containerd.service": ""})
 
     assert _real_host(root=tmp_path, commands=unreadable).condition_check_passed() is False
+
+
+# The two drop-in filenames the guarded host is allowed to carry, written
+# out rather than imported for the same reason the object paths above are:
+# a test that read them from the module under test would accept whatever
+# that module happened to say.
+_GUARD_DROPIN = "50-docker-engine-guard.conf"
+_SANDBOX_STORAGE_DROPIN = "10-requires-sandbox-storage.conf"
+
+
+def _dropin_tree(*, root: Path, dropins: dict[str, tuple[str, ...]]) -> Path:
+    """A `/etc/systemd/system` holding exactly `dropins` for each named unit."""
+    unit_directory = root / "etc" / "systemd" / "system"
+    for unit, names in dropins.items():
+        directory = unit_directory / f"{unit}.d"
+        directory.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            _ = (directory / name).write_text("[Unit]\n", encoding="utf-8")
+    return unit_directory
+
+
+def test_the_dropin_check_accepts_the_guards_own_and_the_sandbox_storage_dropins(
+    tmp_path: Path,
+) -> None:
+    """Design G6 plus rider point 7: the sanctioned set, on both real hosts.
+
+    G6 has the role refuse any drop-in other than its own, because a
+    pre-existing override is exactly how the condition gate would be
+    defeated -- a drop-in loaded after the guard's can add a start path the
+    guard never granted. Rider point 7 then carves out the one override
+    the fleet itself installs: `sandbox_storage` writes
+    `RequiresMountsFor` for `containerd.service` and `docker.service`, and
+    refusing on it would make this guard unusable on hp.
+
+    BOTH real hosts have to pass, which is why the second half asserts the
+    bare tree: the sandbox drop-ins are present on hp and ABSENT on
+    gmktec, so a check that required them would refuse the very host the
+    guard was written for.
+    """
+    conditions = importlib.import_module(_CONDITIONS_MODULE)
+    assert hasattr(conditions, "unexpected_dropins")
+
+    hp = _dropin_tree(
+        root=tmp_path / "hp",
+        dropins={
+            "containerd.service": (_GUARD_DROPIN, _SANDBOX_STORAGE_DROPIN),
+            "docker.service": (_GUARD_DROPIN, _SANDBOX_STORAGE_DROPIN),
+            "docker.socket": (_GUARD_DROPIN,),
+        },
+    )
+
+    assert conditions.unexpected_dropins(unit_directory=hp) == ()
+
+    gmktec = _dropin_tree(
+        root=tmp_path / "gmktec",
+        dropins={
+            "containerd.service": (_GUARD_DROPIN,),
+            "docker.service": (_GUARD_DROPIN,),
+            "docker.socket": (_GUARD_DROPIN,),
+        },
+    )
+
+    assert conditions.unexpected_dropins(unit_directory=gmktec) == ()
+
+    # A host whose drop-in directories do not exist at all: the read is a
+    # survey, so nothing to survey is not a finding.
+    assert conditions.unexpected_dropins(unit_directory=tmp_path / "absent") == ()
