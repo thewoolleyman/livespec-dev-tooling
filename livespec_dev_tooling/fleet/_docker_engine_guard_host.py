@@ -41,6 +41,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_netstate import (
     write_sysctl_snapshot,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_postconditions import read_postconditions
+from livespec_dev_tooling.fleet._docker_engine_guard_preflight import docker_group_accounts
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     cancel_jobs,
@@ -108,8 +109,8 @@ class RealHost:
         raise NotImplementedError
 
     def docker_group_members(self) -> tuple[str, ...]:
-        """CHILD 4: the preflight's docker-group read."""
-        raise NotImplementedError
+        """Every account the `docker` group admits, by either kind of membership."""
+        return docker_group_accounts(runner=self.runner)
 
     # --- publish ---
 

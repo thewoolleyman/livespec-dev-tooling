@@ -34,6 +34,8 @@ from typing import Any
 __all__: list[str] = []
 
 _RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_runner"
+_MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
+_HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 _PREFLIGHT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_preflight"
 _PREFLIGHT_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_preflight.py")
 
@@ -184,3 +186,77 @@ def test_preflight_refuses_every_overlap_of_the_docker_subnet() -> None:
     assert preflight.subnet_overlaps(runner=declared, declared=_DECLARED_OVERLAPPING) == (
         "172.17.0.0/16 overlaps the declared cluster pod CIDR 172.16.0.0/12",
     )
+
+
+def _real_host(*, root: Path, commands: _Commands) -> Any:
+    """The guard's REAL host, rooted under `root` and driven by `commands`.
+
+    The same object the guard's command line builds, so what is asserted
+    is the host layer the factory actually runs -- not a second
+    implementation standing in for it.
+    """
+    host_module = importlib.import_module(_HOST_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    paths = model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+    return host_module.build_real_host(paths=paths, runner=commands)
+
+
+# `getent group docker` on a host where the install has already created
+# the group and somebody has been added to it, and `getent passwd` where
+# one further account carries that group as its PRIMARY one. Both shapes
+# have to be found: a member list names the first, and only the passwd
+# table names the second.
+_GROUP_WITH_MEMBERS = _lines("docker:x:999:bob,alice")
+_PASSWD_TABLE = _lines(
+    "root:x:0:0:root:/root:/bin/bash",
+    "builder:x:1001:999:CI builder:/home/builder:/bin/bash",
+    "chad:x:1000:1000:Chad:/home/chad:/bin/bash",
+)
+
+
+def test_preflight_refuses_every_account_the_docker_group_admits() -> None:
+    """A member of the group and an account whose PRIMARY group it is both count.
+
+    Design R9 admits the Docker API to nobody but the guard until the
+    commit point, and the socket's group is `docker` -- so an account in
+    that group is a second party on the API during the window. The two
+    kinds of membership live in two different tables, and an answer that
+    read only the member list would pass a host whose CI builder has
+    `docker` as its login group.
+    """
+    assert "docker_group_accounts" in importlib.import_module(_PREFLIGHT_MODULE).__all__
+    preflight = importlib.import_module(_PREFLIGHT_MODULE)
+
+    absent = _Commands(answers={preflight.GETENT_PASSWD_ARGV: _PASSWD_TABLE})
+    assert preflight.docker_group_accounts(runner=absent) == ()
+    assert tuple(absent.argvs) == (preflight.GETENT_GROUP_ARGV, preflight.GETENT_PASSWD_ARGV)
+    assert set(absent.timeouts) == {preflight.PREFLIGHT_TIMEOUT_SECONDS}
+
+    admitting = _Commands(
+        answers={
+            preflight.GETENT_GROUP_ARGV: _GROUP_WITH_MEMBERS,
+            preflight.GETENT_PASSWD_ARGV: _PASSWD_TABLE,
+        }
+    )
+    assert preflight.docker_group_accounts(runner=admitting) == ("alice", "bob", "builder")
+
+
+def test_the_real_host_reads_the_docker_group_through_the_preflight(tmp_path: Path) -> None:
+    """`HostOps.docker_group_members` is that same read, and nothing else.
+
+    `reserve` and `arm` both refuse on a non-empty answer, so the seam
+    the lifecycle calls has to be the read above rather than a second
+    one that could disagree with it.
+    """
+    assert "docker_group_accounts" in importlib.import_module(_PREFLIGHT_MODULE).__all__
+    preflight = importlib.import_module(_PREFLIGHT_MODULE)
+    commands = _Commands(
+        answers={
+            preflight.GETENT_GROUP_ARGV: _GROUP_WITH_MEMBERS,
+            preflight.GETENT_PASSWD_ARGV: _PASSWD_TABLE,
+        }
+    )
+
+    host = _real_host(root=tmp_path, commands=commands)
+
+    assert host.docker_group_members() == ("alice", "bob", "builder")
