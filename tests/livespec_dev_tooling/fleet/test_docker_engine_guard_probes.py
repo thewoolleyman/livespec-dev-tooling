@@ -646,6 +646,83 @@ def test_the_dns_placement_read_reports_a_same_node_backend_as_not_counting() ->
     assert missing.error == "no running CoreDNS backend was found through the k3s server"
 
 
+# The route this fleet actually HAS from a k3s agent to its server, and
+# the reason the prefix has to be declared at all: `sudo -u cwoolley -H
+# ssh` reaches the server as the human the fleet provisions keys for, and
+# the trailing `sudo` is what lets `k3s kubectl` there read
+# `/etc/rancher/k3s/k3s.yaml`, which only root can read. It is the same
+# shape `ansible/roles/node_status_credential/files/
+# refresh-node-status-kubeconfig` already uses. Measured 2026-10-16:
+# gmktec-xubuntu is the agent and poweredge-xubuntu the control plane,
+# and no root-to-root ssh credential exists between them.
+_DECLARED_K3S_SERVER_ROUTE = (
+    "sudo",
+    "-u",
+    "cwoolley",
+    "-H",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "poweredge-xubuntu",
+    "sudo",
+)
+
+
+def test_the_dns_placement_read_reaches_the_k3s_server_through_a_declared_route() -> None:
+    """The route to the k3s server is a PARAMETER of the placement read.
+
+    The read delegates the pod listing to the server, so it needs a
+    credential there, and which route carries one is a fact about the
+    fleet rather than about the guard: this one reaches the server as a
+    human user and elevates on the far side. A hard-wired root-to-root
+    `ssh` works only where such a credential is provisioned, and this
+    fleet provisions none, so the prefix is declared and the command it
+    carries -- `PLACEMENT_COMMAND` -- is the part that never varies.
+
+    An undeclared route keeps the previous `ssh -o BatchMode=yes
+    <server>` prefix, so a run that says nothing about the route behaves
+    exactly as it did before this parameter existed.
+    """
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+    assert "PLACEMENT_COMMAND" in cluster.__all__
+    assert cluster.PLACEMENT_COMMAND == (
+        "k3s",
+        "kubectl",
+        "get",
+        "pods",
+        "-n",
+        "kube-system",
+        "-o",
+        "wide",
+    )
+
+    routed = cluster.coredns_placement_argv(
+        server="poweredge-xubuntu", k3s_server_argv=_DECLARED_K3S_SERVER_ROUTE
+    )
+    assert routed == (*_DECLARED_K3S_SERVER_ROUTE, *cluster.PLACEMENT_COMMAND)
+    assert cluster.coredns_placement_argv(server="poweredge-xubuntu") == (
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "poweredge-xubuntu",
+        *cluster.PLACEMENT_COMMAND,
+    )
+
+    bus = _Commands(answers={routed: _KUBE_SYSTEM_WIDE_CROSS_NODE})
+    assert cluster.coredns_nodes(
+        runner=bus, server="poweredge-xubuntu", k3s_server_argv=_DECLARED_K3S_SERVER_ROUTE
+    ) == ("poweredge-xubuntu",)
+    elsewhere = cluster.dns_placement_probe(
+        runner=bus,
+        server="poweredge-xubuntu",
+        node="gmktec-xubuntu",
+        k3s_server_argv=_DECLARED_K3S_SERVER_ROUTE,
+    )
+    assert (elsewhere.passed, elsewhere.counts_toward_confirmation) == (True, True)
+    assert tuple(bus.argvs) == (routed, routed)
+    assert set(bus.timeouts) == {cluster.PLACEMENT_TIMEOUT_SECONDS}
+
+
 _POD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_pod_probes"
 _POD_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_pod_probes.py")
 
