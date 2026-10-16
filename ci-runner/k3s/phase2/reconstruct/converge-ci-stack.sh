@@ -176,6 +176,18 @@ PROBE_KUBECONFIG="${CI_KUEUE_PROBE_KUBECONFIG:-/etc/ci-runner/kueue-webhook-prob
 # is R4.S8's job (livespec-sab5gn.1); converge only renders it.
 GATES_KUBECONFIG="${CI_GATES_KUBECONFIG:-/etc/ci-runner/gates.kubeconfig}"
 GATES_SERVER="${CI_GATES_SERVER:-https://poweredge-xubuntu.perch-rudd.ts.net:6443}"
+# The `factory` namespace's sandbox-launcher credential (step 10e,
+# livespec-dev-tooling-sqobqv). Rendered HERE on the control-plane node but
+# CONSUMED on whichever host runs the Fabro server, so — like the gates
+# credential above and for the same reason — it names the TAILNET address the
+# API server holds a SAN for (../k3s-config/config.yaml `tls-san`) rather than
+# the loopback that is correct only for the on-host probe. Resolved FROM
+# GATES_SERVER rather than respelled, so the fleet keeps ONE literal for this
+# node's tailnet address and the credentials cannot drift apart. Delivering the
+# file to a Fabro-server host is the factory_kubeconfig Ansible role's job;
+# converge only renders it.
+FACTORY_KUBECONFIG="${CI_FACTORY_KUBECONFIG:-/etc/ci-runner/factory.kubeconfig}"
+FACTORY_SERVER="${CI_FACTORY_SERVER:-${GATES_SERVER}}"
 # Each AGENT node's scoped node-status credential (step 10d,
 # livespec-dev-tooling-yj25uj). Rendered HERE, one file per agent, and CONSUMED on
 # that agent — so, like the gates credential above and for the same reason, it
@@ -840,6 +852,34 @@ log "10e. Re-apply the factory namespace, its quota, its egress policy and its l
 # bounded to run, and `kubectl apply` here touches only committed manifests with
 # no host precondition to fail on.
 kubectl apply -f "${FACTORY_DIR}"
+# AND RE-RENDER THE CREDENTIAL THAT IDENTITY IS ONLY USEFUL AS
+# (livespec-dev-tooling-sqobqv). The apply above recreates the ServiceAccount
+# and the token Secret REQUEST; the token controller then populates that Secret
+# with bytes that are DIFFERENT from the ones the previous boot produced. So a
+# host holding a factory kubeconfig is holding a token this API server has
+# never seen from the moment it starts, and nothing on the host can mint a new
+# one — the grant deliberately reaches nothing but the `factory` namespace's
+# pods and jobs. Rendering here, unconditionally, beside the apply that
+# invalidated the old file, is what makes the boot self-sufficient; the
+# factory_kubeconfig role's runtime refresh pulls THIS file.
+#
+# ORDERED AFTER the apply, not beside it: the renderer polls for the token
+# Secret's `data.token` for up to 60 s, and that Secret does not exist until
+# the apply above has run. The wait is a tolerance for the controller's
+# asynchrony, never a substitute for the ordering.
+#
+# ROOT-ONLY (0600) ON THIS NODE, deliberately, even though the consuming host
+# installs it 0640 to a reader group. Nothing on the control-plane node reads
+# this file: it exists here only to be fetched, by a pull that authenticates as
+# a login user and elevates with `sudo cat`. Widening it here would add readers
+# on the one machine that holds the cluster's admin kubeconfig already.
+"${RENDER_SA_KUBECONFIG}" \
+  --namespace factory \
+  --secret sandbox-launcher-token \
+  --user sandbox-launcher \
+  --dest "${FACTORY_KUBECONFIG}" \
+  --server "${FACTORY_SERVER}" \
+  --group root --mode 0600
 
 # ---------------------------------------------------------------------------
 log "11. Verify (informational — non-fatal reads of the converged state)"
@@ -854,4 +894,4 @@ kubectl -n ci-warm-cache get cronjob
 kubectl get nodes -l k3s-role=arc-runner-host \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}ci-runner.io/churn-slot={.status.allocatable.ci-runner\.io/churn-slot}{"\n"}{end}'
 
-log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy and launcher identity."
+log "DONE. CI cluster stack converged: churn-slot capacity asserted + provisioner + Kueue + all queues + ARC controller + ${#SCALE_SETS[@]} scale sets + hook ConfigMap + registry mirror + warm-cache CronJob + probe identity + gate source mirrors and daemon + factory namespace, quota, egress policy, launcher identity and its rendered kubeconfig."
