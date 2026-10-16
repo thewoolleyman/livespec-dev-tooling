@@ -1,25 +1,37 @@
-"""The Docker engine install guard's real host — CHILD 4 STILL OWNS THE REST.
+"""The Docker engine install guard's real host — SOME SEAMS STILL RAISE.
 
 `docker_engine_guard.py`'s command line builds its `HostOps` from
 `build_real_host` here, so the real host actions land in this module
-without reopening the guard module. Child 3a supplies the ones its
-Definition of Done names: the snapshot, the firewall footprint, unit and
-job control, the effective-condition check, the postcondition read and
-the dead-man recipe. The remaining seams — the clock and boot identity,
-the admission reads, the start permission, the observation `sample`, the
-preflight's docker-group read, the post-commit and reconfigure seams child
-1b added, the rollback phase child child 2 added, and child 3b's package
-step — still raise, each saying so where it stands.
+without reopening the guard module. Child 3a supplied the snapshot, the
+firewall footprint, unit and job control, the effective-condition check,
+the postcondition read and the dead-man recipe; child 4 adds the
+PREFLIGHT (the subnet-overlap refusals, the docker-group read and the
+resync refusal) and the observation `sample`. The seams that still
+raise, each saying so where it stands, are the clock and boot identity,
+the runtime directory's ownership, the admission reads of guard-unit
+state and this invocation's own unit, the start permission, the unit
+start, the dead-man timer reads, the post-commit and reconfigure seams
+child 1b added, the rollback phase child child 2 added, and child 3b's
+package step.
+
+TWO METHODS HERE ARE NOT `HostOps` SEAMS, and that is deliberate.
+`preflight_refusals` and `record_preflight` run BEFORE `reserve`, which
+is before any run exists for the dispatch table to admit an operation
+on — so they are the role's own reads of this machine rather than steps
+of the lifecycle. They live on the real host anyway, because they are
+host state and nothing else, and the role has one place to ask this
+machine anything.
 
 This module is deliberately THIN. Every action it exposes is one line of
 delegation to a cohesive sibling — the firewall actions, the unit
 actions, the condition reads, the kernel network state, the postcondition
-record — because `HostOps` is a WIDE protocol and a host that also held
-the work would be one file holding six unrelated concerns.
+record, the preflight and the probe set — because `HostOps` is a WIDE
+protocol and a host that also held the work would be one file holding
+eight unrelated concerns.
 
 Governing specification: `SPECIFICATION/non-functional-requirements.md`
-section "Docker engine install guard", "Host actions" and "Preflight".
-Stdlib only, Python 3.10 syntax.
+section "Docker engine install guard", "Host actions", "Preflight" and
+"Probes". Stdlib only, Python 3.10 syntax.
 """
 
 from __future__ import annotations
@@ -45,6 +57,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_preflight import (
     docker_group_accounts,
     preflight_refusals,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_probe_set import record_preflight, take_sample
 from livespec_dev_tooling.fleet._docker_engine_guard_resync import K3S_CONFIG, K3S_CONFIG_DROPINS
 from livespec_dev_tooling.fleet._docker_engine_guard_runner import run_command
 from livespec_dev_tooling.fleet._docker_engine_guard_units import (
@@ -55,9 +68,10 @@ from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     stop_unit,
     systemd_run,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_witness import CONTAINERD_PATHS, PROC_ROOT
 
 if TYPE_CHECKING:
-    from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps, QueuedJob
+    from livespec_dev_tooling.fleet._docker_engine_guard_hostops import QueuedJob
     from livespec_dev_tooling.fleet._docker_engine_guard_model import GuardPaths
     from livespec_dev_tooling.fleet._docker_engine_guard_runner import GuardCommandRunner
 
@@ -79,6 +93,15 @@ class RealHost:
 
     paths: GuardPaths
     runner: GuardCommandRunner
+
+    # The two locations this host reads from the filesystem rather than
+    # through the runner: `/proc`, where the k3s witness and the
+    # canary's cgroup are read, and the paths k3s's containerd shims
+    # keep their state in. Fields with the REAL defaults, so the whole
+    # sample -- not a stand-in for it -- is drivable against a recorded
+    # tree, exactly as the runner makes every command drivable.
+    proc_root: Path = PROC_ROOT
+    containerd_paths: Sequence[Path] = CONTAINERD_PATHS
 
     # --- clock, boot identity and the guard's own runtime directory ---
 
@@ -144,6 +167,16 @@ class RealHost:
         write_firewall_snapshot(destination=destination, runner=self.runner)
         write_sysctl_snapshot(destination=destination, runner=self.runner)
 
+    def record_preflight(self, *, destination: Path) -> None:
+        """Record k3s's containerd and this host's interfaces beside the snapshot.
+
+        Not a `HostOps` seam for the same reason the preflight reads
+        are not: the specification takes these records at the
+        preflight, before any guarded operation, so the role takes
+        them rather than an operation the dispatch table admits.
+        """
+        record_preflight(destination=destination, runner=self.runner, proc_root=self.proc_root)
+
     def install_packages(self, *, inputs: Path) -> None:
         """CHILD 3b: the fenced, audited package transaction."""
         raise NotImplementedError
@@ -179,8 +212,13 @@ class RealHost:
     # --- observe (child 1b, probes from child 4) ---
 
     def sample(self) -> Mapping[str, object]:
-        """CHILD 4: one observation sample, the probes and the k3s witness."""
-        raise NotImplementedError
+        """One observation sample: every probe and the k3s witness, as one record."""
+        return take_sample(
+            runner=self.runner,
+            paths=self.paths,
+            proc_root=self.proc_root,
+            containerd_paths=self.containerd_paths,
+        )
 
     # --- confirm's post-commit steps (child 1b) ---
 
@@ -249,6 +287,21 @@ class RealHost:
         raise NotImplementedError
 
 
-def build_real_host(*, paths: GuardPaths, runner: GuardCommandRunner = run_command) -> HostOps:
-    """The `HostOps` that actually touches this host, rooted at `paths`."""
-    return RealHost(paths=paths, runner=runner)
+def build_real_host(
+    *,
+    paths: GuardPaths,
+    runner: GuardCommandRunner = run_command,
+    proc_root: Path = PROC_ROOT,
+    containerd_paths: Sequence[Path] = CONTAINERD_PATHS,
+) -> RealHost:
+    """The `HostOps` that actually touches this host, rooted at `paths`.
+
+    Answers `RealHost` rather than `HostOps`: the preflight reads and
+    the preflight record are host state the ROLE asks for before any
+    operation exists, so they are not seams of the protocol the
+    lifecycle runs against — and a caller handed the protocol could not
+    reach them.
+    """
+    return RealHost(
+        paths=paths, runner=runner, proc_root=proc_root, containerd_paths=containerd_paths
+    )
