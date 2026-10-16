@@ -457,8 +457,15 @@ fabro_server_instances:
     # whatever is there on the day it runs. The replacement does not restart
     # the instance: fabro_server_restart_allowed is false by default and the
     # carrying-runs refusal gates it even when it is true.
-    binary_source: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
-    binary_sha256: effe9d03c859e8072934947ce598980ea337065df17e737867685a1508514799
+    #
+    # Rebuilt 2026-10-16 from the SAME commit (adeefec4c) with
+    # NODE_ENV=production exported. fabro-web's build.ts never sets NODE_ENV,
+    # so every earlier build, including effe9d03, embedded React's DEVELOPMENT
+    # build in the web console. The engine source is identical; only the SPA
+    # differs. A rebuild without NODE_ENV=production regresses the console to
+    # the dev UI. Provenance is in BUILD_INFO beside the binary.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
+    binary_sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
     # The sandbox environment the factory's own runs are prepared in. Measured
     # 2026-10-11: this instance's catalog held only the server's seeded `default`
     # entry — buildpack-deps:noble, 2 CPU, 4GB — so the canary run dispatched to
