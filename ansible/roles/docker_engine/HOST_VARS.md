@@ -122,7 +122,49 @@ the role refuses to converge without them:
    read each apt hook, and commit the map as `docker_engine_dpkg_config_digests`
    in that host's host_vars.
 
-No audit has been committed yet.
+### The maintainer-script audit (2026-10-16)
+
+Read by the session `petri-factory-on-gmktec` (session c06a2db3) on
+2026-10-16. The `.deb` files came from the Ubuntu 26.04 archive, downloaded
+inside the disposable acceptance VM with `apt-get download`. Each script was
+extracted with `dpkg-deb -e` and hashed with `sha256sum`; those are the same
+bytes `dpkg-deb -I` prints. Every script was read in full.
+
+- **containerd 2.2.2-0ubuntu1.1**: `postinst`, `prerm` and `postrm`.
+  - `postinst` unmasks and enables `containerd.service`, runs
+    `systemctl daemon-reload`, then `deb-systemd-invoke start`.
+  - `prerm` stops the unit on remove.
+  - `postrm` reloads on remove and purges the unit state on purge.
+- **runc 1.4.0-0ubuntu1**: no maintainer script.
+- **docker.io 29.1.3-0ubuntu4.1**: `preinst`, `postinst`, `prerm` and `postrm`.
+  - `preinst` refuses only when `/var/lib/docker/aufs` exists.
+  - `postinst` does four things. It creates the `docker` system group on a
+    first install. That group is why `arm` repeats the docker-group check
+    (design I4). It reloads the AppArmor profile. It unmasks and enables
+    `docker.service` and `docker.socket`. Finally it runs
+    `invoke-rc.d docker start`.
+  - A ZFS migration branch in `postinst` runs only on a ZFS root, and a
+    debconf restart prompt runs only on upgrade. Neither applies to a fresh
+    install on ext4.
+  - `prerm` stops `docker.socket` then `docker.service` on remove, and copies
+    `nuke-graph-directory.sh` into `/var/lib/docker`.
+  - `postrm` reloads on remove and runs that script on PURGE only. Purge is a
+    path the role never takes: design Mechanism 6 never erases.
+
+What this means for Mechanism 1 is that every start a maintainer script
+attempts meets the guard's start condition. docker.io's `postinst` issues
+`invoke-rc.d docker start` WITHOUT a `daemon-reload` of its own, and it is
+covered two ways:
+
+- `dpkg -i` on the audited set unpacks all three packages before configuring
+  any. So containerd's `postinst`, configured first, has already reloaded
+  systemd with docker's unit files and the guard's drop-ins in place.
+- systemd loads a never-loaded unit's drop-ins from disk on its first start in
+  any case.
+
+The disposable-VM acceptance run is what proves this, not this reading: after
+`publish`, all three units must be inactive with their condition unmet
+(`FAULTS.md`, H-01).
 
 ## Operator procedure
 

@@ -27,15 +27,25 @@
 # scripts differs from these keys, and a script whose bytes differ from its
 # digest, so no run can publish until the audit is committed.
 docker_engine_packages:
+  # Maintainer-script digests, audited 2026-10-16 by reading every script in
+  # the archive's .deb (HOST_VARS.md, "The maintainer-script audit").
   - package: containerd
     version: 2.2.2-0ubuntu1.1
-    scripts: {}
+    scripts:
+      postinst: 8eb27a42216980e4718b36df9bca1ca5106f6ee6cd5e530b01317ed6b57fd837
+      prerm: fb57783af42240ca75150d5befc5a7cf2c353088dbf237ca2d78401929b83332
+      postrm: 07708390cab040da3c2cf628f04dd1ba71299bf5fcd5ec5e039712961ced75a2
   - package: runc
     version: 1.4.0-0ubuntu1
+    # The runc .deb carries no maintainer script at all.
     scripts: {}
   - package: docker.io
     version: 29.1.3-0ubuntu4.1
-    scripts: {}
+    scripts:
+      preinst: 0126ea7a95f68fd15cf0d621e1d745b49ccd7f3b0e8b4fc42f8b5e79f57af3a1
+      postinst: eb565a299e76c65bca86708766bf2d4c158b83fb7b25b7eea5098da4f522df15
+      prerm: 4e2e352933d74f3c35486e34042cf9a582dcef01efe4405e6610fec647cd9c35
+      postrm: 5b2e41555d6fdd376fe96ea0ed97e06f8b0510327891c39b7a32bff343680ed7
 
 # The Debian architecture in each .deb's file name.
 docker_engine_deb_arch: amd64
