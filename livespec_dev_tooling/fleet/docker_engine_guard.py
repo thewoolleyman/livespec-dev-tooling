@@ -209,7 +209,7 @@ DISPATCH_TABLE: Final[tuple[DispatchRow, ...]] = (
     ),
     DispatchRow(
         operation="verify",
-        handler=_pending,
+        handler=commit.verify,
         marker_self="refuse",
         allowed_from=("rollback-partial", "rolled-back"),
     ),

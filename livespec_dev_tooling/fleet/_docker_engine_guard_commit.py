@@ -1,15 +1,29 @@
-"""The Docker engine install guard's commit point, and the rule that guards it.
+"""Every Docker engine install guard operation that runs once a window is over.
 
 Governing specification: `SPECIFICATION/non-functional-requirements.md`
-section "Docker engine install guard" -- "Commit" (this repository).
-Governing design: `docs/docker-engine-guard-design.md`, F4, G2's
-`confirm` and I2's `confirm` row.
+section "Docker engine install guard" -- "Commit" and "After the commit"
+(this repository). Governing design:
+`docs/docker-engine-guard-design.md`, F4, G2's `confirm`, H3, and I2's
+`confirm`, `verify` and `reconfigure` rows.
+
+The three operations here share one concern, which is why they share a
+module: each runs after a run's fate has been decided elsewhere, and
+each reconciles the host with a record that already exists. `confirm`
+takes a run past the commit point and then repeats the post-commit
+steps idempotently for as long as the marker names it. `verify` re-reads
+the rollback postcondition set and promotes a `rollback-partial` run to
+`rolled-back` when every one of them holds. `reconfigure` is the ONLY
+post-commit way to change the owned daemon keys. None of them samples
+the host, and none of them decides whether a run may act -- the
+observer and the dispatch table own that.
 
 Reached only through `docker_engine_guard.run_operation`, so the lock is
 held, the run is the current reservation, the commit marker has been
 read, and the dispatch table has already admitted the invocation --
-from `observed` with an unexpired deadline when the marker is absent.
-Nothing here re-decides any of that.
+`confirm` from `observed` with an unexpired deadline when the marker is
+absent, `verify` from a rollback outcome, `reconfigure` only from
+`confirmed` with the marker naming the run. Nothing here re-decides any
+of that.
 
 WHY THE REFUSALS ARE A FUNCTION RETURNING PROSE. Each clause of the
 commit rule fails for a different reason, and the right next step
@@ -43,7 +57,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_records import (
     record_durability_warning,
     submitted_nonce,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_state import read_marker, record_phase
+from livespec_dev_tooling.fleet._docker_engine_guard_state import (
+    read_marker,
+    read_phase,
+    record_phase,
+)
 
 if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision
@@ -54,6 +72,7 @@ __all__: list[str] = [
     "committed_installation_fault",
     "confirm",
     "deadman_timer_unit",
+    "verify",
 ]
 
 # What the post-commit validation requires of each guarded unit, and it
@@ -213,4 +232,46 @@ def confirm(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         env=env,
         decision=decision,
         warning=record_durability_warning(paths=env.paths, run=run, failure=failure),
+    )
+
+
+def _verify_refusal(*, failed: tuple[str, ...]) -> str:
+    """Why `verify` will not promote the run, naming what it read."""
+    if not failed:
+        return (
+            "the rollback postcondition set read back empty, which is not evidence "
+            "that any of them holds"
+        )
+    return f"these rollback postconditions still fail: {', '.join(failed)}"
+
+
+def verify(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
+    """Re-read the rollback postcondition set, and promote only a clean host.
+
+    `verify` is how a `rollback-partial` run ever ends. The reservation
+    stays with that run until it does, so nothing else can reserve the
+    host -- correct while Docker's footprint may still be on it, and the
+    reason the promotion here is the most consequential write in this
+    module: it is what lets a LATER run start.
+
+    So it is made only when EVERY postcondition holds, re-read NOW
+    rather than taken from what the rollback recorded, and against this
+    run's own snapshot -- the one `publish` took before the first
+    package step, which is what "as snapshotted" means at all. The
+    promotion is also the only write: everything else is a read, so a
+    `verify` that refuses leaves the host exactly as it found it.
+    """
+    postconditions = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
+    failed = tuple(sorted(name for name, holds in postconditions.items() if not holds))
+    if failed or not postconditions:
+        return GuardOutcome(
+            operation="verify", run=run, verdict="refuse", reason=_verify_refusal(failed=failed)
+        )
+    if read_phase(paths=env.paths, run=run) == "rollback-partial":
+        record_phase(paths=env.paths, run=run, phase="rolled-back")
+    return GuardOutcome(
+        operation="verify",
+        run=run,
+        verdict=decision.verdict,
+        reason="every rollback postcondition holds",
     )
