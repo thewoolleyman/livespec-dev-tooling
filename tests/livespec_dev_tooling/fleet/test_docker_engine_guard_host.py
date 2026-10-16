@@ -1291,3 +1291,48 @@ def test_the_dropin_check_refuses_a_dropin_outside_that_set(tmp_path: Path) -> N
     )
 
     assert conditions.dropin_check_passed(unit_directory=ignored) is True
+
+
+def test_the_dead_man_recipe_reaches_systemd_run_with_collect_and_both_budgets(
+    tmp_path: Path,
+) -> None:
+    """Rider points 2 and 9: `--collect`, `AccuracySec=1s`, `TimeoutStartSec=900`.
+
+    Each of the three is a measured fix, not a default worth restating:
+
+    - `--collect` (rider 9) because a transient unit that FAILED stays
+      loaded in `failed` state, and the next `arm` for the same run then
+      collides with the corpse of the last one instead of creating the
+      timer. Admission classifies a failed dead-man, and `--collect` is
+      what stops it accumulating.
+    - `TimeoutStartSec=900` (rider 2) because the dead-man's own service
+      has to outlive the whole rollback budget. At the previous 600 s the
+      service manager would SIGKILL the primary rollback path before its
+      final postcondition check -- a rollback cut off mid-teardown, which
+      is the one state this guard exists to avoid.
+    - `AccuracySec=1s` because systemd's default timer accuracy is a
+      MINUTE, and a dead-man that may fire up to a minute late is a
+      deadline the run can overrun.
+
+    Asserted on the argv the host actually EMITTED rather than on the
+    recipe builder's return value: the recipe is only worth anything if it
+    reaches `systemd-run` unaltered, through the same bounded runner every
+    other host action uses.
+    """
+    model = importlib.import_module(_MODEL_MODULE)
+    units = importlib.import_module(_UNITS_MODULE)
+    recipe = model.deadman_argv(run="run-a", on_active_seconds=360)
+    commands = _Commands()
+
+    _real_host(root=tmp_path, commands=commands).systemd_run(argv=recipe)
+
+    assert tuple(commands.argvs) == (recipe,)
+    emitted = commands.argvs[0]
+    assert emitted[0] == "systemd-run"
+    assert "--collect" in emitted
+    assert "--timer-property=AccuracySec=1s" in emitted
+    assert "--property=TimeoutStartSec=900" in emitted
+    assert "--unit=docker-engine-deadman-run-a" in emitted
+    assert "--on-active=360" in emitted
+    assert emitted[-2:] == ("rollback", "run-a")
+    assert commands.timeouts == [units.UNIT_ACTION_TIMEOUT_SECONDS]
