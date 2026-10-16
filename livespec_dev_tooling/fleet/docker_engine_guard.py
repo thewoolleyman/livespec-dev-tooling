@@ -135,6 +135,21 @@ def _rollback_entry(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutc
     return rollback.run_rollback(run=run, env=env, decision=decision)
 
 
+def _rollback_phase_entry(*, run: str, env: GuardEnv, phase: str) -> GuardOutcome:
+    """Run ONE rollback phase, as the child the rollback driver spawned for it.
+
+    This is the one invocation that takes NEITHER the lock NOR the
+    dispatch table, and both omissions are the point. The driver that
+    spawned this child holds the lock for the whole rollback and its
+    descriptor is close-on-exec, so this process cannot inherit it and a
+    child that waited for it would block for its entire budget and then
+    be killed having done nothing. The decision that this rollback may
+    act was made once, above, by the driver's own table row.
+    """
+    rollback = _sibling_module(name="_docker_engine_guard_rollback")
+    return rollback.run_phase(run=run, env=env, phase=phase)
+
+
 DISPATCH_TABLE: Final[tuple[DispatchRow, ...]] = (
     DispatchRow(
         operation="reserve",
@@ -297,6 +312,8 @@ def run_request(*, request: CliRequest, host: HostOps) -> int:
     host, which child 3a supplies and child 1a therefore cannot run.
     """
     env = GuardEnv(paths=request.paths, host=host, window_seconds=request.window_seconds)
+    if request.phase is not None:
+        return emit(outcome=_rollback_phase_entry(run=request.run, env=env, phase=request.phase))
     return emit(outcome=run_operation(operation=request.operation, run=request.run, env=env))
 
 

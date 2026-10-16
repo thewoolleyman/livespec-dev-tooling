@@ -179,3 +179,13 @@ class HostOps(Protocol):
 
     # The whole postcondition set read as one record, after every stop phase.
     def read_postconditions(self, *, snapshot: Path) -> Mapping[str, bool]: ...
+
+    # Run one rollback phase as its own child process, under the command
+    # line the driver built (`timeout -k 10 <phase budget> …`), and answer
+    # whether that child COMPLETED. `False` covers every way it did not —
+    # a non-zero exit, the timeout, a signal — because the driver treats
+    # all three identically: record no success and enter the next phase.
+    # The phase runs in a child rather than in the driver so that a phase
+    # which hangs or crashes the guard's own parser costs its own budget
+    # and nothing more.
+    def run_phase_child(self, *, argv: Sequence[str]) -> bool: ...

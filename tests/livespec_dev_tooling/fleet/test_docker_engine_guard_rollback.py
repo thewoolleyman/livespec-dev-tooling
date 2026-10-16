@@ -25,6 +25,8 @@ _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
 _STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
 _GUARD_MODULE = "livespec_dev_tooling.fleet.docker_engine_guard"
+_CLI_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_cli"
+_HOSTOPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_hostops"
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
 _ROLLBACK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_rollback.py")
 
@@ -172,3 +174,167 @@ def test_rollback_stops_the_observer_and_the_starter_before_revoking_the_permiss
         ("stop_unit", ("docker-engine-guard-start.service", "10")),
         ("revoke_start_permission", ()),
     ]
+
+
+# The specification's rollback order, written out rather than read from
+# the driver, so a reordered table is a failing test rather than a test
+# that agrees with whatever the code now says.
+_SPECIFIED_ORDER = (
+    "socket-stop",
+    "job-cancel",
+    "forward-restore",
+    "cgroup-kill",
+    "unit-disable",
+    "footprint-removal",
+    "interface-deletion",
+    "sysctl-comparison",
+)
+
+# The three phases whose host action REPORTS something — a residual
+# rule, a deleted interface, a sysctl that no longer matches the
+# snapshot. The other five have nothing to hand back.
+_REPORTING_PHASES = ("footprint-removal", "interface-deletion", "sysctl-comparison")
+
+
+def _reporting_fake(*, root: Path) -> Any:
+    """A `FakeHost` whose reporting seams answer, and with jobs queued.
+
+    One of the queued jobs belongs to `k3s-agent.service`, which is how
+    "cancel the guarded units' jobs by id, never a bare `systemctl
+    cancel`" is asserted at all: the k3s job must survive.
+    """
+    hostops = importlib.import_module(_HOSTOPS_MODULE)
+    fake = _fake(root=root)
+    fake.jobs = (
+        hostops.QueuedJob(job_id="41", unit="docker.service"),
+        hostops.QueuedJob(job_id="42", unit="k3s-agent.service"),
+        hostops.QueuedJob(job_id="43", unit="docker.socket"),
+    )
+    fake.firewall_residue = ("-A DOCKER -j ACCEPT",)
+    fake.deleted_interfaces = ("docker0",)
+    fake.sysctl_differences = ("net.ipv4.ip_forward 1 != 0",)
+    return fake
+
+
+def test_the_driver_spawns_one_child_per_phase_in_the_specified_order(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": the phase order, and all of it after the revocation.
+
+    The order is not interchangeable. The socket stop precedes every
+    service stop because a listening socket keeps re-triggering starts;
+    the job cancellation precedes the kill because a queued start job
+    would bring the daemon straight back; the FORWARD restore is early
+    because it is the access-relevant one and takes milliseconds; the
+    footprint, interface and sysctl phases come last because they are
+    only meaningful once nothing is still writing rules.
+    """
+    rollback = _driver()
+    assert "ROLLBACK_PHASE_ORDER" in rollback.__all__
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision())
+
+    spawned = [call.detail[-1] for call in fake.calls_named(name="run_phase_child")]
+    assert spawned == list(_SPECIFIED_ORDER)
+    assert tuple(spawned) == rollback.ROLLBACK_PHASE_ORDER
+    names = [call.name for call in fake.calls]
+    assert names.index("revoke_start_permission") < names.index("run_phase_child")
+
+
+def test_each_rollback_phase_takes_its_own_host_action_and_records_its_findings(
+    tmp_path: Path,
+) -> None:
+    """Specification "Host actions": one phase, one bounded host action.
+
+    Each phase runs in its own child process, so this is what that child
+    does. The job cancellation is the one to read closely: it cancels
+    the guarded units' jobs BY ID and leaves `k3s-agent.service`'s job
+    alone, because a bare `systemctl cancel` would take the whole queue
+    including k3s's. The kill targets only the two services and the
+    sandbox slice, so no k3s process is reachable from here at all.
+    """
+    rollback = _driver()
+    assert "run_phase" in rollback.__all__
+    stop = "30"
+    expected = {
+        "socket-stop": [("stop_unit", ("docker.socket", stop))],
+        "job-cancel": [("queued_jobs", ()), ("cancel_jobs", ("41", "43"))],
+        "forward-restore": [("restore_forward_policy", ("before",))],
+        "cgroup-kill": [
+            ("kill_cgroup", ("docker.service", "containerd.service", "fabro-sandbox.slice")),
+            ("stop_unit", ("docker.socket", stop)),
+            ("stop_unit", ("docker.service", stop)),
+            ("stop_unit", ("containerd.service", stop)),
+            ("stop_unit", ("fabro-sandbox.slice", stop)),
+        ],
+        "unit-disable": [
+            ("disable_units", ("containerd.service", "docker.service", "docker.socket"))
+        ],
+        "footprint-removal": [("remove_firewall_footprint", ("before",))],
+        "interface-deletion": [("delete_bridge_interfaces", ())],
+        "sysctl-comparison": [("compare_sysctls", ("before",))],
+    }
+    assert tuple(expected) == _SPECIFIED_ORDER
+
+    for phase, calls in expected.items():
+        root = tmp_path / phase
+        fake = _reporting_fake(root=root)
+        _record_phase(root=root, run="run-a", phase="rolling-back")
+
+        outcome = rollback.run_phase(run="run-a", env=_env(root=root, host=fake), phase=phase)
+
+        assert outcome.exit_code == 0, phase
+        observed = [
+            (call.name, tuple(Path(part).name for part in call.detail))
+            for call in fake.calls
+            if call.name != "run_phase_child"
+        ]
+        assert observed == calls, phase
+        findings = root / "var" / "runs" / "run-a" / "rollback" / f"{phase}.findings"
+        assert findings.is_file() == (phase in _REPORTING_PHASES), phase
+
+
+def test_the_phase_child_reaches_its_phase_through_the_guard_command_line(
+    tmp_path: Path,
+) -> None:
+    """The argv the driver builds is the argv that routes, and nothing else.
+
+    A driver that built a command line nothing could route would spawn
+    eight children that each did nothing and reported success, so the
+    two halves are asserted TOGETHER: the driver's own argv is parsed and
+    run here exactly as the child process runs it. The route is
+    deliberately past the dispatch table and past the lock — the driver
+    that spawned the child holds that lock, and a child waiting for it
+    would block for its whole budget and then be killed having done
+    nothing.
+    """
+    rollback = _driver()
+    assert "phase_child_argv" in rollback.__all__
+    guard = importlib.import_module(_GUARD_MODULE)
+    cli = importlib.import_module(_CLI_MODULE)
+    fake = _reporting_fake(root=tmp_path)
+    _record_phase(root=tmp_path, run="run-a", phase="rolling-back")
+    argv = list(
+        rollback.phase_child_argv(
+            run="run-a", env=_env(root=tmp_path, host=fake), phase="unit-disable"
+        )
+    )
+
+    code = guard.run_request(
+        request=cli.parse_request(argv=argv[argv.index("rollback") :]), host=fake
+    )
+
+    assert code == 0
+    assert fake.calls_named(name="disable_units")[0].detail == (
+        "containerd.service",
+        "docker.service",
+        "docker.socket",
+    )
+    # A phase name that is not one of the eight is an expected refusal
+    # carried on the outcome rail, never a raise: these modules run on a
+    # bare host interpreter where the Result railway is not importable.
+    refused = rollback.run_phase(run="run-a", env=_env(root=tmp_path, host=fake), phase="nope")
+    assert refused.verdict == "refuse"
+    assert refused.exit_code == 1

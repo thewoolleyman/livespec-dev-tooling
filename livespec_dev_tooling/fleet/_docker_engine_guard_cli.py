@@ -56,6 +56,9 @@ class CliRequest:
     run: str
     paths: GuardPaths
     window_seconds: int
+    # Set only on the rollback driver's own phase children; `None` on
+    # every invocation an operator or the role makes.
+    phase: str | None = None
 
 
 def parse_request(*, argv: Sequence[str]) -> CliRequest:
@@ -66,12 +69,19 @@ def parse_request(*, argv: Sequence[str]) -> CliRequest:
     _ = parser.add_argument("--state-root", default=str(DEFAULT_STATE_ROOT))
     _ = parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME_ROOT))
     _ = parser.add_argument("--window-seconds", type=int, default=DEFAULT_WINDOW_SECONDS)
+    # INTERNAL. The rollback driver spawns one child process per rollback
+    # phase and names the phase here; no operator and no role step passes
+    # it. It is a flag rather than an eleventh operation because a phase
+    # child is not an operation at all: it acts under the lock its parent
+    # already holds, so it is routed past the dispatch table.
+    _ = parser.add_argument("--phase", default=None)
     args = parser.parse_args(list(argv))
     return CliRequest(
         operation=args.operation,
         run=args.run,
         paths=GuardPaths(state_root=Path(args.state_root), runtime_root=Path(args.runtime_root)),
         window_seconds=args.window_seconds,
+        phase=args.phase,
     )
 
 
