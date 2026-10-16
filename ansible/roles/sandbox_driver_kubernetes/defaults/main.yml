@@ -21,13 +21,17 @@
 # sandbox host.
 
 # The plugin release, and the digest of its x86_64 Linux asset.
-sandbox_driver_kubernetes_version: v0.1.0
-sandbox_driver_kubernetes_sha256: 78b1d9d73ac29973214bde5dd04cbd9b33fc4f737071eb73b2d670de57a7f099
+sandbox_driver_kubernetes_version: v0.3.0
+sandbox_driver_kubernetes_sha256: acd90b1560e4950ef81ab17a618230412fb026b2dbb2cc412e73e9b17b2f0714
 # The upstream CLI (`lithos-sandbox`, crate sandbox-driver-cli), built by the
 # plugin's release workflow at the sandbox-driver revision the plugin pins, so
 # the CLI and the plugin speak the same protocol revision.
 sandbox_driver_kubernetes_cli_rev: 90b0d825767105d4b42e59fdbd116c4d66b87d83
 sandbox_driver_kubernetes_cli_sha256: 5c17f37394b858e48cc2a8a4e9ae5744d1a4dbb455509fd3575cb57191464c98
+# The lifecycle proof driver, released beside the plugin: it holds one plugin
+# process across a control-plane reboot or a node going NotReady, which a
+# per-command CLI cannot (bd-ib-ad6dby).
+sandbox_driver_kubernetes_proof_sha256: 7b9f32b39a4644f0c1cff6cc6e6d3fb223ad35a81c9f6fb65907e815adc8231d
 sandbox_driver_kubernetes_release_url: >-
   https://github.com/thewoolleyman/sandbox-driver-kubernetes/releases/download/{{ sandbox_driver_kubernetes_version }}
 sandbox_driver_kubernetes_bin_dir: /usr/local/bin
@@ -48,8 +52,10 @@ sandbox_driver_kubernetes_config_homes:
 # (livespec-sqvj7p): the namespace and credential of livespec-dev-tooling-sqobqv,
 # the RBAC of -pvykv7, and the workspace root of -due2h6.
 sandbox_driver_kubernetes_kubeconfig: "{{ factory_kubeconfig_dest | default('/etc/ci-runner/factory.kubeconfig') }}"
+# Absolute, because a launcher may pass the plugin no PATH: the sandbox-driver
+# protocol clears the plugin's environment and forwards only what it is told.
 sandbox_driver_kubernetes_refresh_command:
-  - sudo
+  - /usr/bin/sudo
   - -n
   - "{{ factory_kubeconfig_bin_dir | default('/usr/local/bin') }}/refresh-factory-kubeconfig"
 sandbox_driver_kubernetes_namespace: factory
@@ -64,5 +70,12 @@ sandbox_driver_kubernetes_tolerations:
     value: factory
     effect: NoSchedule
 sandbox_driver_kubernetes_workspace_root: /srv/factory-workspaces
+# The node-loaded AppArmor profile every sandbox pod runs under. On these
+# kernels an exec'd process is stacked as `cri-containerd.apparmor.d//&unconfined`
+# and the runtime default denies signals between a sandbox's own processes, so
+# exec could neither finish nor stop. ci-runner-workflow is that default with the
+# signal and ptrace peers widened to the stacked label, and the apparmor_profile
+# role loads it on every ci_pool node.
+sandbox_driver_kubernetes_apparmor_profile: ci-runner-workflow
 # The livespec.dispatch.factory label on every sandbox pod.
 sandbox_driver_kubernetes_factory: "{{ inventory_hostname_short }}"
