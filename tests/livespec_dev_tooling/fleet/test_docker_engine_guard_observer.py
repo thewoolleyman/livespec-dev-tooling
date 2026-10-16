@@ -19,6 +19,7 @@ host action ever fires.
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,8 @@ __all__: list[str] = []
 
 _OBSERVER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_observer"
 _OBSERVER_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_observer.py")
+_RECORDS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_records"
+_RECORDS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_records.py")
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
 _STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
@@ -139,3 +142,53 @@ def test_observe_stops_sampling_once_the_run_has_left_observing(
     # The observer records nothing over the run it no longer owns: the
     # phase it reads is the one the rollback wrote, untouched.
     assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "rolling-back"
+
+
+def _evidence(*, root: Path, run: str) -> dict[str, Any]:
+    """The run's evidence record, read back the way an operator would read it."""
+    records = importlib.import_module(_RECORDS_MODULE)
+    path = records.evidence_path(paths=_paths(root=root), run=run)
+    assert path.is_file()
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_a_failed_sample_records_it_and_triggers_a_rollback_it_never_waits_for(
+    tmp_path: Path,
+) -> None:
+    """Specification "Observe and the challenge", the failed-sample sentence.
+
+    Three things have to be true together, and each is a different kind
+    of mistake to get wrong. The failure is RECORDED, so an operator can
+    tell "Docker broke the pod network" from "CoreDNS restarted" after
+    the host has already been put back. The rollback is started as its
+    OWN transient unit, because this invocation holds the guard's one
+    lock and the rollback entry takes that same lock -- calling it in
+    process would deadlock. And the observer does not WAIT for it: it
+    has nothing left to submit, so rollback's own stop of the observer
+    unit is a no-op and neither waits on the other.
+    """
+    assert _RECORDS_PATH.is_file()
+    observer = importlib.import_module(_OBSERVER_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.sample_result = {"passed": False, "probe": "dns", "error": "no answer from 10.43.0.10"}
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+
+    outcome = observer.observe(
+        run="run-a", env=_env(root=tmp_path, host=fake, window=300), decision=_decision()
+    )
+
+    evidence = _evidence(root=tmp_path, run="run-a")
+    assert evidence["passed"] is False
+    assert "dns" in evidence["failure"]
+    assert evidence["samples"] == [dict(fake.sample_result)]
+    assert evidence["run"] == "run-a"
+    assert evidence["boot_id"] == "boot-a"
+    # The window is 300 seconds at a 15-second interval, so a window that
+    # ran on would have sampled twenty times: ONE sample is the proof that
+    # the observer exited rather than carrying on over a doomed run.
+    assert len(fake.calls_named(name="sample")) == 1
+    assert fake.calls_named(name="systemd_run")[0].detail == model.rollback_argv(run="run-a")
+    assert "--no-block" in model.rollback_argv(run="run-a")
+    assert outcome.verdict == "refuse"
+    assert "dns" in outcome.reason
