@@ -5,10 +5,13 @@ section "Docker engine install guard" (this repository). Governing
 design: `docs/docker-engine-guard-design.md`, revisions 5 to 8.
 
 Run on the guarded host as `python3 docker_engine_guard.py <op> <run>`,
-which is why every module in this set is STDLIB ONLY and why the sibling
-imports resolve through `_sibling_module` rather than a package-qualified
-`from` — as a script there is no package, and the interpreter puts this
-file's own directory on `sys.path` instead.
+which is why every module in this set is STDLIB ONLY: the host has no
+virtual environment and no third-party package, so the railway this
+repository otherwise rides is not importable where this code executes.
+Run that way there is also no PACKAGE, so the preamble below puts the
+package root on `sys.path` and `sibling_module_name` falls back to the
+guard's own package name — both halves are needed, because the sibling
+modules import each other package-qualified.
 
 WHAT THIS MODULE IS FOR. The guard installs the Docker engine on a host
 that is already running k3s and is reachable only over Tailscale, so the
@@ -32,14 +35,32 @@ replaces, so that no sibling ever has to edit this module.
 from __future__ import annotations
 
 import importlib
+import logging
+import sys
+from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Final
+from typing import Final
 
-from livespec_dev_tooling.fleet._docker_engine_guard_dispatch import (
+# The guard also runs as a plain script on the guarded host, where there
+# is no package and the sibling modules' package-qualified imports would
+# not resolve. Putting the package ROOT on `sys.path` makes them resolve
+# from either side — the same preamble every shipped module in this
+# repository already carries for its vendored tree.
+_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+if str(_PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PACKAGE_ROOT))
+
+from livespec_dev_tooling.fleet._docker_engine_guard_cli import (  # noqa: E402
+    CliRequest,
+    emit,
+    parse_request,
+)
+from livespec_dev_tooling.fleet._docker_engine_guard_dispatch import (  # noqa: E402
     DispatchRow,
     decide,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_model import (
+from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps  # noqa: E402
+from livespec_dev_tooling.fleet._docker_engine_guard_model import (  # noqa: E402
     INSTALL_PHASES,
     PHASES,
     Decision,
@@ -47,14 +68,14 @@ from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     Holder,
     Operation,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_ops import (
+from livespec_dev_tooling.fleet._docker_engine_guard_ops import (  # noqa: E402
     arm,
     publish,
     recover,
     reserve,
     start,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_state import (
+from livespec_dev_tooling.fleet._docker_engine_guard_state import (  # noqa: E402
     GuardEnv,
     acquire_lock,
     deadline_passed,
@@ -65,13 +86,13 @@ from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     release_lock,
 )
 
-if TYPE_CHECKING:
-    pass
-
 __all__: list[str] = [
     "DISPATCH_TABLE",
+    "GUARD_PACKAGE",
+    "main",
     "row_for",
     "run_operation",
+    "run_request",
     "sibling_module_name",
 ]
 
@@ -87,16 +108,19 @@ def _pending(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     raise NotImplementedError
 
 
+GUARD_PACKAGE: Final[str] = "livespec_dev_tooling.fleet"
+
+
 def sibling_module_name(*, package: str, name: str) -> str:
     """The import name of a module beside this one, from either side of the split.
 
-    Installed as part of this package, `package` names it and the sibling
-    is `<package>.<name>`. Copied onto the guarded host and run as
-    `python3 docker_engine_guard.py`, there is no package at all and the
-    interpreter has already put this file's own directory on `sys.path`,
-    so the bare name is the one that resolves.
+    Imported as part of this package, `package` names it and the sibling
+    is `<package>.<name>`. Run as `python3 docker_engine_guard.py` on the
+    guarded host there is no package at all and `package` is empty — but
+    the preamble above has put the package ROOT on `sys.path`, so the
+    guard's own package name is the one that resolves.
     """
-    return f"{package}.{name}" if package else name
+    return f"{package or GUARD_PACKAGE}.{name}"
 
 
 def _sibling_module(*, name: str) -> ModuleType:
@@ -267,3 +291,26 @@ def run_operation(*, operation: Operation, run: str, env: GuardEnv) -> GuardOutc
         return _locked_operation(operation=operation, run=run, env=env)
     finally:
         release_lock(fd=fd)
+
+
+def run_request(*, request: CliRequest, host: HostOps) -> int:
+    """Run one parsed request against `host` and report what it decided.
+
+    Separated from `main` so the whole command line is exercised
+    against `FakeHost`: `main`'s remaining job is to build the REAL
+    host, which child 3a supplies and child 1a therefore cannot run.
+    """
+    env = GuardEnv(paths=request.paths, host=host, window_seconds=request.window_seconds)
+    return emit(outcome=run_operation(operation=request.operation, run=request.run, env=env))
+
+
+def main() -> int:
+    """The guard's entry point, as the role's transient unit invokes it."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
+    request = parse_request(argv=sys.argv[1:])
+    host_module = _sibling_module(name="_docker_engine_guard_host")
+    return run_request(request=request, host=host_module.build_real_host(paths=request.paths))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
