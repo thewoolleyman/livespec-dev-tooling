@@ -140,6 +140,19 @@ class HostOps(Protocol):
     # state says it is running now, and neither implies the other.
     def unit_enabled_states(self) -> Mapping[str, str]: ...
 
+    # --- reconfigure (child 1b) ---
+
+    # Write the role-OWNED daemon keys into the daemon configuration,
+    # leaving every other key in it alone: a key this role does not own
+    # belongs to whoever wrote it.
+    def write_daemon_keys(self, *, keys: Mapping[str, object]) -> None: ...
+
+    # Record that `unit` needs a DRAINED restart, rather than restarting it.
+    # After the commit point the host is running sandbox containers under
+    # Docker, so an immediate restart would kill the work the host exists
+    # to do; the drain is the fleet's own deferred-restart mechanism.
+    def record_pending_drained_restart(self, *, unit: str) -> None: ...
+
     # --- rollback phases (child 2) ---
 
     # Remove the start permission. The first act of any rollback.

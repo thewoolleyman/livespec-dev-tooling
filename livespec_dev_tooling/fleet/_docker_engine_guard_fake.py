@@ -50,6 +50,7 @@ class FakeHost:
     boot: str = "boot-a"
     unit_states: dict[str, str] = field(default_factory=dict)
     unit_file_states: dict[str, str] = field(default_factory=dict)
+    daemon_keys: dict[str, object] = field(default_factory=dict)
     jobs: tuple[QueuedJob, ...] = ()
     unit_of_invocation: str = "docker-engine-guard-reserve-run-a-1.service"
     docker_group: tuple[str, ...] = ()
@@ -157,6 +158,15 @@ class FakeHost:
 
     def unit_enabled_states(self) -> Mapping[str, str]:
         return self.unit_file_states
+
+    # --- reconfigure (child 1b) ---
+
+    def write_daemon_keys(self, *, keys: Mapping[str, object]) -> None:
+        self._record(name="write_daemon_keys", detail=tuple(sorted(keys)))
+        self.daemon_keys = dict(keys)
+
+    def record_pending_drained_restart(self, *, unit: str) -> None:
+        self._record(name="record_pending_drained_restart", detail=(unit,))
 
     # --- rollback phases (child 2) ---
 

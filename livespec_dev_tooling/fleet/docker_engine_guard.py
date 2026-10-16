@@ -24,9 +24,9 @@ table. Nothing acts before that table says so.
 
 Child 1a owns the lifecycle: the lock, the records, the deadline, the
 table, and `reserve`, `publish`, `arm`, `start` and `recover`. Child 1b
-owns `observe`, `confirm`, `verify` and `reconfigure`, each in its own
-module beside this one; the rows that are still `_pending` reach their
-table decision here and raise `NotImplementedError` past it. `rollback`'s
+owns `observe` (with the records beside it) and `confirm`, `verify` and
+`reconfigure`, in two modules beside this one, reached as table handlers
+and never called from here. `rollback`'s
 entry calls `run_rollback` in `_docker_engine_guard_rollback.py`, the
 real host lives in `_docker_engine_guard_host.py`, and the package step
 lives in `_docker_engine_guard_packages.py` — three stubs each sibling
@@ -102,17 +102,6 @@ __all__: list[str] = [
     "run_request",
     "sibling_module_name",
 ]
-
-
-def _pending(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
-    """A row whose work a later child owns.
-
-    The table decision above it is real and is reached on every
-    invocation; only the work past it is missing, which is why this
-    raises rather than returning a refusal — an unimplemented operation
-    is a defect in the guard, not a state of the host.
-    """
-    raise NotImplementedError
 
 
 GUARD_PACKAGE: Final[str] = "livespec_dev_tooling.fleet"
@@ -215,7 +204,7 @@ DISPATCH_TABLE: Final[tuple[DispatchRow, ...]] = (
     ),
     DispatchRow(
         operation="reconfigure",
-        handler=_pending,
+        handler=commit.reconfigure,
         marker_self="proceed",
         marker_self_from=("confirmed",),
     ),
