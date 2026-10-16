@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.108.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.108.0...v1.108.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **ansible:** ssh_hardening - converge to the live, approved vps sshd state ([3c32406](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3c324061aa2392348e38749e90534a22836b1429))
+
 ## [1.108.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.107.0...v1.108.0) (2026-10-16)
 
 
