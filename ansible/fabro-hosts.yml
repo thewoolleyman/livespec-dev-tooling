@@ -13,6 +13,25 @@
 # in the play keeps every task's `when`, `notify` and handler scoped to a single
 # unit; a `roles:` entry would run it once per host and silently install only
 # whichever instance happened to be resolved.
+#
+# `fabro_server_target_units` narrows that loop for ONE invocation, and it is
+# what makes restarting a single instance possible at all. With
+# `fabro_server_restart_allowed=true` the role asks EVERY instance it visits
+# whether it is carrying runs, and refuses if any is. That breadth is
+# deliberate: when the probe runs, the role cannot yet know whether a later task
+# will change that instance's unit, drop-in or settings, and the restart handler
+# trusts the flag. So on a host whose fleet instance is never idle, no sibling
+# could be restarted. Measured on hp-xubuntu 2026-10-16: restarting the idle
+# :32278 candidate onto a new binary was refused because fabro-server (:32276)
+# carried 9 runs. Pass the list as JSON so it arrives as a list, not a string:
+#
+#     just ansible-apply ansible/fabro-hosts.yml --limit hp-xubuntu \
+#       -e '{"fabro_server_target_units": ["fabro-server-candidate"]}' \
+#       -e fabro_server_restart_allowed=true
+#
+# Unset or empty means every instance, which is the behaviour before this
+# existed. A name the host does not declare is refused rather than silently
+# matching nothing. Instances left out are not converged by that run at all.
 
 - name: Fabro sandbox host
   hosts: sandbox_hosts
@@ -63,10 +82,32 @@
     - role: sandbox_driver_kubernetes
       tags: [sandbox_driver_kubernetes]
   tasks:
+    - name: Refuse a Fabro target unit this host does not declare
+      ansible.builtin.assert:
+        that:
+          - fabro_server_target_units is sequence
+          - fabro_server_target_units is not string
+          - >-
+            fabro_server_target_units
+            | difference(fabro_server_instances | map(attribute='unit_name') | list)
+            | length == 0
+        fail_msg: >-
+          fabro_server_target_units must be a LIST of unit names this host
+          declares in fabro_server_instances; pass it as JSON, e.g.
+          -e '{"fabro_server_target_units": ["fabro-server-candidate"]}'.
+          Got {{ fabro_server_target_units }}; this host declares
+          {{ fabro_server_instances | map(attribute='unit_name') | list }}.
+        success_msg: every Fabro target unit is declared on this host
+      when: fabro_server_target_units is defined
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:
         name: fabro_server
-      loop: "{{ fabro_server_instances }}"
+      loop: >-
+        {{ fabro_server_instances
+           if (fabro_server_target_units | default([])) | length == 0
+           else fabro_server_instances
+                | selectattr('unit_name', 'in', fabro_server_target_units)
+                | list }}
       loop_control:
         loop_var: fabro_server_instance
         label: "{{ fabro_server_instance.unit_name }}"
@@ -86,10 +127,32 @@
     - role: gha_runner
       tags: [gha_runner]
   tasks:
+    - name: Refuse a Fabro target unit this host does not declare
+      ansible.builtin.assert:
+        that:
+          - fabro_server_target_units is sequence
+          - fabro_server_target_units is not string
+          - >-
+            fabro_server_target_units
+            | difference(fabro_server_instances | map(attribute='unit_name') | list)
+            | length == 0
+        fail_msg: >-
+          fabro_server_target_units must be a LIST of unit names this host
+          declares in fabro_server_instances; pass it as JSON, e.g.
+          -e '{"fabro_server_target_units": ["fabro-server-candidate"]}'.
+          Got {{ fabro_server_target_units }}; this host declares
+          {{ fabro_server_instances | map(attribute='unit_name') | list }}.
+        success_msg: every Fabro target unit is declared on this host
+      when: fabro_server_target_units is defined
     - name: Install every Fabro instance on this host
       ansible.builtin.include_role:
         name: fabro_server
-      loop: "{{ fabro_server_instances }}"
+      loop: >-
+        {{ fabro_server_instances
+           if (fabro_server_target_units | default([])) | length == 0
+           else fabro_server_instances
+                | selectattr('unit_name', 'in', fabro_server_target_units)
+                | list }}
       loop_control:
         loop_var: fabro_server_instance
         label: "{{ fabro_server_instance.unit_name }}"
