@@ -42,6 +42,7 @@ __all__: list[str] = [
     "PHASE_BODIES",
     "PHASE_BUDGET_SECONDS",
     "POSTCONDITIONS",
+    "POSTCONDITION_OF_PHASE",
     "ROLLBACK_PHASE_ORDER",
     "phase_child_argv",
     "run_phase",
@@ -143,14 +144,42 @@ PHASE_KILL_AFTER_SECONDS: Final[int] = 10
 # check. Each name is the key the host answers under, and each is phrased
 # as the property that must HOLD, so a failing one reads as the sentence
 # an operator needs: "no docker0" failing says the bridge is still there.
+_PERMISSION_GONE: Final[str] = "no start permission"
+_UNITS_QUIET: Final[str] = "no socket, process, queued job or pending start for the guarded units"
+_FORWARD_RESTORED: Final[str] = "each FORWARD policy as snapshotted"
+_RULES_GONE: Final[str] = "no Docker rule"
+_BRIDGE_GONE: Final[str] = "no docker0"
+_SYSCTLS_MATCH: Final[str] = "each watched sysctl as snapshotted"
+
 POSTCONDITIONS: Final[tuple[str, ...]] = (
-    "no start permission",
-    "no socket, process, queued job or pending start for the guarded units",
-    "each FORWARD policy as snapshotted",
-    "no Docker rule",
-    "no docker0",
-    "each watched sysctl as snapshotted",
+    _PERMISSION_GONE,
+    _UNITS_QUIET,
+    _FORWARD_RESTORED,
+    _RULES_GONE,
+    _BRIDGE_GONE,
+    _SYSCTLS_MATCH,
 )
+
+# Which postcondition each phase exists to establish, so the final check
+# can make a phase eligible again when its own postcondition regresses.
+#
+# Four phases share `_UNITS_QUIET` and that is not a modelling
+# compromise: the check reads one record of the guarded units, so it
+# genuinely cannot tell which of the four a regression belongs to, and
+# re-running all four is the only sound answer. `_PERMISSION_GONE` has no
+# phase at all — the driver revokes the permission itself, in-process,
+# before the phases — so a failing permission is retried by the next
+# firing's revocation rather than by any phase.
+POSTCONDITION_OF_PHASE: Final[dict[str, str]] = {
+    "socket-stop": _UNITS_QUIET,
+    "job-cancel": _UNITS_QUIET,
+    "forward-restore": _FORWARD_RESTORED,
+    "cgroup-kill": _UNITS_QUIET,
+    "unit-disable": _UNITS_QUIET,
+    "footprint-removal": _RULES_GONE,
+    "interface-deletion": _BRIDGE_GONE,
+    "sysctl-comparison": _SYSCTLS_MATCH,
+}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -284,6 +313,11 @@ def _record_attempt(*, run: str, env: GuardEnv, phase: str, attempts: int) -> No
     )
 
 
+def _clear_success(*, run: str, env: GuardEnv, phase: str) -> None:
+    """Drop this phase's success record, so a later firing re-runs it."""
+    (_rollback_dir(run=run, env=env) / f"{phase}.success").unlink(missing_ok=True)
+
+
 def _succeeded(*, run: str, env: GuardEnv, phase: str) -> bool:
     """Whether this phase has a recorded success a later firing may trust."""
     return (_rollback_dir(run=run, env=env) / f"{phase}.success").is_file()
@@ -366,6 +400,22 @@ def _failed_postconditions(*, run: str, env: GuardEnv) -> tuple[str, ...]:
     return tuple(name for name in POSTCONDITIONS if not read.get(name, False))
 
 
+def _final_check(*, run: str, env: GuardEnv) -> tuple[str, ...]:
+    """Read every postcondition, and make each failing phase eligible again.
+
+    A success record is what a later firing trusts to skip a phase, so a
+    STALE one is the one way this driver could leave a host unrepaired
+    while reporting that it had tried: the phase ran, something undid its
+    work, and every firing after it skipped it. Clearing against this
+    read closes that.
+    """
+    failed = _failed_postconditions(run=run, env=env)
+    for phase in ROLLBACK_PHASE_ORDER:
+        if POSTCONDITION_OF_PHASE[phase] in failed:
+            _clear_success(run=run, env=env, phase=phase)
+    return failed
+
+
 def _fence_and_revoke(*, env: GuardEnv) -> None:
     """Stop both writers, then take the start permission back.
 
@@ -422,7 +472,7 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     _fence_and_revoke(env=env)
     for phase in ROLLBACK_PHASE_ORDER:
         _enter_phase(run=run, env=env, phase=phase)
-    failed = _failed_postconditions(run=run, env=env)
+    failed = _final_check(run=run, env=env)
     return GuardOutcome(
         operation="rollback",
         run=run,
