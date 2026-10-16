@@ -878,3 +878,51 @@ def test_the_sysctl_probe_requires_the_five_watched_values_to_equal_the_snapshot
         False,
         "net.bridge.bridge-nf-call-iptables 1 -> 0",
     )
+
+
+@dataclass(kw_only=True)
+class _ScriptedProbe:
+    """A probe answering a recorded verdict per call, and counting its calls."""
+
+    verdicts: list[bool]
+    calls: int = 0
+
+    def __call__(self) -> Any:
+        sample_module = importlib.import_module(_SAMPLE_MODULE)
+        passed = self.verdicts[self.calls]
+        self.calls += 1
+        return sample_module.ProbeResult(
+            name="dns",
+            passed=passed,
+            error="" if passed else f"attempt {self.calls} saw no answer",
+        )
+
+
+def test_a_failed_probe_is_re_run_once_and_counts_as_failed_only_when_it_fails_twice() -> None:
+    """One immediate retry, and BOTH errors recorded when the retry fails too.
+
+    A single failed request is not evidence that Docker broke anything:
+    this host runs a CI pool whose pods come and go, CoreDNS restarts,
+    and a fifteen-second sampling interval will catch one of those
+    moments sooner or later. A window that rolled back on the first
+    one would never confirm an install. Both attempts' errors are
+    recorded, because "it failed twice the same way" and "it failed
+    twice differently" point an operator at different causes.
+    """
+    assert "run_probe" in importlib.import_module(_SAMPLE_MODULE).__all__
+    sample_module = importlib.import_module(_SAMPLE_MODULE)
+
+    first_time = _ScriptedProbe(verdicts=[True, True])
+    assert sample_module.run_probe(probe=first_time).passed is True
+    assert first_time.calls == 1
+
+    retried = _ScriptedProbe(verdicts=[False, True])
+    recovered = sample_module.run_probe(probe=retried)
+    assert (recovered.passed, recovered.error) == (True, "")
+    assert retried.calls == 2
+
+    twice = _ScriptedProbe(verdicts=[False, False])
+    failed = sample_module.run_probe(probe=twice)
+    assert (failed.name, failed.passed) == ("dns", False)
+    assert failed.error == "attempt 1 saw no answer; then attempt 2 saw no answer"
+    assert twice.calls == 2
