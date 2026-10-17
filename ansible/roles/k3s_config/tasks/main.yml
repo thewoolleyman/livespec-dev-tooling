@@ -30,7 +30,11 @@
 # conditionals inside one template, exactly as the shell did.
 #
 # TAKES EFFECT ON THE NEXT k3s START. Nothing here restarts k3s or k3s-agent: a
-# restart kills every running CI job on the pool.
+# restart kills every running CI job on the pool. To REACH that next start on an
+# AGENT — the gap that left this node's rendered reservations an opinion for
+# nearly a day on 2026-10-13 — apply `restart-k3s-agent.yml` with that host's own
+# confirmation; it refuses a node carrying any pod a DaemonSet does not own
+# (livespec-dev-tooling-mbj3kz).
 
 - name: Refuse a node whose cluster role is neither server nor agent
   ansible.builtin.assert:

@@ -69,6 +69,7 @@ source of truth for how the tool is invoked.
 | `dev-host.yml` | `vps` | `vps-info` `services/` |
 | `reboot-ci-server.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could reboot a pool node |
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
+| `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
 
 `reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
 the only play here that reboots a host. It is an ordinary
@@ -110,6 +111,39 @@ capacity are what they were, and reports the UTC instants at which the API
 first showed the node NotReady and showed it Ready again. A `--check` run stops
 after the idle read and the recorded posture, and says so. See
 `livespec-dev-tooling-raynnh`.
+
+`restart-k3s-agent.yml` is the ONE sanctioned way to restart a pool AGENT's
+`k3s-agent`, which is how that agent's committed START configuration — its node
+taints, its data-directory ordering, and above all its own `kubelet-arg+`
+reservations — actually takes effect. `roles/k3s_config` renders all of it and
+restarts nothing on purpose, so the rendered file is an opinion until the next
+k3s start: on `hp-xubuntu` the reservations were written at 19:38 PDT
+2026-10-13 over an agent running since 19:19, and the live node kept reporting
+allocatable `cpu=16`, `memory=32176236Ki` for a node whose coexistence budget
+reserves nearly all of it. `reboot-ci-server.yml` reboots the SERVER, and
+`hp-xubuntu` is the Fabro factory host, so neither a reboot nor a hand
+`systemctl restart` over ssh was available. It is an ordinary
+`just ansible-apply ansible/restart-k3s-agent.yml -e
+restart_k3s_agent_confirm=hp-xubuntu`, and it shares the fence above exactly:
+without a confirmation naming the host's own inventory entry it reads nothing
+and changes nothing, on an apply and under `--check` alike. It ADMITS agents
+rather than excluding the server — the predicate is `cluster_role == 'agent'`,
+so the control plane and any entry whose role is missing or misspelled are
+refused loudly — and it does NOT refuse `sandbox_hosts`, because the factory
+host is the node this playbook exists for.
+
+What protects a factory host here is the pod gate, not a group refusal: one
+read, field-selected to the target across every namespace, and the play REFUSES
+— naming each pod — if the node is running anything a DaemonSet does not own. A
+finished pod and a DaemonSet's pod are not workload; a bare pod is, which is
+what a Fabro sandbox holding a run looks like. Unlike its two siblings it does
+not wait, because the workload it finds is an operator's decision (drain the
+run, or come back) rather than a CI job that finishes on its own. It then
+restarts the unit, waits for the API to report the node Ready again, and prints
+the node's capacity beside its allocatable so the apply's own output is the
+evidence the reservations took effect. A `--check` run performs the pod read,
+says the restart is withheld, and stops. See `livespec-dev-tooling-mbj3kz` and
+`roles/docker_sandbox_slice/HOST_VARS.md` §"Coexistence with the k3s agent".
 
 `ci-pool.yml` is the k3s pool's node-local provisioning — the roles
 `install-node.sh` drove, in that step order, role-aware by each node's
