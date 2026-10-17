@@ -84,6 +84,33 @@
   vars:
     docker_engine_apt_restore_unit: "docker-engine-apt-restore-{{ docker_engine_run }}"
   block:
+    - name: Start the sandbox slice before anything this run records or starts
+      # Preflight requires the slice unit to be installed but not running (it
+      # is inactive after a reboot or a rollback). Starting it changes no
+      # configuration: it is the start systemd would perform when the daemon
+      # first places a container in it, taken here so the baselines below and
+      # the guard's scope check see it active. A rollback stops it again.
+      ansible.builtin.systemd_service:
+        name: "{{ docker_engine_sandbox_slice }}"
+        state: started
+      become: true
+
+    - name: Read the sandbox slice's state after starting it
+      ansible.builtin.command:
+        argv: [systemctl, show, "{{ docker_engine_sandbox_slice }}", -p, ActiveState]
+      register: docker_engine_slice_started
+      become: true
+      changed_when: false
+
+    - name: Fail the run unless the sandbox slice is active
+      ansible.builtin.assert:
+        that:
+          - "'ActiveState=active' in docker_engine_slice_started.stdout_lines"
+        fail_msg: >-
+          {{ docker_engine_sandbox_slice }} did not become active; it reports
+          {{ docker_engine_slice_started.stdout_lines }}.
+        success_msg: "{{ docker_engine_sandbox_slice }} active"
+
     - name: Record the preflight baselines the observer compares against
       # k3s's containerd witness and this host's interfaces, into the run's own
       # before/ directory, before the first package step (guard child 4's

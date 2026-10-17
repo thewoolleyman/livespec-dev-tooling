@@ -65,7 +65,7 @@ answers throughout and at the end.
 | id | injection | pass |
 | --- | --- | --- |
 | B-01 | reboot before the commit point (F9) | no unit starts; no Docker rule exists |
-| B-02 | reboot after `reserve`, and again after `started` (G8) | no unit starts; the next controller attaches and rolls back |
+| B-02 | reboot after `reserve`, and again after `started` (G8, as revised by H1 and I1-I2) | no unit starts; the next controller is refused, naming the run, its phase and its deadline, and changes nothing; the operator's `recover` (`-e docker_engine_recover=<run>`) rolls the run back |
 | B-03 | fail the directory fsync after the commit rename (F9) | the run stays committed and is never rolled back |
 | B-04 | a crash between the commit rename and the phase update (H7) | dispatched by the marker: confirmed |
 | B-05 | reboot after a failed directory fsync (H7) | dispatched by the marker: confirmed |
