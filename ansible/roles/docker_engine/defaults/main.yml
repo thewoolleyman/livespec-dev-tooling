@@ -135,9 +135,10 @@ docker_engine_k3s_agent_unit: k3s-agent.service
 # local-homelab-llama-server.service). Per host.
 docker_engine_must_stay_running: []
 
-# The sandbox slice the daemon's cgroup-parent names. Its unit must be loaded
-# and active BEFORE the guard's first start (design "The daemon configuration"),
-# which is the systemd-only half of docker_sandbox_slice.
+# The sandbox slice the daemon's cgroup-parent names. Its unit must be
+# installed (the systemd-only half of docker_sandbox_slice) before a converge,
+# and the reserved run starts it BEFORE the guard's first start (design "The
+# daemon configuration").
 docker_engine_sandbox_slice: fabro-sandbox.slice
 
 # --- probes -------------------------------------------------------------------
