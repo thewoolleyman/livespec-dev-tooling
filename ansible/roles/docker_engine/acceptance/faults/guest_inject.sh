@@ -12,7 +12,7 @@ case $MODE in
     while [ $SECONDS -lt $end ]; do c=$(child); if [ -n "$c" ]; then
       if [ "$MODE" = kill ]; then kill -KILL "$c"; else kill -STOP "$c"; fi; log "$MODE $PH child $c"; exit 0; fi; sleep 0.02; done ;;
   deadman)
-    while [ $SECONDS -lt $end ]; do n=$(ls "$G/rollback" 2>/dev/null | grep -c '\.success$'); if [ "$n" -ge 2 ]; then
+    while [ $SECONDS -lt $end ]; do n=$(find "$G/rollback" -maxdepth 1 -name '*.success' 2>/dev/null | wc -l); if [ "$n" -ge 2 ]; then
       systemctl kill -s KILL "docker-engine-deadman-$RUN.service"; log "killed dead-man service after $n phase successes"; exit 0; fi; sleep 0.01; done ;;
   parent)
     k=0; while [ $SECONDS -lt $end ]; do
