@@ -70,6 +70,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps  # n
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (  # noqa: E402
     INSTALL_PHASES,
     PHASES,
+    UNIT_WAIT_SECONDS,
     Decision,
     GuardOutcome,
     Holder,
@@ -248,6 +249,28 @@ def _decided(
     )
 
 
+def _retire_deadman(*, run: str, env: GuardEnv) -> None:
+    """Stop this run's dead-man timer, because the run has nothing left to do.
+
+    Reached when a dead-man FIRING is decided `noop`, which is the one
+    decision that says the run is terminal: a `rolled-back` run has
+    every postcondition holding, so a later firing would find nothing to
+    do and the timer's own 60-second repeat would run forever.
+
+    The rollback driver retires the timer itself after the outcome that
+    earns it, so the ordinary path never reaches here. The driver is
+    only reached on a `proceed` though, so every run that arrived at a
+    terminal phase by another route — a rollback killed between its
+    durable outcome record and the stop after it, a `verify` killed
+    between its promotion and its own stop — left a timer firing every
+    60 seconds forever. The role's classify counts any non-inactive
+    `docker-engine-deadman-*` unit as a busy host, so that is a host
+    refused for the rest of the boot, and it is silent: the firing
+    exits 0 each time.
+    """
+    env.host.stop_unit(unit=commit.deadman_timer_unit(run=run), timeout_seconds=UNIT_WAIT_SECONDS)
+
+
 def _locked_operation(*, operation: Operation, run: str, env: GuardEnv) -> GuardOutcome:
     """Decide and run one operation, with the lock already held.
 
@@ -277,6 +300,13 @@ def _locked_operation(*, operation: Operation, run: str, env: GuardEnv) -> Guard
         ),
     )
     if decision.verdict in {"refuse", "noop"}:
+        if (
+            operation == "rollback"
+            and decision.verdict == "noop"
+            and holder is not None
+            and holder.phase == "rolled-back"
+        ):
+            _retire_deadman(run=run, env=env)
         return _decided(operation=operation, run=run, decision=decision, holder=holder)
     return row.handler(run=run, env=env, decision=decision)
 

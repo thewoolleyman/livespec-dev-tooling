@@ -215,3 +215,50 @@ def test_a_verify_that_promotes_a_partial_run_retires_that_runs_dead_man(
     assert outcome.verdict == "refuse"
     assert state.read_phase(paths=_paths(root=refused), run="run-a") == "rollback-partial"
     assert _stopped_units(fake=host) == ()
+
+
+def _deadman_firing(*, root: Path) -> tuple[Any, Any]:
+    """One dead-man firing: the `rollback <run>` its timer's service runs."""
+    guard = importlib.import_module(_GUARD_MODULE)
+    fake = _fake(root=root)
+    return (
+        guard.run_operation(operation="rollback", run="run-a", env=_env(root=root, host=fake)),
+        fake,
+    )
+
+
+def test_a_dead_man_firing_on_an_already_rolled_back_run_retires_its_own_timer(
+    tmp_path: Path,
+) -> None:
+    """Specification "Dispatch table", the `rollback` row's `rolled-back` cell.
+
+    The rollback driver retires its own timer when it writes a
+    `rolled-back` outcome, so the ordinary path leaves nothing in the
+    air. But the driver is only REACHED on a `proceed`: from
+    `rolled-back` the table decides `noop`, and the guard returned that
+    decision without touching the timer -- so every path that reached
+    `rolled-back` other than through the driver's own final step left a
+    dead-man firing every 60 seconds forever.
+
+    Two real paths do exactly that. A `verify` killed between its
+    promotion and its stop is one. A rollback killed between its
+    outcome record and its stop is the other, and that one is not
+    exotic at all: the outcome record is written durably and the stop
+    is the step after it.
+
+    The retirement belongs HERE rather than in another driver arm
+    because a `noop` is the one answer that means "this run is terminal
+    and nothing is left for a later firing to do". Deciding that and
+    then leaving the thing that will fire again is the whole defect.
+    """
+    commit = importlib.import_module(_COMMIT_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    _record_phase(root=tmp_path, run="run-a", phase="rolled-back")
+
+    outcome, host = _deadman_firing(root=tmp_path)
+
+    assert outcome.verdict == "noop"
+    assert outcome.exit_code == 0
+    assert _stopped_units(fake=host) == (commit.deadman_timer_unit(run="run-a"),)
+    assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "rolled-back"
+    assert host.calls_named(name="run_phase_child") == ()
