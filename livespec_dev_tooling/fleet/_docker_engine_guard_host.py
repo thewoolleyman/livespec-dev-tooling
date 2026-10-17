@@ -228,18 +228,30 @@ class RealHost:
         """
         record_preflight(destination=destination, runner=self.runner, proc_root=self.proc_root)
 
-    def install_packages(self, *, inputs: Path) -> None:
+    def install_packages(self, *, inputs: Path) -> str | None:
         """The fenced, audited package transaction, over this run's own inputs.
 
-        The step's result is not carried back, because `HostOps` gives
-        this seam nothing to carry it in -- and that is the shape the
-        lifecycle wants: `publish`'s proof that the install is inert is
-        the post-install CONDITION CHECK it runs next, not the step's
-        own word for it. A refused step leaves the host unmutated, so
-        that check then fails on a host with no installed units and the
-        operation refuses.
+        The step's REFUSAL REASON is carried back, and `publish` refuses
+        on it. This seam used to discard the whole `PackageStepResult`,
+        reasoning that a refused step leaves the host unmutated, so the
+        post-install condition check `publish` runs next would fail on a
+        host with no installed units. That is false whenever the refusal
+        comes AFTER `dpkg -i` landed the audited set -- on a resumed
+        publish, and on a fresh run whose install left a trigger
+        unfinished -- because the units it landed are inert by
+        construction and so PASS that check.
+
+        FAULTS B-06 (poweredge guard-vm-0, 2026-10-17) is that host: a
+        SIGKILL during `dpkg -i` left every audited package settled and
+        `man-db` half configured; the step computed the refusal; this
+        seam dropped it; and the resumed publish recorded `published`
+        while `dpkg --audit` still named the package, which on a real
+        host blocks apt and unattended-upgrades until somebody runs
+        `dpkg --configure -a` by hand. The INSTALLED set is not carried
+        back, because nothing above this reads it: the condition check
+        remains the proof that what landed cannot start.
         """
-        _ = run_package_step(inputs=inputs, runner=self.package_runner)
+        return run_package_step(inputs=inputs, runner=self.package_runner).refusal
 
     def condition_check_passed(self) -> bool:
         """Each guarded unit's EFFECTIVE conditions, read from the service manager."""
