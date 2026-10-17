@@ -941,6 +941,55 @@ def test_plan_lifecycle_anchor_non_bool_raises(*, tmp_path: Path) -> None:
         _ = _load_plan_lifecycle_anchor(repo_root=tmp_path)
 
 
+def _load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
+    """Loaded through `getattr` for the same reason `_load_plan_lifecycle_anchor` is."""
+    loader = getattr(config_module, "load_gate_check_suite", None)
+    assert callable(loader)
+    value = loader(repo_root=repo_root)
+    assert value is None or isinstance(value, tuple)
+    return value
+
+
+def test_gate_check_suite_none_when_no_pyproject(*, tmp_path: Path) -> None:
+    """No `pyproject.toml` → `None`, so the caller applies its own fall-through."""
+    assert _load_gate_check_suite(repo_root=tmp_path) is None
+
+
+def test_gate_check_suite_none_when_key_absent(*, tmp_path: Path) -> None:
+    """A present block omitting `gate_check_suite` → `None`.
+
+    This is the shape every repository but this one is in, and it is the one
+    the delegated gate's fall-through to the local `check` recipe rests on.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
+    )
+    assert _load_gate_check_suite(repo_root=tmp_path) is None
+
+
+def test_gate_check_suite_entries_are_read_in_declaration_order(*, tmp_path: Path) -> None:
+    """Order is the gate's run order, so it is part of the value, not a set."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'gate_check_suite = ["warm-typecheck", "hook_gate=1 check"]\n'
+        ),
+    )
+    assert _load_gate_check_suite(repo_root=tmp_path) == ("warm-typecheck", "hook_gate=1 check")
+
+
+def test_gate_check_suite_non_array_raises(*, tmp_path: Path) -> None:
+    """A scalar is refused rather than wrapped: the gate must not guess a suite."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\ngate_check_suite = "check"\n',
+    )
+    with pytest.raises(ConfigParseError, match="`gate_check_suite` must be"):
+        _ = _load_gate_check_suite(repo_root=tmp_path)
+
+
 def test_subprocess_spawn_allowlist_none_when_no_pyproject(*, tmp_path: Path) -> None:
     """No `pyproject.toml` → `load_subprocess_spawn_allowlist` returns `None`."""
     assert load_subprocess_spawn_allowlist(repo_root=tmp_path) is None

@@ -102,6 +102,7 @@ __all__: list[str] = [
     "load_config",
     "load_delegated_gate",
     "load_destructive_cli_allowlist",
+    "load_gate_check_suite",
     "load_mutation_staging_dir",
     "load_plan_lifecycle_anchor",
     "load_repo_local_ci_skips",
@@ -1277,6 +1278,35 @@ def load_delegated_gate(*, repo_root: Path) -> bool | None:
     if table is None or "delegated_gate" not in table:
         return None
     return _as_bool(value=table["delegated_gate"], key="delegated_gate")
+
+
+def load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
+    """Return the `gate_check_suite` entries, or `None` if the key is absent.
+
+    Reads `<repo_root>/pyproject.toml`'s `[tool.livespec_dev_tooling]` block,
+    key `gate_check_suite` — a TOML array of `just` invocations the DELEGATED
+    GATE runs inside its Job, in order, against the tree under test. Each entry
+    is passed to `just` as written, so an entry MAY carry leading `name=value`
+    variable assignments (`hook_gate=1 check`); the recipe it names is the
+    first token that is not an assignment, and the gate Job preflights exactly
+    that name.
+
+    Returns `None` when the whole block is absent OR the key is omitted, so the
+    caller applies the documented default: the `check` recipe a consuming
+    repository's local pre-push fall-through runs, as the delegated pre-push
+    gate section of `livespec-dev-tooling`'s own `SPECIFICATION/contracts.md`
+    states. Raises `ConfigParseError` on a non-array value or a non-string
+    element, consistent with the rest of the loader.
+
+    Like `delegated_gate`, with which it is read, this is intentionally NOT a
+    `Config` role key: no CHECK reads it — the gate client does — so it is read
+    directly off the table rather than threaded through the typed layout
+    dataclass.
+    """
+    table = _read_table(repo_root=repo_root)
+    if table is None or "gate_check_suite" not in table:
+        return None
+    return _as_str_tuple(value=table["gate_check_suite"], key="gate_check_suite")
 
 
 def _parse_role_key_overrides(*, table: dict[str, Any]) -> dict[str, Any]:

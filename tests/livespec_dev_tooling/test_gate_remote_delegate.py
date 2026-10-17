@@ -29,9 +29,11 @@ from typing import TYPE_CHECKING
 from returns.result import Failure, Success
 
 from livespec_dev_tooling.gate_remote_delegate import (
+    GATE_CHECK_SUITE_FALL_THROUGH,
     GATE_MIRROR_ROOT,
     GATE_RENDERER_IN_REPO,
     GATE_RENDERER_INSTALLED,
+    declared_gate_check_suite,
     delegated_gate_enabled,
     gate_remote_request,
     main,
@@ -387,6 +389,132 @@ def test_the_renderer_is_told_the_name_the_run_will_wait_on(*, tmp_path: Path) -
     assert "--job-name" in render
     assert f"gate-widget-{_TREE[:12]}" in render
     assert _TREE in render
+
+
+# ---------------------------------------------------------------------------
+# What the gate RUNS — the gated repository's own declaration
+# ---------------------------------------------------------------------------
+
+
+def test_a_repository_that_declares_nothing_gets_its_local_fall_through_recipe(
+    *, tmp_path: Path
+) -> None:
+    """The documented default, and the one every repository but this one is at.
+
+    `check` is the recipe a consumer's OWN local pre-push fall-through runs —
+    never this repository's four, three of which exist nowhere else and made
+    every consuming repository's gate red on every green tree.
+    """
+    declared = declared_gate_check_suite(repo_root=tmp_path)
+
+    assert isinstance(declared, Success)
+    assert declared.unwrap() == GATE_CHECK_SUITE_FALL_THROUGH
+    assert GATE_CHECK_SUITE_FALL_THROUGH == ("check",)
+
+
+def test_a_declared_suite_is_read_in_its_declaration_order(*, tmp_path: Path) -> None:
+    """Order is the gate's run order, so the declaration is a sequence."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body=(
+            "[tool.livespec_dev_tooling]\n"
+            'gate_check_suite = ["install-pack", "hook_gate=1 check"]\n'
+        ),
+    )
+    declared = declared_gate_check_suite(repo_root=tmp_path)
+
+    assert isinstance(declared, Success)
+    assert declared.unwrap() == ("install-pack", "hook_gate=1 check")
+
+
+def test_an_empty_declaration_falls_through_rather_than_gating_on_nothing(
+    *, tmp_path: Path
+) -> None:
+    """An empty array would be a Job that runs no check and reports green."""
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ngate_check_suite = []\n",
+    )
+    declared = declared_gate_check_suite(repo_root=tmp_path)
+
+    assert isinstance(declared, Success)
+    assert declared.unwrap() == GATE_CHECK_SUITE_FALL_THROUGH
+
+
+def test_an_unreadable_declaration_fails_the_step_rather_than_falling_back(
+    *, tmp_path: Path
+) -> None:
+    """The OPPOSITE disposition from the opt-in above, and deliberately so.
+
+    The opt-in resolves a doubt to "run the full local aggregate", which is
+    strict. By the time the suite is read the run has already delegated, so the
+    only thing a fallback could do is gate the tree on a recipe the repository
+    did not declare — which the contract forbids in as many words.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body='[tool.livespec_dev_tooling]\ngate_check_suite = "check"\n',
+    )
+    declared = declared_gate_check_suite(repo_root=tmp_path)
+
+    assert isinstance(declared, Failure)
+    assert declared.failure().step == "read-gate-check-suite"
+
+
+def test_the_renderer_is_told_the_repositorys_own_check_suite(*, tmp_path: Path) -> None:
+    """The flags the renderer turns into the pod's command, one per invocation.
+
+    Repeated rather than one delimited value: a `just` invocation may carry
+    spaces, so any single-argument spelling would need a separator the entries
+    are then forbidden to contain.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+    _write_pyproject(
+        repo_root=repo_root,
+        body='[tool.livespec_dev_tooling]\ngate_check_suite = ["verify", "hook_gate=1 check"]\n',
+    )
+    runner = _StubWorld()
+    _ = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
+
+    render = list(next(argv for argv in runner.argvs if argv[0] == str(_RENDERER)))
+    flags = [render[index + 1] for index, arg in enumerate(render) if arg == "--check-suite"]
+    assert flags == ["verify", "hook_gate=1 check"]
+
+
+def test_an_unreadable_check_suite_submits_no_gate_at_all(*, tmp_path: Path) -> None:
+    """Fail closed: nothing was decided, so the push is refused, not completed."""
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+    _write_pyproject(
+        repo_root=repo_root,
+        body="[tool.livespec_dev_tooling]\ngate_check_suite = [1]\n",
+    )
+    verdict = run_delegated_gate(
+        repo_root=repo_root, renderer=_RENDERER, runner=_StubWorld(), sleeper=_no_sleep
+    )
+
+    assert verdict.state == GATE_NO_VERDICT
+    assert verdict.refuses_push is True
+    assert "no gate was submitted" in verdict.detail
+
+
+def test_this_repository_declares_the_four_recipes_its_gate_runs() -> None:
+    """The first repository to declare one — asserted of the real tree.
+
+    These four are livespec-dev-tooling's OWN. They lived in the shared
+    `gate-job-template.yaml` as a constant until livespec-dev-tooling-saxz, and
+    moving them HERE is what stops another repository's Job from running them.
+    """
+    declared = declared_gate_check_suite(repo_root=_REPO_ROOT)
+
+    assert isinstance(declared, Success)
+    assert declared.unwrap() == (
+        "install-worktree-pack",
+        "install-commit-refuse-hooks",
+        "warm-typecheck",
+        "hook_gate=1 check",
+    )
 
 
 def test_a_push_from_a_linked_worktree_publishes_to_the_repositorys_mirror(

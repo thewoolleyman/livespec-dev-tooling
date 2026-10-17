@@ -177,6 +177,27 @@ plan_lifecycle_anchor = true
 # so. Nothing about the fail-closed rule moves: once a push HAS delegated, a
 # verdict that never arrives refuses it rather than falling back to local.
 delegated_gate = true
+# What THIS repository's gate Job runs, in order — its own declaration rather
+# than a constant inside the shared `gate-job-template.yaml`
+# (livespec-dev-tooling-saxz). Three of these four exist in no other
+# repository, so while they were baked into the template every consuming
+# repository's Job failed and its gate was red on every green tree. The gate
+# Job preflights each recipe and reports a red verdict naming any the tree
+# under test does not provide; a repository that declares nothing gets the
+# single `check` recipe its own local pre-push fall-through runs.
+#
+# The aggregate is `hook_gate=1 check`, NOT bare `just check`: a delegated gate
+# is a surrogate for the LOCAL pre-push (`scripts/just/check-pre-push.sh`), and
+# `hook_gate` adds the `hook_gate_skips` set — today just
+# `check-fleet-conformance-admin`, which needs a user-class admin credential no
+# pre-push host or gate pod holds. The preflight reads the RECIPE out of that
+# entry (`check`), since `just` takes `name=value` assignments before the name.
+gate_check_suite = [
+    "install-worktree-pack",
+    "install-commit-refuse-hooks",
+    "warm-typecheck",
+    "hook_gate=1 check",
+]
 mirror_pairings = [
     { source_tree = "livespec_dev_tooling", test_tree = "tests/livespec_dev_tooling" },
 ]

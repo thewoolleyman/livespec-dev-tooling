@@ -29,7 +29,24 @@
 #      vacuously true — the same discipline case E applies to case D;
 #   L. the GATED REPOSITORY's github.com identity is derived from the gated
 #      clone's own origin and rendered into LIVESPEC_GATE_REPOSITORY — and a
-#      tree with no github.com origin renders EMPTY rather than a guess.
+#      tree with no github.com origin renders EMPTY rather than a guess;
+#   M. the gate command is the GATED REPOSITORY's OWN declared check recipes and
+#      none of livespec-dev-tooling's — two suites render two different
+#      commands, and a repository that declares nothing gets the single `check`
+#      recipe its local pre-push fall-through runs;
+#   N. the rendered pod script PREFLIGHTS each declared recipe: a tree that does
+#      not provide one exits non-zero NAMING it, runs no recipe at all, and
+#      never falls back — and a tree that provides them runs them in order, so
+#      the preflight is proven not to refuse everything;
+#   O. a mutant with the preflight deleted is CAUGHT by case N's own check, and
+#      an entry that is not a plain `just` invocation is refused at render time.
+#
+# WHY M, N AND O EXIST (livespec-dev-tooling-saxz). The pod command was a
+# CONSTANT naming this repository's own recipes, so a consuming repository
+# lacking `warm-typecheck` or a `hook_gate` variable failed every Job and its
+# gate was red on every green tree — measured 2026-10-16 against
+# livespec-orchestrator-beads-fabro, whose post-merge janitor shipped
+# `venue = host_local` instead of using the gate.
 #
 # WHY I AND J EXIST (livespec-dev-tooling-rwmo.1). The sandbox used to be a
 # `--depth 1` fetch of one ref into a bare `git init`, so eight members of
@@ -78,6 +95,14 @@ make_repo() {
 }
 IMG_A="ghcr.io/example/sandbox:python-v1.11.1"
 IMG_B="ghcr.io/example/sandbox:python-v2.22.2"
+
+# The suite livespec-dev-tooling itself declares, passed EXPLICITLY here exactly
+# as the client passes it, so cases D and J keep asserting this repository's own
+# gate command rather than whatever the renderer happens to default to.
+OUR_SUITE=(--check-suite install-worktree-pack
+           --check-suite install-commit-refuse-hooks
+           --check-suite warm-typecheck
+           --check-suite "hook_gate=1 check")
 make_repo "${SCRATCH}/repo-a" "${IMG_A}"
 make_repo "${SCRATCH}/repo-b" "${IMG_B}"
 make_repo "${SCRATCH}/repo-multi" "${IMG_A}" "${IMG_B}"
@@ -145,8 +170,8 @@ check_bootstrap_precedes_check() {
 
 echo "== A. the image comes from the GATED repository's own workflow =="
 out_a="${SCRATCH}/a.yaml"; out_b="${SCRATCH}/b.yaml"
-if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" > "${out_a}" 2>"${SCRATCH}/a.err" &&
-   "${RENDERER}" --repo-root "${SCRATCH}/repo-b" --tree-hash "${HASH_B}" > "${out_b}" 2>"${SCRATCH}/b.err"; then
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${out_a}" 2>"${SCRATCH}/a.err" &&
+   "${RENDERER}" --repo-root "${SCRATCH}/repo-b" --tree-hash "${HASH_B}" "${OUR_SUITE[@]}" > "${out_b}" 2>"${SCRATCH}/b.err"; then
   if grep -qF "${IMG_A}" "${out_a}" && ! grep -qF "${IMG_B}" "${out_a}"; then
     pass "repo-a renders its OWN tag and not repo-b's"
   else
@@ -196,7 +221,7 @@ if [ "$(grep -c 'key: node-role/ci' "${mutant}")" -ne 0 ]; then
 else
   mut_out="${SCRATCH}/mutant.yaml"
   if GATE_JOB_TEMPLATE="${mutant}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
-       --tree-hash "${HASH_A}" > "${mut_out}" 2>/dev/null; then
+       --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${mut_out}" 2>/dev/null; then
     if check_requirements "${mut_out}" > "${SCRATCH}/mut.report" 2>&1; then
       fail "the no-toleration manifest PASSED the requirement check — case D is vacuous"
     else
@@ -275,7 +300,7 @@ shallow_out="${SCRATCH}/shallow.yaml"
 if [ -z "$(grep -F -- '--depth 1' "${shallow}" || true)" ]; then
   fail "could not build the shallow mutant template"
 elif GATE_JOB_TEMPLATE="${shallow}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
-     --tree-hash "${HASH_A}" > "${shallow_out}" 2>/dev/null; then
+     --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${shallow_out}" 2>/dev/null; then
   if check_fetch_brings_range_and_master "${shallow_out}" "${HASH_A}" > "${SCRATCH}/shallow.report" 2>&1; then
     fail "a --depth 1 single-ref fetch PASSED the fetch check — case I is vacuous"
   elif grep -qF 'still fetches with --depth' "${SCRATCH}/shallow.report"; then
@@ -287,13 +312,13 @@ else
   fail "renderer errored on the shallow mutant template instead of rendering it"
 fi
 
-nobootstrap="${SCRATCH}/nobootstrap-template.yaml"
-sed -E '/^[[:space:]]*just install-(worktree-pack|commit-refuse-hooks)$/d' "${TEMPLATE}" > "${nobootstrap}"
+# The bootstrap now comes from the DECLARED SUITE rather than from the template,
+# so the mutant is a declaration with the two installs dropped — which is also
+# exactly the shape a consuming repository that declares only its own aggregate
+# produces, and the ordering check must still name what it did not find.
 nobootstrap_out="${SCRATCH}/nobootstrap.yaml"
-if [ -n "$(grep -E '^[[:space:]]*just install-worktree-pack$' "${nobootstrap}" || true)" ]; then
-  fail "could not build the no-bootstrap mutant template"
-elif GATE_JOB_TEMPLATE="${nobootstrap}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
-     --tree-hash "${HASH_A}" > "${nobootstrap_out}" 2>/dev/null; then
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --check-suite "hook_gate=1 check" > "${nobootstrap_out}" 2>/dev/null; then
   if check_bootstrap_precedes_check "${nobootstrap_out}" > "${SCRATCH}/nobootstrap.report" 2>&1; then
     fail "an un-bootstrapped gate container PASSED the ordering check — case J is vacuous"
   elif grep -qF 'missing: just install-worktree-pack' "${SCRATCH}/nobootstrap.report"; then
@@ -302,7 +327,7 @@ elif GATE_JOB_TEMPLATE="${nobootstrap}" "${RENDERER}" --repo-root "${SCRATCH}/re
     fail "caught, but not as a missing bootstrap step: $(cat "${SCRATCH}/nobootstrap.report")"
   fi
 else
-  fail "renderer errored on the no-bootstrap mutant template instead of rendering it"
+  fail "renderer errored on the no-bootstrap declaration instead of rendering it"
 fi
 
 echo "== L. the gated repository's github.com identity reaches the pod =="
@@ -348,6 +373,148 @@ if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
   fi
 else
   fail "renderer errored on the fixture repo with no origin"
+fi
+
+echo "== M. the command is the GATED repository's own declared recipes =="
+# The same discipline as case A, applied to the command: two DIFFERENT suites
+# rendered by one renderer, plus the no-declaration default. A constant could
+# not produce three different answers.
+gate_recipes() {
+  # Every `just …` the gate container runs, in order. Anchored to a line that
+  # STARTS with `just `, so neither the preflight's `if just --show …` probe nor
+  # the template's prose about these recipes can be mistaken for one.
+  awk '/^ *- name: gate$/ { gate = 1 } gate && /^ *just /' "$1" | sed -e 's/^[[:space:]]*//'
+}
+declared_out="${SCRATCH}/declared.yaml"
+other_out="${SCRATCH}/other.yaml"
+default_out="${SCRATCH}/default.yaml"
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --check-suite verify --check-suite publish > "${declared_out}" 2>/dev/null &&
+   "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --check-suite ci > "${other_out}" 2>/dev/null &&
+   "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     > "${default_out}" 2>/dev/null; then
+  if [ "$(gate_recipes "${declared_out}")" = "just verify
+just publish" ]; then
+    pass "a declaring repository's Job runs its own two recipes, in order"
+  else
+    fail "the declared suite did not reach the command: $(gate_recipes "${declared_out}")"
+  fi
+  if [ "$(gate_recipes "${other_out}")" = "just ci" ]; then
+    pass "a second declaration renders a different command from the same renderer"
+  else
+    fail "the second declaration did not reach the command: $(gate_recipes "${other_out}")"
+  fi
+  if [ "$(gate_recipes "${default_out}")" = "just check" ]; then
+    pass "a repository that declares nothing gets its local fall-through recipe"
+  else
+    fail "the no-declaration default is not just check: $(gate_recipes "${default_out}")"
+  fi
+  if [ -z "$(gate_recipes "${declared_out}" | grep -E 'warm-typecheck|hook_gate|install-' || true)" ]; then
+    pass "none of livespec-dev-tooling's own recipes reach another repository's Job"
+  else
+    fail "this repository's recipes leaked into another repository's Job"
+  fi
+else
+  fail "renderer errored while rendering a declared check suite"
+fi
+
+echo "== N. the pod preflights each declared recipe before running anything =="
+# The rendered script is RUN here, against a stub `just` that answers
+# `--show <recipe>` from a provided list — which is exactly the question the
+# preflight asks. Nothing else about `just` is simulated, because nothing else
+# is under test.
+STUB_DIR="${SCRATCH}/stub-bin"
+mkdir -p "${STUB_DIR}"
+cat > "${STUB_DIR}/just" <<'STUB'
+#!/usr/bin/env bash
+printf 'just %s\n' "$*" >> "${STUB_LOG}"
+if [ "${1:-}" = "--show" ]; then
+  case " ${PROVIDED} " in
+    *" ${2} "*) exit 0 ;;
+    *)          exit 1 ;;
+  esac
+fi
+exit 0
+STUB
+chmod +x "${STUB_DIR}/just"
+
+gate_script() {
+  # The gate container's shell script, dedented out of a rendered manifest.
+  awk '
+    /^ *- name: gate$/ { gate = 1 }
+    gate && !body && /^ *- \|$/ { match($0, /^ */); indent = RLENGTH + 2; body = 1; next }
+    body {
+      if ($0 != "" && substr($0, 1, indent) !~ /^ +$/) { exit }
+      print substr($0, indent + 1)
+    }
+  ' "$1"
+}
+
+run_gate_script() {
+  # run_gate_script <manifest> <space-separated recipes the tree provides>
+  # Leaves the invocation log at ${SCRATCH}/stub.log and returns the script's
+  # own exit status, which IS the Job's verdict.
+  : > "${SCRATCH}/stub.log"
+  gate_script "$1" > "${SCRATCH}/gate-script.sh"
+  PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
+    bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
+}
+
+if run_gate_script "${declared_out}" "verify publish"; then
+  if [ "$(cat "${SCRATCH}/stub.log")" = "just --show verify
+just --show publish
+just verify
+just publish" ]; then
+    pass "a tree providing both recipes preflights both, then runs both in order"
+  else
+    fail "the provided tree ran the wrong commands: $(cat "${SCRATCH}/stub.log")"
+  fi
+else
+  fail "the preflight refused a tree that DOES provide its declared recipes"
+fi
+
+if run_gate_script "${declared_out}" "publish"; then
+  fail "a tree missing a declared recipe reported a GREEN gate"
+else
+  missing_named=0
+  grep -qF "does not provide the gate check recipe 'verify'" "${SCRATCH}/gate.err" || missing_named=1
+  if [ "${missing_named}" -ne 0 ]; then
+    fail "red, but the message does not name the missing recipe: $(cat "${SCRATCH}/gate.err")"
+  elif [ -n "$(grep -vF -- '--show' "${SCRATCH}/stub.log" || true)" ]; then
+    fail "a recipe RAN despite the missing one: $(cat "${SCRATCH}/stub.log")"
+  else
+    pass "a missing declared recipe is red, names the recipe, and runs nothing"
+  fi
+fi
+
+echo "== O. the preflight is load-bearing, and a non-recipe entry is refused =="
+# Case E's discipline: a check that cannot fail is not a check. With the
+# preflight loop deleted the SAME missing-recipe tree must stop being refused.
+nopreflight="${SCRATCH}/nopreflight-template.yaml"
+sed '/for recipe in @@GATE_RECIPE_NAMES@@; do/,/^ *done$/d' "${TEMPLATE}" > "${nopreflight}"
+nopreflight_out="${SCRATCH}/nopreflight.yaml"
+if [ -n "$(grep -F 'GATE_RECIPE_NAMES' "${nopreflight}" || true)" ]; then
+  fail "could not build the no-preflight mutant template"
+elif GATE_JOB_TEMPLATE="${nopreflight}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" --check-suite verify --check-suite publish \
+     > "${nopreflight_out}" 2>/dev/null; then
+  if run_gate_script "${nopreflight_out}" "publish"; then
+    pass "without the preflight the same missing recipe is NOT refused — case N is load-bearing"
+  else
+    fail "the no-preflight mutant refused anyway — case N proves nothing"
+  fi
+else
+  fail "renderer errored on the no-preflight mutant template instead of rendering it"
+fi
+
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --check-suite 'check; curl evil' >/dev/null 2>"${SCRATCH}/injection.err"; then
+  fail "a --check-suite entry that is not a plain just invocation was rendered"
+elif grep -qF 'is not a plain just invocation' "${SCRATCH}/injection.err"; then
+  pass "a --check-suite entry carrying shell is refused at render time"
+else
+  fail "refused without naming the cause: $(cat "${SCRATCH}/injection.err")"
 fi
 
 echo
