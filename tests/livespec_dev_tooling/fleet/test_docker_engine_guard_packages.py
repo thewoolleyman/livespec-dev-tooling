@@ -654,9 +654,14 @@ def test_the_package_step_refuses_a_dpkg_audit_no_recorded_intended_set_accounts
 
     # `runc` is in no intended set of THIS run and in the earlier run's,
     # so the union accounts for it and the step carries on.
+    # The second answer is the re-read after the recovery, which design
+    # F6 requires to be EMPTY before a fresh transaction is issued.
     neighbour = _RecordedRunner(
         result=runner_module.CommandOutput,
-        outputs=[(("dpkg", "--audit"), [_audit_report(packages=("runc",))]), *_fenced_outputs()],
+        outputs=[
+            (("dpkg", "--audit"), [_audit_report(packages=("runc",)), ""]),
+            *_fenced_outputs(),
+        ],
     )
 
     assert packages.run_package_step(inputs=inputs, runner=neighbour).refusal is None
@@ -689,7 +694,9 @@ def test_the_package_step_configures_only_part_installed_packages_a_run_intended
     runner = _RecordedRunner(
         result=runner_module.CommandOutput,
         outputs=[
-            (("dpkg", "--audit"), [_audit_report(packages=("runc", "tini"))]),
+            # The report, and then the re-read the recovery leaves clean —
+            # design F6's empty audit, which the install waits for.
+            (("dpkg", "--audit"), [_audit_report(packages=("runc", "tini")), ""]),
             (("dpkg-query",), [interrupted, interrupted, settled]),
             *_fenced_outputs(),
         ],
@@ -732,7 +739,9 @@ def test_the_package_step_completes_interrupted_triggers_for_those_packages_only
     runner = _RecordedRunner(
         result=runner_module.CommandOutput,
         outputs=[
-            (("dpkg", "--audit"), [_audit_report(packages=("runc", "tini"))]),
+            # The report, and then the re-read the recovery leaves clean —
+            # design F6's empty audit, which the install waits for.
+            (("dpkg", "--audit"), [_audit_report(packages=("runc", "tini")), ""]),
             (("dpkg-query",), [awaiting, awaiting, settled]),
             *_fenced_outputs(),
         ],
@@ -985,6 +994,52 @@ def test_the_package_step_records_the_dpkg_audit_it_read_before_it_installs(
     assert record.is_file()
     assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": []}
     assert len(_calls_named(runner=runner, argv=("dpkg", "-i"))) == 1
+
+
+def test_the_package_step_refuses_when_the_recovery_left_dpkg_audit_naming_a_package(
+    tmp_path: Path,
+) -> None:
+    """Design F6: the install waits for the empty audit rather than hoping for it.
+
+    The recovery is aimed at the states it can finish, and it can FAIL to
+    finish them — a maintainer script that exits non-zero, a trigger
+    whose handler is itself unfinished. `dpkg -i` over a database that
+    still holds an unfinished transaction is the one thing the recovery
+    existed to prevent, so the report is read AGAIN afterwards and the
+    install is issued only when it is empty.
+
+    The refusal names the package, because the operator's next move
+    depends on which one it is, and the step never substitutes
+    `dpkg --configure -a`: adopting whatever else the host has left
+    pending is exactly the mutation the fence refuses on behalf of.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    interrupted = _QUERY_BEFORE + "runc 1.4.0-0ubuntu1 unpacked\n"
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            # One answer, repeated: the recovery below does not clear it.
+            (("dpkg", "--audit"), [_audit_report(packages=("runc",))]),
+            (("dpkg-query",), [interrupted]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is not None
+    assert "runc" in outcome.refusal
+    assert outcome.installed == ()
+    assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+    assert _calls_named(runner=runner, argv=("dpkg", "--configure", "-a")) == []
+    # The recovery was attempted, and what it left behind is recorded.
+    assert len(_calls_named(runner=runner, argv=("dpkg", "--configure"))) == 1
+    record = inputs.parent / "pre-install-audit.json"
+    assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": ["runc"]}
 
 
 def test_the_package_step_refuses_when_the_runs_committed_inputs_are_unreadable(

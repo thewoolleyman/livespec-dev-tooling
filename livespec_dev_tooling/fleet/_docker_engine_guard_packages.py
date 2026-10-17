@@ -246,6 +246,20 @@ def _unaccounted_refusal(*, flagged: tuple[str, ...], runs: Path) -> str | None:
     return None
 
 
+def _flagged_refusal(*, flagged: tuple[str, ...], after: str) -> str:
+    """Why an unfinished dpkg transaction stops the step, naming what is unfinished.
+
+    Read at two points, and `after` is which one: the re-read that
+    design F6's "a fresh transaction requires an empty `dpkg --audit`"
+    gates the install on, and the read after the install that decides
+    whether the transaction actually finished. Both name the packages,
+    because the operator's next move depends on which they are — and
+    neither is answered with `dpkg --configure -a`, which would adopt
+    whatever else the host has left pending.
+    """
+    return f"dpkg --audit names {flagged} after {after}, so dpkg is still interrupted"
+
+
 def _in_states(
     *,
     flagged: tuple[str, ...],
@@ -334,21 +348,73 @@ def _audited(*, inputs: Path, runner: TimedRunner) -> Audit | str:
     return audit_transaction(declared=declared, runner=runner)
 
 
+def _mutation_refusal(*, audit: Audit, run_dir: Path, runner: TimedRunner) -> str | None:
+    """Why the audited transaction may not stand, from the first dpkg state read on.
+
+    Everything on the MUTATING side of this module's line, answered the
+    way every other stage here answers — a refusal, or `None`. The
+    sequence is: refuse on a version that moved under the audit; refuse
+    on an unfinished transaction no guard run accounts for; complete the
+    ones a guard run does; record what `dpkg --audit` then says and
+    refuse unless it says nothing (design F6, "a fresh transaction
+    requires an empty `dpkg --audit`"); and, unless the host already
+    holds the audited set, issue it and require the dpkg-query
+    difference across it to be the additions this host did not hold.
+
+    The settled host skips only the ISSUING. It is asked every question
+    above, which FAULTS B-06 is the record of why: the path that
+    returned early reported an inert install published while
+    `dpkg --audit` still named a package this install's own trigger had
+    left half-configured, and on a real host that blocks apt and
+    unattended-upgrades until somebody intervenes by hand.
+    """
+    before = read_installed(runner=runner)
+    drift = _drift_refusal(audit=audit, installed=before)
+    if drift is not None:
+        return drift
+    flagged = _flagged_packages(runner=runner)
+    unaccounted = _unaccounted_refusal(flagged=flagged, runs=run_dir.parent)
+    if unaccounted is not None:
+        return unaccounted
+    _recover_interrupted(runner=runner, flagged=flagged, installed=before)
+    remaining = _flagged_packages(runner=runner)
+    read_again = json.dumps({"run": run_dir.name, "flagged": list(remaining)})
+    write_durable(path=run_dir / PRE_INSTALL_AUDIT_FILE, data=read_again)
+    if remaining:
+        return _flagged_refusal(flagged=remaining, after="recovery")
+    # A host that already holds the audited set skips the ISSUING and
+    # nothing else: `dpkg -i` over it would be a mutation with no
+    # transaction behind it, while every question above and below is
+    # still owed. `dpkg -i` itself is issued on the audited `.deb` SET
+    # and nothing else, so what runs is byte-for-byte what the audit
+    # cleared with no resolver decision left to apt.
+    if not _already_settled(audit=audit, installed=before):
+        _ = runner(
+            command=TimedCommand(
+                argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),
+                timeout_seconds=INSTALL_TIMEOUT_SECONDS,
+                env=_FENCED_ENV,
+            )
+        )
+        difference = _difference_refusal(
+            expected=_expected_difference(audit=audit, before=before),
+            before=before,
+            after=read_installed(runner=runner),
+        )
+        if difference is not None:
+            return difference
+    return None
+
+
 def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> PackageStepResult:
     """Install exactly the audited package set named by this run's `inputs`.
 
-    `dpkg -i` is issued on the audited `.deb` SET and nothing else, so
-    the transaction that runs is byte-for-byte the one the audit cleared
-    with no resolver decision left to apt. dpkg's own table is read on
-    both sides of it, and the difference has to be the additions the
-    host did not already hold — which on a host that holds all of them
-    is no transaction at all.
-
-    The intended record is written once the audit has cleared and before
-    anything is mutated (design R7), so a run interrupted anywhere in
-    the install leaves behind the set it meant to install — which is
-    what lets the NEXT run tell its own unfinished work from somebody
-    else's.
+    The audit is cleared and the intended record written before anything
+    is mutated (design R7), so a run interrupted anywhere in the install
+    leaves behind the set it meant to install — which is what lets the
+    NEXT run tell its own unfinished work from somebody else's. What the
+    mutating side then does, and every refusal it can answer with, is
+    `_mutation_refusal` below; this is the Result shaping around it.
     """
     audit = _audited(inputs=inputs, runner=runner)
     if isinstance(audit, str):
@@ -358,41 +424,7 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
         path=run_dir / INTENDED_FILE,
         data=json.dumps({"run": run_dir.name, "additions": list(audit.additions)}),
     )
-    before = read_installed(runner=runner)
-    drift = _drift_refusal(audit=audit, installed=before)
-    if drift is not None:
-        return PackageStepResult(refusal=drift)
-    flagged = _flagged_packages(runner=runner)
-    unaccounted = _unaccounted_refusal(flagged=flagged, runs=run_dir.parent)
-    if unaccounted is not None:
-        return PackageStepResult(refusal=unaccounted)
-    _recover_interrupted(runner=runner, flagged=flagged, installed=before)
-    remaining = _flagged_packages(runner=runner)
-    write_durable(
-        path=run_dir / PRE_INSTALL_AUDIT_FILE,
-        data=json.dumps({"run": run_dir.name, "flagged": list(remaining)}),
-    )
-    if _already_settled(audit=audit, installed=before):
-        # Nothing to INSTALL, so no transaction is repeated: the step
-        # returns without `dpkg -i`, which over a host that already
-        # matches the audit would be a mutation with nothing behind it.
-        # What it may NOT do is return before the audit above has been
-        # asked and what it named completed — FAULTS B-06 is exactly
-        # that return, reporting an inert install published on a host
-        # where `dpkg --audit` still named an unfinished package.
-        return PackageStepResult(installed=audit.additions)
-    _ = runner(
-        command=TimedCommand(
-            argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),
-            timeout_seconds=INSTALL_TIMEOUT_SECONDS,
-            env=_FENCED_ENV,
-        )
-    )
-    difference = _difference_refusal(
-        expected=_expected_difference(audit=audit, before=before),
-        before=before,
-        after=read_installed(runner=runner),
-    )
-    if difference is not None:
-        return PackageStepResult(refusal=difference)
+    refusal = _mutation_refusal(audit=audit, run_dir=run_dir, runner=runner)
+    if refusal is not None:
+        return PackageStepResult(refusal=refusal)
     return PackageStepResult(installed=audit.additions)
