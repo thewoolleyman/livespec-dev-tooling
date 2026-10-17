@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +48,7 @@ _RECORDS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_records"
 _STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
 _COMMIT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_commit"
+_FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
 
 _RUN = "r202610170154022b87"
 
@@ -203,3 +204,31 @@ def test_the_committed_validation_names_only_the_guarded_unit_that_is_not_enable
     env = _committed_env(root=tmp_path, commands=commands)
 
     assert commit.committed_installation_fault(run=_RUN, env=env) == f"{_ADRIFT}docker.socket"
+
+
+def test_the_fake_host_holds_the_guards_own_units_and_the_guarded_units_in_separate_maps(
+    tmp_path: Path,
+) -> None:
+    """The harness is what let the real divergence through, so it is fixed too.
+
+    `FakeHost` answered BOTH unit-state seams from one map, and that one
+    map held the guarded units as well as the guard's own. So a check
+    reading the wrong seam got the right answer anyway and the whole
+    suite stayed green while every real committed run refused.
+
+    Two maps make that impossible: whatever the guard's own units are
+    doing, `guard_unit_states` carries no state for `containerd.service`,
+    `docker.service` or `docker.socket` -- which is also what the REAL
+    host answers, since those three match none of the globs the
+    admission read enumerates its units from.
+    """
+    fake_module = importlib.import_module(_FAKE_MODULE)
+    fake = fake_module.FakeHost(state_root=tmp_path / "var", runtime_root=tmp_path / "run")
+
+    assert "guarded_unit_states" in {declared.name for declared in fields(fake)}
+
+    fake.unit_states = {"docker-engine-guard-start.service": "failed"}
+    fake.guarded_unit_states = dict.fromkeys(_GUARDED_UNITS, "active")
+
+    assert dict(fake.guarded_unit_active_states()) == dict.fromkeys(_GUARDED_UNITS, "active")
+    assert dict(fake.guard_unit_states()) == {"docker-engine-guard-start.service": "failed"}

@@ -48,7 +48,16 @@ class FakeHost:
     runtime_root: Path
     clock: float = 0.0
     boot: str = "boot-a"
+    # The GUARD's own units, and the three GUARDED units, in two maps
+    # that never meet. One map answered both reads until 2026-10-17, and
+    # that is precisely why the suite could not see a committed-host
+    # validation reading running state from the guard's own unit set: it
+    # found the guarded units there, while the real host's admission read
+    # enumerates its units by globs none of the three can match. Apart,
+    # a seam read in place of the other answers nothing and the test
+    # that made the swap fails.
     unit_states: dict[str, str] = field(default_factory=dict)
+    guarded_unit_states: dict[str, str] = field(default_factory=dict)
     unit_file_states: dict[str, str] = field(default_factory=dict)
     daemon_keys: dict[str, object] = field(default_factory=dict)
     jobs: tuple[QueuedJob, ...] = ()
@@ -161,7 +170,7 @@ class FakeHost:
         return self.unit_file_states
 
     def guarded_unit_active_states(self) -> Mapping[str, str]:
-        return self.unit_states
+        return self.guarded_unit_states
 
     # --- reconfigure (child 1b) ---
 
