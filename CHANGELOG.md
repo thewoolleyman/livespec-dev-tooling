@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.0...v1.112.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ansible:** install the gate renderer on every host that may delegate a pre-push gate ([8e11006](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8e11006c6ccc5e229ba8e31b417b0e525c958305))
+
 ## [1.112.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.5...v1.112.0) (2026-10-17)
 
 
