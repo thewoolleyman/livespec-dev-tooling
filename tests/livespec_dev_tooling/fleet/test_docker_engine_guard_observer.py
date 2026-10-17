@@ -377,7 +377,7 @@ def _host_after_the_commit(*, root: Path) -> Any:
     """
     fake = _fake(root=root)
     fake.clock = 1.0
-    fake.unit_states = dict(_GUARDED_UNITS_RUNNING)
+    fake.guarded_unit_states = dict(_GUARDED_UNITS_RUNNING)
     fake.unit_file_states = dict(_GUARDED_UNITS_ENABLED)
     return fake
 
@@ -695,7 +695,7 @@ def test_after_the_post_commit_steps_confirm_validates_the_committed_installatio
     down = tmp_path / "engine-not-running"
     _ready_to_confirm(root=down)
     host = _host_after_the_commit(root=down)
-    host.unit_states = {**_GUARDED_UNITS_RUNNING, "docker.service": "failed"}
+    host.guarded_unit_states = {**_GUARDED_UNITS_RUNNING, "docker.service": "failed"}
     outcome = _confirm_on_a_committed_host(root=down, host=host)
 
     assert outcome.verdict == "refuse"
