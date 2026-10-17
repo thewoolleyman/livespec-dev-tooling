@@ -1042,6 +1042,50 @@ def test_the_package_step_refuses_when_the_recovery_left_dpkg_audit_naming_a_pac
     assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": ["runc"]}
 
 
+def test_the_package_step_refuses_when_dpkg_audit_names_a_package_after_the_install(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the additions are not installed while dpkg is.
+
+    The dpkg-query difference says the right packages LANDED; it says
+    nothing about whether dpkg finished with them. An install whose
+    trigger processing was interrupted — FAULTS B-06's `man-db`, whose
+    trigger this install's own man pages activate — leaves every audited
+    package in the table and the transaction unfinished, and reporting
+    that as published is what strands the host: apt and
+    unattended-upgrades stay blocked until somebody runs
+    `dpkg --configure -a` by hand.
+
+    So the report is read once more after the install and after the
+    difference check, and a name in it refuses. The pre-install record
+    read empty, which is what makes the refusal attributable: whatever
+    `man-db` is doing in that report, this transaction put it there.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            # Empty before the install on both reads, and not after it.
+            (("dpkg", "--audit"), ["", "", _audit_report(packages=("man-db",))]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is not None
+    assert "man-db" in outcome.refusal
+    assert outcome.installed == ()
+    # Refused AFTER the audited transaction ran, which is the only place
+    # this can be seen: the install is what left the report non-empty.
+    assert len(_calls_named(runner=runner, argv=("dpkg", "-i"))) == 1
+    record = inputs.parent / "pre-install-audit.json"
+    assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": []}
+
+
 def test_the_package_step_refuses_when_the_runs_committed_inputs_are_unreadable(
     tmp_path: Path,
 ) -> None:

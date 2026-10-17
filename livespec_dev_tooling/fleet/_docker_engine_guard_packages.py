@@ -358,8 +358,10 @@ def _mutation_refusal(*, audit: Audit, run_dir: Path, runner: TimedRunner) -> st
     ones a guard run does; record what `dpkg --audit` then says and
     refuse unless it says nothing (design F6, "a fresh transaction
     requires an empty `dpkg --audit`"); and, unless the host already
-    holds the audited set, issue it and require the dpkg-query
-    difference across it to be the additions this host did not hold.
+    holds the audited set, issue it, require the dpkg-query difference
+    across it to be the additions this host did not hold, and read the
+    report once more — a transaction that landed the right packages and
+    left one of them unfinished is not an install that finished.
 
     The settled host skips only the ISSUING. It is asked every question
     above, which FAULTS B-06 is the record of why: the path that
@@ -403,6 +405,13 @@ def _mutation_refusal(*, audit: Audit, run_dir: Path, runner: TimedRunner) -> st
         )
         if difference is not None:
             return difference
+        # The difference says the audited packages LANDED; it says
+        # nothing about whether dpkg finished with them, and a trigger
+        # interrupted during the install leaves every one of them in
+        # the table with the transaction unfinished.
+        unfinished = _flagged_packages(runner=runner)
+        if unfinished:
+            return _flagged_refusal(flagged=unfinished, after="`dpkg -i`")
     return None
 
 
@@ -414,7 +423,7 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     leaves behind the set it meant to install — which is what lets the
     NEXT run tell its own unfinished work from somebody else's. What the
     mutating side then does, and every refusal it can answer with, is
-    `_mutation_refusal` below; this is the Result shaping around it.
+    `_mutation_refusal` above; this is the Result shaping around it.
     """
     audit = _audited(inputs=inputs, runner=runner)
     if isinstance(audit, str):
