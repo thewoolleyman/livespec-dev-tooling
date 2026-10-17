@@ -895,6 +895,54 @@ def test_the_package_step_refuses_a_foreign_dpkg_audit_on_a_host_already_settled
     assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
+def test_the_package_step_completes_an_intended_package_a_settled_host_left_half_done(
+    tmp_path: Path,
+) -> None:
+    """Design F6's recovery branch, reached from the settled path as well.
+
+    The other half of FAULTS B-06. A kill during `dpkg -i` can leave
+    every audited package settled and a package of a guard run's own
+    recorded intended set `half-configured` beside them — on B-06 the
+    trigger handler this install's own man pages activated. The settled
+    path owes that package the same `dpkg --configure` the install path
+    has always given it: finishing it is what frees apt and
+    unattended-upgrades on the host, and the step may not report the
+    audited additions installed while it is outstanding.
+
+    `runc` here belongs to the EARLIER run, which is the case
+    implementation rider point 4 names — so the recovery is allowed, and
+    aimed at that package by name rather than issued as `--configure -a`.
+    No `dpkg -i` runs: the audited set is settled, so there is still no
+    transaction to repeat.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    half_done = _QUERY_AFTER + "runc 1.4.0-0ubuntu1 half-configured\n"
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+            # The report, and then the re-read the recovery leaves clean.
+            (("dpkg", "--audit"), [_audit_report(packages=("runc",)), ""]),
+            (("dpkg-query",), [half_done]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    assert outcome.installed == ("containerd=2.2.2-0ubuntu1.1", "docker.io=29.1.3-0ubuntu4.1")
+    configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
+    assert len(configured) == 1
+    assert tuple(configured[0].argv) == ("dpkg", "--configure", "runc")
+    assert configured[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
+    assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
 def test_the_package_step_refuses_when_the_runs_committed_inputs_are_unreadable(
     tmp_path: Path,
 ) -> None:
