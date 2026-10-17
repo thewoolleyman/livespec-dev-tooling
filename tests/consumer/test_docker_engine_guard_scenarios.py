@@ -559,11 +559,20 @@ def test_a_run_named_by_the_commit_marker_is_finished_never_rolled_back(
     killed as it enabled the units. The marker — never the phase — is what
     decides commitment, so the run is committed whatever its phase reads.
 
-    `rollback` therefore exits 0 having done NOTHING. Not "having rolled back
-    safely": a committed host's guarded units already honour the marker through
-    their own start condition, so a rollback that acted would undo a commitment
-    the host is already keeping. The assertion is on every acting seam, because
-    exiting 0 is the easy half.
+    `rollback` therefore exits 0 having rolled NOTHING back. Not "having rolled
+    back safely": a committed host's guarded units already honour the marker
+    through their own start condition, so a rollback that acted would undo a
+    commitment the host is already keeping. The assertion is on every acting
+    seam, because exiting 0 is the easy half.
+
+    The ONE thing the no-op does is RETIRE this run's dead-man timer, and that
+    is the opposite of acting on the commitment: the kill above landed between
+    the commit marker and the stop `confirm` performs last, so a timer is still
+    in the air over a run that must never be rolled back — and the role's
+    classify counts any non-inactive `docker-engine-deadman-*` unit as a busy
+    host, which would refuse this host for the rest of the boot. Nothing else
+    is going to come back for it, because every later firing is decided `noop`
+    exactly as this one was.
 
     `confirm` then finishes what the kill interrupted, WITHOUT A CHALLENGE — the
     challenge is deleted first, exactly as the reboot this case models clears the
@@ -592,13 +601,13 @@ def test_a_run_named_by_the_commit_marker_is_finished_never_rolled_back(
     for untouched in (
         "run_phase_child",
         "revoke_start_permission",
-        "stop_unit",
         "kill_cgroup",
         "disable_units",
         "restore_forward_policy",
         "read_postconditions",
     ):
         assert refused.calls_named(name=untouched) == (), untouched
+    assert [call.detail[0] for call in refused.calls_named(name="stop_unit")] == [_DEADMAN_TIMER]
     assert _phase_of(root=root, run=_RUN) == "committed"
     assert state.read_marker(paths=paths, run=_RUN) == "self"
 
