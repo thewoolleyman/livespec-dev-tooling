@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.9...v1.112.10) (2026-10-17)
+
+
+### Bug Fixes
+
+* **fleet:** complete the trigger handlers the guard's own install activated ([034f874](https://github.com/thewoolleyman/livespec-dev-tooling/commit/034f874209c17d6c99d4347d5d41025889caf810))
+* **fleet:** read dpkg's log across the rotation that moved it aside ([fb9d94b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fb9d94b2f5cfec493ef571d5c0954a32027f48b1))
+
 ## [1.112.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.8...v1.112.9) (2026-10-17)
 
 
