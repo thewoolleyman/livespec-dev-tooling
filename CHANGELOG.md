@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.2...v1.112.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* **fleet:** the rollback postcondition read answers under the driver's names ([fa51467](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fa51467784ecb0bec3ed6aaee1aab2c007dd14e9))
+
 ## [1.112.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.1...v1.112.2) (2026-10-17)
 
 
