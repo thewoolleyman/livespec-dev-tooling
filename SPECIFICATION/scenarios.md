@@ -732,6 +732,30 @@ When an operator invokes `recover` for that run
 
 Then the run MUST be rolled back
 
+## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated
+
+Given a run in phase `publishing` whose pre-install audit record is empty and is the most recent one any guard run wrote
+
+And a kill during that run's `dpkg -i` left man-db, which is in no recorded intended set, `half-configured` or `triggers-pending`
+
+And dpkg's log records no `install`, `upgrade`, `remove`, `purge` or `configure` action on a package outside every recorded intended set since that record was written
+
+When publish resumes for that run
+
+Then the package step MUST complete man-db with `dpkg --configure` or `dpkg --triggers-only` named on man-db
+
+And it MUST NOT issue `dpkg --configure -a`
+
+And publish MUST NOT report the inert install published while `dpkg --audit` names any package
+
+Given the same run, and dpkg's log records an `install` action on a package outside every recorded intended set since that record was written
+
+When publish resumes for that run
+
+Then the package step MUST refuse naming man-db
+
+And it MUST NOT run `dpkg --configure` or `dpkg --triggers-only` on man-db
+
 ## Scenario: a delegated gate Job for a repository missing its declared recipe reports red naming the recipe
 
 Given a consuming repository that switches delegation on and declares a check recipe for its gate
