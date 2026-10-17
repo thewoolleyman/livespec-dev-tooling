@@ -168,10 +168,16 @@ class _CannedWorldRealRenderer:
     `pod_message` is what the cluster reports as the failed pod's termination
     message. A run that never reaches a Job never reads it, so the default is
     the empty string and the assembly-only tests are unaffected by it.
+
+    `streamed` records the commands the client asked to be STREAMED rather than
+    captured, which is a different claim from `argvs`: the verdict stream an
+    operator reads is whatever the client hands to the terminal, so a step the
+    client captured and discarded reaches nobody even though its argv is here.
     """
 
     def __init__(self, *, pod_message: str = "") -> None:
         self.argvs: list[tuple[str, ...]] = []
+        self.streamed: list[tuple[str, ...]] = []
         self._pod_message = pod_message
         self._polls = 0
 
@@ -183,8 +189,10 @@ class _CannedWorldRealRenderer:
         stdin: str | None = None,
         stream: bool = False,
     ) -> GateCommandOutcome:
-        _ = (stdin, stream)
+        _ = stdin
         self.argvs.append(tuple(argv))
+        if stream:
+            self.streamed.append(tuple(argv))
         if argv[0] == str(_RENDERER):
             completed = subprocess.run(
                 argv, cwd=str(cwd), capture_output=True, text=True, check=False
@@ -266,6 +274,32 @@ def _env_value(*, manifest: str, container: str, variable: str) -> str:
     value = lines[named + 1].strip()
     assert value.startswith("value:"), f"{variable} is not given a literal value: {value}"
     return value.removeprefix("value:").strip().strip('"')
+
+
+def _literal_env(*, manifest: str, container: str) -> dict[str, str]:
+    """Every environment variable one container's block gives a LITERAL value.
+
+    The `valueFrom:` entries are deliberately absent: `GH_TOKEN` comes from an
+    optional Secret the cluster resolves, and a harness that invented a value
+    for it would be asserting something about this suite's host rather than
+    about the pod.
+
+    THIS IS WHY IT EXISTS: a script run outside a pod inherits the HOST's
+    environment, and this host — a Fabro sandbox — exports a real
+    `LIVESPEC_CORE_PLUGIN_ROOT` of its own pointing at its sibling checkout. A
+    pod-script run that took `os.environ` as-is therefore read the SANDBOX's
+    core path and reported it as the gate's, which is a test that passes while
+    proving nothing. Applying the manifest's own literals is what Kubernetes
+    does, so it both models the pod and scrubs the ambient value.
+    """
+    lines = _container_block(manifest=manifest, name=container)
+    declared: dict[str, str] = {}
+    for index, line in enumerate(lines[:-1]):
+        name = line.strip().removeprefix("- name: ")
+        value = lines[index + 1].strip()
+        if line.strip().startswith("- name: ") and value.startswith("value:"):
+            declared[name] = value.removeprefix("value:").strip().strip('"')
+    return declared
 
 
 def _recipes_run(*, manifest: str) -> list[str]:
@@ -503,12 +537,20 @@ def test_the_gate_job_resolves_livespec_core_at_the_consumers_pinned_release(
     assert "@github.com" not in core_block
 
 
-def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[str]]:
+def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, str, list[str]]:
     """Run the rendered pod script here, against a `just` that provides nothing.
 
     This is the scenario's When, minus the cluster: the Job's verdict IS this
     script's exit status, and what it invoked is the only way to tell "refused
     before running anything" apart from "ran something and it failed".
+
+    Returns the exit status, STDOUT, stderr and the invocation log, in that
+    order. Both streams are returned because the pod writes to each for a
+    different reason: its refusal goes to stderr, where the cluster also lifts
+    it into the termination message, while what it REPORTS about its own
+    environment goes to stdout. The client streams both as one verdict stream,
+    and keeping them apart here is what lets a claim about one not be satisfied
+    by the other.
     """
     stub_dir = root / "bin"
     stub_dir.mkdir(parents=True)
@@ -521,6 +563,9 @@ def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[st
         "\n".join(_container_script(manifest=manifest, name="gate")), encoding="utf-8"
     )
     env = dict(os.environ)
+    # The pod's OWN declared environment, which Kubernetes would apply and this
+    # host would otherwise shadow — see `_literal_env`.
+    env.update(_literal_env(manifest=manifest, container="gate"))
     env.update(
         {
             "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
@@ -535,7 +580,12 @@ def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[st
         text=True,
         check=False,
     )
-    return completed.returncode, completed.stderr, log.read_text(encoding="utf-8").splitlines()
+    return (
+        completed.returncode,
+        completed.stdout,
+        completed.stderr,
+        log.read_text(encoding="utf-8").splitlines(),
+    )
 
 
 def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it(
@@ -558,7 +608,9 @@ def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it
     )
     manifest = _rendered_for(repo_root=consumer)
 
-    returncode, stderr, invoked = _run_the_pod_script(manifest=manifest, root=tmp_path / "pod")
+    returncode, _stdout, stderr, invoked = _run_the_pod_script(
+        manifest=manifest, root=tmp_path / "pod"
+    )
 
     assert returncode != 0
     assert f"'{_CONSUMER_RECIPE}'" in stderr
@@ -574,3 +626,85 @@ def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it
     assert verdict.refuses_push is True
     assert _CONSUMER_RECIPE in verdict.detail
     assert not [argv for argv in cluster.argvs if "green_token" in " ".join(argv)]
+
+
+def test_the_verdict_stream_reports_whether_livespec_core_was_resolved(*, tmp_path: Path) -> None:
+    """The core resolution is an OBSERVABLE of the run, not only a fact of the manifest.
+
+    The test above this one proves the pod is HANDED core at the consumer's pin.
+    That is a property of the rendered YAML, and nobody reading a verdict reads
+    YAML: the gate client streams the Job's logs and that stream is the whole of
+    what an operator sees. So "the gate resolved core at /livespec-core" was
+    unanswerable from a gate's own output — including from the output of the
+    very failure it explains, a consumer's `check-doctor-static` reporting
+    core's own "livespec core not found" (freeze-driver ruling R100,
+    2026-10-17).
+
+    THREE ARMS, BECAUSE THE CLAIM SPANS TWO ARTIFACTS THAT CANNOT SEE EACH
+    OTHER. The pod script has to SAY it: the rendered gate container reports the
+    `LIVESPEC_CORE_PLUGIN_ROOT` it received and the ref that root was fetched
+    at. It has to say it BEFORE the sequence runs, so a Job that refuses a
+    missing recipe still reports it — which is asserted by position against the
+    first `just` the script reaches, and then by RUNNING the script against a
+    `just` that provides nothing: the value reaches stdout even on the refusal
+    path. And the client has to CARRY it: the log step is the one command the
+    run asks to be STREAMED rather than captured, so what the pod printed is
+    what the operator reads.
+
+    The streamed step is read off `streamed` rather than `argvs` on purpose. A
+    client that captured the logs and dropped them would record the identical
+    argv here and show an operator nothing.
+    """
+    consumer = _a_consumer_repository(
+        root=tmp_path / "pinned",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+        core_pin="v0.42.1",
+    )
+    manifest = _rendered_for(repo_root=consumer)
+    script = _container_script(manifest=manifest, name="gate")
+
+    reporting = [
+        line
+        for line in script
+        if "LIVESPEC_CORE_PLUGIN_ROOT" in line and not line.lstrip().startswith("#")
+    ]
+
+    assert len(reporting) == 1, (
+        "the gate container's script does not report the core plugin root it "
+        "was handed, so a reader of the verdict stream cannot tell whether "
+        f"core was resolved: {reporting}"
+    )
+
+    reports = script.index(reporting[0])
+    first_just = next(index for index, line in enumerate(script) if "just " in line)
+
+    assert reports < first_just, (
+        "the gate container reports its core resolution only after the check "
+        "sequence has started, so a Job that refuses a missing recipe reports "
+        "nothing about core"
+    )
+    assert _literal_env(manifest=manifest, container="gate")["LIVESPEC_CORE_PLUGIN_ROOT"] == (
+        _CORE_PLUGIN_ROOT
+    )
+
+    returncode, stdout, _stderr, invoked = _run_the_pod_script(
+        manifest=manifest, root=tmp_path / "pod"
+    )
+
+    assert returncode != 0
+    assert invoked == [f"just --show {_CONSUMER_RECIPE}"]
+    assert _CORE_PLUGIN_ROOT in stdout, (
+        "the gate pod ran without reporting the core plugin root it was handed: " f"{stdout!r}"
+    )
+    assert "v0.42.1" in stdout
+
+    cluster = _CannedWorldRealRenderer()
+    _ = run_delegated_gate(
+        repo_root=consumer, renderer=_RENDERER, runner=cluster, sleeper=_no_sleep
+    )
+
+    assert len(cluster.streamed) == 1
+    streamed = cluster.streamed[0]
+    assert "logs" in streamed
+    assert "--follow" in streamed
+    assert f"job/gate-widget-{_TREE[:12]}" in streamed
