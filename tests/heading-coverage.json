@@ -714,5 +714,13 @@
     "test": "tests.consumer.test_docker_engine_guard_scenarios.test_recover_resumes_an_interrupted_publish_and_rolls_back_any_other_run",
     "reason": "Consumer-tier: interrupts a publish at its package step and asserts `recover` resumes it without retaking the snapshot, whose marked bytes survive, and separately drives `recover` for a `started` run and asserts it reaches the rollback driver and lands `rolled-back` (work-item livespec-dev-tooling-4on5pg).",
     "work_item": "livespec-dev-tooling-4on5pg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate Job for a repository missing its declared recipe reports red naming the recipe",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-saxz owns it.",
+    "work_item": "livespec-dev-tooling-saxz"
   }
 ]
