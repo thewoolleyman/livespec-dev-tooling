@@ -284,6 +284,33 @@ _QUERY_UNAUDITED_HALF_INSTALLED = (
 )
 
 
+# The runtime an EARLIER guard run recorded as intended, at the version
+# `_record_earlier_runs` writes into that run's record below.
+_RUNC = ("runc", "1.4.0-0ubuntu1")
+
+# `dpkg --audit` names a package once per SECTION of its report that
+# carries it: the report measured on guard-vm-0 named docker.io THREE
+# times (it needs reinstallation, its list file is missing, and its
+# md5sums file is missing), beside the two packages the same transaction
+# had already unpacked.
+_FLAGGED_MEASURED = (_ENGINE[0], _ENGINE[0], _ENGINE[0], _RUNC[0], _SHIM[0])
+
+# The three tables a resumed publish reads on that host, in order: what
+# the kill left, what the re-unpack produced, and what the recovery's
+# configure and this run's own install left settled.
+_QUERY_RESUMED_INTERRUPTED = (
+    f"{_QUERY_BEFORE}{_SHIM[0]} {_SHIM[1]} unpacked\n"
+    f"{_RUNC[0]} {_RUNC[1]} unpacked\n"
+    f"{_ENGINE[0]} {_ENGINE[1]} half-installed\n"
+)
+_QUERY_RESUMED_RE_UNPACKED = (
+    f"{_QUERY_BEFORE}{_SHIM[0]} {_SHIM[1]} unpacked\n"
+    f"{_RUNC[0]} {_RUNC[1]} unpacked\n"
+    f"{_ENGINE[0]} {_ENGINE[1]} unpacked\n"
+)
+_QUERY_RESUMED_SETTLED = f"{_QUERY_AFTER}{_RUNC[0]} {_RUNC[1]} installed\n"
+
+
 # `apt-get -s install`'s recorded output for the audited set on a host that
 # has never carried the engine: the two `Inst` lines carry a version in
 # parentheses and NO bracketed version before it, which is what an install
@@ -603,6 +630,81 @@ def test_the_package_step_re_unpacks_a_half_installed_leftover_from_its_archive(
     )
     configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
     assert runner.calls.index(unpacked[0]) < runner.calls.index(configured[0])
+
+
+def test_a_resumed_publish_re_unpacks_the_engine_and_configures_the_three_by_name(
+    tmp_path: Path,
+) -> None:
+    """Specification scenario: the resumed publish, end to end inside the fence.
+
+    The repair measured on poweredge guard-vm-1 on 2026-10-17, which is
+    what the amended fence has to reproduce by itself. A kill during
+    `dpkg -i` left docker.io `half-installed` and left runc and
+    containerd `unpacked`; `dpkg --unpack` of docker.io's own audited
+    archive moved it to `unpacked`, and `dpkg --configure runc
+    containerd docker.io` then left all three installed with
+    `dpkg --audit` empty. runc belongs to an EARLIER run's recorded
+    intended set, which is implementation rider point 4: the run that
+    has to finish what a rollback from `publishing` left is the NEXT
+    one, so recovery is never keyed to the current run's id.
+
+    The report here is dpkg's MEASURED one, naming docker.io three
+    times, and that is the load-bearing part of the shape rather than
+    noise: taken as a list it would issue three unpacks of the same
+    archive and name the same package three times in the configure argv.
+    One `dpkg --unpack` per half-installed package, and each package
+    named once, is the reading the specification's "naming exactly the
+    audited `.deb`" carries.
+
+    And the additions are reported installed only with `dpkg --audit`
+    empty — the report is read once more AFTER the install, because a
+    transaction that landed the right packages and left one of them
+    unfinished is not an install that finished.
+    """
+    assert _REUNPACK_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+            (("dpkg", "--audit"), [_audit_report(packages=_FLAGGED_MEASURED), ""]),
+            (
+                ("dpkg-query",),
+                [
+                    _QUERY_RESUMED_INTERRUPTED,
+                    _QUERY_RESUMED_INTERRUPTED,
+                    _QUERY_RESUMED_RE_UNPACKED,
+                    _QUERY_RESUMED_SETTLED,
+                ],
+            ),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    assert outcome.installed == (
+        f"{_SHIM[0]}={_SHIM[1]}",
+        f"{_ENGINE[0]}={_ENGINE[1]}",
+    )
+    unpacked = _calls_named(runner=runner, argv=("dpkg", "--unpack"))
+    assert [tuple(call.argv) for call in unpacked] == [
+        (
+            "dpkg",
+            "--unpack",
+            str(tmp_path / "cache" / _deb_name(package=_ENGINE[0], version=_ENGINE[1])),
+        )
+    ]
+    configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
+    assert [tuple(call.argv) for call in configured] == [
+        ("dpkg", "--configure", _SHIM[0], _ENGINE[0], _RUNC[0])
+    ]
+    record = inputs.parent / "pre-install-audit.json"
+    assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": []}
 
 
 def test_the_package_step_never_configures_a_package_dpkg_holds_half_installed(

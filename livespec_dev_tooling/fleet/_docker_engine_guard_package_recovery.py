@@ -84,8 +84,14 @@ def _in_states(
     installed: Mapping[str, InstalledPackage],
     states: frozenset[str],
 ) -> tuple[str, ...]:
-    """The flagged packages dpkg holds in one of `states`, sorted."""
-    return tuple(sorted(name for name in flagged if installed.get(name, UNHELD).status in states))
+    """The flagged packages dpkg holds in one of `states`, sorted and deduplicated.
+
+    `dpkg --audit` names a package once per SECTION of its report that
+    carries it — the report measured on guard-vm-0 named a
+    half-installed docker.io three times — so the names are taken as a
+    SET. A package is named once in the argv that recovers it.
+    """
+    return tuple(sorted({name for name in flagged if installed.get(name, UNHELD).status in states}))
 
 
 def recover_interrupted(
