@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.111.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.3...v1.111.4) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ansible:** skip template timers in the node-loss drill's timer discovery ([4b1ebe0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b1ebe0dd2a89398dda7da1422782e4a85f54e7c))
+
 ## [1.111.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.2...v1.111.3) (2026-10-16)
 
 
