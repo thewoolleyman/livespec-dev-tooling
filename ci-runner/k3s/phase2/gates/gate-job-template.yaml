@@ -137,6 +137,61 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+        # livespec CORE, for the consumer whose aggregate runs
+        # `check-doctor-static` (freeze-driver ruling R92, 2026-10-17, part ii).
+        # Core ships that checker and the recipe resolves it through
+        # `LIVESPEC_CORE_PLUGIN_ROOT` or, locally, the installed plugin cache.
+        # The pod has NEITHER: /workspace is a `git init` + fetch and no plugin
+        # is installed, so the target failed with core's own "livespec core not
+        # found" on a tree that was green in CI. This is the same resolution the
+        # consumer's OWN CI job makes — check core out at the ref its
+        # `.livespec.jsonc` `compat.pinned` names, then point the recipe at that
+        # tree's `.claude-plugin` — so the gate and CI judge the tree against
+        # the same core build rather than two.
+        #
+        # NO CREDENTIAL IS PASSED IN FOR IT, and this container's lack of an env
+        # block is that statement: livespec core is public, the remote is the
+        # anonymous https form, and there is nothing here to leak or rotate. The
+        # two credential-reading aggregate members still read GH_TOKEN from the
+        # gate container's own optional Secret reference below.
+        #
+        # SHALLOW IS CORRECT HERE AND WRONG ABOVE, which is why only the
+        # fetch-tree container is held to a full fetch: nothing reads core's
+        # HISTORY — doctor's out-of-band-edits arm walks the GATED repository's
+        # history, in /workspace, which is fetched in full — and a full clone of
+        # core is two orders of magnitude more bytes on a pod whose cache is
+        # cold every run.
+        - name: fetch-livespec-core
+          image: @@IMAGE@@
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              git init --quiet /livespec-core
+              cd /livespec-core
+              git remote add origin "@@LIVESPEC_CORE_URL@@"
+              # `git fetch <ref>` rather than `clone --branch`: the pinned value
+              # is a TAG for a consumer that pins a release and a BRANCH for one
+              # that pins nothing, and this one form resolves either.
+              if ! git fetch --quiet --depth 1 origin "@@LIVESPEC_CORE_REF@@"; then
+                echo "FATAL: cannot fetch livespec core ref @@LIVESPEC_CORE_REF@@ from @@LIVESPEC_CORE_URL@@ — this is the ref the gated repository's .livespec.jsonc compat.pinned names" >&2
+                exit 1
+              fi
+              git checkout --quiet --detach FETCH_HEAD
+              # Fetched is not the same as USABLE. A ref that resolves to a tree
+              # without a plugin root leaves LIVESPEC_CORE_PLUGIN_ROOT pointing
+              # at nothing, and the consumer's own recipe would then report
+              # "livespec core not found" — the exact message this container
+              # exists to prevent, with no indication that the PIN is what is
+              # wrong. Fail here, where it names the ref.
+              if [ ! -d .claude-plugin ]; then
+                echo "FATAL: livespec core at @@LIVESPEC_CORE_REF@@ carries no .claude-plugin directory, so there is no plugin root to resolve" >&2
+                exit 1
+              fi
+          volumeMounts:
+            - name: livespec-core
+              mountPath: /livespec-core
       containers:
         - name: gate
           # Requirement 1: resolved by render-gate-job.sh from the GATED
@@ -249,6 +304,17 @@ spec:
             # which fails those two targets the same way a missing token does.
             - name: LIVESPEC_GATE_REPOSITORY
               value: "@@GATED_REPOSITORY@@"
+            # WHERE livespec core is, for a consumer whose aggregate runs
+            # `check-doctor-static` (ruling R92, part ii). The value is the
+            # `.claude-plugin` directory of the tree the init container above
+            # fetched, which is what this variable means everywhere else in the
+            # fleet: the consumer's own `just-check-doctor-static.sh` resolves
+            # `$LIVESPEC_CORE_PLUGIN_ROOT/scripts/bin/doctor_static.py`, and its
+            # CI job sets it to a core checkout's `.claude-plugin` the same way.
+            # Set unconditionally and inert for a consumer that runs no
+            # doctor-static target.
+            - name: LIVESPEC_CORE_PLUGIN_ROOT
+              value: "/livespec-core/.claude-plugin"
             # Requirement 4. The local lane derives nproc / 4, and `nproc` inside
             # a container reports the NODE's 32 threads regardless of this
             # container's cpu request — so an unset value would start 8 workers
@@ -302,6 +368,14 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+            # The core tree the init container fetched, at the path
+            # LIVESPEC_CORE_PLUGIN_ROOT above names. Without this mount that
+            # variable names an empty path and the checks that read it fail
+            # exactly as they did with no variable at all.
+            - name: livespec-core
+              mountPath: /livespec-core
       volumes:
         - name: workspace
+          emptyDir: {}
+        - name: livespec-core
           emptyDir: {}
