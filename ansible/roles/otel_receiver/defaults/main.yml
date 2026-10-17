@@ -1,0 +1,43 @@
+---
+# The persistent OTel receiver co-located with a host's Fabro servers
+# (livespec-dev-tooling-jvem). Off unless a host turns it on: a host without
+# Fabro servers exporting to the Docker bridge has nothing for it to receive.
+otel_receiver_enabled: false
+
+# The account the receiver runs as, and that account's home. Per-host.
+otel_receiver_user: ubuntu
+otel_receiver_group: ubuntu
+otel_receiver_home: /home/ubuntu
+
+# The environment file holding HONEYCOMB_INGEST_KEY_LIVESPEC. This role ONLY
+# refers to it from the unit and checks that it exists; it never writes, copies
+# or reads it. Per-host; empty is refused when the role is enabled.
+otel_receiver_env_file: ""
+
+# The livespec-orchestrator-beads-fabro RELEASE the receiver runs. The receiver
+# imports its OtelReceiver, exporter and attribute allowlist from this tree, so
+# this pin is what decides which span attributes reach Honeycomb. v0.210.0 is the
+# floor: older builds strip the Petri-era run_turn.* attributes.
+otel_receiver_orchestrator_remote: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+otel_receiver_orchestrator_version: v0.211.0
+otel_receiver_orchestrator_floor: "0.210.0"
+
+# Everything the role owns lives under these two directories. The clone is the
+# ROLE'S OWN, never fabro_server_host_checkout: that checkout is shared with a
+# live factory, and the fabro_server role leaves it exactly as it finds it.
+otel_receiver_install_root: "{{ otel_receiver_home }}/.local/share/livespec-otel-receiver"
+otel_receiver_orchestrator_dir: "{{ otel_receiver_install_root }}/orchestrator"
+otel_receiver_entry_point: "{{ otel_receiver_install_root }}/otel_receiver_daemon.py"
+otel_receiver_state_dir: "{{ otel_receiver_home }}/.local/state/livespec-otel-receiver"
+otel_receiver_python: /usr/bin/python3
+
+otel_receiver_unit_name: otel-receiver.service
+otel_receiver_unit_path: "/etc/systemd/system/{{ otel_receiver_unit_name }}"
+otel_receiver_restart_pending_marker: "{{ otel_receiver_state_dir }}/restart-pending"
+
+# Restarting the receiver drops the spans every Fabro instance on the host
+# exports while it is down (no run is killed or held). So a converge that changes
+# the receiver restarts it only when the operator passes
+# -e otel_receiver_restart_allowed=true inside an announced window; otherwise it
+# records the restart as pending and the next allowed run applies it.
+otel_receiver_restart_allowed: false

@@ -163,6 +163,16 @@ lan_ssh_fallback_must_stay_running:
   - fabro-server.service
   - fabro-server-candidate.service
 
+# --- otel_receiver ---
+# The account and environment file of the hand-installed unit this role
+# replaced (measured 2026-10-17). The env file holds the ingest key and is
+# provisioned outside the role.
+otel_receiver_enabled: true
+otel_receiver_user: cwoolley
+otel_receiver_group: cwoolley
+otel_receiver_home: /home/cwoolley
+otel_receiver_env_file: /home/cwoolley/.fabro/storage/otel-receiver.env
+
 # --- sandbox_storage ---
 # The former Steam disk (Fanxiang S101 4 TB SATA SSD, was NTFS "4TB SSD"),
 # wiped with the maintainer's confirmation on 2026-10-12 (work-item smrzsj).

@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+# Installed by livespec-dev-tooling ansible/roles/otel_receiver.
+[Unit]
+Description=livespec OTel receiver (persistent, co-located with fabro-server)
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/otel_receiver/HOST_VARS.md
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User={{ otel_receiver_user }}
+Group={{ otel_receiver_group }}
+Environment=HOME={{ otel_receiver_home }}
+Environment=LIVESPEC_OTEL_RECEIVER_ORCHESTRATOR_ROOT={{ otel_receiver_orchestrator_dir }}
+Environment=LIVESPEC_OTEL_RECEIVER_STATE_DIR={{ otel_receiver_state_dir }}
+EnvironmentFile={{ otel_receiver_env_file }}
+WorkingDirectory={{ otel_receiver_state_dir }}
+ExecStart={{ otel_receiver_python }} {{ otel_receiver_entry_point }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
