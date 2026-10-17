@@ -127,17 +127,35 @@ check_requirements() {
   return "${missing}"
 }
 
+# One container's own block out of the rendered manifest at $1, by name ($2).
+# Bounded by the next sibling `- name:` entry, so a claim about one container is
+# never satisfied by its neighbour's lines.
+container_block() {
+  awk -v want="$2" '
+    $0 ~ "^ *- name: " want "$" { inblock = 1; print; next }
+    inblock && /^ *- name: / { exit }
+    inblock { print }
+  ' "$1"
+}
+
 # The fetch check, used by BOTH case I and case K. Returns 0 iff the rendered
 # manifest at $1 fetches the tree $2 with ancestry AND a resolvable diff base.
 # COMMENT LINES ARE STRIPPED FIRST: the template explains at length why it is
 # not a `--depth 1` fetch, and prose about a flag must not read as the flag.
+#
+# THE `--depth` BAN IS SCOPED TO THE fetch-tree CONTAINER, which is the one this
+# requirement is about: the TREE UNDER TEST needs ancestry because eight
+# aggregate members judge `origin/master..HEAD`. A sibling init container
+# fetching a DEPENDENCY — livespec core, whose history nothing reads — is
+# legitimately shallow, and the scoping stays load-bearing because case K's
+# mutant reinstates `--depth 1` in THIS container and must still be caught.
 check_fetch_brings_range_and_master() {
   local f="$1" hash="$2" missing=0
   # NOT `... | grep -q`: under `pipefail` a `-q` downstream exits on its FIRST
   # match, the upstream grep takes SIGPIPE, and the pipeline reports 141 — so a
   # real match reads as no match, but only when the upstream is still writing.
   # That race passed here and failed inside the loaded commit aggregate.
-  if [ -n "$(grep -v '^[[:space:]]*#' "$f" | grep -F -- '--depth' || true)" ]; then
+  if [ -n "$(container_block "$f" fetch-tree | grep -v '^[[:space:]]*#' | grep -F -- '--depth' || true)" ]; then
     echo "    shallow: the initContainer still fetches with --depth"; missing=1
   fi
   grep -qF "+refs/gates/${hash}:refs/gates/${hash}" "$f" \

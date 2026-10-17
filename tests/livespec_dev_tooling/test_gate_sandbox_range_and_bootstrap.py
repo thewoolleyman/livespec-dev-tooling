@@ -27,6 +27,7 @@ research/003 sections D and E).
 from __future__ import annotations
 
 import subprocess
+from itertools import takewhile
 from pathlib import Path
 
 from livespec_dev_tooling import gate_remote_client
@@ -57,6 +58,29 @@ def _executable_lines() -> list[str]:
     its own explanation.
     """
     return [line for line in _template_lines() if not line.lstrip().startswith("#")]
+
+
+def _fetch_tree_lines() -> list[str]:
+    """The `fetch-tree` init container's own executable lines.
+
+    The `--depth` ban below is a property of THE FETCH OF THE TREE UNDER TEST,
+    which needs ancestry because eight aggregate members judge
+    `origin/master..HEAD`. A sibling init container fetching a DEPENDENCY whose
+    history nothing reads — livespec core, resolved at the consumer's pin — is
+    legitimately shallow, so the ban is read off this container alone. It stays
+    load-bearing: the renderer's own exit-test suite mutates THIS container back
+    to a `--depth 1` single-ref fetch and requires that the same check catch it.
+    """
+    lines = _executable_lines()
+    start = next(index for index, line in enumerate(lines) if line.strip() == "- name: fetch-tree")
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    body = takewhile(
+        lambda line: not (
+            line.strip().startswith("- name: ") and len(line) - len(line.lstrip()) == indent
+        ),
+        lines[start + 1 :],
+    )
+    return [lines[start], *body]
 
 
 # This repository's own gate recipes, in the order the gate container runs them.
@@ -131,7 +155,7 @@ def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> 
     can be walked and `git merge-base` has nothing to walk to — which is why the
     flag's absence is asserted rather than merely the refspecs' presence.
     """
-    shallow = [line for line in _executable_lines() if "--depth" in line]
+    shallow = [line for line in _fetch_tree_lines() if "--depth" in line]
     assert shallow == [], f"the gate fetch is still shallow: {shallow}"
     joined = "\n".join(_executable_lines())
     assert f'"+refs/gates/{_TREE_TOKEN}:refs/gates/{_TREE_TOKEN}"' in joined

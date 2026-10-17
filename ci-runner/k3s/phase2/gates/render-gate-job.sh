@@ -24,6 +24,7 @@
 #                      [--gated-repository OWNER/REPO]
 #                      [--source-url URL] [--cpu N] [--memory SIZE]
 #                      [--parallelism N] [--ttl-seconds N] [--job-name NAME]
+#                      [--livespec-core-ref REF]
 #                      [--check-suite 'RECIPE' ...]
 #
 # --repo defaults to the basename of --repo-root. --source-url defaults to the
@@ -49,6 +50,14 @@
 # accepts before the recipe name. The RECIPE the Job preflights is the first
 # token that is not an assignment, so `hook_gate=1 check` preflights `check`.
 #
+# --livespec-core-ref is the livespec CORE release the gate resolves inside the
+# pod, for a consumer whose aggregate runs `check-doctor-static` (R4.S7c part
+# ii, freeze-driver ruling R92). It DEFAULTS to the gated repository's own
+# `.livespec.jsonc` `compat.pinned` — the same field that repository's CI job
+# resolves core at, so the gate and CI judge the tree against one core build —
+# and to `master` for a consumer that pins nothing. Core is public, so no
+# credential is passed into the pod for it.
+#
 # --gated-repository is the github.com <owner>/<repo> the gate is judging, and
 # it is NOT the same thing as --repo (R4.S7 slice B, livespec-dev-tooling-rwmo.2).
 # --repo names the mirror and labels the Job; this names the FORGE REPOSITORY
@@ -64,7 +73,20 @@ TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
 
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; job_name=""
+livespec_core_ref=""
 check_suite=()
+
+# WHERE livespec CORE comes from, for the consumer whose aggregate runs
+# `check-doctor-static` (R4.S7c part ii, freeze-driver ruling R92 2026-10-17).
+# A constant rather than a flag because there is exactly one livespec core and
+# it is PUBLIC: the anonymous https form is what lets the pod resolve core
+# without being handed a credential, and a flag would be a way to repoint a gate
+# at another tree. WHICH REF is per consumer and is derived below.
+LIVESPEC_CORE_URL="https://github.com/thewoolleyman/livespec.git"
+# What a consumer that pins no livespec release gets — the same fallback its own
+# CI step takes when `.livespec.jsonc` carries no `pinned` field.
+LIVESPEC_CORE_REF_FALLBACK="master"
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root)         repo_root="$2"; shift 2 ;;
@@ -77,6 +99,7 @@ while [ $# -gt 0 ]; do
     --parallelism)       parallelism="$2"; shift 2 ;;
     --ttl-seconds)       ttl_seconds="$2"; shift 2 ;;
     --job-name)          job_name="$2"; shift 2 ;;
+    --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
@@ -130,6 +153,29 @@ if [ -z "${gated_repository}" ] && command -v git > /dev/null 2>&1; then
       ;;
   esac
 fi
+
+# --- the livespec core ref THIS consumer pins (R4.S7c part ii) ---------------
+# Derived from the gated clone's own `.livespec.jsonc` `compat.pinned`, which is
+# the SAME field the consumer's own CI job resolves core at — so the gate and CI
+# judge the tree against one core build rather than two. Read with the same
+# first-match grep that CI step uses rather than a JSON parser, because the file
+# is JSONC (comments) and the renderer must stay dependency-free.
+#
+# An ABSENT file or field is an ANSWER, not a refusal: the consumer pins
+# nothing and gets the same `master` fallback its CI step takes.
+if [ -z "${livespec_core_ref}" ] && [ -f "${repo_root}/.livespec.jsonc" ]; then
+  livespec_core_ref="$(grep -oE '"pinned"[[:space:]]*:[[:space:]]*"[^"]*"' "${repo_root}/.livespec.jsonc" \
+    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/')"
+fi
+[ -n "${livespec_core_ref}" ] || livespec_core_ref="${LIVESPEC_CORE_REF_FALLBACK}"
+# The value goes into the pod's shell script, so the character set is bounded
+# HERE rather than trusted — a git ref name is alphanumerics with `._/-` and
+# everything else is a way to write shell into a manifest.
+case "${livespec_core_ref}" in
+  *[!A-Za-z0-9._/-]*)
+    echo "FATAL: livespec core ref '${livespec_core_ref}' is not a plain git ref name" >&2
+    exit 2 ;;
+esac
 
 # --- requirement 1: the image comes from the gated repo's own workflow --------
 workflow="${repo_root}/.github/workflows/ci.yml"
@@ -262,6 +308,8 @@ substitute CPU               "${cpu}"
 substitute MEMORY            "${memory}"
 substitute PARALLELISM       "${parallelism}"
 substitute TTL_SECONDS       "${ttl_seconds}"
+substitute LIVESPEC_CORE_URL "${LIVESPEC_CORE_URL}"
+substitute LIVESPEC_CORE_REF "${livespec_core_ref}"
 substitute GATE_RECIPE_NAMES "${quoted_recipe_names}"
 substitute_block GATE_RECIPES "${gate_recipe_lines}"
 

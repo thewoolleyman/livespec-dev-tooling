@@ -83,6 +83,21 @@ _FALL_THROUGH_SUITE = (
 _PRE_PUSH_SCRIPT = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
 _LEFTHOOK = _REPO_ROOT / "lefthook.yml"
 
+# How the pod reaches livespec CORE, which a consumer running `check-doctor-static`
+# needs and a `git init` + fetch workspace does not have. The URL is the ANONYMOUS
+# https form of a PUBLIC repository — the one property that makes this resolvable
+# without handing the pod a credential — and the plugin root is the `.claude-plugin`
+# directory of the fetched tree, which is what `LIVESPEC_CORE_PLUGIN_ROOT` means
+# everywhere else in the fleet (the consumer's own `just-check-doctor-static.sh`
+# resolves `$LIVESPEC_CORE_PLUGIN_ROOT/scripts/bin/doctor_static.py`).
+_CORE_URL = "https://github.com/thewoolleyman/livespec.git"
+_CORE_PLUGIN_ROOT = "/livespec-core/.claude-plugin"
+_CORE_CONTAINER = "fetch-livespec-core"
+
+# What a consumer that pins no livespec release gets — the same fallback its own
+# CI step takes when `.livespec.jsonc` carries no `pinned` field.
+_CORE_REF_WHEN_UNPINNED = "master"
+
 # The two `kubectl get job --output json` payloads one run sees, in order: a Job
 # Kueue has not admitted yet, and then the condition that means the gate ran and
 # was RED. Conditions carry `status` as well as `type`, because a Job reports
@@ -102,14 +117,28 @@ exit 0
 """
 
 
-def _a_consumer_repository(*, root: Path, declaration: str) -> Path:
+def _a_consumer_repository(*, root: Path, declaration: str, core_pin: str | None = None) -> Path:
     """A fixture consuming repository, with the one workflow the renderer reads.
 
     `declaration` is the body of its `[tool.livespec_dev_tooling]` block, so a
     consumer that declares a gate suite and one that declares none differ by
     exactly that line and nothing else.
+
+    `core_pin` is the livespec release this consumer pins in its own
+    `.livespec.jsonc` `compat.pinned` — the same field its CI resolves core at.
+    `None` writes no `.livespec.jsonc` at all, which is the consumer that pins
+    nothing.
     """
     root.mkdir(parents=True, exist_ok=True)
+    if core_pin is not None:
+        _ = (root / ".livespec.jsonc").write_text(
+            "{\n"
+            '  "widget": {\n'
+            '    "compat": { "livespec": ">=0.1.0,<1.0.0", "pinned": "' + core_pin + '" }\n'
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
     workflow = root / ".github" / "workflows" / "ci.yml"
     workflow.parent.mkdir(parents=True)
     _ = workflow.write_text(
@@ -188,21 +217,53 @@ class _CannedWorldRealRenderer:
         return ""
 
 
-def _gate_container_script(*, manifest: str) -> list[str]:
-    """The gate container's own shell script, dedented out of the manifest.
+def _container_block(*, manifest: str, name: str) -> list[str]:
+    """One container's own YAML block, from its `- name:` line to its last line.
 
-    Sliced from `- name: gate` so the initContainer above — which runs its own
-    `set -euo pipefail` block — cannot contribute a line to an assertion about
-    what the AGGREGATE container runs. `next` raises when either marker is gone,
-    which is a defect in the rendered manifest rather than a state to report.
+    Bounded by INDENTATION rather than by the next `- name:` spelling, so the
+    block of the last container in a list ends where its list does. Every
+    assertion below is made of one container's lines alone: a claim about what
+    the gate container reads must not be satisfiable by an initContainer, and a
+    claim that an initContainer carries no credential must not be read off the
+    gate container's env a few lines later.
     """
     lines = manifest.splitlines()
-    start = next(index for index, line in enumerate(lines) if line.strip() == "- name: gate")
-    opener = next(index for index in range(start, len(lines)) if lines[index].strip() == "- |")
+    start = next(index for index, line in enumerate(lines) if line.strip() == f"- name: {name}")
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    body = takewhile(
+        lambda line: not line.strip() or len(line) - len(line.lstrip()) > indent,
+        lines[start + 1 :],
+    )
+    return [lines[start], *body]
+
+
+def _container_script(*, manifest: str, name: str) -> list[str]:
+    """One container's own shell script, dedented out of its block.
+
+    Sliced from that container's `- name:` line so a sibling — each of which
+    runs its own `set -euo pipefail` block — cannot contribute a line to an
+    assertion about this one. `next` raises when either marker is gone, which is
+    a defect in the rendered manifest rather than a state to report.
+    """
+    lines = _container_block(manifest=manifest, name=name)
+    opener = next(index for index, line in enumerate(lines) if line.strip() == "- |")
     indent = len(lines[opener]) - len(lines[opener].lstrip()) + 2
     pad = " " * indent
     body = takewhile(lambda line: not line.strip() or line.startswith(pad), lines[opener + 1 :])
     return [line[indent:] for line in body]
+
+
+def _env_value(*, manifest: str, container: str, variable: str) -> str:
+    """The literal value one container's env block gives `variable`.
+
+    Read off the container's own block, because an environment variable naming a
+    path is only true of the container that also MOUNTS that path.
+    """
+    lines = _container_block(manifest=manifest, name=container)
+    named = next(index for index, line in enumerate(lines) if line.strip() == f"- name: {variable}")
+    value = lines[named + 1].strip()
+    assert value.startswith("value:"), f"{variable} is not given a literal value: {value}"
+    return value.removeprefix("value:").strip().strip('"')
 
 
 def _recipes_run(*, manifest: str) -> list[str]:
@@ -214,7 +275,7 @@ def _recipes_run(*, manifest: str) -> list[str]:
     """
     return [
         line.strip()
-        for line in _gate_container_script(manifest=manifest)
+        for line in _container_script(manifest=manifest, name="gate")
         if line.strip().startswith("just ")
     ]
 
@@ -366,6 +427,68 @@ def test_a_consumer_that_declares_nothing_gets_the_shared_pre_push_sequence(
     assert _recipes_run(manifest=_rendered_for(repo_root=declaring)) == [f"just {_CONSUMER_RECIPE}"]
 
 
+def test_the_gate_job_resolves_livespec_core_at_the_consumers_pinned_release(
+    *, tmp_path: Path
+) -> None:
+    """The pod gets livespec CORE, at the consumer's pin, with no credential.
+
+    A consumer whose check aggregate runs `check-doctor-static` needs core
+    inside the pod: core ships the checker, and the recipe resolves it through
+    `LIVESPEC_CORE_PLUGIN_ROOT` or the installed plugin cache. The gate pod has
+    neither — `/workspace` is a `git init` + fetch and no plugin is installed —
+    so that target failed with core's own "livespec core not found" on a tree
+    that was green in CI (freeze-driver ruling R92, 2026-10-17, part ii).
+
+    THE PIN IS THE CONSUMER'S, which is why three fixtures are rendered rather
+    than one: a constant could satisfy any single arm and not the set. Each
+    consumer's `.livespec.jsonc` `compat.pinned` is the same field its CI
+    resolves core at, so the gate and CI judge the tree against the same core
+    build; a consumer that pins nothing gets the same `master` fallback its CI
+    step takes.
+
+    AND NO CREDENTIAL REACHES THE POD FOR IT. livespec core is public, so the
+    anonymous https remote is the whole mechanism: the init container declares
+    no env block at all, which is a stronger statement than the absence of one
+    token name — there is nothing there to leak and nothing to rotate. The two
+    credential-reading aggregate members still read their GH_TOKEN from the gate
+    container's own optional Secret reference, which this leaves untouched.
+    """
+    pinned = _a_consumer_repository(root=tmp_path / "pinned", declaration="", core_pin="v0.42.1")
+    other = _a_consumer_repository(root=tmp_path / "other", declaration="", core_pin="v9.99.0")
+    unpinned = _a_consumer_repository(root=tmp_path / "unpinned", declaration="")
+
+    manifest = _rendered_for(repo_root=pinned)
+    assert f"- name: {_CORE_CONTAINER}" in manifest, (
+        "the rendered gate Job has no init container fetching livespec core, so a "
+        "consumer running check-doctor-static cannot resolve it in the pod"
+    )
+
+    fetch = "\n".join(_container_script(manifest=manifest, name=_CORE_CONTAINER))
+    assert _CORE_URL in fetch
+    assert "v0.42.1" in fetch
+    assert "v9.99.0" in "\n".join(
+        _container_script(manifest=_rendered_for(repo_root=other), name=_CORE_CONTAINER)
+    )
+    assert _CORE_REF_WHEN_UNPINNED in "\n".join(
+        _container_script(manifest=_rendered_for(repo_root=unpinned), name=_CORE_CONTAINER)
+    )
+
+    assert (
+        _env_value(manifest=manifest, container="gate", variable="LIVESPEC_CORE_PLUGIN_ROOT")
+        == _CORE_PLUGIN_ROOT
+    )
+    gate = "\n".join(_container_block(manifest=manifest, name="gate"))
+    assert "mountPath: /livespec-core" in gate, (
+        "the gate container names a core plugin root it does not mount, so the "
+        "path is empty where its checks read it"
+    )
+
+    core_block = "\n".join(_container_block(manifest=manifest, name=_CORE_CONTAINER))
+    assert "env:" not in core_block
+    assert "secretKeyRef" not in core_block
+    assert "@github.com" not in core_block
+
+
 def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[str]]:
     """Run the rendered pod script here, against a `just` that provides nothing.
 
@@ -380,7 +503,9 @@ def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[st
     stub.chmod(0o755)
     log = root / "invocations.log"
     script = root / "gate-script.sh"
-    _ = script.write_text("\n".join(_gate_container_script(manifest=manifest)), encoding="utf-8")
+    _ = script.write_text(
+        "\n".join(_container_script(manifest=manifest, name="gate")), encoding="utf-8"
+    )
     env = dict(os.environ)
     env.update(
         {
