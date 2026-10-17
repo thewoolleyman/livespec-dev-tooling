@@ -134,7 +134,7 @@ def publish(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         # Written only AFTER the host returns, so a snapshot interrupted
         # half way is retaken rather than trusted.
         write_durable(path=taken, data=run)
-    env.host.install_packages(inputs=env.paths.inputs_dir(run=run))
+    _ = env.host.install_packages(inputs=env.paths.inputs_dir(run=run))
     if not env.host.condition_check_passed():
         return GuardOutcome(
             operation="publish",

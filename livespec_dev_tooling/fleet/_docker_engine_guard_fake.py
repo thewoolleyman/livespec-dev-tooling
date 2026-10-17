@@ -135,8 +135,9 @@ class FakeHost:
         destination.mkdir(parents=True, exist_ok=True)
         _ = (destination / "iptables-save").write_text("# snapshot\n", encoding="utf-8")
 
-    def install_packages(self, *, inputs: Path) -> None:
+    def install_packages(self, *, inputs: Path) -> str | None:
         self._record(name="install_packages", detail=(str(inputs),))
+        return self.package_refusal
 
     def condition_check_passed(self) -> bool:
         self._record(name="condition_check_passed")

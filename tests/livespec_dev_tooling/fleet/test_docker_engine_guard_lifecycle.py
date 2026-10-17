@@ -283,6 +283,46 @@ def test_the_fake_host_answers_the_admission_clock_and_package_seams(
     assert fake.calls_named(name="set_owner_root")[0].detail == (str(tmp_path / "run"),)
 
 
+# The refusal the package fence answers when `dpkg --audit` still names a
+# package after the install landed the audited set. Measured on poweredge
+# guard-vm-0 at FAULTS B-06, 2026-10-17: a SIGKILL during `dpkg -i` left
+# `man-db` -- whose trigger that very transaction had activated -- half
+# configured, which on a real host blocks apt until somebody intervenes.
+_PACKAGE_REFUSAL = "dpkg --audit names ('man-db',) after `dpkg -i`, so dpkg is still interrupted"
+
+
+def test_the_fake_host_answers_the_install_seam_with_the_refusal_it_was_told(
+    tmp_path: Path,
+) -> None:
+    """The install seam ANSWERS: the package step's refusal, or nothing to report.
+
+    FAULTS B-06: the real seam computed its step's refusal and discarded
+    it, so `publish` had nothing to read and recorded `published` over a
+    host whose `dpkg --audit` still named a half-configured package. What
+    left it nowhere to put that answer was the PROTOCOL, so the answer is
+    what the seam now carries -- on this fake and on the real host alike.
+
+    Both answers are driven. The refusal is the interesting one; `None`
+    is the one every other lifecycle test in this file rests on, and a
+    seam that answered a stale refusal to the next caller would break
+    them all.
+    """
+    assert _FAKE_PATH.is_file()
+    assert _HOSTOPS_PATH.is_file()
+    fake = _fake(root=tmp_path)
+    inputs = tmp_path / "inputs"
+
+    assert fake.install_packages(inputs=inputs) is None
+
+    fake.package_refusal = _PACKAGE_REFUSAL
+
+    assert fake.install_packages(inputs=inputs) == _PACKAGE_REFUSAL
+    assert [call.detail for call in fake.calls_named(name="install_packages")] == [
+        (str(inputs),),
+        (str(inputs),),
+    ]
+
+
 def _paths(*, root: Path) -> Any:
     """`GuardPaths` for the two state roots `_fake` also uses."""
     model = importlib.import_module(_MODEL_MODULE)
