@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # FAULTS B-01 (reboot before the commit point) and B-02 (reboot after `reserve`, and
-# again after `started`; the next controller attaches and rolls back).
+# again after `started`). Revision 7's H1 removed G8's automatic takeover, so the
+# next controller is refused (I1) and the operator's recover rolls back (I2).
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 I=1
@@ -27,10 +28,14 @@ echo "######## restore guard-vm-$I"; restore $I || exit 1
 echo; echo "################ B-01 / B-02b: reboot at started"
 reboot_at started b01
 echo "######## after reboot (B-01 pass: no unit started, no Docker rule)"; after_reboot
-echo "######## next controller converges (B-02 pass: attaches and rolls back)"; converge $I tmp/faults/b02b.converge.log
+echo "######## next controller converges (B-02 pass: refused, run untouched)"; converge $I tmp/faults/b02b.converge.log
+after_reboot
+echo "######## operator recovers the run (B-02 pass: rolled back)"; converge $I tmp/faults/b02b.recover.log -e docker_engine_recover=$RUN
 rolled_back_check $I
 echo; echo "################ B-02a: reboot after reserve"
 reboot_at reserved b02a
 echo "######## after reboot"; after_reboot
-echo "######## next controller converges"; converge $I tmp/faults/b02a.converge2.log
+echo "######## next controller converges (refused, run untouched)"; converge $I tmp/faults/b02a.converge2.log
+after_reboot
+echo "######## operator recovers the run (rolled back)"; converge $I tmp/faults/b02a.recover.log -e docker_engine_recover=$RUN
 rolled_back_check $I
