@@ -22,6 +22,7 @@ dead-man, and the `stop_unit` calls that retire it.
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -261,4 +262,50 @@ def test_a_dead_man_firing_on_an_already_rolled_back_run_retires_its_own_timer(
     assert outcome.exit_code == 0
     assert _stopped_units(fake=host) == (commit.deadman_timer_unit(run="run-a"),)
     assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "rolled-back"
+    assert host.calls_named(name="run_phase_child") == ()
+
+
+def _publish_marker(*, root: Path, run: str) -> None:
+    """Publish a commit marker naming `run`, the way `confirm` would."""
+    state = importlib.import_module(_STATE_MODULE)
+    state.write_durable(path=_paths(root=root).marker, data=json.dumps({"run": run, "digest": "d"}))
+
+
+def test_a_dead_man_firing_on_a_run_the_commit_marker_names_retires_its_timer(
+    tmp_path: Path,
+) -> None:
+    """Specification "Dispatch table", the `rollback` row's marker-names-this-run cell.
+
+    A committed run is finished and must never be rolled back, which is
+    why the table answers this firing `noop` rather than admitting it.
+    `confirm`'s post-commit steps stop the same timer, LAST, for exactly
+    that reason -- so on the ordinary path a committed run has no
+    dead-man left.
+
+    A `confirm` killed between the commit marker and that stop is the
+    path this covers, and the window is real: the marker is written
+    before the phase moves, by design R1, so a host can be committed
+    with its dead-man still in the air and nothing but a later firing
+    able to notice. Every such firing is decided `noop` and returned,
+    which left the timer alive and the host classified busy forever.
+
+    The retirement reads the DECISION rather than the phase, which is
+    what makes one arm cover both terminal cells: the marker outranks
+    the phase, so a committed run's phase may still read anything at
+    all. Here it reads `committed` -- the phase a run holds between the
+    commit rename and the post-commit steps, which is precisely where a
+    killed `confirm` leaves it.
+    """
+    commit = importlib.import_module(_COMMIT_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    _record_phase(root=tmp_path, run="run-a", phase="committed")
+    _publish_marker(root=tmp_path, run="run-a")
+
+    outcome, host = _deadman_firing(root=tmp_path)
+
+    assert outcome.verdict == "noop"
+    assert outcome.exit_code == 0
+    assert _stopped_units(fake=host) == (commit.deadman_timer_unit(run="run-a"),)
+    assert state.read_marker(paths=_paths(root=tmp_path), run="run-a") == "self"
+    assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "committed"
     assert host.calls_named(name="run_phase_child") == ()
