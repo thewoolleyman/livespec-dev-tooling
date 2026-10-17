@@ -38,14 +38,26 @@
   become: true
   changed_when: false
 
-- name: Require both services inert and never started
+- name: Require both services inert and not started by this install
+  # Never started BY THIS INSTALL: the start timestamp is what it was just
+  # before the publish (zero on a fresh boot; the previous run's on a re-run
+  # inside one boot, measured 2026-10-17 on guard-vm-3), and a condition
+  # result of `yes` is accepted only when it, too, is unchanged from then.
+  vars:
+    docker_engine_before_lines: >-
+      {{ (docker_engine_services_before_publish.results
+          | selectattr('item', 'equalto', item.item) | first).stdout_lines }}
+    docker_engine_start_before: >-
+      {{ docker_engine_before_lines | select('match', '^ExecMainStartTimestampMonotonic=') | first }}
   ansible.builtin.assert:
     that:
       - "'ActiveState=inactive' in item.stdout_lines"
-      - "'ExecMainStartTimestampMonotonic=0' in item.stdout_lines"
-      - "'ConditionResult=yes' not in item.stdout_lines"
-    fail_msg: "{{ item.item }} is not inert after the install: {{ item.stdout_lines }}"
-    success_msg: "{{ item.item }} is inert and never started"
+      - docker_engine_start_before in item.stdout_lines
+      - "'ConditionResult=yes' not in item.stdout_lines or 'ConditionResult=yes' in docker_engine_before_lines"
+    fail_msg: >-
+      {{ item.item }} is not inert after the install: {{ item.stdout_lines }}
+      (before the install: {{ docker_engine_before_lines }})
+    success_msg: "{{ item.item }} is inert and was not started by the install"
   loop: "{{ docker_engine_installed_services.results }}"
   loop_control:
     label: "{{ item.item }}"
