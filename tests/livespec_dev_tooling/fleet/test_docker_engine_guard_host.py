@@ -23,6 +23,7 @@ tests already use.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import subprocess
@@ -66,6 +67,10 @@ _STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _PACKAGE_AUDIT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_audit"
 _PACKAGE_RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_runner"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
+# Reached from here only for the one assertion that is about the real
+# host and an OPERATION together: what `publish` does with the package
+# step's refusal, which neither side can answer alone.
+_GUARD_MODULE = "livespec_dev_tooling.fleet.docker_engine_guard"
 
 # What the guarded host's two address families look like BEFORE any Docker
 # package exists: the k3s and Tailscale rule sets the snapshot has to
@@ -1965,6 +1970,7 @@ def test_the_rollback_phase_child_completes_only_on_a_zero_exit(
 
 _INSTALL_PACKAGE = "docker-ce"
 _INSTALL_VERSION = "5:28.0.1-1~ubuntu.24.04~noble"
+_INSTALL_DEB = "docker-ce.deb"
 
 
 @dataclass(kw_only=True)
@@ -1976,14 +1982,35 @@ class _PackageCommands:
     working directory, environment additions -- rather than an argv and
     a number, because the one mutation it makes has to ride a fenced
     environment.
+
+    `answers` pairs an argv PREFIX with the output measured for it, and
+    an unmatched command answers nothing -- which is what makes the
+    DEFAULT bus refuse at the fence's very first read. A prefix is the
+    right key because the fence appends the pinned specs and the archive
+    paths to argvs it otherwise fixes.
     """
 
+    answers: dict[tuple[str, ...], str] = field(default_factory=dict)
     commands: list[Any] = field(default_factory=list)
 
     def __call__(self, *, command: Any) -> Any:
         self.commands.append(command)
         package_runner = importlib.import_module(_PACKAGE_RUNNER_MODULE)
-        return package_runner.CommandOutput(returncode=0, stdout="")
+        return package_runner.CommandOutput(returncode=0, stdout=self._answer(command=command))
+
+    def _answer(self, *, command: Any) -> str:
+        for prefix, stdout in self.answers.items():
+            if tuple(command.argv[: len(prefix)]) == prefix:
+                return stdout
+        return ""
+
+    def argvs_with(self, *, argv: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
+        """Every recorded command whose argv begins with `argv`, in order."""
+        return tuple(
+            tuple(command.argv)
+            for command in self.commands
+            if tuple(command.argv[: len(argv)]) == argv
+        )
 
 
 def _package_inputs(*, root: Path) -> Path:
@@ -1998,7 +2025,7 @@ def _package_inputs(*, root: Path) -> Path:
                     {
                         "package": _INSTALL_PACKAGE,
                         "version": _INSTALL_VERSION,
-                        "deb": "docker-ce.deb",
+                        "deb": _INSTALL_DEB,
                         "scripts": {},
                     }
                 ],
@@ -2060,3 +2087,136 @@ def test_the_package_seam_runs_the_fenced_step_on_the_runs_own_inputs(
     )
     assert fence.commands[0].timeout_seconds == package_runner.COMMAND_TIMEOUT_SECONDS
     assert [tuple(command.argv)[:2] for command in fence.commands].count(("dpkg", "-i")) == 0
+
+
+# The bytes this run's cache holds for the audited archive. Arbitrary in
+# themselves; what matters is that the recorded archive-index stanza
+# carries THEIR digest, so the audit's comparison is a comparison.
+_AUDITED_DEB = b"the audited docker-ce archive, as this run's cache holds it"
+
+# `dpkg-deb -I <deb>`'s control-archive listing for an archive carrying no
+# maintainer script at all: the unmarked data members and nothing else.
+# The ASTERISK an executable member carries is what the audit's scan
+# matches, so this listing yields the empty script set the committed
+# allowlist declares for this package.
+_CONTROL_LISTING = (
+    " new Debian package, version 2.0.\n"
+    " size 20418432 bytes: control archive=4096 bytes.\n"
+    "     503 bytes,    13 lines      control              \n"
+    "   18274 bytes,   266 lines      md5sums              \n"
+)
+
+# `apt-get -s install`'s recorded output on a host that ALREADY holds the
+# audited package at the audited version -- the resumed-publish case. apt
+# reports it as already the newest version and emits no `Inst` line at
+# all, so the simulation clears with nothing left for the install to do.
+_SIMULATION_SETTLED = (
+    "NOTE: This is only a simulation!\n"
+    "Reading package lists...\n"
+    "Building dependency tree...\n"
+    f"{_INSTALL_PACKAGE} is already the newest version ({_INSTALL_VERSION}).\n"
+    "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n"
+)
+
+# `dpkg-query -W`'s recorded output for that host, in the format the fence
+# asks for: the audited package SETTLED, which is what sends the step down
+# the path that skips the issuing.
+_QUERY_SETTLED = f"{_INSTALL_PACKAGE} {_INSTALL_VERSION} installed\n"
+
+# `dpkg --audit`'s recorded output naming what the interrupted install left
+# behind. The shape is load-bearing: the headers wrap onto unindented
+# continuation lines and only the package rows are indented, which is the
+# whole of how the names are picked out of it.
+_AUDIT_NAMES_MAN_DB = (
+    "The following packages have been unpacked but not yet configured.\n"
+    "They must be configured using dpkg --configure or the configure\n"
+    "menu option in dselect for them to work:\n"
+    " man-db                        a package this host carries\n"
+    "\n"
+)
+
+
+def _settled_fence(*, cache: Path) -> _PackageCommands:
+    """The fence's bus for FAULTS B-06's dpkg database, as the step reads it.
+
+    The simulation clears with nothing to install; the archive in this
+    run's cache matches the index entry for it and carries no maintainer
+    script; dpkg holds the audited package SETTLED -- and `dpkg --audit`
+    still names `man-db`, which no guard run recorded as intended
+    because the interrupted install's own trigger left it half
+    configured.
+    """
+    cache.mkdir(parents=True, exist_ok=True)
+    _ = (cache / _INSTALL_DEB).write_bytes(_AUDITED_DEB)
+    return _PackageCommands(
+        answers={
+            ("apt-get", "-s"): _SIMULATION_SETTLED,
+            ("apt-cache", "show"): (
+                f"Package: {_INSTALL_PACKAGE}\n"
+                f"Version: {_INSTALL_VERSION}\n"
+                f"SHA256: {hashlib.sha256(_AUDITED_DEB).hexdigest()}\n"
+            ),
+            ("dpkg-deb", "-f"): f"{_INSTALL_VERSION}\n",
+            ("dpkg-deb", "-I"): _CONTROL_LISTING,
+            ("dpkg-query",): _QUERY_SETTLED,
+            ("dpkg", "--audit"): _AUDIT_NAMES_MAN_DB,
+        }
+    )
+
+
+def test_a_resumed_publish_refuses_on_the_dpkg_audit_its_settled_install_left(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the step's refusal reaches the operation.
+
+    FAULTS B-06 on poweredge guard-vm-0, 2026-10-17, end to end against
+    the REAL host -- the composition neither side can answer alone. The
+    publish unit and dpkg were SIGKILLed during `dpkg -i`; every audited
+    package ended settled, so the `recover` that resumed the publish
+    took the step's settled path; and `dpkg --audit` still named
+    `man-db`, whose trigger that install had activated and which no
+    guard run recorded as intended. The step computed exactly that
+    refusal. The seam returned `None`, so `publish` never saw it,
+    the condition check passed over the units the install HAD landed,
+    and the run was recorded `published` while a real host's apt and
+    unattended-upgrades stayed blocked.
+
+    Driven through `run_operation` from the records a resumed publish
+    finds on disk -- the reservation, the phase `publishing`, a snapshot
+    already taken -- so nothing is re-snapshotted and the package step
+    is the one mutation left. The condition bus is the PASSING one on
+    purpose: that is the state this fault lives in, and a bus that
+    failed the check would refuse for its own reason and let the
+    regression through.
+    """
+    guard = importlib.import_module(_GUARD_MODULE)
+    host_module = importlib.import_module(_HOST_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    paths = _paths(root=tmp_path)
+    run_dir = paths.run_dir(run="run-a")
+    _ = _package_inputs(root=run_dir)
+    fence = _settled_fence(cache=run_dir / "cache")
+    commands = _conditions_bus(root=tmp_path)
+    state.write_durable(path=paths.reservation, data="run-a")
+    state.record_phase(paths=paths, run="run-a", phase="publishing")
+    state.write_durable(path=paths.snapshot_taken_path(run="run-a"), data="run-a")
+    host = host_module.RealHost(paths=paths, runner=commands, package_runner=fence)
+
+    outcome = guard.run_operation(
+        operation="publish", run="run-a", env=state.GuardEnv(paths=paths, host=host)
+    )
+
+    assert outcome.verdict == "refuse"
+    assert "man-db" in outcome.reason
+    assert outcome.exit_code == 1
+    assert state.read_phase(paths=paths, run="run-a") == "publishing"
+    # The step ran over THIS run's committed inputs: design R7's
+    # provenance record landed in this run's own directory.
+    recorded = json.loads((run_dir / "intended.json").read_text(encoding="utf-8"))
+    assert recorded["additions"] == [f"{_INSTALL_PACKAGE}={_INSTALL_VERSION}"]
+    # The host already held the audited set, so no transaction was
+    # issued over it -- the refusal is all this resumed publish produced.
+    assert fence.argvs_with(argv=("dpkg", "-i")) == ()
+    # And the condition check never ran. Its passing verdict is what the
+    # discarded refusal used to be overruled by.
+    assert commands.argvs_with(flag="Conditions") == ()
