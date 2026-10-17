@@ -31,12 +31,18 @@ _RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_runner
 _RUNNER_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_package_runner.py")
 _AUDIT_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_package_audit.py")
 _LEFTOVERS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_package_leftovers.py")
+_REUNPACK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_package_reunpack.py")
 _PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
 
 # The versions measured on the gmktec host on 2026-10-15, and the archive
 # file names `apt-get download` writes for them.
 _ENGINE = ("docker.io", "29.1.3-0ubuntu4.1")
 _SHIM = ("containerd", "2.2.2-0ubuntu1.1")
+
+# The architecture every audited archive and every dpkg row here carries.
+# It is a field of the match the re-unpack makes rather than a detail of
+# the file name, so it is named once and read from both sides.
+_ARCH = "amd64"
 
 # What stands in for the downloaded archives. The bytes themselves are
 # arbitrary; what matters is that the recorded archive-index stanza and the
@@ -81,7 +87,7 @@ def _config_dirs(*, etc: Path) -> tuple[Path, ...]:
 
 def _deb_name(*, package: str, version: str) -> str:
     """The archive file name `apt-get download` writes for one allowlist row."""
-    return f"{package}_{version}_amd64.deb"
+    return f"{package}_{version}_{_ARCH}.deb"
 
 
 def _control_listing(*, scripts: tuple[str, ...]) -> str:
@@ -120,6 +126,35 @@ def _control_listings() -> dict[str, str]:
     }
 
 
+def _identity_stanza(*, package: str, version: str) -> str:
+    """`dpkg-deb -f <deb> Package Version Architecture`'s recorded output.
+
+    Asked for MORE than one field, `dpkg-deb -f` prints `Field: value`
+    lines rather than the bare value a single field yields — and it
+    prints them in the order the CONTROL FILE carries them rather than
+    the order they were asked for. That is why the recorded shape here
+    leads with `Architecture` in the middle: a reader indexing the answer
+    by POSITION would pass against a stanza it had dictated the order of
+    and fail against a real archive.
+    """
+    return f"Package: {package}\nArchitecture: {_ARCH}\nVersion: {version}\n"
+
+
+def _control_stanzas() -> dict[str, str]:
+    """Each audited archive's identity stanza, at the audited version.
+
+    The DEFAULT for every runner, because the re-unpack matches the
+    leftover against these: a test that drives a MISMATCH by overriding
+    one is the test that proves the three-field comparison happens.
+    """
+    return {
+        _deb_name(package=package, version=version): _identity_stanza(
+            package=package, version=version
+        )
+        for package, version in (_ENGINE, _SHIM)
+    }
+
+
 def _index_stanza(*, package: str, version: str, digest: str) -> str:
     """One `apt-cache show` stanza, in the shape the archive index carries it."""
     return (
@@ -140,6 +175,20 @@ _CONTROL_READ = ("dpkg-deb", "-I")
 _LISTING_ARGC = 3
 
 
+# The two `dpkg-deb -f` reads, and how many argv tokens the second one
+# carries. The audit asks for ONE field (`Version`) and gets the bare
+# value; the re-unpack asks for THREE (`Package Version Architecture`)
+# and gets a stanza. Exactly as with the control reads above, the two
+# share every token a prefix can match and differ only in ARITY.
+_FIELD_READ = ("dpkg-deb", "-f")
+_IDENTITY_ARGC = 6
+
+# The leftover's architecture, read one package at a time: the only
+# `dpkg-query` the fence makes that NAMES a package, so the token count
+# is again what tells it from the whole-table read every test queues.
+_ARCH_QUERY_ARGC = 5
+
+
 @dataclass(kw_only=True)
 class _RecordedRunner:
     """The one injectable runner, answering RECORDED output and recording each call.
@@ -150,14 +199,19 @@ class _RecordedRunner:
     the fence runs on both sides of the install answers the host before
     the engine landed and then the host after it.
 
-    `listings` is keyed by archive file name rather than by a prefix,
-    because the control-archive listing is the one answer no prefix can
-    select — see `_CONTROL_READ` above.
+    `listings` and `identities` are keyed by archive file name rather
+    than by a prefix, because the control-archive listing and the
+    identity stanza are the answers no prefix can select — see
+    `_CONTROL_READ` and `_FIELD_READ` above. `architectures` is keyed by
+    PACKAGE name and answers `_ARCH` for anything it does not carry, so
+    only a test driving an architecture mismatch has to say anything.
     """
 
     result: Any
     outputs: list[tuple[tuple[str, ...], list[str]]] = field(default_factory=list)
     listings: dict[str, str] = field(default_factory=_control_listings)
+    identities: dict[str, str] = field(default_factory=_control_stanzas)
+    architectures: dict[str, str] = field(default_factory=dict)
     calls: list[Any] = field(default_factory=list)
 
     def __call__(self, *, command: Any) -> Any:
@@ -165,6 +219,14 @@ class _RecordedRunner:
         if tuple(command.argv[:2]) == _CONTROL_READ and len(command.argv) == _LISTING_ARGC:
             return self.result(
                 returncode=0, stdout=self.listings.get(Path(command.argv[2]).name, "")
+            )
+        if tuple(command.argv[:2]) == _FIELD_READ and len(command.argv) == _IDENTITY_ARGC:
+            return self.result(
+                returncode=0, stdout=self.identities.get(Path(command.argv[2]).name, "")
+            )
+        if command.argv[0] == "dpkg-query" and len(command.argv) == _ARCH_QUERY_ARGC:
+            return self.result(
+                returncode=0, stdout=self.architectures.get(command.argv[4], f"{_ARCH}\n")
             )
         for prefix, queued in self.outputs:
             if tuple(command.argv[: len(prefix)]) == prefix:
@@ -191,6 +253,23 @@ docker-compose-v2  not-installed
 containerd 2.2.2-0ubuntu1.1 installed
 docker.io 29.1.3-0ubuntu4.1 installed
 """
+
+
+# The table a kill during `dpkg -i`'s UNPACK leaves, which is FAULTS B-06
+# and M-04 measured on poweredge guard-vm-0 and guard-vm-2 on 2026-10-17:
+# the shim this transaction had already unpacked, and the engine
+# `half-installed` — the state dpkg documents as needing reinstallation
+# and refuses to configure.
+_QUERY_INTERRUPTED_UNPACK = (
+    f"{_QUERY_BEFORE}{_SHIM[0]} {_SHIM[1]} unpacked\n{_ENGINE[0]} {_ENGINE[1]} half-installed\n"
+)
+
+# The same table once the re-unpack moved the engine to `unpacked`, which
+# is the state `dpkg --configure` can complete. Proven on guard-vm-1 the
+# same evening.
+_QUERY_RE_UNPACKED = (
+    f"{_QUERY_BEFORE}{_SHIM[0]} {_SHIM[1]} unpacked\n{_ENGINE[0]} {_ENGINE[1]} unpacked\n"
+)
 
 
 # `apt-get -s install`'s recorded output for the audited set on a host that
@@ -438,6 +517,80 @@ def _leftover_outputs(*, result: Any, flagged: tuple[str, ...], query: str) -> _
             *_fenced_outputs(),
         ],
     )
+
+
+def _interrupted_unpack_outputs(*, result: Any, table: str) -> _RecordedRunner:
+    """The recorded host a kill during `dpkg -i`'s unpack of the engine left.
+
+    `table` is what `dpkg-query` answers from the SECOND read on, so a
+    test can say whether the re-unpack took: the first two answers are
+    the interrupted table — the versions the audit relied on, and the
+    same table re-read immediately before the mutation — and everything
+    after them is `table`. The queue therefore holds the same answer for
+    the re-read the recovery makes and for the post-install read, which
+    is what keeps the shape independent of how many times the step asks.
+
+    The simulation is the SETTLED one: dpkg already holds a row for both
+    audited packages, so apt reports each as already the newest version
+    and emits no `Inst` line at all.
+    """
+    return _RecordedRunner(
+        result=result,
+        outputs=[
+            (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+            (
+                ("dpkg", "--audit"),
+                [_audit_report(packages=(_ENGINE[0], _SHIM[0])), ""],
+            ),
+            (("dpkg-query",), [_QUERY_INTERRUPTED_UNPACK, _QUERY_INTERRUPTED_UNPACK, table]),
+            *_fenced_outputs(),
+        ],
+    )
+
+
+def test_the_package_step_re_unpacks_a_half_installed_leftover_from_its_archive(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the re-unpack, before any `dpkg --configure`.
+
+    FAULTS B-06 on poweredge guard-vm-0 and M-04 on guard-vm-2,
+    2026-10-17 against release v1.112.10: the publish unit and dpkg were
+    SIGKILLed while `dpkg -i` UNPACKED docker.io, which left it
+    `half-installed` with its list and md5sums control files missing.
+    dpkg cannot configure that state — it answers `package docker.io is
+    not ready for configuration / cannot configure (current status
+    'half-installed')` and exits 1 — so a recovery aiming `--configure`
+    at it could never clear it; and because the step may issue `dpkg -i`
+    only over an EMPTY `dpkg --audit`, every later run on that host
+    refused identically and rolled back.
+
+    What clears it is re-unpacking the package's own audited archive,
+    proven on guard-vm-1 the same evening. The archive is matched to the
+    leftover on package name, version and architecture, and the unpack
+    runs BEFORE the `dpkg --configure` the rest of the recovery issues,
+    because the state that configure is aimed at is the one the unpack
+    produces.
+    """
+    assert _REUNPACK_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    runner = _interrupted_unpack_outputs(
+        result=runner_module.CommandOutput, table=_QUERY_RE_UNPACKED
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    unpacked = _calls_named(runner=runner, argv=("dpkg", "--unpack"))
+    assert len(unpacked) == 1
+    assert tuple(unpacked[0].argv) == (
+        "dpkg",
+        "--unpack",
+        str(tmp_path / "cache" / _deb_name(package=_ENGINE[0], version=_ENGINE[1])),
+    )
+    configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
+    assert runner.calls.index(unpacked[0]) < runner.calls.index(configured[0])
 
 
 def test_the_package_step_installs_exactly_the_audited_debs_under_the_frontend_lock(
