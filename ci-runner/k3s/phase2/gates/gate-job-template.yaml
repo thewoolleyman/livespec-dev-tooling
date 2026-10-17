@@ -207,10 +207,12 @@ spec:
           # that repository's `gate_check_suite` declaration — or, when it
           # declares none, from the shared pre-push SEQUENCE its local
           # fall-through runs: the worktree-pack install, the
-          # commit-refuse-hook install, and `hook_gate=1 check` (freeze-driver
-          # ruling R92, 2026-10-17; a single `check` was that default until
-          # then, and the two missing installs plus the missing `hook_gate=1`
-          # reddened four targets on a tree green in CI).
+          # commit-refuse-hook install, and the one recipe that hook calls,
+          # `check-pre-push` (freeze-driver rulings R92 and R100, 2026-10-17; a
+          # single `check` was that default before R92, and the two missing
+          # installs reddened members on a tree green in CI, while R92's own
+          # `hook_gate=1 check` spelling then died in every consumer that does
+          # not declare that `just` variable).
           # They are NOT a constant here, and that is the
           # whole point of the slice that rewrote this block
           # (livespec-dev-tooling-saxz): the command used to be a fixed list of

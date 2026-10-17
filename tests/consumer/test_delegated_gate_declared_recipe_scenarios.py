@@ -59,28 +59,30 @@ _ORIGIN = "git@github.com:acme/widget.git"
 # livespec-dev-tooling recipe could not produce it by accident.
 _CONSUMER_RECIPE = "verify"
 
-# The recipe that is livespec-dev-tooling's OWN and NO other repository's — the
-# one survivor of the four-recipe constant the pod command used to be. The other
-# three are the SHARED pre-push sequence every fleet consumer runs, and are the
-# default below (freeze-driver ruling R92, 2026-10-17); `warm-typecheck` is this
-# repository's alone, so it may still never appear in another repository's Job.
-_OUR_OWN_RECIPES = ("warm-typecheck",)
+# The invocations that are livespec-dev-tooling's OWN and NO other
+# repository's — the two survivors of the four-recipe constant the pod command
+# used to be. `warm-typecheck` exists in no other repository's justfile, and
+# `hook_gate=1 check` overrides a `just` variable only this justfile DECLARES
+# (`export hook_gate := ""`), which `just` refuses to accept from the command
+# line anywhere else. Neither may ever appear in another repository's Job.
+_OUR_OWN_RECIPES = ("warm-typecheck", "hook_gate=1 check")
 
 # What a consuming repository that declares nothing gets: the SHARED pre-push
 # sequence its own local fall-through runs — the pre-push hook's pack install,
-# the commit-refuse-hook install, and the hook-gated aggregate the shared
-# `scripts/just/check-pre-push.sh` ends in. Each entry is read back out of the
-# file that owns it by the helpers below, so the default and the sequence it
-# mirrors cannot drift apart silently.
+# the commit-refuse-hook install, and the ONE recipe that hook then calls.
+# Each entry is read back out of the file that owns it by the helpers below, so
+# the default and the sequence it mirrors cannot drift apart silently.
 _FALL_THROUGH_SUITE = (
     "install-worktree-pack",
     "install-commit-refuse-hooks",
-    "hook_gate=1 check",
+    "check-pre-push",
 )
 
-# The shared pre-push script and the hook that runs it — the two files the
-# default above mirrors, read as text so a moved step fails HERE.
-_PRE_PUSH_SCRIPT = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
+# The hook that runs the pre-push sequence the default above mirrors, read as
+# text so a moved step fails HERE. It is the lefthook block and NOT this
+# repository's own `scripts/just/check-pre-push.sh`: the RECIPE NAME is what the
+# fleet shares, while the script behind it is per repository (freeze-driver
+# ruling R100, 2026-10-17).
 _LEFTHOOK = _REPO_ROOT / "lefthook.yml"
 
 # How the pod reaches livespec CORE, which a consumer running `check-doctor-static`
@@ -280,38 +282,35 @@ def _recipes_run(*, manifest: str) -> list[str]:
     ]
 
 
-def _pre_push_hook_installs() -> tuple[str, ...]:
-    """Every `just` recipe the pre-push HOOK runs before the gate script itself.
+def _pre_push_hook_recipes() -> tuple[str, ...]:
+    """Every `just` recipe lefthook's `pre-push` block names, in order.
 
     lefthook's `pre-push` block is where the pack install lives — it cannot live
     inside the gate script, because the root justfile reaches the pack through
     `import?`, which `just` resolves when it PARSES the file. The gate pod has
     the same problem for the same reason, which is why the default suite runs it
     as its own invocation.
+
+    THIS BLOCK, AND NOT THE SCRIPT BEHIND IT, is what the fleet shares. Every
+    repository's `pre-push` calls `just check-pre-push`; what that recipe then
+    runs is per repository (livespec-orchestrator-beads-fabro's ends in
+    `just check-skipping check-codex-skill-picker`, this one's in
+    `just hook_gate=1 check`). Reading the script instead is the mistake ruling
+    R100 corrected — it put a variable only this justfile declares into every
+    consumer's gate Job.
     """
     lines = _LEFTHOOK.read_text(encoding="utf-8").splitlines()
     block = lines[lines.index("pre-push:") :]
-    runs = [
+    return tuple(
         line.strip().removeprefix("run: just ")
         for line in block
         if line.strip().startswith("run: just ")
-    ]
-    return tuple(takewhile(lambda recipe: recipe != "check-pre-push", runs))
+    )
 
 
-def _shared_pre_push_aggregate() -> str:
-    """The last `just` invocation the SHARED pre-push script runs.
-
-    That invocation is what a delegated gate stands in for, and `hook_gate=1` is
-    load-bearing in it: the flag omits the world-gate member needing an
-    admin-scope credential that no pre-push host and no gate pod holds. A bare
-    `just check` ran it and reddened the gate on a target the local pre-push
-    never runs.
-    """
-    lines = _PRE_PUSH_SCRIPT.read_text(encoding="utf-8").splitlines()
-    return [
-        line.strip().removeprefix("just ") for line in lines if line.strip().startswith("just ")
-    ][-1]
+def _pre_push_hook_installs() -> tuple[str, ...]:
+    """The hook's recipes that run BEFORE the gate recipe itself."""
+    return tuple(takewhile(lambda recipe: recipe != "check-pre-push", _pre_push_hook_recipes()))
 
 
 def _renderer_default_recipes(*, root: Path) -> list[str]:
@@ -376,32 +375,45 @@ def test_the_gate_job_runs_the_consumers_own_declared_recipe_and_none_of_ours(
         assert f"just {ours}" not in silent_manifest
 
 
-def test_a_consumer_that_declares_nothing_gets_the_shared_pre_push_sequence(
+def test_a_consumer_that_declares_nothing_gets_the_recipe_its_own_pre_push_names(
     *, tmp_path: Path
 ) -> None:
-    """The default IS the shared pre-push sequence, read out of its own files.
+    """The default IS the shared pre-push sequence, read out of the file that owns it.
 
-    Freeze-driver ruling R92 (2026-10-17), option A. The default was the single
-    `check` recipe, which is a bare `just check` — and a gate Job that runs one
-    is NOT the local fall-through it stands in for. Measured the same day on
-    livespec-orchestrator-beads-fabro, whose tree was green in CI while its gate
-    Job went red from four targets: the two installs the pod never ran left
-    `check-primary-checkout-commit-refuse-hook-installed` and
+    Freeze-driver rulings R92 and R100 (both 2026-10-17). R92 replaced a single
+    `check` with three steps, because a gate Job that runs a bare `just check`
+    is NOT the local fall-through it stands in for: the two installs the pod
+    never ran left `check-primary-checkout-commit-refuse-hook-installed` and
     `check-no-workflow-edits` judging an un-bootstrapped sandbox rather than the
-    tree, and the missing `hook_gate=1` ran the admin-scope world gate that no
-    pre-push host and no gate pod can satisfy (403).
+    tree under test.
 
-    WHAT THE CONTRACT ACTUALLY SAYS is that the Job runs "the recipe its local
-    fall-through runs", and for a fleet consumer that fall-through is three
-    steps, not one: lefthook's `pre-push` hook installs the worktree pack, this
-    repository's own gate adds the commit-refuse-hook install, and the shared
-    `scripts/just/check-pre-push.sh` ends in `just hook_gate=1 check`. So the
-    first two assertions read those steps back out of the files that own them —
-    a step that moves there fails HERE, naming the default that must move with
-    it, rather than silently reddening a consumer's gate on a green tree.
+    R100 THEN CORRECTED ITS LAST STEP, and that correction is what the first two
+    arms below pin. R92 wrote `hook_gate=1 check` on the premise that every
+    fleet consumer's pre-push ends in THIS repository's
+    `scripts/just/check-pre-push.sh`. It does not — each repository ships its
+    own script — and `hook_gate` is a `just` variable only this repository's
+    justfile declares, which `just` refuses to let the command line override
+    anywhere else. Measured 2026-10-17: Job
+    gate-livespec-orchestrator-beads-fabro-ee118f8fd5dc died with `error:
+    Variable 'hook_gate' overridden on the command line but not present in
+    justfile`, before its aggregate ran, on a tree whose master CI was green.
 
-    The last two arms are what the default is FOR and what it must not become:
-    a consumer that declares nothing gets the sequence, and a consumer that
+    WHAT IS UNIFORM FLEET-WIDE IS THE RECIPE NAME. `check-pre-push` is what
+    every repository's lefthook `pre-push` block calls, and a recipe name is
+    what the Job's own preflight can test for — a variable it cannot. So the
+    sequence is read back out of `lefthook.yml`, the file that owns it: a step
+    that moves there fails HERE, naming the default that must move with it,
+    rather than silently reddening a consumer's gate on a green tree.
+
+    AND NO ENTRY MAY CARRY A `name=value` OVERRIDE AT ALL, asserted of the
+    default AND of the rendered command. That is the general form of the defect:
+    a variable assignment in the shared default is a bet that every consumer's
+    justfile declares that variable, and `just` turns a losing bet into a red
+    gate before any check has run.
+
+    The last arms are what the default is FOR and what it must not become: a
+    consumer that declares nothing gets the sequence through both spellings of
+    it — the client's and the renderer's own fallback — and a consumer that
     declares a suite gets ITS suite and none of the default.
     """
     silent = _a_consumer_repository(root=tmp_path / "silent", declaration="")
@@ -411,16 +423,18 @@ def test_a_consumer_that_declares_nothing_gets_the_shared_pre_push_sequence(
     )
 
     assert _pre_push_hook_installs() == ("install-worktree-pack",)
-    assert _shared_pre_push_aggregate() == "hook_gate=1 check"
+    assert _pre_push_hook_recipes()[-1] == "check-pre-push"
     assert _FALL_THROUGH_SUITE == (
         "install-worktree-pack",
         "install-commit-refuse-hooks",
-        "hook_gate=1 check",
+        "check-pre-push",
     )
+    assert [entry for entry in _FALL_THROUGH_SUITE if "=" in entry] == []
 
-    assert _recipes_run(manifest=_rendered_for(repo_root=silent)) == [
-        f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
-    ]
+    silent_recipes = _recipes_run(manifest=_rendered_for(repo_root=silent))
+
+    assert silent_recipes == [f"just {recipe}" for recipe in _FALL_THROUGH_SUITE]
+    assert [line for line in silent_recipes if "=" in line] == []
     assert _renderer_default_recipes(root=silent) == [
         f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
     ]
