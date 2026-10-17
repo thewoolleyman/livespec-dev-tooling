@@ -23,12 +23,13 @@
   become: true
 
 - name: Write the declared ranges the guard's preflight checks for overlaps
-  # The Docker bridge and every range the cluster and the tailnet already use,
-  # each under a name the refusal can print.
+  # Every range the cluster and the tailnet already use, each under a name the
+  # refusal can print. Never the Docker bridge itself: the guard compares each
+  # declared range AGAINST Docker's subnet, so declaring the bridge refuses
+  # every host (measured 2026-10-17, H-01 on guard-vm-0).
   ansible.builtin.copy:
     content: >-
-      {{ {'docker bridge': docker_engine_bridge_cidr}
-         | combine(dict(docker_engine_reserved_cidrs | zip(docker_engine_reserved_cidrs))) | to_nice_json }}
+      {{ dict(docker_engine_reserved_cidrs | zip(docker_engine_reserved_cidrs)) | to_nice_json }}
     dest: "{{ docker_engine_preflight_declared.path }}"
     owner: root
     group: root
