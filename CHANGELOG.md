@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.4...v1.112.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* **gate:** default the delegated gate Job to the recipe pre-push names ([e93e8a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e93e8a27731483a90579bf2b99fef20621437404))
+* **gate:** report the gate pod's livespec core resolution to the verdict stream ([e08a700](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e08a7007a278c5a2bc43c66b3044f4c9a88fe8b7))
+
 ## [1.112.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.3...v1.112.4) (2026-10-17)
 
 
