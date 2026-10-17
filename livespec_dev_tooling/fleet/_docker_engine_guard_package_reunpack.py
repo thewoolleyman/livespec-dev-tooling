@@ -160,9 +160,16 @@ def reunpack_half_installed(
     unfinished one — and the step cannot proceed either way, because
     design F6 requires a fresh transaction to start from an empty
     `dpkg --audit` and this report can no longer be emptied.
+
+    `dpkg --audit` names a package once per SECTION of its report that
+    carries it — the report measured on guard-vm-0 named a
+    half-installed docker.io three times, for the reinstallation it
+    needs and for each of the two control files its interrupted unpack
+    never wrote — so the names are taken as a SET. One `dpkg --unpack`
+    runs per half-installed package, not per row of the report.
     """
     unpacked: list[str] = []
-    for name in sorted(flagged):
+    for name in sorted(set(flagged)):
         row = installed.get(name, UNHELD)
         if row.status != HALF_INSTALLED:
             continue
