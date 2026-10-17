@@ -229,6 +229,17 @@
              | selectattr('stdout', 'in', ['enabled', 'enabled-runtime', 'not-found'])
              | map(attribute='item') | list }}
 
+    - name: Read whether each guarded service ever ran, before the install
+      # A re-run inside one boot inherits the previous run's start timestamp
+      # and condition result (systemd keeps them until the next start), so the
+      # post-install proof compares against these, not against zero.
+      ansible.builtin.command:
+        argv: [systemctl, show, "{{ item }}", -p, ConditionResult, -p, ExecMainStartTimestampMonotonic]
+      loop: [containerd.service, docker.service]
+      register: docker_engine_services_before_publish
+      become: true
+      changed_when: false
+
     - name: Mark the journal before the install
       ansible.builtin.command:
         argv: [date, +%s]
