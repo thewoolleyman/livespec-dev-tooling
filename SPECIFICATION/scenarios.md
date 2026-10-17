@@ -756,6 +756,28 @@ Then the package step MUST refuse naming man-db
 
 And it MUST NOT run `dpkg --configure` or `dpkg --triggers-only` on man-db
 
+## Scenario: a Docker engine install guard publish resumed after a kill during an intended package's unpack re-unpacks it from its audited archive
+
+Given a run in phase `publishing` whose audited `.deb` files include docker.io
+
+And a kill during that run's `dpkg -i` left docker.io `half-installed` at the audited `.deb`'s version and architecture
+
+When publish resumes for that run
+
+Then the package step MUST run `dpkg --unpack` naming docker.io's audited `.deb` and no other file
+
+And it MUST NOT run `dpkg --configure` on docker.io while docker.io is `half-installed`
+
+And publish MUST finish with `dpkg --audit` empty
+
+Given the same run, and the half-installed docker.io is at a version that no audited `.deb` of the run carries
+
+When publish resumes for that run
+
+Then the package step MUST refuse naming docker.io
+
+And it MUST NOT run `dpkg --unpack` or `dpkg -i`
+
 ## Scenario: a delegated gate Job for a repository missing its declared recipe reports red naming the recipe
 
 Given a consuming repository that switches delegation on and declares a check recipe for its gate
