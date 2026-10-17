@@ -1,0 +1,23 @@
+---
+# gate_renderer — the delegated pre-push gate's Job renderer, installed on every
+# host that may delegate (the `dev_hosts` play in ../../gates-kubeconfig.yml).
+#
+# WHY A ROLE OF ITS OWN. The gate client (livespec_dev_tooling.gate_remote_delegate)
+# renders the gate Job with `render-gate-job.sh`, preferring the repository's own
+# ci-runner/k3s/phase2/gates copy — which only livespec-dev-tooling carries — and
+# otherwise falling back to GATE_RENDERER_INSTALLED. Only ci_converge_unit, a
+# ci_pool role, installed that fallback, so a consuming repository could never
+# delegate from vps (livespec-dev-tooling-saxz's host leg, 2026-10-17). The install
+# directory below is asserted equal to that constant's parent by
+# tests/livespec_dev_tooling/test_gate_renderer_on_delegating_hosts.py.
+#
+# The template rides beside the renderer because render-gate-job.sh resolves
+# GATE_JOB_TEMPLATE next to itself. It is shipped, never applied: it carries
+# placeholder markers and is a manifest only once rendered.
+gate_renderer_src_dir: "{{ role_path }}/../../../ci-runner/k3s/phase2/gates"
+gate_renderer_install_dir: /usr/local/lib/ci-runner-k3s/gates
+gate_renderer_files:
+  - src: render-gate-job.sh
+    mode: "0755"
+  - src: gate-job-template.yaml
+    mode: "0644"
