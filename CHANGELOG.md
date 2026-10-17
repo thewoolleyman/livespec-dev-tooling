@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.113.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.10...v1.113.0) (2026-10-17)
+
+
+### Features
+
+* **ansible:** install hp's OTel receiver from a pinned orchestrator release ([eadd896](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eadd89684331563f0725a8b76f300fcf0da89a2d))
+
 ## [1.112.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.9...v1.112.10) (2026-10-17)
 
 
