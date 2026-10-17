@@ -76,8 +76,32 @@
       {{ docker_engine_daemon_raw.content | b64decode | from_json | dict2items
          | selectattr('key', 'in', docker_engine_daemon_config.keys() | list) | items2dict }}
 
+- name: Read the guard's record of the latest reconfiguration
+  ansible.builtin.slurp:
+    src: "{{ docker_engine_state_root }}/reconfigured"
+  register: docker_engine_reconfigured_raw
+  become: true
+  failed_when: false
+
+- name: Hold the digests the guard vouches for and the one this converge wants
+  # The guard's own canonical digest (owned_keys_digest): SHA256 over the owned
+  # keys as sorted, compact JSON. Comparing the host's daemon.json alone misses a
+  # reconfigure killed after its daemon.json write and before its digest record:
+  # the keys then match, the reconfigure is skipped, no drained restart is owed,
+  # and the guard's committed-installation check refuses on the stale digest
+  # (FAULTS H-04, measured 2026-10-17 on guard-vm-0).
+  ansible.builtin.set_fact:
+    docker_engine_owned_digest_wanted: >-
+      {{ docker_engine_daemon_config | to_json(sort_keys=True, separators=[',', ':']) | hash('sha256') }}
+    docker_engine_owned_digests_vouched: >-
+      {{ [(docker_engine_marker_raw.content | b64decode | from_json).digest | default('')]
+         + ([(docker_engine_reconfigured_raw.content | b64decode | from_json).digest | default('')]
+            if docker_engine_reconfigured_raw.content is defined else []) }}
+
 - name: Apply a changed owned key through the guard's reconfigure
-  when: docker_engine_owned_current != docker_engine_daemon_config
+  when: >-
+    docker_engine_owned_current != docker_engine_daemon_config
+    or docker_engine_owned_digest_wanted not in docker_engine_owned_digests_vouched
   block:
     - name: Upload the owned keys into the committed run's inputs
       # The guard reads the owned keys from the run's inputs/ and writes them
