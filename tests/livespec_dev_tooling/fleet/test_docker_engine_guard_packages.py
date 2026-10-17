@@ -271,6 +271,18 @@ _QUERY_RE_UNPACKED = (
     f"{_QUERY_BEFORE}{_SHIM[0]} {_SHIM[1]} unpacked\n{_ENGINE[0]} {_ENGINE[1]} unpacked\n"
 )
 
+# A version NO audited archive of the run carries — the engine's previous
+# security update, which is exactly what a cache or a host one run behind
+# would be holding.
+_OTHER_VERSION = "29.1.2-0ubuntu4"
+
+# The interrupted table with the half-installed engine at that version,
+# so no audited `.deb` of the run matches it on all three fields.
+_QUERY_UNAUDITED_HALF_INSTALLED = (
+    f"{_QUERY_BEFORE}{_SHIM[0]} {_SHIM[1]} unpacked\n"
+    f"{_ENGINE[0]} {_OTHER_VERSION} half-installed\n"
+)
+
 
 # `apt-get -s install`'s recorded output for the audited set on a host that
 # has never carried the engine: the two `Inst` lines carry a version in
@@ -591,6 +603,56 @@ def test_the_package_step_re_unpacks_a_half_installed_leftover_from_its_archive(
     )
     configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
     assert runner.calls.index(unpacked[0]) < runner.calls.index(configured[0])
+
+
+def test_the_package_step_refuses_a_half_installed_leftover_no_audited_deb_matches(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the re-unpack's refusal, on both fields.
+
+    The scenario's second arm. A package `half-installed` at a version
+    or an architecture this run's audited set does not carry cannot be
+    re-unpacked from that set at all, and the one thing the step may not
+    do about it is unpack a NEIGHBOURING archive: the audit cleared each
+    `.deb` for the allowlist row it belongs to, so installing one over
+    another package's interrupted unpack would be a transaction nobody
+    audited, aimed at a database already holding an unfinished one.
+
+    Both mismatching fields are driven, because a comparison on name and
+    version alone would pass the architecture case silently — the
+    half-installed row and the archive agree on every field it reads.
+    Neither arm may issue `dpkg --unpack`, and neither may reach
+    `dpkg -i`: design F6 requires a fresh transaction to start from an
+    empty `dpkg --audit`, and this report can no longer be emptied.
+    """
+    assert _REUNPACK_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+
+    for table, architectures, expected in (
+        (_QUERY_UNAUDITED_HALF_INSTALLED, {}, _OTHER_VERSION),
+        (_QUERY_INTERRUPTED_UNPACK, {_ENGINE[0]: "arm64\n"}, "arm64"),
+    ):
+        runner = _RecordedRunner(
+            result=runner_module.CommandOutput,
+            architectures=architectures,
+            outputs=[
+                (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+                (("dpkg", "--audit"), [_audit_report(packages=(_ENGINE[0], _SHIM[0])), ""]),
+                (("dpkg-query",), [table]),
+                *_fenced_outputs(),
+            ],
+        )
+
+        outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+        assert outcome.refusal is not None
+        assert _ENGINE[0] in outcome.refusal
+        assert expected in outcome.refusal
+        assert outcome.installed == ()
+        assert _calls_named(runner=runner, argv=("dpkg", "--unpack")) == []
+        assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
 def test_every_dpkg_unpack_names_an_audited_deb_under_the_frontend_lock(
