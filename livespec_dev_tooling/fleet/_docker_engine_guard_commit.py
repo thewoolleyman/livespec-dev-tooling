@@ -301,7 +301,21 @@ def verify(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     run's own snapshot -- the one `publish` took before the first
     package step, which is what "as snapshotted" means at all. The
     promotion is also the only write: everything else is a read, so a
-    `verify` that refuses leaves the host exactly as it found it.
+    `verify` that refuses leaves the host exactly as it found it — and
+    that is why the dead-man below is retired only ON the promotion. A
+    refusal means a postcondition still fails and the run stays
+    `rollback-partial`, where the dead-man is the only thing that comes
+    back to repair it; stopping its timer there would strand a host
+    still carrying a `docker0` or a Docker rule with nothing watching.
+
+    The promotion RETIRES the dead-man in the same step, because
+    `rolled-back` is the phase from which every later firing is decided
+    `noop`: nothing will come back to the run again, so a surviving
+    timer only re-fires forever — and the role's classify counts any
+    non-inactive `docker-engine-deadman-*` unit as a busy host, which
+    would refuse the host to every later converge for the rest of the
+    boot. Freeing the reservation without retiring the timer therefore
+    frees nothing.
     """
     postconditions = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
     failed = tuple(sorted(name for name, holds in postconditions.items() if not holds))
@@ -311,6 +325,7 @@ def verify(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         )
     if read_phase(paths=env.paths, run=run) == "rollback-partial":
         record_phase(paths=env.paths, run=run, phase="rolled-back")
+        env.host.stop_unit(unit=deadman_timer_unit(run=run), timeout_seconds=UNIT_WAIT_SECONDS)
     return GuardOutcome(
         operation="verify",
         run=run,

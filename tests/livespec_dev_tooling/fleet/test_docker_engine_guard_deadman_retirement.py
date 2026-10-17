@@ -30,6 +30,9 @@ __all__: list[str] = []
 _GUARD_MODULE = "livespec_dev_tooling.fleet.docker_engine_guard"
 _MODEL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_model"
 _MODEL_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_model.py")
+_COMMIT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_commit"
+_COMMIT_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_commit.py")
+_POSTCONDITIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_postconditions"
 _STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _FAKE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_fake"
 
@@ -63,6 +66,23 @@ def _record_phase(*, root: Path, run: str, phase: str) -> None:
     (state_root / "runs" / run).mkdir(parents=True, exist_ok=True)
     _ = (state_root / "run").write_text(run, encoding="utf-8")
     _ = (state_root / "runs" / run / "phase").write_text(phase, encoding="utf-8")
+
+
+def _every_postcondition(*, holds: bool) -> dict[str, bool]:
+    """The whole postcondition set, answered `holds` for every name.
+
+    Keyed off the shipped `POSTCONDITIONS` tuple rather than a second
+    hand-written list, because the names are the record's keys: a test
+    spelling of them would answer under keys the guard never looks up
+    and would read as a host that answered nothing.
+    """
+    postconditions = importlib.import_module(_POSTCONDITIONS_MODULE)
+    return {name: holds for name in postconditions.POSTCONDITIONS}
+
+
+def _stopped_units(*, fake: Any) -> tuple[str, ...]:
+    """Every unit the host was asked to stop, in order."""
+    return tuple(call.detail[0] for call in fake.calls_named(name="stop_unit"))
 
 
 def _service_properties(*, argv: tuple[str, ...]) -> tuple[str, ...]:
@@ -132,3 +152,66 @@ def test_the_dead_man_is_a_bounded_oneshot_carrying_the_rollbacks_stop_propertie
     assert "--timer-property=AccuracySec=1s" in armed
     assert "--collect" in armed
     assert armed[-2:] == ("rollback", "run-a")
+
+
+def _verify(*, root: Path, postconditions: dict[str, bool]) -> tuple[Any, Any]:
+    """Run `verify` through the whole guard with `postconditions` injected."""
+    guard = importlib.import_module(_GUARD_MODULE)
+    fake = _fake(root=root)
+    fake.postconditions = postconditions
+    return guard.run_operation(
+        operation="verify", run="run-a", env=_env(root=root, host=fake)
+    ), fake
+
+
+def test_a_verify_that_promotes_a_partial_run_retires_that_runs_dead_man(
+    tmp_path: Path,
+) -> None:
+    """Specification "After the commit", the `verify` sentence, read to its end.
+
+    `verify` is how a `rollback-partial` run ever ends, and the
+    promotion it writes is terminal: from `rolled-back` every later
+    dead-man firing is decided `noop` by the dispatch table, so nothing
+    will ever come back to that run again. The timer was nonetheless
+    left in the air, re-firing every 60 seconds forever -- and the
+    `docker_engine` role's classify counts ANY non-inactive
+    `docker-engine-deadman-*` unit as a busy host, so a promoted run
+    whose timer survived refuses the host to every later converge.
+    Promoting without retiring the timer therefore buys nothing: it
+    frees the reservation and leaves the host busy for the other
+    reason.
+
+    So the promotion and the retirement are one step, exactly as
+    `confirm`'s post-commit steps already stop the same timer once a run
+    is committed.
+
+    A `verify` that REFUSES is the other half of the same rule and is
+    asserted in the same test, because it is what keeps the retirement
+    scoped to the promotion: a refusal means a rollback postcondition
+    still fails, the run stays `rollback-partial`, and the dead-man is
+    the only thing that will come back to repair it. Stopping its timer
+    there would strand a host carrying a `docker0` or a residual Docker
+    rule with nothing watching it. A refusing `verify` is a pure read,
+    and it stays one -- it stops no unit at all.
+    """
+    assert _COMMIT_PATH.is_file()
+    commit = importlib.import_module(_COMMIT_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    assert "deadman_timer_unit" in commit.__all__
+
+    promoted = tmp_path / "promoted"
+    _record_phase(root=promoted, run="run-a", phase="rollback-partial")
+    outcome, host = _verify(root=promoted, postconditions=_every_postcondition(holds=True))
+
+    assert outcome.verdict == "proceed"
+    assert state.read_phase(paths=_paths(root=promoted), run="run-a") == "rolled-back"
+    assert _stopped_units(fake=host) == (commit.deadman_timer_unit(run="run-a"),)
+
+    refused = tmp_path / "still-partial"
+    _record_phase(root=refused, run="run-a", phase="rollback-partial")
+    failing = {**_every_postcondition(holds=True), "no docker0": False}
+    outcome, host = _verify(root=refused, postconditions=failing)
+
+    assert outcome.verdict == "refuse"
+    assert state.read_phase(paths=_paths(root=refused), run="run-a") == "rollback-partial"
+    assert _stopped_units(fake=host) == ()
