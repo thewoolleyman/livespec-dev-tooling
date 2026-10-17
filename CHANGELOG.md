@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.5...v1.112.6) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ansible:** serialize the delegated node-status RBAC apply across agents ([f7cfbb9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f7cfbb95990ddcfe90eea7446b7be7bca8157198))
+
 ## [1.112.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.4...v1.112.5) (2026-10-17)
 
 
