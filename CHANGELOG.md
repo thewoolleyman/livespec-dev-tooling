@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.8...v1.112.9) (2026-10-17)
+
+
+### Bug Fixes
+
+* **fleet:** answer the install seam with the package step's refusal reason ([a7ed85a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a7ed85a6b62a33940093573e3f5bcd0a3de9ff6d))
+* **fleet:** carry the real package step's refusal back out of the host seam ([9b9b867](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9b9b867f5c36f3051fdddc5e97b87c14fa7aa54d))
+* **fleet:** let a test tell the fake host the package step found nothing ([49b09f5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/49b09f591148d6eb9da4b84a48465b6220ce9526))
+* **fleet:** refuse the publish carrying the package step's own refusal ([099760a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/099760a3def5f74549d4ddb76c93845b384c0d13))
+
 ## [1.112.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.7...v1.112.8) (2026-10-17)
 
 
