@@ -147,34 +147,52 @@ spec:
           image: @@IMAGE@@
           imagePullPolicy: IfNotPresent
           workingDir: /workspace
-          # Requirement 2: the gated repository's own PRE-PUSH aggregate,
-          # nothing else — preceded ONLY by the repository bootstrap two of its
-          # members read. The command is `just hook_gate=1 check`, NOT bare
-          # `just check`: a delegated gate is a surrogate for the LOCAL pre-push,
-          # which runs `just hook_gate=1 check` (scripts/just/check-pre-push.sh),
-          # and `hook_gate` adds the `hook_gate_skips` set to the skip list —
-          # today just `check-fleet-conformance-admin`, which needs a user-class
-          # admin credential no pre-push host (or gate pod) holds and which
-          # credential-reading-targets.md records as never running in the gate.
-          # Bare `just check` here ran it and failed the gate on a target the
-          # pre-push it stands in for never runs.
+          # Requirement 2: THE GATED REPOSITORY'S OWN check recipes, nothing
+          # else. Both blocks below are substituted by render-gate-job.sh from
+          # that repository's `gate_check_suite` declaration — or, when it
+          # declares none, from the single `check` recipe its local pre-push
+          # fall-through runs. They are NOT a constant here, and that is the
+          # whole point of the slice that rewrote this block
+          # (livespec-dev-tooling-saxz): the command used to be a fixed list of
+          # livespec-dev-tooling's OWN recipes — the worktree-pack install, the
+          # commit-refuse-hook install, the typecheck warm-up and its
+          # hook-gated aggregate. Three of those four exist in no other
+          # repository, so every consuming repository's Job failed and its gate
+          # was red on every green tree. Measured 2026-10-16 against
+          # livespec-orchestrator-beads-fabro, whose post-merge janitor shipped
+          # `venue = host_local` rather than use a gate that could not pass.
           #
-          # `/workspace` is a `git init` + fetch, not a bootstrapped clone, so
-          # the worktree-discipline pack and the commit-refuse hooks are simply
+          # THE PREFLIGHT IS WHAT MAKES A MISSING RECIPE LEGIBLE. Without it a
+          # consumer that does not provide its declared recipe gets `just`'s own
+          # "Justfile does not contain recipe" at whatever point the suite
+          # reached, which reads exactly like a red tree. With it the Job stops
+          # before running ANYTHING, names the recipe on stderr and in the pod's
+          # termination message — which the client lifts into the verdict an
+          # operator reads — and exits non-zero. It never reports green and it
+          # never falls back to a recipe the repository did not declare.
+          #
+          # WHY THE TERMINATION-LOG WRITE IS BEST-EFFORT: the message is
+          # EVIDENCE, not the verdict. The exit status is the verdict, and a
+          # cluster or a shell that cannot write that file must not be able to
+          # turn a red gate into something else — nor, in a test harness that
+          # runs this script outside a pod, into a different failure than the
+          # one being asserted.
+          #
+          # livespec-dev-tooling's own declaration still runs the two installs
+          # first, and the reasons are worth keeping because they are the ones a
+          # consumer authoring its own suite will meet. `/workspace` is a
+          # `git init` + fetch, not a bootstrapped clone, so the
+          # worktree-discipline pack and the commit-refuse hooks are simply
           # absent: `check-primary-checkout-commit-refuse-hook-installed` fails
           # on the missing hooks and `check-no-workflow-edits` has no
           # `dev-tooling/check-no-workflow-edits.sh` to run at all. Neither is a
-          # verdict about the tree under test.
-          #
-          # THE PACK INSTALL MUST BE ITS OWN `just` INVOCATION, and that is not
-          # a style choice: the root justfile reaches the pack through
-          # `import? 'dev-tooling/worktree.just'`, which `just` resolves when it
-          # PARSES the file. A `just install-worktree-pack check` would parse
-          # once, before the pack existed, and run the aggregate against a
-          # justfile that never imported it.
-          #
-          # The two narrow recipes rather than `just bootstrap`: bootstrap walks
-          # the whole local-obligation partition — mise trust/install, plugin
+          # verdict about the tree under test. THE PACK INSTALL MUST BE ITS OWN
+          # `just` INVOCATION, and that is not a style choice: the root justfile
+          # reaches the pack through `import? 'dev-tooling/worktree.just'`, which
+          # `just` resolves when it PARSES the file, so a combined invocation
+          # would parse once, before the pack existed. And the narrow recipes
+          # rather than `just bootstrap`: bootstrap walks the whole
+          # local-obligation partition — mise trust/install, plugin
           # registration, the beads-runtime probes — none of which a gate pod
           # has or needs, and each of which is a way for a gate to fail for a
           # reason that is not the tree.
@@ -182,10 +200,16 @@ spec:
           args:
             - |
               set -euo pipefail
-              just install-worktree-pack
-              just install-commit-refuse-hooks
-              just warm-typecheck
-              just hook_gate=1 check
+              for recipe in @@GATE_RECIPE_NAMES@@; do
+                if just --show "${recipe}" > /dev/null 2>&1; then
+                  continue
+                fi
+                missing="FATAL: the tree under test does not provide the gate check recipe '${recipe}' this repository declares for its delegated gate (gate_check_suite in its [tool.livespec_dev_tooling] block, or the check recipe its local pre-push fall-through runs). No recipe was run; this gate is RED."
+                echo "${missing}" >&2
+                { printf '%s\n' "${missing}" > /dev/termination-log; } 2> /dev/null || true
+                exit 1
+              done
+              @@GATE_RECIPES@@
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check
