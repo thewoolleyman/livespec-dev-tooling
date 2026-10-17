@@ -593,6 +593,43 @@ def test_the_package_step_re_unpacks_a_half_installed_leftover_from_its_archive(
     assert runner.calls.index(unpacked[0]) < runner.calls.index(configured[0])
 
 
+def test_every_dpkg_unpack_names_an_audited_deb_under_the_frontend_lock(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the fence around the re-unpack itself.
+
+    Two halves, and each is the fence rather than a convenience. The
+    unpack may name NO file that is not one of this run's audited `.deb`
+    files, because an archive outside that set is bytes the audit never
+    digested and never compared against the index — the re-unpack would
+    otherwise be the one way into this step for an unaudited package.
+    And `DPKG_FRONTEND_LOCKED=1` is what tells dpkg that its caller
+    already holds the frontend lock (design R6): the recovery runs inside
+    the same held lock as the install, so without it this dpkg takes the
+    lock itself and deadlocks against the role's lock-holding helper.
+    """
+    assert _REUNPACK_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    audited = {
+        str(tmp_path / "cache" / _deb_name(package=package, version=version))
+        for package, version in (_ENGINE, _SHIM)
+    }
+    runner = _interrupted_unpack_outputs(
+        result=runner_module.CommandOutput, table=_QUERY_RE_UNPACKED
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    unpacked = _calls_named(runner=runner, argv=("dpkg", "--unpack"))
+    assert unpacked
+    for call in unpacked:
+        assert set(call.argv[2:]) <= audited
+        assert call.env == {"DPKG_FRONTEND_LOCKED": "1"}
+
+
 def test_the_package_step_installs_exactly_the_audited_debs_under_the_frontend_lock(
     tmp_path: Path,
 ) -> None:
