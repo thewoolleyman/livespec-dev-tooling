@@ -18,7 +18,8 @@ if [ "$CASE" = p06 ]; then
   argv=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' bash "$W6" ssh -i "$KEY" -J cwoolley@poweredge-xubuntu -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 -o ControlMaster=no -o ControlPath=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null guard@127.0.0.1 true)
   extra=(-e "{\"docker_engine_tailscale_ssh_argv\": $argv}")
 fi
-setsid bash -c "source ansible/roles/docker_engine/acceptance/faults/lib.sh; converge $I $L.converge.log -e docker_engine_window_seconds=$W $(printf '%q ' "${extra[@]}")" > $L.converge.out 2>&1 &
+xq=""; [ ${#extra[@]} -gt 0 ] && xq=$(printf '%q ' "${extra[@]}")
+setsid bash -c "source ansible/roles/docker_engine/acceptance/faults/lib.sh; converge $I $L.converge.log -e docker_engine_window_seconds=$W $xq" > $L.converge.out 2>&1 &
 CPID=$!
 until [ "$(phase_of $I)" = observed ] || ! kill -0 $CPID 2>/dev/null; do sleep 0.5; done
 echo "######## $CASE phase=$(phase_of $I) at $(date -u +%T): injecting"
