@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.111.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.4...v1.111.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* **guard:** exit zero from the preflight command line on a host with no refusal ([e575218](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e575218c4cb4118e998cc41bdb83be8844d65e2c))
+* **guard:** print every preflight refusal from a command line the role can run ([b79f644](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b79f644dbb576826021021690c9ecc8eed3e206d))
+* **guard:** record the k3s witness and the interfaces from the preflight command line ([743ce3e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/743ce3ecb6941ef0d3968d4da3acb9043f3100f1))
+* **guard:** resolve the preflight command line's siblings from the installed tree ([c595bdb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c595bdb2e7e7b98bf994449b3a9cd4487c8eb557))
+
 ## [1.111.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.3...v1.111.4) (2026-10-17)
 
 
