@@ -59,18 +59,29 @@ _ORIGIN = "git@github.com:acme/widget.git"
 # livespec-dev-tooling recipe could not produce it by accident.
 _CONSUMER_RECIPE = "verify"
 
-# The recipes that are livespec-dev-tooling's OWN — the constant the pod command
-# used to be. None of them may appear in another repository's gate Job.
-_OUR_OWN_RECIPES = (
+# The recipe that is livespec-dev-tooling's OWN and NO other repository's — the
+# one survivor of the four-recipe constant the pod command used to be. The other
+# three are the SHARED pre-push sequence every fleet consumer runs, and are the
+# default below (freeze-driver ruling R92, 2026-10-17); `warm-typecheck` is this
+# repository's alone, so it may still never appear in another repository's Job.
+_OUR_OWN_RECIPES = ("warm-typecheck",)
+
+# What a consuming repository that declares nothing gets: the SHARED pre-push
+# sequence its own local fall-through runs — the pre-push hook's pack install,
+# the commit-refuse-hook install, and the hook-gated aggregate the shared
+# `scripts/just/check-pre-push.sh` ends in. Each entry is read back out of the
+# file that owns it by the helpers below, so the default and the sequence it
+# mirrors cannot drift apart silently.
+_FALL_THROUGH_SUITE = (
     "install-worktree-pack",
     "install-commit-refuse-hooks",
-    "warm-typecheck",
     "hook_gate=1 check",
 )
 
-# What a consuming repository that declares nothing gets: the recipe its local
-# pre-push fall-through runs.
-_FALL_THROUGH_RECIPE = "check"
+# The shared pre-push script and the hook that runs it — the two files the
+# default above mirrors, read as text so a moved step fails HERE.
+_PRE_PUSH_SCRIPT = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
+_LEFTHOOK = _REPO_ROOT / "lefthook.yml"
 
 # The two `kubectl get job --output json` payloads one run sees, in order: a Job
 # Kueue has not admitted yet, and then the condition that means the gate ran and
@@ -208,6 +219,58 @@ def _recipes_run(*, manifest: str) -> list[str]:
     ]
 
 
+def _pre_push_hook_installs() -> tuple[str, ...]:
+    """Every `just` recipe the pre-push HOOK runs before the gate script itself.
+
+    lefthook's `pre-push` block is where the pack install lives — it cannot live
+    inside the gate script, because the root justfile reaches the pack through
+    `import?`, which `just` resolves when it PARSES the file. The gate pod has
+    the same problem for the same reason, which is why the default suite runs it
+    as its own invocation.
+    """
+    lines = _LEFTHOOK.read_text(encoding="utf-8").splitlines()
+    block = lines[lines.index("pre-push:") :]
+    runs = [
+        line.strip().removeprefix("run: just ")
+        for line in block
+        if line.strip().startswith("run: just ")
+    ]
+    return tuple(takewhile(lambda recipe: recipe != "check-pre-push", runs))
+
+
+def _shared_pre_push_aggregate() -> str:
+    """The last `just` invocation the SHARED pre-push script runs.
+
+    That invocation is what a delegated gate stands in for, and `hook_gate=1` is
+    load-bearing in it: the flag omits the world-gate member needing an
+    admin-scope credential that no pre-push host and no gate pod holds. A bare
+    `just check` ran it and reddened the gate on a target the local pre-push
+    never runs.
+    """
+    lines = _PRE_PUSH_SCRIPT.read_text(encoding="utf-8").splitlines()
+    return [
+        line.strip().removeprefix("just ") for line in lines if line.strip().startswith("just ")
+    ][-1]
+
+
+def _renderer_default_recipes(*, root: Path) -> list[str]:
+    """What the renderer runs when it is handed NO suite at all.
+
+    The client is the one place the default is decided, and the renderer carries
+    its own fallback for a hand-run render on a delegating host. Two spellings
+    of one sequence drift unless something reads them together — this does.
+    """
+    completed = subprocess.run(
+        [str(_RENDERER), "--repo-root", str(root), "--tree-hash", _TREE],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    return _recipes_run(manifest=completed.stdout)
+
+
 def _no_sleep(*, seconds: float) -> None:
     """The poll wait, canned — the run's only source of time."""
     _ = seconds
@@ -228,11 +291,11 @@ def test_the_gate_job_runs_the_consumers_own_declared_recipe_and_none_of_ours(
     """Two consumers, one renderer, two different commands — so it is DERIVED.
 
     The positive arm alone could be satisfied by a template that happened to
-    name `verify`; the control arm, which declares nothing and gets the
-    fall-through `check`, is what proves the command comes from the repository
-    under test. The negative half is the defect itself: not one of
-    livespec-dev-tooling's own recipes may appear in another repository's Job,
-    because a consumer that does not carry them is red on every green tree.
+    name `verify`; the control arm, which declares nothing and gets the shared
+    pre-push sequence instead, is what proves the command comes from the
+    repository under test. The negative half is the defect itself: a recipe only
+    livespec-dev-tooling declares may not appear in another repository's Job,
+    because a consumer that does not carry it is red on every green tree.
     """
     declaring = _a_consumer_repository(
         root=tmp_path / "declaring",
@@ -244,10 +307,63 @@ def test_the_gate_job_runs_the_consumers_own_declared_recipe_and_none_of_ours(
     silent_manifest = _rendered_for(repo_root=silent)
 
     assert _recipes_run(manifest=declared_manifest) == [f"just {_CONSUMER_RECIPE}"]
-    assert _recipes_run(manifest=silent_manifest) == [f"just {_FALL_THROUGH_RECIPE}"]
+    assert _recipes_run(manifest=silent_manifest) == [
+        f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
+    ]
     for ours in _OUR_OWN_RECIPES:
         assert f"just {ours}" not in declared_manifest
         assert f"just {ours}" not in silent_manifest
+
+
+def test_a_consumer_that_declares_nothing_gets_the_shared_pre_push_sequence(
+    *, tmp_path: Path
+) -> None:
+    """The default IS the shared pre-push sequence, read out of its own files.
+
+    Freeze-driver ruling R92 (2026-10-17), option A. The default was the single
+    `check` recipe, which is a bare `just check` — and a gate Job that runs one
+    is NOT the local fall-through it stands in for. Measured the same day on
+    livespec-orchestrator-beads-fabro, whose tree was green in CI while its gate
+    Job went red from four targets: the two installs the pod never ran left
+    `check-primary-checkout-commit-refuse-hook-installed` and
+    `check-no-workflow-edits` judging an un-bootstrapped sandbox rather than the
+    tree, and the missing `hook_gate=1` ran the admin-scope world gate that no
+    pre-push host and no gate pod can satisfy (403).
+
+    WHAT THE CONTRACT ACTUALLY SAYS is that the Job runs "the recipe its local
+    fall-through runs", and for a fleet consumer that fall-through is three
+    steps, not one: lefthook's `pre-push` hook installs the worktree pack, this
+    repository's own gate adds the commit-refuse-hook install, and the shared
+    `scripts/just/check-pre-push.sh` ends in `just hook_gate=1 check`. So the
+    first two assertions read those steps back out of the files that own them —
+    a step that moves there fails HERE, naming the default that must move with
+    it, rather than silently reddening a consumer's gate on a green tree.
+
+    The last two arms are what the default is FOR and what it must not become:
+    a consumer that declares nothing gets the sequence, and a consumer that
+    declares a suite gets ITS suite and none of the default.
+    """
+    silent = _a_consumer_repository(root=tmp_path / "silent", declaration="")
+    declaring = _a_consumer_repository(
+        root=tmp_path / "declaring",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+    )
+
+    assert _pre_push_hook_installs() == ("install-worktree-pack",)
+    assert _shared_pre_push_aggregate() == "hook_gate=1 check"
+    assert _FALL_THROUGH_SUITE == (
+        "install-worktree-pack",
+        "install-commit-refuse-hooks",
+        "hook_gate=1 check",
+    )
+
+    assert _recipes_run(manifest=_rendered_for(repo_root=silent)) == [
+        f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
+    ]
+    assert _renderer_default_recipes(root=silent) == [
+        f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
+    ]
+    assert _recipes_run(manifest=_rendered_for(repo_root=declaring)) == [f"just {_CONSUMER_RECIPE}"]
 
 
 def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[str]]:

@@ -119,12 +119,36 @@ _RENDER_STEP = "render-gate-job"
 _REPO_NAME_STEP = "derive-repo-name"
 _CHECK_SUITE_STEP = "read-gate-check-suite"
 
-# What a consuming repository that declares no gate suite gets: the recipe its
-# own local pre-push fall-through runs. It is the FALL-THROUGH's name, not this
-# repository's — `livespec-dev-tooling` itself declares four recipes, three of
-# which no other repository carries, and baking those into the shared Job made
-# every consumer red on every green tree (livespec-dev-tooling-saxz).
-GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = ("check",)
+# What a consuming repository that declares no gate suite gets: the SHARED
+# PRE-PUSH SEQUENCE its own local fall-through runs, which is three steps rather
+# than one (freeze-driver ruling R92, 2026-10-17). `lefthook.yml`'s `pre-push`
+# block installs the worktree pack, this repository's own gate adds the
+# commit-refuse-hook install, and `scripts/just/check-pre-push.sh` ends in
+# `just hook_gate=1 check`.
+#
+# EVERY ENTRY IS LOAD-BEARING, and the single `check` this used to be is why.
+# `/workspace` in the gate pod is a `git init` + fetch, not a bootstrapped
+# clone, so without the two installs the pack and the commit-refuse hooks are
+# simply absent and `check-primary-checkout-commit-refuse-hook-installed` and
+# `check-no-workflow-edits` judge the SANDBOX rather than the tree under test.
+# Without `hook_gate=1` the aggregate also runs the world-gate member that needs
+# an admin-scope credential no pre-push host and no gate pod holds, which
+# answers 403. Measured 2026-10-17 against livespec-orchestrator-beads-fabro:
+# all four of those targets failed on a tree that was green in CI.
+#
+# It is still the FALL-THROUGH's sequence and never this repository's own
+# declaration: `livespec-dev-tooling` adds `warm-typecheck`, which no other
+# repository carries, and baking that into the shared Job made every consumer
+# red on every green tree (livespec-dev-tooling-saxz). The sequence is pinned to
+# the two files above by
+# `tests.consumer.test_delegated_gate_declared_recipe_scenarios`, which reads
+# each step back out of the file that owns it, so a step that moves there fails
+# that test rather than silently reddening a consumer's gate.
+GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = (
+    "install-worktree-pack",
+    "install-commit-refuse-hooks",
+    "hook_gate=1 check",
+)
 
 # What `_answered` reads back when a probe did not answer at all — a git that is
 # not on PATH, a spawn that failed. Non-zero rather than empty stdout so the one
@@ -186,8 +210,9 @@ def declared_gate_check_suite(*, repo_root: Path) -> Result[tuple[str, ...], Gat
 
     The gate Job runs the gated repository's OWN recipes and nothing else, so
     this is the one place the command is decided — and `GATE_CHECK_SUITE_FALL_THROUGH`
-    is the documented default a repository that declares nothing gets, never a
-    recipe only some other repository has.
+    is the documented default a repository that declares nothing gets: the
+    shared pre-push sequence its own local fall-through runs, never a recipe
+    only some other repository has.
 
     A MALFORMED DECLARATION FAILS THE STEP rather than falling back, which is
     the opposite disposition from `delegated_gate_enabled` above and

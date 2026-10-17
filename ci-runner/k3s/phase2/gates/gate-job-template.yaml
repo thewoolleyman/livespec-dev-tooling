@@ -150,13 +150,18 @@ spec:
           # Requirement 2: THE GATED REPOSITORY'S OWN check recipes, nothing
           # else. Both blocks below are substituted by render-gate-job.sh from
           # that repository's `gate_check_suite` declaration — or, when it
-          # declares none, from the single `check` recipe its local pre-push
-          # fall-through runs. They are NOT a constant here, and that is the
+          # declares none, from the shared pre-push SEQUENCE its local
+          # fall-through runs: the worktree-pack install, the
+          # commit-refuse-hook install, and `hook_gate=1 check` (freeze-driver
+          # ruling R92, 2026-10-17; a single `check` was that default until
+          # then, and the two missing installs plus the missing `hook_gate=1`
+          # reddened four targets on a tree green in CI).
+          # They are NOT a constant here, and that is the
           # whole point of the slice that rewrote this block
           # (livespec-dev-tooling-saxz): the command used to be a fixed list of
           # livespec-dev-tooling's OWN recipes — the worktree-pack install, the
           # commit-refuse-hook install, the typecheck warm-up and its
-          # hook-gated aggregate. Three of those four exist in no other
+          # hook-gated aggregate. The typecheck warm-up exists in no other
           # repository, so every consuming repository's Job failed and its gate
           # was red on every green tree. Measured 2026-10-16 against
           # livespec-orchestrator-beads-fabro, whose post-merge janitor shipped
@@ -178,9 +183,12 @@ spec:
           # runs this script outside a pod, into a different failure than the
           # one being asserted.
           #
-          # livespec-dev-tooling's own declaration still runs the two installs
-          # first, and the reasons are worth keeping because they are the ones a
-          # consumer authoring its own suite will meet. `/workspace` is a
+          # THE TWO INSTALLS RUN FIRST IN EVERY GATE — livespec-dev-tooling's
+          # own declaration and, since ruling R92, the default every consumer
+          # that declares nothing gets. The reasons are worth keeping because
+          # they are the ones a consumer authoring its own suite will meet,
+          # and because they are why a bare `check` could never stand in for
+          # the local fall-through. `/workspace` is a
           # `git init` + fetch, not a bootstrapped clone, so the
           # worktree-discipline pack and the commit-refuse hooks are simply
           # absent: `check-primary-checkout-commit-refuse-hook-installed` fails
