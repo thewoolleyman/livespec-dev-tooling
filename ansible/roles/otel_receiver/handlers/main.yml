@@ -1,0 +1,8 @@
+---
+# Reloading changes nothing the running receiver is doing; the new unit takes
+# effect at its next start. tasks/main.yml flushes this straight after the unit
+# is written, so a restart later in the same run starts the new unit.
+- name: Reload systemd for the receiver's unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true

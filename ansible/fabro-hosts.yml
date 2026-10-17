@@ -81,6 +81,12 @@
     # credential the plugin is configured to read.
     - role: sandbox_driver_kubernetes
       tags: [sandbox_driver_kubernetes]
+    # The persistent OTel receiver every Fabro instance on the host exports to
+    # (livespec-dev-tooling-jvem). Off unless the host turns it on. A converge
+    # that changes it never restarts it without -e otel_receiver_restart_allowed=true;
+    # see the role's HOST_VARS.md for the announced-window procedure.
+    - role: otel_receiver
+      tags: [otel_receiver]
   tasks:
     - name: Refuse a Fabro target unit this host does not declare
       ansible.builtin.assert:

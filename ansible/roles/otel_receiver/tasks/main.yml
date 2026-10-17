@@ -1,0 +1,163 @@
+---
+- name: Skip a host that does not run the receiver
+  ansible.builtin.meta: end_role
+  when: not (otel_receiver_enabled | bool)
+
+- name: Refuse a receiver configuration this role cannot install safely
+  ansible.builtin.assert:
+    that:
+      - otel_receiver_env_file | length > 0
+      - otel_receiver_orchestrator_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+      - otel_receiver_orchestrator_version[1:] is version(otel_receiver_orchestrator_floor, '>=')
+    fail_msg: >-
+      otel_receiver_env_file must name the host's ingest-key environment file,
+      and otel_receiver_orchestrator_version must be a release tag at or after
+      v{{ otel_receiver_orchestrator_floor }} (got
+      '{{ otel_receiver_orchestrator_version }}'): an older build strips the
+      Petri-era run_turn.* span attributes.
+    success_msg: the receiver's pin and environment file are declared
+
+- name: Look for the receiver's environment file
+  # Only its existence is read. The role never writes, copies or reads the
+  # value: the ingest key reaches the process through the unit's
+  # EnvironmentFile and nowhere else.
+  ansible.builtin.stat:
+    path: "{{ otel_receiver_env_file }}"
+    get_checksum: false
+  become: true
+  register: otel_receiver_env_stat
+  check_mode: false
+
+- name: Refuse a host whose environment file is missing
+  ansible.builtin.assert:
+    that:
+      - otel_receiver_env_stat.stat.exists
+      - otel_receiver_env_stat.stat.isreg
+    fail_msg: >-
+      {{ otel_receiver_env_file }} is not a regular file. It carries
+      HONEYCOMB_INGEST_KEY_LIVESPEC and is provisioned outside this role; put
+      it in place before converging the receiver.
+    success_msg: the receiver's environment file is present
+
+- name: Create the receiver's install and state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ otel_receiver_user }}"
+    group: "{{ otel_receiver_group }}"
+    mode: "0755"
+  loop:
+    - "{{ otel_receiver_install_root }}"
+    - "{{ otel_receiver_state_dir }}"
+  become: true
+
+- name: Clone the pinned orchestrator release the receiver runs from
+  # The role's OWN clone, so moving it to the pin is safe: nothing else runs
+  # from it and nobody keeps work in it.
+  ansible.builtin.git:
+    repo: "{{ otel_receiver_orchestrator_remote }}"
+    dest: "{{ otel_receiver_orchestrator_dir }}"
+    version: "{{ otel_receiver_orchestrator_version }}"
+    update: true
+    force: false
+  become: true
+  become_user: "{{ otel_receiver_user }}"
+  register: otel_receiver_clone
+
+- name: Install the receiver's daemon entry point
+  ansible.builtin.copy:
+    src: otel_receiver_daemon.py
+    dest: "{{ otel_receiver_entry_point }}"
+    owner: "{{ otel_receiver_user }}"
+    group: "{{ otel_receiver_group }}"
+    mode: "0644"
+  become: true
+  register: otel_receiver_daemon
+
+- name: Install the receiver's unit
+  ansible.builtin.template:
+    src: otel-receiver.service.j2
+    dest: "{{ otel_receiver_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: otel_receiver_unit
+  notify: Reload systemd for the receiver's unit
+
+- name: Reload systemd now if the unit changed
+  ansible.builtin.meta: flush_handlers
+
+- name: Keep the receiver enabled
+  ansible.builtin.systemd_service:
+    name: "{{ otel_receiver_unit_name }}"
+    enabled: true
+  become: true
+
+- name: Look for a restart an earlier run deferred
+  ansible.builtin.stat:
+    path: "{{ otel_receiver_restart_pending_marker }}"
+    get_checksum: false
+  become: true
+  register: otel_receiver_pending
+  check_mode: false
+
+- name: Decide whether the receiver needs a restart
+  ansible.builtin.set_fact:
+    otel_receiver_needs_restart: >-
+      {{ otel_receiver_clone.changed
+         or otel_receiver_daemon.changed
+         or otel_receiver_unit.changed
+         or otel_receiver_pending.stat.exists }}
+
+- name: Record the restart as pending when the operator has not allowed it
+  # Constant content, so a second refused run reports no change and the marker
+  # reads as one standing deferral.
+  ansible.builtin.copy:
+    dest: "{{ otel_receiver_restart_pending_marker }}"
+    content: |
+      The receiver's source, entry point or unit changed and it was NOT
+      restarted, so it still runs the OLD build. Apply it inside an announced
+      window with: just ansible-apply ansible/fabro-hosts.yml --tags otel_receiver
+      -l <host> -e otel_receiver_restart_allowed=true
+    owner: "{{ otel_receiver_user }}"
+    group: "{{ otel_receiver_group }}"
+    mode: "0644"
+  become: true
+  when:
+    - otel_receiver_needs_restart | bool
+    - not (otel_receiver_restart_allowed | bool)
+
+- name: Restart the receiver
+  ansible.builtin.systemd_service:
+    name: "{{ otel_receiver_unit_name }}"
+    state: restarted
+  become: true
+  when:
+    - otel_receiver_needs_restart | bool
+    - otel_receiver_restart_allowed | bool
+
+- name: Clear the restart-pending marker this restart satisfied
+  ansible.builtin.file:
+    path: "{{ otel_receiver_restart_pending_marker }}"
+    state: absent
+  become: true
+  when:
+    - otel_receiver_needs_restart | bool
+    - otel_receiver_restart_allowed | bool
+
+- name: Keep the receiver running
+  # Starts a receiver that is not running; never restarts one that is.
+  ansible.builtin.systemd_service:
+    name: "{{ otel_receiver_unit_name }}"
+    state: started
+  become: true
+
+- name: Report a deferred restart
+  ansible.builtin.debug:
+    msg: >-
+      {{ otel_receiver_unit_name }} changed and was NOT restarted: it keeps
+      running the old build until a run with otel_receiver_restart_allowed=true.
+  when:
+    - otel_receiver_needs_restart | bool
+    - not (otel_receiver_restart_allowed | bool)
