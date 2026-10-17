@@ -41,8 +41,9 @@
 # livespec-orchestrator-beads-fabro, whose post-merge janitor had to ship
 # `venue = host_local` because of it. The caller passes what the repository
 # DECLARES (`gate_check_suite` in its `[tool.livespec_dev_tooling]` block); the
-# default when no flag is given is the single `check` recipe a consumer's local
-# pre-push fall-through runs, never a recipe only this repository declares.
+# default when no flag is given is the SHARED PRE-PUSH SEQUENCE a consumer's
+# local fall-through runs (see that default below), never a recipe only this
+# repository declares.
 #
 # An entry MAY carry leading `name=value` variable assignments, which `just`
 # accepts before the recipe name. The RECIPE the Job preflights is the first
@@ -151,11 +152,26 @@ fi
 image="${images[0]}"
 
 # --- the gated repository's own check recipes --------------------------------
-# No flag means the repository declared nothing, which is the overwhelmingly
-# common case: it gets the `check` recipe its own local pre-push fall-through
-# runs. Never this repository's four — that constant is the defect
+# No flag means the caller named no suite, which for the gate client means the
+# repository declared nothing: it gets the SHARED PRE-PUSH SEQUENCE its own
+# local fall-through runs — the worktree-pack install lefthook's `pre-push`
+# block runs, the commit-refuse-hook install, and the `hook_gate=1 check`
+# aggregate `scripts/just/check-pre-push.sh` ends in (freeze-driver ruling R92,
+# 2026-10-17). A single `check` was this default until then, and it is NOT that
+# fall-through: the pod's `/workspace` is a `git init` + fetch rather than a
+# bootstrapped clone, so without the installs two members judge the SANDBOX, and
+# without `hook_gate=1` the admin-scope world gate runs and answers 403.
+#
+# The client decides the default too (`GATE_CHECK_SUITE_FALL_THROUGH`) and
+# always passes it explicitly, so this is the fallback for a hand-run render on
+# a delegating host. The two spellings are held together by
+# `tests.consumer.test_delegated_gate_declared_recipe_scenarios`, which renders
+# with no flag and compares. Never this repository's `warm-typecheck`, which no
+# other repository carries — that constant is the defect
 # livespec-dev-tooling-saxz removed.
-[ "${#check_suite[@]}" -gt 0 ] || check_suite=("check")
+if [ "${#check_suite[@]}" -eq 0 ]; then
+  check_suite=("install-worktree-pack" "install-commit-refuse-hooks" "hook_gate=1 check")
+fi
 
 # Each entry goes into the pod's shell script verbatim and its recipe name goes
 # into an unquoted `for` list, so the character set is bounded HERE rather than

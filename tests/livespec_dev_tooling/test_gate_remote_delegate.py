@@ -401,15 +401,25 @@ def test_a_repository_that_declares_nothing_gets_its_local_fall_through_recipe(
 ) -> None:
     """The documented default, and the one every repository but this one is at.
 
-    `check` is the recipe a consumer's OWN local pre-push fall-through runs —
-    never this repository's four, three of which exist nowhere else and made
-    every consuming repository's gate red on every green tree.
+    It is the SHARED pre-push sequence a consumer's own local fall-through runs
+    — the pack install the `pre-push` hook runs, the commit-refuse-hook install,
+    and the `hook_gate=1 check` aggregate `scripts/just/check-pre-push.sh` ends
+    in (freeze-driver ruling R92, 2026-10-17). It is never this repository's
+    `warm-typecheck`, which exists nowhere else. The sequence is pinned to those
+    files by tests.consumer.test_delegated_gate_declared_recipe_scenarios, which
+    reads each step back out of the file that owns it; this is the unit-tier
+    statement that the suite a repository declaring nothing gets IS that
+    sequence.
     """
     declared = declared_gate_check_suite(repo_root=tmp_path)
 
     assert isinstance(declared, Success)
     assert declared.unwrap() == GATE_CHECK_SUITE_FALL_THROUGH
-    assert GATE_CHECK_SUITE_FALL_THROUGH == ("check",)
+    assert GATE_CHECK_SUITE_FALL_THROUGH == (
+        "install-worktree-pack",
+        "install-commit-refuse-hooks",
+        "hook_gate=1 check",
+    )
 
 
 def test_a_declared_suite_is_read_in_its_declaration_order(*, tmp_path: Path) -> None:

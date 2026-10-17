@@ -32,8 +32,9 @@
 #      tree with no github.com origin renders EMPTY rather than a guess;
 #   M. the gate command is the GATED REPOSITORY's OWN declared check recipes and
 #      none of livespec-dev-tooling's — two suites render two different
-#      commands, and a repository that declares nothing gets the single `check`
-#      recipe its local pre-push fall-through runs;
+#      commands, and a repository that declares nothing gets the shared
+#      pre-push SEQUENCE its local fall-through runs — the two installs, then
+#      `hook_gate=1 check` (freeze-driver ruling R92, 2026-10-17);
 #   N. the rendered pod script PREFLIGHTS each declared recipe: a tree that does
 #      not provide one exits non-zero NAMING it, runs no recipe at all, and
 #      never falls back — and a tree that provides them runs them in order, so
@@ -405,10 +406,16 @@ just publish" ]; then
   else
     fail "the second declaration did not reach the command: $(gate_recipes "${other_out}")"
   fi
-  if [ "$(gate_recipes "${default_out}")" = "just check" ]; then
-    pass "a repository that declares nothing gets its local fall-through recipe"
+  # The no-declaration default is the SHARED PRE-PUSH SEQUENCE, not one recipe
+  # (ruling R92). A bare `just check` is not the fall-through a gate stands in
+  # for: without the installs two members judge the pod's un-bootstrapped
+  # sandbox, and without `hook_gate=1` the admin-scope world gate answers 403.
+  if [ "$(gate_recipes "${default_out}")" = "just install-worktree-pack
+just install-commit-refuse-hooks
+just hook_gate=1 check" ]; then
+    pass "a repository that declares nothing gets its local fall-through sequence"
   else
-    fail "the no-declaration default is not just check: $(gate_recipes "${default_out}")"
+    fail "the no-declaration default is not the shared pre-push sequence: $(gate_recipes "${default_out}")"
   fi
   if [ -z "$(gate_recipes "${declared_out}" | grep -E 'warm-typecheck|hook_gate|install-' || true)" ]; then
     pass "none of livespec-dev-tooling's own recipes reach another repository's Job"
