@@ -265,6 +265,22 @@ spec:
           args:
             - |
               set -euo pipefail
+              # THE CORE RESOLUTION, SAID OUT LOUD WHERE A VERDICT'S READER IS.
+              # The init container above fetches livespec core at the consumer's
+              # pin and this container is handed the path to it, but until this
+              # line nothing in the gate's own output said so: the client
+              # streams THIS pod's logs as the verdict stream, so the resolution
+              # was a fact of the MANIFEST rather than an observable of the RUN,
+              # and "was core resolved?" could not be answered from a gate's
+              # output at all (freeze-driver ruling R100, 2026-10-17).
+              #
+              # BEFORE THE PREFLIGHT, deliberately: a Job that refuses a missing
+              # recipe still reports whether core was there. An EMPTY or absent
+              # value prints as such rather than tripping `-u`, because "core
+              # was not resolved" is the answer a reader needs most — it is the
+              # cause behind core's own "livespec core not found" from a
+              # consumer's `check-doctor-static`.
+              echo ":: gate: livespec core ref @@LIVESPEC_CORE_REF@@ -> LIVESPEC_CORE_PLUGIN_ROOT=${LIVESPEC_CORE_PLUGIN_ROOT:-<unset>}"
               for recipe in @@GATE_RECIPE_NAMES@@; do
                 if just --show "${recipe}" > /dev/null 2>&1; then
                   continue
