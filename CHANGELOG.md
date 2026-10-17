@@ -58,6 +58,48 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.111.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.4...v1.111.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* **guard:** exit zero from the preflight command line on a host with no refusal ([e575218](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e575218c4cb4118e998cc41bdb83be8844d65e2c))
+* **guard:** print every preflight refusal from a command line the role can run ([b79f644](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b79f644dbb576826021021690c9ecc8eed3e206d))
+* **guard:** record the k3s witness and the interfaces from the preflight command line ([743ce3e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/743ce3ecb6941ef0d3968d4da3acb9043f3100f1))
+* **guard:** resolve the preflight command line's siblings from the installed tree ([c595bdb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c595bdb2e7e7b98bf994449b3a9cd4487c8eb557))
+
+## [1.111.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.3...v1.111.4) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ansible:** skip template timers in the node-loss drill's timer discovery ([4b1ebe0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4b1ebe0dd2a89398dda7da1422782e4a85f54e7c))
+
+## [1.111.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.2...v1.111.3) (2026-10-16)
+
+
+### Bug Fixes
+
+* **fleet:** carry the declared k3s-server route from probes.json into the sample ([b2cf7aa](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2cf7aa5a1b4198aa021e5b873952761eef67730))
+* **fleet:** declare the route the DNS-placement probe reaches the k3s server by ([6986e60](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6986e60aa66d80774b812caac08bdfdfb1f6e36a))
+* **fleet:** refuse a k3s-server route the placement read cannot run ([793751f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/793751fef64ed87c2d8a437be6a0bfdbb4f49aeb))
+
+## [1.111.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.1...v1.111.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **guard:** read an absent rollback snapshot file as a failing postcondition ([19d6347](https://github.com/thewoolleyman/livespec-dev-tooling/commit/19d6347b55323c2e1582dffa9787de001f1e3161))
+* **guard:** release an unsnapshotted run's reservation on rollback ([a7dd65e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a7dd65eaac92c464c84e56bace3cd197f9e0298e))
+
+## [1.111.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.0...v1.111.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **factory:** accept a live telemetry receiver on the reach check's run-now apply ([32648d2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/32648d2603200d47ff9d2714750fe264d4d90f4d))
+* **factory:** drop the beads Dolt tenant from the factory reach endpoints ([f629496](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f6294968ecffdab1bba8307bebbe89abec8fc1ff))
+
 ## [1.111.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.110.1...v1.111.0) (2026-10-16)
 
 

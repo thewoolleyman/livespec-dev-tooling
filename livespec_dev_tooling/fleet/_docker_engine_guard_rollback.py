@@ -2,7 +2,11 @@
 
 `docker_engine_guard.py` reaches `run_rollback` here once its dispatch
 table has decided that a rollback may proceed, so the driver lives beside
-the guard rather than inside it.
+the guard rather than inside it. The eight phase BODIES this driver
+decides between live in `_docker_engine_guard_rollback_phases.py`, which
+is where a spawned phase child does its one bounded host action; this
+module owns which phases a firing enters, in what order, how often, and
+what the firing's outcome is.
 
 Governing specification: `SPECIFICATION/non-functional-requirements.md`
 section "Docker engine install guard", "Rollback" (this repository).
@@ -17,13 +21,16 @@ expected refusal is RETURNED in a `GuardOutcome` rather than raised.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (
     GUARD_EXECUTABLE,
-    GUARDED_UNITS,
     GuardOutcome,
+)
+from livespec_dev_tooling.fleet._docker_engine_guard_rollback_phases import (
+    PHASE_BODIES,
+    UNIT_STOP_SECONDS,
+    run_phase,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_state import (
     read_phase,
@@ -32,9 +39,8 @@ from livespec_dev_tooling.fleet._docker_engine_guard_state import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Mapping
 
-    from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps
     from livespec_dev_tooling.fleet._docker_engine_guard_model import Decision, Phase
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
@@ -80,32 +86,6 @@ def deadman_timer_unit(*, run: str) -> str:
     """
     return f"docker-engine-deadman-{run}.timer"
 
-
-# The bounded wait on each `systemctl stop` a rollback phase issues. Every
-# stop is bounded because a rollback that blocked on one would hold the
-# lock until its own budget killed it, having run none of the later
-# phases.
-UNIT_STOP_SECONDS: Final[int] = 30
-
-# The slice holding every container this run created. Killing BY CGROUP
-# is what spares k3s: its containerd and every shim live in
-# `k3s-agent.service` and the kubepods slices, never in these three, so
-# no k3s process is reachable from the kill at all.
-KILL_TARGETS: Final[tuple[str, ...]] = (
-    "docker.service",
-    "containerd.service",
-    "fabro-sandbox.slice",
-)
-
-# What the bounded stop after the kill covers: the kill's three targets
-# plus `docker.socket`, and the socket FIRST — a listening socket that
-# outlived the service it activates would re-trigger a start.
-STOP_AFTER_KILL: Final[tuple[str, ...]] = (
-    "docker.socket",
-    "docker.service",
-    "containerd.service",
-    "fabro-sandbox.slice",
-)
 
 # The specification's rollback order. Written out rather than derived
 # from the budget table below, because the ORDER is a rule in its own
@@ -197,150 +177,37 @@ POSTCONDITION_OF_PHASE: Final[dict[str, str]] = {
 }
 
 
-@dataclass(frozen=True, kw_only=True)
-class _PhaseContext:
-    """Everything a rollback phase acts through, and nothing else.
-
-    Narrower than the `GuardEnv` the driver holds, on purpose: a phase
-    body reads no record, writes no phase and decides no admission — it
-    takes one bounded host action and compares against one snapshot.
-    """
-
-    host: HostOps
-    snapshot: Path
-
-
-class _PhaseBody(Protocol):
-    """What one rollback phase does, and what it hands back to report.
-
-    The returned strings are the phase's FINDINGS — a residual rule, a
-    deleted interface, a sysctl that no longer matches the snapshot. They
-    are recorded rather than acted on: shared state is never written back
-    blindly, because another actor may own the value now.
-    """
-
-    def __call__(self, *, context: _PhaseContext) -> tuple[str, ...]: ...
-
-
-def _socket_stop(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Stop `docker.socket`, before anything stops `docker.service`.
-
-    Load-bearing rather than tidy (design rider 1): a `Restart=` respawn
-    does NOT re-evaluate `ConditionPathExists` on systemd 259, so a
-    listening socket left in place would keep re-triggering starts that
-    the revoked permission can no longer skip.
-    """
-    context.host.stop_unit(unit="docker.socket", timeout_seconds=UNIT_STOP_SECONDS)
-    return ()
-
-
-def _job_cancel(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Cancel the guarded units' queued jobs, by job id.
-
-    Never a bare `systemctl cancel`, which cancels the WHOLE queue
-    including k3s's own jobs. A queued start job is what would otherwise
-    bring a daemon straight back the moment the kill finished.
-    """
-    guarded = set(GUARDED_UNITS)
-    context.host.cancel_jobs(
-        job_ids=tuple(job.job_id for job in context.host.queued_jobs() if job.unit in guarded)
-    )
-    return ()
-
-
-def _forward_restore(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Put each address family's FORWARD policy back to its snapshot value.
-
-    Early in the order because it is the ACCESS-relevant phase and takes
-    milliseconds: a FORWARD policy left where Docker put it is the
-    failure that would cost the maintainer the host.
-    """
-    context.host.restore_forward_policy(snapshot=context.snapshot)
-    return ()
-
-
-def _cgroup_kill(*, context: _PhaseContext) -> tuple[str, ...]:
-    """SIGKILL by cgroup, then stop, and nothing outside those cgroups."""
-    context.host.kill_cgroup(units=KILL_TARGETS)
-    for unit in STOP_AFTER_KILL:
-        context.host.stop_unit(unit=unit, timeout_seconds=UNIT_STOP_SECONDS)
-    return ()
-
-
-def _unit_disable(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Disable the three guarded units the package postinst enabled.
-
-    Without this they stay enabled and condition-skipped: harmless while
-    the permission is absent, and a pending start the postconditions
-    would keep reporting.
-    """
-    context.host.disable_units(units=GUARDED_UNITS)
-    return ()
-
-
-def _footprint_removal(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Remove exactly Docker's rule footprint, and report any residue."""
-    return context.host.remove_firewall_footprint(snapshot=context.snapshot)
-
-
-def _interface_deletion(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Delete `docker0` and every veth mastered by it, and report what went."""
-    return context.host.delete_bridge_interfaces()
-
-
-def _sysctl_comparison(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Compare the watched sysctls with the snapshot and report each difference."""
-    return context.host.compare_sysctls(snapshot=context.snapshot)
-
-
-PHASE_BODIES: Final[dict[str, _PhaseBody]] = {
-    "socket-stop": _socket_stop,
-    "job-cancel": _job_cancel,
-    "forward-restore": _forward_restore,
-    "cgroup-kill": _cgroup_kill,
-    "unit-disable": _unit_disable,
-    "footprint-removal": _footprint_removal,
-    "interface-deletion": _interface_deletion,
-    "sysctl-comparison": _sysctl_comparison,
-}
-
-
-def _rollback_dir(*, run: str, env: GuardEnv) -> Path:
-    """Where this run's rollback bookkeeping lives, beside its other records."""
-    return env.paths.run_dir(run=run) / "rollback"
-
-
 def _attempts(*, run: str, env: GuardEnv, phase: str) -> int:
     """How many times this phase has been ENTERED, across every firing.
 
     Absent reads as zero, which is the only safe reading: the record is
     written before the phase is entered, so no record means no entry.
     """
-    record = _rollback_dir(run=run, env=env) / f"{phase}.attempts"
+    record = env.paths.rollback_dir(run=run) / f"{phase}.attempts"
     return int(record.read_text(encoding="utf-8")) if record.is_file() else 0
 
 
 def _record_attempt(*, run: str, env: GuardEnv, phase: str, attempts: int) -> None:
     """Advance this phase's attempt count durably, before the phase is entered."""
     write_durable(
-        path=_rollback_dir(run=run, env=env) / f"{phase}.attempts",
+        path=env.paths.rollback_dir(run=run) / f"{phase}.attempts",
         data=str(attempts + 1),
     )
 
 
 def _clear_success(*, run: str, env: GuardEnv, phase: str) -> None:
     """Drop this phase's success record, so a later firing re-runs it."""
-    (_rollback_dir(run=run, env=env) / f"{phase}.success").unlink(missing_ok=True)
+    (env.paths.rollback_dir(run=run) / f"{phase}.success").unlink(missing_ok=True)
 
 
 def _succeeded(*, run: str, env: GuardEnv, phase: str) -> bool:
     """Whether this phase has a recorded success a later firing may trust."""
-    return (_rollback_dir(run=run, env=env) / f"{phase}.success").is_file()
+    return (env.paths.rollback_dir(run=run) / f"{phase}.success").is_file()
 
 
 def _record_success(*, run: str, env: GuardEnv, phase: str) -> None:
     """Record that this phase's child completed, durably."""
-    write_durable(path=_rollback_dir(run=run, env=env) / f"{phase}.success", data=phase)
+    write_durable(path=env.paths.rollback_dir(run=run) / f"{phase}.success", data=phase)
 
 
 def phase_child_argv(*, run: str, env: GuardEnv, phase: str) -> tuple[str, ...]:
@@ -373,36 +240,6 @@ def phase_child_argv(*, run: str, env: GuardEnv, phase: str) -> tuple[str, ...]:
     )
 
 
-def run_phase(*, run: str, env: GuardEnv, phase: str) -> GuardOutcome:
-    """Run ONE rollback phase, in the child process the driver spawned for it.
-
-    A phase name outside the eight is an expected refusal RETURNED on the
-    outcome, never a raise: this module runs on a bare host interpreter
-    where the Result railway is not importable, so the outcome carries
-    the refusal instead.
-    """
-    body = PHASE_BODIES.get(phase)
-    if body is None:
-        return GuardOutcome(
-            operation="rollback",
-            run=run,
-            verdict="refuse",
-            reason=f"{phase} is not one of this guard's rollback phases",
-        )
-    findings = body(context=_PhaseContext(host=env.host, snapshot=env.paths.snapshot_dir(run=run)))
-    if findings:
-        write_durable(
-            path=_rollback_dir(run=run, env=env) / f"{phase}.findings",
-            data="\n".join(findings),
-        )
-    return GuardOutcome(
-        operation="rollback",
-        run=run,
-        verdict="proceed",
-        reason=f"rollback phase {phase} ran",
-    )
-
-
 def _failed_postconditions(*, run: str, env: GuardEnv) -> tuple[str, ...]:
     """Every postcondition the final check finds failing, in specified order.
 
@@ -410,8 +247,19 @@ def _failed_postconditions(*, run: str, env: GuardEnv) -> tuple[str, ...]:
     postcondition the host did not answer at all counts as failing, so a
     narrowed or broken read reports a partial recovery rather than a
     clean one.
+
+    A snapshot file the read cannot OPEN is that same unanswered case,
+    and is answered the same way rather than allowed to raise. Raising
+    is worse than useless twice over: the firing dies before
+    `_record_outcome`, so it writes no outcome and leaves the run
+    holding the host's one reservation, and the one thing an unanswered
+    read must never do is let the host read as clean.
     """
-    read = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
+    read: Mapping[str, bool]
+    try:
+        read = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
+    except FileNotFoundError:
+        read = {}
     return tuple(name for name in POSTCONDITIONS if not read.get(name, False))
 
 
@@ -449,7 +297,7 @@ def _record_outcome(*, run: str, env: GuardEnv, failed: tuple[str, ...]) -> Phas
     """
     outcome: Phase = "rollback-partial" if failed else "rolled-back"
     write_durable(
-        path=_rollback_dir(run=run, env=env) / "outcome.json",
+        path=env.paths.rollback_dir(run=run) / "outcome.json",
         data=json.dumps({"outcome": outcome, "failed_postconditions": list(failed)}),
     )
     record_phase(paths=env.paths, run=run, phase=outcome)
@@ -542,14 +390,40 @@ def run_rollback(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome
     `decision` is the table's, already made under the lock: reaching here
     means the run is uncommitted and its phase admits a rollback.
 
-    The phase record comes FIRST, before any other step. It is what
-    closes the forward path — `start` and `confirm` are each allowed only
-    from a phase this run no longer has — so recording it first is what
-    makes a driver killed immediately afterwards leave a run nothing can
-    carry forward, rather than one that was acted on and still looks
+    A run with NO SNAPSHOT is answered before anything else, and
+    answered by releasing it. `publish` takes the snapshot before its
+    first package step, so a run that has none was interrupted between
+    `reserve` and `publish` and has had nothing started behind it: no
+    package installed, no permission granted, no daemon up. Design G3
+    states the consequence — "a crash after `reserve` and before
+    `publish` leaves a `reserved` run with no snapshot; `rollback` on it
+    only releases the reservation (nothing was started)". Running the
+    phases over such a run is not merely wasted work: the comparison
+    phases and the final check read a snapshot that does not exist, so
+    the firing dies having written no outcome and leaves the run
+    `rolling-back`, holding the host's one reservation until an operator
+    clears it by hand. The question is asked BEFORE the phase record so
+    that a run ALREADY stranded that way is released by the same rule.
+
+    Otherwise the phase record comes FIRST, before any other step. It is
+    what closes the forward path — `start` and `confirm` are each allowed
+    only from a phase this run no longer has — so recording it first is
+    what makes a driver killed immediately afterwards leave a run nothing
+    can carry forward, rather than one that was acted on and still looks
     startable. A run already on the rollback path keeps the phase it
     arrived with until this firing writes an outcome.
     """
+    if not env.paths.snapshot_taken_path(run=run).is_file():
+        # Through the ordinary outcome record, so a later `verify` and an
+        # operator read the file they always read. No dead-man is stopped
+        # because none was ever armed: `arm` follows `publish`.
+        _ = _record_outcome(run=run, env=env, failed=())
+        return GuardOutcome(
+            operation="rollback",
+            run=run,
+            verdict=decision.verdict,
+            reason="no snapshot was taken, so nothing was started; the reservation is released",
+        )
     if read_phase(paths=env.paths, run=run) not in _ROLLBACK_PATH_PHASES:
         record_phase(paths=env.paths, run=run, phase="rolling-back")
     _fence_and_revoke(env=env)

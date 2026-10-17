@@ -118,6 +118,14 @@ hand. That re-run works because the refusing run RECORDED the deferral on the
 host — see "The deferred restart" below for what it wrote and what the re-run
 does with it.
 
+On a host with several instances, that re-run probes EVERY instance it visits,
+so a busy sibling refuses it even when the instance you want is idle. Narrow it
+with the playbook's `fabro_server_target_units`, passed as JSON:
+`-e '{"fabro_server_target_units": ["fabro-server-candidate"]}'
+-e fabro_server_restart_allowed=true`. See the header of
+`ansible/fabro-hosts.yml` for why the probe stays broad and the loop is narrowed
+instead.
+
 Rollback is step 4 in reverse and needs no role change: move the `.bak` over
 `binary_path` by hand, or point `binary_source` at the build you want and declare
 its digest. Both the `.incoming` and `.bak` siblings are left on the host
@@ -398,6 +406,20 @@ fabro_server_instances:
     github_app_id: "3668528"
     # Live on the host since 2026-08-21.
     otel_dropin: present
+    # The SAME build this instance has run since 2026-10-01 — fabro 0.254.0 at
+    # 8869e88 (tag carrier-8869e88-pre-rebuild-2026-10-10 on
+    # thewoolleyman/fabro) — rebuilt 2026-10-16 with NODE_ENV=production
+    # exported, because fabro-web's build.ts never sets it and every earlier
+    # build embedded React's DEVELOPMENT build in the web console. Engine source
+    # is identical; only the SPA differs. STAGED, NOT RESTARTED: this instance is
+    # never idle, so an apply with fabro_server_restart_allowed false swaps the
+    # file atomically under the running server and records the deferred restart.
+    # The new console goes live at the next restart: a zero-live window, or the
+    # fabro-currency cutover (gitops-fleet-capacity-monitoring ruling R80). The
+    # path is shared with fabro-server-mi-homelab, which names no binary_path and
+    # is stopped. Provenance is in BUILD_INFO beside the binary.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
+    binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
 
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/cwoolley/.fabro-mi-homelab
@@ -457,8 +479,15 @@ fabro_server_instances:
     # whatever is there on the day it runs. The replacement does not restart
     # the instance: fabro_server_restart_allowed is false by default and the
     # carrying-runs refusal gates it even when it is true.
-    binary_source: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
-    binary_sha256: effe9d03c859e8072934947ce598980ea337065df17e737867685a1508514799
+    #
+    # Rebuilt 2026-10-16 from the SAME commit (adeefec4c) with
+    # NODE_ENV=production exported. fabro-web's build.ts never sets NODE_ENV,
+    # so every earlier build, including effe9d03, embedded React's DEVELOPMENT
+    # build in the web console. The engine source is identical; only the SPA
+    # differs. A rebuild without NODE_ENV=production regresses the console to
+    # the dev UI. Provenance is in BUILD_INFO beside the binary.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
+    binary_sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
     # The sandbox environment the factory's own runs are prepared in. Measured
     # 2026-10-11: this instance's catalog held only the server's seeded `default`
     # entry — buildpack-deps:noble, 2 CPU, 4GB — so the canary run dispatched to

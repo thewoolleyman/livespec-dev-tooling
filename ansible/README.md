@@ -68,6 +68,7 @@ source of truth for how the tool is invoked.
 | `fabro-hosts.yml` | `hp-xubuntu`, `vps` | `fabro-hosts` `services/` |
 | `dev-host.yml` | `vps` | `vps-info` `services/` |
 | `reboot-ci-server.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could reboot a pool node |
+| `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 
 `reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
 the only play here that reboots a host. It is an ordinary
@@ -82,6 +83,33 @@ and it runs nothing after the reboot, because the unattended recovery is the
 property a reboot drill exists to prove. See
 `../ci-runner/k3s/README.md` §"Rebooting the k3s server" and
 `livespec-dev-tooling-a3uvyu`.
+
+`node-loss-drill.yml` is the ONE sanctioned way to take a pool AGENT node's
+k3s agent down, hold the node NotReady for a configured window, and bring it
+back — the committed path the `kubernetes-sandbox-backend` lifecycle proof
+needs, which previously existed only as an `ssh … systemctl stop k3s-agent`
+the Driver's fleet-host guard correctly refuses. It is an ordinary
+`just ansible-apply ansible/node-loss-drill.yml -e
+node_loss_drill_confirm=gmktec-xubuntu -e node_loss_drill_hold_minutes=5`, and
+it shares `reboot-ci-server.yml`'s fence exactly: without a confirmation naming
+the host's own inventory entry it reads nothing and changes nothing. Consent is
+not sufficient, though — it REFUSES, loudly, a confirmation that names the
+pool's control plane (reboot that with `reboot-ci-server.yml` instead) or any
+member of `sandbox_hosts`, since a Fabro factory host runs the very server and
+sandbox plugin the drill is being run for. Both sets come from the inventory,
+so the refusal follows the groups through the Fabro cutover rather than a name.
+
+Before the agent goes down it waits for the target to carry no `arc-runners`
+runner pod and no `gates` Job pod, read twice and field-selected to that node
+alone. It never cordons the node and never moves or removes a pod: a factory
+sandbox pod on the target is the drill's SUBJECT, and taking it away answers a
+different question. The restore lives in an `always:`, so a failed hold still
+ends with the agent back up; the play then re-reads the node and FAILS unless
+its taints, its `ci-runner.io/factory` label and its `ci-runner.io/churn-slot`
+capacity are what they were, and reports the UTC instants at which the API
+first showed the node NotReady and showed it Ready again. A `--check` run stops
+after the idle read and the recorded posture, and says so. See
+`livespec-dev-tooling-raynnh`.
 
 `ci-pool.yml` is the k3s pool's node-local provisioning — the roles
 `install-node.sh` drove, in that step order, role-aware by each node's

@@ -29,9 +29,11 @@ import importlib
 import json
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 __all__: list[str] = []
 
@@ -644,6 +646,83 @@ def test_the_dns_placement_read_reports_a_same_node_backend_as_not_counting() ->
     )
     assert (missing.passed, missing.counts_toward_confirmation) == (False, True)
     assert missing.error == "no running CoreDNS backend was found through the k3s server"
+
+
+# The route this fleet actually HAS from a k3s agent to its server, and
+# the reason the prefix has to be declared at all: `sudo -u cwoolley -H
+# ssh` reaches the server as the human the fleet provisions keys for, and
+# the trailing `sudo` is what lets `k3s kubectl` there read
+# `/etc/rancher/k3s/k3s.yaml`, which only root can read. It is the same
+# shape `ansible/roles/node_status_credential/files/
+# refresh-node-status-kubeconfig` already uses. Measured 2026-10-16:
+# gmktec-xubuntu is the agent and poweredge-xubuntu the control plane,
+# and no root-to-root ssh credential exists between them.
+_DECLARED_K3S_SERVER_ROUTE = (
+    "sudo",
+    "-u",
+    "cwoolley",
+    "-H",
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "poweredge-xubuntu",
+    "sudo",
+)
+
+
+def test_the_dns_placement_read_reaches_the_k3s_server_through_a_declared_route() -> None:
+    """The route to the k3s server is a PARAMETER of the placement read.
+
+    The read delegates the pod listing to the server, so it needs a
+    credential there, and which route carries one is a fact about the
+    fleet rather than about the guard: this one reaches the server as a
+    human user and elevates on the far side. A hard-wired root-to-root
+    `ssh` works only where such a credential is provisioned, and this
+    fleet provisions none, so the prefix is declared and the command it
+    carries -- `PLACEMENT_COMMAND` -- is the part that never varies.
+
+    An undeclared route keeps the previous `ssh -o BatchMode=yes
+    <server>` prefix, so a run that says nothing about the route behaves
+    exactly as it did before this parameter existed.
+    """
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+    assert "PLACEMENT_COMMAND" in cluster.__all__
+    assert cluster.PLACEMENT_COMMAND == (
+        "k3s",
+        "kubectl",
+        "get",
+        "pods",
+        "-n",
+        "kube-system",
+        "-o",
+        "wide",
+    )
+
+    routed = cluster.coredns_placement_argv(
+        server="poweredge-xubuntu", k3s_server_argv=_DECLARED_K3S_SERVER_ROUTE
+    )
+    assert routed == (*_DECLARED_K3S_SERVER_ROUTE, *cluster.PLACEMENT_COMMAND)
+    assert cluster.coredns_placement_argv(server="poweredge-xubuntu") == (
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "poweredge-xubuntu",
+        *cluster.PLACEMENT_COMMAND,
+    )
+
+    bus = _Commands(answers={routed: _KUBE_SYSTEM_WIDE_CROSS_NODE})
+    assert cluster.coredns_nodes(
+        runner=bus, server="poweredge-xubuntu", k3s_server_argv=_DECLARED_K3S_SERVER_ROUTE
+    ) == ("poweredge-xubuntu",)
+    elsewhere = cluster.dns_placement_probe(
+        runner=bus,
+        server="poweredge-xubuntu",
+        node="gmktec-xubuntu",
+        k3s_server_argv=_DECLARED_K3S_SERVER_ROUTE,
+    )
+    assert (elsewhere.passed, elsewhere.counts_toward_confirmation) == (True, True)
+    assert tuple(bus.argvs) == (routed, routed)
+    assert set(bus.timeouts) == {cluster.PLACEMENT_TIMEOUT_SECONDS}
 
 
 _POD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_pod_probes"
@@ -1508,7 +1587,9 @@ def _before_bus() -> _Commands:
     return _Commands(answers=answers)
 
 
-def _sample_bus(*, sysctls: dict[str, str] = _SYSCTLS_BEFORE) -> _Commands:
+def _sample_bus(
+    *, sysctls: dict[str, str] = _SYSCTLS_BEFORE, k3s_server_argv: Sequence[str] = ()
+) -> _Commands:
     """Every read ONE sample takes, on the host during a healthy window."""
     firewall = importlib.import_module("livespec_dev_tooling.fleet._docker_engine_guard_firewall")
     netstate = importlib.import_module(_NETSTATE_MODULE)
@@ -1518,7 +1599,9 @@ def _sample_bus(*, sysctls: dict[str, str] = _SYSCTLS_BEFORE) -> _Commands:
     scope = importlib.import_module(_SCOPE_MODULE)
     answers: dict[tuple[str, ...], str] = {
         cluster.node_status_argv(node="gmktec-xubuntu"): _NODE_STATUS_READY,
-        cluster.coredns_placement_argv(server="poweredge-xubuntu"): (_KUBE_SYSTEM_WIDE_CROSS_NODE),
+        cluster.coredns_placement_argv(
+            server="poweredge-xubuntu", k3s_server_argv=k3s_server_argv
+        ): (_KUBE_SYSTEM_WIDE_CROSS_NODE),
         pod_probes.POD_LIST_ARGV: _READY_PODS,
         pod_probes.inspect_pod_argv(sandbox="svclb0001"): _HOST_NETWORK_POD,
         pod_probes.inspect_pod_argv(sandbox="cijob0002"): _POD_NETWORK_POD,
@@ -1545,14 +1628,20 @@ def _sample_bus(*, sysctls: dict[str, str] = _SYSCTLS_BEFORE) -> _Commands:
     return _Commands(answers=answers)
 
 
-def _guarded_tree(*, root: Path, proc: Path, shims: tuple[Path, ...]) -> Any:
+def _guarded_tree(
+    *,
+    root: Path,
+    proc: Path,
+    shims: tuple[Path, ...],
+    parameters: dict[str, Any] = _PROBE_PARAMETERS,
+) -> Any:
     """A reserved run with its probe parameters and its preflight snapshot."""
     paths = _guard_paths(root=root)
     paths.state_root.mkdir(parents=True, exist_ok=True)
     _ = paths.reservation.write_text(_lines(_RUN), encoding="utf-8")
     inputs = paths.inputs_dir(run=_RUN)
     inputs.mkdir(parents=True, exist_ok=True)
-    _ = (inputs / "probes.json").write_text(json.dumps(_PROBE_PARAMETERS), encoding="utf-8")
+    _ = (inputs / "probes.json").write_text(json.dumps(parameters), encoding="utf-8")
     host = _real_host(root=root, commands=_before_bus(), proc_root=proc, containerd_paths=shims)
     host.take_snapshot(destination=paths.snapshot_dir(run=_RUN))
     host.record_preflight(destination=paths.snapshot_dir(run=_RUN))
@@ -1625,3 +1714,103 @@ def test_the_real_hosts_sample_composes_every_probe_against_recorded_output(
             "error": "net.ipv4.ip_forward 1 -> 0; then net.ipv4.ip_forward 1 -> 0",
         },
     )
+
+
+# The same declared parameters, plus the route this fleet reaches its k3s
+# server by. It is a LIST in the recorded file because that is what JSON
+# has; the parameters carry it as a tuple.
+_PROBE_PARAMETERS_ROUTED: dict[str, Any] = {
+    **_PROBE_PARAMETERS,
+    "k3s_server_argv": list(_DECLARED_K3S_SERVER_ROUTE),
+}
+
+
+def test_the_declared_k3s_server_route_carries_from_probes_json_into_the_sample(
+    tmp_path: Path,
+) -> None:
+    """A run's declared route reaches the placement read, and only it.
+
+    The route is a fact about the FLEET, so it arrives the way every
+    other cluster fact does: declared in the run's own `probes.json`,
+    read into the parameters, and bound to the one probe that delegates
+    to the k3s server. Nothing else in the sample changes, which is why
+    both halves below drive the same recorded bus: a run that declares
+    no route emits exactly the argv it emitted before the route was a
+    parameter, and a run that declares one emits that prefix instead.
+    """
+    probe_set = importlib.import_module(_PROBE_SET_MODULE)
+    assert "k3s_server_argv" in {declared.name for declared in fields(probe_set.ProbeParameters)}
+    cluster = importlib.import_module(_CLUSTER_MODULE)
+    sample_module = importlib.import_module(_SAMPLE_MODULE)
+
+    proc = _proc_tree(
+        root=tmp_path / "proc",
+        cgroups={
+            **_CONTAINERD_CGROUPS,
+            "7211": f"0::{_SANDBOX_CONTROL_GROUP}/docker-abc123.scope",
+        },
+    )
+    shims = (tmp_path / "containerd" / "s", tmp_path / "containerd" / "runc" / "k8s.io")
+    for directory in shims:
+        directory.mkdir(parents=True, exist_ok=True)
+
+    for name, declared, route in (
+        ("routed", _PROBE_PARAMETERS_ROUTED, _DECLARED_K3S_SERVER_ROUTE),
+        ("undeclared", _PROBE_PARAMETERS, ()),
+    ):
+        root = tmp_path / name
+        paths = _guarded_tree(root=root, proc=proc, shims=shims, parameters=declared)
+        assert probe_set.read_probe_parameters(paths=paths, run=_RUN).k3s_server_argv == route
+
+        bus = _sample_bus(k3s_server_argv=route)
+        taken = _real_host(root=root, commands=bus, proc_root=proc, containerd_paths=shims).sample()
+        assert taken[sample_module.PASSED_KEY] is True
+        assert (
+            cluster.coredns_placement_argv(server="poweredge-xubuntu", k3s_server_argv=route)
+            in bus.argvs
+        )
+
+
+# Every shape a declared route can be wrong in, and each is wrong in its
+# own way: an empty list reads as "no route declared" and silently
+# restores the prefix the declaration exists to replace, a bare string is
+# iterated character by character into one-letter words, a non-string
+# word is not a command argument at all, and an EMPTY word builds an argv
+# `ssh` reads as a host named "".
+_MALFORMED_K3S_SERVER_ROUTES: tuple[Any, ...] = (
+    [],
+    "sudo -u cwoolley -H ssh poweredge-xubuntu sudo",
+    ["ssh", "poweredge-xubuntu", 7],
+    ["ssh", "", "poweredge-xubuntu"],
+    None,
+)
+
+# What the refusal has to SAY, because the operator who wrote the
+# declaration is the one who has to fix it.
+_ROUTE_REFUSAL = "k3s_server_argv must be a non-empty list of non-empty strings"
+
+
+def test_reading_the_probe_parameters_refuses_an_unusable_k3s_server_route(
+    tmp_path: Path,
+) -> None:
+    """A declared route that cannot be RUN is refused where it is read.
+
+    Every malformed shape above would otherwise fail once per sample on
+    the one host nobody can reach by hand, and three of the four would
+    fail SILENTLY -- an empty list by quietly restoring the default, a
+    string by becoming one-letter words, an empty word by naming a host
+    called "". So the read refuses, which puts the failure in front of
+    the operator who wrote the declaration rather than inside the
+    observation window.
+    """
+    probe_set = importlib.import_module(_PROBE_SET_MODULE)
+    for index, malformed in enumerate(_MALFORMED_K3S_SERVER_ROUTES):
+        paths = _guard_paths(root=tmp_path / str(index))
+        inputs = paths.inputs_dir(run=_RUN)
+        inputs.mkdir(parents=True, exist_ok=True)
+        _ = (inputs / "probes.json").write_text(
+            json.dumps({**_PROBE_PARAMETERS, "k3s_server_argv": malformed}), encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match=_ROUTE_REFUSAL) as refused:
+            _ = probe_set.read_probe_parameters(paths=paths, run=_RUN)
+        assert str(inputs / "probes.json") in str(refused.value)

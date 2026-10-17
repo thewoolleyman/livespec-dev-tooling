@@ -731,3 +731,17 @@ Given a run in phase `started` whose commit marker is absent
 When an operator invokes `recover` for that run
 
 Then the run MUST be rolled back
+
+## Scenario: a delegated gate Job for a repository missing its declared recipe reports red naming the recipe
+
+Given a consuming repository that switches delegation on and declares a check recipe for its gate
+
+And the committed tree at the pushing worktree's `HEAD` does not provide that recipe
+
+When the gate client submits the gate Job for that tree
+
+Then the gate Job MUST report a red verdict that names the missing recipe
+
+And the gate Job MUST NOT have run any recipe that only livespec-dev-tooling declares
+
+And the push MUST be refused, never completed

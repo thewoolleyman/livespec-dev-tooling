@@ -287,9 +287,30 @@ class GuardPaths:
         """The host snapshot `publish` takes once, before the first package step."""
         return self.run_dir(run=run) / "before"
 
+    def snapshot_taken_path(self, *, run: str) -> Path:
+        """The marker written inside the snapshot once the host snapshot COMPLETED.
+
+        Written only after the host action returns, so a resumed
+        `publish` can tell "already snapshotted" from "interrupted part
+        way through snapshotting" and retake the second. Its ABSENCE
+        carries a second fact a rollback reads: `publish` is also what
+        installs the first package, so a run with no snapshot has had
+        nothing started behind it at all.
+        """
+        return self.snapshot_dir(run=run) / "taken"
+
     def inputs_dir(self, *, run: str) -> Path:
         """Where the controller uploads this run's inputs, and nowhere else."""
         return self.run_dir(run=run) / "inputs"
+
+    def rollback_dir(self, *, run: str) -> Path:
+        """This run's rollback bookkeeping, beside its other records.
+
+        The per-phase attempt counts, success records and findings the
+        driver writes, and the outcome record an operator and a later
+        `verify` read.
+        """
+        return self.run_dir(run=run) / "rollback"
 
 
 @dataclass(frozen=True, kw_only=True)

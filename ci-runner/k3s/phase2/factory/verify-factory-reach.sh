@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # verify-factory-reach.sh — prove that a `factory`-namespace pod ON A NAMED NODE
-# reaches the beads Dolt tenant and the telemetry receiver, and that the node can
-# pull the fleet sandbox image (livespec-dev-tooling-sszvvw, livespec plan
-# factory-worker-nodes-gitops, epic livespec-sqvj7p, plan assertion 7).
+# reaches every endpoint its configuration names, and that the node can pull the
+# fleet sandbox image (livespec-dev-tooling-sszvvw, livespec plan
+# factory-worker-nodes-gitops, epic livespec-sqvj7p, plan assertion 7 as amended
+# by freeze ruling R78 of 2026-10-16, which left the telemetry receiver as the
+# only committed endpoint — ./factory-reach-endpoints.env records why the beads
+# Dolt tenant is no longer one of them, and why adding it back blinds this check
+# to everything behind it).
 #
 # WHY A SHORT-LIVED JOB AND NOT A PROBE FROM THE HOST. Every bound that could
 # make the answer "no" belongs to the POD and not to the host: ./factory-rbac.yaml's

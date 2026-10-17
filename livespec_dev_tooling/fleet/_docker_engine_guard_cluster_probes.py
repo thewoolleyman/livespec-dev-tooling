@@ -34,6 +34,7 @@ __all__: list[str] = [
     "NODE_READY_PROBE",
     "NODE_STATUS_KUBECONFIG",
     "NODE_STATUS_TIMEOUT_SECONDS",
+    "PLACEMENT_COMMAND",
     "PLACEMENT_TIMEOUT_SECONDS",
     "READY_CONDITION",
     "REQUIRED_UNITS",
@@ -75,6 +76,20 @@ _NODE_COLUMN: Final[int] = 6
 # One delegated read over SSH to the k3s server. Longer than a local
 # API round trip because it carries a connection setup with it.
 PLACEMENT_TIMEOUT_SECONDS: Final[int] = 30
+
+# The placement read itself, which is the SAME command wherever it runs.
+# Only the prefix that carries it to the k3s server varies by fleet, so
+# the two are separate: the route is declared and this is not.
+PLACEMENT_COMMAND: Final[tuple[str, ...]] = (
+    "k3s",
+    "kubectl",
+    "get",
+    "pods",
+    "-n",
+    "kube-system",
+    "-o",
+    "wide",
+)
 
 # The pool's node-status credential, which the k3s agent already carries
 # (design, measured state 2026-10-15).
@@ -166,29 +181,32 @@ def node_ready_probe(*, runner: GuardCommandRunner, node: str) -> ProbeResult:
     )
 
 
-def coredns_placement_argv(*, server: str) -> tuple[str, ...]:
+def coredns_placement_argv(*, server: str, k3s_server_argv: Sequence[str] = ()) -> tuple[str, ...]:
     """Where CoreDNS runs, read by DELEGATING the question to the k3s server.
 
     The guarded host's own node-status credential cannot list pods --
     its grant is this node's status and nothing else (design R8) -- so
-    the placement is read where a credential for it exists. `BatchMode`
-    so a host whose key is not accepted fails at once instead of
-    waiting on a password prompt no sample can answer.
+    the placement is read where a credential for it exists.
+
+    WHICH ROUTE CARRIES IT THERE IS DECLARED, not hard-wired. The prefix
+    below reaches the server and runs a command with the rights `k3s
+    kubectl` needs, and what those rights cost differs per fleet: on a
+    cluster whose agents hold a root-to-root ssh credential a bare `ssh
+    <server>` is enough, while on one that provisions keys for a human
+    user it takes that user's ssh plus an elevation on the far side,
+    because `k3s kubectl` on the server reads
+    `/etc/rancher/k3s/k3s.yaml` and only root can read it. A hard-wired
+    prefix is right for exactly one of those and silently wrong on the
+    other -- per sample, on the one host nobody can reach by hand.
+
+    The default is the previous root-to-root prefix, so a run that
+    declares no route behaves as it did before the route was a
+    parameter. `BatchMode` is in it so a host whose key is not accepted
+    fails at once instead of waiting on a password prompt no sample can
+    answer; a declared route carries its own equivalent.
     """
-    return (
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        server,
-        "k3s",
-        "kubectl",
-        "get",
-        "pods",
-        "-n",
-        "kube-system",
-        "-o",
-        "wide",
-    )
+    route = tuple(k3s_server_argv) or ("ssh", "-o", "BatchMode=yes", server)
+    return (*route, *PLACEMENT_COMMAND)
 
 
 def _coredns_node(*, fields: Sequence[str]) -> Sequence[str]:
@@ -207,17 +225,26 @@ def _coredns_node(*, fields: Sequence[str]) -> Sequence[str]:
     return node if name and name[0].startswith(COREDNS_PREFIX) and status == [RUNNING] else ()
 
 
-def coredns_nodes(*, runner: GuardCommandRunner, server: str) -> tuple[str, ...]:
+def coredns_nodes(
+    *, runner: GuardCommandRunner, server: str, k3s_server_argv: Sequence[str] = ()
+) -> tuple[str, ...]:
     """Every node a running CoreDNS replica answers from, in the order listed."""
     answer = runner(
-        argv=coredns_placement_argv(server=server), timeout_seconds=PLACEMENT_TIMEOUT_SECONDS
+        argv=coredns_placement_argv(server=server, k3s_server_argv=k3s_server_argv),
+        timeout_seconds=PLACEMENT_TIMEOUT_SECONDS,
     )
     return tuple(
         node for raw in answer.stdout.splitlines() for node in _coredns_node(fields=raw.split())
     )
 
 
-def dns_placement_probe(*, runner: GuardCommandRunner, server: str, node: str) -> ProbeResult:
+def dns_placement_probe(
+    *,
+    runner: GuardCommandRunner,
+    server: str,
+    node: str,
+    k3s_server_argv: Sequence[str] = (),
+) -> ProbeResult:
     """Whether the DNS probe is still answered from ANOTHER node.
 
     Read at the preflight and again at the end of the window, because
@@ -226,7 +253,7 @@ def dns_placement_probe(*, runner: GuardCommandRunner, server: str, node: str) -
     running backend at all is a failure, because the cluster then has
     no DNS for the probe to prove anything with.
     """
-    backends = coredns_nodes(runner=runner, server=server)
+    backends = coredns_nodes(runner=runner, server=server, k3s_server_argv=k3s_server_argv)
     if not backends:
         return ProbeResult(
             name=DNS_PLACEMENT_PROBE,

@@ -3,12 +3,22 @@
 WHY THIS FILE EXISTS (work-item livespec-dev-tooling-sszvvw, livespec plan
 `factory-worker-nodes-gitops`, epic `livespec-sqvj7p`, plan assertion 7). The
 plan needs a REPEATABLE proof that a `factory`-namespace pod on a named node
-reaches the beads Dolt tenant and the telemetry receiver, and pulls the sandbox
-image. `ci-runner/k3s/phase2/factory/DERIVATION.md` "The tailnet" defers exactly
-that question here by name: it recorded that an hp Docker sandbox could NOT
-reach the tenant on 2026-10-13 and left proving the reach PER NODE to this
-check. A proof nobody can re-run is a measurement, not a check, so the artifact
-is committed beside the manifests it probes from.
+reaches the telemetry receiver, and pulls the sandbox image.
+`ci-runner/k3s/phase2/factory/DERIVATION.md` "The tailnet" defers exactly that
+question here by name. A proof nobody can re-run is a measurement, not a check,
+so the artifact is committed beside the manifests it probes from.
+
+THE BEADS DOLT TENANT IS NO LONGER ONE OF THOSE ENDPOINTS (work-item
+livespec-dev-tooling-5iep7h, freeze ruling R78 of 2026-10-16, which amended plan
+assertion 7). DERIVATION.md had recorded that an hp Docker sandbox could NOT
+reach the tenant on 2026-10-13 and left proving the reach PER NODE here; the
+committed run of 2026-10-16 (gate `20261016T191450Z-326561`) then found every
+covered node refused at `beads-dolt-tenant 100.89.189.118:3307` while its pod
+RAN — so the image pulled, and because the probe is fail-fast the telemetry
+receiver was never reached at all. R78 ruled that ledger access stays HOST-SIDE
+with the dispatcher, so no factory pod is given a route to the tenant. A probe
+kept for an endpoint nothing is meant to reach fails every run forever AND hides
+every endpoint behind it, which is the measurement that run actually took.
 
 WHY A PYTEST FILE AND NOT ONLY A SHELL SUITE. The sibling convention in that
 directory is a `*-exit-tests.sh` beside each script, but nothing in `just check`
@@ -53,6 +63,19 @@ _SCRIPT = _FACTORY_DIR / "verify-factory-reach.sh"
 _PROBE = _FACTORY_DIR / "factory-reach-probe.sh"
 _ENDPOINTS = _FACTORY_DIR / "factory-reach-endpoints.env"
 _CI_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
+
+# This repository's own committed Dolt connection, which is where the endpoint
+# R78 dropped took its port from. READ rather than spelled: the assertion is
+# that no committed endpoint names the tenant, and a literal here would still
+# agree with an entry that moved the tenant to the port `.beads/config.yaml`
+# actually commits.
+_BEADS_CONFIG = _REPO_ROOT / ".beads" / "config.yaml"
+
+# The endpoint R78 left in the set, and the ruling that left it. The file has to
+# record WHY the other one went, because the next reader's obvious repair for a
+# one-endpoint probe set is to put the tenant back.
+_TELEMETRY_RECEIVER = "telemetry-receiver"
+_RULING = "R78"
 
 # The identity and the bounds `./factory-namespace.yaml` and
 # `./factory-rbac.yaml` declare. Spelled here rather than read back out of them
@@ -119,6 +142,25 @@ def _committed_endpoints() -> list[str]:
     ]
     assert entries, f"{_ENDPOINTS.relative_to(_REPO_ROOT)} must name at least one endpoint"
     return entries
+
+
+def _committed_endpoint_targets() -> dict[str, str]:
+    """The committed endpoint configuration as `NAME -> HOST:PORT`."""
+    return {entry.split("=", 1)[0]: entry.split("=", 1)[1] for entry in _committed_endpoints()}
+
+
+def _beads_tenant_port() -> str:
+    """The Dolt port this repository's `.beads/config.yaml` commits for its tenant."""
+    ports = re.findall(
+        r"^dolt\.server-port:\s*(\d+)\s*$",
+        _BEADS_CONFIG.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert len(ports) == 1, (
+        f"{_BEADS_CONFIG.relative_to(_REPO_ROOT)} must commit exactly one "
+        f"`dolt.server-port` for this reader to assert against; found {ports}"
+    )
+    return ports[0]
 
 
 def _write_executable(*, path: Path, lines: list[str]) -> None:
@@ -254,6 +296,56 @@ def _embedded_probe(*, manifest: str) -> str:
     return "".join(f"{line[_BLOCK_INDENT:]}\n" for line in body)
 
 
+# --- the endpoint set itself (livespec-dev-tooling-5iep7h, ruling R78) -------
+
+
+def test_the_committed_endpoints_drop_the_beads_tenant_and_keep_the_telemetry_receiver() -> None:
+    """R78's endpoint set: the telemetry receiver, and no route to the ledger.
+
+    Ledger access stays HOST-SIDE with the dispatcher, which reaches the tenant
+    through the `with-livespec-env.sh` credential wrapper, and the tenant
+    password never enters a sandbox — so a factory pod is given no route to it.
+    A probe for an endpoint nothing is meant to reach does not merely fail: the
+    probe is fail-fast, so it HIDES every endpoint behind it, and the committed
+    run of 2026-10-16 reported exactly that — three nodes refused at the tenant
+    with the telemetry receiver never reached.
+
+    Asserted over the NAMES and the TARGETS both, because the defect this
+    forbids has two spellings: the entry coming back under its own name, and the
+    tenant coming back under some other name on the port `.beads/config.yaml`
+    commits for it.
+    """
+    targets = _committed_endpoint_targets()
+    assert _TELEMETRY_RECEIVER in targets, (
+        f"{_ENDPOINTS.relative_to(_REPO_ROOT)} must still name the `{_TELEMETRY_RECEIVER}` "
+        f"endpoint: reaching the receiver a dispatch projects into its sandbox is what plan "
+        f"assertion 7 still asks a factory pod to prove; names={sorted(targets)}"
+    )
+    tenant_port = _beads_tenant_port()
+    for name, target in targets.items():
+        assert "beads" not in name and "dolt" not in name, (
+            f"{_ENDPOINTS.relative_to(_REPO_ROOT)} must name NO beads Dolt tenant endpoint; "
+            f"`{name}={target}` does. R78 (2026-10-16) ruled that ledger access stays "
+            f"host-side with the dispatcher, so no factory pod gets a route to the tenant "
+            f"and no probe of one belongs in a check that stops at its first refusal"
+        )
+        assert not target.endswith(f":{tenant_port}"), (
+            f"`{name}={target}` targets the Dolt port `.beads/config.yaml` commits "
+            f"({tenant_port}), so it is the tenant endpoint under another name — which R78 "
+            f"removed from this set rather than renamed"
+        )
+    recorded = _ENDPOINTS.read_text(encoding="utf-8")
+    assert _RULING in recorded, (
+        f"{_ENDPOINTS.relative_to(_REPO_ROOT)} must cite ruling `{_RULING}` where the tenant "
+        f"entry used to be: a one-endpoint probe set with no record of why reads like an "
+        f"omission, and putting the tenant back is the next reader's obvious repair"
+    )
+    assert "The tailnet" in recorded, (
+        'and ./DERIVATION.md "The tailnet", which derives the egress rule these endpoints '
+        "have to sit inside and records the 2026-10-13 reads they came from"
+    )
+
+
 # --- the Definition of Done's first two assertions -------------------------
 
 
@@ -313,15 +405,15 @@ def test_the_probe_stops_at_the_first_unreachable_endpoint(*, listening_port: in
         argv=[
             "bash",
             str(_PROBE),
-            f"telemetry-receiver=127.0.0.1:{listening_port}",
-            f"beads-dolt-tenant=127.0.0.1:{closed}",
+            f"{_TELEMETRY_RECEIVER}=127.0.0.1:{listening_port}",
+            f"second-endpoint=127.0.0.1:{closed}",
             f"never-probed=127.0.0.1:{closed}",
         ],
         path=os.environ["PATH"],
         extra_env={"FACTORY_REACH_CONNECT_TIMEOUT_SECONDS": "5"},
     )
     assert code != 0, f"a refused endpoint must fail the probe;\n{output}"
-    assert f"UNREACHABLE beads-dolt-tenant at 127.0.0.1:{closed}" in output, output
+    assert f"UNREACHABLE second-endpoint at 127.0.0.1:{closed}" in output, output
     assert "never-probed" not in output, (
         f"the probe must stop at the FIRST unreachable endpoint, so a later one is never "
         f"reported;\n{output}"
@@ -335,8 +427,8 @@ def test_the_probe_exits_zero_only_when_every_endpoint_is_reachable(*, listening
         argv=[
             "bash",
             str(_PROBE),
-            f"beads-dolt-tenant=127.0.0.1:{listening_port}",
-            f"telemetry-receiver=127.0.0.1:{listening_port}",
+            f"{_TELEMETRY_RECEIVER}=127.0.0.1:{listening_port}",
+            f"second-endpoint=127.0.0.1:{listening_port}",
         ],
         path=os.environ["PATH"],
     )
@@ -355,20 +447,14 @@ def test_the_check_names_the_first_unreachable_endpoint_from_the_job_log(
 ) -> None:
     """A failed probe makes the check exit non-zero, naming that endpoint."""
     path, logs = fake_kubectl
-    _write_job_log(
-        logs=logs,
-        lines=[
-            "reached telemetry-receiver at 100.89.189.118:35129",
-            "UNREACHABLE beads-dolt-tenant at 100.89.189.118:3307",
-        ],
-    )
+    _write_job_log(logs=logs, lines=["UNREACHABLE telemetry-receiver at 100.89.189.118:35129"])
     code, output = _run(
         argv=["bash", str(_SCRIPT), "--node", _HP],
         path=path,
         extra_env={"FACTORY_REACH_FAKE_LOGS": str(logs), "FACTORY_REACH_FAKE_WAIT_RC": "1"},
     )
     assert code != 0, f"an unreachable endpoint must fail the check;\n{output}"
-    assert "beads-dolt-tenant at 100.89.189.118:3307" in output, output
+    assert "telemetry-receiver at 100.89.189.118:35129" in output, output
 
 
 def test_the_check_names_the_image_when_the_pull_is_what_failed(
@@ -411,7 +497,6 @@ def test_the_check_exits_zero_when_the_job_log_carries_the_probe_verdict(
     _write_job_log(
         logs=logs,
         lines=[
-            "reached beads-dolt-tenant at 100.89.189.118:3307",
             "reached telemetry-receiver at 100.89.189.118:35129",
             "ALL ENDPOINTS REACHED",
         ],
@@ -423,7 +508,7 @@ def test_the_check_exits_zero_when_the_job_log_carries_the_probe_verdict(
     )
     assert code == 0, f"every endpoint reached and the image pulled, so exit 0;\n{output}"
 
-    _write_job_log(logs=logs, lines=["reached beads-dolt-tenant at 100.89.189.118:3307"])
+    _write_job_log(logs=logs, lines=["reached telemetry-receiver at 100.89.189.118:35129"])
     truncated_code, truncated_output = _run(
         argv=["bash", str(_SCRIPT), "--node", _HP],
         path=path,
