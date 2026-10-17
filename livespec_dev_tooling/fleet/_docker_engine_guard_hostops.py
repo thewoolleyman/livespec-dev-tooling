@@ -92,8 +92,16 @@ class HostOps(Protocol):
     def take_snapshot(self, *, destination: Path) -> None: ...
 
     # The fenced, audited package transaction, inert by the start condition.
-    # Child 3b supplies the step behind it.
-    def install_packages(self, *, inputs: Path) -> None: ...
+    # Child 3b supplies the step behind it, and the step's REFUSAL REASON is
+    # answered back (`None` when it has none). The return is load-bearing
+    # rather than informational: the step can refuse AFTER `dpkg -i` has
+    # landed the audited set -- on a resumed publish, and on a fresh run
+    # whose install left a trigger unfinished -- and in both cases the
+    # installed units then satisfy the post-install condition check. With
+    # nowhere to carry the refusal, `publish` read that check as proof and
+    # recorded `published` over a host `dpkg --audit` still named a package
+    # on (FAULTS B-06, poweredge guard-vm-0, 2026-10-17).
+    def install_packages(self, *, inputs: Path) -> str | None: ...
 
     # The post-install condition check: each guarded unit's effective
     # conditions read from the service manager through `busctl`.
