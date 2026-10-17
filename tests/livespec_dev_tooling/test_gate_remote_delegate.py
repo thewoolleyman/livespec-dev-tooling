@@ -403,13 +403,16 @@ def test_a_repository_that_declares_nothing_gets_its_local_fall_through_recipe(
 
     It is the SHARED pre-push sequence a consumer's own local fall-through runs
     — the pack install the `pre-push` hook runs, the commit-refuse-hook install,
-    and the `hook_gate=1 check` aggregate `scripts/just/check-pre-push.sh` ends
-    in (freeze-driver ruling R92, 2026-10-17). It is never this repository's
-    `warm-typecheck`, which exists nowhere else. The sequence is pinned to those
-    files by tests.consumer.test_delegated_gate_declared_recipe_scenarios, which
-    reads each step back out of the file that owns it; this is the unit-tier
-    statement that the suite a repository declaring nothing gets IS that
-    sequence.
+    and the ONE recipe that hook then calls, `check-pre-push` (freeze-driver
+    rulings R92 and R100, 2026-10-17). It is never this repository's
+    `warm-typecheck` nor its own `hook_gate=1 check`: `hook_gate` is a `just`
+    variable only this justfile declares, and `just` refuses a command-line
+    override of an undeclared variable, so R92's spelling killed every other
+    consumer's Job before its aggregate ran. The sequence is pinned to
+    `lefthook.yml` by tests.consumer.test_delegated_gate_declared_recipe_scenarios,
+    which reads each step back out of the file that owns it; this is the
+    unit-tier statement that the suite a repository declaring nothing gets IS
+    that sequence, and that no entry in it carries a variable override.
     """
     declared = declared_gate_check_suite(repo_root=tmp_path)
 
@@ -418,8 +421,9 @@ def test_a_repository_that_declares_nothing_gets_its_local_fall_through_recipe(
     assert GATE_CHECK_SUITE_FALL_THROUGH == (
         "install-worktree-pack",
         "install-commit-refuse-hooks",
-        "hook_gate=1 check",
+        "check-pre-push",
     )
+    assert [entry for entry in GATE_CHECK_SUITE_FALL_THROUGH if "=" in entry] == []
 
 
 def test_a_declared_suite_is_read_in_its_declaration_order(*, tmp_path: Path) -> None:

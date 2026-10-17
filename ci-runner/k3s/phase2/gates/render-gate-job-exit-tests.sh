@@ -34,7 +34,9 @@
 #      none of livespec-dev-tooling's — two suites render two different
 #      commands, and a repository that declares nothing gets the shared
 #      pre-push SEQUENCE its local fall-through runs — the two installs, then
-#      `hook_gate=1 check` (freeze-driver ruling R92, 2026-10-17);
+#      the recipe every repository's lefthook `pre-push` names,
+#      `check-pre-push`, with no `name=value` override of any kind
+#      (freeze-driver rulings R92 and R100, 2026-10-17);
 #   N. the rendered pod script PREFLIGHTS each declared recipe: a tree that does
 #      not provide one exits non-zero NAMING it, runs no recipe at all, and
 #      never falls back — and a tree that provides them runs them in order, so
@@ -427,13 +429,22 @@ just publish" ]; then
   # The no-declaration default is the SHARED PRE-PUSH SEQUENCE, not one recipe
   # (ruling R92). A bare `just check` is not the fall-through a gate stands in
   # for: without the installs two members judge the pod's un-bootstrapped
-  # sandbox, and without `hook_gate=1` the admin-scope world gate answers 403.
+  # sandbox. And the last entry is the RECIPE every repository's lefthook
+  # `pre-push` names, carrying no `name=value` override (ruling R100): R92's
+  # `hook_gate=1 check` names a variable only livespec-dev-tooling declares, and
+  # `just` refuses an override of an undeclared variable, so every other
+  # consumer's Job died before its aggregate ran.
   if [ "$(gate_recipes "${default_out}")" = "just install-worktree-pack
 just install-commit-refuse-hooks
-just hook_gate=1 check" ]; then
+just check-pre-push" ]; then
     pass "a repository that declares nothing gets its local fall-through sequence"
   else
     fail "the no-declaration default is not the shared pre-push sequence: $(gate_recipes "${default_out}")"
+  fi
+  if [ -z "$(gate_recipes "${default_out}" | grep -F '=' || true)" ]; then
+    pass "the no-declaration default passes no just-variable override at all"
+  else
+    fail "the default carries a just-variable override: $(gate_recipes "${default_out}")"
   fi
   if [ -z "$(gate_recipes "${declared_out}" | grep -E 'warm-typecheck|hook_gate|install-' || true)" ]; then
     pass "none of livespec-dev-tooling's own recipes reach another repository's Job"
