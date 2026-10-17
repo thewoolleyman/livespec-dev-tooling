@@ -15,6 +15,7 @@ the one that proves the default runner is wired to `subprocess` at all.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import importlib
 import json
@@ -1342,6 +1343,70 @@ def test_every_dpkg_recovery_the_package_step_issues_names_its_packages(
         named = tuple(call.argv)[2:]
         assert named
         assert [name for name in named if name.startswith("-")] == []
+
+
+def test_the_package_step_reads_dpkg_s_log_across_the_rotation_that_moved_it(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": "since that record was written", in full.
+
+    logrotate moves `/var/log/dpkg.log` aside and compresses the older
+    copies, and a guard run can rest in phase `publishing` across that
+    boundary — `publishing` carries no deadline, so there is no bound on
+    how long a run may sit there before a `recover` resumes it. So "no
+    `install`, `upgrade`, `remove`, `purge` or `configure` action since
+    that record was written" is a claim about dpkg's WHOLE record of
+    itself and not about the current file: read from that file alone it
+    under-counts the foreign actions, and an under-count here attributes
+    somebody else's package to the guard and then completes their
+    transaction. That is the one direction this may not fail in, which is
+    why the series is read rather than the file (ratification review of
+    v075, point 1).
+
+    Three arms, one per way the evidence can live outside the current
+    file: the plain `dpkg.log.1` that `delaycompress` leaves
+    uncompressed, the gzipped `dpkg.log.2.gz` beside it, and a member
+    that cannot be decompressed at all — which refuses for the reason an
+    absent log does, since a series with an unreadable member supports no
+    claim about what is not in it.
+    """
+    assert _LEFTOVERS_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    current = (_LOG_OLD_FOREIGN + _LOG_OWN_INSTALL).encode("utf-8")
+    rotated = _LOG_FOREIGN_INSTALL.encode("utf-8")
+
+    for index, members in enumerate(
+        (
+            {"dpkg.log": current, "dpkg.log.1": rotated},
+            {"dpkg.log": current, "dpkg.log.2.gz": gzip.compress(rotated)},
+            {"dpkg.log": current, "dpkg.log.2.gz": b"bytes no gzip member begins with"},
+        )
+    ):
+        root = tmp_path / f"host-{index}"
+        inputs = _declare(root=root, payload=_payload(cache=root / "cache"))
+        _record_earlier_runs(root=root)
+        _record_pre_install_audit(
+            root=root,
+            run="run-prior",
+            data=_audit_record(run="run-prior", flagged=()),
+            written_at=_RECORD_WRITTEN_AT,
+        )
+        runner = _leftover_outputs(
+            result=runner_module.CommandOutput,
+            flagged=("man-db",),
+            query=_QUERY_AFTER + "man-db 2.12.0-4build2 half-configured\n",
+        )
+
+        outcome = packages.run_package_step(
+            inputs=inputs, runner=runner, dpkg_log=_dpkg_log(root=root, members=members)
+        )
+
+        assert outcome.refusal is not None
+        assert "man-db" in outcome.refusal
+        assert outcome.installed == ()
+        assert _calls_named(runner=runner, argv=("dpkg", "--configure")) == []
+        assert _calls_named(runner=runner, argv=("dpkg", "--triggers-only")) == []
 
 
 def test_the_package_step_records_the_dpkg_audit_it_read_before_it_installs(
