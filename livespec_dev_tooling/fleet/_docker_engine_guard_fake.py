@@ -66,6 +66,12 @@ class FakeHost:
     deadman_units: set[str] = field(default_factory=set)
     active_deadman_units: set[str] = field(default_factory=set)
     condition_check: bool = True
+    # What the package step behind `install_packages` answers: a refusal
+    # reason, or `None` for a step that found nothing to report. A FIELD
+    # for the same reason the real host's `package_runner` is one -- a
+    # seam whose answer a test cannot set is a seam no test can drive
+    # both ways, and `publish` has to be driven both ways.
+    package_refusal: str | None = None
     sample_result: dict[str, object] = field(default_factory=dict)
     firewall_residue: tuple[str, ...] = ()
     deleted_interfaces: tuple[str, ...] = ()
