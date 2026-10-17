@@ -58,6 +58,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.7...v1.112.8) (2026-10-17)
+
+
+### Bug Fixes
+
+* **fleet:** record the dpkg audit the package step read before it installs ([9ce0320](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9ce03207e9b4ad47714eeabeb296c8eb161c3354))
+* **fleet:** recover an intended half-done package on the settled package path ([99bb2ff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/99bb2ff922387358c98c642f3410b0ccb6626138))
+* **fleet:** refuse a foreign dpkg audit on the guard's settled package path ([4055673](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4055673e4eb3163d5d1af79570c7164faf6d89b0))
+* **fleet:** refuse the audited additions while dpkg stays interrupted after -i ([8a43ef7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8a43ef71293e2d3245f147ad461a51efe42e1080))
+* **fleet:** refuse the install while the recovery left dpkg audit non-empty ([b75fb16](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b75fb161b4102f5bdd090817ac24203def78def6))
+
 ## [1.112.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.6...v1.112.7) (2026-10-17)
 
 
