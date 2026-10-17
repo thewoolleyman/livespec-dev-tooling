@@ -1,6 +1,9 @@
 # shellcheck shell=bash
 # Shared helpers for the docker_engine FAULTS suite. Source from a case script.
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." || exit 1
+# Every driver writes its logs under tmp/faults (gitignored); a fresh worktree lacks it, and a
+# missing directory made every converge redirect fail while the driver still exited 0.
+mkdir -p tmp/faults || exit 1
 FAULTS_KEY=$HOME/.cache/docker-engine-guard-acceptance/poweredge-xubuntu/id_ed25519
 vm() { local i=$1; shift; ssh -i "$FAULTS_KEY" -o ProxyJump=cwoolley@poweredge-xubuntu -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -p $((2229 + 10 * i)) guard@127.0.0.1 "$@"; }
 converge() { # converge <i> <log> [extra ansible args...]
