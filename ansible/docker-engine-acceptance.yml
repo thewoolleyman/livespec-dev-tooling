@@ -1,0 +1,203 @@
+---
+# docker-engine-acceptance.yml — run the docker_engine role's disposable-VM
+# harness on the KVM acceptance host.
+#
+# WHY A PLAYBOOK. The acceptance VMs run on a fleet machine with KVM, which
+# coordinator ruling R59 (2026-10-16, recorded on livespec-dev-tooling-dfixhe)
+# ruled usable for disposable QEMU/KVM VMs. That machine is changed only through
+# committed automation, so the harness is staged and driven from here. The play
+# binds to the docker_engine_acceptance_hosts group. Which machine is in that
+# group is the inventory's decision, never this file's.
+#
+# WHAT IT MAY DO THERE (R59's conditions). It runs as the inventory's own user,
+# with NO become. Images and VM state live under that user's home. It installs
+# no package, writes no system configuration and adds no persistent unit. Each
+# VM runs inside its own transient `systemd-run --user --scope`, so `down` or
+# `teardown` removes it and everything it spawned. There are at most 8 VMs
+# (32 vCPU, 64 GiB at the harness's 4 vCPU / 4 GiB each).
+#
+# ACTIONS (-e docker_engine_acceptance_action=<action>):
+#   stage     copy the harness into ~/docker-engine-guard-acceptance and fetch
+#             and verify the cloud image
+#   baseline  build instance 0 from the image, apply baseline.sh, snapshot it
+#             as `baseline`, and clone that overlay to instances 1..N-1
+#   up        restore `baseline` on every instance and boot it
+#   down      stop every instance
+#   teardown  stop every instance and delete every image and overlay
+#             (R59: remove the images once the suite passes)
+# N is docker_engine_acceptance_instances (default 4).
+- name: Docker engine guard acceptance VMs on the KVM acceptance host
+  hosts: docker_engine_acceptance_hosts
+  gather_facts: false
+  become: false
+  vars:
+    docker_engine_acceptance_action: stage
+    docker_engine_acceptance_instances: 4
+    docker_engine_acceptance_dir: "/home/{{ ansible_user }}/docker-engine-guard-acceptance"
+    docker_engine_acceptance_state_dir: "/home/{{ ansible_user }}/.cache/docker-engine-guard-vm"
+    # The forwarded LLM-health stub must be reachable by the role's controller,
+    # which runs on the control node and reaches this host over the tailnet.
+    docker_engine_acceptance_llm_bind: 0.0.0.0
+    docker_engine_acceptance_env:
+      DOCKER_ENGINE_VM_BASE_DIR: "{{ docker_engine_acceptance_state_dir }}"
+      DOCKER_ENGINE_VM_LLM_BIND: "{{ docker_engine_acceptance_llm_bind }}"
+  tasks:
+    - name: Refuse an unknown action or an instance count outside R59's bound
+      ansible.builtin.assert:
+        that:
+          - docker_engine_acceptance_action in ['stage', 'baseline', 'up', 'down', 'teardown']
+          - docker_engine_acceptance_instances | int >= 1
+          - docker_engine_acceptance_instances | int <= 8
+        fail_msg: >-
+          action must be one of stage, baseline, up, down or teardown, and the
+          instance count must be between 1 and 8 (R59's bound)
+
+    # The access check goes through stat's `readable`/`writeable`, which ask
+    # os.access as this user and so honour ACLs. On Ubuntu 26.04 /usr/bin/test
+    # is the uutils build, and it refused /dev/kvm on the acceptance host while
+    # this user held the device through a logind ACL (not the kvm group), which
+    # is exactly how QEMU opens it.
+    - name: Read this user's access to /dev/kvm
+      ansible.builtin.stat:
+        path: /dev/kvm
+      register: docker_engine_acceptance_kvm
+
+    - name: Refuse a host where this user cannot open /dev/kvm
+      ansible.builtin.assert:
+        that:
+          - docker_engine_acceptance_kvm.stat.exists
+          - docker_engine_acceptance_kvm.stat.readable
+          - docker_engine_acceptance_kvm.stat.writeable
+        fail_msg: this user cannot open /dev/kvm for reading and writing
+
+    - name: Stage the harness
+      when: docker_engine_acceptance_action == 'stage'
+      block:
+        - name: Create the harness directory in the user's home
+          ansible.builtin.file:
+            path: "{{ docker_engine_acceptance_dir }}"
+            state: directory
+            mode: "0755"
+
+        - name: Copy the harness scripts
+          ansible.builtin.copy:
+            src: "roles/docker_engine/acceptance/{{ item }}"
+            dest: "{{ docker_engine_acceptance_dir }}/{{ item }}"
+            mode: "0755"
+          loop: [vm.sh, baseline.sh]
+
+        - name: Fetch and verify the cloud image
+          ansible.builtin.command:
+            argv: ["{{ docker_engine_acceptance_dir }}/vm.sh", fetch]
+          environment: "{{ docker_engine_acceptance_env }}"
+          register: docker_engine_acceptance_fetch
+          changed_when: "'already present' not in docker_engine_acceptance_fetch.stdout"
+
+    - name: Build the baseline on instance 0 and clone it
+      when: docker_engine_acceptance_action == 'baseline'
+      block:
+        - name: Stop and discard instance 0, then boot it fresh
+          ansible.builtin.shell:
+            cmd: >-
+              set -euo pipefail;
+              ./vm.sh down; ./vm.sh reset; ./vm.sh up
+            chdir: "{{ docker_engine_acceptance_dir }}"
+            executable: /bin/bash
+          environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': '0'}) }}"
+          changed_when: true
+
+        - name: Make the guest gmktec-shaped
+          ansible.builtin.shell:
+            cmd: set -euo pipefail; ./vm.sh ssh sudo bash -s < baseline.sh
+            chdir: "{{ docker_engine_acceptance_dir }}"
+            executable: /bin/bash
+          environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': '0'}) }}"
+          changed_when: true
+
+        - name: Snapshot instance 0 as baseline
+          ansible.builtin.shell:
+            cmd: set -euo pipefail; ./vm.sh down; ./vm.sh snapshot baseline
+            chdir: "{{ docker_engine_acceptance_dir }}"
+            executable: /bin/bash
+          environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': '0'}) }}"
+          changed_when: true
+
+        - name: Clone the baseline overlay and key to every other instance
+          ansible.builtin.shell:
+            cmd: >-
+              set -euo pipefail;
+              ./vm.sh down;
+              mkdir -p "$DOCKER_ENGINE_VM_BASE_DIR/vm-{{ item }}";
+              cp --reflink=auto "$DOCKER_ENGINE_VM_BASE_DIR/overlay.qcow2"
+              "$DOCKER_ENGINE_VM_BASE_DIR/id_ed25519" "$DOCKER_ENGINE_VM_BASE_DIR/id_ed25519.pub"
+              "$DOCKER_ENGINE_VM_BASE_DIR/vm-{{ item }}/";
+              cp -r "$DOCKER_ENGINE_VM_BASE_DIR/seed" "$DOCKER_ENGINE_VM_BASE_DIR/vm-{{ item }}/"
+            chdir: "{{ docker_engine_acceptance_dir }}"
+            executable: /bin/bash
+          environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': item | string}) }}"
+          loop: "{{ range(1, docker_engine_acceptance_instances | int) | list }}"
+          changed_when: true
+
+        # The role's controller runs on the control node and reaches each
+        # guest through a jump over this host (acceptance/inventory-kvm.yml),
+        # so it needs the guest key locally. Every instance shares instance
+        # 0's key, which the clone above copied.
+        - name: Fetch the guest key to the control node
+          ansible.builtin.fetch:
+            src: "{{ docker_engine_acceptance_state_dir }}/id_ed25519"
+            dest: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/docker-engine-guard-acceptance/{{ inventory_hostname }}/id_ed25519"
+            flat: true
+
+        - name: Make the fetched guest key private
+          delegate_to: localhost
+          ansible.builtin.file:
+            path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/docker-engine-guard-acceptance/{{ inventory_hostname }}/id_ed25519"
+            mode: "0600"
+
+    - name: Restore baseline and boot every instance
+      when: docker_engine_acceptance_action == 'up'
+      ansible.builtin.shell:
+        cmd: set -euo pipefail; ./vm.sh down; ./vm.sh restore baseline; ./vm.sh up
+        chdir: "{{ docker_engine_acceptance_dir }}"
+        executable: /bin/bash
+      environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': item | string}) }}"
+      loop: "{{ range(0, docker_engine_acceptance_instances | int) | list }}"
+      changed_when: true
+
+    - name: Wait for each instance's k3s to answer DNS again
+      # A cold boot from `baseline` restarts the guest's k3s, and the guard's
+      # DNS-placement probe fails while no CoreDNS pod is Running, so a case
+      # started before then would roll back for a reason that is not its own.
+      when: docker_engine_acceptance_action == 'up'
+      ansible.builtin.shell:
+        cmd: >-
+          set -euo pipefail;
+          ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers
+          | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {exit !found}'
+        chdir: "{{ docker_engine_acceptance_dir }}"
+        executable: /bin/bash
+      environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': item | string}) }}"
+      loop: "{{ range(0, docker_engine_acceptance_instances | int) | list }}"
+      register: docker_engine_acceptance_dns
+      until: docker_engine_acceptance_dns.rc == 0
+      retries: 36
+      delay: 5
+      changed_when: false
+
+    - name: Stop every instance
+      when: docker_engine_acceptance_action in ['down', 'teardown']
+      ansible.builtin.command:
+        argv: ["{{ docker_engine_acceptance_dir }}/vm.sh", down]
+        chdir: "{{ docker_engine_acceptance_dir }}"
+      environment: "{{ docker_engine_acceptance_env | combine({'DOCKER_ENGINE_VM_INSTANCE': item | string}) }}"
+      loop: "{{ range(0, 8) | list }}"
+      changed_when: true
+
+    - name: Delete every image and overlay
+      when: docker_engine_acceptance_action == 'teardown'
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ docker_engine_acceptance_state_dir }}"
+        - "{{ docker_engine_acceptance_dir }}"

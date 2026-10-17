@@ -1,0 +1,390 @@
+---
+# One guarded run on a host the classification found fresh: reserve, write the
+# run's inputs and the start condition, publish the inert audited install
+# inside the apt fence, then arm, start, observe and confirm. From the moment
+# the reservation exists, ANY failure the controller sees rolls the run back
+# through the guard (rider point 5), and a committed run is never rolled back
+# because the guard makes `rollback` a no-op once the marker names the run.
+#
+# What keeps the host safe if THIS CONTROLLER dies instead: before `start` the
+# packages are inert by construction (Mechanism 1) and nothing has a start
+# permission; from `arm` on, the dead-man rolls the run back at its deadline
+# and every 60 s after; and the apt timers come back on a host-side backstop.
+
+- name: Hold this converge's run id
+  ansible.builtin.set_fact:
+    docker_engine_run: "r{{ now(utc=true, fmt='%Y%m%d%H%M%S') }}{{ '%04x' | format(65535 | random) }}"
+
+- name: Make a file for the declared ranges
+  # A private temporary file: nothing of the guard's own state exists yet.
+  ansible.builtin.tempfile:
+    suffix: .preflight-declared.json
+  register: docker_engine_preflight_declared
+  become: true
+
+- name: Write the declared ranges the guard's preflight checks for overlaps
+  # Every range the cluster and the tailnet already use, each under a name the
+  # refusal can print. Never the Docker bridge itself: the guard compares each
+  # declared range AGAINST Docker's subnet, so declaring the bridge refuses
+  # every host (measured 2026-10-17, H-01 on guard-vm-0).
+  ansible.builtin.copy:
+    content: >-
+      {{ dict(docker_engine_reserved_cidrs | zip(docker_engine_reserved_cidrs)) | to_nice_json }}
+    dest: "{{ docker_engine_preflight_declared.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+
+- name: Ask the guard for every reason this host may not reserve
+  # The guard's own preflight (guard child 4: subnet overlaps, docker-group
+  # members, k3s resync intervals), run through its command-line entry (guard
+  # child 10, livespec-dev-tooling-26w6d2) because it reads this machine BEFORE
+  # any run exists. Every refusal is printed at once, and nothing is changed.
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -B
+      - "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/_docker_engine_guard_preflight_cli.py"
+      - refusals
+      - --declared
+      - "{{ docker_engine_preflight_declared.path }}"
+  register: docker_engine_guard_preflight
+  become: true
+  changed_when: false
+  failed_when: false
+
+- name: Remove the declared-ranges file
+  ansible.builtin.file:
+    path: "{{ docker_engine_preflight_declared.path }}"
+    state: absent
+  become: true
+
+- name: Refuse the host on any guard preflight refusal
+  ansible.builtin.assert:
+    that:
+      - docker_engine_guard_preflight.rc == 0
+    fail_msg: >-
+      The guard refuses this host before reserving (nothing has been changed):
+      {{ docker_engine_guard_preflight.stdout_lines + docker_engine_guard_preflight.stderr_lines }}
+    success_msg: the guard's preflight found no reason to refuse
+
+- name: Reserve the host for this run
+  # The guard's admission (design I1): no marker, no reservation that is not
+  # rolled-back, every guard unit quiescent, nobody in the docker group. A
+  # refusal names the holding run and changes nothing, so there is nothing to
+  # roll back and the converge simply fails here.
+  ansible.builtin.include_tasks: guard_op.yml
+  vars:
+    docker_engine_op: reserve
+    docker_engine_op_run: "{{ docker_engine_run }}"
+
+- name: Drive the reserved run to an outcome
+  vars:
+    docker_engine_apt_restore_unit: "docker-engine-apt-restore-{{ docker_engine_run }}"
+  block:
+    - name: Start the sandbox slice before anything this run records or starts
+      # Preflight requires the slice unit to be installed but not running (it
+      # is inactive after a reboot or a rollback). Starting it changes no
+      # configuration: it is the start systemd would perform when the daemon
+      # first places a container in it, taken here so the baselines below and
+      # the guard's scope check see it active. A rollback stops it again.
+      ansible.builtin.systemd_service:
+        name: "{{ docker_engine_sandbox_slice }}"
+        state: started
+      become: true
+
+    - name: Read the sandbox slice's state after starting it
+      ansible.builtin.command:
+        argv: [systemctl, show, "{{ docker_engine_sandbox_slice }}", -p, ActiveState]
+      register: docker_engine_slice_started
+      become: true
+      changed_when: false
+
+    - name: Fail the run unless the sandbox slice is active
+      ansible.builtin.assert:
+        that:
+          - "'ActiveState=active' in docker_engine_slice_started.stdout_lines"
+        fail_msg: >-
+          {{ docker_engine_sandbox_slice }} did not become active; it reports
+          {{ docker_engine_slice_started.stdout_lines }}.
+        success_msg: "{{ docker_engine_sandbox_slice }} active"
+
+    - name: Record the preflight baselines the observer compares against
+      # k3s's containerd witness and this host's interfaces, into the run's own
+      # before/ directory, before the first package step (guard child 4's
+      # record_preflight, through guard child 10's command-line entry). Without
+      # it every real `observe` fails on the missing k3s-witness.json (measured
+      # 2026-10-16, H-01).
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -I
+          - -B
+          - "{{ docker_engine_guard_install_root }}/livespec_dev_tooling/fleet/_docker_engine_guard_preflight_cli.py"
+          - record
+          - --state-root
+          - "{{ docker_engine_state_root }}"
+          - --run
+          - "{{ docker_engine_run }}"
+      become: true
+      changed_when: true
+
+    - name: Write the start condition and prove it, before any package exists
+      ansible.builtin.include_tasks: dropins.yml
+
+    - name: Write the run's owned daemon keys into its inputs
+      # The guard digests these for the commit marker and for every later
+      # post-commit validation.
+      ansible.builtin.copy:
+        content: "{{ docker_engine_daemon_config | to_nice_json }}\n"
+        dest: "{{ docker_engine_state_root }}/runs/{{ docker_engine_run }}/inputs/daemon.json"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+
+    - name: Hold the allowlist rows, each naming the .deb file it is audited as
+      ansible.builtin.set_fact:
+        docker_engine_allow_rows: >-
+          {{ docker_engine_allow_rows | default([])
+             + [item | combine({'deb': item.package ~ '_' ~ item.version ~ '_'
+                                       ~ docker_engine_deb_arch ~ '.deb'})] }}
+      loop: "{{ docker_engine_packages }}"
+      loop_control:
+        label: "{{ item.package }}"
+
+    - name: Write the run's package inputs
+      # The committed allowlist, the cache the audit downloads into, and the
+      # host's apt and dpkg configuration digests (packages.json, read by the
+      # guard's load_package_inputs).
+      ansible.builtin.copy:
+        content: >-
+          {{ {'allow': docker_engine_allow_rows,
+              'cache': docker_engine_deb_cache,
+              'config_digests': docker_engine_dpkg_config_digests,
+              'config_dirs': docker_engine_dpkg_config_dirs} | to_nice_json }}
+        dest: "{{ docker_engine_state_root }}/runs/{{ docker_engine_run }}/inputs/packages.json"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+
+    - name: Write the run's probe parameters
+      ansible.builtin.copy:
+        content: >-
+          {{ docker_engine_probe_parameters
+             | combine({'must_stay_running': docker_engine_must_stay_running})
+             | combine({'k3s_server_argv': docker_engine_k3s_server_argv}
+                       if docker_engine_k3s_server_argv | length > 0 else {})
+             | combine({'services': docker_engine_required_units,
+                        'window_seconds': docker_engine_window_seconds | int,
+                        'bridge_cidr': docker_engine_bridge_cidr,
+                        'reserved_cidrs': docker_engine_reserved_cidrs}) | to_nice_json }}
+        dest: "{{ docker_engine_state_root }}/runs/{{ docker_engine_run }}/inputs/probes.json"
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+
+    - name: Read the daemon configuration the host already carries
+      ansible.builtin.slurp:
+        src: "{{ docker_engine_daemon_config_path }}"
+      register: docker_engine_daemon_existing
+      become: true
+      failed_when: false
+
+    - name: Create the daemon configuration directory
+      ansible.builtin.file:
+        path: "{{ docker_engine_daemon_config_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      become: true
+
+    - name: Write the owned daemon keys, preserving every other key, before the daemon ever starts
+      # The guard's `publish` does not install the daemon keys into place, so
+      # the role writes them here, after the reservation (design F2) and before
+      # the first start. `combine` over the host's own parsed file is what keeps
+      # every key the role does not own.
+      ansible.builtin.copy:
+        content: >-
+          {{ ((docker_engine_daemon_existing.content | b64decode | from_json)
+              if docker_engine_daemon_existing.content is defined else {})
+             | combine(docker_engine_daemon_config) | to_nice_json }}
+        dest: "{{ docker_engine_daemon_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+
+    - name: Download the audited packages and prove the drop-ins attach to them
+      ansible.builtin.include_tasks: scratch.yml
+
+    - name: Fence the package step from apt and publish the inert install
+      ansible.builtin.include_tasks: fence_publish.yml
+
+    - name: Prove the install was inert
+      ansible.builtin.include_tasks: post_install.yml
+
+    - name: Arm the run's dead-man
+      # From here on, a lost controller is recovered by the dead-man alone.
+      ansible.builtin.include_tasks: guard_op.yml
+      vars:
+        docker_engine_op: arm
+        docker_engine_op_run: "{{ docker_engine_run }}"
+
+    - name: Start the engine behind the start permission
+      ansible.builtin.include_tasks: guard_op.yml
+      vars:
+        docker_engine_op: start
+        docker_engine_op_run: "{{ docker_engine_run }}"
+
+    - name: Remove a canary an earlier rolled-back run left behind
+      # Rollback kills and stops the daemons but erases nothing under
+      # /var/lib/docker, so a run that reached `canary` and then rolled back
+      # leaves its stopped container registered under the canary's fixed name,
+      # and the next run's `docker run --name` failed on the conflict (FAULTS
+      # M-01, guard-vm-3, 2026-10-17: run r20261017121454ef92). The name is the
+      # guard's own; nothing else is touched.
+      ansible.builtin.command:
+        argv: [docker, rm, --force, "{{ docker_engine_canary_name }}"]
+      register: docker_engine_canary_leftover
+      become: true
+      changed_when: docker_engine_canary_leftover.stdout | trim | length > 0
+      failed_when:
+        - docker_engine_canary_leftover.rc != 0
+        - "'No such container' not in docker_engine_canary_leftover.stderr"
+
+    - name: Run the canary container
+      # Design Mechanism 1, phase `canary`: ONE container from a pinned image on
+      # the default bridge, which exercises the endpoint, veth and per-container
+      # rules the observer's canary-cgroup, exclusive-scope and interface probes
+      # read. No guard operation runs it, so the role does, between `start` and
+      # `observe`; the daemon's cgroup-parent places it in the sandbox slice.
+      ansible.builtin.command:
+        argv:
+          - docker
+          - run
+          - --detach
+          - --name
+          - "{{ docker_engine_canary_name }}"
+          - --network
+          - bridge
+          - "{{ docker_engine_canary_image }}"
+          - sleep
+          - "{{ (docker_engine_window_seconds | int) * 4 }}"
+      become: true
+      changed_when: true
+
+    - name: Observe the host across the whole window
+      # On a failed sample the observer starts the rollback itself and refuses;
+      # the rescue below then waits for that rollback rather than racing it.
+      ansible.builtin.include_tasks: guard_op.yml
+      vars:
+        docker_engine_op: observe
+        docker_engine_op_run: "{{ docker_engine_run }}"
+
+    - name: Answer the guard's challenge
+      ansible.builtin.include_tasks: answer.yml
+
+    - name: Confirm the run
+      ansible.builtin.include_tasks: guard_op.yml
+      vars:
+        docker_engine_op: confirm
+        docker_engine_op_run: "{{ docker_engine_run }}"
+
+    - name: Remove the canary container
+      # Design Mechanism 1, phase `confirm`: the canary exists only to be
+      # observed. After a rollback the engine is stopped, which removes it with
+      # the daemon's state, so only the committed path needs this.
+      ansible.builtin.command:
+        argv: [docker, rm, --force, "{{ docker_engine_canary_name }}"]
+      become: true
+      changed_when: true
+
+    - name: Prove the run committed and the host is as it was
+      ansible.builtin.include_tasks: after_outcome.yml
+      vars:
+        docker_engine_outcome_strict: true
+
+  rescue:
+    - name: Report what failed before rolling back
+      ansible.builtin.debug:
+        msg: >-
+          Run {{ docker_engine_run }} failed at '{{ ansible_failed_task.name | default('?') }}':
+          {{ ansible_failed_result.msg | default(ansible_failed_result) }}. Rolling back.
+
+    - name: Wait for a rollback the observer or the dead-man already started
+      # Both take the guard's lock for up to the rollback budget; starting a
+      # second rollback beside them would only meet a lock refusal.
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - "docker-engine-guard-rollback-{{ docker_engine_run }}.service"
+          - "docker-engine-deadman-{{ docker_engine_run }}.service"
+          - docker-engine-guard-start.service
+          - docker-engine-guard-observe.service
+      register: docker_engine_rollback_wait
+      become: true
+      changed_when: false
+      failed_when: false
+      until: docker_engine_rollback_wait.stdout_lines | select('in', ['active', 'activating', 'deactivating']) | list | length == 0
+      retries: "{{ ((docker_engine_guard_timing.budgets.rollback | int + 60) / 15) | round(0, 'ceil') | int }}"
+      delay: 15
+
+    - name: Roll the run back through the guard
+      # A no-op if the commit marker names the run, so this can never undo a
+      # committed install.
+      ansible.builtin.include_tasks: guard_op.yml
+      vars:
+        docker_engine_op: rollback
+        docker_engine_op_run: "{{ docker_engine_run }}"
+        docker_engine_op_may_refuse: true
+
+    - name: Report the host after the rollback
+      ansible.builtin.include_tasks: after_outcome.yml
+      vars:
+        docker_engine_outcome_strict: false
+
+    - name: Fail the converge, reporting a run committed before the failure
+      ansible.builtin.fail:
+        msg: >-
+          Run {{ docker_engine_run }} IS COMMITTED (the marker names it) and was
+          not rolled back; a check after the commit point failed at
+          '{{ ansible_failed_task.name | default('?') }}'. Investigate on the host;
+          the next converge takes the post-commit path.
+      when: docker_engine_outcome_marker_run == docker_engine_run
+
+    - name: Fail the converge with the rolled-back run's outcome
+      ansible.builtin.fail:
+        msg: >-
+          Run {{ docker_engine_run }} did not commit. It failed at
+          '{{ ansible_failed_task.name | default('?') }}' and the guard now records
+          phase {{ docker_engine_outcome_phase }}. A rollback-partial run keeps the
+          reservation until an operator repairs the host and re-runs with
+          -e docker_engine_acknowledge_run={{ docker_engine_run }}.
+
+  always:
+    - name: Restart the apt timers that were active before the fence
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ docker_engine_apt_timers_active | default([]) }}"
+      become: true
+
+    - name: Cancel the host-side backstop, now that the timers are restored
+      ansible.builtin.command:
+        argv: [systemctl, stop, "{{ docker_engine_apt_restore_unit }}.timer"]
+      become: true
+      changed_when: true
+      failed_when: false
+
+    - name: Remove the scratch root
+      ansible.builtin.file:
+        path: "/var/tmp/docker-engine-guard-scratch-{{ docker_engine_run }}"
+        state: absent
+      become: true

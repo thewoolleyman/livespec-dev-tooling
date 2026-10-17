@@ -1,0 +1,22 @@
+# Managed by the docker_engine role (livespec-dev-tooling). Removed again by the
+# same run that installed it.
+#
+# A throwaway unit that proves the start condition's MECHANISM on this host
+# before any Docker package is installed (design R5 step 1, F5 step 1): it
+# carries the identical two-line OR drop-in, naming its own test permission
+# instead of the real one, and must be skipped without it and run with it.
+[Unit]
+Description=docker-engine-guard start-condition probe
+
+#
+# RemainAfterExit keeps the unit loaded and active after /bin/true exits, so the
+# `systemctl show` read that follows sees THIS start. Without it the finished
+# oneshot is inactive and unreferenced, systemd garbage-collects it, and the
+# read loads a fresh copy whose ConditionResult and start timestamp are their
+# defaults: a start that ran reads as one that was skipped (measured
+# 2026-10-16, H-01 on an Ubuntu 26.04 guest, where the journal showed the
+# permitted start finishing while the read said ConditionResult=no).
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true

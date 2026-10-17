@@ -1,0 +1,119 @@
+---
+# After `publish`: the proof that the install was inert (design F5 step 3).
+# The guard's `publish` has already required, through busctl, that each unit's
+# EFFECTIVE conditions are exactly the guard's two; this adds what the role can
+# see and the guard does not read: the units never ran, the socket holds
+# nothing, and systemd logged the skip for every start the postinst attempted.
+# That journal line is the positive control that the gate actually fired.
+
+- name: Reload the service manager after the install
+  # Design F6: there is no systemd unit-directory dpkg trigger on this OS.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+
+- name: Read each guarded unit as the service manager assembles it now
+  ansible.builtin.command:
+    argv: [systemctl, cat, "{{ item }}"]
+  loop: [containerd.service, docker.service, docker.socket]
+  register: docker_engine_installed_cat
+  become: true
+  changed_when: false
+
+- name: Require the guard drop-in on each installed unit
+  ansible.builtin.assert:
+    that:
+      - item.stdout is search(('/etc/systemd/system/' ~ item.item ~ '.d/50-docker-engine-guard.conf') | regex_escape)
+    fail_msg: "{{ item.item }} does not list the guard drop-in: {{ item.stdout_lines }}"
+    success_msg: "{{ item.item }} lists the guard drop-in"
+  loop: "{{ docker_engine_installed_cat.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Read whether each guarded service ever ran
+  ansible.builtin.command:
+    argv: [systemctl, show, "{{ item }}", -p, ConditionResult, -p, ActiveState, -p, ExecMainStartTimestampMonotonic]
+  loop: [containerd.service, docker.service]
+  register: docker_engine_installed_services
+  become: true
+  changed_when: false
+
+- name: Require both services inert and not started by this install
+  # Never started BY THIS INSTALL: the start timestamp is what it was just
+  # before the publish (zero on a fresh boot; the previous run's on a re-run
+  # inside one boot, measured 2026-10-17 on guard-vm-3), and a condition
+  # result of `yes` is accepted only when it, too, is unchanged from then.
+  vars:
+    docker_engine_before_lines: >-
+      {{ (docker_engine_services_before_publish.results
+          | selectattr('item', 'equalto', item.item) | first).stdout_lines }}
+    docker_engine_start_before: >-
+      {{ docker_engine_before_lines | select('match', '^ExecMainStartTimestampMonotonic=') | first }}
+  ansible.builtin.assert:
+    that:
+      - "'ActiveState=inactive' in item.stdout_lines"
+      - docker_engine_start_before in item.stdout_lines
+      - "'ConditionResult=yes' not in item.stdout_lines or 'ConditionResult=yes' in docker_engine_before_lines"
+    fail_msg: >-
+      {{ item.item }} is not inert after the install: {{ item.stdout_lines }}
+      (before the install: {{ docker_engine_before_lines }})
+    success_msg: "{{ item.item }} is inert and was not started by the install"
+  loop: "{{ docker_engine_installed_services.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Read the host's listening unix sockets
+  ansible.builtin.command:
+    argv: [ss, -xlH]
+  register: docker_engine_unix_listeners
+  become: true
+  changed_when: false
+
+- name: Require docker.socket to hold no socket
+  ansible.builtin.assert:
+    that:
+      - docker_engine_unix_listeners.stdout is not search('/run/docker\.sock')
+    fail_msg: "Something listens on /run/docker.sock after an inert install."
+    success_msg: nothing listens on /run/docker.sock
+
+- name: Read the journal of each unit the postinst tried to start
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - "--unit={{ item }}"
+      - "--since=@{{ docker_engine_publish_since.stdout }}"
+      - --output=cat
+      - --no-pager
+  loop: "{{ docker_engine_postinst_started_units }}"
+  register: docker_engine_postinst_journal
+  become: true
+  changed_when: false
+  # A publish over a host that already held every audited package at its
+  # audited version runs no postinst, so there is no start for the gate to
+  # skip (fresh_run.yml, docker_engine_publish_installs). The proofs above,
+  # and dropins.yml's probe-unit proof of the mechanism, still hold.
+  when: docker_engine_publish_installs | default(true) | bool
+
+- name: Require systemd's condition-skip message for each of them
+  # The text systemd writes for `|` conditions; its presence proves the gate
+  # fired on a real start attempt rather than that nothing tried to start.
+  # systemd 259.5 (Ubuntu 26.04) writes "<unit> - <description> skipped, no
+  # trigger condition checks were met." (measured 2026-10-16, H-01 on an
+  # acceptance guest); older releases write "... was skipped because no trigger
+  # condition checks were met". Both mean the same skip, so accept either.
+  ansible.builtin.assert:
+    that:
+      - item.stdout is search('skipped(,| because) no trigger condition checks were met')
+    fail_msg: >-
+      No condition skip for {{ item.item }} since the install, so the gate is
+      not proven to have fired: {{ item.stdout_lines }}
+    success_msg: "{{ item.item }}'s postinst start was skipped by its condition"
+  loop: "{{ docker_engine_postinst_journal.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  # Only for a unit the postinst would have started: deb-systemd-invoke skips
+  # a disabled one without logging any condition result (finding 1 of the
+  # 2026-10-17 static audit; a rollback disables all three).
+  when:
+    - docker_engine_publish_installs | default(true) | bool
+    - item.item in (docker_engine_postinst_would_start | default(docker_engine_postinst_started_units))

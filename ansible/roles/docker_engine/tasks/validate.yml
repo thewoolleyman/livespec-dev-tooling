@@ -1,0 +1,55 @@
+---
+# Refusals that need nothing from the host: a configuration the role cannot
+# converge is refused before the first connection does any work.
+
+- name: Refuse an empty per-host value
+  ansible.builtin.assert:
+    that:
+      - docker_engine_llm_health_url | length > 0
+      - docker_engine_dpkg_config_digests | length > 0
+      - docker_engine_tailscale_unit | length > 0
+      - docker_engine_k3s_agent_unit | length > 0
+      - docker_engine_window_seconds | int > 0
+      - docker_engine_k3s_server | length > 0
+    fail_msg: >-
+      docker_engine needs docker_engine_llm_health_url,
+      docker_engine_dpkg_config_digests and docker_engine_k3s_server from this
+      host's host_vars (see the role's HOST_VARS.md), and non-empty unit names
+      and window.
+    success_msg: every per-host value is set
+
+- name: Refuse owned daemon keys that differ from the guard's owned set
+  # The commit marker's digest covers exactly the guard's OWNED_DAEMON_KEYS. A
+  # key owned here and not there would be written and never validated; one owned
+  # there and not here would be digested from a value nobody set.
+  ansible.builtin.assert:
+    that:
+      - docker_engine_daemon_config.keys() | sort
+        == ['bip', 'cgroup-parent', 'ip-forward', 'ip-forward-no-drop', 'ip6tables', 'iptables', 'ipv6', 'live-restore']
+      - docker_engine_daemon_config['cgroup-parent'] == docker_engine_sandbox_slice
+      - docker_engine_daemon_config['ip-forward-no-drop'] | bool
+    fail_msg: >-
+      docker_engine_daemon_config must carry exactly the guard's owned keys,
+      name docker_engine_sandbox_slice as cgroup-parent, and keep
+      ip-forward-no-drop true (it is what keeps FORWARD at ACCEPT).
+    success_msg: the owned daemon keys match the guard's owned set
+
+- name: Read the guard's operation budgets and deadline from its own source
+  # From the same checkout the guard is installed from, so a budget that moves
+  # in _docker_engine_guard_model.py moves every unit timeout below with it.
+  ansible.builtin.set_fact:
+    docker_engine_guard_timing: >-
+      {{ lookup('ansible.builtin.pipe',
+                'env PYTHONPATH=' ~ (docker_engine_guard_source_root | realpath) | quote
+                ~ ' python3 -m livespec_dev_tooling.fleet.docker_engine_guard_budgets'
+                ~ ' --window-seconds ' ~ (docker_engine_window_seconds | int | string)) | from_json }}
+
+- name: Hold the backstop that restores the apt timers if this controller is lost
+  # Design F6: the worst-case guarded run (the install budget, the deadline N,
+  # one rollback) plus thirty minutes. Normally the role restores the timers
+  # itself and cancels this.
+  ansible.builtin.set_fact:
+    docker_engine_apt_restore_after: >-
+      {{ docker_engine_guard_timing.budgets.publish
+         + docker_engine_guard_timing.deadman_deadline_seconds
+         + docker_engine_guard_timing.budgets.rollback + 1800 }}

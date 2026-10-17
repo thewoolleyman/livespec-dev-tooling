@@ -1,0 +1,60 @@
+---
+# The host states the role refuses before writing anything, each naming what an
+# operator needs for the next step. A refused converge changes nothing.
+
+- name: Refuse foreign Docker
+  # Docker packages or state that no guard run on this host recorded (hp's
+  # hand-installed Docker is the measured example). Never adopted, never erased.
+  ansible.builtin.fail:
+    msg: >-
+      Refusing: this host carries Docker packages or state that no
+      docker-engine-guard run recorded: {{ docker_engine_foreign }}. Foreign
+      Docker is never adopted or touched by this role.
+  when: docker_engine_class == 'foreign'
+
+- name: Refuse while a guard unit is running or queued
+  ansible.builtin.fail:
+    msg: >-
+      Refusing: these guard units are not quiescent, so an earlier run may still
+      be acting: {{ docker_engine_busy_units }}. Wait for them, or read their
+      journal; a failed unit means a rollback did not finish.
+  when: docker_engine_class == 'busy'
+
+- name: Refuse an unfinished run the operator has not named
+  # Design H1: the role never attaches to, rolls back or takes over a run. A
+  # second controller arriving during a healthy run lands here and changes
+  # nothing; the run's own controller or its dead-man finishes it.
+  ansible.builtin.fail:
+    msg: >-
+      Refusing: run {{ docker_engine_current_run }} is unfinished (phase
+      {{ docker_engine_current_phase or 'unrecorded' }}, deadline
+      {{ docker_engine_current_deadline }}). If its controller is gone and its
+      dead-man has not taken it back, recover it explicitly with
+      -e docker_engine_recover={{ docker_engine_current_run }}.
+  when:
+    - docker_engine_class == 'unfinished'
+    - docker_engine_recover != docker_engine_current_run
+
+- name: Refuse a rollback-partial run the operator has not acknowledged
+  ansible.builtin.fail:
+    msg: >-
+      Refusing: run {{ docker_engine_current_run }} ended rollback-partial. Read
+      {{ docker_engine_state_root }}/runs/{{ docker_engine_current_run }}/ and the
+      journal of docker-engine-deadman-{{ docker_engine_current_run }}.service,
+      repair what it names, then re-run with
+      -e docker_engine_acknowledge_run={{ docker_engine_current_run }}; the guard's
+      verify then re-reads every rollback postcondition.
+  when:
+    - docker_engine_class == 'rollback-partial'
+    - docker_engine_acknowledge_run != docker_engine_current_run
+
+- name: Refuse an operator switch that names a run this host does not hold
+  ansible.builtin.fail:
+    msg: >-
+      docker_engine_recover={{ docker_engine_recover }} /
+      docker_engine_acknowledge_run={{ docker_engine_acknowledge_run }} does not
+      name this host's current run ({{ docker_engine_current_run or 'none' }}).
+  when: >-
+    (docker_engine_recover | length > 0 and docker_engine_recover != docker_engine_current_run)
+    or (docker_engine_acknowledge_run | length > 0
+        and docker_engine_acknowledge_run != docker_engine_current_run)
