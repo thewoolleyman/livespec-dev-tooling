@@ -14,6 +14,7 @@ CPID=$!
 # Wait until dpkg is actually unpacking inside the publish unit, then kill both.
 until vm $I 'pgrep -f "^dpkg -i" >/dev/null' 2>/dev/null || ! kill -0 $CPID 2>/dev/null; do sleep 0.3; done
 RUN=$(latest_run $I)
+[ -n "$RUN" ] && kill -0 $CPID 2>/dev/null || { echo "######## VOID: no guard run reached dpkg -i (see $L.converge.out); not a verdict"; exit 3; }
 vm $I "sudo bash -c 'u=\$(systemctl list-units --plain --no-legend \"docker-engine-guard-publish-*\" | awk \"{print \\\$1}\" | head -1); echo killing \$u during dpkg; systemctl kill -s KILL \$u; pkill -KILL -f \"^dpkg -i\"; true'"
 kill -KILL -- -$CPID 2>/dev/null
 sleep 5
