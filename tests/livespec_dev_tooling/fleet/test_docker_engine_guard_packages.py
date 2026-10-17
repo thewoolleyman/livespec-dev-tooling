@@ -943,6 +943,50 @@ def test_the_package_step_completes_an_intended_package_a_settled_host_left_half
     assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
+def test_the_package_step_records_the_dpkg_audit_it_read_before_it_installs(
+    tmp_path: Path,
+) -> None:
+    """Design F6: "a fresh transaction requires an empty `dpkg --audit`".
+
+    The re-read happens AFTER the recovery and BEFORE `dpkg -i`, and it
+    is recorded durably beside `intended.json` for the same reason that
+    record exists (design R7): a run interrupted inside the install
+    leaves behind what the host looked like when it was entered. Here
+    that is the one statement nothing else preserves — dpkg's own
+    unfinished-transaction report at the moment this step was about to
+    mutate, which is what a later reader needs to attribute a trigger
+    handler like `man-db` to THIS transaction rather than to the host.
+
+    `runc` is the earlier run's package, left `unpacked`; the recovery
+    completes it, so what the re-read measures and this record carries is
+    an empty report — the evidence that the transaction below started
+    from one.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    interrupted = _QUERY_BEFORE + "runc 1.4.0-0ubuntu1 unpacked\n"
+    settled = _QUERY_AFTER + "runc 1.4.0-0ubuntu1 installed\n"
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("dpkg", "--audit"), [_audit_report(packages=("runc",)), ""]),
+            (("dpkg-query",), [interrupted, interrupted, settled]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is None
+    record = inputs.parent / "pre-install-audit.json"
+    assert record.is_file()
+    assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": []}
+    assert len(_calls_named(runner=runner, argv=("dpkg", "-i"))) == 1
+
+
 def test_the_package_step_refuses_when_the_runs_committed_inputs_are_unreadable(
     tmp_path: Path,
 ) -> None:

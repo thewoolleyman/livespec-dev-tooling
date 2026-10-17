@@ -45,6 +45,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_state import write_durable
 
 __all__: list[str] = [
     "INTENDED_FILE",
+    "PRE_INSTALL_AUDIT_FILE",
     "PackageStepResult",
     "run_package_step",
 ]
@@ -59,6 +60,15 @@ _FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
 # directory BEFORE the first package mutation, so a run interrupted
 # anywhere in the install leaves behind what it intended to install.
 INTENDED_FILE: Final[str] = "intended.json"
+
+# What `dpkg --audit` said after the recovery and immediately before the
+# install, written into the run's own directory beside the record above.
+# Design F6 requires a fresh transaction to start from an empty report,
+# and this is the only statement of what it actually started from: dpkg
+# keeps no history, so after the install nothing on the host can say
+# whether a package it names was left by THIS transaction or was already
+# unfinished when the step was entered.
+PRE_INSTALL_AUDIT_FILE: Final[str] = "pre-install-audit.json"
 
 # The three states an interrupted UNPACK leaves a package in, and the only
 # ones design F6 allows `dpkg --configure` to be aimed at. Narrow on
@@ -357,6 +367,11 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     if unaccounted is not None:
         return PackageStepResult(refusal=unaccounted)
     _recover_interrupted(runner=runner, flagged=flagged, installed=before)
+    remaining = _flagged_packages(runner=runner)
+    write_durable(
+        path=run_dir / PRE_INSTALL_AUDIT_FILE,
+        data=json.dumps({"run": run_dir.name, "flagged": list(remaining)}),
+    )
     if _already_settled(audit=audit, installed=before):
         # Nothing to INSTALL, so no transaction is repeated: the step
         # returns without `dpkg -i`, which over a host that already
