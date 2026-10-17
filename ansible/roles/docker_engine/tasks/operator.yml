@@ -19,6 +19,9 @@
       vars:
         docker_engine_fence_op: recover
         docker_engine_fence_run: "{{ docker_engine_current_run }}"
+
+    - name: Prove the resumed install was inert
+      ansible.builtin.include_tasks: post_install.yml
   always:
     - name: Restart the apt timers that were active before the fence
       ansible.builtin.systemd_service:

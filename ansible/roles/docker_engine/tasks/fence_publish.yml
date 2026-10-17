@@ -26,8 +26,11 @@
     # (operator.yml), so the guarded op and its run are parameters.
     docker_engine_fence_op: publish
     docker_engine_fence_run: "{{ docker_engine_run }}"
-    docker_engine_aptlock_unit: "docker-engine-guard-aptlock-{{ docker_engine_fence_run }}"
-    docker_engine_aptlock_ready: "/run/docker-engine-guard-aptlock-{{ docker_engine_fence_run }}"
+    # Named OUTSIDE the docker-engine-guard- prefix: the guard's admission (I1)
+    # and classify.yml read every docker-engine-guard-* unit as a guard unit, so
+    # a lost controller's helper stranded the host as busy.
+    docker_engine_aptlock_unit: "docker-engine-aptlock-{{ docker_engine_fence_run }}"
+    docker_engine_aptlock_ready: "/run/docker-engine-aptlock-{{ docker_engine_fence_run }}"
   block:
     - name: List the apt backstops an earlier, lost controller left armed
       # A killed controller's backstop would otherwise restart the apt timers
@@ -47,9 +50,10 @@
           systemctl start {{ item | regex_replace('\\.timer$', '.service') | quote }};
           systemctl stop {{ item | quote }}
         executable: /bin/bash
-      loop: >-
-        {{ docker_engine_stale_backstops.stdout_lines | map('split') | map('first')
-           | reject('equalto', docker_engine_apt_restore_unit ~ '.timer') | list }}
+      # Every one, the current run's included: on the recover path the current
+      # run's backstop IS the lost controller's, and the only record of which
+      # timers that controller stopped. This fence arms its own afterwards.
+      loop: "{{ docker_engine_stale_backstops.stdout_lines | map('split') | map('first') | list }}"
       become: true
       changed_when: true
 
@@ -85,6 +89,21 @@
         state: stopped
       loop: "{{ docker_engine_apt_timers_active }}"
       become: true
+
+    - name: Stop the lock helper a lost controller left holding the dpkg frontend lock
+      # Reached only when no guard unit is busy (classify refused otherwise), so
+      # no live publish owns a helper. Without this the wait below sat out its
+      # whole bound on the dead controller's helper, and the recover path could
+      # not start a helper of the same name. The legacy name is included.
+      ansible.builtin.shell:
+        cmd: >-
+          for u in $(systemctl list-units --all --plain --no-legend --no-pager
+          'docker-engine-aptlock-*.service' 'docker-engine-guard-aptlock-*.service'
+          | awk '{print $1}'); do systemctl stop "$u"; echo "$u"; done
+        executable: /bin/bash
+      register: docker_engine_stale_aptlock
+      become: true
+      changed_when: docker_engine_stale_aptlock.stdout | length > 0
 
     # Wait on the locks, not on process names: the always-running
     # unattended-upgrade-shutdown truncates to the same 15-character comm as a
@@ -155,6 +174,55 @@
           A permission exists before the install:
           {{ docker_engine_permissions_before.results | selectattr('stat.exists') | map(attribute='item') | list }}
         success_msg: no start permission exists
+
+    - name: Read which audited packages dpkg already holds, before the publish
+      # The guard's publish skips `dpkg -i` when every audited package is
+      # already installed at its audited version (_already_settled), which is
+      # the host every re-run after a rollback finds, because rollback never
+      # purges packages. No postinst runs then, so post_install.yml must not
+      # demand the condition-skip journal line a postinst start would write.
+      vars:
+        docker_engine_query_format: -f=${binary:Package} ${Version} ${db:Status-Status}\n
+      ansible.builtin.command:
+        argv: "{{ ['dpkg-query', '-W', docker_engine_query_format] + docker_engine_packages | map(attribute='package') | list }}"
+      register: docker_engine_pkg_before_publish
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Read each guarded unit's enablement, before the publish
+      # deb-systemd-invoke starts a unit only when `systemctl is-enabled` says
+      # enabled; a rollback DISABLES the three, so on a re-run's reinstall the
+      # postinst starts nothing and no condition skip is logged for them.
+      ansible.builtin.command:
+        argv: [systemctl, is-enabled, "{{ item }}"]
+      loop: "{{ docker_engine_postinst_started_units }}"
+      register: docker_engine_enabled_before_publish
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Hold whether the publish has anything to install
+      vars:
+        docker_engine_settled_rows: >-
+          {{ docker_engine_packages
+             | map(attribute='package') | zip(docker_engine_packages | map(attribute='version'))
+             | map('join', ' ') | map('regex_replace', '$', ' installed') | list }}
+      ansible.builtin.set_fact:
+        docker_engine_publish_installs: >-
+          {{ docker_engine_settled_rows | difference(docker_engine_pkg_before_publish.stdout_lines) | length > 0 }}
+        # deb-systemd-invoke starts a unit only when `systemctl is-enabled`
+        # prints enabled or enabled-runtime (init-system-helpers 1.68, lines
+        # 131-141); a missing unit (`not-found`, a fresh host) is enabled by the
+        # postinst first and then started. A rollback DISABLES all three, so a
+        # re-run's reinstall starts none of them. Known gap: a package left
+        # unpacked and never configured reads `disabled` here yet IS enabled and
+        # started by its first configure, so its skip line is not demanded; that
+        # weakens the proof and never fails it.
+        docker_engine_postinst_would_start: >-
+          {{ docker_engine_enabled_before_publish.results
+             | selectattr('stdout', 'in', ['enabled', 'enabled-runtime', 'not-found'])
+             | map(attribute='item') | list }}
 
     - name: Mark the journal before the install
       ansible.builtin.command:
