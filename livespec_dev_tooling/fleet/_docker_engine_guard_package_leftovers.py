@@ -24,6 +24,7 @@ bare interpreter, where the `returns` railway is not importable.
 
 from __future__ import annotations
 
+import gzip
 import json
 import time
 from pathlib import Path
@@ -156,10 +157,41 @@ def _written_at(*, record: Path) -> str:
 
 
 def _log_text(*, log: Path) -> str | None:
-    """dpkg's log, or `None` when it is not there to be read."""
+    """dpkg's log and every rotation of it, or `None` if one cannot be read.
+
+    The SERIES rather than the current file, because logrotate moves
+    `/var/log/dpkg.log` aside and compresses the older copies while a
+    guard run can rest in phase `publishing` across that boundary — the
+    phase carries no deadline, so nothing bounds how long a run may sit
+    there before a `recover` resumes it. Read from the current file alone
+    the answer under-counts the actions since a record was written, and
+    an under-count attributes somebody else's package to the guard and
+    then completes their transaction.
+
+    Globbing the current file's NAME covers both logrotate naming
+    schemes — `dpkg.log.1`, `dpkg.log.2.gz`, and the `dateext` spelling
+    `dpkg.log-20261001.gz` — because what bounds the answer is the
+    timestamp comparison in `_log_refusal` and never the file name. A
+    member the host compressed with something other than gzip would
+    decode to nothing this parses, which is the one gap here; the host's
+    own `/etc/logrotate.d/dpkg` uses `compress`, which is gzip.
+
+    A `.gz` member that cannot be decompressed is `None` rather than
+    skipped, for the reason an absent log is: a series with a member
+    missing supports no claim about what is not in it.
+    """
     if not log.is_file():
         return None
-    return log.read_text(encoding="utf-8", errors="replace")
+    texts: list[str] = []
+    for member in sorted(log.parent.glob(f"{log.name}*")):
+        raw = member.read_bytes()
+        if member.suffix == ".gz":
+            try:
+                raw = gzip.decompress(raw)
+            except gzip.BadGzipFile:
+                return None
+        texts.append(raw.decode("utf-8", errors="replace"))
+    return "\n".join(texts)
 
 
 def _action(*, line: str) -> tuple[str, str, str] | None:
@@ -189,13 +221,15 @@ def _log_refusal(*, log: Path, since: str, recorded: frozenset[str]) -> str | No
     is idempotent. So the clause is left as the specification states it
     rather than widened here (ratification review of v075, point 2).
 
-    A log that cannot be read refuses, because "no action since that
-    record" is a claim about dpkg's whole record of itself, and a record
-    that is not there supports no such claim.
+    A log that cannot be read IN FULL refuses, because "no action since
+    that record" is a claim about dpkg's whole record of itself, and a
+    series with a member missing supports no such claim.
     """
     text = _log_text(log=log)
     if text is None:
-        return f"dpkg's log at {log} could not be read, so nothing since {since} is ruled out"
+        return (
+            f"dpkg's log at {log} could not be read in full, so nothing since {since} is ruled out"
+        )
     for line in text.splitlines():
         action = _action(line=line)
         if action is None:
