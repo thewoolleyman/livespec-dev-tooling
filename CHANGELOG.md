@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.5...v1.112.0) (2026-10-17)
+
+
+### Features
+
+* render the delegated gate Job command from the consumer's declared recipe ([0711085](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0711085f52e140f37636a1e5028279b1ee889af1))
+* surface the gate Job's missing-recipe refusal into the verdict ([63f3e8d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/63f3e8da45826de63018fd16b031de06b8e52df3))
+
 ## [1.111.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.4...v1.111.5) (2026-10-17)
 
 
