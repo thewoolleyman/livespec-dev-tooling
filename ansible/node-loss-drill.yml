@@ -429,7 +429,15 @@
                 | awk '{ print $1 }')"
               {
                 for timer in ${timers}; do
-                  triggered="$(systemctl show "${timer}" --property=Unit --value)"
+                  # A TEMPLATE unit file (`name@.timer`) is listed by
+                  # list-unit-files but is not a unit `systemctl show` will
+                  # read, so it is skipped; it fires nothing until instantiated,
+                  # and an instance appears in the list under its own name. A
+                  # `show` that still fails for any other reason skips that one
+                  # unit rather than aborting the discovery under `set -e`
+                  # (gmktec-xubuntu `chrony-dnssrv@.timer`, 2026-10-17).
+                  case "${timer}" in *@.*) continue ;; esac
+                  triggered="$(systemctl show "${timer}" --property=Unit --value 2>/dev/null)" || continue
                   [ -n "${triggered}" ] || continue
                   pulls="$(systemctl show "${triggered}" \
                     --property=Wants --property=Requires --value | tr '\n' ' ')"

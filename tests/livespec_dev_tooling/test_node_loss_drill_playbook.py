@@ -142,6 +142,13 @@ _WATCHDOG_TIMER = "agent-rejoin-watchdog.timer"
 _EXTENDED_RESOURCE_TIMER = "reapply-node-extended-resource.timer"
 _UNRELATED_TIMER = "logrotate.timer"
 _DISARMED_TIMER = "agent-rejoin-standby.timer"
+# A TEMPLATE timer, as gmktec-xubuntu carries `chrony-dnssrv@.timer`. `systemctl
+# list-unit-files --type=timer` lists template unit files, but `systemctl show`
+# REFUSES a template name ("Unit name ... is neither a valid invocation ID nor
+# unit name", exit 1), so a discovery that reads every listed timer under
+# `set -e` aborts on it. That is how the drill's second real run failed
+# (gmktec-xubuntu 2026-10-17T00:31Z). The stand-in refuses it the same way.
+_TEMPLATE_TIMER = "chrony-dnssrv@.timer"
 
 # One row per timer: the timer, the unit it triggers, that unit's `Wants`, its
 # `Requires`, and the timer's state before the drill. `-` is "no such value",
@@ -157,11 +164,12 @@ _TIMER_TABLE = (
     ),
     (_UNRELATED_TIMER, "logrotate.service", "-", "-", "running"),
     (_DISARMED_TIMER, "agent-rejoin-standby.service", f"{_AGENT_UNIT}.service", "-", "stopped"),
+    (_TEMPLATE_TIMER, "-", "-", "-", "stopped"),
 )
 
 # The two the drill must pause and re-arm, and the two it must leave alone.
 _PAUSED_TIMERS = (_WATCHDOG_TIMER, _EXTENDED_RESOURCE_TIMER)
-_UNPAUSED_TIMERS = (_UNRELATED_TIMER, _DISARMED_TIMER)
+_UNPAUSED_TIMERS = (_UNRELATED_TIMER, _DISARMED_TIMER, _TEMPLATE_TIMER)
 
 # The three hosts, named for the drill rather than for real pool nodes so no
 # output of this suite can be mistaken for a record of a fleet machine having
@@ -347,6 +355,11 @@ case "$*" in
     awk '{ printf "%s enabled enabled\\n", $1 }' "${table}"
     exit 0 ;;
   *'--property=Unit'*)
+    case "$2" in
+      *@.*)
+        printf 'Failed to get properties: Unit name %s is neither a valid invocation ID nor unit name.\\n' "$2" >&2
+        exit 1 ;;
+    esac
     table_row 1 "$2" | awk '{ print $2 }'
     exit 0 ;;
   *'--property=Wants'*)
