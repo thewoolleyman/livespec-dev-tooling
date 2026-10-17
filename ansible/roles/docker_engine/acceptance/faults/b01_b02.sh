@@ -4,7 +4,7 @@
 # next controller is refused (I1) and the operator's recover rolls back (I2).
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
-I=1
+I=${1:-1}
 reboot_at() { # reboot_at <phase> <tag>
   local want=$1 tag=$2
   setsid bash -c "source ansible/roles/docker_engine/acceptance/faults/lib.sh; converge $I tmp/faults/$tag.converge.log" > tmp/faults/$tag.converge.out 2>&1 &
