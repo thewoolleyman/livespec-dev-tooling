@@ -223,6 +223,31 @@
     - name: Download the audited packages and prove the drop-ins attach to them
       ansible.builtin.include_tasks: scratch.yml
 
+    - name: Read which audited packages dpkg already holds, before the publish
+      # The guard's publish skips `dpkg -i` when every audited package is
+      # already installed at its audited version (_already_settled), which is
+      # the host every re-run after a rollback finds, because rollback never
+      # purges packages. No postinst runs then, so post_install.yml must not
+      # demand the condition-skip journal line a postinst start would write.
+      vars:
+        docker_engine_query_format: -f=${binary:Package} ${Version} ${db:Status-Status}\n
+      ansible.builtin.command:
+        argv: "{{ ['dpkg-query', '-W', docker_engine_query_format] + docker_engine_packages | map(attribute='package') | list }}"
+      register: docker_engine_pkg_before_publish
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Hold whether the publish has anything to install
+      vars:
+        docker_engine_settled_rows: >-
+          {{ docker_engine_packages
+             | map(attribute='package') | zip(docker_engine_packages | map(attribute='version'))
+             | map('join', ' ') | map('regex_replace', '$', ' installed') | list }}
+      ansible.builtin.set_fact:
+        docker_engine_publish_installs: >-
+          {{ docker_engine_settled_rows | difference(docker_engine_pkg_before_publish.stdout_lines) | length > 0 }}
+
     - name: Fence the package step from apt and publish the inert install
       ansible.builtin.include_tasks: fence_publish.yml
 
