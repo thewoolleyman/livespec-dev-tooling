@@ -29,6 +29,8 @@ produces, and a canned manifest would assert it of the fixture instead.
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 from itertools import takewhile
 from pathlib import Path
@@ -36,8 +38,9 @@ from pathlib import Path
 import pytest
 from returns.result import Success
 
-from livespec_dev_tooling.gate_remote_delegate import gate_remote_request
+from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, run_delegated_gate
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
+from livespec_dev_tooling.gate_remote_verdict import GATE_FAILED
 
 __all__: list[str] = []
 
@@ -68,6 +71,24 @@ _OUR_OWN_RECIPES = (
 # What a consuming repository that declares nothing gets: the recipe its local
 # pre-push fall-through runs.
 _FALL_THROUGH_RECIPE = "check"
+
+# The two `kubectl get job --output json` payloads one run sees, in order: a Job
+# Kueue has not admitted yet, and then the condition that means the gate ran and
+# was RED. Conditions carry `status` as well as `type`, because a Job reports
+# every condition it has ever set and a reader that tests only the type would
+# call a running gate terminal.
+_JOB_ADMITTING = json.dumps({"status": {}})
+_JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status": "True"}]}})
+
+# A `just` that provides NOTHING the tree declares — the scenario's Given. Every
+# existence probe answers no; anything else succeeds, so a recipe that DID run
+# would leave a green gate and a log line, and the assertions can tell the two
+# failure shapes apart.
+_JUST_STUB = """#!/usr/bin/env bash
+printf 'just %s\\n' "$*" >> "${STUB_LOG}"
+[ "${1:-}" = "--show" ] && exit 1
+exit 0
+"""
 
 
 def _a_consumer_repository(*, root: Path, declaration: str) -> Path:
@@ -101,10 +122,16 @@ class _CannedWorldRealRenderer:
     The renderer is the subject, so stubbing it would assert the stub. It is a
     bash script that reads a fixture directory and writes YAML to stdout — it
     opens no socket and touches nothing outside its own output.
+
+    `pod_message` is what the cluster reports as the failed pod's termination
+    message. A run that never reaches a Job never reads it, so the default is
+    the empty string and the assembly-only tests are unaffected by it.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, pod_message: str = "") -> None:
         self.argvs: list[tuple[str, ...]] = []
+        self._pod_message = pod_message
+        self._polls = 0
 
     def __call__(
         self,
@@ -127,10 +154,27 @@ class _CannedWorldRealRenderer:
                     stderr=completed.stderr,
                 )
             )
-        # The assembly's only other two reaches, in the order it makes them:
-        # the tree under test, then the repository the mirror is named after.
-        answered = _TREE if "rev-parse" in argv else _ORIGIN
-        return Success(GateCommandResult(returncode=0, stdout=f"{answered}\n", stderr=""))
+        return Success(GateCommandResult(returncode=0, stdout=self._stdout(argv=argv), stderr=""))
+
+    def _stdout(self, *, argv: list[str]) -> str:
+        """What each canned step answers with.
+
+        The polls answer "not admitted yet" once before the verdict, which is
+        the realistic shape — no gate is terminal on its first poll — and the
+        only way the client's wait is exercised at all.
+        """
+        if "pods" in argv:
+            return self._pod_message
+        if "job" in argv:
+            self._polls += 1
+            return _JOB_ADMITTING if self._polls == 1 else _JOB_FAILED
+        if "rev-parse" in argv:
+            return f"{_TREE}\n"
+        if "get-url" in argv:
+            return f"{_ORIGIN}\n"
+        # The push, the submit, the log stream and the ref collection: the
+        # client reads their exit codes, never their output.
+        return ""
 
 
 def _gate_container_script(*, manifest: str) -> list[str]:
@@ -162,6 +206,11 @@ def _recipes_run(*, manifest: str) -> list[str]:
         for line in _gate_container_script(manifest=manifest)
         if line.strip().startswith("just ")
     ]
+
+
+def _no_sleep(*, seconds: float) -> None:
+    """The poll wait, canned — the run's only source of time."""
+    _ = seconds
 
 
 def _rendered_for(*, repo_root: Path) -> str:
@@ -199,3 +248,74 @@ def test_the_gate_job_runs_the_consumers_own_declared_recipe_and_none_of_ours(
     for ours in _OUR_OWN_RECIPES:
         assert f"just {ours}" not in declared_manifest
         assert f"just {ours}" not in silent_manifest
+
+
+def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[str]]:
+    """Run the rendered pod script here, against a `just` that provides nothing.
+
+    This is the scenario's When, minus the cluster: the Job's verdict IS this
+    script's exit status, and what it invoked is the only way to tell "refused
+    before running anything" apart from "ran something and it failed".
+    """
+    stub_dir = root / "bin"
+    stub_dir.mkdir(parents=True)
+    stub = stub_dir / "just"
+    _ = stub.write_text(_JUST_STUB, encoding="utf-8")
+    stub.chmod(0o755)
+    log = root / "invocations.log"
+    script = root / "gate-script.sh"
+    _ = script.write_text("\n".join(_gate_container_script(manifest=manifest)), encoding="utf-8")
+    env = dict(os.environ)
+    env.update(
+        {
+            "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
+            "STUB_LOG": str(log),
+        }
+    )
+    completed = subprocess.run(
+        ["bash", str(script)],
+        cwd=str(root),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode, completed.stderr, log.read_text(encoding="utf-8").splitlines()
+
+
+def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it(
+    *, tmp_path: Path
+) -> None:
+    """The scenario, end to end: the pod's refusal and the verdict that carries it.
+
+    The two arms are joined by a VALUE rather than by a shared expectation: the
+    message the pod actually produced is the message handed to the canned
+    cluster as the failed pod's termination message. So the verdict naming the
+    recipe is the pod's own wording reaching an operator, not a second string
+    that happens to agree with it today.
+
+    `refuses_push` and the absent token are asserted too, because "red" is only
+    half the scenario's Then — a verdict nobody acts on still completes a push.
+    """
+    consumer = _a_consumer_repository(
+        root=tmp_path / "declaring",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+    )
+    manifest = _rendered_for(repo_root=consumer)
+
+    returncode, stderr, invoked = _run_the_pod_script(manifest=manifest, root=tmp_path / "pod")
+
+    assert returncode != 0
+    assert f"'{_CONSUMER_RECIPE}'" in stderr
+    assert invoked == [f"just --show {_CONSUMER_RECIPE}"]
+
+    cluster = _CannedWorldRealRenderer(pod_message=stderr.strip())
+    verdict = run_delegated_gate(
+        repo_root=consumer, renderer=_RENDERER, runner=cluster, sleeper=_no_sleep
+    )
+
+    assert verdict.state == GATE_FAILED
+    assert verdict.token_written is False
+    assert verdict.refuses_push is True
+    assert _CONSUMER_RECIPE in verdict.detail
+    assert not [argv for argv in cluster.argvs if "green_token" in " ".join(argv)]
