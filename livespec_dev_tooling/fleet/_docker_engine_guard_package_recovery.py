@@ -34,6 +34,7 @@ from typing import Final
 from livespec_dev_tooling.fleet._docker_engine_guard_package_audit import (
     UNHELD,
     InstalledPackage,
+    read_installed,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_package_reunpack import (
     reunpack_half_installed,
@@ -49,14 +50,19 @@ __all__: list[str] = [
     "recover_interrupted",
 ]
 
-# The three states an interrupted UNPACK leaves a package in, and the only
-# ones design F6 allows `dpkg --configure` to be aimed at. Narrow on
+# The two states a package can be in that `dpkg --configure` completes,
+# and the only ones design F6 allows it to be aimed at. Narrow on
 # purpose: `--configure -a` would adopt whatever else the host has left
 # pending, which is the one thing the recovery branch must not do.
+#
+# `half-installed` is deliberately NOT here, and its absence is the fix
+# FAULTS B-06 and M-04 paid for: dpkg cannot configure that state at all
+# — it answers `cannot configure (current status 'half-installed')` and
+# exits 1 — so a package in it is re-unpacked from its own audited
+# archive first and reaches this set, as `unpacked`, only afterwards.
 _RECOVERABLE_STATES: Final[frozenset[str]] = frozenset(
     {
         "half-configured",
-        "half-installed",
         "unpacked",
     }
 )
@@ -108,6 +114,15 @@ def recover_interrupted(
     package's triggers would skip the configuration it is actually
     waiting for.
 
+    Those last two sets are read from the states AFTER the re-unpack,
+    which is why the table is re-read when one happened: the package the
+    unpack moved out of `half-installed` is exactly the one
+    `dpkg --configure` now has to name, and the snapshot the step took
+    before the recovery still reports it in the state dpkg refuses. The
+    re-read is skipped when nothing was unpacked, because then that
+    snapshot still describes the host and a second query would only cost
+    a command.
+
     The one refusal this branch can answer with is the re-unpack's: a
     `half-installed` leftover that no audited `.deb` of this run carries
     at that exact identity is work neither the recovery nor the install
@@ -119,7 +134,8 @@ def recover_interrupted(
     )
     if reunpack.refusal is not None:
         return reunpack.refusal
-    recoverable = _in_states(flagged=flagged, installed=installed, states=_RECOVERABLE_STATES)
+    current = read_installed(runner=runner) if reunpack.unpacked else installed
+    recoverable = _in_states(flagged=flagged, installed=current, states=_RECOVERABLE_STATES)
     if recoverable:
         _ = runner(
             command=TimedCommand(
@@ -128,7 +144,7 @@ def recover_interrupted(
                 env=FENCED_ENV,
             )
         )
-    awaiting = _in_states(flagged=flagged, installed=installed, states=_TRIGGER_STATES)
+    awaiting = _in_states(flagged=flagged, installed=current, states=_TRIGGER_STATES)
     if awaiting:
         _ = runner(
             command=TimedCommand(
