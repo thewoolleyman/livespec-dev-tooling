@@ -267,6 +267,22 @@
         docker_engine_op: start
         docker_engine_op_run: "{{ docker_engine_run }}"
 
+    - name: Remove a canary an earlier rolled-back run left behind
+      # Rollback kills and stops the daemons but erases nothing under
+      # /var/lib/docker, so a run that reached `canary` and then rolled back
+      # leaves its stopped container registered under the canary's fixed name,
+      # and the next run's `docker run --name` failed on the conflict (FAULTS
+      # M-01, guard-vm-3, 2026-10-17: run r20261017121454ef92). The name is the
+      # guard's own; nothing else is touched.
+      ansible.builtin.command:
+        argv: [docker, rm, --force, "{{ docker_engine_canary_name }}"]
+      register: docker_engine_canary_leftover
+      become: true
+      changed_when: docker_engine_canary_leftover.stdout | trim | length > 0
+      failed_when:
+        - docker_engine_canary_leftover.rc != 0
+        - "'No such container' not in docker_engine_canary_leftover.stderr"
+
     - name: Run the canary container
       # Design Mechanism 1, phase `canary`: ONE container from a pinned image on
       # the default bridge, which exercises the endpoint, veth and per-container
