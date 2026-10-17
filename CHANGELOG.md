@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.1...v1.112.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **gate:** default the delegated gate Job to the shared pre-push sequence ([dee06cc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dee06ccec6c872908b0de333ee6b7f5734d89267))
+
 ## [1.112.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.0...v1.112.1) (2026-10-17)
 
 
