@@ -71,6 +71,13 @@ HALF_INSTALLED: Final[str] = "half-installed"
 # state rather than needing a second branch at every comparison.
 _UNHELD: Final[InstalledPackage] = InstalledPackage(version="", status="")
 
+# What tells dpkg that its caller already holds the frontend lock — the
+# documented way for a frontend holding it to call dpkg (design R6). The
+# recovery runs inside the same held lock as the install, so the unpack
+# carries it for the same reason `dpkg -i` does: without it this dpkg
+# takes the lock itself and deadlocks against the helper holding it.
+_FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
+
 # The leftover's architecture, asked for one package at a time. It is
 # the one field of the match dpkg's own table read does not carry.
 _ARCHITECTURE_QUERY: Final[tuple[str, ...]] = (
@@ -166,6 +173,7 @@ def reunpack_half_installed(
             command=TimedCommand(
                 argv=("dpkg", "--unpack", str(matched[0])),
                 timeout_seconds=INSTALL_TIMEOUT_SECONDS,
+                env=_FENCED_ENV,
             )
         )
         unpacked.append(name)
