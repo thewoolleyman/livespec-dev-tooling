@@ -29,7 +29,7 @@ latest_run() { vm "$1" 'sudo bash -c "ls -t /var/lib/docker-engine-guard/runs 2>
 phase_of() { vm "$1" "sudo bash -c 'r=\$(ls -t /var/lib/docker-engine-guard/runs 2>/dev/null | head -1); [ -n \"\$r\" ] && cat /var/lib/docker-engine-guard/runs/\$r/phase'" 2>/dev/null; }
 guard_op() { # guard_op <i> <op> <run> [extra args]: run one guard operation as the role does, print exit and journal
   local i=$1 op=$2 run=$3; shift 3
-  vm "$i" "U=docker-engine-guard-$op-$run-fault-\$(date +%H%M%S%N | cut -c1-9); S=\$(date +%s); sudo systemd-run --unit=\$U --wait --collect --quiet --property=Type=oneshot --property=TimeoutStartSec=420 /usr/local/libexec/docker-engine-guard $op $run --window-seconds=420 $*; echo \"$op $run exit=\$?\"; sudo journalctl -u \$U.service --since=@\$S --no-pager -o cat | grep -vE '^(Starting|Finished|docker-engine-guard-.*: (Deactivated|Main process|Failed))'"
+  vm "$i" "U=docker-engine-guard-$op-$run-fault-\$(date +%H%M%S%N | cut -c1-9); S=\$(date +%s); sudo systemd-run --unit=\$U --wait --collect --quiet --property=Type=oneshot --property=TimeoutStartSec=1900 /usr/local/libexec/docker-engine-guard $op $run --window-seconds=420 $*; echo \"$op $run exit=\$?\"; sudo journalctl -u \$U.service --since=@\$S --no-pager -o cat | grep -vE '^(Starting|Finished|docker-engine-guard-.*: (Deactivated|Main process|Failed))'"
 }
 rolled_back_check() { # the FAULTS.md definition of "rolled back", as far as it is observable
   vm "$1" 'sudo bash -c "

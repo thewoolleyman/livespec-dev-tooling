@@ -68,6 +68,17 @@
         mode: "0700"
       become: true
 
+    - name: Stop a probe a lost controller left active
+      # The probe has RemainAfterExit, so one killed between its permitted start
+      # and the stop below stays active, and a later start would be a no-op that
+      # proves nothing. Named outside the docker-engine-guard- prefix for the
+      # same busy-stranding reason as the apt lock helper.
+      ansible.builtin.command:
+        argv: [systemctl, stop, docker-engine-probe.service, docker-engine-guard-probe.service]
+      become: true
+      changed_when: false
+      failed_when: false
+
     - name: Ensure the probe's test permission is absent
       ansible.builtin.file:
         path: "{{ docker_engine_probe_allow }}"
@@ -76,8 +87,8 @@
 
     - name: Install the probe unit
       ansible.builtin.template:
-        src: docker-engine-guard-probe.service.j2
-        dest: /etc/systemd/system/docker-engine-guard-probe.service
+        src: docker-engine-probe.service.j2
+        dest: /etc/systemd/system/docker-engine-probe.service
         owner: root
         group: root
         mode: "0644"
@@ -85,7 +96,7 @@
 
     - name: Create the probe unit's drop-in directory
       ansible.builtin.file:
-        path: /etc/systemd/system/docker-engine-guard-probe.service.d
+        path: /etc/systemd/system/docker-engine-probe.service.d
         state: directory
         owner: root
         group: root
@@ -97,7 +108,7 @@
       # path, which the fresh-run assertions have already found absent.
       ansible.builtin.template:
         src: 50-docker-engine-guard.conf.j2
-        dest: /etc/systemd/system/docker-engine-guard-probe.service.d/50-docker-engine-guard.conf
+        dest: /etc/systemd/system/docker-engine-probe.service.d/50-docker-engine-guard.conf
         owner: root
         group: root
         mode: "0644"
@@ -112,13 +123,13 @@
 
     - name: Start the probe without its permission
       ansible.builtin.command:
-        argv: [systemctl, start, docker-engine-guard-probe.service]
+        argv: [systemctl, start, docker-engine-probe.service]
       become: true
       changed_when: true
 
     - name: Read the probe after the denied start
       ansible.builtin.command:
-        argv: "{{ ['systemctl', 'show', 'docker-engine-guard-probe.service'] + docker_engine_probe_props }}"
+        argv: "{{ ['systemctl', 'show', 'docker-engine-probe.service'] + docker_engine_probe_props }}"
       register: docker_engine_probe_denied
       become: true
       changed_when: false
@@ -143,13 +154,13 @@
 
     - name: Start the probe with its permission
       ansible.builtin.command:
-        argv: [systemctl, start, docker-engine-guard-probe.service]
+        argv: [systemctl, start, docker-engine-probe.service]
       become: true
       changed_when: true
 
     - name: Read the probe after the permitted start
       ansible.builtin.command:
-        argv: "{{ ['systemctl', 'show', 'docker-engine-guard-probe.service'] + docker_engine_probe_props }}"
+        argv: "{{ ['systemctl', 'show', 'docker-engine-probe.service'] + docker_engine_probe_props }}"
       register: docker_engine_probe_permitted
       become: true
       changed_when: false
@@ -171,7 +182,7 @@
       # Stopping an inactive or unknown unit exits 0, so this is safe on every
       # path into `always`.
       ansible.builtin.command:
-        argv: [systemctl, stop, docker-engine-guard-probe.service]
+        argv: [systemctl, stop, docker-engine-probe.service]
       become: true
       changed_when: true
       failed_when: false
@@ -182,8 +193,8 @@
         state: absent
       loop:
         - "{{ docker_engine_probe_allow }}"
-        - /etc/systemd/system/docker-engine-guard-probe.service.d
-        - /etc/systemd/system/docker-engine-guard-probe.service
+        - /etc/systemd/system/docker-engine-probe.service.d
+        - /etc/systemd/system/docker-engine-probe.service
       become: true
 
     - name: Unload the probe

@@ -12,9 +12,9 @@ echo "######## restore guard-vm-$I"; restore $I || exit 1
 setsid bash -c "source ansible/roles/docker_engine/acceptance/faults/lib.sh; converge $I $L.converge.log -e docker_engine_window_seconds=$W" > $L.converge.out 2>&1 &
 CPID=$!
 # Wait until dpkg is actually unpacking inside the publish unit, then kill both.
-until vm $I 'pgrep -x dpkg >/dev/null' 2>/dev/null || ! kill -0 $CPID 2>/dev/null; do sleep 0.3; done
+until vm $I 'pgrep -f "^dpkg -i" >/dev/null' 2>/dev/null || ! kill -0 $CPID 2>/dev/null; do sleep 0.3; done
 RUN=$(latest_run $I)
-vm $I "sudo bash -c 'u=\$(systemctl list-units --plain --no-legend \"docker-engine-guard-publish-*\" | awk \"{print \\\$1}\" | head -1); echo killing \$u during dpkg; systemctl kill -s KILL \$u; pkill -KILL -x dpkg; true'"
+vm $I "sudo bash -c 'u=\$(systemctl list-units --plain --no-legend \"docker-engine-guard-publish-*\" | awk \"{print \\\$1}\" | head -1); echo killing \$u during dpkg; systemctl kill -s KILL \$u; pkill -KILL -f \"^dpkg -i\"; true'"
 kill -KILL -- -$CPID 2>/dev/null
 sleep 5
 echo "######## run=$RUN phase=$(phase_of $I); dpkg --audit:"; vm $I 'sudo dpkg --audit | head -5'
