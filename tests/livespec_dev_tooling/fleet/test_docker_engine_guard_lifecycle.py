@@ -19,6 +19,7 @@ import fcntl
 import importlib
 import json
 import stat
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -1068,6 +1069,43 @@ def test_publish_stays_at_publishing_when_the_post_install_condition_check_fails
     assert outcome.verdict == "refuse"
     assert outcome.exit_code == 1
     assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "publishing"
+
+
+def test_publish_records_published_when_the_package_step_answers_no_refusal(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the forward path, with the step answering none.
+
+    The companion the refusal assertions beside this one need. `publish`
+    now reads the package step's OWN verdict as well as the condition
+    check, and a fix that carried a refusal by refusing on every publish
+    would satisfy every refusal test here while leaving no host able to
+    install anything at all. So the forward path is driven through the
+    same seam, told there is nothing to report.
+
+    "No refusal" is INJECTED rather than left to whatever the fake
+    happens to do, which is what the field asserted here is for -- the
+    same shape, and for the same reason, as the real host's own
+    `package_runner` field: a seam whose answer a test cannot set is a
+    seam no test can drive both ways.
+    """
+    _entry(name="publish")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake_module = importlib.import_module(_FAKE_MODULE)
+    assert "package_refusal" in {declared.name for declared in fields(fake_module.FakeHost)}
+    fake = _fake(root=tmp_path)
+    fake.package_refusal = None
+    fake.condition_check = True
+    _record_phase(root=tmp_path, run="run-a", phase="reserved")
+
+    outcome = guard.run_operation(
+        operation="publish", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert outcome.verdict != "refuse"
+    assert outcome.exit_code == 0
+    assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "published"
 
 
 def test_the_deadline_interval_covers_start_observe_and_confirm_plus_a_margin(
