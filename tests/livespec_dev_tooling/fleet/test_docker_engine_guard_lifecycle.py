@@ -1111,6 +1111,52 @@ def test_publish_stays_at_publishing_when_the_post_install_condition_check_fails
     assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "publishing"
 
 
+def test_publish_refuses_carrying_the_package_steps_refusal_and_stays_publishing(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": a refused step is a refused publish.
+
+    FAULTS B-06 on poweredge guard-vm-0, 2026-10-17: a SIGKILL during
+    `dpkg -i` left `man-db` half-configured; the package step computed
+    exactly the refusal asserted here; and the `recover` that resumed
+    the publish reported "inert install published" and recorded phase
+    `published` while `dpkg --audit` still named `man-db`.
+
+    The reasoning that discarded it was that a refused step leaves the
+    host unmutated, so the condition check would fail next. That is
+    false whenever the refusal comes AFTER the packages landed -- which
+    is this host exactly: the audited units are installed and inert, so
+    their effective conditions ARE the guard's two and the check passes
+    over them. The condition check is therefore driven PASSING here,
+    because a test that failed it would pass against the defect.
+
+    So the refusal is carried, verbatim: the step's reason is the one an
+    operator reads, and anything reworded here would be a second account
+    of a dpkg state only the step examined. And the phase stays
+    `publishing`, which is what leaves the run resumable by the same
+    `recover` rather than armable over an unfinished transaction.
+    """
+    _entry(name="publish")
+    guard = _guard_surface()
+    state = importlib.import_module(_STATE_MODULE)
+    fake = _fake(root=tmp_path)
+    fake.package_refusal = _PACKAGE_REFUSAL
+    fake.condition_check = True
+    _record_phase(root=tmp_path, run="run-a", phase="reserved")
+
+    outcome = guard.run_operation(
+        operation="publish", run="run-a", env=_env(root=tmp_path, host=fake)
+    )
+
+    assert outcome.verdict == "refuse"
+    assert outcome.reason == _PACKAGE_REFUSAL
+    assert outcome.exit_code == 1
+    assert state.read_phase(paths=_paths(root=tmp_path), run="run-a") == "publishing"
+    # The refusal is reached BEFORE the check whose passing verdict is
+    # what the discarded refusal used to be overruled by.
+    assert fake.calls_named(name="condition_check_passed") == ()
+
+
 def test_publish_records_published_when_the_package_step_answers_no_refusal(
     tmp_path: Path,
 ) -> None:
