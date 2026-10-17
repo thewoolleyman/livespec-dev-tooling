@@ -356,16 +356,16 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     unaccounted = _unaccounted_refusal(flagged=flagged, runs=run_dir.parent)
     if unaccounted is not None:
         return PackageStepResult(refusal=unaccounted)
-    if _already_settled(audit=audit, installed=before):
-        # Nothing to install, so nothing is mutated: the step returns
-        # having only READ. Issuing `dpkg -i` again over a host that
-        # already matches the audit would be a mutation with no
-        # transaction behind it. What it may NOT do is return before the
-        # audit above has been asked — FAULTS B-06 is exactly that
-        # return, reporting an inert install published on a host where
-        # `dpkg --audit` still named a package nobody here intended.
-        return PackageStepResult(installed=audit.additions)
     _recover_interrupted(runner=runner, flagged=flagged, installed=before)
+    if _already_settled(audit=audit, installed=before):
+        # Nothing to INSTALL, so no transaction is repeated: the step
+        # returns without `dpkg -i`, which over a host that already
+        # matches the audit would be a mutation with nothing behind it.
+        # What it may NOT do is return before the audit above has been
+        # asked and what it named completed — FAULTS B-06 is exactly
+        # that return, reporting an inert install published on a host
+        # where `dpkg --audit` still named an unfinished package.
+        return PackageStepResult(installed=audit.additions)
     _ = runner(
         command=TimedCommand(
             argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),
