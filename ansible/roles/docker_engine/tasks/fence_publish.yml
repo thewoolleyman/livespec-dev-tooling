@@ -41,21 +41,25 @@
       become: true
       changed_when: false
 
-    - name: Fire each earlier backstop now, then retire it
+    - name: Fire each earlier backstop now
       # Firing it restores exactly the timers that run stopped, BEFORE this
       # fence reads and stops them, so nothing is left stopped forever and
-      # nothing restarts them later under this run's feet.
-      ansible.builtin.shell:
-        cmd: >-
-          systemctl start {{ item | regex_replace('\\.timer$', '.service') | quote }};
-          systemctl stop {{ item | quote }}
-        executable: /bin/bash
-      # Every one, the current run's included: on the recover path the current
-      # run's backstop IS the lost controller's, and the only record of which
-      # timers that controller stopped. This fence arms its own afterwards.
+      # nothing restarts them later under this run's feet. Every one, the
+      # current run's included: on the recover path the current run's backstop
+      # IS the lost controller's, and the only record of which timers that
+      # controller stopped. This fence arms its own afterwards.
+      ansible.builtin.systemd_service:
+        name: "{{ item | regex_replace('\\.timer$', '.service') }}"
+        state: started
       loop: "{{ docker_engine_stale_backstops.stdout_lines | map('split') | map('first') | list }}"
       become: true
-      changed_when: true
+
+    - name: Retire each earlier backstop's timer
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+      loop: "{{ docker_engine_stale_backstops.stdout_lines | map('split') | map('first') | list }}"
+      become: true
 
     - name: Read whether each apt timer is active
       ansible.builtin.command:
@@ -97,6 +101,7 @@
       # not start a helper of the same name. The legacy name is included.
       ansible.builtin.shell:
         cmd: >-
+          set -o pipefail;
           for u in $(systemctl list-units --all --plain --no-legend --no-pager
           'docker-engine-aptlock-*.service' 'docker-engine-guard-aptlock-*.service'
           | awk '{print $1}'); do systemctl stop "$u"; echo "$u"; done
