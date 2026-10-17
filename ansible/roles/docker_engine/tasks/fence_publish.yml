@@ -22,9 +22,37 @@
 
 - name: Fence the package step
   vars:
-    docker_engine_aptlock_unit: "docker-engine-guard-aptlock-{{ docker_engine_run }}"
-    docker_engine_aptlock_ready: "/run/docker-engine-guard-aptlock-{{ docker_engine_run }}"
+    # The fence also wraps `recover` when it resumes an interrupted publish
+    # (operator.yml), so the guarded op and its run are parameters.
+    docker_engine_fence_op: publish
+    docker_engine_fence_run: "{{ docker_engine_run }}"
+    docker_engine_aptlock_unit: "docker-engine-guard-aptlock-{{ docker_engine_fence_run }}"
+    docker_engine_aptlock_ready: "/run/docker-engine-guard-aptlock-{{ docker_engine_fence_run }}"
   block:
+    - name: List the apt backstops an earlier, lost controller left armed
+      # A killed controller's backstop would otherwise restart the apt timers
+      # in the middle of THIS run's window (2026-10-17 static audit, finding 6).
+      ansible.builtin.command:
+        argv: [systemctl, list-units, --all, --plain, --no-legend, --no-pager, "docker-engine-apt-restore-*.timer"]
+      register: docker_engine_stale_backstops
+      become: true
+      changed_when: false
+
+    - name: Fire each earlier backstop now, then retire it
+      # Firing it restores exactly the timers that run stopped, BEFORE this
+      # fence reads and stops them, so nothing is left stopped forever and
+      # nothing restarts them later under this run's feet.
+      ansible.builtin.shell:
+        cmd: >-
+          systemctl start {{ item | regex_replace('\\.timer$', '.service') | quote }};
+          systemctl stop {{ item | quote }}
+        executable: /bin/bash
+      loop: >-
+        {{ docker_engine_stale_backstops.stdout_lines | map('split') | map('first')
+           | reject('equalto', docker_engine_apt_restore_unit ~ '.timer') | list }}
+      become: true
+      changed_when: true
+
     - name: Read whether each apt timer is active
       ansible.builtin.command:
         argv: [systemctl, is-active, "{{ item }}"]
@@ -140,8 +168,8 @@
       # that read finds exactly the guard's two.
       ansible.builtin.include_tasks: guard_op.yml
       vars:
-        docker_engine_op: publish
-        docker_engine_op_run: "{{ docker_engine_run }}"
+        docker_engine_op: "{{ docker_engine_fence_op }}"
+        docker_engine_op_run: "{{ docker_engine_fence_run }}"
 
   always:
     - name: Release the dpkg frontend lock
