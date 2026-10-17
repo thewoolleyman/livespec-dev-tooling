@@ -99,8 +99,9 @@ class HostOps(Protocol):
     # whose install left a trigger unfinished -- and in both cases the
     # installed units then satisfy the post-install condition check. With
     # nowhere to carry the refusal, `publish` read that check as proof and
-    # recorded `published` over a host `dpkg --audit` still named a package
-    # on (FAULTS B-06, poweredge guard-vm-0, 2026-10-17).
+    # recorded `published` over a host whose `dpkg --audit` still named a
+    # half-configured package (FAULTS B-06, poweredge guard-vm-0,
+    # 2026-10-17).
     def install_packages(self, *, inputs: Path) -> str | None: ...
 
     # The post-install condition check: each guarded unit's effective
