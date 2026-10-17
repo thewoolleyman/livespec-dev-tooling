@@ -137,6 +137,61 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+        # livespec CORE, for the consumer whose aggregate runs
+        # `check-doctor-static` (freeze-driver ruling R92, 2026-10-17, part ii).
+        # Core ships that checker and the recipe resolves it through
+        # `LIVESPEC_CORE_PLUGIN_ROOT` or, locally, the installed plugin cache.
+        # The pod has NEITHER: /workspace is a `git init` + fetch and no plugin
+        # is installed, so the target failed with core's own "livespec core not
+        # found" on a tree that was green in CI. This is the same resolution the
+        # consumer's OWN CI job makes — check core out at the ref its
+        # `.livespec.jsonc` `compat.pinned` names, then point the recipe at that
+        # tree's `.claude-plugin` — so the gate and CI judge the tree against
+        # the same core build rather than two.
+        #
+        # NO CREDENTIAL IS PASSED IN FOR IT, and this container's lack of an env
+        # block is that statement: livespec core is public, the remote is the
+        # anonymous https form, and there is nothing here to leak or rotate. The
+        # two credential-reading aggregate members still read GH_TOKEN from the
+        # gate container's own optional Secret reference below.
+        #
+        # SHALLOW IS CORRECT HERE AND WRONG ABOVE, which is why only the
+        # fetch-tree container is held to a full fetch: nothing reads core's
+        # HISTORY — doctor's out-of-band-edits arm walks the GATED repository's
+        # history, in /workspace, which is fetched in full — and a full clone of
+        # core is two orders of magnitude more bytes on a pod whose cache is
+        # cold every run.
+        - name: fetch-livespec-core
+          image: @@IMAGE@@
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              git init --quiet /livespec-core
+              cd /livespec-core
+              git remote add origin "@@LIVESPEC_CORE_URL@@"
+              # `git fetch <ref>` rather than `clone --branch`: the pinned value
+              # is a TAG for a consumer that pins a release and a BRANCH for one
+              # that pins nothing, and this one form resolves either.
+              if ! git fetch --quiet --depth 1 origin "@@LIVESPEC_CORE_REF@@"; then
+                echo "FATAL: cannot fetch livespec core ref @@LIVESPEC_CORE_REF@@ from @@LIVESPEC_CORE_URL@@ — this is the ref the gated repository's .livespec.jsonc compat.pinned names" >&2
+                exit 1
+              fi
+              git checkout --quiet --detach FETCH_HEAD
+              # Fetched is not the same as USABLE. A ref that resolves to a tree
+              # without a plugin root leaves LIVESPEC_CORE_PLUGIN_ROOT pointing
+              # at nothing, and the consumer's own recipe would then report
+              # "livespec core not found" — the exact message this container
+              # exists to prevent, with no indication that the PIN is what is
+              # wrong. Fail here, where it names the ref.
+              if [ ! -d .claude-plugin ]; then
+                echo "FATAL: livespec core at @@LIVESPEC_CORE_REF@@ carries no .claude-plugin directory, so there is no plugin root to resolve" >&2
+                exit 1
+              fi
+          volumeMounts:
+            - name: livespec-core
+              mountPath: /livespec-core
       containers:
         - name: gate
           # Requirement 1: resolved by render-gate-job.sh from the GATED
@@ -147,34 +202,60 @@ spec:
           image: @@IMAGE@@
           imagePullPolicy: IfNotPresent
           workingDir: /workspace
-          # Requirement 2: the gated repository's own PRE-PUSH aggregate,
-          # nothing else — preceded ONLY by the repository bootstrap two of its
-          # members read. The command is `just hook_gate=1 check`, NOT bare
-          # `just check`: a delegated gate is a surrogate for the LOCAL pre-push,
-          # which runs `just hook_gate=1 check` (scripts/just/check-pre-push.sh),
-          # and `hook_gate` adds the `hook_gate_skips` set to the skip list —
-          # today just `check-fleet-conformance-admin`, which needs a user-class
-          # admin credential no pre-push host (or gate pod) holds and which
-          # credential-reading-targets.md records as never running in the gate.
-          # Bare `just check` here ran it and failed the gate on a target the
-          # pre-push it stands in for never runs.
+          # Requirement 2: THE GATED REPOSITORY'S OWN check recipes, nothing
+          # else. Both blocks below are substituted by render-gate-job.sh from
+          # that repository's `gate_check_suite` declaration — or, when it
+          # declares none, from the shared pre-push SEQUENCE its local
+          # fall-through runs: the worktree-pack install, the
+          # commit-refuse-hook install, and `hook_gate=1 check` (freeze-driver
+          # ruling R92, 2026-10-17; a single `check` was that default until
+          # then, and the two missing installs plus the missing `hook_gate=1`
+          # reddened four targets on a tree green in CI).
+          # They are NOT a constant here, and that is the
+          # whole point of the slice that rewrote this block
+          # (livespec-dev-tooling-saxz): the command used to be a fixed list of
+          # livespec-dev-tooling's OWN recipes — the worktree-pack install, the
+          # commit-refuse-hook install, the typecheck warm-up and its
+          # hook-gated aggregate. The typecheck warm-up exists in no other
+          # repository, so every consuming repository's Job failed and its gate
+          # was red on every green tree. Measured 2026-10-16 against
+          # livespec-orchestrator-beads-fabro, whose post-merge janitor shipped
+          # `venue = host_local` rather than use a gate that could not pass.
           #
-          # `/workspace` is a `git init` + fetch, not a bootstrapped clone, so
-          # the worktree-discipline pack and the commit-refuse hooks are simply
+          # THE PREFLIGHT IS WHAT MAKES A MISSING RECIPE LEGIBLE. Without it a
+          # consumer that does not provide its declared recipe gets `just`'s own
+          # "Justfile does not contain recipe" at whatever point the suite
+          # reached, which reads exactly like a red tree. With it the Job stops
+          # before running ANYTHING, names the recipe on stderr and in the pod's
+          # termination message — which the client lifts into the verdict an
+          # operator reads — and exits non-zero. It never reports green and it
+          # never falls back to a recipe the repository did not declare.
+          #
+          # WHY THE TERMINATION-LOG WRITE IS BEST-EFFORT: the message is
+          # EVIDENCE, not the verdict. The exit status is the verdict, and a
+          # cluster or a shell that cannot write that file must not be able to
+          # turn a red gate into something else — nor, in a test harness that
+          # runs this script outside a pod, into a different failure than the
+          # one being asserted.
+          #
+          # THE TWO INSTALLS RUN FIRST IN EVERY GATE — livespec-dev-tooling's
+          # own declaration and, since ruling R92, the default every consumer
+          # that declares nothing gets. The reasons are worth keeping because
+          # they are the ones a consumer authoring its own suite will meet,
+          # and because they are why a bare `check` could never stand in for
+          # the local fall-through. `/workspace` is a
+          # `git init` + fetch, not a bootstrapped clone, so the
+          # worktree-discipline pack and the commit-refuse hooks are simply
           # absent: `check-primary-checkout-commit-refuse-hook-installed` fails
           # on the missing hooks and `check-no-workflow-edits` has no
           # `dev-tooling/check-no-workflow-edits.sh` to run at all. Neither is a
-          # verdict about the tree under test.
-          #
-          # THE PACK INSTALL MUST BE ITS OWN `just` INVOCATION, and that is not
-          # a style choice: the root justfile reaches the pack through
-          # `import? 'dev-tooling/worktree.just'`, which `just` resolves when it
-          # PARSES the file. A `just install-worktree-pack check` would parse
-          # once, before the pack existed, and run the aggregate against a
-          # justfile that never imported it.
-          #
-          # The two narrow recipes rather than `just bootstrap`: bootstrap walks
-          # the whole local-obligation partition — mise trust/install, plugin
+          # verdict about the tree under test. THE PACK INSTALL MUST BE ITS OWN
+          # `just` INVOCATION, and that is not a style choice: the root justfile
+          # reaches the pack through `import? 'dev-tooling/worktree.just'`, which
+          # `just` resolves when it PARSES the file, so a combined invocation
+          # would parse once, before the pack existed. And the narrow recipes
+          # rather than `just bootstrap`: bootstrap walks the whole
+          # local-obligation partition — mise trust/install, plugin
           # registration, the beads-runtime probes — none of which a gate pod
           # has or needs, and each of which is a way for a gate to fail for a
           # reason that is not the tree.
@@ -182,10 +263,16 @@ spec:
           args:
             - |
               set -euo pipefail
-              just install-worktree-pack
-              just install-commit-refuse-hooks
-              just warm-typecheck
-              just hook_gate=1 check
+              for recipe in @@GATE_RECIPE_NAMES@@; do
+                if just --show "${recipe}" > /dev/null 2>&1; then
+                  continue
+                fi
+                missing="FATAL: the tree under test does not provide the gate check recipe '${recipe}' this repository declares for its delegated gate (gate_check_suite in its [tool.livespec_dev_tooling] block, or the check recipe its local pre-push fall-through runs). No recipe was run; this gate is RED."
+                echo "${missing}" >&2
+                { printf '%s\n' "${missing}" > /dev/termination-log; } 2> /dev/null || true
+                exit 1
+              done
+              @@GATE_RECIPES@@
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check
@@ -217,6 +304,17 @@ spec:
             # which fails those two targets the same way a missing token does.
             - name: LIVESPEC_GATE_REPOSITORY
               value: "@@GATED_REPOSITORY@@"
+            # WHERE livespec core is, for a consumer whose aggregate runs
+            # `check-doctor-static` (ruling R92, part ii). The value is the
+            # `.claude-plugin` directory of the tree the init container above
+            # fetched, which is what this variable means everywhere else in the
+            # fleet: the consumer's own `just-check-doctor-static.sh` resolves
+            # `$LIVESPEC_CORE_PLUGIN_ROOT/scripts/bin/doctor_static.py`, and its
+            # CI job sets it to a core checkout's `.claude-plugin` the same way.
+            # Set unconditionally and inert for a consumer that runs no
+            # doctor-static target.
+            - name: LIVESPEC_CORE_PLUGIN_ROOT
+              value: "/livespec-core/.claude-plugin"
             # Requirement 4. The local lane derives nproc / 4, and `nproc` inside
             # a container reports the NODE's 32 threads regardless of this
             # container's cpu request — so an unset value would start 8 workers
@@ -270,6 +368,14 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+            # The core tree the init container fetched, at the path
+            # LIVESPEC_CORE_PLUGIN_ROOT above names. Without this mount that
+            # variable names an empty path and the checks that read it fail
+            # exactly as they did with no variable at all.
+            - name: livespec-core
+              mountPath: /livespec-core
       volumes:
         - name: workspace
+          emptyDir: {}
+        - name: livespec-core
           emptyDir: {}

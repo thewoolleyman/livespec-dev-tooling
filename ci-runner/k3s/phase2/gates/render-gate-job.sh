@@ -24,11 +24,39 @@
 #                      [--gated-repository OWNER/REPO]
 #                      [--source-url URL] [--cpu N] [--memory SIZE]
 #                      [--parallelism N] [--ttl-seconds N] [--job-name NAME]
+#                      [--livespec-core-ref REF]
+#                      [--check-suite 'RECIPE' ...]
 #
 # --repo defaults to the basename of --repo-root. --source-url defaults to the
 # in-cluster read-only mirror R4.S4 builds. The resource defaults are the terms
 # ../kueue/cluster-queue-gates.yaml quotas: 5 cpu / 6Gi, three concurrent gates
 # under its 15 cpu / 24Gi.
+#
+# --check-suite is the GATED REPOSITORY'S OWN check recipes — one flag per `just`
+# invocation, run in the order given — and it is requirement 1's sibling
+# (livespec-dev-tooling-saxz). The pod command used to be a CONSTANT naming
+# livespec-dev-tooling's own `install-worktree-pack`, `warm-typecheck` and
+# `hook_gate=1 check`, so a consuming repository that carries neither
+# `warm-typecheck` nor a `hook_gate` variable failed every Job and its gate was
+# red on every green tree — measured 2026-10-16 against
+# livespec-orchestrator-beads-fabro, whose post-merge janitor had to ship
+# `venue = host_local` because of it. The caller passes what the repository
+# DECLARES (`gate_check_suite` in its `[tool.livespec_dev_tooling]` block); the
+# default when no flag is given is the SHARED PRE-PUSH SEQUENCE a consumer's
+# local fall-through runs (see that default below), never a recipe only this
+# repository declares.
+#
+# An entry MAY carry leading `name=value` variable assignments, which `just`
+# accepts before the recipe name. The RECIPE the Job preflights is the first
+# token that is not an assignment, so `hook_gate=1 check` preflights `check`.
+#
+# --livespec-core-ref is the livespec CORE release the gate resolves inside the
+# pod, for a consumer whose aggregate runs `check-doctor-static` (R4.S7c part
+# ii, freeze-driver ruling R92). It DEFAULTS to the gated repository's own
+# `.livespec.jsonc` `compat.pinned` — the same field that repository's CI job
+# resolves core at, so the gate and CI judge the tree against one core build —
+# and to `master` for a consumer that pins nothing. Core is public, so no
+# credential is passed into the pod for it.
 #
 # --gated-repository is the github.com <owner>/<repo> the gate is judging, and
 # it is NOT the same thing as --repo (R4.S7 slice B, livespec-dev-tooling-rwmo.2).
@@ -45,6 +73,20 @@ TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
 
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; job_name=""
+livespec_core_ref=""
+check_suite=()
+
+# WHERE livespec CORE comes from, for the consumer whose aggregate runs
+# `check-doctor-static` (R4.S7c part ii, freeze-driver ruling R92 2026-10-17).
+# A constant rather than a flag because there is exactly one livespec core and
+# it is PUBLIC: the anonymous https form is what lets the pod resolve core
+# without being handed a credential, and a flag would be a way to repoint a gate
+# at another tree. WHICH REF is per consumer and is derived below.
+LIVESPEC_CORE_URL="https://github.com/thewoolleyman/livespec.git"
+# What a consumer that pins no livespec release gets — the same fallback its own
+# CI step takes when `.livespec.jsonc` carries no `pinned` field.
+LIVESPEC_CORE_REF_FALLBACK="master"
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root)         repo_root="$2"; shift 2 ;;
@@ -57,6 +99,8 @@ while [ $# -gt 0 ]; do
     --parallelism)       parallelism="$2"; shift 2 ;;
     --ttl-seconds)       ttl_seconds="$2"; shift 2 ;;
     --job-name)          job_name="$2"; shift 2 ;;
+    --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
+    --check-suite)       check_suite+=("$2"); shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -110,6 +154,29 @@ if [ -z "${gated_repository}" ] && command -v git > /dev/null 2>&1; then
   esac
 fi
 
+# --- the livespec core ref THIS consumer pins (R4.S7c part ii) ---------------
+# Derived from the gated clone's own `.livespec.jsonc` `compat.pinned`, which is
+# the SAME field the consumer's own CI job resolves core at — so the gate and CI
+# judge the tree against one core build rather than two. Read with the same
+# first-match grep that CI step uses rather than a JSON parser, because the file
+# is JSONC (comments) and the renderer must stay dependency-free.
+#
+# An ABSENT file or field is an ANSWER, not a refusal: the consumer pins
+# nothing and gets the same `master` fallback its CI step takes.
+if [ -z "${livespec_core_ref}" ] && [ -f "${repo_root}/.livespec.jsonc" ]; then
+  livespec_core_ref="$(grep -oE '"pinned"[[:space:]]*:[[:space:]]*"[^"]*"' "${repo_root}/.livespec.jsonc" \
+    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/')"
+fi
+[ -n "${livespec_core_ref}" ] || livespec_core_ref="${LIVESPEC_CORE_REF_FALLBACK}"
+# The value goes into the pod's shell script, so the character set is bounded
+# HERE rather than trusted — a git ref name is alphanumerics with `._/-` and
+# everything else is a way to write shell into a manifest.
+case "${livespec_core_ref}" in
+  *[!A-Za-z0-9._/-]*)
+    echo "FATAL: livespec core ref '${livespec_core_ref}' is not a plain git ref name" >&2
+    exit 2 ;;
+esac
+
 # --- requirement 1: the image comes from the gated repo's own workflow --------
 workflow="${repo_root}/.github/workflows/ci.yml"
 [ -f "${workflow}" ] || { echo "FATAL: ${workflow} not found — cannot resolve the gated repository's image" >&2; exit 1; }
@@ -130,6 +197,69 @@ if [ "${#images[@]}" -gt 1 ]; then
 fi
 image="${images[0]}"
 
+# --- the gated repository's own check recipes --------------------------------
+# No flag means the caller named no suite, which for the gate client means the
+# repository declared nothing: it gets the SHARED PRE-PUSH SEQUENCE its own
+# local fall-through runs — the worktree-pack install lefthook's `pre-push`
+# block runs, the commit-refuse-hook install, and the `hook_gate=1 check`
+# aggregate `scripts/just/check-pre-push.sh` ends in (freeze-driver ruling R92,
+# 2026-10-17). A single `check` was this default until then, and it is NOT that
+# fall-through: the pod's `/workspace` is a `git init` + fetch rather than a
+# bootstrapped clone, so without the installs two members judge the SANDBOX, and
+# without `hook_gate=1` the admin-scope world gate runs and answers 403.
+#
+# The client decides the default too (`GATE_CHECK_SUITE_FALL_THROUGH`) and
+# always passes it explicitly, so this is the fallback for a hand-run render on
+# a delegating host. The two spellings are held together by
+# `tests.consumer.test_delegated_gate_declared_recipe_scenarios`, which renders
+# with no flag and compares. Never this repository's `warm-typecheck`, which no
+# other repository carries — that constant is the defect
+# livespec-dev-tooling-saxz removed.
+if [ "${#check_suite[@]}" -eq 0 ]; then
+  check_suite=("install-worktree-pack" "install-commit-refuse-hooks" "hook_gate=1 check")
+fi
+
+# Each entry goes into the pod's shell script verbatim and its recipe name goes
+# into an unquoted `for` list, so the character set is bounded HERE rather than
+# trusted. `just` recipe names are kebab/underscore identifiers and an entry may
+# carry `name=value` assignments and the spaces between them; nothing else can
+# be a legitimate invocation, and everything else is a way to write shell into a
+# manifest.
+recipe_names=()
+for entry in "${check_suite[@]}"; do
+  case "${entry}" in
+    "" | *[!A-Za-z0-9_.=\ -]*)
+      echo "FATAL: --check-suite entry '${entry}' is not a plain just invocation" >&2
+      exit 2 ;;
+  esac
+  recipe=""
+  for token in ${entry}; do
+    case "${token}" in
+      *=*) continue ;;
+      *)   recipe="${token}"; break ;;
+    esac
+  done
+  if [ -z "${recipe}" ]; then
+    echo "FATAL: --check-suite entry '${entry}' names no recipe, only assignments" >&2
+    exit 2
+  fi
+  recipe_names+=("${recipe}")
+done
+
+# The preflight's `for` list: single-quoted so a name is one word there even
+# though the character set above already forbids anything that could split.
+quoted_recipe_names=""
+for recipe in "${recipe_names[@]}"; do
+  quoted_recipe_names="${quoted_recipe_names:+${quoted_recipe_names} }'${recipe}'"
+done
+# The invocations themselves, one per line, substituted as a BLOCK so the
+# rendered manifest reads as the script it is rather than as one packed line.
+gate_recipe_lines=""
+for entry in "${check_suite[@]}"; do
+  gate_recipe_lines="${gate_recipe_lines:+${gate_recipe_lines}
+}just ${entry}"
+done
+
 # --- substitution ------------------------------------------------------------
 # `&`, `|` and `\` are the characters sed would reinterpret in a replacement with
 # `|` as the delimiter. URLs and image references carry `/` and `:` freely, which
@@ -142,6 +272,32 @@ substitute() {
   value="$(sed_escape "$2")"
   rendered="$(printf '%s\n' "${rendered}" | sed -e "s|@@${token}@@|${value}|g")"
 }
+
+# A MULTI-LINE value cannot ride the `sed` substitution above — the replacement
+# would collapse onto one line and the block scalar would stop being a script.
+# This one replaces the placeholder's whole LINE, re-using that line's own
+# indentation for every line of the block, so the YAML stays well-formed
+# whatever depth the token sits at. The placeholder must therefore be alone on
+# its line, which it is.
+substitute_block() {
+  local token="$1"
+  rendered="$(
+    LIVESPEC_RENDER_TOKEN="@@${token}@@" LIVESPEC_RENDER_BLOCK="$2" awk '
+      BEGIN {
+        token = ENVIRON["LIVESPEC_RENDER_TOKEN"]
+        count = split(ENVIRON["LIVESPEC_RENDER_BLOCK"], block, "\n")
+      }
+      index($0, token) > 0 {
+        match($0, /^[ \t]*/)
+        indent = substr($0, 1, RLENGTH)
+        for (line = 1; line <= count; line++) { print indent block[line] }
+        next
+      }
+      { print }
+    ' <<< "${rendered}"
+  )"
+}
+
 substitute JOB_NAME          "${job_name}"
 substitute REPO              "${repo}"
 substitute GATED_REPOSITORY  "${gated_repository}"
@@ -152,6 +308,10 @@ substitute CPU               "${cpu}"
 substitute MEMORY            "${memory}"
 substitute PARALLELISM       "${parallelism}"
 substitute TTL_SECONDS       "${ttl_seconds}"
+substitute LIVESPEC_CORE_URL "${LIVESPEC_CORE_URL}"
+substitute LIVESPEC_CORE_REF "${livespec_core_ref}"
+substitute GATE_RECIPE_NAMES "${quoted_recipe_names}"
+substitute_block GATE_RECIPES "${gate_recipe_lines}"
 
 # A token added to the template without a matching substitution above is caught
 # HERE, at render time, rather than by the API server or — worse — by a gate that

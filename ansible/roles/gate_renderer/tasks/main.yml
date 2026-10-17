@@ -1,0 +1,21 @@
+---
+- name: Create the gate renderer's install directory
+  ansible.builtin.file:
+    path: "{{ gate_renderer_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the gate renderer and the Job template it renders
+  ansible.builtin.copy:
+    src: "{{ gate_renderer_src_dir }}/{{ item.src }}"
+    dest: "{{ gate_renderer_install_dir }}/{{ item.src }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop: "{{ gate_renderer_files }}"
+  loop_control:
+    label: "{{ item.src }}"
+  become: true

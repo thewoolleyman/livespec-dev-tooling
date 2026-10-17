@@ -126,6 +126,15 @@ def _paths(*, root: Path) -> Any:
     return model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
 
 
+def _active_states_of(*, fake: Any, unit: str) -> dict[str, str]:
+    """The map holding `unit`'s active state: the guarded units' own, or the guard's."""
+    return (
+        fake.guarded_unit_states
+        if unit in _module(name=_MODEL_MODULE).GUARDED_UNITS
+        else fake.unit_states
+    )
+
+
 def _service_manager(*, fake: Any) -> None:
     """Let the unit actions the guard takes move the unit states it later reads.
 
@@ -138,6 +147,11 @@ def _service_manager(*, fake: Any) -> None:
     A rollback phase's own unit actions are NOT among them: each phase body runs
     in a child process the driver spawns, and `run_phase_child` answers whether
     that child completed rather than running the body here.
+
+    A started or stopped unit lands in whichever map the real host would answer
+    for it -- the guarded units' own, or the guard's. The guard both starts the
+    three guarded units and stops its dead-man timer, and a host that filed
+    either under the other's map would be answering a read the real one cannot.
     """
     start_unit = fake.start_unit
     stop_unit = fake.stop_unit
@@ -145,11 +159,11 @@ def _service_manager(*, fake: Any) -> None:
 
     def starting(*, unit: str, timeout_seconds: int) -> None:
         start_unit(unit=unit, timeout_seconds=timeout_seconds)
-        fake.unit_states[unit] = "active"
+        _active_states_of(fake=fake, unit=unit)[unit] = "active"
 
     def stopping(*, unit: str, timeout_seconds: int) -> None:
         stop_unit(unit=unit, timeout_seconds=timeout_seconds)
-        fake.unit_states[unit] = "inactive"
+        _active_states_of(fake=fake, unit=unit)[unit] = "inactive"
 
     def enabling(*, units: Sequence[str]) -> None:
         enable_units(units=units)

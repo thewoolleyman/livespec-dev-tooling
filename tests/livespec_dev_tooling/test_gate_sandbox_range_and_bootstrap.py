@@ -27,6 +27,7 @@ research/003 sections D and E).
 from __future__ import annotations
 
 import subprocess
+from itertools import takewhile
 from pathlib import Path
 
 from livespec_dev_tooling import gate_remote_client
@@ -59,17 +60,92 @@ def _executable_lines() -> list[str]:
     return [line for line in _template_lines() if not line.lstrip().startswith("#")]
 
 
-def _gate_container_script() -> list[str]:
-    """The gate container's own lines, comments dropped.
+def _fetch_tree_lines() -> list[str]:
+    """The `fetch-tree` init container's own executable lines.
 
-    Sliced from `- name: gate` to the end of the file so the initContainer
-    above cannot contribute to an assertion about what the AGGREGATE container
-    runs. `next` raises when the container is gone, which is a bug in the
-    template rather than a state to report.
+    The `--depth` ban below is a property of THE FETCH OF THE TREE UNDER TEST,
+    which needs ancestry because eight aggregate members judge
+    `origin/master..HEAD`. A sibling init container fetching a DEPENDENCY whose
+    history nothing reads — livespec core, resolved at the consumer's pin — is
+    legitimately shallow, so the ban is read off this container alone. It stays
+    load-bearing: the renderer's own exit-test suite mutates THIS container back
+    to a `--depth 1` single-ref fetch and requires that the same check catch it.
     """
-    lines = _template_lines()
+    lines = _executable_lines()
+    start = next(index for index, line in enumerate(lines) if line.strip() == "- name: fetch-tree")
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    body = takewhile(
+        lambda line: not (
+            line.strip().startswith("- name: ") and len(line) - len(line.lstrip()) == indent
+        ),
+        lines[start + 1 :],
+    )
+    return [lines[start], *body]
+
+
+# This repository's own gate recipes, in the order the gate container runs them.
+# They are a DECLARATION in `pyproject.toml` now rather than a constant inside
+# the template: a consuming repository that carries neither `warm-typecheck` nor
+# a `hook_gate` variable was red on every green tree while they were baked in
+# (livespec-dev-tooling-saxz).
+_OUR_DECLARED_SUITE = (
+    "install-worktree-pack",
+    "install-commit-refuse-hooks",
+    "warm-typecheck",
+    "hook_gate=1 check",
+)
+
+# A render needs one, and nothing here depends on which: the renderer only
+# requires lowercase hex.
+_TREE_HASH = "aaaabbbbccccddddeeeeffff0000111122223333"
+
+
+def _our_declared_suite_from_pyproject() -> list[str]:
+    """This repository's `gate_check_suite` entries, read as TEXT.
+
+    Text rather than a parse: stdlib `tomllib` lands in 3.11 and this
+    repository's floor is 3.10, so a parsing test would not run on the floor it
+    supports. The entries are one per line in the array, which is the shape
+    `ruff format` produces and the formatter-suppression guard keeps.
+    """
+    text = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    opener = "gate_check_suite = ["
+    assert opener in text, "pyproject.toml declares no gate_check_suite for the delegated gate"
+    start = text.index(opener) + len(opener)
+    block = text[start : text.index("]", start)]
+    return [line.strip().rstrip(",").strip('"') for line in block.splitlines() if line.strip()]
+
+
+def _rendered_gate_recipes(*, check_suite: tuple[str, ...]) -> list[str]:
+    """Every `just …` the RENDERED gate container runs, for one declared suite.
+
+    Rendered rather than read off the template, because the command is no longer
+    in the template: it is substituted from what the gated repository declares.
+    Anchored to a line that STARTS with `just `, so the preflight's own
+    `if just --show …` existence probe is not counted as a recipe that ran.
+    """
+    completed = subprocess.run(
+        [
+            str(_GATES / "render-gate-job.sh"),
+            "--repo-root",
+            str(_REPO_ROOT),
+            "--tree-hash",
+            _TREE_HASH,
+            *[flag for recipe in check_suite for flag in ("--check-suite", recipe)],
+        ],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    lines = completed.stdout.splitlines()
     start = next(index for index, line in enumerate(lines) if line.strip() == "- name: gate")
-    return [line for line in lines[start:] if not line.lstrip().startswith("#")]
+    return [
+        line.strip()
+        for line in lines[start:]
+        if line.strip().startswith("just ") and not line.lstrip().startswith("#")
+    ]
 
 
 def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> None:
@@ -79,7 +155,7 @@ def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> 
     can be walked and `git merge-base` has nothing to walk to — which is why the
     flag's absence is asserted rather than merely the refspecs' presence.
     """
-    shallow = [line for line in _executable_lines() if "--depth" in line]
+    shallow = [line for line in _fetch_tree_lines() if "--depth" in line]
     assert shallow == [], f"the gate fetch is still shallow: {shallow}"
     joined = "\n".join(_executable_lines())
     assert f'"+refs/gates/{_TREE_TOKEN}:refs/gates/{_TREE_TOKEN}"' in joined
@@ -133,14 +209,20 @@ def test_the_repository_bootstrap_precedes_the_aggregate_in_the_gate_container()
     and fails intermittently with "Stub file not found for 'typing'". It MUST
     come after the installs and before the aggregate, and being a `just ` step it
     is caught by this whole-list assertion.
+
+    IT IS THIS REPOSITORY'S DECLARATION THAT IS ASSERTED, not the template's
+    constant (livespec-dev-tooling-saxz). The four recipes above are
+    livespec-dev-tooling's own — a consuming repository carries neither
+    `warm-typecheck` nor a `hook_gate` variable — so baking them into the shared
+    template made every other repository's gate red on every green tree. They
+    are read back out of `pyproject.toml` here and rendered through the real
+    renderer, which is the whole path a consumer's own declaration takes.
     """
-    steps = [line.strip() for line in _gate_container_script() if line.strip().startswith("just ")]
-    assert steps == [
-        "just install-worktree-pack",
-        "just install-commit-refuse-hooks",
-        "just warm-typecheck",
-        "just hook_gate=1 check",
-    ]
+    assert _our_declared_suite_from_pyproject() == list(_OUR_DECLARED_SUITE)
+
+    steps = _rendered_gate_recipes(check_suite=_OUR_DECLARED_SUITE)
+
+    assert steps == [f"just {recipe}" for recipe in _OUR_DECLARED_SUITE]
 
 
 def test_the_renderers_own_exit_test_suite_passes() -> None:

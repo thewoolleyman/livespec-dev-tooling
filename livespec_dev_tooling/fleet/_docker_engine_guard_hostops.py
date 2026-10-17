@@ -135,10 +135,18 @@ class HostOps(Protocol):
     def enable_units(self, *, units: Sequence[str]) -> None: ...
 
     # Every guard-relevant unit mapped to its `UnitFileState`. Read beside
-    # `guard_unit_states` above by the post-commit validation, which needs
-    # BOTH: enablement carries the engine across the next boot, the active
-    # state says it is running now, and neither implies the other.
+    # `guarded_unit_active_states` below by the post-commit validation,
+    # which needs BOTH: enablement carries the engine across the next boot,
+    # the active state says it is running now, and neither implies the other.
     def unit_enabled_states(self) -> Mapping[str, str]: ...
+
+    # Each GUARDED unit mapped to its `ActiveState`, from the service
+    # manager's own report for that unit. NOT `guard_unit_states` above:
+    # that read enumerates the GUARD's own transient units, which the three
+    # guarded units never match, so a validation reading running state from
+    # it read an empty map and reported every committed host adrift (H-01,
+    # 2026-10-17).
+    def guarded_unit_active_states(self) -> Mapping[str, str]: ...
 
     # --- reconfigure (child 1b) ---
 

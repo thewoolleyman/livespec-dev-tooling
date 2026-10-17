@@ -137,8 +137,16 @@ _DELETE_STEP = "delete-gate-ref"
 # The two Job conditions that mean the gate is OVER. Kubernetes reports every
 # condition it has ever set, negative ones included, so the type alone does not
 # say the gate finished — the condition must also be asserted `"True"`.
-_TERMINAL_CONDITION_TYPES = frozenset({"Complete", "Failed"})
+_COMPLETE_CONDITION = "Complete"
+_TERMINAL_CONDITION_TYPES = frozenset({_COMPLETE_CONDITION, "Failed"})
 _CONDITION_ASSERTED = "True"
+
+# The failed pod's own last words. `containerStatuses` rather than
+# `initContainerStatuses`: the aggregate container is the one whose refusal an
+# operator has to act on, and the initContainer's own fatal paths already name
+# themselves in the log. The Job object does not carry this — only its pod does
+# — so it is a separate read, taken only when there is a failure to explain.
+_TERMINATION_MESSAGE_JSONPATH = "{.items[*].status.containerStatuses[*].state.terminated.message}"
 
 _JobPayload: TypeAlias = Mapping[str, Mapping[str, object]]
 _Conditions: TypeAlias = Sequence[Mapping[str, str]]
@@ -173,12 +181,20 @@ class GateRunOutcome:
     `terminal_state` is the Job condition type the cluster reported, verbatim,
     and `logs_returncode` is the log stream's own exit code. Both are
     observations for S7b to interpret; neither is a decision.
+
+    `failure_message` is the failed pod's termination message, verbatim, and the
+    empty string when there was none or when the gate did not fail. It is the
+    pod's OWN account of why it stopped — notably the preflight's refusal naming
+    a check recipe the tree under test does not provide — and it is carried
+    rather than interpreted for the same reason `terminal_state` is: what to do
+    about it is S7b's, and until then it is evidence.
     """
 
     tree_hash: str
     job_name: str
     terminal_state: str
     logs_returncode: int
+    failure_message: str = ""
 
 
 def run_gate(
@@ -339,6 +355,13 @@ def _gate_a_pushed_tree(
     terminal = _await_terminal_state(request=request, runner=runner, sleeper=sleeper)
     if isinstance(terminal, Failure):
         return Failure(terminal.failure())
+    state = terminal.unwrap()
+    # Read only when there is a failure to explain. That is a decision about
+    # whether to spend an API call, NOT an adjudication: the message is carried
+    # verbatim either way and this slice still forms no opinion about it.
+    message = (
+        "" if state == _COMPLETE_CONDITION else _failure_message(request=request, runner=runner)
+    )
     logs_argv = [
         *_kubectl(request=request),
         "logs",
@@ -358,10 +381,35 @@ def _gate_a_pushed_tree(
         lambda ran: GateRunOutcome(
             tree_hash=tree_hash,
             job_name=request.job_name,
-            terminal_state=terminal.unwrap(),
+            terminal_state=state,
             logs_returncode=ran.returncode,
+            failure_message=message,
         )
     )
+
+
+def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner) -> str:
+    """The failed pod's termination message, or the empty string.
+
+    EVIDENCE, NEVER A VERDICT, which is why every unreadable shape answers the
+    empty string rather than a failure. The gate has already reported a real
+    terminal condition by the time this runs; a pod that has been collected, a
+    read the API server declines, or a container that wrote nothing must not be
+    able to turn that red verdict into a no-verdict — the push is refused
+    either way, and losing the explanation is strictly better than losing the
+    verdict that carries it.
+    """
+    argv = [
+        *_kubectl(request=request),
+        "get",
+        "pods",
+        "--selector",
+        f"job-name={request.job_name}",
+        "--output",
+        f"jsonpath={_TERMINATION_MESSAGE_JSONPATH}",
+    ]
+    read = runner(argv=argv, cwd=request.repo_root)
+    return read.map(lambda ran: ran.stdout.strip()).value_or("")
 
 
 def _poll_budget(*, request: GateRunRequest) -> int:

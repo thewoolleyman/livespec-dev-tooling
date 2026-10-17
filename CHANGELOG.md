@@ -58,6 +58,35 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.2...v1.112.3) (2026-10-17)
+
+
+### Bug Fixes
+
+* **fleet:** the rollback postcondition read answers under the driver's names ([fa51467](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fa51467784ecb0bec3ed6aaee1aab2c007dd14e9))
+
+## [1.112.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.1...v1.112.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **gate:** default the delegated gate Job to the shared pre-push sequence ([dee06cc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/dee06ccec6c872908b0de333ee6b7f5734d89267))
+
+## [1.112.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.0...v1.112.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ansible:** install the gate renderer on every host that may delegate a pre-push gate ([8e11006](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8e11006c6ccc5e229ba8e31b417b0e525c958305))
+
+## [1.112.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.5...v1.112.0) (2026-10-17)
+
+
+### Features
+
+* render the delegated gate Job command from the consumer's declared recipe ([0711085](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0711085f52e140f37636a1e5028279b1ee889af1))
+* surface the gate Job's missing-recipe refusal into the verdict ([63f3e8d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/63f3e8da45826de63018fd16b031de06b8e52df3))
+
 ## [1.111.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.111.4...v1.111.5) (2026-10-17)
 
 

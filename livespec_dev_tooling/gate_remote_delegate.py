@@ -60,7 +60,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
+from livespec_dev_tooling.config import (
+    ConfigParseError,
+    load_delegated_gate,
+    load_gate_check_suite,
+)
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
@@ -85,9 +89,11 @@ from returns.result import Failure, Result, Success  # noqa: E402  — same.
 
 __all__: list[str] = [
     "GATED_LOCALLY",
+    "GATE_CHECK_SUITE_FALL_THROUGH",
     "GATE_MIRROR_ROOT",
     "GATE_RENDERER_INSTALLED",
     "GATE_RENDERER_IN_REPO",
+    "declared_gate_check_suite",
     "delegated_gate_enabled",
     "delegated_gate_selected",
     "gate_remote_request",
@@ -111,6 +117,38 @@ GATE_RENDERER_INSTALLED = Path("/usr/local/lib/ci-runner-k3s/gates/render-gate-j
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
 _REPO_NAME_STEP = "derive-repo-name"
+_CHECK_SUITE_STEP = "read-gate-check-suite"
+
+# What a consuming repository that declares no gate suite gets: the SHARED
+# PRE-PUSH SEQUENCE its own local fall-through runs, which is three steps rather
+# than one (freeze-driver ruling R92, 2026-10-17). `lefthook.yml`'s `pre-push`
+# block installs the worktree pack, this repository's own gate adds the
+# commit-refuse-hook install, and `scripts/just/check-pre-push.sh` ends in
+# `just hook_gate=1 check`.
+#
+# EVERY ENTRY IS LOAD-BEARING, and the single `check` this used to be is why.
+# `/workspace` in the gate pod is a `git init` + fetch, not a bootstrapped
+# clone, so without the two installs the pack and the commit-refuse hooks are
+# simply absent and `check-primary-checkout-commit-refuse-hook-installed` and
+# `check-no-workflow-edits` judge the SANDBOX rather than the tree under test.
+# Without `hook_gate=1` the aggregate also runs the world-gate member that needs
+# an admin-scope credential no pre-push host and no gate pod holds, which
+# answers 403. Measured 2026-10-17 against livespec-orchestrator-beads-fabro:
+# all four of those targets failed on a tree that was green in CI.
+#
+# It is still the FALL-THROUGH's sequence and never this repository's own
+# declaration: `livespec-dev-tooling` adds `warm-typecheck`, which no other
+# repository carries, and baking that into the shared Job made every consumer
+# red on every green tree (livespec-dev-tooling-saxz). The sequence is pinned to
+# the two files above by
+# `tests.consumer.test_delegated_gate_declared_recipe_scenarios`, which reads
+# each step back out of the file that owns it, so a step that moves there fails
+# that test rather than silently reddening a consumer's gate.
+GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = (
+    "install-worktree-pack",
+    "install-commit-refuse-hooks",
+    "hook_gate=1 check",
+)
 
 # What `_answered` reads back when a probe did not answer at all — a git that is
 # not on PATH, a spawn that failed. Non-zero rather than empty stdout so the one
@@ -165,6 +203,50 @@ def delegated_gate_selected(*, repo_root: Path) -> bool:
     question and nothing is narrated at the overwhelming majority of pushes.
     """
     return delegated_gate_enabled(repo_root=repo_root) and gates_kubeconfig_readable()
+
+
+def declared_gate_check_suite(*, repo_root: Path) -> Result[tuple[str, ...], GateStepFailed]:
+    """Name the `just` invocations THIS repository declares for its gate.
+
+    The gate Job runs the gated repository's OWN recipes and nothing else, so
+    this is the one place the command is decided — and `GATE_CHECK_SUITE_FALL_THROUGH`
+    is the documented default a repository that declares nothing gets: the
+    shared pre-push sequence its own local fall-through runs, never a recipe
+    only some other repository has.
+
+    A MALFORMED DECLARATION FAILS THE STEP rather than falling back, which is
+    the opposite disposition from `delegated_gate_enabled` above and
+    deliberately so. There, a doubt resolves to "run the full local aggregate",
+    which is strict. Here, the run has ALREADY delegated, so the only thing a
+    fallback could do is gate the tree on a recipe the repository did not
+    declare — which the contract forbids in as many words. A step that did not
+    complete reaches `GATE_NO_VERDICT`, and the push is refused.
+    """
+    try:
+        declared = load_gate_check_suite(repo_root=repo_root)
+    except ConfigParseError as unreadable:
+        return Failure(
+            GateStepFailed(
+                step=_CHECK_SUITE_STEP,
+                argv=(),
+                returncode=None,
+                detail=(
+                    "gate_check_suite in the [tool.livespec_dev_tooling] block of "
+                    f"{repo_root}/pyproject.toml cannot be read: {unreadable}"
+                ),
+            )
+        )
+    return Success(declared or GATE_CHECK_SUITE_FALL_THROUGH)
+
+
+def _check_suite_argv(*, suite: tuple[str, ...]) -> list[str]:
+    """The renderer flags that carry one declared suite, in declaration order.
+
+    Repeated rather than one delimited value: a `just` invocation may carry
+    spaces (`hook_gate=1 check`), so any single-argument spelling would need a
+    separator the entries are then forbidden to contain.
+    """
+    return [flag for recipe in suite for flag in ("--check-suite", recipe)]
 
 
 def resolve_renderer(*, repo_root: Path) -> Path:
@@ -257,11 +339,14 @@ def gate_remote_request(
 ) -> Result[GateRunRequest, GateStepFailed]:
     """Assemble the one request S7a needs, out of the repository itself.
 
-    Both reaches into the world go through the SAME seam the client uses, so a
+    Every reach into the world goes through the SAME seam the client uses, so a
     caller that can stub the cluster can stub the assembly too — and a failure
     here arrives in the shape the run's own failures arrive in, carrying the step
     that could not be completed rather than an exception nobody up the stack is
-    positioned to interpret.
+    positioned to interpret. The one reach that does NOT is the declaration read:
+    it is a read of the repository's own `pyproject.toml`, which the opt-in above
+    already reads the same way, and a caller that can write a fixture repository
+    can vary it without a seam.
     """
     tree_argv = ["git", "rev-parse", "HEAD^{tree}"]
     tree = require_success(
@@ -274,6 +359,9 @@ def gate_remote_request(
     if isinstance(named, Failure):
         return Failure(named.failure())
     repo = named.unwrap()
+    suite = declared_gate_check_suite(repo_root=repo_root)
+    if isinstance(suite, Failure):
+        return Failure(suite.failure())
     job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
     render_argv = [
         str(renderer),
@@ -285,6 +373,7 @@ def gate_remote_request(
         repo,
         "--job-name",
         job_name,
+        *_check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(
         step=_RENDER_STEP, argv=render_argv, outcome=runner(argv=render_argv, cwd=repo_root)

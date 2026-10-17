@@ -1402,7 +1402,7 @@ def _committed_host(*, root: Path, run: str) -> Any:
         paths=paths, run=run, digest=records.owned_keys_digest(paths=paths, run=run)
     )
     fake = _fake(root=root)
-    fake.unit_states = dict(_GUARDED_UNITS_RUNNING)
+    fake.guarded_unit_states = dict(_GUARDED_UNITS_RUNNING)
     fake.unit_file_states = dict(_GUARDED_UNITS_ENABLED)
     return fake
 

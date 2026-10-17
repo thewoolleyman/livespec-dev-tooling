@@ -62,6 +62,7 @@ _DAEMON_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_daemon.py")
 _PHASE_CHILD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_phase_child"
 _PHASE_CHILD_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_phase_child.py")
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
+_STATE_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_state"
 _PACKAGE_AUDIT_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_audit"
 _PACKAGE_RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_runner"
 _HOST_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_host"
@@ -213,12 +214,16 @@ def _bus() -> _Commands:
     return _Commands(answers=_sysctl_answers(), tables=_before_tables())
 
 
+def _paths(*, root: Path) -> Any:
+    """`GuardPaths` over the two state roots every host here is built on."""
+    model = importlib.import_module(_MODEL_MODULE)
+    return model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
+
+
 def _real_host(*, root: Path, commands: _Commands) -> Any:
     """The real host rooted under `root`, with every command on the recorded bus."""
-    model = importlib.import_module(_MODEL_MODULE)
     host_module = importlib.import_module(_HOST_MODULE)
-    paths = model.GuardPaths(state_root=root / "var", runtime_root=root / "run")
-    return host_module.build_real_host(paths=paths, runner=commands)
+    return host_module.build_real_host(paths=_paths(root=root), runner=commands)
 
 
 def test_the_one_runner_carries_an_explicit_timeout_to_every_command(
@@ -1016,24 +1021,15 @@ def _postcondition_answers(
     return answers
 
 
-def test_the_postcondition_read_reports_all_eight_facts_as_one_record(
-    tmp_path: Path,
-) -> None:
-    """One record, read after every stop phase, naming each postcondition.
+def _clean_postcondition_bus() -> _Commands:
+    """A recorded bus answering as a host the rollback finished on.
 
-    ONE record and not eight calls, because the driver writes
-    `rolled-back` only when EVERY postcondition holds and names each
-    failing one otherwise -- a partial answer assembled from separate
-    reads could report a host as clean while a later read was still
-    pending. The eight are the specification's own set: the permission,
-    the socket, the processes, the queued jobs, both FORWARD policies, the
-    Docker rules, `docker0`, and the watched sysctls.
+    No Docker socket bound, no task in any guarded cgroup, no queued
+    guarded job, no `docker0`, the pre-Docker rule sets and both
+    FORWARD policies back as snapshotted, and the five watched sysctls
+    at their snapshot values.
     """
-    assert _POSTCONDITIONS_PATH.is_file()
-    clean_root = tmp_path / "clean"
-    snapshot = _write_snapshot(root=clean_root)
-    _ = (snapshot / "sysctl.json").write_text(json.dumps(_SYSCTL_BEFORE), encoding="utf-8")
-    clean = _Commands(
+    return _Commands(
         answers={
             **_sysctl_answers(),
             **_postcondition_answers(
@@ -1046,20 +1042,64 @@ def test_the_postcondition_read_reports_all_eight_facts_as_one_record(
         tables=_before_tables(),
     )
 
-    assert _real_host(root=clean_root, commands=clean).read_postconditions(snapshot=snapshot) == {
-        "no_start_permission": True,
-        "no_docker_socket": True,
-        "no_guarded_process": True,
-        "no_queued_job": True,
-        "forward_policies_restored": True,
-        "no_docker_rule": True,
-        "no_docker0": True,
-        "sysctls_restored": True,
-    }
+
+def _snapshot_with_sysctls(*, root: Path) -> Path:
+    """A run's snapshot directory, carrying the watched sysctls as well."""
+    snapshot = _write_snapshot(root=root)
+    _ = (snapshot / "sysctl.json").write_text(json.dumps(_SYSCTL_BEFORE), encoding="utf-8")
+    return snapshot
+
+
+# The driver's own name for the one postcondition that carries more than
+# one fact, written out here so a rename on either side of the seam is a
+# failing test rather than a silently narrower read. The other five are
+# asserted against the driver's `POSTCONDITIONS` itself, which is the
+# contract this read has to answer under.
+_UNITS_QUIET = "no socket, process, queued job or pending start for the guarded units"
+
+
+def test_the_postcondition_read_answers_under_the_rollback_drivers_own_names(
+    tmp_path: Path,
+) -> None:
+    """One record, read after every stop phase, keyed by the DRIVER's names.
+
+    ONE record and not eight calls, because the driver writes
+    `rolled-back` only when EVERY postcondition holds and names each
+    failing one otherwise -- a partial answer assembled from separate
+    reads could report a host as clean while a later read was still
+    pending.
+
+    Keyed by the driver's own names, because that is the half of the
+    seam this read got wrong. The final check looks each of the six
+    `POSTCONDITIONS` up in this mapping and counts a name it does not
+    find as FAILING, so a record keyed any other way reports every
+    postcondition failing on a host that is wholly rolled back.
+    Measured on a disposable guest on 2026-10-16: the rollback had
+    removed the start permission, stopped `docker.service` and
+    `containerd.service` and deleted `docker0` by 21:46:49.7, and the
+    driver recorded `rollback-partial` naming all six half a second
+    later.
+
+    The eight facts the specification lists are still all read -- the
+    permission, the socket, the processes, the queued jobs, both
+    FORWARD policies, the Docker rules, `docker0` and the sysctls --
+    and the three that concern the guarded units answer together under
+    the one name the specification gives them.
+    """
+    assert _POSTCONDITIONS_PATH.is_file()
+    rollback = importlib.import_module(_ROLLBACK_MODULE)
+    assert _UNITS_QUIET in rollback.POSTCONDITIONS
+    clean_root = tmp_path / "clean"
+    snapshot = _snapshot_with_sysctls(root=clean_root)
+    clean = _clean_postcondition_bus()
+
+    read = _real_host(root=clean_root, commands=clean).read_postconditions(snapshot=snapshot)
+
+    assert tuple(read) == rollback.POSTCONDITIONS
+    assert read == dict.fromkeys(rollback.POSTCONDITIONS, True)
 
     dirty_root = tmp_path / "dirty"
-    dirty_snapshot = _write_snapshot(root=dirty_root)
-    _ = (dirty_snapshot / "sysctl.json").write_text(json.dumps(_SYSCTL_BEFORE), encoding="utf-8")
+    dirty_snapshot = _snapshot_with_sysctls(root=dirty_root)
     (dirty_root / "run").mkdir(parents=True, exist_ok=True)
     _ = (dirty_root / "run" / "allow-start").write_text("run-a\n", encoding="utf-8")
     opened = dict(_after_tables())
@@ -1081,16 +1121,111 @@ def test_the_postcondition_read_reports_all_eight_facts_as_one_record(
 
     assert _real_host(root=dirty_root, commands=dirty).read_postconditions(
         snapshot=dirty_snapshot
-    ) == {
-        "no_start_permission": False,
-        "no_docker_socket": False,
-        "no_guarded_process": False,
-        "no_queued_job": False,
-        "forward_policies_restored": False,
-        "no_docker_rule": False,
-        "no_docker0": False,
-        "sysctls_restored": False,
-    }
+    ) == dict.fromkeys(rollback.POSTCONDITIONS, False)
+
+
+def test_the_units_postcondition_fails_on_a_socket_a_task_or_a_queued_job(
+    tmp_path: Path,
+) -> None:
+    """Any ONE of the three is enough to fail it, and all three are read.
+
+    The driver reads one record of the guarded units, so this single
+    name carries three independent facts, and each one alone brings the
+    engine straight back: a bound socket re-triggers the service a
+    `Restart=` respawn no longer re-evaluates its condition for, a task
+    in a guarded control group is a container still running, and a
+    queued start job runs the moment the kill finishes. So the
+    postcondition holds only when none of them is there -- a read
+    answering on the socket alone would report a quiet host while
+    containers were still up.
+
+    Every instrument is consulted in each case rather than
+    short-circuited on the first failure, which is what makes the
+    answer one PASS over the host rather than a sequence a later reader
+    could find half-taken.
+    """
+    rollback = importlib.import_module(_ROLLBACK_MODULE)
+    postconditions = importlib.import_module(_POSTCONDITIONS_MODULE)
+    assert _UNITS_QUIET in rollback.POSTCONDITIONS
+
+    for defect, sockets, tasks, jobs in (
+        ("a-listening-socket", _SS_WITH_DOCKER, "0", _ONLY_K3S_JOB),
+        ("a-surviving-task", _SS_WITHOUT_DOCKER, "7", _ONLY_K3S_JOB),
+        ("a-queued-guarded-job", _SS_WITHOUT_DOCKER, "0", _LIST_JOBS),
+    ):
+        root = tmp_path / defect
+        snapshot = _snapshot_with_sysctls(root=root)
+        commands = _Commands(
+            answers={
+                **_sysctl_answers(),
+                **_postcondition_answers(
+                    tasks=tasks, sockets=sockets, jobs=jobs, links=_LINK_SHOW_WITHOUT_BRIDGE
+                ),
+            },
+            tables=_before_tables(),
+        )
+
+        read = _real_host(root=root, commands=commands).read_postconditions(snapshot=snapshot)
+
+        assert read.get(_UNITS_QUIET) is False
+        assert _SS_ARGV in commands.argvs
+        assert _LIST_JOBS_ARGV in commands.argvs
+        assert any(postconditions.TASKS_CURRENT in argv for argv in commands.argvs)
+
+
+def test_a_rolled_back_host_read_through_the_real_host_ends_the_run_rolled_back(
+    tmp_path: Path,
+) -> None:
+    """The real host's read and the driver's final check, driven together.
+
+    The two halves of the seam the postcondition record crosses were
+    each covered on their own -- the read against recorded command
+    output here, the final check against the fake's supplied mapping in
+    the driver's own tests -- and the fake answers under whatever keys
+    a test hands it, which is exactly why no test saw the names
+    disagree. So this one drives the real read INTO the real final
+    check: the only host state is the recorded command output of a host
+    the rollback finished on, and the assertion is the outcome an
+    operator reads.
+
+    `rolled-back` is the consequential half. It retires the dead-man
+    and lets a later `reserve` take the host, so a rollback that
+    reports `rollback-partial` over a clean host holds the reservation
+    until an operator intervenes -- which is what happened on
+    2026-10-16 -- while one that reported `rolled-back` over a dirty
+    one would hand a fresh install a host still carrying a `docker0`.
+
+    The snapshot's `taken` marker is on disk because this run reached
+    `started`, and the driver now answers a run that has NONE by
+    releasing it without entering a phase at all. That is the right
+    answer for a run nothing was started behind, and it is not the path
+    under test here: a run with no marker never reaches the final check,
+    so the names on either side of this seam would never be compared.
+    """
+    rollback = importlib.import_module(_ROLLBACK_MODULE)
+    state = importlib.import_module(_STATE_MODULE)
+    model = importlib.import_module(_MODEL_MODULE)
+    snapshot = _snapshot_with_sysctls(root=tmp_path)
+    _ = (tmp_path / "var" / "run").write_text("run-a", encoding="utf-8")
+    _ = (snapshot.parent / "phase").write_text("started", encoding="utf-8")
+    _ = (snapshot / "taken").write_text("run-a", encoding="utf-8")
+    paths = _paths(root=tmp_path)
+    env = state.GuardEnv(
+        paths=paths, host=_real_host(root=tmp_path, commands=_clean_postcondition_bus())
+    )
+
+    outcome = rollback.run_rollback(
+        run="run-a",
+        env=env,
+        decision=model.Decision(verdict="proceed", reason="rollback is allowed from started"),
+    )
+
+    assert outcome.reason == "the rollback ran; these postconditions fail: none"
+    assert state.read_phase(paths=paths, run="run-a") == "rolled-back"
+    recorded = json.loads(
+        (paths.run_dir(run="run-a") / "rollback" / "outcome.json").read_text(encoding="utf-8")
+    )
+    assert recorded == {"outcome": "rolled-back", "failed_postconditions": []}
 
 
 # The three guarded units mapped to their systemd D-Bus object paths. The
