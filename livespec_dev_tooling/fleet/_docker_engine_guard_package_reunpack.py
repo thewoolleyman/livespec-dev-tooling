@@ -48,9 +48,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from livespec_dev_tooling.fleet._docker_engine_guard_package_audit import InstalledPackage
+from livespec_dev_tooling.fleet._docker_engine_guard_package_audit import (
+    UNHELD,
+    InstalledPackage,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
     COMMAND_TIMEOUT_SECONDS,
+    FENCED_ENV,
     INSTALL_TIMEOUT_SECONDS,
     TimedCommand,
     TimedRunner,
@@ -65,18 +69,6 @@ __all__: list[str] = [
 # The dpkg status an interrupted UNPACK leaves, and the one state
 # `dpkg --configure` can do nothing at all with.
 HALF_INSTALLED: Final[str] = "half-installed"
-
-# What a package dpkg holds nothing for reads as, so a name
-# `dpkg --audit` reported that the query did not carry falls into no
-# state rather than needing a second branch at every comparison.
-_UNHELD: Final[InstalledPackage] = InstalledPackage(version="", status="")
-
-# What tells dpkg that its caller already holds the frontend lock — the
-# documented way for a frontend holding it to call dpkg (design R6). The
-# recovery runs inside the same held lock as the install, so the unpack
-# carries it for the same reason `dpkg -i` does: without it this dpkg
-# takes the lock itself and deadlocks against the helper holding it.
-_FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
 
 # The leftover's architecture, asked for one package at a time. It is
 # the one field of the match dpkg's own table read does not carry.
@@ -161,19 +153,34 @@ def reunpack_half_installed(
     table read BEFORE this ran no longer has a true one: a re-unpacked
     package is `unpacked` afterwards, and it is THAT state the recovery's
     `dpkg --configure` has to be aimed at.
+
+    A leftover no audited `.deb` of this run carries at that exact
+    identity REFUSES. Unpacking a neighbouring archive instead would be
+    a transaction nobody audited, aimed at a database already holding an
+    unfinished one — and the step cannot proceed either way, because
+    design F6 requires a fresh transaction to start from an empty
+    `dpkg --audit` and this report can no longer be emptied.
     """
     unpacked: list[str] = []
     for name in sorted(flagged):
-        row = installed.get(name, _UNHELD)
+        row = installed.get(name, UNHELD)
         if row.status != HALF_INSTALLED:
             continue
         wanted = _leftover_identity(name=name, row=row, runner=runner)
         matched = [deb for deb in debs if _archive_identity(deb=deb, runner=runner) == wanted]
+        if not matched:
+            return Reunpacked(
+                refusal=(
+                    f"no audited `.deb` of this run carries {wanted.package} "
+                    f"{wanted.version} {wanted.architecture}, which dpkg holds "
+                    f"{HALF_INSTALLED}, so it cannot be re-unpacked"
+                )
+            )
         _ = runner(
             command=TimedCommand(
                 argv=("dpkg", "--unpack", str(matched[0])),
                 timeout_seconds=INSTALL_TIMEOUT_SECONDS,
-                env=_FENCED_ENV,
+                env=FENCED_ENV,
             )
         )
         unpacked.append(name)

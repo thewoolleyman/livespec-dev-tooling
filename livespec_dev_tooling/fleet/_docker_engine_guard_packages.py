@@ -16,7 +16,7 @@ What belongs to the ROLE and not here: the apt timers, the wait for the
 dpkg frontend lock, and the post-install `systemctl daemon-reload` (there
 is no systemd unit-directory dpkg trigger on this OS, per design F6). The
 role runs them AROUND this step, which assumes the frontend lock is
-already held — see `_FENCED_ENV`.
+already held — see `FENCED_ENV` in the runner module.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Final
 
 from livespec_dev_tooling.fleet._docker_engine_guard_package_audit import (
+    UNHELD,
     Audit,
     InstalledPackage,
     audit_transaction,
@@ -40,11 +41,12 @@ from livespec_dev_tooling.fleet._docker_engine_guard_package_leftovers import (
     PRE_INSTALL_AUDIT_FILE,
     leftover_refusal,
 )
-from livespec_dev_tooling.fleet._docker_engine_guard_package_reunpack import (
-    reunpack_half_installed,
+from livespec_dev_tooling.fleet._docker_engine_guard_package_recovery import (
+    recover_interrupted,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
     COMMAND_TIMEOUT_SECONDS,
+    FENCED_ENV,
     INSTALL_TIMEOUT_SECONDS,
     TimedCommand,
     TimedRunner,
@@ -56,39 +58,6 @@ __all__: list[str] = [
     "PackageStepResult",
     "run_package_step",
 ]
-
-# What tells dpkg that its caller already holds the frontend lock — the
-# documented way for a frontend holding it to call dpkg (design R6). The
-# role's lock-holding helper has held that lock since before the audit,
-# so without this the install would block on the fence protecting it.
-_FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
-
-# The three states an interrupted UNPACK leaves a package in, and the only
-# ones design F6 allows `dpkg --configure` to be aimed at. Narrow on
-# purpose: `--configure -a` would adopt whatever else the host has left
-# pending, which is the one thing the recovery branch must not do.
-_RECOVERABLE_STATES: Final[frozenset[str]] = frozenset(
-    {
-        "half-configured",
-        "half-installed",
-        "unpacked",
-    }
-)
-
-# The two states a helper killed during trigger processing leaves behind.
-# Neither is broken enough for `--configure` nor finished enough to be
-# installed over, so design G7 completes them with `--triggers-only`.
-_TRIGGER_STATES: Final[frozenset[str]] = frozenset(
-    {
-        "triggers-awaited",
-        "triggers-pending",
-    }
-)
-
-# What a package dpkg holds nothing for reads as. A name `dpkg --audit`
-# reported that the query did not carry then falls into no recovery state
-# at all, rather than needing a second branch at every comparison.
-_UNHELD: Final[InstalledPackage] = InstalledPackage(version="", status="")
 
 # The one dpkg status that means a package is finished: not merely
 # present, but unpacked AND configured. Every other status an audited
@@ -134,7 +103,7 @@ def _already_settled(*, audit: Audit, installed: Mapping[str, InstalledPackage])
     transaction that has to complete it.
     """
     return all(
-        installed.get(name, _UNHELD) == InstalledPackage(version=version, status=_SETTLED)
+        installed.get(name, UNHELD) == InstalledPackage(version=version, status=_SETTLED)
         for name, version in _addition_pairs(audit=audit)
     )
 
@@ -214,63 +183,6 @@ def _flagged_refusal(*, flagged: tuple[str, ...], after: str) -> str:
     return f"dpkg --audit names {flagged} after {after}, so dpkg is still interrupted"
 
 
-def _in_states(
-    *,
-    flagged: tuple[str, ...],
-    installed: Mapping[str, InstalledPackage],
-    states: frozenset[str],
-) -> tuple[str, ...]:
-    """The flagged packages dpkg holds in one of `states`, sorted."""
-    return tuple(sorted(name for name in flagged if installed.get(name, _UNHELD).status in states))
-
-
-def _recover_interrupted(
-    *,
-    runner: TimedRunner,
-    flagged: tuple[str, ...],
-    installed: Mapping[str, InstalledPackage],
-    debs: tuple[Path, ...],
-) -> None:
-    """Finish what an interrupted install left, and only for those packages.
-
-    Design F6's recovery branch. It runs BEFORE this run's own
-    transaction because dpkg refuses to unpack over a database that
-    still holds an unfinished one, and it is aimed at named packages
-    rather than issued as `--configure -a`, which would adopt whatever
-    else the host has left pending.
-
-    Every name here has already been accounted for against the recorded
-    intended sets, so the narrowness that remains is by STATE: a package
-    an interrupted UNPACK left `half-installed` is re-unpacked from its
-    own audited archive, because that is the one state
-    `dpkg --configure` can do nothing with; the states an interrupted
-    CONFIGURE leaves go to `--configure`; and the two a helper killed
-    during trigger processing leaves go to `--triggers-only`. A package
-    is in exactly one of those positions, and completing an unpacked
-    package's triggers would skip the configuration it is actually
-    waiting for.
-    """
-    _ = reunpack_half_installed(runner=runner, flagged=flagged, installed=installed, debs=debs)
-    recoverable = _in_states(flagged=flagged, installed=installed, states=_RECOVERABLE_STATES)
-    if recoverable:
-        _ = runner(
-            command=TimedCommand(
-                argv=("dpkg", "--configure", *recoverable),
-                timeout_seconds=INSTALL_TIMEOUT_SECONDS,
-                env=_FENCED_ENV,
-            )
-        )
-    awaiting = _in_states(flagged=flagged, installed=installed, states=_TRIGGER_STATES)
-    if awaiting:
-        _ = runner(
-            command=TimedCommand(
-                argv=("dpkg", "--triggers-only", *awaiting),
-                timeout_seconds=INSTALL_TIMEOUT_SECONDS,
-                env=_FENCED_ENV,
-            )
-        )
-
-
 def _drift_refusal(*, audit: Audit, installed: Mapping[str, InstalledPackage]) -> str | None:
     """Every version the audit relied on that has moved since it read them.
 
@@ -307,18 +219,58 @@ def _audited(*, inputs: Path, runner: TimedRunner) -> Audit | str:
     return audit_transaction(declared=declared, runner=runner)
 
 
+def _pre_install_refusal(
+    *,
+    audit: Audit,
+    run_dir: Path,
+    runner: TimedRunner,
+    dpkg_log: Path,
+    before: Mapping[str, InstalledPackage],
+) -> str | None:
+    """Why this host's dpkg state is not one the audited transaction may start from.
+
+    Everything the step owes BEFORE it mutates, in order: refuse on a
+    version that moved under the audit; refuse on an unfinished
+    transaction that is no guard run's leftover; complete the ones that
+    are, or refuse on a `half-installed` one this run's audited set
+    cannot re-unpack; and record what `dpkg --audit` then says, refusing
+    unless it says nothing (design F6, "a fresh transaction requires an
+    empty `dpkg --audit`").
+
+    The record is written whatever it says, and that is the point of it:
+    dpkg keeps no history, so after the install nothing on the host can
+    say whether a package it names was left by THIS transaction or was
+    already unfinished when the step was entered.
+    """
+    drift = _drift_refusal(audit=audit, installed=before)
+    if drift is not None:
+        return drift
+    flagged = _flagged_packages(runner=runner)
+    unaccounted = leftover_refusal(flagged=flagged, runs=run_dir.parent, log=dpkg_log)
+    if unaccounted is not None:
+        return unaccounted
+    stranded = recover_interrupted(
+        runner=runner, flagged=flagged, installed=before, debs=audit.debs
+    )
+    if stranded is not None:
+        return stranded
+    remaining = _flagged_packages(runner=runner)
+    read_again = json.dumps({"run": run_dir.name, "flagged": list(remaining)})
+    write_durable(path=run_dir / PRE_INSTALL_AUDIT_FILE, data=read_again)
+    if remaining:
+        return _flagged_refusal(flagged=remaining, after="recovery")
+    return None
+
+
 def _mutation_refusal(
     *, audit: Audit, run_dir: Path, runner: TimedRunner, dpkg_log: Path
 ) -> str | None:
     """Why the audited transaction may not stand, from the first dpkg state read on.
 
     Everything on the MUTATING side of this module's line, answered the
-    way every other stage here answers — a refusal, or `None`. The
-    sequence is: refuse on a version that moved under the audit; refuse
-    on an unfinished transaction that is no guard run's leftover; complete
-    the ones that are; record what `dpkg --audit` then says and
-    refuse unless it says nothing (design F6, "a fresh transaction
-    requires an empty `dpkg --audit`"); and, unless the host already
+    way every other stage here answers — a refusal, or `None`. The state
+    the transaction would start from is `_pre_install_refusal` above;
+    what remains here is the transaction itself: unless the host already
     holds the audited set, issue it, require the dpkg-query difference
     across it to be the additions this host did not hold, and read the
     report once more — a transaction that landed the right packages and
@@ -332,19 +284,11 @@ def _mutation_refusal(
     unattended-upgrades until somebody intervenes by hand.
     """
     before = read_installed(runner=runner)
-    drift = _drift_refusal(audit=audit, installed=before)
-    if drift is not None:
-        return drift
-    flagged = _flagged_packages(runner=runner)
-    unaccounted = leftover_refusal(flagged=flagged, runs=run_dir.parent, log=dpkg_log)
-    if unaccounted is not None:
-        return unaccounted
-    _recover_interrupted(runner=runner, flagged=flagged, installed=before, debs=audit.debs)
-    remaining = _flagged_packages(runner=runner)
-    read_again = json.dumps({"run": run_dir.name, "flagged": list(remaining)})
-    write_durable(path=run_dir / PRE_INSTALL_AUDIT_FILE, data=read_again)
-    if remaining:
-        return _flagged_refusal(flagged=remaining, after="recovery")
+    unstartable = _pre_install_refusal(
+        audit=audit, run_dir=run_dir, runner=runner, dpkg_log=dpkg_log, before=before
+    )
+    if unstartable is not None:
+        return unstartable
     # A host that already holds the audited set skips the ISSUING and
     # nothing else: `dpkg -i` over it would be a mutation with no
     # transaction behind it, while every question above and below is
@@ -356,7 +300,7 @@ def _mutation_refusal(
             command=TimedCommand(
                 argv=("dpkg", "-i", *(str(deb) for deb in audit.debs)),
                 timeout_seconds=INSTALL_TIMEOUT_SECONDS,
-                env=_FENCED_ENV,
+                env=FENCED_ENV,
             )
         )
         difference = _difference_refusal(

@@ -36,6 +36,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
 __all__: list[str] = [
     "INPUTS_FILE",
     "QUERY_ARGV",
+    "UNHELD",
     "Audit",
     "InstalledPackage",
     "PackageInputs",
@@ -183,6 +184,14 @@ class InstalledPackage:
 
     version: str
     status: str
+
+
+# What a package dpkg holds nothing for reads as. A name `dpkg --audit`
+# reported that the table below did not carry then falls into no state at
+# all, rather than needing a second branch at every comparison. It lives
+# with `InstalledPackage` because it is a fact about that record's
+# absence, and every reader of the table needs the same one.
+UNHELD: Final[InstalledPackage] = InstalledPackage(version="", status="")
 
 
 def read_installed(*, runner: TimedRunner) -> dict[str, InstalledPackage]:

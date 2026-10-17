@@ -27,12 +27,25 @@ from typing import Final, Protocol
 
 __all__: list[str] = [
     "COMMAND_TIMEOUT_SECONDS",
+    "FENCED_ENV",
     "INSTALL_TIMEOUT_SECONDS",
     "CommandOutput",
     "TimedCommand",
     "TimedRunner",
     "default_runner",
 ]
+
+# What tells dpkg that its caller already holds the frontend lock — the
+# documented way for a frontend holding it to call dpkg (design R6). The
+# role's lock-holding helper has held that lock since before the audit,
+# so without this the install would block on the fence protecting it.
+#
+# It lives beside the timeouts because it is the same kind of fact: not
+# something any one step decides, but how EVERY dpkg this fence issues
+# has to be called. Each of the three — the install, the re-unpack and
+# the configure — carries it, and `default_runner` below is where it is
+# merged over the ambient environment rather than replacing it.
+FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
 
 # The bound on every READ the fence makes: a simulated transaction, an
 # archive index lookup, a package query. Generous enough for an apt
