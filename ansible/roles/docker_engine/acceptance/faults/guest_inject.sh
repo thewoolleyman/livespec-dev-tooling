@@ -46,9 +46,12 @@ case $MODE in
       if [ -n "$u" ]; then m=$(systemctl show -p MainPID --value "$u")
         if [ "${m:-0}" != 0 ] && flock -n /run/docker-engine-guard/lock true 2>/dev/null; then sleep 0.005; continue; fi
         if [ "${m:-0}" != 0 ]; then kill -STOP "$m"; t0=$SECONDS; log "SIGSTOP $u main $m while it holds the lock; TimeoutStartSec=$(systemctl show -p TimeoutStartUSec --value "$u")"
-          while systemctl is-active -q "$u" || [ "$(systemctl show -p ActiveState --value "$u")" = activating ]; do sleep 0.5; done
-          log "$u ended after $((SECONDS - t0))s: $(systemctl show -p Result --value "$u" 2>/dev/null)"
-          if flock -n /run/docker-engine-guard/lock true; then log "lock released"; else log "LOCK STILL HELD"; fi
+          # deactivating counts as alive: SIGKILL may still be pending on the stopped process
+          while case "$(systemctl show -p ActiveState --value "$u" 2>/dev/null)" in active|activating|deactivating|reloading) true;; *) false;; esac; do sleep 0.5; done
+          log "$u ended after $((SECONDS - t0))s: $(systemctl show -p Result --value "$u" 2>/dev/null); main $m $( [ -d /proc/"$m" ] && echo ALIVE || echo gone)"
+          # flock -n exits non-zero both on a conflict and on a failed open, so the conflict gets its own code
+          flock -n -E 200 /run/docker-engine-guard/lock true 2>/dev/null; rc=$?
+          case $rc in 0) log "lock released";; 200) log "LOCK STILL HELD";; *) log "lock released (lock file absent, rc=$rc)";; esac
           exit 0; fi; fi
       sleep 0.005; done ;;
 esac
