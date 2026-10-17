@@ -76,6 +76,11 @@
   register: docker_engine_postinst_journal
   become: true
   changed_when: false
+  # A publish over a host that already held every audited package at its
+  # audited version runs no postinst, so there is no start for the gate to
+  # skip (fresh_run.yml, docker_engine_publish_installs). The proofs above,
+  # and dropins.yml's probe-unit proof of the mechanism, still hold.
+  when: docker_engine_publish_installs | default(true) | bool
 
 - name: Require systemd's condition-skip message for each of them
   # The text systemd writes for `|` conditions; its presence proves the gate
@@ -94,3 +99,4 @@
   loop: "{{ docker_engine_postinst_journal.results }}"
   loop_control:
     label: "{{ item.item }}"
+  when: docker_engine_publish_installs | default(true) | bool
