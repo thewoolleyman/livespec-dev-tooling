@@ -46,7 +46,10 @@ rolled_back_check() { # the FAULTS.md definition of "rolled back", as far as it 
   "'
 }
 
-restore() { # restore <i>: one instance back to the `baseline` snapshot, booted, k3s DNS answering
+# A restored snapshot's persistent apt timers fire on catch-up minutes after boot; on
+# guard-vm-0 (2026-10-17 20:55:39) unattended-upgrade began reinstalling docker.io
+# mid-case. Masking them keeps every dpkg action on the guest the guard's own.
+restore() { # restore <i>: one instance back to the `baseline` snapshot, booted, k3s DNS answering, apt timers masked
   local i=$1
-  ssh -o BatchMode=yes cwoolley@poweredge-xubuntu "cd ~/docker-engine-guard-acceptance && export DOCKER_ENGINE_VM_BASE_DIR=\$HOME/.cache/docker-engine-guard-vm DOCKER_ENGINE_VM_LLM_BIND=0.0.0.0 DOCKER_ENGINE_VM_INSTANCE=$i && ./vm.sh down >/dev/null && ./vm.sh restore baseline >/dev/null && ./vm.sh up >/dev/null && for n in \$(seq 1 60); do ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers 2>/dev/null | awk '\$1 ~ /^coredns-/ && \$3 == \"Running\" {f=1} END {exit !f}' && break; sleep 5; [ \$n = 60 ] && { echo restore-$i-DNS-TIMEOUT; exit 1; }; done; for n in \$(seq 1 60); do ./vm.sh ssh sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || { echo restored-$i; exit 0; }; sleep 5; done; echo restore-$i-APT-BUSY; exit 1"
+  ssh -o BatchMode=yes cwoolley@poweredge-xubuntu "cd ~/docker-engine-guard-acceptance && export DOCKER_ENGINE_VM_BASE_DIR=\$HOME/.cache/docker-engine-guard-vm DOCKER_ENGINE_VM_LLM_BIND=0.0.0.0 DOCKER_ENGINE_VM_INSTANCE=$i && ./vm.sh down >/dev/null && ./vm.sh restore baseline >/dev/null && ./vm.sh up >/dev/null && for n in \$(seq 1 60); do ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers 2>/dev/null | awk '\$1 ~ /^coredns-/ && \$3 == \"Running\" {f=1} END {exit !f}' && break; sleep 5; [ \$n = 60 ] && { echo restore-$i-DNS-TIMEOUT; exit 1; }; done; ./vm.sh ssh sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1; ./vm.sh ssh sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || { echo restore-$i-APT-TIMER-MASK-FAILED; exit 1; }; for n in \$(seq 1 60); do ./vm.sh ssh sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || { echo restored-$i; exit 0; }; sleep 5; done; echo restore-$i-APT-BUSY; exit 1"
 }
