@@ -37,5 +37,19 @@ case $MODE in
       if [ "$(cat "$G/phase" 2>/dev/null)" = observed ]; then
         systemctl start --no-block "docker-engine-deadman-$RUN.service"; log "observed; dead-man service started ahead of confirm"; exit 0; fi
       sleep 0.005; done ;;
+  sigstop)
+    # C-03: SIGSTOP the main process of the first unit named <prefix> (PH is the
+    # unit-name prefix), then time until systemd kills it and the lock frees.
+    # RUN may be `-` when the run id is not yet known (reserve).
+    while [ $SECONDS -lt $end ]; do
+      u=$(systemctl list-units --plain --no-legend --state=active,activating "$PH*" | awk '{print $1}' | head -1)
+      if [ -n "$u" ]; then m=$(systemctl show -p MainPID --value "$u")
+        if [ "${m:-0}" != 0 ] && flock -n /run/docker-engine-guard/lock true 2>/dev/null; then sleep 0.005; continue; fi
+        if [ "${m:-0}" != 0 ]; then kill -STOP "$m"; t0=$SECONDS; log "SIGSTOP $u main $m while it holds the lock; TimeoutStartSec=$(systemctl show -p TimeoutStartUSec --value "$u")"
+          while systemctl is-active -q "$u" || [ "$(systemctl show -p ActiveState --value "$u")" = activating ]; do sleep 0.5; done
+          log "$u ended after $((SECONDS - t0))s: $(systemctl show -p Result --value "$u" 2>/dev/null)"
+          if flock -n /run/docker-engine-guard/lock true; then log "lock released"; else log "LOCK STILL HELD"; fi
+          exit 0; fi; fi
+      sleep 0.005; done ;;
 esac
 log "TIMEOUT"
