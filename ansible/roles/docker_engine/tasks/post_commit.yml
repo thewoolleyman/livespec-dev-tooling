@@ -11,6 +11,20 @@
   ansible.builtin.set_fact:
     docker_engine_committed_run: "{{ (docker_engine_marker_raw.content | b64decode | from_json).run }}"
 
+- name: Finish a committed run whose confirmation was interrupted
+  # Design H5/I2: the marker names the run, so `confirm` FINISHES it (the
+  # idempotent post-commit steps: enable and start the units, retire the
+  # dead-man) whatever the phase says. Without this a crash between the commit
+  # rename and the phase update (FAULTS B-04), or a reboot there (B-05), was
+  # only validated, never finished.
+  ansible.builtin.include_tasks: guard_op.yml
+  vars:
+    docker_engine_op: confirm
+    docker_engine_op_run: "{{ docker_engine_committed_run }}"
+  when:
+    - docker_engine_current_run == docker_engine_committed_run
+    - docker_engine_current_phase != 'confirmed'
+
 - name: Prove the drop-ins are still exactly the guard's
   # Compared, never rewritten: on a committed host the drop-ins' only remaining
   # job is to let the marker satisfy the start condition, and a rewrite here

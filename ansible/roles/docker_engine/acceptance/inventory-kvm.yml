@@ -1,5 +1,5 @@
 ---
-# The four disposable acceptance VMs on the KVM acceptance host, as the
+# The eight disposable acceptance VMs (R59's bound) on the KVM acceptance host, as the
 # docker_engine play's targets.
 #
 # Used ONLY with this play and these VMs:
@@ -151,3 +151,107 @@ all:
             - guard@127.0.0.1
             - "true"
           docker_engine_lan_fallback_ssh_argv: *vm3_new_session
+        guard-vm-4:
+          ansible_port: 2269
+          docker_engine_llm_health_url: http://poweredge-xubuntu:2320/health
+          docker_engine_tailscale_ssh_argv: &vm4_new_session
+            - ssh
+            - -i
+            - "{{ docker_engine_acceptance_key }}"
+            - -J
+            - cwoolley@poweredge-xubuntu
+            - -p
+            - "2269"
+            - -o
+            - BatchMode=yes
+            - -o
+            - ConnectTimeout=15
+            - -o
+            - ControlMaster=no
+            - -o
+            - ControlPath=none
+            - -o
+            - StrictHostKeyChecking=no
+            - -o
+            - UserKnownHostsFile=/dev/null
+            - guard@127.0.0.1
+            - "true"
+          docker_engine_lan_fallback_ssh_argv: *vm4_new_session
+        guard-vm-5:
+          ansible_port: 2279
+          docker_engine_llm_health_url: http://poweredge-xubuntu:2330/health
+          docker_engine_tailscale_ssh_argv: &vm5_new_session
+            - ssh
+            - -i
+            - "{{ docker_engine_acceptance_key }}"
+            - -J
+            - cwoolley@poweredge-xubuntu
+            - -p
+            - "2279"
+            - -o
+            - BatchMode=yes
+            - -o
+            - ConnectTimeout=15
+            - -o
+            - ControlMaster=no
+            - -o
+            - ControlPath=none
+            - -o
+            - StrictHostKeyChecking=no
+            - -o
+            - UserKnownHostsFile=/dev/null
+            - guard@127.0.0.1
+            - "true"
+          docker_engine_lan_fallback_ssh_argv: *vm5_new_session
+        guard-vm-6:
+          ansible_port: 2289
+          docker_engine_llm_health_url: http://poweredge-xubuntu:2340/health
+          docker_engine_tailscale_ssh_argv: &vm6_new_session
+            - ssh
+            - -i
+            - "{{ docker_engine_acceptance_key }}"
+            - -J
+            - cwoolley@poweredge-xubuntu
+            - -p
+            - "2289"
+            - -o
+            - BatchMode=yes
+            - -o
+            - ConnectTimeout=15
+            - -o
+            - ControlMaster=no
+            - -o
+            - ControlPath=none
+            - -o
+            - StrictHostKeyChecking=no
+            - -o
+            - UserKnownHostsFile=/dev/null
+            - guard@127.0.0.1
+            - "true"
+          docker_engine_lan_fallback_ssh_argv: *vm6_new_session
+        guard-vm-7:
+          ansible_port: 2299
+          docker_engine_llm_health_url: http://poweredge-xubuntu:2350/health
+          docker_engine_tailscale_ssh_argv: &vm7_new_session
+            - ssh
+            - -i
+            - "{{ docker_engine_acceptance_key }}"
+            - -J
+            - cwoolley@poweredge-xubuntu
+            - -p
+            - "2299"
+            - -o
+            - BatchMode=yes
+            - -o
+            - ConnectTimeout=15
+            - -o
+            - ControlMaster=no
+            - -o
+            - ControlPath=none
+            - -o
+            - StrictHostKeyChecking=no
+            - -o
+            - UserKnownHostsFile=/dev/null
+            - guard@127.0.0.1
+            - "true"
+          docker_engine_lan_fallback_ssh_argv: *vm7_new_session

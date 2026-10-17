@@ -4,6 +4,36 @@
 # host: a recovered or verified host is converged by the NEXT run of the play,
 # after the operator has read what this one reported.
 
+- name: Resume an interrupted publish through the guard, inside the apt fence
+  # Design I2: `recover` from `publishing` resumes the inert install, which
+  # runs `dpkg -i` with DPKG_FRONTEND_LOCKED=1 and so needs the role's fence
+  # exactly as `publish` does (2026-10-17 static audit, finding 5).
+  when:
+    - docker_engine_recover == docker_engine_current_run
+    - docker_engine_current_phase == 'publishing'
+  vars:
+    docker_engine_apt_restore_unit: "docker-engine-apt-restore-{{ docker_engine_current_run }}"
+  block:
+    - name: Fence the package step and resume the publish
+      ansible.builtin.include_tasks: fence_publish.yml
+      vars:
+        docker_engine_fence_op: recover
+        docker_engine_fence_run: "{{ docker_engine_current_run }}"
+  always:
+    - name: Restart the apt timers that were active before the fence
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ docker_engine_apt_timers_active | default([]) }}"
+      become: true
+
+    - name: Cancel the host-side backstop, now that the timers are restored
+      ansible.builtin.command:
+        argv: [systemctl, stop, "{{ docker_engine_apt_restore_unit }}.timer"]
+      become: true
+      changed_when: true
+      failed_when: false
+
 - name: Recover the named run through the guard
   # `recover` takes the same lock and the same dispatch table as everything
   # else (rider point 8) and runs whatever it delegates to inside its own unit,
@@ -14,7 +44,9 @@
   vars:
     docker_engine_op: recover
     docker_engine_op_run: "{{ docker_engine_current_run }}"
-  when: docker_engine_recover == docker_engine_current_run
+  when:
+    - docker_engine_recover == docker_engine_current_run
+    - docker_engine_current_phase != 'publishing'
 
 - name: Verify the acknowledged rollback-partial run through the guard
   # `verify` re-reads every rollback postcondition now, against the run's own
