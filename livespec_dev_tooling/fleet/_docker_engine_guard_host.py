@@ -87,6 +87,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_unit_state import (
     deadman_timer_active,
     deadman_timer_exists,
     guard_unit_states,
+    guarded_unit_active_states,
     invoking_unit,
     unit_enabled_states,
 )
@@ -288,6 +289,10 @@ class RealHost:
     def unit_enabled_states(self) -> Mapping[str, str]:
         """Every guard-relevant unit mapped to its `UnitFileState`."""
         return unit_enabled_states(runner=self.runner)
+
+    def guarded_unit_active_states(self) -> Mapping[str, str]:
+        """Each guarded unit mapped to the `ActiveState` the manager reports for it."""
+        return guarded_unit_active_states(runner=self.runner)
 
     # --- reconfigure (child 1b) ---
 

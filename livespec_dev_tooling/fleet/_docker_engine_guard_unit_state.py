@@ -39,6 +39,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_units import (
     ACTIVE_STATE,
     SYSTEMCTL,
     UNIT_READ_TIMEOUT_SECONDS,
+    unit_active_states,
     unit_property,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_witness import PROC_ROOT
@@ -58,6 +59,7 @@ __all__: list[str] = [
     "deadman_timer_active",
     "deadman_timer_exists",
     "guard_unit_states",
+    "guarded_unit_active_states",
     "invoking_unit",
     "unit_enabled_states",
 ]
@@ -135,6 +137,27 @@ def guard_unit_states(*, runner: GuardCommandRunner) -> Mapping[str, str]:
         timeout_seconds=UNIT_READ_TIMEOUT_SECONDS,
     )
     return _states_by_unit(text=answer.stdout, name=ACTIVE_STATE)
+
+
+def guarded_unit_active_states(*, runner: GuardCommandRunner) -> Mapping[str, str]:
+    """Each GUARDED unit's `ActiveState`, read one unit at a time.
+
+    NOT `guard_unit_states` above, and the two being different reads is
+    the whole reason this one exists. That read enumerates the GUARD's
+    own transient units by glob; the three units the guard CONDITIONS
+    match none of those globs, so a post-commit validation that reached
+    for it read an EMPTY map and reported all three guarded units
+    adrift on every real committed run. H-01 measured exactly that on
+    2026-10-17: `confirm` refused a committed host whose service
+    manager reported all three `enabled` and `active`.
+
+    Per unit, like `unit_enabled_states` below, and over the same fixed
+    set: the validation needs both halves of "enabled AND running" for
+    the same three units, and reading them the same way is what keeps a
+    unit the manager does not know ABSENT from both answers rather than
+    reported as something it is not.
+    """
+    return unit_active_states(runner=runner, units=GUARDED_UNITS)
 
 
 def unit_enabled_states(*, runner: GuardCommandRunner) -> Mapping[str, str]:

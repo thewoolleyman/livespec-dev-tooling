@@ -160,6 +160,9 @@ class FakeHost:
     def unit_enabled_states(self) -> Mapping[str, str]:
         return self.unit_file_states
 
+    def guarded_unit_active_states(self) -> Mapping[str, str]:
+        return self.unit_states
+
     # --- reconfigure (child 1b) ---
 
     def write_daemon_keys(self, *, keys: Mapping[str, object]) -> None:

@@ -146,6 +146,16 @@ def committed_installation_fault(*, run: str, env: GuardEnv) -> str:
     would roll back a commitment the guarded units' start condition
     already honours, which is the one move design F4 forbids outright.
 
+    BOTH unit reads are over the GUARDED units, and the running half is
+    the service manager's report for each of them -- never the guard's
+    own unit map. That map enumerates the guard's transient units by
+    glob, which the three guarded units match none of, so reading it
+    here came back empty on a committed host (the dead-man is stopped
+    by then, so no guard unit is loaded at all) and reported all three
+    adrift. H-01 hit exactly that on 2026-10-17: a refusal naming every
+    guarded unit on a guest whose `systemctl` called all three
+    `enabled` and `active`.
+
     TWO digests are accepted and both are needed. The marker's is what
     the run COMMITTED; the reconfigured one is what the last
     `reconfigure` wrote, recorded beside the marker because the marker
@@ -156,7 +166,7 @@ def committed_installation_fault(*, run: str, env: GuardEnv) -> str:
     ever wrote.
     """
     enabled = env.host.unit_enabled_states()
-    active = env.host.guard_unit_states()
+    active = env.host.guarded_unit_active_states()
     adrift = tuple(
         unit
         for unit in GUARDED_UNITS
