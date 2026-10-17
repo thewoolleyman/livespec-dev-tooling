@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.3...v1.112.4) (2026-10-17)
+
+
+### Bug Fixes
+
+* **docker-engine-guard:** read the guarded units' running state from the service manager ([1696d9b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1696d9b45818fedb65eb1874f193025f33ff4b3d))
+* **docker-engine-guard:** split the fake host's guard and guarded unit maps ([01a3c52](https://github.com/thewoolleyman/livespec-dev-tooling/commit/01a3c52a876cb734d2df5eb78c0007f63703e33a))
+
 ## [1.112.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.2...v1.112.3) (2026-10-17)
 
 
