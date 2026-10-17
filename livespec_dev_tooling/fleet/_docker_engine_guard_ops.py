@@ -126,6 +126,18 @@ def publish(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
     has passed — that check is the proof the installed units cannot
     start, so arming over a run that skipped it would arm over an engine
     free to start on its own.
+
+    The package step's OWN refusal is read first, and it is not
+    redundant with that check: a step can refuse AFTER `dpkg -i` has
+    landed the audited set, and the units it landed are inert by
+    construction, so the condition check then PASSES over an unfinished
+    dpkg transaction. FAULTS B-06 (poweredge guard-vm-0, 2026-10-17) is
+    that state: a SIGKILL during `dpkg -i` left `man-db` half
+    configured, the step computed the refusal, and the publish that
+    discarded it recorded `published` while `dpkg --audit` still named
+    the package — which on a real host blocks apt and
+    unattended-upgrades until somebody intervenes by hand. The reason is
+    carried verbatim, because it names a dpkg state only the step read.
     """
     record_phase(paths=env.paths, run=run, phase="publishing")
     taken = env.paths.snapshot_taken_path(run=run)
@@ -134,7 +146,9 @@ def publish(*, run: str, env: GuardEnv, decision: Decision) -> GuardOutcome:
         # Written only AFTER the host returns, so a snapshot interrupted
         # half way is retaken rather than trusted.
         write_durable(path=taken, data=run)
-    _ = env.host.install_packages(inputs=env.paths.inputs_dir(run=run))
+    refusal = env.host.install_packages(inputs=env.paths.inputs_dir(run=run))
+    if refusal is not None:
+        return GuardOutcome(operation="publish", run=run, verdict="refuse", reason=refusal)
     if not env.host.condition_check_passed():
         return GuardOutcome(
             operation="publish",
