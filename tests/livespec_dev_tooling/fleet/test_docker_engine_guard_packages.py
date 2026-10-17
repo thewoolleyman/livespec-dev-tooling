@@ -18,6 +18,8 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,7 @@ __all__: list[str] = []
 _RUNNER_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_package_runner"
 _RUNNER_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_package_runner.py")
 _AUDIT_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_package_audit.py")
+_LEFTOVERS_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_package_leftovers.py")
 _PACKAGES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_packages"
 
 # The versions measured on the gmktec host on 2026-10-15, and the archive
@@ -327,6 +330,112 @@ def _audit_report(*, packages: tuple[str, ...]) -> str:
         "menu option in dselect for them to work:\n"
         f"{rows}"
         "\n"
+    )
+
+
+# The instant the most recent pre-install audit record was written, and a
+# neighbour an hour earlier for the arms about WHICH record is the most
+# recent one. Fixed rather than taken from the clock, because the whole
+# comparison below is of dpkg's own log timestamps against this second.
+_RECORD_WRITTEN_AT = time.mktime((2026, 10, 17, 13, 0, 1, 0, 0, -1))
+_EARLIER_RECORD_AT = _RECORD_WRITTEN_AT - 3600
+
+
+# What dpkg logged for the guard's OWN interrupted `dpkg -i`, in the shape
+# `/var/log/dpkg.log` carries it. This is the whole mechanism the second
+# arm of the leftover rule rests on, so every line is measured rather than
+# illustrative: the `install` line names an audited package, which a guard
+# run's recorded intended set covers, and the trigger handler this install
+# ACTIVATED appears as `trigproc` and `status` — never as one of the five
+# actions the fence reads. That is what leaves man-db attributable to the
+# guard while a package another transaction installed is not.
+#
+# The last line is the kill itself: dpkg was SIGKILLed mid-write, so the
+# log ends in a torn line carrying no action at all.
+_LOG_OWN_INSTALL = """2026-10-17 13:00:02 startup archives unpack
+2026-10-17 13:00:02 install docker.io:amd64 <none> 29.1.3-0ubuntu4.1
+2026-10-17 13:00:03 status unpacked docker.io:amd64 29.1.3-0ubuntu4.1
+2026-10-17 13:00:04 trigproc man-db:amd64 2.12.0-4build2 <none>
+2026-10-17 13:00:04 status half-configured man-db:amd64 2.12.0-4build2
+2026-10-17 13:00:0
+"""
+
+# An `install` of a package no guard run ever intended, BEFORE the most
+# recent pre-install audit record was written. Every arm carries it: it is
+# the control that proves the comparison is against that record's instant
+# rather than against the log as a whole, since a host that has ever
+# installed anything outside the guard's sets would otherwise never
+# attribute a leftover again.
+_LOG_OLD_FOREIGN = "2026-10-01 09:00:00 install nginx:amd64 <none> 1.24.0-2ubuntu7\n"
+
+# The same action AFTER that record was written, which is the transaction
+# the second arm exists to rule out.
+_LOG_FOREIGN_INSTALL = "2026-10-17 13:05:00 install nginx:amd64 <none> 1.24.0-2ubuntu7\n"
+
+
+def _audit_record(*, run: str, flagged: tuple[str, ...]) -> str:
+    """One pre-install audit record, in the shape the step itself writes it."""
+    return json.dumps({"run": run, "flagged": list(flagged)})
+
+
+def _record_pre_install_audit(*, root: Path, run: str, data: str, written_at: float) -> None:
+    """Lay down `run`'s pre-install audit record, stamped when it was written.
+
+    The modification time IS "when that record was written": the step
+    renames it into place through `write_durable` and the record carries
+    no timestamp of its own. The tests set it explicitly so the
+    comparison against dpkg's log is against a known second.
+    """
+    directory = root / "runs" / run
+    directory.mkdir(parents=True, exist_ok=True)
+    record = directory / "pre-install-audit.json"
+    record.write_text(data, encoding="utf-8")
+    os.utime(record, (written_at, written_at))
+
+
+def _dpkg_log(*, root: Path, members: dict[str, bytes]) -> Path:
+    """dpkg's log, and every rotation of it beside it, as a host keeps them.
+
+    Keyed by file NAME and written as bytes because the rotated series is
+    part of the subject: logrotate moves the current file aside and
+    compresses the older copies, so a member can be gzip rather than
+    text. The CURRENT file's path is what the step is handed; it finds
+    the rest beside it.
+    """
+    directory = root / "log"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, data in members.items():
+        (directory / name).write_bytes(data)
+    return directory / "dpkg.log"
+
+
+def _own_install_log(*, root: Path) -> Path:
+    """dpkg's log on a host whose only recent transaction was the guard's own."""
+    return _dpkg_log(
+        root=root,
+        members={"dpkg.log": (_LOG_OLD_FOREIGN + _LOG_OWN_INSTALL).encode("utf-8")},
+    )
+
+
+def _leftover_outputs(*, result: Any, flagged: tuple[str, ...], query: str) -> _RecordedRunner:
+    """The recorded host FAULTS B-06 left: settled audited set, `flagged` pending.
+
+    The simulation is the SETTLED one, because that is the host the
+    scenario is about — a kill during `dpkg -i` that left every audited
+    package installed and the trigger handler it activated unfinished, so
+    the resumed publish has no transaction to repeat and the only
+    outstanding work is the handler.
+    """
+    return _RecordedRunner(
+        result=result,
+        outputs=[
+            (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+            # The report, and then the re-read a successful recovery leaves
+            # clean — design F6's empty audit, which the step requires.
+            (("dpkg", "--audit"), [_audit_report(packages=flagged), ""]),
+            (("dpkg-query",), [query]),
+            *_fenced_outputs(),
+        ],
     )
 
 
@@ -950,6 +1059,289 @@ def test_the_package_step_completes_an_intended_package_a_settled_host_left_half
     assert tuple(configured[0].argv) == ("dpkg", "--configure", "runc")
     assert configured[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
     assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
+def test_the_package_step_completes_a_half_configured_handler_its_install_activated(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the leftover rule's SECOND arm, completing.
+
+    FAULTS B-06 on poweredge guard-vm-7, 2026-10-17 13:00Z: the publish
+    unit and dpkg were SIGKILLed during `dpkg -i`. Every audited package
+    ended settled and man-db was left `half-configured`, because this
+    install's own man pages had activated its trigger. man-db is in no
+    guard run's recorded intended set, so the intended-set arm alone
+    refuses — honestly, and leaving the run stranded with apt and
+    unattended-upgrades blocked on the host until somebody runs
+    `dpkg --configure -a` by hand.
+
+    The second arm is what attributes it. The most recent pre-install
+    audit record any guard run wrote is EMPTY, which is the evidence that
+    the guard's own `dpkg -i` started from a clean dpkg database; and
+    dpkg's own log records no `install`, `upgrade`, `remove`, `purge` or
+    `configure` action on a package outside every recorded intended set
+    since that record was written, which is the evidence that nothing
+    else has touched the database since. What is flagged is therefore the
+    guard's own leftover, and completing it is the guard's job.
+
+    Both halves of the narrowness still hold: the completion is aimed at
+    man-db BY NAME and never issued as `--configure -a`, and the step
+    reaches its report only with `dpkg --audit` empty.
+    """
+    assert _LEFTOVERS_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    _record_pre_install_audit(
+        root=tmp_path,
+        run="run-prior",
+        data=_audit_record(run="run-prior", flagged=()),
+        written_at=_RECORD_WRITTEN_AT,
+    )
+    runner = _leftover_outputs(
+        result=runner_module.CommandOutput,
+        flagged=("man-db",),
+        query=_QUERY_AFTER + "man-db 2.12.0-4build2 half-configured\n",
+    )
+
+    outcome = packages.run_package_step(
+        inputs=inputs, runner=runner, dpkg_log=_own_install_log(root=tmp_path)
+    )
+
+    assert outcome.refusal is None
+    assert outcome.installed == ("containerd=2.2.2-0ubuntu1.1", "docker.io=29.1.3-0ubuntu4.1")
+    configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
+    assert [tuple(call.argv) for call in configured] == [("dpkg", "--configure", "man-db")]
+    assert configured[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
+    assert _calls_named(runner=runner, argv=("dpkg", "--configure", "-a")) == []
+    # Completed BEFORE the report: what the step recorded as the audit it
+    # was about to install over is empty, and that read happens after the
+    # recovery. No `dpkg -i` — the audited set was already settled.
+    record = inputs.parent / "pre-install-audit.json"
+    assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": []}
+    assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
+def test_the_package_step_completes_a_triggers_pending_handler_its_install_activated(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the same arm, through `--triggers-only`.
+
+    The kill that stranded FAULTS B-06 can land either side of the
+    handler's own configuration, so the leftover it leaves is in one of
+    two positions. A handler killed while its trigger was still queued is
+    `triggers-pending` rather than `half-configured`: not broken enough
+    for `--configure`, and not finished enough to be installed over.
+    Design G7 completes exactly that with `dpkg --triggers-only`.
+
+    Which of the two it is comes off dpkg's own table rather than off the
+    audit report, which names neither state, and the states do not
+    overlap — so this host sees `--triggers-only` on man-db and no
+    `--configure` at all. Configuring a package that is only awaiting
+    triggers would run a configuration it is not waiting for.
+    """
+    assert _LEFTOVERS_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    _record_pre_install_audit(
+        root=tmp_path,
+        run="run-prior",
+        data=_audit_record(run="run-prior", flagged=()),
+        written_at=_RECORD_WRITTEN_AT,
+    )
+    runner = _leftover_outputs(
+        result=runner_module.CommandOutput,
+        flagged=("man-db",),
+        query=_QUERY_AFTER + "man-db 2.12.0-4build2 triggers-pending\n",
+    )
+
+    outcome = packages.run_package_step(
+        inputs=inputs, runner=runner, dpkg_log=_own_install_log(root=tmp_path)
+    )
+
+    assert outcome.refusal is None
+    assert outcome.installed == ("containerd=2.2.2-0ubuntu1.1", "docker.io=29.1.3-0ubuntu4.1")
+    completed = _calls_named(runner=runner, argv=("dpkg", "--triggers-only"))
+    assert [tuple(call.argv) for call in completed] == [("dpkg", "--triggers-only", "man-db")]
+    assert completed[0].env == {"DPKG_FRONTEND_LOCKED": "1"}
+    assert _calls_named(runner=runner, argv=("dpkg", "--configure")) == []
+    record = inputs.parent / "pre-install-audit.json"
+    assert json.loads(record.read_text(encoding="utf-8")) == {"run": "run-a", "flagged": []}
+
+
+def test_the_package_step_refuses_a_flagged_package_a_foreign_dpkg_action_reaches(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the second arm's own fence, refusing.
+
+    The danger of attributing a flagged package to the guard runs the
+    opposite way from B-06: adopting somebody else's interrupted
+    transaction. dpkg's log is what rules that out, so an `install` of a
+    package outside every recorded intended set since the record was
+    written switches the arm OFF — man-db is then no guard run's
+    leftover, the step refuses naming it, and it completes nothing.
+
+    The log that cannot be READ refuses for the same reason. "No foreign
+    action since that record" is a claim about the whole series, and a
+    series with a member missing supports no such claim; read as "nothing
+    found" it would attribute every flagged package on a host whose log
+    was rotated away or never kept.
+    """
+    assert _LEFTOVERS_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    foreign = (_LOG_OLD_FOREIGN + _LOG_OWN_INSTALL + _LOG_FOREIGN_INSTALL).encode("utf-8")
+
+    for index, members in enumerate(({"dpkg.log": foreign}, {})):
+        root = tmp_path / f"host-{index}"
+        inputs = _declare(root=root, payload=_payload(cache=root / "cache"))
+        _record_earlier_runs(root=root)
+        _record_pre_install_audit(
+            root=root,
+            run="run-prior",
+            data=_audit_record(run="run-prior", flagged=()),
+            written_at=_RECORD_WRITTEN_AT,
+        )
+        runner = _leftover_outputs(
+            result=runner_module.CommandOutput,
+            flagged=("man-db",),
+            query=_QUERY_AFTER + "man-db 2.12.0-4build2 half-configured\n",
+        )
+
+        outcome = packages.run_package_step(
+            inputs=inputs, runner=runner, dpkg_log=_dpkg_log(root=root, members=members)
+        )
+
+        assert outcome.refusal is not None
+        assert "man-db" in outcome.refusal
+        assert outcome.installed == ()
+        assert _calls_named(runner=runner, argv=("dpkg", "--configure")) == []
+        assert _calls_named(runner=runner, argv=("dpkg", "--triggers-only")) == []
+        assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
+def test_the_package_step_refuses_a_flagged_package_the_most_recent_record_named(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the arm's other half, the audit record.
+
+    An empty record is the only evidence that the guard's own `dpkg -i`
+    started from a clean dpkg database. A record naming a package says
+    the opposite — that run entered its install over a transaction
+    somebody else had left unfinished — so nothing flagged afterwards is
+    attributable to the guard, and the step refuses naming it.
+
+    It is the MOST RECENT record that answers, not every record, which is
+    the second arm here: a host carrying an older record that named
+    something and a newer one that is empty has since had a run start
+    clean, and refusing on the older one would strand every later run on
+    a transaction that has already been accounted for.
+
+    A record that cannot be READ is the third arm, and refuses for the
+    reason the unreadable log above does: it is the absence of the
+    evidence rather than evidence of a clean start.
+    """
+    assert _LEFTOVERS_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    empty = ("run-prior", _audit_record(run="run-prior", flagged=()))
+    named = ("run-interrupted", _audit_record(run="run-interrupted", flagged=("man-db",)))
+    torn = ("run-torn", "{half-written")
+
+    for index, (records, expected) in enumerate(
+        (
+            (((*empty, _EARLIER_RECORD_AT), (*named, _RECORD_WRITTEN_AT)), "man-db"),
+            (((*named, _EARLIER_RECORD_AT), (*empty, _RECORD_WRITTEN_AT)), None),
+            (((*torn, _RECORD_WRITTEN_AT),), "man-db"),
+        )
+    ):
+        root = tmp_path / f"host-{index}"
+        inputs = _declare(root=root, payload=_payload(cache=root / "cache"))
+        _record_earlier_runs(root=root)
+        for run, data, written_at in records:
+            _record_pre_install_audit(root=root, run=run, data=data, written_at=written_at)
+        runner = _leftover_outputs(
+            result=runner_module.CommandOutput,
+            flagged=("man-db",),
+            query=_QUERY_AFTER + "man-db 2.12.0-4build2 half-configured\n",
+        )
+
+        outcome = packages.run_package_step(
+            inputs=inputs, runner=runner, dpkg_log=_own_install_log(root=root)
+        )
+
+        configured = [
+            tuple(call.argv) for call in _calls_named(runner=runner, argv=("dpkg", "--configure"))
+        ]
+        if expected is None:
+            assert outcome.refusal is None
+            assert configured == [("dpkg", "--configure", "man-db")]
+        else:
+            assert outcome.refusal is not None
+            assert expected in outcome.refusal
+            assert configured == []
+
+
+def test_every_dpkg_recovery_the_package_step_issues_names_its_packages(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the step MUST NOT issue `dpkg --configure -a`.
+
+    Stated as a property of EVERY recovery command rather than as the
+    absence of one spelling, because `-a` is not the only way to adopt a
+    host's pending work: a `dpkg --configure` or `dpkg --triggers-only`
+    carrying no package at all, or carrying any flag in place of a name,
+    would reach past the fence just as far. So each recovery invocation
+    is read back and required to be names only.
+
+    The host here is the one that issues both, so both are covered by one
+    reading: libc-bin was left `half-configured` and man-db
+    `triggers-pending` by the same interrupted install, and neither is in
+    any recorded intended set — both are the guard's under the second arm,
+    and the states route them to different commands.
+    """
+    assert _LEFTOVERS_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    _record_pre_install_audit(
+        root=tmp_path,
+        run="run-prior",
+        data=_audit_record(run="run-prior", flagged=()),
+        written_at=_RECORD_WRITTEN_AT,
+    )
+    runner = _leftover_outputs(
+        result=runner_module.CommandOutput,
+        flagged=("libc-bin", "man-db"),
+        query=(
+            _QUERY_AFTER
+            + "libc-bin 2.39-0ubuntu8.4 half-configured\n"
+            + "man-db 2.12.0-4build2 triggers-pending\n"
+        ),
+    )
+
+    outcome = packages.run_package_step(
+        inputs=inputs, runner=runner, dpkg_log=_own_install_log(root=tmp_path)
+    )
+
+    assert outcome.refusal is None
+    recoveries = [
+        call
+        for call in runner.calls
+        if tuple(call.argv[:2]) in {("dpkg", "--configure"), ("dpkg", "--triggers-only")}
+    ]
+    assert [tuple(call.argv) for call in recoveries] == [
+        ("dpkg", "--configure", "libc-bin"),
+        ("dpkg", "--triggers-only", "man-db"),
+    ]
+    for call in recoveries:
+        named = tuple(call.argv)[2:]
+        assert named
+        assert [name for name in named if name.startswith("-")] == []
 
 
 def test_the_package_step_records_the_dpkg_audit_it_read_before_it_installs(

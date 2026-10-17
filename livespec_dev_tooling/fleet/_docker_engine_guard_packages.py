@@ -34,6 +34,12 @@ from livespec_dev_tooling.fleet._docker_engine_guard_package_audit import (
     load_package_inputs,
     read_installed,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_package_leftovers import (
+    DPKG_LOG,
+    INTENDED_FILE,
+    PRE_INSTALL_AUDIT_FILE,
+    leftover_refusal,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
     COMMAND_TIMEOUT_SECONDS,
     INSTALL_TIMEOUT_SECONDS,
@@ -44,8 +50,6 @@ from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
 from livespec_dev_tooling.fleet._docker_engine_guard_state import write_durable
 
 __all__: list[str] = [
-    "INTENDED_FILE",
-    "PRE_INSTALL_AUDIT_FILE",
     "PackageStepResult",
     "run_package_step",
 ]
@@ -55,20 +59,6 @@ __all__: list[str] = [
 # role's lock-holding helper has held that lock since before the audit,
 # so without this the install would block on the fence protecting it.
 _FENCED_ENV: Final[dict[str, str]] = {"DPKG_FRONTEND_LOCKED": "1"}
-
-# The provenance record design R7 requires: written into the run's own
-# directory BEFORE the first package mutation, so a run interrupted
-# anywhere in the install leaves behind what it intended to install.
-INTENDED_FILE: Final[str] = "intended.json"
-
-# What `dpkg --audit` said after the recovery and immediately before the
-# install, written into the run's own directory beside the record above.
-# Design F6 requires a fresh transaction to start from an empty report,
-# and this is the only statement of what it actually started from: dpkg
-# keeps no history, so after the install nothing on the host can say
-# whether a package it names was left by THIS transaction or was already
-# unfinished when the step was entered.
-PRE_INSTALL_AUDIT_FILE: Final[str] = "pre-install-audit.json"
 
 # The three states an interrupted UNPACK leaves a package in, and the only
 # ones design F6 allows `dpkg --configure` to be aimed at. Narrow on
@@ -194,29 +184,6 @@ def _difference_refusal(
     return None
 
 
-def _recorded_packages(*, runs: Path) -> frozenset[str]:
-    """Every package ANY guard run on this host recorded as intended.
-
-    The union, not this run's own record, and that is implementation
-    rider point 4: a rollback from `publishing` leaves the PREVIOUS run's
-    packages part-installed, and a recovery keyed to the current run's id
-    would read them as foreign and strand the host for every later run.
-
-    A record that cannot be parsed is skipped rather than refused on: an
-    intended record interrupted mid-write is not evidence of a foreign
-    package, and the names it would have carried are already covered by
-    the refusal below if nothing else accounts for them.
-    """
-    names: set[str] = set()
-    for record in sorted(runs.glob(f"*/{INTENDED_FILE}")):
-        try:
-            payload = json.loads(record.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        names.update(str(addition).split("=")[0] for addition in payload["additions"])
-    return frozenset(names)
-
-
 def _flagged_packages(*, runner: TimedRunner) -> tuple[str, ...]:
     """Every package `dpkg --audit` names as needing attention.
 
@@ -228,22 +195,6 @@ def _flagged_packages(*, runner: TimedRunner) -> tuple[str, ...]:
         command=TimedCommand(argv=("dpkg", "--audit"), timeout_seconds=COMMAND_TIMEOUT_SECONDS)
     )
     return tuple(line.split()[0] for line in report.stdout.splitlines() if line.startswith(" "))
-
-
-def _unaccounted_refusal(*, flagged: tuple[str, ...], runs: Path) -> str | None:
-    """Every flagged package no guard run's recorded intended set accounts for.
-
-    `dpkg --audit` naming something is not by itself a reason to stop: a
-    rollback from `publishing` leaves a guard run's packages part
-    installed and the next run has to be able to finish them. What the
-    step may never do is step over somebody else's interrupted
-    transaction, so membership in the union is the test.
-    """
-    recorded = _recorded_packages(runs=runs)
-    foreign = tuple(sorted(name for name in flagged if name not in recorded))
-    if foreign:
-        return f"dpkg --audit names {foreign}, which no guard run recorded as intended"
-    return None
 
 
 def _flagged_refusal(*, flagged: tuple[str, ...], after: str) -> str:
@@ -348,14 +299,16 @@ def _audited(*, inputs: Path, runner: TimedRunner) -> Audit | str:
     return audit_transaction(declared=declared, runner=runner)
 
 
-def _mutation_refusal(*, audit: Audit, run_dir: Path, runner: TimedRunner) -> str | None:
+def _mutation_refusal(
+    *, audit: Audit, run_dir: Path, runner: TimedRunner, dpkg_log: Path
+) -> str | None:
     """Why the audited transaction may not stand, from the first dpkg state read on.
 
     Everything on the MUTATING side of this module's line, answered the
     way every other stage here answers — a refusal, or `None`. The
     sequence is: refuse on a version that moved under the audit; refuse
-    on an unfinished transaction no guard run accounts for; complete the
-    ones a guard run does; record what `dpkg --audit` then says and
+    on an unfinished transaction that is no guard run's leftover; complete
+    the ones that are; record what `dpkg --audit` then says and
     refuse unless it says nothing (design F6, "a fresh transaction
     requires an empty `dpkg --audit`"); and, unless the host already
     holds the audited set, issue it, require the dpkg-query difference
@@ -375,7 +328,7 @@ def _mutation_refusal(*, audit: Audit, run_dir: Path, runner: TimedRunner) -> st
     if drift is not None:
         return drift
     flagged = _flagged_packages(runner=runner)
-    unaccounted = _unaccounted_refusal(flagged=flagged, runs=run_dir.parent)
+    unaccounted = leftover_refusal(flagged=flagged, runs=run_dir.parent, log=dpkg_log)
     if unaccounted is not None:
         return unaccounted
     _recover_interrupted(runner=runner, flagged=flagged, installed=before)
@@ -415,7 +368,9 @@ def _mutation_refusal(*, audit: Audit, run_dir: Path, runner: TimedRunner) -> st
     return None
 
 
-def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> PackageStepResult:
+def run_package_step(
+    *, inputs: Path, runner: TimedRunner = default_runner, dpkg_log: Path = DPKG_LOG
+) -> PackageStepResult:
     """Install exactly the audited package set named by this run's `inputs`.
 
     The audit is cleared and the intended record written before anything
@@ -424,6 +379,11 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
     NEXT run tell its own unfinished work from somebody else's. What the
     mutating side then does, and every refusal it can answer with, is
     `_mutation_refusal` above; this is the Result shaping around it.
+
+    `dpkg_log` is where dpkg's own log lives, and it is a parameter for
+    the same reason `runner` is: the leftover attribution reads that log,
+    so without the seam the whole second arm of it could only be proven
+    against the log of the machine the tests run on.
     """
     audit = _audited(inputs=inputs, runner=runner)
     if isinstance(audit, str):
@@ -433,7 +393,7 @@ def run_package_step(*, inputs: Path, runner: TimedRunner = default_runner) -> P
         path=run_dir / INTENDED_FILE,
         data=json.dumps({"run": run_dir.name, "additions": list(audit.additions)}),
     )
-    refusal = _mutation_refusal(audit=audit, run_dir=run_dir, runner=runner)
+    refusal = _mutation_refusal(audit=audit, run_dir=run_dir, runner=runner, dpkg_log=dpkg_log)
     if refusal is not None:
         return PackageStepResult(refusal=refusal)
     return PackageStepResult(installed=audit.additions)
