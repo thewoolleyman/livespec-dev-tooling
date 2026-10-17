@@ -40,6 +40,9 @@ from livespec_dev_tooling.fleet._docker_engine_guard_package_leftovers import (
     PRE_INSTALL_AUDIT_FILE,
     leftover_refusal,
 )
+from livespec_dev_tooling.fleet._docker_engine_guard_package_reunpack import (
+    reunpack_half_installed,
+)
 from livespec_dev_tooling.fleet._docker_engine_guard_package_runner import (
     COMMAND_TIMEOUT_SECONDS,
     INSTALL_TIMEOUT_SECONDS,
@@ -226,6 +229,7 @@ def _recover_interrupted(
     runner: TimedRunner,
     flagged: tuple[str, ...],
     installed: Mapping[str, InstalledPackage],
+    debs: tuple[Path, ...],
 ) -> None:
     """Finish what an interrupted install left, and only for those packages.
 
@@ -236,13 +240,17 @@ def _recover_interrupted(
     else the host has left pending.
 
     Every name here has already been accounted for against the recorded
-    intended sets, so the narrowness that remains is by STATE: the three
-    an interrupted unpack leaves go to `--configure`, and the two a
-    helper killed during trigger processing leaves go to
-    `--triggers-only`. A package is in exactly one of those positions,
-    and completing an unpacked package's triggers would skip the
-    configuration it is actually waiting for.
+    intended sets, so the narrowness that remains is by STATE: a package
+    an interrupted UNPACK left `half-installed` is re-unpacked from its
+    own audited archive, because that is the one state
+    `dpkg --configure` can do nothing with; the states an interrupted
+    CONFIGURE leaves go to `--configure`; and the two a helper killed
+    during trigger processing leaves go to `--triggers-only`. A package
+    is in exactly one of those positions, and completing an unpacked
+    package's triggers would skip the configuration it is actually
+    waiting for.
     """
+    _ = reunpack_half_installed(runner=runner, flagged=flagged, installed=installed, debs=debs)
     recoverable = _in_states(flagged=flagged, installed=installed, states=_RECOVERABLE_STATES)
     if recoverable:
         _ = runner(
@@ -331,7 +339,7 @@ def _mutation_refusal(
     unaccounted = leftover_refusal(flagged=flagged, runs=run_dir.parent, log=dpkg_log)
     if unaccounted is not None:
         return unaccounted
-    _recover_interrupted(runner=runner, flagged=flagged, installed=before)
+    _recover_interrupted(runner=runner, flagged=flagged, installed=before, debs=audit.debs)
     remaining = _flagged_packages(runner=runner)
     read_again = json.dumps({"run": run_dir.name, "flagged": list(remaining)})
     write_durable(path=run_dir / PRE_INSTALL_AUDIT_FILE, data=read_again)
