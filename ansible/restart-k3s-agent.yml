@@ -1,0 +1,403 @@
+---
+# restart-k3s-agent.yml — the ONE sanctioned way to restart a pool AGENT node's
+# k3s agent, so that agent's committed START CONFIGURATION takes effect.
+#
+# WHY IT EXISTS (livespec-dev-tooling-mbj3kz, found live 2026-10-14 right after
+# hp-xubuntu joined the pool). `roles/k3s_config` renders an agent's whole start
+# configuration — its node taints, the ordering its data directory needs, and its
+# own `kubelet-arg+` reservations — and deliberately restarts NOTHING, because a
+# restart kills every CI job running on the pool; its handler only waits. So the
+# rendered file is an opinion until the next k3s start, and on hp-xubuntu that
+# gap was measured: the role wrote
+# `/etc/rancher/k3s/config.yaml.d/20-kubelet-args.yaml` (system-reserved
+# `cpu=14500m,memory=25088Mi`; kube-reserved `cpu=1000m,memory=1024Mi`;
+# eviction-hard) at 19:38 PDT 2026-10-13 while `k3s-agent` had been running since
+# 19:19, so the live node still reported allocatable `cpu=16`,
+# `memory=32176236Ki` instead of the few hundred millicores and ~3Gi the
+# coexistence budget in `roles/docker_sandbox_slice/HOST_VARS.md` derives. The
+# only committed restart path was `reboot-ci-server.yml`, which reboots the
+# SERVER; a hand `systemctl restart k3s-agent` over ssh is exactly what the
+# Driver's `fleet_host_guard.py` refuses; and hp-xubuntu is the Fabro factory
+# host, which must not be rebooted for this. An agent whose start configuration
+# had changed therefore had NO sanctioned way to reach its next start. This
+# playbook is that gap closed, in the shape `reboot-ci-server.yml` and
+# `node-loss-drill.yml` already use.
+#
+# THE FENCE IS A VARIABLE, NOT OMISSION FROM A LIST. This play is reachable by
+# `just ansible-apply ansible/restart-k3s-agent.yml` and by nothing else that
+# matters: without `restart_k3s_agent_confirm=<this host's inventory name>` it
+# reads nothing, changes nothing and exits 0, on an apply and under `--check`
+# alike. A playbook kept safe by being left out of a sweep's argument list is one
+# edit away from being swept; a playbook kept safe by a confirmation variable
+# cannot be reached by a bare apply, by a drift report, by a fleet-wide converge,
+# or by a typo — including a typo that names another pool node, since the
+# confirmation must equal the host's own inventory name.
+#
+# AND IT ADMITS AGENTS RATHER THAN EXCLUDING THE SERVER. The role predicate is
+# `cluster_role == 'agent'`, so the control-plane node is refused — its unit is
+# `k3s`, not `k3s-agent`, and taking the control plane down is a cluster outage
+# rather than an agent's start configuration taking effect; `reboot-ci-server.yml`
+# owns that host — and so is any `ci_pool` entry whose role is missing or
+# misspelled. Stated the other way round ("not the server") a typo'd role would
+# be RESTARTED on the strength of the typo. The role is read from the inventory
+# and never from a host name spelled here, which is what
+# `just check-ansible-hostname-free` requires of every play in this tree
+# (livespec-dev-tooling-prdxxe).
+#
+# IT DOES NOT REFUSE A FABRO FACTORY HOST, AND THAT IS THE ONE PLACE ITS FENCE
+# DIFFERS FROM `node-loss-drill.yml`'S. That drill refuses every member of
+# `sandbox_hosts` because a factory host runs the Fabro server the drill is being
+# observed by — taking its kubelet away kills the observer. This playbook exists
+# FOR that host: hp-xubuntu is the node whose kubelet reservations never took
+# effect, and the whole point of the reservations is to let the k3s agent and the
+# Docker sandbox slice coexist on it. What protects a factory host here is the
+# POD GATE below, not a group refusal: a Fabro sandbox pod is a bare pod no
+# DaemonSet owns, so a restart attempted while a run is executing is refused.
+# `SPECIFICATION/non-functional-requirements.md` §"Consent-gated pool-node
+# disruption" clause "A node-loss drill refuses the hosts it must not disturb"
+# governs a play that takes an agent down to EXERCISE node loss; this play
+# restarts one to apply committed configuration, and is governed by that
+# section's "Committed and consent-gated" clause.
+#
+# IT REFUSES RATHER THAN WAITING, which is the other deliberate difference from
+# its two siblings. `reboot-ci-server.yml` and `node-loss-drill.yml` hold their
+# subject inside a bounded retry window because the pool's RUNNER pods are job
+# executions that finish on their own, and waiting for one costs minutes. The
+# workload this gate finds is a Fabro sandbox pod holding a factory run, which
+# can last hours and which the OPERATOR has to decide about — drain the run, or
+# come back. A bounded wait would spend 31 minutes telling the operator what one
+# read already knows, and on a factory host it would hold a run open across the
+# very decision it cannot make. So the gate is a single read taken immediately
+# before the restart, it names every pod that held it, and it refuses. It is
+# therefore a read at an INSTANT and not a promise about the next second: a pod
+# scheduled between the read and the restart is not protected by it, which is why
+# an operator restarts an agent inside a quiet window rather than against a busy
+# pool.
+#
+# A FINISHED POD AND A DaemonSet's POD ARE NOT WORKLOAD. A pod that has
+# Succeeded or Failed is not work this node is still doing, and treating it as
+# busy would hold every later restart on a leftover. A DaemonSet-owned pod is on
+# the node because the node exists — every node runs several — and its pod is
+# recreated by its controller the moment the kubelet is back, so waiting for one
+# is waiting for something that never leaves. Everything else is workload,
+# including a BARE pod no controller owns, which is exactly what a Fabro sandbox
+# is, and which must therefore never be mistaken for noise.
+#
+# NOTHING HERE CORDONS, DRAINS, EVICTS OR DELETES ANYTHING, and nothing else on
+# the host is touched: the only change this play makes is one `systemctl restart`
+# of the agent unit on a node the gate found carrying no workload. The node's own
+# timers are deliberately left armed — unlike the node-loss drill, which pauses
+# them because they would undo its hold; here `agent-rejoin-watchdog.timer`
+# pulling the agent up is the outcome this play wants anyway.
+#
+# Governing clause: `SPECIFICATION/non-functional-requirements.md`
+# §"Consent-gated pool-node disruption", clause "Committed and consent-gated".
+# The reservations this restart makes effective: `roles/docker_sandbox_slice/HOST_VARS.md`
+# §"Coexistence with the k3s agent". Operator-facing description: `README.md`
+# §"The playbooks".
+
+- name: Restart one agent node's k3s agent so its start configuration takes effect
+  hosts: ci_pool
+  # NO FACT GATHERING. Nothing in this play reads a fact, and a playbook that
+  # restarts a fleet node's kubelet should ask the host for as little as it can —
+  # an unconfirmed run then genuinely touches the host with zero commands rather
+  # than with a setup module's worth.
+  gather_facts: false
+  # ESCALATED AT THE PLAY, deliberately, rather than task by task. The play
+  # connects as the pool's unprivileged login user; the admin kubeconfig the
+  # reads need is root-owned on the server and restarting a unit is root's. The
+  # reboot playbook granted this per task and the ONE task that mattered was
+  # missed, so its reboot was refused by the host with `Access denied as the
+  # requested operation requires interactive authentication`
+  # (livespec-dev-tooling-rh6io2, measured 2026-10-13T02:39:00Z). Granting it
+  # once at the top means a task added to this play tomorrow cannot arrive the
+  # same way. The controller-side modules below (`debug`, `fail`) reach no host,
+  # so the grant is inert for them.
+  become: true
+  vars:
+    # Read on the server under its admin kubeconfig, which is the same
+    # `delegate_to` shape the node_labels, node_taints and node-loss-drill reads
+    # use. An agent holds no credential that may read a Node object or another
+    # namespace's pods.
+    restart_k3s_agent_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    # The k3s server, resolved from the inventory and never named here: the
+    # ci_pool member whose cluster_role is server.
+    restart_k3s_agent_server_host: >-
+      {{ groups['ci_pool'] | map('extract', hostvars)
+         | selectattr('cluster_role', 'defined')
+         | selectattr('cluster_role', 'equalto', 'server')
+         | map(attribute='inventory_hostname') | first }}
+    # The unit this play restarts, and the only thing it changes.
+    restart_k3s_agent_agent_unit: k3s-agent
+    # The Ready wait. A kubelet that has just restarted re-registers and posts
+    # status within a few seconds, so 10 s reads over 31 attempts bound the wait
+    # at roughly five minutes. ADDITIONAL attempts: ansible's `retries` is on top
+    # of the first run, so 30 means 31 attempts.
+    restart_k3s_agent_status_interval: 10
+    restart_k3s_agent_status_retries: 30
+    # THE TWO HALVES OF THE GATE, kept apart because they mean different things
+    # to an operator. `named` is consent: this run is about THIS host. `refused`
+    # is policy: this host is not one of the pool's agents and may never be
+    # restarted through this playbook, whatever the confirmation says. A run that
+    # is not named reports and ends; a run that is named but refused FAILS.
+    #
+    # `| bool` on each half is load-bearing: these resolve to the strings
+    # 'True' / 'False', and a non-empty string is truthy in Jinja, so composing
+    # them without it would make 'False' true.
+    restart_k3s_agent_named: >-
+      {{ restart_k3s_agent_confirm | default('') == inventory_hostname }}
+    restart_k3s_agent_refused: >-
+      {{ cluster_role | default('') != 'agent' }}
+    restart_k3s_agent_requested: >-
+      {{ (restart_k3s_agent_named | bool) and not (restart_k3s_agent_refused | bool) }}
+  tasks:
+    - name: Report a run that carries no agent-restart confirmation for this host
+      # The refusal an operator meets most often, and it has to be LEGIBLE: a
+      # play that silently did nothing reads exactly like a play whose restart
+      # silently failed. So the unconfirmed path SAYS what it did not do and
+      # prints the invocation that would.
+      ansible.builtin.debug:
+        msg: >-
+          Not restarting {{ restart_k3s_agent_agent_unit }} on
+          {{ inventory_hostname }}: this run does not carry
+          `restart_k3s_agent_confirm={{ inventory_hostname }}` (it carries
+          `{{ restart_k3s_agent_confirm | default('<unset>') }}`). Nothing was
+          read and nothing was changed. To restart this node's agent, run from
+          the control node with no workload on the node: just ansible-apply
+          ansible/restart-k3s-agent.yml -e
+          restart_k3s_agent_confirm={{ inventory_hostname }}
+      when: not (restart_k3s_agent_named | bool)
+
+    - name: Refuse an agent restart on a host that is not one of the pool's agents
+      # NAMED BUT REFUSED, and therefore a FAILURE rather than a skip. An
+      # operator who asked for this host by name has to be told the request was
+      # rejected; a quiet skip would read as a restart under way. It is the first
+      # task after the consent note on purpose — nothing has been read yet, so a
+      # refused run touches the cluster and the host with zero commands.
+      ansible.builtin.fail:
+        msg: >-
+          Refusing to restart {{ restart_k3s_agent_agent_unit }} on
+          {{ inventory_hostname }}: its inventory cluster_role is
+          `{{ cluster_role | default('<unset>') }}` and this playbook restarts
+          only a pool AGENT's {{ restart_k3s_agent_agent_unit }}. The
+          control-plane node runs `k3s`, not
+          {{ restart_k3s_agent_agent_unit }}, and taking it down is a cluster
+          outage rather than a start configuration taking effect — reboot it with
+          ansible/reboot-ci-server.yml instead. The role is read from the
+          inventory, so this refusal follows the entry rather than a name.
+          Nothing was read and nothing was changed.
+      when:
+        - restart_k3s_agent_named | bool
+        - restart_k3s_agent_refused | bool
+
+    - name: Restart the confirmed agent node's k3s agent
+      when: restart_k3s_agent_requested | bool
+      block:
+        - name: Read every pod the target node is running
+          # THE GATE'S ONE READ, taken immediately before the restart. See the
+          # header for why this refuses instead of waiting, and why a finished
+          # pod and a DaemonSet's pod are not workload.
+          #
+          # `shell` rather than `command`, and bash rather than sh: the filter
+          # below is a pipeline and `set -o pipefail` needs bash.
+          ansible.builtin.shell:
+            executable: /bin/bash
+            # FAIL CLOSED ON A READ THAT DID NOT HAPPEN. `local pods` and the
+            # assignment are SEPARATE statements on purpose: `local
+            # pods="$(...)"` would return the status of `local`, masking a
+            # kubectl that failed, and a masked failure here reads as an empty
+            # pod list — which reads as an idle node, which restarts the kubelet
+            # under a running factory run because nothing could tell us it was
+            # busy. Split, the substitution's status reaches `set -e` and the
+            # whole read fails, which fails this task and the play.
+            #
+            # The `|| true` applies to grep ALONE, whose exit 1 means "no pod
+            # held the restart" — the idle answer, not an error.
+            #
+            # EVERY NAMESPACE, FIELD-SELECTED TO THIS NODE. A restart is only
+            # held by a workload on the node being restarted; a namespace-wide
+            # read would refuse for a pod running somewhere else. And it is every
+            # namespace rather than a list of CI ones, because the pod this gate
+            # mainly exists for — a Fabro sandbox — is in neither of the two
+            # namespaces the sibling playbooks wait on.
+            #
+            # OWNERSHIP IS READ AS THE OWNER KINDS, and the exemption is anchored
+            # to `DaemonSet` ALONE: a pod with no owner at all renders
+            # `owners:` and is held, which is the bare-pod shape a sandbox has,
+            # and a pod owned by anything else — a Job, a ReplicaSet — is held
+            # too. Fail-closed, so a controller nobody thought of is workload.
+            # The empty rendering of an absent `ownerReferences` is kubectl's
+            # `--allow-missing-template-keys`, which defaults to true: without
+            # it a jsonpath over a bare pod would ERROR, and an error here fails
+            # the task rather than passing a pod off as unowned, so the
+            # fail-closed direction holds either way.
+            # THE TEMPLATE IS ASSEMBLED IN SINGLE-QUOTED PIECES, and not because
+            # one line would be prettier: `just check-ansible-lint` holds this
+            # tree to a 160-column line, and a jsonpath is one unbreakable
+            # token. Single quotes throughout, so `{"\n"}` reaches kubectl as
+            # the four characters it needs rather than as an interpreted escape.
+            cmd: |
+              set -euo pipefail
+              pod_template='{range .items[*]}'
+              pod_template+='{.metadata.namespace}/{.metadata.name}={.status.phase}'
+              pod_template+='=owners:{.metadata.ownerReferences[*].kind}'
+              pod_template+='{"\n"}{end}'
+              node_pods() {
+                local pods
+                pods="$(kubectl get pods \
+                  --all-namespaces \
+                  --field-selector 'spec.nodeName={{ inventory_hostname }}' \
+                  --output "jsonpath=${pod_template}")"
+                printf '%s\n' "${pods}" \
+                  | { grep -v -E '^$|=(Succeeded|Failed|Completed)=owners:|=owners:DaemonSet$' || true; }
+              }
+              node_pods
+          delegate_to: "{{ restart_k3s_agent_server_host }}"
+          environment:
+            KUBECONFIG: "{{ restart_k3s_agent_admin_kubeconfig }}"
+          register: restart_k3s_agent_node_pods
+          # The gate is a READ, so it runs under `--check` too: a drift report of
+          # this playbook — given the confirmation — must answer whether the
+          # node's workload would let the restart through rather than skip the
+          # question. A check run that reported a clean would-be restart over a
+          # node holding a live factory sandbox is the one output an operator
+          # must not get. It mutates nothing; the restart below is what check
+          # mode withholds.
+          check_mode: false
+          changed_when: false
+
+        - name: Refuse an agent restart on a node running a pod no DaemonSet owns
+          # BEFORE THE RESTART, and it names every pod that held it: an operator
+          # who cannot see WHICH workload is in the way cannot know what to wait
+          # for or what to drain.
+          ansible.builtin.fail:
+            msg: >-
+              Refusing to restart {{ restart_k3s_agent_agent_unit }} on
+              {{ inventory_hostname }}: the node is running
+              {{ restart_k3s_agent_node_pods.stdout_lines | length }} pod(s) that
+              no DaemonSet owns, and a restart takes the kubelet away from every
+              one of them —
+              {{ restart_k3s_agent_node_pods.stdout_lines | join(', ') }}. A
+              Fabro sandbox pod holds a factory run and a runner or gate pod
+              holds a CI job, so this is an operator decision rather than
+              something to wait out. Nothing was restarted and nothing on this
+              host was changed; re-run once the node carries no workload.
+          when: restart_k3s_agent_node_pods.stdout != ''
+
+        - name: Note that a check run withholds the agent restart itself
+          # WHAT `--check` IS FOR HERE, stated rather than left to be inferred.
+          # The read above is a real read and it answers the question a drift
+          # report of this playbook should answer: would this node's workload let
+          # the restart through. Everything below mutates the node or depends on
+          # that mutation having happened, so a check run withholds it — a Ready
+          # wait against a kubelet that was never restarted would redden every
+          # drift read.
+          ansible.builtin.debug:
+            msg: >-
+              `--check`: {{ restart_k3s_agent_agent_unit }} on
+              {{ inventory_hostname }} would be restarted. The node carries no
+              pod that a DaemonSet does not own, so the gate would let the
+              restart through — but {{ restart_k3s_agent_agent_unit }} is NOT
+              being restarted, so the Ready wait and the reservation report are
+              withheld. Re-run without `--check` to perform the restart.
+          when: ansible_check_mode
+
+        - name: Perform the agent restart and wait for the node to return
+          # Withheld WHOLE under `--check`, rather than task by task: the
+          # restart, the Ready wait and the report are one unit of work whose
+          # every step reads the state the step before it created. A check run
+          # that executed the reads and skipped the restart would report the
+          # node's pre-restart reservations as the outcome of a restart it never
+          # made.
+          when: not ansible_check_mode
+          block:
+            - name: Restart the node's k3s agent
+              # THE ONE CHANGE THIS PLAY MAKES, on the TARGET and not on the
+              # server: the unit is the target's. `state: restarted` rather than
+              # a stop and a start, because the gap between a separate pair is a
+              # window the node's own rejoin watchdog can fire in — and because
+              # one action is what an operator can read as one change.
+              #
+              # NO `daemon_reload` HERE. `roles/k3s_config` reloads systemd in
+              # the pass that rewrites the agent unit; a reload in this play
+              # would be a second answer to a question that role already
+              # answered, and this play must change nothing but the unit's run
+              # state.
+              ansible.builtin.systemd_service:
+                name: "{{ restart_k3s_agent_agent_unit }}"
+                state: restarted
+
+            - name: Wait until the API reports the node Ready again
+              # The observation, and it is the API's rather than the host's: a
+              # unit that is `active` proves the process started, not that the
+              # cluster has the node back. The same read carries the node's
+              # capacity and its allocatable, because those two figures ARE the
+              # outcome this playbook exists for and a second read would be a
+              # second place their paths live.
+              ansible.builtin.shell:
+                executable: /bin/bash
+                # Same fail-closed split assignment as the gate above, and for
+                # the same reason: a masked kubectl failure would print an empty
+                # status, and an empty status does not contain `ready=True`, so
+                # it would read as a node that has not returned — which at least
+                # fails safe here, but would make the wait's own window the
+                # thing that reported a cluster outage.
+                cmd: |
+                  set -euo pipefail
+                  node_template='ready={range .status.conditions[?(@.type=="Ready")]}'
+                  node_template+='{.status}{end}'
+                  node_template+=' capacity-cpu={.status.capacity.cpu}'
+                  node_template+=' capacity-memory={.status.capacity.memory}'
+                  node_template+=' allocatable-cpu={.status.allocatable.cpu}'
+                  node_template+=' allocatable-memory={.status.allocatable.memory}'
+                  node_status() {
+                    local status
+                    status="$(kubectl get node '{{ inventory_hostname }}' \
+                      --output "jsonpath=${node_template}")"
+                    printf '%s' "${status}"
+                  }
+                  observed="$(node_status)"
+                  printf '%s observed-at=%s\n' \
+                    "${observed}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              delegate_to: "{{ restart_k3s_agent_server_host }}"
+              environment:
+                KUBECONFIG: "{{ restart_k3s_agent_admin_kubeconfig }}"
+              register: restart_k3s_agent_ready_reads
+              changed_when: false
+              # THE PREDICATE, STATED IN BOTH SENSES, deliberately. `until`
+              # governs the LOOP: a node that has not posted status yet and a
+              # read that failed outright both keep retrying inside the bounded
+              # window, so a transient kubectl error does not fail a restart that
+              # worked. `failed_when` owns the VERDICT, so the window running out
+              # is THIS play's failure rather than an internal of ansible's retry
+              # loop — which marks an exhausted loop failed only when
+              # `retries > 1`, and an operator's belief that the node is back
+              # must never ride on that detail.
+              until: >-
+                restart_k3s_agent_ready_reads.rc == 0
+                and 'ready=True' in restart_k3s_agent_ready_reads.stdout
+              failed_when: >-
+                restart_k3s_agent_ready_reads.rc != 0
+                or 'ready=True' not in restart_k3s_agent_ready_reads.stdout
+              retries: "{{ restart_k3s_agent_status_retries }}"
+              delay: "{{ restart_k3s_agent_status_interval }}"
+
+            - name: Report the node's Ready condition and its kubelet reservations
+              # THE ARTIFACT THE RUN IS MADE FOR. The whole point of the restart
+              # is that the agent's rendered `kubelet-arg+` reservations are now
+              # in effect, and the only way to see that is the node's allocatable
+              # against its capacity. Printing it here means the apply's own
+              # output carries the evidence, rather than an operator having to
+              # know which `kubectl get node` to run afterwards.
+              ansible.builtin.debug:
+                msg: >-
+                  {{ restart_k3s_agent_agent_unit }} on {{ inventory_hostname }}
+                  was restarted and the API has the node back:
+                  {{ restart_k3s_agent_ready_reads.stdout }}. An allocatable
+                  figure equal to its capacity means this node's profile
+                  declares no KUBELET_ARGS reservations, or the rendered
+                  drop-in was not read — see
+                  ansible/roles/docker_sandbox_slice/HOST_VARS.md
+                  §"Coexistence with the k3s agent" for the budget a factory
+                  node is expected to hold back. No workload on this node was
+                  touched and nothing else on the host was changed.

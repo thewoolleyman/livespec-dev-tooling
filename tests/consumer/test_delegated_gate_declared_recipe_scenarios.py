@@ -59,28 +59,30 @@ _ORIGIN = "git@github.com:acme/widget.git"
 # livespec-dev-tooling recipe could not produce it by accident.
 _CONSUMER_RECIPE = "verify"
 
-# The recipe that is livespec-dev-tooling's OWN and NO other repository's — the
-# one survivor of the four-recipe constant the pod command used to be. The other
-# three are the SHARED pre-push sequence every fleet consumer runs, and are the
-# default below (freeze-driver ruling R92, 2026-10-17); `warm-typecheck` is this
-# repository's alone, so it may still never appear in another repository's Job.
-_OUR_OWN_RECIPES = ("warm-typecheck",)
+# The invocations that are livespec-dev-tooling's OWN and NO other
+# repository's — the two survivors of the four-recipe constant the pod command
+# used to be. `warm-typecheck` exists in no other repository's justfile, and
+# `hook_gate=1 check` overrides a `just` variable only this justfile DECLARES
+# (`export hook_gate := ""`), which `just` refuses to accept from the command
+# line anywhere else. Neither may ever appear in another repository's Job.
+_OUR_OWN_RECIPES = ("warm-typecheck", "hook_gate=1 check")
 
 # What a consuming repository that declares nothing gets: the SHARED pre-push
 # sequence its own local fall-through runs — the pre-push hook's pack install,
-# the commit-refuse-hook install, and the hook-gated aggregate the shared
-# `scripts/just/check-pre-push.sh` ends in. Each entry is read back out of the
-# file that owns it by the helpers below, so the default and the sequence it
-# mirrors cannot drift apart silently.
+# the commit-refuse-hook install, and the ONE recipe that hook then calls.
+# Each entry is read back out of the file that owns it by the helpers below, so
+# the default and the sequence it mirrors cannot drift apart silently.
 _FALL_THROUGH_SUITE = (
     "install-worktree-pack",
     "install-commit-refuse-hooks",
-    "hook_gate=1 check",
+    "check-pre-push",
 )
 
-# The shared pre-push script and the hook that runs it — the two files the
-# default above mirrors, read as text so a moved step fails HERE.
-_PRE_PUSH_SCRIPT = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
+# The hook that runs the pre-push sequence the default above mirrors, read as
+# text so a moved step fails HERE. It is the lefthook block and NOT this
+# repository's own `scripts/just/check-pre-push.sh`: the RECIPE NAME is what the
+# fleet shares, while the script behind it is per repository (freeze-driver
+# ruling R100, 2026-10-17).
 _LEFTHOOK = _REPO_ROOT / "lefthook.yml"
 
 # How the pod reaches livespec CORE, which a consumer running `check-doctor-static`
@@ -166,10 +168,16 @@ class _CannedWorldRealRenderer:
     `pod_message` is what the cluster reports as the failed pod's termination
     message. A run that never reaches a Job never reads it, so the default is
     the empty string and the assembly-only tests are unaffected by it.
+
+    `streamed` records the commands the client asked to be STREAMED rather than
+    captured, which is a different claim from `argvs`: the verdict stream an
+    operator reads is whatever the client hands to the terminal, so a step the
+    client captured and discarded reaches nobody even though its argv is here.
     """
 
     def __init__(self, *, pod_message: str = "") -> None:
         self.argvs: list[tuple[str, ...]] = []
+        self.streamed: list[tuple[str, ...]] = []
         self._pod_message = pod_message
         self._polls = 0
 
@@ -181,8 +189,10 @@ class _CannedWorldRealRenderer:
         stdin: str | None = None,
         stream: bool = False,
     ) -> GateCommandOutcome:
-        _ = (stdin, stream)
+        _ = stdin
         self.argvs.append(tuple(argv))
+        if stream:
+            self.streamed.append(tuple(argv))
         if argv[0] == str(_RENDERER):
             completed = subprocess.run(
                 argv, cwd=str(cwd), capture_output=True, text=True, check=False
@@ -266,6 +276,32 @@ def _env_value(*, manifest: str, container: str, variable: str) -> str:
     return value.removeprefix("value:").strip().strip('"')
 
 
+def _literal_env(*, manifest: str, container: str) -> dict[str, str]:
+    """Every environment variable one container's block gives a LITERAL value.
+
+    The `valueFrom:` entries are deliberately absent: `GH_TOKEN` comes from an
+    optional Secret the cluster resolves, and a harness that invented a value
+    for it would be asserting something about this suite's host rather than
+    about the pod.
+
+    THIS IS WHY IT EXISTS: a script run outside a pod inherits the HOST's
+    environment, and this host — a Fabro sandbox — exports a real
+    `LIVESPEC_CORE_PLUGIN_ROOT` of its own pointing at its sibling checkout. A
+    pod-script run that took `os.environ` as-is therefore read the SANDBOX's
+    core path and reported it as the gate's, which is a test that passes while
+    proving nothing. Applying the manifest's own literals is what Kubernetes
+    does, so it both models the pod and scrubs the ambient value.
+    """
+    lines = _container_block(manifest=manifest, name=container)
+    declared: dict[str, str] = {}
+    for index, line in enumerate(lines[:-1]):
+        name = line.strip().removeprefix("- name: ")
+        value = lines[index + 1].strip()
+        if line.strip().startswith("- name: ") and value.startswith("value:"):
+            declared[name] = value.removeprefix("value:").strip().strip('"')
+    return declared
+
+
 def _recipes_run(*, manifest: str) -> list[str]:
     """Every `just …` invocation the gate container runs, in order.
 
@@ -280,38 +316,35 @@ def _recipes_run(*, manifest: str) -> list[str]:
     ]
 
 
-def _pre_push_hook_installs() -> tuple[str, ...]:
-    """Every `just` recipe the pre-push HOOK runs before the gate script itself.
+def _pre_push_hook_recipes() -> tuple[str, ...]:
+    """Every `just` recipe lefthook's `pre-push` block names, in order.
 
     lefthook's `pre-push` block is where the pack install lives — it cannot live
     inside the gate script, because the root justfile reaches the pack through
     `import?`, which `just` resolves when it PARSES the file. The gate pod has
     the same problem for the same reason, which is why the default suite runs it
     as its own invocation.
+
+    THIS BLOCK, AND NOT THE SCRIPT BEHIND IT, is what the fleet shares. Every
+    repository's `pre-push` calls `just check-pre-push`; what that recipe then
+    runs is per repository (livespec-orchestrator-beads-fabro's ends in
+    `just check-skipping check-codex-skill-picker`, this one's in
+    `just hook_gate=1 check`). Reading the script instead is the mistake ruling
+    R100 corrected — it put a variable only this justfile declares into every
+    consumer's gate Job.
     """
     lines = _LEFTHOOK.read_text(encoding="utf-8").splitlines()
     block = lines[lines.index("pre-push:") :]
-    runs = [
+    return tuple(
         line.strip().removeprefix("run: just ")
         for line in block
         if line.strip().startswith("run: just ")
-    ]
-    return tuple(takewhile(lambda recipe: recipe != "check-pre-push", runs))
+    )
 
 
-def _shared_pre_push_aggregate() -> str:
-    """The last `just` invocation the SHARED pre-push script runs.
-
-    That invocation is what a delegated gate stands in for, and `hook_gate=1` is
-    load-bearing in it: the flag omits the world-gate member needing an
-    admin-scope credential that no pre-push host and no gate pod holds. A bare
-    `just check` ran it and reddened the gate on a target the local pre-push
-    never runs.
-    """
-    lines = _PRE_PUSH_SCRIPT.read_text(encoding="utf-8").splitlines()
-    return [
-        line.strip().removeprefix("just ") for line in lines if line.strip().startswith("just ")
-    ][-1]
+def _pre_push_hook_installs() -> tuple[str, ...]:
+    """The hook's recipes that run BEFORE the gate recipe itself."""
+    return tuple(takewhile(lambda recipe: recipe != "check-pre-push", _pre_push_hook_recipes()))
 
 
 def _renderer_default_recipes(*, root: Path) -> list[str]:
@@ -376,32 +409,45 @@ def test_the_gate_job_runs_the_consumers_own_declared_recipe_and_none_of_ours(
         assert f"just {ours}" not in silent_manifest
 
 
-def test_a_consumer_that_declares_nothing_gets_the_shared_pre_push_sequence(
+def test_a_consumer_that_declares_nothing_gets_the_recipe_its_own_pre_push_names(
     *, tmp_path: Path
 ) -> None:
-    """The default IS the shared pre-push sequence, read out of its own files.
+    """The default IS the shared pre-push sequence, read out of the file that owns it.
 
-    Freeze-driver ruling R92 (2026-10-17), option A. The default was the single
-    `check` recipe, which is a bare `just check` — and a gate Job that runs one
-    is NOT the local fall-through it stands in for. Measured the same day on
-    livespec-orchestrator-beads-fabro, whose tree was green in CI while its gate
-    Job went red from four targets: the two installs the pod never ran left
-    `check-primary-checkout-commit-refuse-hook-installed` and
+    Freeze-driver rulings R92 and R100 (both 2026-10-17). R92 replaced a single
+    `check` with three steps, because a gate Job that runs a bare `just check`
+    is NOT the local fall-through it stands in for: the two installs the pod
+    never ran left `check-primary-checkout-commit-refuse-hook-installed` and
     `check-no-workflow-edits` judging an un-bootstrapped sandbox rather than the
-    tree, and the missing `hook_gate=1` ran the admin-scope world gate that no
-    pre-push host and no gate pod can satisfy (403).
+    tree under test.
 
-    WHAT THE CONTRACT ACTUALLY SAYS is that the Job runs "the recipe its local
-    fall-through runs", and for a fleet consumer that fall-through is three
-    steps, not one: lefthook's `pre-push` hook installs the worktree pack, this
-    repository's own gate adds the commit-refuse-hook install, and the shared
-    `scripts/just/check-pre-push.sh` ends in `just hook_gate=1 check`. So the
-    first two assertions read those steps back out of the files that own them —
-    a step that moves there fails HERE, naming the default that must move with
-    it, rather than silently reddening a consumer's gate on a green tree.
+    R100 THEN CORRECTED ITS LAST STEP, and that correction is what the first two
+    arms below pin. R92 wrote `hook_gate=1 check` on the premise that every
+    fleet consumer's pre-push ends in THIS repository's
+    `scripts/just/check-pre-push.sh`. It does not — each repository ships its
+    own script — and `hook_gate` is a `just` variable only this repository's
+    justfile declares, which `just` refuses to let the command line override
+    anywhere else. Measured 2026-10-17: Job
+    gate-livespec-orchestrator-beads-fabro-ee118f8fd5dc died with `error:
+    Variable 'hook_gate' overridden on the command line but not present in
+    justfile`, before its aggregate ran, on a tree whose master CI was green.
 
-    The last two arms are what the default is FOR and what it must not become:
-    a consumer that declares nothing gets the sequence, and a consumer that
+    WHAT IS UNIFORM FLEET-WIDE IS THE RECIPE NAME. `check-pre-push` is what
+    every repository's lefthook `pre-push` block calls, and a recipe name is
+    what the Job's own preflight can test for — a variable it cannot. So the
+    sequence is read back out of `lefthook.yml`, the file that owns it: a step
+    that moves there fails HERE, naming the default that must move with it,
+    rather than silently reddening a consumer's gate on a green tree.
+
+    AND NO ENTRY MAY CARRY A `name=value` OVERRIDE AT ALL, asserted of the
+    default AND of the rendered command. That is the general form of the defect:
+    a variable assignment in the shared default is a bet that every consumer's
+    justfile declares that variable, and `just` turns a losing bet into a red
+    gate before any check has run.
+
+    The last arms are what the default is FOR and what it must not become: a
+    consumer that declares nothing gets the sequence through both spellings of
+    it — the client's and the renderer's own fallback — and a consumer that
     declares a suite gets ITS suite and none of the default.
     """
     silent = _a_consumer_repository(root=tmp_path / "silent", declaration="")
@@ -411,16 +457,18 @@ def test_a_consumer_that_declares_nothing_gets_the_shared_pre_push_sequence(
     )
 
     assert _pre_push_hook_installs() == ("install-worktree-pack",)
-    assert _shared_pre_push_aggregate() == "hook_gate=1 check"
+    assert _pre_push_hook_recipes()[-1] == "check-pre-push"
     assert _FALL_THROUGH_SUITE == (
         "install-worktree-pack",
         "install-commit-refuse-hooks",
-        "hook_gate=1 check",
+        "check-pre-push",
     )
+    assert [entry for entry in _FALL_THROUGH_SUITE if "=" in entry] == []
 
-    assert _recipes_run(manifest=_rendered_for(repo_root=silent)) == [
-        f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
-    ]
+    silent_recipes = _recipes_run(manifest=_rendered_for(repo_root=silent))
+
+    assert silent_recipes == [f"just {recipe}" for recipe in _FALL_THROUGH_SUITE]
+    assert [line for line in silent_recipes if "=" in line] == []
     assert _renderer_default_recipes(root=silent) == [
         f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
     ]
@@ -489,12 +537,20 @@ def test_the_gate_job_resolves_livespec_core_at_the_consumers_pinned_release(
     assert "@github.com" not in core_block
 
 
-def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[str]]:
+def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, str, list[str]]:
     """Run the rendered pod script here, against a `just` that provides nothing.
 
     This is the scenario's When, minus the cluster: the Job's verdict IS this
     script's exit status, and what it invoked is the only way to tell "refused
     before running anything" apart from "ran something and it failed".
+
+    Returns the exit status, STDOUT, stderr and the invocation log, in that
+    order. Both streams are returned because the pod writes to each for a
+    different reason: its refusal goes to stderr, where the cluster also lifts
+    it into the termination message, while what it REPORTS about its own
+    environment goes to stdout. The client streams both as one verdict stream,
+    and keeping them apart here is what lets a claim about one not be satisfied
+    by the other.
     """
     stub_dir = root / "bin"
     stub_dir.mkdir(parents=True)
@@ -507,6 +563,9 @@ def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[st
         "\n".join(_container_script(manifest=manifest, name="gate")), encoding="utf-8"
     )
     env = dict(os.environ)
+    # The pod's OWN declared environment, which Kubernetes would apply and this
+    # host would otherwise shadow — see `_literal_env`.
+    env.update(_literal_env(manifest=manifest, container="gate"))
     env.update(
         {
             "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
@@ -521,7 +580,12 @@ def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, list[st
         text=True,
         check=False,
     )
-    return completed.returncode, completed.stderr, log.read_text(encoding="utf-8").splitlines()
+    return (
+        completed.returncode,
+        completed.stdout,
+        completed.stderr,
+        log.read_text(encoding="utf-8").splitlines(),
+    )
 
 
 def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it(
@@ -544,7 +608,9 @@ def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it
     )
     manifest = _rendered_for(repo_root=consumer)
 
-    returncode, stderr, invoked = _run_the_pod_script(manifest=manifest, root=tmp_path / "pod")
+    returncode, _stdout, stderr, invoked = _run_the_pod_script(
+        manifest=manifest, root=tmp_path / "pod"
+    )
 
     assert returncode != 0
     assert f"'{_CONSUMER_RECIPE}'" in stderr
@@ -560,3 +626,85 @@ def test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it
     assert verdict.refuses_push is True
     assert _CONSUMER_RECIPE in verdict.detail
     assert not [argv for argv in cluster.argvs if "green_token" in " ".join(argv)]
+
+
+def test_the_verdict_stream_reports_whether_livespec_core_was_resolved(*, tmp_path: Path) -> None:
+    """The core resolution is an OBSERVABLE of the run, not only a fact of the manifest.
+
+    The test above this one proves the pod is HANDED core at the consumer's pin.
+    That is a property of the rendered YAML, and nobody reading a verdict reads
+    YAML: the gate client streams the Job's logs and that stream is the whole of
+    what an operator sees. So "the gate resolved core at /livespec-core" was
+    unanswerable from a gate's own output — including from the output of the
+    very failure it explains, a consumer's `check-doctor-static` reporting
+    core's own "livespec core not found" (freeze-driver ruling R100,
+    2026-10-17).
+
+    THREE ARMS, BECAUSE THE CLAIM SPANS TWO ARTIFACTS THAT CANNOT SEE EACH
+    OTHER. The pod script has to SAY it: the rendered gate container reports the
+    `LIVESPEC_CORE_PLUGIN_ROOT` it received and the ref that root was fetched
+    at. It has to say it BEFORE the sequence runs, so a Job that refuses a
+    missing recipe still reports it — which is asserted by position against the
+    first `just` the script reaches, and then by RUNNING the script against a
+    `just` that provides nothing: the value reaches stdout even on the refusal
+    path. And the client has to CARRY it: the log step is the one command the
+    run asks to be STREAMED rather than captured, so what the pod printed is
+    what the operator reads.
+
+    The streamed step is read off `streamed` rather than `argvs` on purpose. A
+    client that captured the logs and dropped them would record the identical
+    argv here and show an operator nothing.
+    """
+    consumer = _a_consumer_repository(
+        root=tmp_path / "pinned",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+        core_pin="v0.42.1",
+    )
+    manifest = _rendered_for(repo_root=consumer)
+    script = _container_script(manifest=manifest, name="gate")
+
+    reporting = [
+        line
+        for line in script
+        if "LIVESPEC_CORE_PLUGIN_ROOT" in line and not line.lstrip().startswith("#")
+    ]
+
+    assert len(reporting) == 1, (
+        "the gate container's script does not report the core plugin root it "
+        "was handed, so a reader of the verdict stream cannot tell whether "
+        f"core was resolved: {reporting}"
+    )
+
+    reports = script.index(reporting[0])
+    first_just = next(index for index, line in enumerate(script) if "just " in line)
+
+    assert reports < first_just, (
+        "the gate container reports its core resolution only after the check "
+        "sequence has started, so a Job that refuses a missing recipe reports "
+        "nothing about core"
+    )
+    assert _literal_env(manifest=manifest, container="gate")["LIVESPEC_CORE_PLUGIN_ROOT"] == (
+        _CORE_PLUGIN_ROOT
+    )
+
+    returncode, stdout, _stderr, invoked = _run_the_pod_script(
+        manifest=manifest, root=tmp_path / "pod"
+    )
+
+    assert returncode != 0
+    assert invoked == [f"just --show {_CONSUMER_RECIPE}"]
+    assert _CORE_PLUGIN_ROOT in stdout, (
+        "the gate pod ran without reporting the core plugin root it was handed: " f"{stdout!r}"
+    )
+    assert "v0.42.1" in stdout
+
+    cluster = _CannedWorldRealRenderer()
+    _ = run_delegated_gate(
+        repo_root=consumer, renderer=_RENDERER, runner=cluster, sleeper=_no_sleep
+    )
+
+    assert len(cluster.streamed) == 1
+    streamed = cluster.streamed[0]
+    assert "logs" in streamed
+    assert "--follow" in streamed
+    assert f"job/gate-widget-{_TREE[:12]}" in streamed

@@ -121,33 +121,58 @@ _CHECK_SUITE_STEP = "read-gate-check-suite"
 
 # What a consuming repository that declares no gate suite gets: the SHARED
 # PRE-PUSH SEQUENCE its own local fall-through runs, which is three steps rather
-# than one (freeze-driver ruling R92, 2026-10-17). `lefthook.yml`'s `pre-push`
-# block installs the worktree pack, this repository's own gate adds the
-# commit-refuse-hook install, and `scripts/just/check-pre-push.sh` ends in
-# `just hook_gate=1 check`.
+# than one (freeze-driver rulings R92 and R100, 2026-10-17). `lefthook.yml`'s
+# `pre-push` block installs the worktree pack, this repository's own gate adds
+# the commit-refuse-hook install, and that hook then calls exactly ONE recipe:
+# `check-pre-push`.
 #
-# EVERY ENTRY IS LOAD-BEARING, and the single `check` this used to be is why.
+# THE LAST ENTRY IS A RECIPE NAME AND CARRIES NO JUST-VARIABLE OVERRIDE, which
+# is what R100 corrected. R92 wrote `hook_gate=1 check` here on the premise that
+# every fleet consumer's pre-push ends in THIS repository's
+# `scripts/just/check-pre-push.sh` and therefore in that invocation. It does
+# not: each repository ships its own pre-push script —
+# livespec-orchestrator-beads-fabro's ends in
+# `just check-skipping check-codex-skill-picker` — and `hook_gate` is a `just`
+# variable only this repository's justfile declares (`export hook_gate := ""`).
+# `just` REFUSES a command-line override of an undeclared variable, so every
+# consumer lacking that declaration was red before its aggregate ran at all:
+# measured 2026-10-17, Job gate-livespec-orchestrator-beads-fabro-ee118f8fd5dc
+# died with `error: Variable 'hook_gate' overridden on the command line but not
+# present in justfile` on a tree whose master CI was green.
+#
+# WHAT IS ACTUALLY UNIFORM ACROSS THE FLEET IS THE RECIPE NAME. Every
+# repository's lefthook `pre-push` calls `just check-pre-push` — verified in
+# livespec, livespec-overseer, livespec-driver-claude,
+# livespec-console-beads-fabro and livespec-orchestrator-beads-fabro — and the
+# renderer's preflight tests for a RECIPE, never for a variable, so a consumer
+# that lacks it gets the existing red verdict naming the missing recipe rather
+# than `just`'s own refusal to parse an override.
+#
+# THE TWO INSTALLS STAY, and the single `check` this default once was is why.
 # `/workspace` in the gate pod is a `git init` + fetch, not a bootstrapped
-# clone, so without the two installs the pack and the commit-refuse hooks are
-# simply absent and `check-primary-checkout-commit-refuse-hook-installed` and
+# clone, so without them the pack and the commit-refuse hooks are simply absent
+# and `check-primary-checkout-commit-refuse-hook-installed` and
 # `check-no-workflow-edits` judge the SANDBOX rather than the tree under test.
-# Without `hook_gate=1` the aggregate also runs the world-gate member that needs
-# an admin-scope credential no pre-push host and no gate pod holds, which
-# answers 403. Measured 2026-10-17 against livespec-orchestrator-beads-fabro:
-# all four of those targets failed on a tree that was green in CI.
+#
+# NOTHING RE-DELEGATES INSIDE THE POD, which is the one new question
+# `check-pre-push` raises: it is the recipe that consults this module's own
+# switch, so the default now runs it on the far side of a delegation. It cannot
+# delegate again, because `delegated_gate_selected` also requires a READABLE
+# gates kubeconfig and the gate pod holds none — so the pod's `check-pre-push`
+# takes its own local fall-through there exactly as a laptop's does.
 #
 # It is still the FALL-THROUGH's sequence and never this repository's own
-# declaration: `livespec-dev-tooling` adds `warm-typecheck`, which no other
-# repository carries, and baking that into the shared Job made every consumer
-# red on every green tree (livespec-dev-tooling-saxz). The sequence is pinned to
-# the two files above by
+# declaration: `livespec-dev-tooling` adds `warm-typecheck` and its own
+# `hook_gate=1 check`, which no other repository carries, and baking those into
+# the shared Job made every consumer red on every green tree
+# (livespec-dev-tooling-saxz). The sequence is pinned to `lefthook.yml` by
 # `tests.consumer.test_delegated_gate_declared_recipe_scenarios`, which reads
 # each step back out of the file that owns it, so a step that moves there fails
 # that test rather than silently reddening a consumer's gate.
 GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = (
     "install-worktree-pack",
     "install-commit-refuse-hooks",
-    "hook_gate=1 check",
+    "check-pre-push",
 )
 
 # What `_answered` reads back when a probe did not answer at all — a git that is

@@ -201,22 +201,31 @@ image="${images[0]}"
 # No flag means the caller named no suite, which for the gate client means the
 # repository declared nothing: it gets the SHARED PRE-PUSH SEQUENCE its own
 # local fall-through runs — the worktree-pack install lefthook's `pre-push`
-# block runs, the commit-refuse-hook install, and the `hook_gate=1 check`
-# aggregate `scripts/just/check-pre-push.sh` ends in (freeze-driver ruling R92,
-# 2026-10-17). A single `check` was this default until then, and it is NOT that
-# fall-through: the pod's `/workspace` is a `git init` + fetch rather than a
-# bootstrapped clone, so without the installs two members judge the SANDBOX, and
-# without `hook_gate=1` the admin-scope world gate runs and answers 403.
+# block runs, the commit-refuse-hook install, and the ONE recipe that hook then
+# calls, `check-pre-push` (freeze-driver rulings R92 and R100, 2026-10-17). A
+# single `check` was this default before R92, and it is NOT that fall-through:
+# the pod's `/workspace` is a `git init` + fetch rather than a bootstrapped
+# clone, so without the installs two members judge the SANDBOX.
+#
+# THE LAST ENTRY CARRIES NO `name=value` OVERRIDE, which is R100. R92 spelled it
+# `hook_gate=1 check`, but `hook_gate` is a `just` variable only
+# livespec-dev-tooling's own justfile declares, and `just` refuses a
+# command-line override of an undeclared variable — so every other consumer's
+# Job died with `error: Variable 'hook_gate' overridden on the command line but
+# not present in justfile` before its aggregate ran (measured 2026-10-17 on
+# gate-livespec-orchestrator-beads-fabro-ee118f8fd5dc, on a tree green in CI).
+# What IS uniform fleet-wide is the RECIPE NAME `check-pre-push`, which the
+# preflight below can test for; a variable it cannot.
 #
 # The client decides the default too (`GATE_CHECK_SUITE_FALL_THROUGH`) and
 # always passes it explicitly, so this is the fallback for a hand-run render on
 # a delegating host. The two spellings are held together by
 # `tests.consumer.test_delegated_gate_declared_recipe_scenarios`, which renders
-# with no flag and compares. Never this repository's `warm-typecheck`, which no
-# other repository carries — that constant is the defect
-# livespec-dev-tooling-saxz removed.
+# with no flag and compares. Never this repository's `warm-typecheck` or its own
+# `hook_gate=1 check`, which no other repository carries — that constant is the
+# defect livespec-dev-tooling-saxz removed.
 if [ "${#check_suite[@]}" -eq 0 ]; then
-  check_suite=("install-worktree-pack" "install-commit-refuse-hooks" "hook_gate=1 check")
+  check_suite=("install-worktree-pack" "install-commit-refuse-hooks" "check-pre-push")
 fi
 
 # Each entry goes into the pod's shell script verbatim and its recipe name goes

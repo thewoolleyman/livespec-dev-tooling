@@ -64,11 +64,28 @@ sandbox_driver_kubernetes_node_selector:
   ci-runner.io/factory: "true"
 # A factory node may carry node-role/ci=factory:NoSchedule; on an untainted
 # node the toleration is harmless.
+#
+# The two NoExecute entries keep a sandbox pod bound to its node through a node
+# outage of any length. Without them the DefaultTolerationSeconds admission
+# plugin gives every pod not-ready and unreachable tolerations of 300 s, so an
+# outage longer than five minutes evicts the pod and the run loses a sandbox
+# whose workspace still sits on that node's hostPath. The plugin renders a
+# toleration without tolerationSeconds, which Kubernetes reads as "tolerate
+# forever"; a node that never returns is bounded by the run's own stage
+# timeouts instead. Measured on gmktec 2026-10-17 (bd-ib-ad6dby): through a
+# NotReady window the plugin reported the sandbox unavailable but not lost, no
+# replacement pod appeared, and exec resumed on the same pod with its marker.
 sandbox_driver_kubernetes_tolerations:
   - key: node-role/ci
     operator: Equal
     value: factory
     effect: NoSchedule
+  - key: node.kubernetes.io/not-ready
+    operator: Exists
+    effect: NoExecute
+  - key: node.kubernetes.io/unreachable
+    operator: Exists
+    effect: NoExecute
 sandbox_driver_kubernetes_workspace_root: /srv/factory-workspaces
 # The node-loaded AppArmor profile every sandbox pod runs under. On these
 # kernels an exec'd process is stacked as `cri-containerd.apparmor.d//&unconfined`

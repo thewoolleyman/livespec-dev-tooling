@@ -58,6 +58,39 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.112.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.6...v1.112.7) (2026-10-17)
+
+
+### Bug Fixes
+
+* **docker-engine-guard:** bound the dead-man with Type=oneshot and the rollback's stop properties ([61d26f9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/61d26f9e1be79e8d51d9b736e0710d3a9dd3a521))
+* **docker-engine-guard:** retire the dead-man of a run already rolled back ([4e9f622](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4e9f622c764ae4b09e27e5d379109407f3006b1c))
+* **docker-engine-guard:** retire the dead-man of a run the commit marker names ([a511403](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a511403bbe7bb9a7b291e0d57dd8750921c472c4))
+* **docker-engine-guard:** retire the dead-man when verify promotes a partial run ([e70b498](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e70b4983c1eebcb0bcb4de47b910c779a964fa9f))
+
+## [1.112.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.5...v1.112.6) (2026-10-17)
+
+
+### Bug Fixes
+
+* **ansible:** serialize the delegated node-status RBAC apply across agents ([f7cfbb9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f7cfbb95990ddcfe90eea7446b7be7bca8157198))
+
+## [1.112.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.4...v1.112.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* **gate:** default the delegated gate Job to the recipe pre-push names ([e93e8a2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e93e8a27731483a90579bf2b99fef20621437404))
+* **gate:** report the gate pod's livespec core resolution to the verdict stream ([e08a700](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e08a7007a278c5a2bc43c66b3044f4c9a88fe8b7))
+
+## [1.112.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.3...v1.112.4) (2026-10-17)
+
+
+### Bug Fixes
+
+* **docker-engine-guard:** read the guarded units' running state from the service manager ([1696d9b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1696d9b45818fedb65eb1874f193025f33ff4b3d))
+* **docker-engine-guard:** split the fake host's guard and guarded unit maps ([01a3c52](https://github.com/thewoolleyman/livespec-dev-tooling/commit/01a3c52a876cb734d2df5eb78c0007f63703e33a))
+
 ## [1.112.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.2...v1.112.3) (2026-10-17)
 
 

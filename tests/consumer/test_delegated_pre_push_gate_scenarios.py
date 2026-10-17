@@ -43,6 +43,7 @@ from returns.result import Success
 
 from livespec_dev_tooling.gate_credential import GATES_KUBECONFIG_ENV, GATES_WRAPPER
 from livespec_dev_tooling.gate_remote_delegate import (
+    GATE_CHECK_SUITE_FALL_THROUGH,
     delegated_gate_enabled,
     delegated_gate_selected,
     main,
@@ -305,6 +306,64 @@ def test_an_opted_in_push_from_a_host_without_the_credential_gates_locally(
     assert "gating locally" in printed
 
     code, invoked = _run_pre_push(tmp_path=tmp_path / "push", switch_exit=str(decided))
+
+    assert code == 0
+    assert "just hook_gate=1 check" in invoked
+    assert not [line for line in invoked if "gate_remote_delegate run" in line]
+
+
+def test_the_gate_pods_own_check_pre_push_gates_locally_instead_of_delegating_again(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The host-eligibility rule read from INSIDE a gate pod — the recursion that cannot start.
+
+    The shared default a consumer declaring no `gate_check_suite` gets ends in
+    `just check-pre-push` (freeze-driver ruling R100, 2026-10-17), and
+    `check-pre-push` is the very recipe that consults this module's switch. So
+    the default now runs the delegation question again, one level down, inside
+    the Job the first answer produced — and if it answered the same way there,
+    a gate pod would submit a gate Job, whose pod would submit another.
+
+    THE POD IS AN INELIGIBLE HOST, AND THAT IS THE WHOLE GUARD. Delegation
+    needs two facts, not one: the repository's `delegated_gate = true`, which
+    travels with the code and is therefore just as true inside the pod, AND a
+    READABLE gates kubeconfig, which is a property of the host. The gate pod is
+    handed no gates credential — it holds `GH_TOKEN` and nothing else — so the
+    second fact is false there and `enabled` answers non-zero, which IS the
+    local fall-through. Asserted as the pair, because the opt-in alone answering
+    yes is exactly what makes the credential half load-bearing.
+
+    This is the same mechanism the ineligible-host scenario above exercises from
+    a laptop, asserted of the one caller that reaches it through a delegation
+    that has ALREADY happened — and joined to the default suite, so a default
+    that stopped ending in `check-pre-push` fails here rather than leaving an
+    unexercised claim behind.
+
+    `git push --no-verify` is not what stops the recursion either, and it is
+    worth saying which layer does: the client's own mirror pushes run hookless
+    (`gate_remote_client._mirror_push`), while THIS is the layer that stops the
+    pod's aggregate from reaching the client at all.
+    """
+    pod_workspace = tmp_path / "workspace"
+    pod_workspace.mkdir()
+    _opt_in(repo_root=pod_workspace)
+    absent = _an_ineligible_host(tmp_path=tmp_path, monkeypatch=monkeypatch)
+
+    assert absent.is_file() is False, "the fixture pod was handed a gates credential"
+    assert GATE_CHECK_SUITE_FALL_THROUGH[-1] == "check-pre-push"
+    assert delegated_gate_enabled(repo_root=pod_workspace) is True
+    assert delegated_gate_selected(repo_root=pod_workspace) is False
+
+    monkeypatch.chdir(pod_workspace)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    decided = main()
+    printed = capsys.readouterr().err
+
+    assert decided == 1
+    assert "gating locally" in printed
+
+    code, invoked = _run_pre_push(tmp_path=tmp_path / "pod-run", switch_exit=str(decided))
 
     assert code == 0
     assert "just hook_gate=1 check" in invoked

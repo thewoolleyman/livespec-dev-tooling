@@ -176,6 +176,40 @@ def deadline_seconds(*, window_seconds: int) -> int:
     )
 
 
+def _rollback_service_properties() -> tuple[str, ...]:
+    """The `--property=` set every unit running `rollback <run>` is bounded by.
+
+    ONE set, shared by the two recipes below, because a dead-man and a
+    triggered rollback run the SAME command and a rollback that is
+    bounded on one path and not the other is the defect this exists to
+    rule out.
+
+    `Type=oneshot` is the load-bearing entry and the one that was
+    missing from the dead-man. `systemd-run`'s default service type is
+    `simple`, and systemd considers a `simple` unit started the moment
+    it has forked — so `TimeoutStartSec` bounds nothing at all once the
+    rollback is running, and a rollback that hangs while holding the
+    guard lock holds it forever. A `oneshot` unit is "starting" until
+    its command EXITS, which is what makes the budget bind.
+
+    The budget itself is the WHOLE rollback budget, so the primary
+    rollback is never killed before its final postcondition check. The
+    three stop properties are what make the expiry reach anything:
+    `TimeoutStopSec` bounds the stop, `KillMode=control-group` signals
+    the rollback's whole cgroup rather than its main process alone (the
+    driver spawns a child per phase), and `SendSIGKILL` ends a process
+    that is stopped or ignoring SIGTERM.
+    """
+    rollback_budget = operation_budget_seconds(operation="rollback", window_seconds=0)
+    return (
+        "--property=Type=oneshot",
+        f"--property=TimeoutStartSec={rollback_budget}",
+        "--property=TimeoutStopSec=30",
+        "--property=KillMode=control-group",
+        "--property=SendSIGKILL=yes",
+    )
+
+
 def deadman_argv(*, run: str, on_active_seconds: int) -> tuple[str, ...]:
     """The `systemd-run` that arms this run's dead-man.
 
@@ -183,11 +217,15 @@ def deadman_argv(*, run: str, on_active_seconds: int) -> tuple[str, ...]:
     deadline, not N, so a delayed arming still fires at the recorded
     instant. `--on-unit-inactive` makes it re-fire after each rollback
     it runs, which is what lets a rollback killed half way simply be
-    repeated a minute later. Its service budget is the whole rollback
-    budget, so the primary rollback is never killed before its final
-    postcondition check.
+    repeated a minute later — and it keeps working under
+    `Type=oneshot`, because such a service goes inactive exactly when
+    the rollback exits.
+
+    Its service properties are the rollback unit's, whole, for the
+    reason `_rollback_service_properties` records: the two run the same
+    command, so the dead-man carrying a weaker bound than the triggered
+    path is a dead-man whose own budget cannot kill it.
     """
-    rollback_budget = operation_budget_seconds(operation="rollback", window_seconds=0)
     return (
         "systemd-run",
         "--collect",
@@ -195,7 +233,7 @@ def deadman_argv(*, run: str, on_active_seconds: int) -> tuple[str, ...]:
         f"--on-active={on_active_seconds}",
         f"--on-unit-inactive={DEADMAN_REPEAT_SECONDS}",
         "--timer-property=AccuracySec=1s",
-        f"--property=TimeoutStartSec={rollback_budget}",
+        *_rollback_service_properties(),
         str(GUARD_EXECUTABLE),
         "rollback",
         run,
@@ -212,17 +250,12 @@ def rollback_argv(*, run: str) -> tuple[str, ...]:
     one is already running is refused by the service manager rather than
     starting a second driver.
     """
-    rollback_budget = operation_budget_seconds(operation="rollback", window_seconds=0)
     return (
         "systemd-run",
         "--collect",
         "--no-block",
         f"--unit=docker-engine-guard-rollback-{run}",
-        "--property=Type=oneshot",
-        f"--property=TimeoutStartSec={rollback_budget}",
-        "--property=TimeoutStopSec=30",
-        "--property=KillMode=control-group",
-        "--property=SendSIGKILL=yes",
+        *_rollback_service_properties(),
         str(GUARD_EXECUTABLE),
         "rollback",
         run,

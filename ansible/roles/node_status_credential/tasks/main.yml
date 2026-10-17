@@ -158,6 +158,38 @@
         stdin: >-
           {{ lookup('ansible.builtin.file', node_status_credential_rbac_template)
           | replace('NODE_NAME_PLACEHOLDER', node_status_credential_node) }}
+      # ONE AGENT'S APPLY AT A TIME, because every per-node render carries the
+      # SHARED ci-runner-node-status Namespace. `kubectl apply` reads the live
+      # object and patches it, so two agents' applies in flight together are two
+      # patches of that one Namespace derived from one resourceVersion, and the
+      # server refuses the loser:
+      #
+      #   Error from server (Conflict): error when applying patch: ... Operation
+      #   cannot be fulfilled on namespaces "ci-runner-node-status": the object
+      #   has been modified; please apply your changes to the latest version and
+      #   try again
+      #
+      # Measured 2026-10-14 on the first `just ansible-apply ansible/ci-pool.yml`
+      # with TWO agents in ci_pool (gate run 20261014T023745Z-2075403,
+      # livespec-dev-tooling-r5gdzj): gmktec-xubuntu and hp-xubuntu ran this task
+      # concurrently and hp's whole play stopped here, 42 tasks in. With one
+      # agent the race could not occur, which is why the role carried it from the
+      # day it was written — and why an unattended full-pool converge was
+      # nondeterministic from the moment the second agent joined.
+      #
+      # THE SERIALIZATION RATHER THAN A SECOND APPLY PATH. The alternatives were
+      # to lift the Namespace into a `run_once` task of its own, or to move this
+      # apply to `--server-side`. Both change WHAT is applied or how its
+      # idempotence is read — the Namespace is part of the committed template
+      # that ../../../ci-runner/k3s/phase2/node-status-credential/provision-node-status-credential.sh
+      # applies as one unit, and a server-side apply reports `serverside-applied`
+      # rather than the `created`/`configured` this task's changed_when reads.
+      # `throttle` leaves the manifest, the grant and the dry-run|apply
+      # idempotence shape exactly as they are and removes only the concurrency.
+      # It is also per-TASK, so the rest of the role still converges both agents
+      # in parallel. tests/livespec_dev_tooling/test_node_status_credential_concurrent_rbac_apply.py
+      # runs this task over two agents and measures the overlap.
+      throttle: 1
       delegate_to: "{{ node_status_credential_server_host }}"
       become: true
       environment:

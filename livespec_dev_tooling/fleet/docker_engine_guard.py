@@ -70,6 +70,7 @@ from livespec_dev_tooling.fleet._docker_engine_guard_hostops import HostOps  # n
 from livespec_dev_tooling.fleet._docker_engine_guard_model import (  # noqa: E402
     INSTALL_PHASES,
     PHASES,
+    UNIT_WAIT_SECONDS,
     Decision,
     GuardOutcome,
     Holder,
@@ -248,6 +249,35 @@ def _decided(
     )
 
 
+def _retire_deadman(*, run: str, env: GuardEnv) -> None:
+    """Stop this run's dead-man timer, because the run has nothing left to do.
+
+    Reached when a dead-man FIRING is decided `noop`, and that decision
+    is the whole condition: it is the `rollback` row's answer in exactly
+    its two TERMINAL cells, and in neither is anything left for a later
+    firing. A `rolled-back` run has every postcondition holding, so a
+    firing would find no work; a run the commit MARKER names is
+    committed, so it must never be rolled back at all. Reading the
+    decision rather than the phase is what lets one arm cover both —
+    the marker outranks the phase, so a committed run's phase may read
+    anything.
+
+    The rollback driver retires the timer itself after the outcome that
+    earns it, and `confirm`'s post-commit steps retire it last, so the
+    ordinary paths never reach here. Both of those are reached only on a
+    decision that ADMITS the invocation, though, so every run that
+    arrived at a terminal state by another route — a rollback killed
+    between its durable outcome record and the stop after it, a
+    `confirm` killed between the commit marker and its own stop, a
+    `verify` killed between its promotion and its stop — left a timer
+    firing every 60 seconds forever. The role's classify counts any
+    non-inactive `docker-engine-deadman-*` unit as a busy host, so that
+    is a host refused for the rest of the boot, and it is silent: the
+    firing exits 0 each time.
+    """
+    env.host.stop_unit(unit=commit.deadman_timer_unit(run=run), timeout_seconds=UNIT_WAIT_SECONDS)
+
+
 def _locked_operation(*, operation: Operation, run: str, env: GuardEnv) -> GuardOutcome:
     """Decide and run one operation, with the lock already held.
 
@@ -256,6 +286,11 @@ def _locked_operation(*, operation: Operation, run: str, env: GuardEnv) -> Guard
     changes nothing), then the MARKER, then the phase. Reading the phase
     before the marker would let a run whose phase record says `committed`
     after a failed directory fsync be treated as committed when it is not.
+
+    A no-op `rollback` is the one decision that acts on its way out, and
+    `_retire_deadman` records why: the decision itself says the run is
+    terminal, so the timer that will otherwise fire again is retired
+    here rather than in a driver this invocation never reaches.
     """
     row = row_for(operation=operation)
     reservation = read_reservation(paths=env.paths)
@@ -277,6 +312,8 @@ def _locked_operation(*, operation: Operation, run: str, env: GuardEnv) -> Guard
         ),
     )
     if decision.verdict in {"refuse", "noop"}:
+        if operation == "rollback" and decision.verdict == "noop":
+            _retire_deadman(run=run, env=env)
         return _decided(operation=operation, run=run, decision=decision, holder=holder)
     return row.handler(run=run, env=env, decision=decision)
 
