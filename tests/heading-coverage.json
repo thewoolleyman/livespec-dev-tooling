@@ -719,8 +719,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate Job for a repository missing its declared recipe reports red naming the recipe",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-saxz owns it.",
-    "work_item": "livespec-dev-tooling-saxz"
+    "test": "tests.consumer.test_delegated_gate_declared_recipe_scenarios.test_a_gate_for_a_repository_missing_its_declared_recipe_is_red_and_names_it",
+    "reason": "Consumer-tier (integration-tier-or-above per the scenario-tier rule). The mapped test proves the scenario end to end across the two artifacts it spans, joined by a VALUE rather than by a shared expectation. Its Given is a fixture consuming repository under `tmp_path` that switches delegation on and declares a `gate_check_suite` recipe no justfile here carries; its When renders the REAL gate Job for that tree through the real `render-gate-job.sh` and RUNS the rendered pod script against a `just` that provides nothing, which is the Job's own verdict. That arm asserts the three halves of the first Then that can only be observed in the pod: a non-zero exit, a message naming the missing recipe, and an invocation log holding the existence probe ALONE — which is what separates “refused before running anything” from “ran something and it failed”, and which also discharges the second Then, that no recipe only livespec-dev-tooling declares was run. The message that arm produced is then handed to a canned cluster as the failed pod's termination message, and `run_delegated_gate` is driven against it: the verdict is FAILED, its detail carries the pod's own wording naming the recipe, no green token was written and `refuses_push` is true, which is the third Then. The companion test in the same module proves the command is DERIVED from the consuming repository rather than constant — two declarations render two commands and a repository that declares nothing gets its local fall-through `check` (work-item livespec-dev-tooling-saxz)."
   }
 ]

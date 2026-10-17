@@ -170,14 +170,28 @@ def _adjudicate(
     """Read the terminal condition as the exit code it stands in for."""
     if outcome.terminal_state != _COMPLETE:
         return GateVerdict(
-            state=GATE_FAILED,
-            detail=(
-                f"the gate Job {outcome.job_name} ended {outcome.terminal_state} "
-                f"on tree {outcome.tree_hash}"
-            ),
-            token_written=False,
+            state=GATE_FAILED, detail=_failed_detail(outcome=outcome), token_written=False
         )
     return _write_green_token(outcome=outcome, request=request, runner=runner)
+
+
+def _failed_detail(*, outcome: GateRunOutcome) -> str:
+    """Why the gate was red — in the Job's OWN words wherever it left any.
+
+    The condition alone says a Job ended `Failed`, which is equally true of a
+    red tree and of a Job that refused before running a single check. The one
+    shape an operator cannot act on without being told is the second: a
+    consuming repository whose tree does not provide a check recipe it declares
+    for its gate is refused by the pod's preflight, which names that recipe in
+    its termination message. Leaving the name in the streamed log alone made
+    the one verdict with an obvious fix read like every other red tree
+    (livespec-dev-tooling-saxz).
+    """
+    ended = (
+        f"the gate Job {outcome.job_name} ended {outcome.terminal_state} "
+        f"on tree {outcome.tree_hash}"
+    )
+    return f"{ended}: {outcome.failure_message}" if outcome.failure_message else ended
 
 
 def _passed_without_token(*, detail: str) -> GateVerdict:
