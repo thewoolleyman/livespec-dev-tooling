@@ -605,6 +605,55 @@ def test_the_package_step_re_unpacks_a_half_installed_leftover_from_its_archive(
     assert runner.calls.index(unpacked[0]) < runner.calls.index(configured[0])
 
 
+def test_the_package_step_never_configures_a_package_dpkg_holds_half_installed(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": `--configure` is never aimed at that state.
+
+    dpkg refuses it — `cannot configure (current status
+    'half-installed')`, exit 1 — so aiming `--configure` at such a
+    package cannot help and the attempt is itself the defect FAULTS B-06
+    recorded. The state the recovery reads is therefore the state AFTER
+    the re-unpack and not the snapshot taken before it, which is what
+    this drives: the unpack here does NOT take, so the package is still
+    `half-installed` when the configure is composed and may not appear
+    in it. The shim beside it is `unpacked`, so a configure DOES run —
+    the assertion is about which packages it names, not about whether
+    the recovery ran at all.
+
+    `dpkg --audit` still names the engine afterwards, so the step
+    refuses rather than issuing `dpkg -i`: design F6 requires a fresh
+    transaction to start from an empty report. Refusing with the host
+    honestly described is the outcome; silently configuring over a state
+    dpkg cannot leave is not.
+    """
+    assert _REUNPACK_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+            # One answer, so every read of the report and of the table
+            # says the same thing: the re-unpack did not clear the state.
+            (("dpkg", "--audit"), [_audit_report(packages=(_ENGINE[0], _SHIM[0]))]),
+            (("dpkg-query",), [_QUERY_INTERRUPTED_UNPACK]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is not None
+    assert _ENGINE[0] in outcome.refusal
+    assert outcome.installed == ()
+    assert len(_calls_named(runner=runner, argv=("dpkg", "--unpack"))) == 1
+    configured = _calls_named(runner=runner, argv=("dpkg", "--configure"))
+    assert [tuple(call.argv) for call in configured] == [("dpkg", "--configure", _SHIM[0])]
+    assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
 def test_the_package_step_refuses_a_half_installed_leftover_no_audited_deb_matches(
     tmp_path: Path,
 ) -> None:
