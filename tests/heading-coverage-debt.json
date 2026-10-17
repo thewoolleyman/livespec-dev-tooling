@@ -9,6 +9,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during an intended package's unpack re-unpacks it from its audited archive",
+    "work_item": "livespec-dev-tooling-eyfhky",
+    "first_seen": "2026-10-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated",
     "work_item": "livespec-dev-tooling-mrr7ye",
     "first_seen": "2026-10-17"

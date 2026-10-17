@@ -729,5 +729,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-mrr7ye owns it.",
     "work_item": "livespec-dev-tooling-mrr7ye"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during an intended package's unpack re-unpacks it from its audited archive",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-eyfhky owns it.",
+    "work_item": "livespec-dev-tooling-eyfhky"
   }
 ]
