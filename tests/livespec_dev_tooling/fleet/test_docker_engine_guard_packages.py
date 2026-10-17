@@ -851,6 +851,50 @@ def test_the_package_step_installs_nothing_when_the_audited_set_is_already_insta
     assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
 
 
+def test_the_package_step_refuses_a_foreign_dpkg_audit_on_a_host_already_settled(
+    tmp_path: Path,
+) -> None:
+    """Specification "Package fence": the settled host is asked `dpkg --audit` too.
+
+    FAULTS B-06 on poweredge guard-vm-7, 2026-10-17: the publish unit and
+    dpkg were SIGKILLed during `dpkg -i`. Every audited package ended
+    settled, so the `recover` that resumed publish took the settled path
+    — and that path returned before the flagged-package handling ran at
+    all. It reported an inert install published while `dpkg --audit` still
+    named `man-db`, whose trigger this install had activated, which on a
+    real host blocks apt and unattended-upgrades until somebody runs
+    `dpkg --configure -a` by hand.
+
+    A host whose dpkg table already holds the audited set is therefore not
+    a host with nothing to ask: it is the one case where the install
+    ALREADY happened, and the flagged package left behind is the only
+    evidence of how it ended. `man-db` here is in no guard run's recorded
+    intended set, so the refusal is the union test the fence already
+    carries, reached from the path that never asked it.
+    """
+    assert _RUNNER_PATH.is_file()
+    runner_module = importlib.import_module(_RUNNER_MODULE)
+    packages = importlib.import_module(_PACKAGES_MODULE)
+    inputs = _declare(root=tmp_path, payload=_payload(cache=tmp_path / "cache"))
+    _record_earlier_runs(root=tmp_path)
+    runner = _RecordedRunner(
+        result=runner_module.CommandOutput,
+        outputs=[
+            (("apt-get", "-s"), [_SIMULATION_SETTLED]),
+            (("dpkg", "--audit"), [_audit_report(packages=("man-db",))]),
+            (("dpkg-query",), [_QUERY_AFTER]),
+            *_fenced_outputs(),
+        ],
+    )
+
+    outcome = packages.run_package_step(inputs=inputs, runner=runner)
+
+    assert outcome.refusal is not None
+    assert "man-db" in outcome.refusal
+    assert outcome.installed == ()
+    assert _calls_named(runner=runner, argv=("dpkg", "-i")) == []
+
+
 def test_the_package_step_refuses_when_the_runs_committed_inputs_are_unreadable(
     tmp_path: Path,
 ) -> None:
