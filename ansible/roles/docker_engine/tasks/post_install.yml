@@ -99,4 +99,9 @@
   loop: "{{ docker_engine_postinst_journal.results }}"
   loop_control:
     label: "{{ item.item }}"
-  when: docker_engine_publish_installs | default(true) | bool
+  # Only for a unit the postinst would have started: deb-systemd-invoke skips
+  # a disabled one without logging any condition result (finding 1 of the
+  # 2026-10-17 static audit; a rollback disables all three).
+  when:
+    - docker_engine_publish_installs | default(true) | bool
+    - item.item in (docker_engine_postinst_would_start | default(docker_engine_postinst_started_units))

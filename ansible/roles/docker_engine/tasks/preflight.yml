@@ -76,6 +76,16 @@
   changed_when: false
   check_mode: false
 
+- name: Look for the commit marker
+  # After the commit point the API is admitted (the guard granted it), and a
+  # factory host adds its sandbox account to the docker group, so the refusal
+  # below would refuse every later converge of a committed host.
+  ansible.builtin.stat:
+    path: "{{ docker_engine_state_root }}/confirmed"
+  register: docker_engine_preflight_marker
+  become: true
+  check_mode: false
+
 - name: Refuse a host on which any account could reach the Docker API
   # Design F7 / I1: until the commit point the API is admitted to nobody but
   # the guard. The group does not exist on a fresh host; when it does, it must
@@ -98,6 +108,7 @@
       Accounts in the docker group: {{ docker_engine_group_members
       + docker_engine_primary_members }}. Nothing has been changed.
     success_msg: no account is in the docker group
+  when: not docker_engine_preflight_marker.stat.exists
 
 - name: Read each family's FORWARD policy before the change
   # The role's own record, independent of the guard's snapshot, so the claim
