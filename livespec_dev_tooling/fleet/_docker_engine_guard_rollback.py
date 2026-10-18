@@ -154,6 +154,12 @@ PHASE_KILL_AFTER_SECONDS: Final[int] = 10
 # before the phases — so a failing permission is retried by the next
 # firing's revocation rather than by any phase, and the name is therefore
 # not imported here.
+# The one phase whose OWN findings the final check reads back, beside
+# the whole-host postcondition read. Its removal is the only teardown
+# step a daemon still in graceful shutdown can undo, and the sweep the
+# child takes immediately after it is the only read inside that window.
+_FOOTPRINT_PHASE: Final[str] = "footprint-removal"
+
 POSTCONDITION_OF_PHASE: Final[dict[str, str]] = {
     "socket-stop": UNITS_QUIET,
     "job-cancel": UNITS_QUIET,
@@ -164,6 +170,19 @@ POSTCONDITION_OF_PHASE: Final[dict[str, str]] = {
     "interface-deletion": BRIDGE_GONE,
     "sysctl-comparison": SYSCTLS_MATCH,
 }
+
+
+def _reported_findings(*, run: str, env: GuardEnv, phase: str) -> bool:
+    """Whether `phase`'s last entry left findings behind.
+
+    The phase ran in its own process and wrote them there, so this is
+    the only way the driver learns what that child SAW. It matters for
+    the footprint phase above all: the child's post-removal sweep is the
+    one read taken while the dying daemon is still the thing that
+    recreates Docker's chains, and the final check's own read comes a
+    second or two later, after the window has closed.
+    """
+    return (env.paths.rollback_dir(run=run) / f"{phase}.findings").is_file()
 
 
 def _attempts(*, run: str, env: GuardEnv, phase: str) -> int:
@@ -250,13 +269,28 @@ def _failed_postconditions(*, run: str, env: GuardEnv) -> tuple[str, ...]:
     check, it would make every lookup miss and report a wholly
     rolled-back host as partial. That is exactly what two spellings did
     on 2026-10-16.
+
+    One postcondition is read from TWO places, and the second is not
+    redundant. The footprint phase's child reports the residue its own
+    post-removal sweep found, and that sweep is the only read taken
+    while a daemon still in graceful shutdown is the thing recreating
+    Docker's chains; this read comes a second or two later, after the
+    window has closed. So a reported residue fails `RULES_GONE` whatever
+    the host answers now -- measured on gmktec-xubuntu on 2026-10-18,
+    where the chains the removal had just deleted were back by the next
+    run's snapshot and the firing had already recorded `rolled-back`.
     """
     read: Mapping[str, bool]
     try:
         read = env.host.read_postconditions(snapshot=env.paths.snapshot_dir(run=run))
     except FileNotFoundError:
         read = {}
-    return tuple(name for name in POSTCONDITIONS if not read.get(name, False))
+    residue = _reported_findings(run=run, env=env, phase=_FOOTPRINT_PHASE)
+    return tuple(
+        name
+        for name in POSTCONDITIONS
+        if not read.get(name, False) or (residue and name == RULES_GONE)
+    )
 
 
 def _final_check(*, run: str, env: GuardEnv) -> tuple[str, ...]:
