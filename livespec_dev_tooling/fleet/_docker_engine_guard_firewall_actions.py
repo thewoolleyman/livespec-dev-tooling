@@ -153,12 +153,33 @@ def _named_rules(*, family: str, table: str, plan: FootprintPlan) -> tuple[str, 
     return tuple(f"{family} {table} {rule}" for rule in plan.delete_rules)
 
 
+def _named_chains(*, family: str, table: str, plan: FootprintPlan) -> tuple[str, ...]:
+    """Each planned chain named with the family and table it lives in.
+
+    Reported in the `-N` spelling a `*-save` dump declares a chain with,
+    so an operator can tell which of the two kinds of leftover the sweep
+    found. A chain is reported in its own right because an EMPTY one
+    holds no rule at all: an empty `DOCKER-CT` and `DOCKER-FORWARD` are
+    exactly what a dying daemon recreated after a removal on
+    gmktec-xubuntu on 2026-10-18, and a rules-only report read that host
+    as clean.
+    """
+    return tuple(f"{family} {table} -N {chain}" for chain in plan.delete_chains)
+
+
+def _named_footprint(*, family: str, table: str, plan: FootprintPlan) -> tuple[str, ...]:
+    """Everything one table has to give up, rules first and then chains."""
+    return _named_rules(family=family, table=table, plan=plan) + _named_chains(
+        family=family, table=table, plan=plan
+    )
+
+
 def residual_docker_rules(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str, ...]:
-    """Every Docker rule still present, read-only, named with family and table."""
+    """Every Docker rule and chain still present, read-only, named with family and table."""
     found: tuple[str, ...] = ()
     for family in FAMILIES:
         for table in SNAPSHOT_TABLES:
-            found += _named_rules(
+            found += _named_footprint(
                 family=family,
                 table=table,
                 plan=_table_plan(runner=runner, snapshot=snapshot, family=family, table=table),
@@ -171,20 +192,21 @@ def remove_footprint(*, runner: GuardCommandRunner, snapshot: Path) -> tuple[str
 
     The walk order is the families' order and then the tables', so a
     report of what happened reads the same way twice. A pass that finds
-    nothing ends the removal right there; otherwise the passes run out and
-    the final READ-ONLY sweep is what the residue report is built from --
-    never the last pass's plan, which says what was attempted rather than
-    what survived.
+    nothing ends the PASSES right there; the final READ-ONLY sweep then
+    runs whatever they found, and it is what the residue report is built
+    from -- never the last pass's plan, which says what was attempted
+    rather than what survived, and never the ABSENCE of a plan, which
+    says nothing about the host at all.
     """
     for _ in range(FOOTPRINT_PASSES):
         found: tuple[str, ...] = ()
         for family in FAMILIES:
             for table in SNAPSHOT_TABLES:
                 plan = _table_plan(runner=runner, snapshot=snapshot, family=family, table=table)
-                found += _named_rules(family=family, table=table, plan=plan)
+                found += _named_footprint(family=family, table=table, plan=plan)
                 apply_footprint_plan(runner=runner, family=family, table=table, plan=plan)
         if not found:
-            return ()
+            break
     return residual_docker_rules(runner=runner, snapshot=snapshot)
 
 

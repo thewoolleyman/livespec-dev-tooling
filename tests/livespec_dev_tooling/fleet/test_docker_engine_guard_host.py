@@ -150,17 +150,21 @@ class _Commands:
     would; `answers` holds every other command's recorded reply.
     `undeletable` is the one lever a test needs that a real host has no
     switch for -- a rule the host will not drop, which is the only way to
-    reach residual reporting at all. `returncodes` is the second such
-    lever: a command's EXIT STATUS, for the one seam that reads it
-    rather than its output, and the only way to record a child killed
-    by its own `timeout` or by a signal. Each call is recorded with the
-    timeout it carried, which is how "every command is bounded" is
-    asserted.
+    reach residual reporting at all. `undeletable_chains` is its
+    whole-chain counterpart, and it is not redundant with it: an EMPTY
+    `DOCKER` chain holds no rule at all, so no undeletable RULE can
+    stand in for the residue a dying daemon actually leaves.
+    `returncodes` is the third such lever: a command's EXIT STATUS, for
+    the one seam that reads it rather than its output, and the only way
+    to record a child killed by its own `timeout` or by a signal. Each
+    call is recorded with the timeout it carried, which is how "every
+    command is bounded" is asserted.
     """
 
     answers: dict[tuple[str, ...], str] = field(default_factory=dict)
     tables: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     undeletable: tuple[str, ...] = ()
+    undeletable_chains: tuple[str, ...] = ()
     returncodes: dict[tuple[str, ...], int] = field(default_factory=dict)
     argvs: list[tuple[str, ...]] = field(default_factory=list)
     timeouts: list[int] = field(default_factory=list)
@@ -191,7 +195,7 @@ class _Commands:
             self.tables[slot] = [line for line in lines if line != rule]
         if verb == "-F":
             self.tables[slot] = [line for line in lines if not line.startswith(f"-A {rest[0]} ")]
-        if verb == "-X":
+        if verb == "-X" and rest[0] not in self.undeletable_chains:
             self.tables[slot] = [line for line in lines if not line.startswith(f":{rest[0]} ")]
 
     def argvs_with(self, *, flag: str) -> tuple[tuple[str, ...], ...]:
@@ -646,6 +650,68 @@ def test_footprint_removal_repeats_at_most_three_passes_and_reports_the_residue(
     assert residue == (f"ipv4 filter {stubborn}",)
     assert stuck.argvs.count(_EXPECTED_DELETES[3]) == actions.FOOTPRINT_PASSES
     assert len(stuck.argvs_with(flag="-D")) == len(_EXPECTED_DELETES) + 2
+
+
+def _snapshotted_reads() -> tuple[tuple[str, ...], ...]:
+    """The read of every snapshotted table, as the removal's own sweep issues it."""
+    firewall = importlib.import_module(_FIREWALL_MODULE)
+    return tuple(
+        firewall.save_argv(family=family, table=table)
+        for family in firewall.FAMILIES
+        for table in firewall.SNAPSHOT_TABLES
+    )
+
+
+def test_footprint_removal_re_reads_every_table_after_it_and_reports_a_residual_chain(
+    tmp_path: Path,
+) -> None:
+    """The removal ENDS with a read of all four tables, and a leftover chain counts.
+
+    Both halves are the measured defect of gmktec-xubuntu 2026-10-18.
+    Run r202610180557326f69's removal reported no residue and its run
+    recorded `rolled-back` with no failed postcondition; the next run's
+    snapshot, 12 minutes later, held the EMPTY `DOCKER-CT` and
+    `DOCKER-FORWARD` chains the dying daemon recreated after it. Those
+    chains then belonged to the host as far as the next run's footprint
+    plan could tell -- anything the snapshot holds is excluded -- and
+    that run's firewall probe failed at sample 1 on Docker's own
+    `-A FORWARD -j DOCKER-FORWARD`.
+
+    So the residue report is ALWAYS built from a read taken after the
+    removal, even when the passes found nothing to remove at all: a
+    report built from the ABSENCE of a plan says nothing about the host.
+    And the sweep reports a residual DOCKER-prefixed chain the snapshot
+    does not hold, in the `-N` spelling a dump declares a chain with,
+    not only a residual rule -- an empty chain holds no rule, so a
+    rules-only report is blind to exactly what was measured.
+    """
+    actions = importlib.import_module(_ACTIONS_MODULE)
+    settled_root = tmp_path / "settled"
+    # A host with no footprint left at all: the state a second dead-man
+    # firing finds after the first one removed everything.
+    settled = _Commands(tables=_before_tables())
+    settled_host = _real_host(root=settled_root, commands=settled)
+
+    assert settled_host.remove_firewall_footprint(snapshot=_write_snapshot(root=settled_root)) == ()
+
+    assert settled.argvs_with(flag="-D") == ()
+    for read in _snapshotted_reads():
+        assert settled.argvs.count(read) == 2, read
+
+    stuck_root = tmp_path / "stuck"
+    # Unique to the ipv4 `filter` table, so the residue report is pinned
+    # to one family and one table -- `DOCKER` itself is spelled
+    # identically in three of the four.
+    stubborn = "DOCKER-ISOLATION-STAGE-1"
+    stuck = _Commands(tables=_after_tables(), undeletable_chains=(stubborn,))
+    stuck_host = _real_host(root=stuck_root, commands=stuck)
+
+    residue = stuck_host.remove_firewall_footprint(snapshot=_write_snapshot(root=stuck_root))
+
+    assert residue == (f"ipv4 filter -N {stubborn}",)
+    assert stuck.argvs.count(("iptables-nft", "-t", "filter", "-X", stubborn)) == (
+        actions.FOOTPRINT_PASSES
+    )
 
 
 def test_forward_restore_puts_each_family_s_recorded_policy_back(tmp_path: Path) -> None:
