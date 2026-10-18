@@ -807,3 +807,43 @@ Then the gate Job MUST report a red verdict that names the missing recipe
 And the gate Job MUST NOT have run any recipe that only livespec-dev-tooling declares
 
 And the push MUST be refused, never completed
+
+## Scenario: the fabro-hosts play renders the factory registry from the inventory's factory names
+
+Given `fabro_factory_registry` maps `legacy` to one host's instance with a `docker_host`, and maps `petri` to another host's instance with no `docker_host`
+
+And a `dev_hosts` host whose `/etc/livespec/fabro-factories.json` holds a stale entry named `retired`
+
+When `ansible/fabro-hosts.yml` converges and runs the rendering on that host
+
+Then that host's `/etc/livespec/fabro-factories.json` MUST map `legacy` and `petri` each to an object whose `server` is `https://` followed by the named instance's `canonical_host`
+
+And `legacy`'s object MUST carry that `docker_host` and `petri`'s object MUST carry none
+
+And the file MUST hold no other entry, so `retired` is gone, and MUST be owned by root and world-readable
+
+Given `fabro_factory_registry` is changed so that `petri` names an instance on a third host
+
+When `ansible/fabro-hosts.yml` converges and runs the rendering on that host
+
+Then `petri`'s `server` MUST be `https://` followed by the third host's instance's `canonical_host`, and the previous address MUST be gone
+
+Given the inventory declares no `fabro_factory_registry`
+
+When `ansible/fabro-hosts.yml` converges and runs the rendering on a `dev_hosts` host
+
+Then that host's `/etc/livespec/fabro-factories.json` MUST hold the empty object
+
+Given a `dev_hosts` host whose `/etc/livespec/fabro-factories.json` holds an entry the inventory no longer declares
+
+When `ansible/fabro-hosts.yml` runs with `--tags` selecting no rendering task
+
+Then that host's file MUST be unchanged
+
+Given a `fabro_factory_registry` entry that is <invalid>
+
+When `ansible/fabro-hosts.yml` converges and runs the rendering on any host
+
+Then the play MUST refuse before writing the registry on any host, naming that factory and the reason
+
+Examples of <invalid>: a name that is whitespace only; a `host` that is not an inventory host; a `unit_name` that matches no instance on its `host`; a matched instance whose `canonical_host` is whitespace only; a `docker_host` that is whitespace only

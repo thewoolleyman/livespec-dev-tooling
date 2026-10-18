@@ -238,6 +238,55 @@ and queued demand remains pending while the circuit is open.
 
 **Documented beside the values.** The owning role's `HOST_VARS.md` MUST document every per-host variable the role reads, with its default where it has one. An interim control MUST also carry its operator procedure, its rollback and the condition under which it is retired.
 
+## Fabro factory registry
+
+**Scope.** This section states how this repository publishes, on each host
+where the Dispatcher runs natively, which Fabro server instance answers to each
+logical factory name. The Dispatcher reads that publication to resolve a
+factory entry that declares `"registry": true` (livespec-orchestrator-beads-fabro
+`contracts.md` §"Factory addresses resolved from a host registry"). A
+Dispatcher running inside a factory sandbox or a cluster gate Job reads no such
+file, and the file is not rendered there.
+
+**Declared once, in the inventory.** The inventory MAY declare
+`fabro_factory_registry`, and when it does it MUST declare it only in
+`ansible/inventory/group_vars/dev_hosts.yml`: a
+mapping from each logical factory name to an object carrying `host`, the
+inventory name of the host that serves it, `unit_name`, the `unit_name` of one
+mapping in that host's `fabro_server_instances`, and optionally `docker_host`, a
+string spelled as the Docker CLI's `DOCKER_HOST`. A factory name SHOULD name the
+Fabro server instance it addresses and SHOULD stay the same for that instance's
+whole life.
+
+**Rendered on the dispatching hosts.** On every host in the `dev_hosts` group,
+`ansible/fabro-hosts.yml` MUST render `/etc/livespec/fabro-factories.json` as a
+JSON object holding exactly one entry per `fabro_factory_registry` name: an
+object whose `server` is `https://` followed by the named instance's
+`canonical_host`, and which carries `docker_host` exactly when the mapping
+declares it. When the inventory declares no `fabro_factory_registry`, the file
+MUST hold the empty object. The file MUST be owned by root and MUST be
+world-readable. A converge that runs the rendering on a host MUST leave that
+host's file holding exactly the derived content, removing any entry the
+inventory no longer declares. A run narrowed by `--limit` or `--tags` so that
+it does not run the rendering on a host MUST leave that host's file
+unchanged.
+
+**Refused before writing.** Every run that runs the rendering on any host MUST
+first validate every `fabro_factory_registry` entry, and MUST refuse, before it
+writes the registry on any host, an entry whose name is not a string non-empty
+after surrounding whitespace is removed, whose `host` is not an inventory host,
+whose `unit_name` matches no mapping in that host's `fabro_server_instances`,
+whose matched instance has no `canonical_host` non-empty after surrounding
+whitespace is removed, or whose `docker_host` is present but is not a string
+non-empty after surrounding whitespace is removed, naming the factory and the
+reason. These are the same emptiness rules the Dispatcher applies when it reads
+the file.
+
+**Machines are bound only in the inventory.** Moving a factory name from one
+instance to another MUST be a change to `fabro_factory_registry` or to host_vars
+followed by this converge; no play, role or committed factory entry names the
+machine.
+
 ## Docker engine install guard
 
 **Scope.** This section governs the Docker engine install guard: the executable `/usr/local/libexec/docker-engine-guard` and the role steps that drive it. The guard installs the Docker engine on a factory host that already runs k3s and Tailscale, without risking that host's network access. A *run* is one attempt to install and commit the engine. Durable state lives under `/var/lib/docker-engine-guard`; runtime state lives under `/run/docker-engine-guard`, which is tmpfs and is cleared by a reboot. The *guarded units* are `docker.service`, `docker.socket` and `containerd.service`. The *start permission* is the file `/run/docker-engine-guard/allow-start`, and the *commit marker* is the file `/var/lib/docker-engine-guard/confirmed`. The guarded transition exists to install the engine once: after a run has committed, every later converge on that host takes the post-commit path. The guarded transition applies only to a host whose Docker packages and state, if any, were recorded by this guard's own runs; foreign Docker MUST be refused, never adopted.
