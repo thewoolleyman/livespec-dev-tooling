@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.1...v1.118.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **ansible:** raise gmktec's Fabro capacity one step to two runs in a 22G slice ([c0a9e86](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c0a9e8647cc660eaccdb9519b77d699ced2ddeef))
+* **ansible:** size gmktec's two-run sandbox slice to the CI-churn peak, 18G ([0f90b58](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f90b5871c16ba2b179614a9a17710013c6ca035))
+
 ## [1.118.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.0...v1.118.1) (2026-10-18)
 
 
