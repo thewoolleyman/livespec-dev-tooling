@@ -92,3 +92,9 @@ all:
         docker_engine_acceptance_hosts:
           hosts:
             poweredge-xubuntu:
+        # The hosts the guarded Docker engine install (ansible/docker-engine.yml)
+        # converges. A host joins deliberately and only once: hp-xubuntu, whose
+        # Docker was installed by hand, must never be added.
+        docker_engine_hosts:
+          hosts:
+            gmktec-xubuntu:
