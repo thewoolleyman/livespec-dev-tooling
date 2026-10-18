@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.117.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.116.2...v1.117.0) (2026-10-18)
+
+
+### Features
+
+* **ansible:** tailscale_serve publishes a host's declared loopback services on the tailnet ([fafb474](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fafb4745d54e5ae692b00f1aa5f605ce102d5e06))
+
 ## [1.116.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.116.1...v1.116.2) (2026-10-18)
 
 
