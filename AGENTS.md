@@ -74,7 +74,9 @@ The files:
   false observation across 42 days.
 - Read `.ai/fleet-and-secrets.md` before changing fleet coordination workflows,
   maintainer signaling, GitHub App automation, or 1Password-backed secret
-  projection.
+  projection, and before relying on a session environment variable
+  (such as `LIVESPEC_PLAN_UNATTENDED`) inside a `with-livespec-env.sh` call —
+  the wrapper scrubs the caller's environment.
 - Read `.ai/ci-node-storage-tiers.md` before touching the CI runner node's
   storage tiers (`ci-cache`, `ci-containerd`, `ci-workvols`), installing or
   surveying NVMe hardware on the node, or running anything under
@@ -110,6 +112,17 @@ The files:
   tool: measure the file count and layout first, pass `-lptgoD -HAX
   --numeric-ids` (it rejects `-a`), log progress, and checksum only AFTER the
   copy against a quiet source (paid for on hp-xubuntu, 2026-10-12).
+- Read `.ai/fabro-dispatch-diagnosis.md` before reading anything into a
+  quiet or stuck factory dispatch, before adding a ledger comment meant to
+  reach a running worker, or before claiming a template token renders (or not)
+  in a Fabro run — a bare `fabro ps` asks the wrong server, `runnable` can mean
+  an orphaned run that will never start, a worker's brief is frozen at
+  dispatch, and `fabro create` plus `fabro dump` shows the resolved spec.
+- Read `.ai/false-green-gates-and-audits.md` before trusting a green gate
+  that disagrees with reality, writing a gate that replays a production step,
+  auditing `.livespec.jsonc` keys across the fleet, or re-running a coverage
+  report that died with `NoSource` — each records a plausible, error-free
+  wrong answer measured in this fleet.
 
 ## Backlog drive — this repo has no foreman seat
 

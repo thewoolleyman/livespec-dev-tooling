@@ -67,3 +67,30 @@ For GitHub App work, the projected source env vars are `GITHUB_APP_ID` and
 `GITHUB_PRIVATE_KEY`; fleet reconcile writes Actions secrets named `APP_ID` and
 `APP_PRIVATE_KEY` through stdin. The private key is stored as a single-line PEM
 in the environment and must be rewrapped before use by JWT tooling.
+
+## The Credential Wrapper Scrubs The Session Environment
+
+Measured 2026-09-04; carried from session auto-memory on 2026-10-18.
+`/usr/local/bin/with-livespec-env.sh` re-execs through `sudo` and then
+`exec env -i` so that `op run` sees a clean environment. Only an explicit
+carry-through list survives, so session-scoped markers do not reach a wrapped
+call. With `LIVESPEC_PLAN_UNATTENDED=1` set in the session,
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- sh -c 'echo ${LIVESPEC_PLAN_UNATTENDED:-unset}'
+```
+
+printed `unset`. The orchestrator's `is_unattended_session` therefore returned
+False, and `resume_directive` answered `ask=True, reason='interactive resume'`
+for a resume that was genuinely unattended — a plausible directive, not an
+error.
+
+When a wrapped call must observe a session variable, pass it back in at the
+inner boundary:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- env LIVESPEC_PLAN_UNATTENDED=1 python3 script.py
+```
+
+The wrapper is for credentials; it is not a transparent environment
+passthrough.
