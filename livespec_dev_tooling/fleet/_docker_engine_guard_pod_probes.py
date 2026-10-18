@@ -125,13 +125,25 @@ def _sandbox_pid(*, text: str) -> str:
 
 
 def pod_namespace_pid(*, runner: GuardCommandRunner) -> str:
-    """The sandbox PID of a ready pod on this node that is NOT host-network.
+    """The sandbox PID of the LONGEST-RUNNING ready pod that is NOT host-network.
 
-    The first qualifying pod wins, and the choice is made AFRESH on
-    every sample rather than remembered: this host runs a CI pool whose
-    ARC listener deletes and creates pods continuously, so a pid held
-    across samples would be a pid that has gone (design Mechanism 3,
-    "the pod is re-selected if it disappears").
+    The oldest qualifying pod wins, judged by the `createdAt` instant
+    `crictl` reports, and the choice is made AFRESH on every sample
+    rather than remembered: this host runs a CI pool whose ARC listener
+    deletes and creates pods continuously, so a pid held across samples
+    would be a pid that has gone (design Mechanism 3, "the pod is
+    re-selected if it disappears").
+
+    AGE IS WHAT MAKES THE CHOICE SURVIVE THE SAMPLE. `crictl` lists the
+    newest pod first, and on this node the newest pod is an ARC
+    runner's workflow pod: measured on gmktec-xubuntu 2026-10-18, those
+    live about ten seconds and were Killing every few seconds. Taking
+    the first listed pod therefore entered a namespace that was
+    routinely gone before the probe set finished, and two guarded
+    converges rolled back on the https probe alone with nothing wrong
+    with the host. The longest-running pod is the one least likely to
+    disappear underneath a probe, and choosing it costs no extra read:
+    the newest pods are not inspected at all.
 
     An empty answer means no such pod exists right now, which the
     caller reports as a failed probe rather than treating as a pass:
@@ -139,7 +151,10 @@ def pod_namespace_pid(*, runner: GuardCommandRunner) -> str:
     proven.
     """
     listed = runner(argv=POD_LIST_ARGV, timeout_seconds=CRICTL_TIMEOUT_SECONDS)
-    for sandbox in json.loads(listed.stdout)["items"]:
+    oldest_first = sorted(
+        json.loads(listed.stdout)["items"], key=lambda sandbox: int(sandbox["createdAt"])
+    )
+    for sandbox in oldest_first:
         inspected = runner(
             argv=inspect_pod_argv(sandbox=str(sandbox["id"])),
             timeout_seconds=CRICTL_TIMEOUT_SECONDS,

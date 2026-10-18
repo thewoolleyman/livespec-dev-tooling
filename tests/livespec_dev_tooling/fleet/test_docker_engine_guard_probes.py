@@ -728,10 +728,36 @@ def test_the_dns_placement_read_reaches_the_k3s_server_through_a_declared_route(
 _POD_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_pod_probes"
 _POD_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_pod_probes.py")
 
+# When each listed pod was created, in the nanoseconds since the epoch
+# that `crictl pods -o json` reports. The service load balancer has been
+# up since the node booted, the CI job pod for twelve days, and the ARC
+# runner's workflow pod for ten SECONDS -- measured on gmktec-xubuntu,
+# 2026-10-18, where such a pod was Killing every few seconds.
+_SVCLB_CREATED = "1790577340000000000"
+_CIJOB_CREATED = "1791268540000000000"
+_WORKFLOW_CREATED = "1792305340000000000"
+
+
+def _pods(*listed: tuple[str, str]) -> str:
+    """A `crictl pods` listing: each sandbox's id and its creation instant."""
+    return json.dumps(
+        {"items": [{"id": sandbox, "createdAt": created} for sandbox, created in listed]}
+    )
+
+
 # `k3s crictl pods --state Ready -o json`: the service-load-balancer pod
 # is HOST-network and must be skipped, and the CI job pod behind it is
 # the one a probe may enter.
-_READY_PODS = '{"items": [{"id": "svclb0001"}, {"id": "cijob0002"}]}'
+_READY_PODS = _pods(("svclb0001", _SVCLB_CREATED), ("cijob0002", _CIJOB_CREATED))
+
+# The same read on a node under ARC churn, as `crictl` answers it: the
+# NEWEST pod first, and that newest pod an ARC runner's workflow pod.
+_CHURNING_PODS = _pods(
+    ("workflow0003", _WORKFLOW_CREATED),
+    ("cijob0002", _CIJOB_CREATED),
+    ("svclb0001", _SVCLB_CREATED),
+)
+
 _HOST_NETWORK_POD = (
     '{"status": {"linux": {"namespaces": {"options": {"network": "NODE"}}}},'
     ' "info": {"pid": 991}}'
@@ -739,6 +765,13 @@ _HOST_NETWORK_POD = (
 _POD_NETWORK_POD = (
     '{"status": {"linux": {"namespaces": {"options": {"network": "POD"}}}},'
     ' "info": {"pid": 40127}}'
+)
+
+# The ten-second workflow pod. It has a namespace of its own, so nothing
+# but its AGE tells it from a pod worth entering.
+_WORKFLOW_POD = (
+    '{"status": {"linux": {"namespaces": {"options": {"network": "POD"}}}},'
+    ' "info": {"pid": 90001}}'
 )
 
 
@@ -750,7 +783,32 @@ def _crictl_bus(*, pods: str = _READY_PODS) -> _Commands:
             pod_probes.POD_LIST_ARGV: pods,
             pod_probes.inspect_pod_argv(sandbox="svclb0001"): _HOST_NETWORK_POD,
             pod_probes.inspect_pod_argv(sandbox="cijob0002"): _POD_NETWORK_POD,
+            pod_probes.inspect_pod_argv(sandbox="workflow0003"): _WORKFLOW_POD,
         }
+    )
+
+
+def test_the_entered_pod_is_the_longest_running_one_that_has_its_own_namespace() -> None:
+    """The EARLIEST `createdAt`, never the pod `crictl` happens to list first.
+
+    `crictl` lists the newest pod first, and on this CI node the newest
+    pod is an ARC runner's workflow pod that lives about ten seconds.
+    Measured on gmktec-xubuntu 2026-10-18: a sample that entered one of
+    those lost the namespace between its api and its https probe, and
+    two guarded converges rolled back on the https probe alone with
+    nothing wrong with the host. Choosing the longest-running pod makes
+    the pod a sample enters outlive the sample -- and the newest pod is
+    not even inspected, so the choice costs no extra read.
+    """
+    assert _POD_PATH.is_file()
+    pod_probes = importlib.import_module(_POD_MODULE)
+    churning = _crictl_bus(pods=_CHURNING_PODS)
+
+    assert pod_probes.pod_namespace_pid(runner=churning) == "40127"
+    assert tuple(churning.argvs) == (
+        pod_probes.POD_LIST_ARGV,
+        pod_probes.inspect_pod_argv(sandbox="svclb0001"),
+        pod_probes.inspect_pod_argv(sandbox="cijob0002"),
     )
 
 
