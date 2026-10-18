@@ -58,6 +58,33 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.114.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.113.1...v1.114.0) (2026-10-18)
+
+
+### Features
+
+* **ansible:** bind gmktec-xubuntu to the guarded Docker engine install ([25e9220](https://github.com/thewoolleyman/livespec-dev-tooling/commit/25e9220ae6d7b6626c8f6a1d4b0d92d7b8cd4be3))
+
+
+### Bug Fixes
+
+* **ansible:** accept systemd 259.5's wording of a condition skip ([53fb31a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/53fb31a9138e4e4d98bb1f0fc9b5434acdb6696f))
+* **ansible:** call the guard's budgets and aptlock modules by their real interfaces ([7be5109](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7be5109136f7b243b4ae0973b051f179cfabec92))
+* **ansible:** check /dev/kvm access through os.access so ACL-granted access passes ([e67981c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e67981c3f1e58e0aac932322fa1ac57a67e482ef))
+* **ansible:** close the re-run, commit-finish and fence gaps the static audit found ([3112db9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3112db9f17b1d7b729fc86e905a826e28ae4a915))
+* **ansible:** declare only the reserved ranges to the guard's preflight ([94afe29](https://github.com/thewoolleyman/livespec-dev-tooling/commit/94afe29a6bbb1c3293b7d228a71a168997a4cb49))
+* **ansible:** demand the postinst condition skip only when the publish installs ([5c9b684](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5c9b68452b9a71a4721bd4f87f348cf3204837ca))
+* **ansible:** fence and helper-unit fixes from the audit review; correct the fault drivers ([5d1ea02](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5d1ea02fec5b27c653bf467d9f030ec47dca8762))
+* **ansible:** keep the start-condition probe loaded so its read sees the start ([8a4b91f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8a4b91fbe1324ab1919c51e688277d64c0bd8c55))
+* **ansible:** prove the install inert against the services' pre-publish state, not zero ([2de9afd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2de9afda69c53bf986258a8c20193fbe7a4e2389))
+* **ansible:** read the scratch root's units through systemd-analyze cat-config ([49febb7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/49febb7b7b3b188bd350ede57ea94aaa98cc2524))
+* **ansible:** reconfigure when the guard does not vouch for the wanted owned keys ([b2e188a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b2e188ada58a2afcf705dc84061b3fed4d68f6fc))
+* **ansible:** remove a rolled-back run's leftover canary before creating the next ([382fd11](https://github.com/thewoolleyman/livespec-dev-tooling/commit/382fd111c352a820eef4108e8ab7594bdd821dd9))
+* **ansible:** run the guard's preflight refusals and record through its command line ([0f79788](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f7978846150c62c6f1f3158c95d09dbbae81637))
+* **ansible:** satisfy ansible-lint in the fence's backstop and lock-helper tasks ([753cdcb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/753cdcb2cad0412149d000e733445dbe84b964ae))
+* **ansible:** start the sandbox slice in the run instead of requiring it running at preflight ([0f2964b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0f2964bc888cc86d526cc1dd2ac6f6224b80d14c))
+* **ansible:** write the guard's probe parameters, run the canary, and give the acceptance guest a real k3s ([9461c0b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9461c0bc2491a17093e1c4662ac3bf7e35e2c694))
+
 ## [1.113.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.113.0...v1.113.1) (2026-10-18)
 
 
