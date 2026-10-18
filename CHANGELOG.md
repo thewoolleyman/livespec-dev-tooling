@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.116.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.116.0...v1.116.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **fleet:** a failed pod-namespace probe resolves its pod again to retry ([a06d92d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a06d92d505a13706006b7992977641672dc56010))
+* **fleet:** the guard enters the longest-running pod, not the newest ([e100402](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e10040299d92538f897721d11a040b3cfc1a605e))
+
 ## [1.116.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.115.1...v1.116.0) (2026-10-18)
 
 
