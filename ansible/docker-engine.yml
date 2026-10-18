@@ -29,5 +29,11 @@
   max_fail_percentage: 0
   any_errors_fatal: true
   roles:
+    # The guard refuses a first start unless the sandbox slice is already
+    # loaded and active, so the slice converges first. On a host with no
+    # daemon yet it installs and starts the slice only; docker_engine writes
+    # cgroup-parent into daemon.json as one of its own keys.
+    - role: docker_sandbox_slice
+      tags: [docker_sandbox_slice]
     - role: docker_engine
       tags: [docker_engine]

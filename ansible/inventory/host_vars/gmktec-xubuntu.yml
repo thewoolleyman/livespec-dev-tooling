@@ -20,3 +20,42 @@ lan_ssh_fallback_must_stay_running:
   - tailscaled.service
   - k3s-agent.service
   - local-homelab-llama-server.service
+
+# --- docker_engine ---
+# Measured read-only on gmktec-xubuntu 2026-10-18 ~02:05Z (role HOST_VARS.md,
+# "The audit"). /etc/dpkg/dpkg.cfg.d is empty. Every apt hook in
+# /etc/apt/apt.conf.d is the stock Ubuntu one (esm, packagekit, snapd,
+# appstream, command-not-found, debconf preconfigure, synaptic); the guard's
+# package step runs dpkg -i directly, so apt's hooks never run inside it.
+docker_engine_must_stay_running:
+  - local-homelab-llama-server.service
+docker_engine_llm_health_url: http://100.79.195.82:8080/health
+docker_engine_dpkg_config_digests:
+  /etc/apt/apt.conf.d/01autoremove: 35b4360d9126e5e5efc1ce42cea8a957ba42921de749ad8502922d536c9f385c
+  /etc/apt/apt.conf.d/01-vendor-ubuntu: 364d5eeac5475b7dddfd629899ea88b91ed8d8e8e319c29bb9dbd6772e87ed55
+  /etc/apt/apt.conf.d/20apt-esm-hook.conf: f7ab45bab1355711fcd031d78299cc3c7767654e7bf3f66a716ee3f2eae93733
+  /etc/apt/apt.conf.d/20auto-upgrades: b81a3a01864d5ed7f8d023f3fa86d65087ad6b85706d399dc229a60b1c784807
+  /etc/apt/apt.conf.d/20packagekit: b4b98908ac8561a4823b23c724e65cc4c98f2067eb961a80816b3d15427522b4
+  /etc/apt/apt.conf.d/20snapd.conf: 4f1a710936d83d53caa575af269db4311d7b461bdb1bb94ced5b1d331b0886ac
+  /etc/apt/apt.conf.d/50appstream: 8e89df0e4cfa24c7db4a165e776f40af7e0477f0d290bea4334edf6655db72bd
+  /etc/apt/apt.conf.d/50command-not-found: 3a6f9f5244e49bee66ce65101fb73e16ba90f7a6cbd19befeefdf2c63209e2f1
+  /etc/apt/apt.conf.d/50unattended-upgrades: 88fb5cc2a1bbe749468213f6a9d351a8b668760d8a4c94eef5ad7f4723f19a6e
+  /etc/apt/apt.conf.d/70debconf: db749e19baf3b72ca2c157c70c52522cae23d94bc8b2dc5793fd43d427445367
+  /etc/apt/apt.conf.d/99synaptic: 44a9572816592bff7858122ec224d8e7e53c198035faca54c94b1fed9ab02c98
+  /etc/dpkg/dpkg.cfg: fead43b89af3ea5691c48f32d7fe1ba0f7ab229fb5d230f612d76fe8e6f5a015
+# The k3s control plane the observer's DNS-placement probe asks, reached the
+# way node_status_credential's route is proven (guard child 9).
+docker_engine_k3s_server: poweredge-xubuntu
+docker_engine_k3s_server_argv: [sudo, -u, cwoolley, -H, ssh, -o, BatchMode=yes, poweredge-xubuntu, sudo]
+
+# --- docker_sandbox_slice ---
+# Coordinator ruling R138 (2026-10-18, on livespec-dev-tooling-dfixhe). The
+# model lives in the GPU's own memory, not the 62 GB of OS RAM; system.slice
+# holds ~21 GB steady (llama-server 10.2 GB, k3s-agent 7.2 GB) and
+# kubepods.slice peaked at 27.4 GB for the 12 CI churn slots, leaving ~13.6 GB
+# at CI peak. hp's 24G would oversubscribe the host by ~10 GB. CPU is
+# plentiful, and a quota caps only the factory. Revisit after a day of load
+# from fabro-sandbox.slice and kubepods.slice memory.peak.
+docker_sandbox_slice_memory_high: 12G
+docker_sandbox_slice_memory_max: 14G
+docker_sandbox_slice_cpu_quota: "1400%"

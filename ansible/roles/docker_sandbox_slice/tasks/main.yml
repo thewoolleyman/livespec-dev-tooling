@@ -83,7 +83,25 @@
   failed_when: false
   check_mode: false
 
+# A host that has no container daemon YET is converged before the
+# docker_engine role installs one: that role's guard refuses a first start
+# unless this slice is already loaded and active, and it writes cgroup-parent
+# into daemon.json itself as one of its owned keys. So on such a host this role
+# installs and starts the slice and leaves the daemon configuration alone; the
+# driver check, the daemon.json write and the pending-restart marker all concern
+# a daemon that does not exist.
+- name: Ask whether this host has a container daemon at all
+  ansible.builtin.stat:
+    path: /usr/bin/dockerd
+  become: true
+  register: docker_sandbox_slice_dockerd
+
+- name: Hold whether this host has a container daemon
+  ansible.builtin.set_fact:
+    docker_sandbox_slice_daemon_present: "{{ docker_sandbox_slice_dockerd.stat.exists }}"
+
 - name: Refuse a daemon that is not on the systemd cgroup driver
+  when: docker_sandbox_slice_daemon_present | bool
   ansible.builtin.assert:
     that:
       - docker_sandbox_slice_driver.rc == 0
@@ -147,7 +165,10 @@
   changed_when: false
   failed_when: false
   check_mode: false
+  when: docker_sandbox_slice_daemon_present | bool
 
+# With no daemon yet there is nothing that has failed to load the slice, so
+# this reads as already naming it and no drained restart is recorded.
 - name: Hold the daemon configuration this host already carries
   # The base of the merge below, and the reason `cgroup-parent` can be added
   # without owning the file: every other key reaches the written file through
@@ -156,7 +177,9 @@
   ansible.builtin.set_fact:
     docker_sandbox_slice_existing_config: >-
       {{ (docker_sandbox_slice_daemon_raw.content | b64decode | from_json)
-         if (docker_sandbox_slice_daemon_raw.content is defined) else {} }}
+         if (docker_sandbox_slice_daemon_raw.content is defined)
+         else ({} if (docker_sandbox_slice_daemon_present | bool)
+               else {'cgroup-parent': docker_sandbox_slice_name}) }}
 
 - name: Hold the cgroup parent that configuration already names
   # The daemon loads daemon.json at START, so the value the FILE carried before
@@ -182,6 +205,7 @@
     group: root
     mode: "0644"
   become: true
+  when: docker_sandbox_slice_daemon_present | bool
 
 - name: Create the directory the pending-restart marker lives in
   # `--check` cannot see past this: with the directory absent the marker below is
@@ -194,6 +218,7 @@
     group: root
     mode: "0755"
   become: true
+  when: docker_sandbox_slice_daemon_present | bool
 
 - name: Record that a drained daemon restart is pending
   # The condition compares the parent the RUNNING daemon loaded against the one
