@@ -1302,3 +1302,51 @@ def test_a_reported_footprint_residue_fails_the_rule_postcondition(
     # And the phase is eligible again, so the next dead-man firing
     # re-enters it rather than trusting the success it just recorded.
     assert "footprint-removal" not in _surviving_successes(root=tmp_path, run="run-a")
+
+
+def test_a_clean_post_removal_sweep_clears_the_residue_record_and_ends_rolled_back(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": the residue record is the LAST sweep's, not an earlier one's.
+
+    A findings file is what makes the final check fail the "no Docker
+    rule" postcondition, so a file left behind by an earlier firing
+    would hold a repaired host at `rollback-partial` forever — the
+    dead-man would re-enter the phase every 60 seconds, the phase would
+    find nothing, and the stale report would still be the thing the
+    check read. Each entry therefore REPLACES that record, and a sweep
+    that finds nothing removes it.
+
+    With no residue reported and every postcondition holding, the run
+    ends `rolled-back` naming nothing, exactly as it did before this
+    reading existed: the record is an extra way to FAIL the
+    postcondition, never a new way to pass it.
+    """
+    rollback = _driver()
+    fake = _reporting_fake(root=tmp_path)
+    fake.firewall_residue = ()
+    _record_phase(root=tmp_path, run="run-a", phase="rolling-back")
+    stale = _rollback_record(root=tmp_path, run="run-a", name="footprint-removal.findings")
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    _ = stale.write_text("ipv4 filter -N DOCKER-FORWARD", encoding="utf-8")
+
+    outcome = rollback.run_phase(
+        run="run-a", env=_env(root=tmp_path, host=fake), phase="footprint-removal"
+    )
+
+    assert outcome.exit_code == 0
+    assert fake.calls_named(name="remove_firewall_footprint") != ()
+    assert not stale.is_file()
+
+    clean = tmp_path / "clean"
+    quiet = _reporting_fake(root=clean)
+    quiet.postconditions = dict.fromkeys(_SPECIFIED_POSTCONDITIONS, True)
+    _record_phase(root=clean, run="run-a", phase="started")
+
+    _ = rollback.run_rollback(run="run-a", env=_env(root=clean, host=quiet), decision=_decision())
+
+    assert _phase_of(root=clean, run="run-a") == "rolled-back"
+    assert json.loads(
+        _rollback_record(root=clean, run="run-a", name="outcome.json").read_text(encoding="utf-8")
+    ) == {"outcome": "rolled-back", "failed_postconditions": []}
+    assert _surviving_successes(root=clean, run="run-a") == set(_SPECIFIED_ORDER)
