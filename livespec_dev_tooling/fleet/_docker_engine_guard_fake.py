@@ -58,6 +58,12 @@ class FakeHost:
     # that made the swap fails.
     unit_states: dict[str, str] = field(default_factory=dict)
     guarded_unit_states: dict[str, str] = field(default_factory=dict)
+    # The states the NEXT `sleep` adopts, if a test set any: how a unit
+    # that finishes its shutdown WHILE a bounded wait is waiting is
+    # modelled. A real host needs no such switch -- its units change
+    # state on their own -- and without one no test can tell a wait that
+    # re-reads from a single read that happened to be lucky.
+    guarded_unit_states_after_sleep: dict[str, str] | None = None
     unit_file_states: dict[str, str] = field(default_factory=dict)
     daemon_keys: dict[str, object] = field(default_factory=dict)
     jobs: tuple[QueuedJob, ...] = ()
@@ -109,6 +115,9 @@ class FakeHost:
 
     def sleep(self, *, seconds: float) -> None:
         self.clock += seconds
+        if self.guarded_unit_states_after_sleep is not None:
+            self.guarded_unit_states = self.guarded_unit_states_after_sleep
+            self.guarded_unit_states_after_sleep = None
 
     def set_owner_root(self, *, path: Path) -> None:
         self._record(name="set_owner_root", detail=(str(path),))

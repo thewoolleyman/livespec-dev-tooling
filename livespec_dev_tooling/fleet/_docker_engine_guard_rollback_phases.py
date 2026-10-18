@@ -36,6 +36,9 @@ if TYPE_CHECKING:
     from livespec_dev_tooling.fleet._docker_engine_guard_state import GuardEnv
 
 __all__: list[str] = [
+    "INACTIVE_POLLS",
+    "INACTIVE_POLL_SECONDS",
+    "INACTIVE_STATE",
     "KILL_TARGETS",
     "PHASE_BODIES",
     "STOP_AFTER_KILL",
@@ -68,6 +71,23 @@ STOP_AFTER_KILL: Final[tuple[str, ...]] = (
     "containerd.service",
     "fabro-sandbox.slice",
 )
+
+# The `ActiveState` all three guarded units must REPORT before the
+# footprint phase touches a rule. A daemon in `deactivating` still owns
+# its own chains: measured on gmktec-xubuntu 2026-10-18, run
+# r202610180557326f69's removal recorded success at 06:02:40Z while
+# dockerd was in graceful shutdown, and the next run's snapshot held the
+# empty `DOCKER-CT` and `DOCKER-FORWARD` chains it recreated afterwards.
+INACTIVE_STATE: Final[str] = "inactive"
+
+# The bounded wait for that report, and the interval it is re-read on.
+# Bounded for the same reason every stop here is: a unit that will not go
+# inactive will not go, and an unbounded poll would hold the phase until
+# its own `timeout -k 10` killed it mid-teardown, having removed nothing
+# and reported nothing. Thirty seconds is the stop bound above, which is
+# the window the kill phase two steps earlier already allowed each unit.
+INACTIVE_POLL_SECONDS: Final[int] = 1
+INACTIVE_POLLS: Final[int] = 30
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -151,9 +171,46 @@ def _unit_disable(*, context: _PhaseContext) -> tuple[str, ...]:
     return ()
 
 
+def _not_inactive(*, context: _PhaseContext) -> tuple[str, ...]:
+    """Each guarded unit whose reported `ActiveState` is not `inactive`.
+
+    An unreadable state counts as NOT inactive, fail-closed: the removal
+    this guards is the one teardown step a dying daemon can undo, so a
+    state the host did not answer must never read as quiet.
+    """
+    states = context.host.guarded_unit_active_states()
+    return tuple(
+        f"{unit} reports {states.get(unit) or 'no state'}"
+        for unit in GUARDED_UNITS
+        if states.get(unit) != INACTIVE_STATE
+    )
+
+
 def _footprint_removal(*, context: _PhaseContext) -> tuple[str, ...]:
-    """Remove exactly Docker's rule footprint, and report any residue."""
-    return context.host.remove_firewall_footprint(snapshot=context.snapshot)
+    """Remove exactly Docker's rule footprint, and report any residue.
+
+    Nothing is removed until the daemon, its socket and containerd all
+    report inactive. A daemon still in graceful shutdown RECREATES the
+    chains a removal just deleted -- measured on gmktec-xubuntu
+    2026-10-18 -- and because the footprint plan treats every DOCKER
+    chain the SNAPSHOT holds as the host's own, that residue survives
+    into the next run as something the guard will not touch.
+
+    A unit still deactivating when the bounded wait runs out leaves the
+    footprint in place and is REPORTED instead, which is strictly better
+    than removing rules the daemon is about to write back under a
+    `rolled-back` outcome: the report is what makes the final check fail
+    this phase's postcondition, and the dead-man re-fires every 60
+    seconds to re-enter it.
+    """
+    for _ in range(INACTIVE_POLLS):
+        if not _not_inactive(context=context):
+            return context.host.remove_firewall_footprint(snapshot=context.snapshot)
+        context.host.sleep(seconds=INACTIVE_POLL_SECONDS)
+    return tuple(
+        f"Docker's footprint was left in place: {report}"
+        for report in _not_inactive(context=context)
+    )
 
 
 def _interface_deletion(*, context: _PhaseContext) -> tuple[str, ...]:

@@ -31,7 +31,14 @@ _GUARD_MODULE = "livespec_dev_tooling.fleet.docker_engine_guard"
 _CLI_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_cli"
 _HOSTOPS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_hostops"
 _ROLLBACK_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback"
+_PHASES_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_rollback_phases"
 _ROLLBACK_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_rollback.py")
+
+# The three guarded units, written out rather than read from the model,
+# because the SET is the rule the footprint phase waits on: a removal
+# that waited for two of them would leave the third free to write back
+# what it removed.
+_GUARDED_UNITS = ("containerd.service", "docker.service", "docker.socket")
 
 
 def _fake(*, root: Path) -> Any:
@@ -227,6 +234,11 @@ def _reporting_fake(*, root: Path) -> Any:
         hostops.QueuedJob(job_id="42", unit="k3s-agent.service"),
         hostops.QueuedJob(job_id="43", unit="docker.socket"),
     )
+    # The three guarded units already down, which is the ORDINARY state
+    # by the time the footprint phase runs: the cgroup kill two phases
+    # earlier stopped all of them. A unit still deactivating here is the
+    # exception, and it has its own assertion below.
+    fake.guarded_unit_states = dict.fromkeys(_GUARDED_UNITS, "inactive")
     fake.firewall_residue = ("-A DOCKER -j ACCEPT",)
     fake.deleted_interfaces = ("docker0",)
     fake.sysctl_differences = ("net.ipv4.ip_forward 1 != 0",)
@@ -1157,3 +1169,71 @@ def test_the_final_check_reads_an_absent_snapshot_file_as_a_failing_postconditio
     }
     for name in _SPECIFIED_POSTCONDITIONS:
         assert name in outcome.reason
+
+
+def _findings_of(*, root: Path, run: str, phase: str) -> str:
+    """One phase's recorded findings, or the empty string when it recorded none."""
+    record = _rollback_record(root=root, run=run, name=f"{phase}.findings")
+    return record.read_text(encoding="utf-8") if record.is_file() else ""
+
+
+def test_the_footprint_phase_removes_nothing_until_the_guarded_units_report_inactive(
+    tmp_path: Path,
+) -> None:
+    """A dying daemon still owns its rules, so nothing is removed until it is gone.
+
+    Measured on gmktec-xubuntu on 2026-10-18. Run r202610180557326f69's
+    rollback recorded `footprint-removal.success` at 06:02:40Z while
+    dockerd was still in graceful shutdown — its journal at 06:02:38
+    reads "Container failed to exit within 10s", "stopping event
+    stream" — and the next run's snapshot, at 06:14:37Z, held the empty
+    `DOCKER-CT` and `DOCKER-FORWARD` chains the dying daemon recreated
+    AFTER the removal. The run still recorded `rolled-back` with no
+    failed postcondition. Because the footprint plan treats every DOCKER
+    chain the SNAPSHOT holds as the host's own, that residue then cost
+    the next run its firewall probe at sample 1, on Docker's own
+    `-A FORWARD -j DOCKER-FORWARD`.
+
+    So the phase waits, boundedly, for all three units to report
+    inactive, and a unit still deactivating when the wait runs out
+    leaves the footprint in place and is REPORTED. Leaving it is
+    strictly better than removing rules the daemon is about to write
+    back under a `rolled-back` outcome: the dead-man re-fires every 60
+    seconds and the report is what makes the next firing re-enter the
+    phase.
+    """
+    rollback = _driver()
+    phases = importlib.import_module(_PHASES_MODULE)
+    fake = _reporting_fake(root=tmp_path)
+    fake.guarded_unit_states = dict.fromkeys(_GUARDED_UNITS, "deactivating")
+    _record_phase(root=tmp_path, run="run-a", phase="rolling-back")
+
+    outcome = rollback.run_phase(
+        run="run-a", env=_env(root=tmp_path, host=fake), phase="footprint-removal"
+    )
+
+    assert outcome.exit_code == 0
+    assert fake.calls_named(name="remove_firewall_footprint") == ()
+    findings = _findings_of(root=tmp_path, run="run-a", phase="footprint-removal")
+    for unit in _GUARDED_UNITS:
+        assert unit in findings, unit
+    # Bounded for the reason every other wait in this teardown is: the
+    # phase's own `timeout -k 10` would otherwise kill it mid-teardown,
+    # and a phase killed that way reports nothing at all.
+    assert fake.clock == phases.INACTIVE_POLLS * phases.INACTIVE_POLL_SECONDS
+
+    # A daemon that DOES finish its shutdown while the phase waits gets
+    # its footprint removed in that same firing, rather than costing the
+    # run a `rollback-partial` and another dead-man cycle.
+    settling = tmp_path / "settling"
+    later = _reporting_fake(root=settling)
+    later.guarded_unit_states = dict.fromkeys(_GUARDED_UNITS, "deactivating")
+    later.guarded_unit_states_after_sleep = dict.fromkeys(_GUARDED_UNITS, "inactive")
+    _record_phase(root=settling, run="run-a", phase="rolling-back")
+
+    _ = rollback.run_phase(
+        run="run-a", env=_env(root=settling, host=later), phase="footprint-removal"
+    )
+
+    assert later.calls_named(name="remove_firewall_footprint") != ()
+    assert later.clock == phases.INACTIVE_POLL_SECONDS
