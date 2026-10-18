@@ -102,6 +102,13 @@
     # for a real credential — OR `value`, for a committed non-secret
     # placeholder.
     fabro_server_vault_secrets: "{{ fabro_server_instance.vault_secrets | default([]) }}"
+    # OPTIONAL, and EMPTY by default — the word for "this instance launches no
+    # third-party sandbox-driver plugin". A mapping from a provider kind to the
+    # plugin Fabro launches for it, rendered as one
+    # `[server.sandbox.providers.<kind>]` table each in settings.toml. Empty
+    # renders settings.toml exactly as it rendered before the axis existed,
+    # which is what every instance predating it needs.
+    fabro_server_sandbox_providers: "{{ fabro_server_instance.sandbox_providers | default({}) }}"
 
 - name: Refuse an instance mapping that does not spell every axis
   # render-unit.sh exited 3 naming the one variable a values file had missed.
@@ -231,6 +238,53 @@
       - image
       - cpu
       - memory
+  loop: "{{ fabro_server_environments }}"
+  loop_control:
+    label: "{{ item.id | default('an entry with no id') }}"
+
+- name: Refuse a sandbox provider declaration Fabro would refuse or could not verify
+  # A PREFLIGHT, like every refusal in this file. Fabro rejects plugin fields on
+  # its three bundled kinds, so a bundled kind here is a typo for one of them;
+  # a relative path resolves against whatever directory the server happens to
+  # start in; and a plugin without a sha256 is launched unverified, which a
+  # release build of Fabro refuses at the first run that selects it rather
+  # than at start. Each is refused here, before the host is read.
+  ansible.builtin.assert:
+    that:
+      - item.key not in ['local', 'docker', 'daytona']
+      - item.key is match('^[a-z][a-z0-9-]*$')
+      - item.value.path | default('') is match('^/')
+      - item.value.sha256 | default('') is match('^[0-9a-f]{64}$')
+      - item.value.args | default([]) is sequence and item.value.args | default([]) is not string
+      - item.value.inherit_env | default([]) is sequence and item.value.inherit_env | default([]) is not string
+    fail_msg: >-
+      The sandbox provider '{{ item.key }}' declared for
+      {{ fabro_server_unit_name }} is malformed. A provider kind is a lower-case
+      name that is not one of Fabro's bundled kinds (local, docker, daytona); its
+      plugin needs an absolute `path` and the 64-hex-digit `sha256` Fabro
+      verifies it against; `args` and `inherit_env`, when present, are lists.
+      See roles/fabro_server/HOST_VARS.md.
+    success_msg: this sandbox provider declaration is well formed
+  loop: "{{ fabro_server_sandbox_providers | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Refuse an environment whose provider this instance does not declare
+  # An environment that names a plugin provider the instance's settings.toml
+  # does not configure is written to the catalog without complaint and fails
+  # only when a run selects it, as an unconfigured-plugin error mid-dispatch.
+  # The provider is OPTIONAL and defaults to docker, the only provider every
+  # declaration before this axis used.
+  ansible.builtin.assert:
+    that:
+      - (item.provider | default('docker')) in (['docker'] + (fabro_server_sandbox_providers.keys() | list))
+    fail_msg: >-
+      The declared environment {{ item.id | default('with no id') }} of
+      {{ fabro_server_unit_name }} names provider
+      '{{ item.provider | default('docker') }}', which is neither docker nor a
+      kind this instance declares under sandbox_providers
+      ({{ fabro_server_sandbox_providers.keys() | list | join(', ') or 'none' }}).
+    success_msg: this environment's provider is one the instance configures
   loop: "{{ fabro_server_environments }}"
   loop_control:
     label: "{{ item.id | default('an entry with no id') }}"
