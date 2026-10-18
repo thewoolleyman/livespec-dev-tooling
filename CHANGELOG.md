@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.115.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.114.2...v1.115.0) (2026-10-18)
+
+
+### Features
+
+* **ansible:** converge the current Fabro server on gmktec-xubuntu with no step by hand ([250cd5c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/250cd5c631f35ac56fa0ecc440d9e8702383d4ab))
+
 ## [1.114.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.114.1...v1.114.2) (2026-10-18)
 
 
