@@ -812,6 +812,58 @@
   # exactly the instance that probe was added for.
   when: fabro_server_restart_deferred | bool or fabro_server_binary_stale | bool
 
+- name: Log this instance's own CLI in with the instance's dev token
+  # The probe below runs the instance's CLI, which needs a login for this
+  # server in the host user's auth store. `fabro install` writes that login;
+  # this role writes server.env itself and never runs install, so on a server
+  # it brought up from nothing the probe answered "Authentication required"
+  # (rc 4). Measured 2026-10-18 on gmktec-xubuntu's first restart-allowed
+  # converge.
+  #
+  # The entry is merged into the auth store in the shape `fabro auth login
+  # --dev-token` writes (`servers.<url>` = kind, logged_in_at, token). The
+  # token is read from server.env inside the host-side interpreter, so it is in
+  # no argv and never in Ansible's variables; an entry already carrying the
+  # instance's current token is left untouched and reports no change.
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import datetime, json, os, tempfile
+        url = os.environ["FABRO_SERVER"]
+        store = os.path.join(os.environ["HOME"], ".fabro", "auth.json")
+        with open(os.environ["FABRO_SERVER_ENV_FILE"], encoding="utf-8") as env:
+            token = [line.split("=", 1)[1].strip() for line in env if line.startswith("FABRO_DEV_TOKEN=")][-1]
+        data = {"servers": {}}
+        if os.path.exists(store):
+            with open(store, encoding="utf-8") as current:
+                data = json.load(current)
+        entry = data.setdefault("servers", {}).get(url) or {}
+        if entry.get("kind") == "dev-token" and entry.get("token") == token:
+            print("unchanged")
+            raise SystemExit(0)
+        now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data["servers"][url] = {"kind": "dev-token", "logged_in_at": now, "token": token}
+        os.makedirs(os.path.dirname(store), mode=0o700, exist_ok=True)
+        handle, staged = tempfile.mkstemp(dir=os.path.dirname(store))
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            json.dump(data, out, indent=2)
+        os.chmod(staged, 0o600)
+        os.replace(staged, store)
+        print("changed")
+  become: true
+  become_user: "{{ fabro_server_host_user }}"
+  environment:
+    HOME: "{{ fabro_server_home_env }}"
+    FABRO_SERVER: "http://127.0.0.1:{{ fabro_server_port }}"
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+  register: fabro_server_cli_login
+  changed_when: fabro_server_cli_login.stdout == 'changed'
+  when:
+    - (fabro_server_restart_allowed | bool) or fabro_server_service_state == 'stopped'
+    - fabro_server_health.status | default(-1) == 200
+
 - name: Ask this instance whether any Fabro run is active
   # install.sh's require_quiet_server, and it runs only when a restart is
   # actually on the table. FABRO_SERVER pins the probe to THIS instance; the
