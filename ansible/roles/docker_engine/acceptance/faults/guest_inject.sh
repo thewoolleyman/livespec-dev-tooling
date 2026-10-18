@@ -54,5 +54,21 @@ case $MODE in
           case $rc in 0) log "lock released";; 200) log "LOCK STILL HELD";; *) log "lock released (lock file absent, rc=$rc)";; esac
           exit 0; fi; fi
       sleep 0.005; done ;;
+  pause-observer)
+    # C-09: SIGSTOP the observer's main process while the run is observing, start
+    # the dead-man's service, wait for the rollback to end, then SIGCONT it. The
+    # observer must be dead (the rollback stops its unit) and must write nothing.
+    while [ $SECONDS -lt $end ]; do
+      if [ "$(cat "$G/phase" 2>/dev/null)" = observing ]; then
+        u=$(systemctl list-units --plain --no-legend --state=active,activating "docker-engine-guard-observe*" | awk '{print $1}' | head -1)
+        m=$(systemctl show -p MainPID --value "$u" 2>/dev/null)
+        if [ -n "$u" ] && [ "${m:-0}" != 0 ]; then kill -STOP "$m"; log "SIGSTOP observer $u main $m"
+          systemctl start --no-block "docker-engine-deadman-$RUN.service"; log "dead-man service started"
+          while case $(cat "$G/phase" 2>/dev/null) in rolled-back|rollback-partial) false;; *) true;; esac; do sleep 0.2; done
+          before=$(stat -c %Y "$G/phase"); kill -CONT "$m" 2>/dev/null && log "SIGCONT sent to $m" || log "SIGCONT: $m already gone"
+          sleep 5
+          log "observer main $m $( [ -d /proc/"$m" ] && echo ALIVE || echo gone); unit $u $(systemctl is-active "$u" 2>/dev/null); phase $(cat "$G/phase") phase-file-touched-after-resume=$( [ "$(stat -c %Y "$G/phase")" -gt "$before" ] && echo YES || echo no)"
+          exit 0; fi; fi
+      sleep 0.01; done ;;
 esac
 log "TIMEOUT"

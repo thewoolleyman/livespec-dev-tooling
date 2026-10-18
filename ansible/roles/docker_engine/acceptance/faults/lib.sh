@@ -34,6 +34,18 @@ guard_op() { # guard_op <i> <op> <run> [extra args]: run one guard operation as 
   local i=$1 op=$2 run=$3; shift 3
   vm "$i" "U=docker-engine-guard-$op-$run-fault-\$(date +%H%M%S%N | cut -c1-9); S=\$(date +%s); sudo systemd-run --unit=\$U --wait --collect --quiet --property=Type=oneshot --property=TimeoutStartSec=1900 /usr/local/libexec/docker-engine-guard $op $run --window-seconds=420 $*; echo \"$op $run exit=\$?\"; sudo journalctl -u \$U.service --since=@\$S --no-pager -o cat | grep -vE '^(Starting|Finished|docker-engine-guard-.*: (Deactivated|Main process|Failed))'"
 }
+# The k3s, flannel, kube-router and Tailscale chains, as FAULTS.md's "rolled back"
+# compares them: every table of both families, counters stripped, Docker's own
+# rules and chains left to the docker-chains count, and kube-router's per-pod
+# chains and jumps dropped (they churn as pods come and go, measured on
+# guard-vm-0 2026-10-18: KUBE-POD-FW-<hash> chains changed within 60 s at rest).
+HOST_CHAINS_CMD='for f in iptables ip6tables; do for t in filter nat mangle raw; do $f-save -t $t 2>/dev/null | sed "s/\[[0-9]*:[0-9]*\]//" | grep -vE "^#|^\*|^COMMIT|DOCKER|docker0|KUBE-(POD-FW|SEP|SVC|EXT|FW|SVL)-|POD name:" | sed "s/^/$f $t /"; done; done | sort'
+host_chains_save() { # host_chains_save <i>: record the pre-change host chains on the guest
+  vm "$1" "sudo bash -c '$HOST_CHAINS_CMD > /var/tmp/faults-host-chains.before'"
+}
+host_chains_check() { # host_chains_check <i>: compare the host chains now with the recorded ones
+  vm "$1" "sudo bash -c '$HOST_CHAINS_CMD > /var/tmp/faults-host-chains.after; if diff -q /var/tmp/faults-host-chains.before /var/tmp/faults-host-chains.after >/dev/null; then echo host-chains: equal \$(wc -l < /var/tmp/faults-host-chains.before) lines; else echo host-chains: DIFF; diff /var/tmp/faults-host-chains.before /var/tmp/faults-host-chains.after | head -20; fi'"
+}
 rolled_back_check() { # the FAULTS.md definition of "rolled back", as far as it is observable
   vm "$1" 'sudo bash -c "
     r=\$(ls -t /var/lib/docker-engine-guard/runs | head -1); echo run=\$r phase=\$(cat /var/lib/docker-engine-guard/runs/\$r/phase)
@@ -44,6 +56,7 @@ rolled_back_check() { # the FAULTS.md definition of "rolled back", as far as it 
     echo docker0: \$(ip -o link show docker0 2>/dev/null | cut -d: -f2 || echo absent)
     echo marker: \$(cat /var/lib/docker-engine-guard/confirmed 2>/dev/null || echo none)
   "'
+  host_chains_check "$1"
 }
 
 # A restored snapshot's persistent apt timers fire on catch-up minutes after boot; on
@@ -51,5 +64,5 @@ rolled_back_check() { # the FAULTS.md definition of "rolled back", as far as it 
 # mid-case. Masking them keeps every dpkg action on the guest the guard's own.
 restore() { # restore <i>: one instance back to the `baseline` snapshot, booted, k3s DNS answering, apt timers masked
   local i=$1
-  ssh -o BatchMode=yes cwoolley@poweredge-xubuntu "cd ~/docker-engine-guard-acceptance && export DOCKER_ENGINE_VM_BASE_DIR=\$HOME/.cache/docker-engine-guard-vm DOCKER_ENGINE_VM_LLM_BIND=0.0.0.0 DOCKER_ENGINE_VM_INSTANCE=$i && ./vm.sh down >/dev/null && ./vm.sh restore baseline >/dev/null && ./vm.sh up >/dev/null && for n in \$(seq 1 60); do ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers 2>/dev/null | awk '\$1 ~ /^coredns-/ && \$3 == \"Running\" {f=1} END {exit !f}' && break; sleep 5; [ \$n = 60 ] && { echo restore-$i-DNS-TIMEOUT; exit 1; }; done; ./vm.sh ssh sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1; ./vm.sh ssh sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || { echo restore-$i-APT-TIMER-MASK-FAILED; exit 1; }; for n in \$(seq 1 60); do ./vm.sh ssh sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || { echo restored-$i; exit 0; }; sleep 5; done; echo restore-$i-APT-BUSY; exit 1"
+  ssh -o BatchMode=yes cwoolley@poweredge-xubuntu "cd ~/docker-engine-guard-acceptance && export DOCKER_ENGINE_VM_BASE_DIR=\$HOME/.cache/docker-engine-guard-vm DOCKER_ENGINE_VM_LLM_BIND=0.0.0.0 DOCKER_ENGINE_VM_INSTANCE=$i && ./vm.sh down >/dev/null && ./vm.sh restore baseline >/dev/null && ./vm.sh up >/dev/null && for n in \$(seq 1 60); do ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers 2>/dev/null | awk '\$1 ~ /^coredns-/ && \$3 == \"Running\" {f=1} END {exit !f}' && break; sleep 5; [ \$n = 60 ] && { echo restore-$i-DNS-TIMEOUT; exit 1; }; done; ./vm.sh ssh sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1; ./vm.sh ssh sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || { echo restore-$i-APT-TIMER-MASK-FAILED; exit 1; }; for n in \$(seq 1 60); do ./vm.sh ssh sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || { echo restored-$i; exit 0; }; sleep 5; done; echo restore-$i-APT-BUSY; exit 1" && host_chains_save "$i"
 }
