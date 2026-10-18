@@ -1,0 +1,117 @@
+---
+# The vault entries ONE Fabro instance declares, created in that instance's own
+# vault when it does not hold them. Included once per instance by
+# tasks/main.yml, after the server answers its health endpoint.
+#
+# WHY THE ROLE WRITES THE VAULT AT ALL. An instance cannot act as its GitHub App
+# without GITHUB_APP_PRIVATE_KEY in its vault, and a factory host that has never
+# run Fabro has an empty one. The only route in used to be an operator running
+# `fabro secret set` on the host by hand, which the fleet host guard denies. So
+# the key now comes from the CONTROL NODE's environment — the credential wrapper
+# carries it — and reaches the host the way every other value does: as a task
+# the play runs.
+#
+# CREATE-ONLY, NEVER OVERWRITE. A name the vault already holds is left exactly as
+# it is: its value is not read, compared or replaced. Rotation is a deliberate
+# operator act, and the Dispatcher rewrites its own LIVESPEC_DISPATCH_* entries
+# on every dispatch, so a converge that replaced values could undo either. The
+# list read below returns names and metadata only — never a value.
+#
+# HOW THE VALUE TRAVELS. It is in the write task's stdin, which Ansible passes
+# inside the module invocation; `no_log: true` keeps it out of every display and
+# log. On the host the shell builds the JSON body from stdin and hands it to
+# curl on stdin, and the dev token goes in as a header file read from a pipe, so
+# neither value is ever an argument and neither appears in the process table.
+# Both requests name /bin/bash for the reason environment.yml gives:
+# `set -o pipefail` is a bash option and /bin/sh is dash.
+
+- name: Read the names this instance's vault already holds
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --fail-with-body --header @- \
+          --header 'Accept: application/json' "${FABRO_SECRETS_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_SECRETS_URL: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/secrets"
+  register: fabro_server_vault_read
+  changed_when: false
+  check_mode: false
+
+- name: Decide which declared vault entries this instance lacks
+  ansible.builtin.set_fact:
+    fabro_server_vault_missing: >-
+      {{ fabro_server_vault_secrets
+         | rejectattr('name', 'in',
+             (fabro_server_vault_read.stdout | from_json).data | map(attribute='name') | list)
+         | list }}
+  check_mode: false
+
+- name: Refuse a missing vault entry whose controller variable is unset
+  # Checked for every missing entry before ANY is written, so a run that cannot
+  # supply one value writes none of them. The message names the variable, never
+  # a value. Run the apply under the control node's credential wrapper.
+  ansible.builtin.assert:
+    that:
+      - item.value is defined or (lookup('ansible.builtin.env', item.from_controller_env) | length > 0)
+    fail_msg: >-
+      {{ fabro_server_unit_name }}'s vault lacks {{ item.name }}, and the
+      control node's environment has no {{ item.from_controller_env | default('value') }}
+      to create it from. Run the apply under the credential wrapper
+      (with-livespec-env.sh -- just ansible-apply ...).
+    success_msg: "{{ item.name }} can be created"
+  loop: "{{ fabro_server_vault_missing }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create each declared vault entry this instance lacks
+  # Skipped under --check by its `when`, and reported by the task below instead,
+  # because a dry run that wrote a credential into a live factory's vault would
+  # not be a dry run.
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      python3 -c '
+      import json, os, sys
+      body = {"name": os.environ["FABRO_SECRET_NAME"],
+              "type": os.environ["FABRO_SECRET_TYPE"],
+              "value": sys.stdin.read().rstrip("\r\n")}
+      if os.environ.get("FABRO_SECRET_DESCRIPTION"):
+          body["description"] = os.environ["FABRO_SECRET_DESCRIPTION"]
+      if not body["value"]:
+          sys.exit("empty secret value")
+      sys.stdout.write(json.dumps(body))
+      ' |
+        curl --silent --show-error --fail-with-body \
+          --header @<(printf 'Authorization: Bearer %s\n' \
+            "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)") \
+          --header 'Content-Type: application/json' \
+          --data-binary @- "${FABRO_SECRETS_URL}" >/dev/null
+    stdin: "{{ item.value if item.value is defined else lookup('ansible.builtin.env', item.from_controller_env) }}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_SECRETS_URL: "http://127.0.0.1:{{ fabro_server_port }}/api/v1/secrets"
+    FABRO_SECRET_NAME: "{{ item.name }}"
+    FABRO_SECRET_TYPE: "{{ item.type | default('token') }}"
+    FABRO_SECRET_DESCRIPTION: "{{ item.description | default('') }}"
+  no_log: true
+  changed_when: true
+  loop: "{{ fabro_server_vault_missing }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode
+
+- name: Report the vault entries a dry run would create
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} would create vault entries
+      {{ fabro_server_vault_missing | map(attribute='name') | join(', ') }}.
+  when:
+    - ansible_check_mode
+    - fabro_server_vault_missing | length > 0

@@ -24,6 +24,7 @@ yet fpsync-based; that switch is a separate follow-up.
 
 | variable | default | what it is |
 | --- | --- | --- |
+| `sandbox_storage_enabled` | `true` | read by `ansible/fabro-hosts.yml`, not the role: `false` skips the role on a host with no second disk (gmktec-xubuntu, one NVMe disk), with the reason beside it in host_vars |
 | `sandbox_storage_device` | `""` (**required**) | the disk, by its `/dev/disk/by-id/` path — model and serial, never `/dev/sdX` |
 | `sandbox_storage_swap_label` | `sandbox-swap` | the swap partition's label (GPT partition 1); at most 16 bytes |
 | `sandbox_storage_fs_label` | `sandbox-stores` | the filesystem's label (GPT partition 2, the rest of the disk); at most 16 bytes, ext4's limit |

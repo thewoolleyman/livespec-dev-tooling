@@ -13,6 +13,10 @@ otel_receiver_home: /home/ubuntu
 # refers to it from the unit and checks that it exists; it never writes, copies
 # or reads it. Per-host; empty is refused when the role is enabled.
 otel_receiver_env_file: ""
+# The control-node environment variable to RENDER otel_receiver_env_file from
+# when the host has none, e.g. HONEYCOMB_INGEST_KEY_LIVESPEC. Empty means the
+# file is provisioned outside the role, as on hp-xubuntu. Never overwrites.
+otel_receiver_env_from_controller: ""
 
 # The livespec-orchestrator-beads-fabro RELEASE the receiver runs. The receiver
 # imports its OtelReceiver, exporter and attribute allowlist from this tree, so

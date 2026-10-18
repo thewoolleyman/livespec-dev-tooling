@@ -51,7 +51,7 @@ per instance and a `roles:` entry runs once per host.
 
 Every other key of an instance mapping must be spelled out — the role refuses a
 mapping that misses one, because an instance that inherited `unit_name`,
-`home_dir` or `port` would silently share the fleet server's state. These six
+`home_dir` or `port` would silently share the fleet server's state. These seven
 are the exception, and they are safe to default for one reason: omitting one
 cannot make two instances collide. It only keeps the behaviour the instance had
 before the axis existed.
@@ -63,6 +63,7 @@ before the axis existed.
 | `binary_sha256` | empty — the role leaves whatever is at `binary_path` alone | the sha256 `binary_source` must hash to. Declared together with `binary_source` or not at all; the role refuses the pair half-spelled, and refuses a source that does not hash to this digest **before** it reads the factory host. |
 | `home_env` | `fabro_server_host_home` | the unit's `Environment=HOME`. Independent of `home_dir`: `home_dir` is the state root the server is POINTED at with `--storage-dir` and `--config`, while this is the `HOME` its process and its CLI resolve `~/.fabro` against. |
 | `environments` | `[]` — the role leaves whatever the instance's server holds alone | the instance's **sandbox environment catalog**: a list of entries, each spelling an `id`, a docker `image`, a `cpu` count and a `memory` size. The one axis that is not a file this role renders — a sandbox environment is server-managed state behind the instance's `/api/v1/environments` API. See "The sandbox environment catalog" below. |
+| `vault_secrets` | `[]` — the role leaves the instance's vault alone | vault entries the instance must hold: a list, each spelling a `name`, a `type` (`token` or `file`), an optional `description`, and either `from_controller_env` (the control-node variable a real credential is read from) or `value` (a committed non-secret placeholder). Each name the vault lacks is created once the server answers; a name it holds is never read, compared or overwritten. See "State the role provisions on a host that has none" below. |
 | `service_state` | `running` | `stopped` parks the instance in version control — unit, drop-in, `settings.toml` and state directory all KEPT on the host, the unit stopped and disabled, the restart handler never fired for it and the running-server verification skipped. Bring it back by flipping the word and re-applying. Refused while the instance is carrying runs, by the quiet-server guard that gates a restart. |
 
 An instance that omits `binary_path` and `home_env` renders a unit **byte-identical**
@@ -666,15 +667,46 @@ Per instance, unless noted:
    `<host_home>/.fabro/bin/fabro` — **shared by every instance that does not
    name one** — and otherwise the instance's own build. The preflight stats
    whichever path the axis resolves to; the role never builds or downloads it.
-2. `<home_dir>/storage/server.env`, mode 0600, carrying a generated
-   `SESSION_SECRET` and `FABRO_DEV_TOKEN`. Fabro generates it.
-3. The GitHub App private key in that instance's own Fabro vault:
-   `FABRO_SERVER=http://127.0.0.1:<port> fabro secret set
-   GITHUB_APP_PRIVATE_KEY --value-stdin`.
-4. A `tailscale serve` mapping for the port, which lives in the
+2. The GitHub App private key in that instance's own Fabro vault, for an
+   instance that does not declare it under `vault_secrets` (below).
+3. A `tailscale serve` mapping for the port, which lives in the
    `tailscale-admin` repository. The role cannot see it at all — see the note
    in `tasks/main.yml`.
-5. `<home_dir>/settings.toml`, unless `fabro_server_manage_settings` is set.
+4. `<home_dir>/settings.toml`, unless `fabro_server_manage_settings` is set.
+
+## State the role provisions on a host that has none
+
+Each of these used to be a refusal whose only way through was a step by hand,
+which the fleet host guard denies. On a host that already has them, every task
+is a no-op (hp-xubuntu and vps drift reads, 2026-10-18: no change).
+
+- **The state root, `<home_dir>/storage`, and the binary's directory**, owned by
+  the service account. The mode only adds the owner's bits, so an existing
+  directory keeps its mode.
+- **`<home_dir>/storage/server.env`**, mode 0600, generated ON THE HOST when it
+  is absent: `SESSION_SECRET` is 64 hex characters and `FABRO_DEV_TOKEN` is
+  `fabro_dev_` plus 64 hex characters, Fabro's own formats. An existing file is
+  never touched, because the running server's dev token is what the Dispatcher
+  and the catalog requests authenticate with.
+- **Docker group membership** for the service account. Added only where the
+  host's Docker is ready: a `docker` group exists AND either the host has no
+  docker_engine guard state root (`fabro_server_docker_engine_state_root`,
+  default `/var/lib/docker-engine-guard`; its Docker predates the guard) or that
+  guard's `confirmed` marker is present. Before its commit point the
+  docker_engine guard refuses a host on which any account is in the group, so a
+  running instance on a host whose Docker is not ready is REFUSED, naming
+  `ansible/docker-engine.yml` as the step to converge first.
+- **Vault entries an instance declares** (the optional `vault_secrets` axis).
+  After the server answers its health endpoint, the role lists the vault's
+  NAMES and creates each declared name that is missing. It never reads,
+  compares or overwrites a value it finds. Each entry spells `name`, `type`
+  (`token` or `file`), an optional `description`, and either
+  `from_controller_env` — the control-node environment variable the value is
+  read from, which the credential wrapper supplies — or `value`, for a committed
+  non-secret placeholder. A missing entry whose variable is unset is refused
+  before anything is written, so run the apply under `with-livespec-env.sh`.
+  The write task is `no_log`, and on the host the value and the dev token travel
+  on standard input and a pipe, never as arguments.
 
 ## `fabro_server_interrupt_runs_allowed` (per-invocation only)
 
@@ -685,3 +717,19 @@ instance anyway, killing them. It exists because a busy factory never becomes qu
 during a play (other sessions' dispatchers keep admitting runs), so without it the role
 had no way to stop or restart a busy instance, and the fleet host guard forbids doing it
 by hand. Never put it in host_vars.
+
+## `host_vars/gmktec-xubuntu.yml`
+
+The current Fabro server's host (plan `petri-factory-on-gmktec`). One instance,
+`fabro-server` on port 32276 under `/home/cwoolley/.fabro`, running the v0.382
+carrier `adeefec` (production web UI) staged on the control node.
+`fabro_server_host_checkout_remote` is declared because the host had no
+checkout, `fabro_server_manage_settings` is true because a fresh instance has
+no settings.toml to preserve, and `max_concurrent_runs` is 1 because one 8GB
+`livespec-ci` sandbox is all the 14G sandbox slice (coordinator ruling R138)
+holds. `vault_secrets` declares the App key, from the wrapper's
+`GITHUB_PRIVATE_KEY`, and the `OPENAI_API_KEY` placeholder an ACP-only graph
+needs to pass `fabro.model.no_ready_provider` admission. Its Docker comes from
+`ansible/docker-engine.yml`, which must be confirmed before this play installs
+the server.
+

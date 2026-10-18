@@ -17,10 +17,53 @@
       Petri-era run_turn.* span attributes.
     success_msg: the receiver's pin and environment file are declared
 
+# --- rendering the environment file, opt-in per host ------------------------
+#
+# A host that sets otel_receiver_env_from_controller has its environment file
+# CREATED, when absent, from that control-node variable — the credential
+# wrapper carries the ingest key — so a new factory host needs no file placed by
+# hand. CREATE-ONLY: `force: false` leaves an existing file exactly as it is,
+# which is what keeps hp-xubuntu's hand-provisioned file untouched. The value is
+# never displayed (`no_log`) and is never an argument on the host.
+
+- name: Create the directory the receiver's environment file lives in
+  ansible.builtin.file:
+    path: "{{ otel_receiver_env_file | dirname }}"
+    state: directory
+    owner: "{{ otel_receiver_user }}"
+    group: "{{ otel_receiver_group }}"
+    mode: "0755"
+  become: true
+  when: otel_receiver_env_from_controller | length > 0
+
+- name: Refuse to render the environment file from an unset controller variable
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', otel_receiver_env_from_controller) | length > 0
+    fail_msg: >-
+      otel_receiver_env_from_controller names {{ otel_receiver_env_from_controller }},
+      which the control node's environment does not set. Run the apply under
+      the credential wrapper (with-livespec-env.sh -- just ansible-apply ...).
+    success_msg: the ingest key is available on the control node
+  when: otel_receiver_env_from_controller | length > 0
+
+- name: Render the receiver's environment file when it is absent
+  ansible.builtin.copy:
+    content: "HONEYCOMB_INGEST_KEY_LIVESPEC={{ lookup('ansible.builtin.env', otel_receiver_env_from_controller) }}\n"
+    dest: "{{ otel_receiver_env_file }}"
+    owner: "{{ otel_receiver_user }}"
+    group: "{{ otel_receiver_group }}"
+    mode: "0600"
+    force: false
+  become: true
+  no_log: true
+  register: otel_receiver_env_render
+  when: otel_receiver_env_from_controller | length > 0
+
 - name: Look for the receiver's environment file
-  # Only its existence is read. The role never writes, copies or reads the
-  # value: the ingest key reaches the process through the unit's
-  # EnvironmentFile and nowhere else.
+  # Only its existence is read. The value reaches the process through the
+  # unit's EnvironmentFile and nowhere else; the role writes it only through
+  # the opt-in render above, and never reads it back.
   ansible.builtin.stat:
     path: "{{ otel_receiver_env_file }}"
     get_checksum: false
@@ -35,9 +78,12 @@
       - otel_receiver_env_stat.stat.isreg
     fail_msg: >-
       {{ otel_receiver_env_file }} is not a regular file. It carries
-      HONEYCOMB_INGEST_KEY_LIVESPEC and is provisioned outside this role; put
-      it in place before converging the receiver.
+      HONEYCOMB_INGEST_KEY_LIVESPEC; put it in place, or set
+      otel_receiver_env_from_controller so the role renders it.
     success_msg: the receiver's environment file is present
+  # Skipped for one run only: a dry run of a host whose file the render above
+  # would create, which under --check wrote nothing.
+  when: not (ansible_check_mode and (otel_receiver_env_render.changed | default(false)))
 
 - name: Create the receiver's install and state directories
   ansible.builtin.file:
@@ -93,6 +139,10 @@
     name: "{{ otel_receiver_unit_name }}"
     enabled: true
   become: true
+  # Skipped on a dry run whose unit write is a would-be change: under --check
+  # nothing was written, so on a fresh host systemd has no such unit and the
+  # task would fail on a fault the dry run itself created.
+  when: not (ansible_check_mode and otel_receiver_unit.changed)
 
 - name: Look for a restart an earlier run deferred
   ansible.builtin.stat:
@@ -152,6 +202,10 @@
     name: "{{ otel_receiver_unit_name }}"
     state: started
   become: true
+  # Skipped on a dry run whose unit write is a would-be change: under --check
+  # nothing was written, so on a fresh host systemd has no such unit and the
+  # task would fail on a fault the dry run itself created.
+  when: not (ansible_check_mode and otel_receiver_unit.changed)
 
 - name: Report a deferred restart
   ansible.builtin.debug:

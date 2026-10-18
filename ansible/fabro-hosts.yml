@@ -66,8 +66,14 @@
     # and moving the live stores are each one opt-in run (-e flags named in
     # the role's HOST_VARS.md); a plain converge never formats and never stops
     # docker or containerd.
+    # A host with no second disk opts out by declaring
+    # `sandbox_storage_enabled: false` in its host_vars, with the reason beside
+    # it. An explicit word rather than "skip when no device is named", so a
+    # two-disk host that forgot its device is still refused by the role instead
+    # of silently skipped.
     - role: sandbox_storage
       tags: [sandbox_storage]
+      when: sandbox_storage_enabled | default(true) | bool
     # The `factory` namespace credential the Kubernetes sandbox backend
     # launches a run's pod with (livespec-dev-tooling-sqobqv). Reached through
     # this GROUP play rather than named per host, so a machine that joins the
