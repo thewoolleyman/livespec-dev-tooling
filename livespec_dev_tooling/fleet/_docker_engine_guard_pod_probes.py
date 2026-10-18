@@ -29,7 +29,8 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Final
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Final, Protocol
 
 from livespec_dev_tooling.fleet._docker_engine_guard_sample import ProbeResult
 
@@ -50,6 +51,8 @@ __all__: list[str] = [
     "RESOLVE_TIMEOUT_SECONDS",
     "UBUNTU_ARCHIVE_HOST",
     "UBUNTU_ARCHIVE_PATH",
+    "PodNamespace",
+    "PodProbe",
     "api_probe",
     "api_probe_argv",
     "dns_probe",
@@ -59,6 +62,7 @@ __all__: list[str] = [
     "inspect_pod_argv",
     "nsenter_argv",
     "pod_namespace_pid",
+    "pod_namespace_probe",
     "resolve_argv",
     "resolve_on_host",
 ]
@@ -163,6 +167,63 @@ def pod_namespace_pid(*, runner: GuardCommandRunner) -> str:
         if pid:
             return pid
     return ""
+
+
+@dataclass(kw_only=True)
+class PodNamespace:
+    """The pod one sample's namespace probes enter, FORGOTTEN after a failure.
+
+    Resolved on first use and then SHARED, because resolving per probe
+    would cost two more pod listings on a sample where nothing is wrong
+    and could hand two probes two different pods. Forgotten the moment
+    a probe fails in it, because a pod that stopped answering is the
+    one thing that makes the shared choice wrong -- and the retry needs
+    a pod that exists, not the dead one again.
+    """
+
+    runner: GuardCommandRunner
+    chosen: str = ""
+
+    def pid(self) -> str:
+        """This sample's pod namespace PID, resolved once and kept while it works."""
+        if not self.chosen:
+            self.chosen = pod_namespace_pid(runner=self.runner)
+        return self.chosen
+
+    def forget(self) -> None:
+        """Drop the choice, so the next probe in this sample resolves a pod afresh."""
+        self.chosen = ""
+
+
+class PodProbe(Protocol):
+    """One probe of the pod network, run in whichever pod it is given."""
+
+    def __call__(self, *, pid: str) -> ProbeResult: ...
+
+
+def pod_namespace_probe(*, probe: PodProbe, namespace: PodNamespace) -> ProbeResult:
+    """Run `probe` in this sample's pod, and forget that pod when it fails.
+
+    This is what makes the retry rule's second attempt EVIDENCE rather
+    than a repetition. `run_probe` re-runs a failed probe immediately
+    to tell a transient from a change, but a second attempt in the same
+    namespace can only repeat the first answer when the reason for the
+    first was that the namespace is gone. Measured on gmktec-xubuntu
+    2026-10-18: an ARC runner's workflow pod was Killing between the api
+    and the https probe of the same sample, both https attempts entered
+    its dead namespace, and two guarded converges rolled back on that
+    alone -- every other probe of those samples passed, and all nine of
+    the mirror's addresses answered from the host.
+
+    Forgetting rather than re-resolving unconditionally keeps the retry
+    rule ONE retry: a probe that fails in two consecutively resolved
+    pods still fails, with both attempts' errors recorded by the rule
+    that owns them.
+    """
+    result = probe(pid=namespace.pid())
+    if not result.passed:
+        namespace.forget()
+    return result
 
 
 def nsenter_argv(*, pid: str, argv: Sequence[str]) -> tuple[str, ...]:

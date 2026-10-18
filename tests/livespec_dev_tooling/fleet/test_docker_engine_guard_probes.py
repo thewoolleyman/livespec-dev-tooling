@@ -1945,6 +1945,173 @@ def test_the_real_hosts_sample_composes_every_probe_against_recorded_output(
     )
 
 
+# The node a moment later, as the ARC listener leaves it: the CI job pod
+# the sample entered is gone, and a different one is Ready. It is still
+# younger than the host-network service load balancer, so the next
+# resolution skips that one and chooses it.
+_REPLACEMENT_CREATED = "1791095740000000000"
+_PODS_AFTER_CHURN = _pods(
+    ("cijob0004", _REPLACEMENT_CREATED),
+    ("svclb0001", _SVCLB_CREATED),
+)
+_REPLACEMENT_POD = (
+    '{"status": {"linux": {"namespaces": {"options": {"network": "POD"}}}},'
+    ' "info": {"pid": 40411}}'
+)
+
+
+@dataclass(kw_only=True)
+class _VanishingPod:
+    """A recorded bus whose Ready-pod listing CHANGES between resolutions.
+
+    Each `crictl pods` read answers the NEXT recorded listing, so a
+    probe that resolves the pod again sees what the ARC listener
+    actually leaves behind: the pod this sample entered is gone and a
+    different one is Ready. Every other command is answered -- and
+    recorded -- by the sample bus underneath, so one test still reads
+    the whole sample's argv in the order it was emitted.
+    """
+
+    bus: _Commands
+    listings: tuple[str, ...]
+    resolutions: int = 0
+
+    def __call__(self, *, argv: Sequence[str], timeout_seconds: int) -> Any:
+        pod_probes = importlib.import_module(_POD_MODULE)
+        if tuple(argv) == pod_probes.POD_LIST_ARGV:
+            self.bus.answers[pod_probes.POD_LIST_ARGV] = self.listings[
+                min(self.resolutions, len(self.listings) - 1)
+            ]
+            self.resolutions += 1
+        return self.bus(argv=argv, timeout_seconds=timeout_seconds)
+
+
+def _https_in_pod(*, pid: str) -> tuple[str, ...]:
+    """The HEAD the https probe runs inside the network namespace of `pid`."""
+    pod_probes = importlib.import_module(_POD_MODULE)
+    return pod_probes.https_probe_argv(
+        pid=pid,
+        address="185.125.190.83",
+        host=pod_probes.UBUNTU_ARCHIVE_HOST,
+        path=pod_probes.UBUNTU_ARCHIVE_PATH,
+    )
+
+
+def _sample_under_churn(*, tmp_path: Path, failing: dict[str, int]) -> tuple[Any, _Commands]:
+    """One whole sample on a node whose entered pod vanishes mid-sample.
+
+    `failing` maps a pod namespace PID to the exit code the HEAD takes
+    inside it: `nsenter` into the namespace of a pod that is gone exits
+    non-zero, which is exactly what the two rolled-back converges of
+    2026-10-18 recorded -- after the services, node-ready, dns-placement,
+    dns and api probes of the SAME sample had all passed.
+    """
+    pod_probes = importlib.import_module(_POD_MODULE)
+    proc = _proc_tree(
+        root=tmp_path / "proc",
+        cgroups={
+            **_CONTAINERD_CGROUPS,
+            "7211": f"0::{_SANDBOX_CONTROL_GROUP}/docker-abc123.scope",
+        },
+    )
+    shims = (tmp_path / "containerd" / "s", tmp_path / "containerd" / "runc" / "k8s.io")
+    for directory in shims:
+        directory.mkdir(parents=True, exist_ok=True)
+    root = tmp_path / "guard"
+    _ = _guarded_tree(root=root, proc=proc, shims=shims)
+
+    bus = _sample_bus()
+    bus.answers[pod_probes.inspect_pod_argv(sandbox="cijob0004")] = _REPLACEMENT_POD
+    for pid, code in failing.items():
+        bus.codes[_https_in_pod(pid=pid)] = code
+    churning = _VanishingPod(bus=bus, listings=(_READY_PODS, _PODS_AFTER_CHURN))
+    host = _real_host(root=root, commands=churning, proc_root=proc, containerd_paths=shims)
+    return host.sample(), bus
+
+
+def test_a_failed_pod_namespace_probe_resolves_its_pod_again_before_retrying(
+    tmp_path: Path,
+) -> None:
+    """The retry enters a FRESHLY resolved pod, never the first attempt's PID.
+
+    The retry exists to tell a transient from a change, and a second
+    attempt in the same dead namespace can only repeat the first
+    answer. Measured on gmktec-xubuntu 2026-10-18: the pod a sample
+    resolved was an ARC workflow pod that was Killing between the api
+    and the https probe, so both attempts entered a namespace that no
+    longer existed and the sample failed with nothing wrong with the
+    host. Resolving again is what makes the second attempt evidence.
+    """
+    pod_probes = importlib.import_module(_POD_MODULE)
+    _, bus = _sample_under_churn(tmp_path=tmp_path, failing={"40127": 1})
+
+    entered = tuple(
+        argv
+        for argv in bus.argvs
+        if argv in (_https_in_pod(pid="40127"), _https_in_pod(pid="40411"))
+    )
+    assert entered == (_https_in_pod(pid="40127"), _https_in_pod(pid="40411"))
+    assert bus.argvs.count(pod_probes.POD_LIST_ARGV) == 2
+
+
+def test_a_probe_whose_pod_disappeared_passes_in_the_pod_its_retry_resolves(
+    tmp_path: Path,
+) -> None:
+    """A pod that went away is not a broken pod network, and the sample says so.
+
+    This is the whole point of re-resolving: the first attempt failed
+    because its pod was deleted, the retry ran in a pod that exists,
+    and that attempt answered. A sample that reported this as a failure
+    would start a rollback of a healthy install -- which is what the two
+    guarded converges of 2026-10-18 did.
+    """
+    sample_module = importlib.import_module(_SAMPLE_MODULE)
+    taken, _ = _sample_under_churn(tmp_path=tmp_path, failing={"40127": 1})
+
+    assert taken[sample_module.PASSED_KEY] is True
+    assert taken[sample_module.FAILURES_KEY] == ()
+    recorded = taken[sample_module.PROBES_KEY]
+    assert isinstance(recorded, tuple)
+    assert {
+        "name": "https",
+        "passed": True,
+        "error": "",
+        "counts_toward_confirmation": True,
+    } in recorded
+
+
+def test_a_pod_namespace_probe_failing_in_two_pods_names_both_attempts(tmp_path: Path) -> None:
+    """Two consecutively resolved pods, both failing, is still a failed sample.
+
+    Re-resolving must not become a way to keep trying until something
+    passes: the retry rule stays ONE retry, and a failure in two
+    different pods is a failure. Both attempts' errors are recorded
+    because they are now attempts in two DIFFERENT namespaces, which is
+    the first thing an operator needs to know when reading a rolled-back
+    run.
+    """
+    sample_module = importlib.import_module(_SAMPLE_MODULE)
+    taken, bus = _sample_under_churn(tmp_path=tmp_path, failing={"40127": 1, "40411": 124})
+
+    assert taken[sample_module.PASSED_KEY] is False
+    assert taken[sample_module.FAILURES_KEY] == (
+        {
+            "probe": "https",
+            "error": (
+                "the HEAD of https://archive.ubuntu.com/ubuntu/ from the pod namespace exited 1"
+                "; then the HEAD of https://archive.ubuntu.com/ubuntu/ from the pod namespace "
+                "exited 124"
+            ),
+        },
+    )
+    entered = tuple(
+        argv
+        for argv in bus.argvs
+        if argv in (_https_in_pod(pid="40127"), _https_in_pod(pid="40411"))
+    )
+    assert entered == (_https_in_pod(pid="40127"), _https_in_pod(pid="40411"))
+
+
 # The same declared parameters, plus the route this fleet reaches its k3s
 # server by. It is a LIST in the recorded file because that is what JSON
 # has; the parameters carry it as a tuple.
