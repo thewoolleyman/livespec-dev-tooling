@@ -1378,6 +1378,45 @@ def test_a_sample_fails_on_an_interface_that_appeared_outside_the_guarded_pair(
     )
 
 
+# Every interface name the pre-install read above carries, which is what
+# the snapshot records and all it records: the master is read live at
+# sample time and compared with these NAMES, so the recorded file needs
+# no new field and no format change.
+_SNAPSHOT_NAMES = ["cni0", "enp2s0", "flannel.1", "lo", "tailscale0", "vethf00d01"]
+
+
+def test_the_interface_reader_records_each_interface_s_master(tmp_path: Path) -> None:
+    """The reader carries the `master` column; the snapshot still carries names only.
+
+    The master is what tells a veth k3s's pod network made from one
+    Docker made: both appear during the window and only the second is
+    the guard's to find. It is carried on the READ rather than written
+    into the snapshot because the question a sample asks is about the
+    master an interface has NOW -- "is it a bridge this host already
+    had" -- which the recorded names answer on their own.
+    """
+    witness = importlib.import_module(_WITNESS_MODULE)
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+    assert "HostLink" in witness.__all__
+
+    links = witness.read_links(runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_BEFORE}))
+    assert {index: (link.name, link.master) for index, link in links.items()} == {
+        "1": ("lo", ""),
+        "2": ("enp2s0", ""),
+        "3": ("tailscale0", ""),
+        "4": ("cni0", ""),
+        "5": ("flannel.1", ""),
+        "6": ("vethf00d01", "cni0"),
+    }
+
+    snapshot = tmp_path / "before"
+    witness.write_interface_snapshot(
+        destination=snapshot, runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_BEFORE})
+    )
+    recorded = json.loads((snapshot / witness.INTERFACE_SNAPSHOT).read_text(encoding="utf-8"))
+    assert recorded == _SNAPSHOT_NAMES
+
+
 _FIREWALL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_sample_firewall"
 _FIREWALL_PATH = Path("livespec_dev_tooling/fleet/_docker_engine_guard_sample_firewall.py")
 _ACTIONS_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_firewall_actions"

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -46,6 +48,7 @@ __all__: list[str] = [
     "SYSCTL_PROBE",
     "WITNESS_SNAPSHOT",
     "WITNESS_TIMEOUT_SECONDS",
+    "HostLink",
     "containerd_pid",
     "interface_probe",
     "k3s_witness_probe",
@@ -168,8 +171,38 @@ def k3s_witness_probe(
     return ProbeResult(name=K3S_WITNESS_PROBE, passed=not faults, error="; ".join(faults))
 
 
-def read_links(*, runner: GuardCommandRunner) -> Mapping[str, str]:
-    """Every interface on the host, its INDEX mapped to its name.
+@dataclass(frozen=True, kw_only=True)
+class HostLink:
+    """One interface as `ip -o link show` reports it: its name and its master.
+
+    The MASTER rides beside the name because it is the only column that
+    tells a veth k3s's pod network made from a veth Docker made: both
+    appear during the observation window, both are named at random, and
+    only the second is the guard's to find. It is read live at sample
+    time rather than recorded, so the snapshot stays the list of NAMES
+    it already was.
+    """
+
+    name: str
+    master: str
+
+
+def _link_master(*, row: str) -> str:
+    """The interface this `ip -o link show` row is enslaved to, or nothing.
+
+    `ip` reports it as the field following the `master` keyword, and a
+    row without the keyword is enslaved to nothing. The field is taken
+    by PAIRING each field with its successor rather than by indexing
+    past the keyword, so a row whose last field is `master` yields
+    nothing and needs no bounds guard -- the same reason the reader
+    below zips slices.
+    """
+    pairs = pairwise(row.split())
+    return next((after for keyword, after in pairs if keyword == "master"), "")
+
+
+def read_links(*, runner: GuardCommandRunner) -> Mapping[str, HostLink]:
+    """Every interface on the host, its INDEX mapped to its name and master.
 
     The index is carried because that is how the canary's veth pair is
     identified: the container side names the host-side INDEX, never the
@@ -183,7 +216,9 @@ def read_links(*, runner: GuardCommandRunner) -> Mapping[str, str]:
     """
     answer = runner(argv=LINK_SHOW_ARGV, timeout_seconds=LINK_TIMEOUT_SECONDS)
     return {
-        index.rstrip(":"): name.rstrip(":").partition("@")[0]
+        index.rstrip(":"): HostLink(
+            name=name.rstrip(":").partition("@")[0], master=_link_master(row=raw)
+        )
         for raw in answer.stdout.splitlines()
         # `strict=False` is REQUIRED and not a relaxation: a row with
         # fewer than two fields pairs with nothing, which is the whole
@@ -196,7 +231,8 @@ def write_interface_snapshot(*, destination: Path, runner: GuardCommandRunner) -
     """Record every interface NAME on the host in the run's `before/` directory."""
     destination.mkdir(parents=True, exist_ok=True)
     _ = (destination / INTERFACE_SNAPSHOT).write_text(
-        json.dumps(sorted(read_links(runner=runner).values()), indent=2) + "\n",
+        json.dumps(sorted(link.name for link in read_links(runner=runner).values()), indent=2)
+        + "\n",
         encoding="utf-8",
     )
 
@@ -222,9 +258,9 @@ def interface_probe(
         str(name)
         for name in json.loads((snapshot / INTERFACE_SNAPSHOT).read_text(encoding="utf-8"))
     }
-    pair: set[str] = {links[canary_veth_index]} if canary_veth_index in links else set()
+    pair: set[str] = {links[canary_veth_index].name} if canary_veth_index in links else set()
     allowed: set[str] = recorded | {DOCKER_BRIDGE} | pair
-    appeared = tuple(sorted(name for name in links.values() if name not in allowed))
+    appeared = tuple(sorted(link.name for link in links.values() if link.name not in allowed))
     return ProbeResult(
         name=INTERFACE_PROBE,
         passed=not appeared,
