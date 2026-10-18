@@ -547,6 +547,10 @@ fabro_server_instances:
         inherit_env:
           - HOME
           - PATH
+        # Petri refuses a plugin backend with no configured host address: it
+        # cannot infer how a sandbox pod reaches Petri's services on this host.
+        # hp's wired LAN address, the one k3s pins and every factory node routes.
+        host_address: 192.168.1.4
     # Spelled rather than defaulted: this instance is deliberately RUNNING, and
     # the word is what the cutover flips on the fleet instance instead.
     service_state: running
