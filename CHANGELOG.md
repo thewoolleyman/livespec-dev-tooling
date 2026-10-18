@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.116.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.116.1...v1.116.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **ansible:** fabro_server derives a new environment from the seeded local entry when no default exists ([c23fdbc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c23fdbc8e9b4aa527ba1cea8903a913ad312bb27))
+
 ## [1.116.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.116.0...v1.116.1) (2026-10-18)
 
 
