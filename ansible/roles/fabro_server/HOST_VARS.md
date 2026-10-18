@@ -740,12 +740,13 @@ carrier `adeefec` (production web UI) staged on the control node.
 `fabro_server_host_checkout_remote` is declared because the host had no
 checkout, `fabro_server_manage_settings` is true because a fresh instance has
 no settings.toml to preserve, and `max_concurrent_runs` is 2 because two 8GB
-`livespec-ci` sandboxes fit the 22G sandbox slice. Coordinator ruling R196 raised
-both one step from 1 run and 14G (ruling R138) once gmktec became the Petri-era
-factory's home. The basis was one run peaking at 10.3 GB in the slice, with
-kubepods.slice at 21.2 GB and 53 of 62 GiB available. Three runs at 30G are
-pre-approved after a day at two with the slice's memory.peak under 20 GB and
-`/proc/pressure/memory` full avg300 at 0. `vault_secrets` declares the App key, from the wrapper's
+`livespec-ci` sandboxes fit the 18G sandbox slice. Coordinator ruling R196, as
+amended, raised both one step from 1 run and 14G (ruling R138) once gmktec became
+the Petri-era factory's home, sized against the CI-churn peak (kubepods.slice
+27.4 GB) rather than a quiet reading; one run peaked at 10.3 GB in the slice. A
+third run is pre-approved after a day at two with the slice's memory.peak under
+20 GB, `/proc/pressure/memory` full avg300 at 0, and system plus kubepods peak
+plus the new slice under 62 GiB with swap untouched. `vault_secrets` declares the App key, from the wrapper's
 `GITHUB_PRIVATE_KEY`, and the `OPENAI_API_KEY` placeholder an ACP-only graph
 needs to pass `fabro.model.no_ready_provider` admission. Its Docker comes from
 `ansible/docker-engine.yml`, which must be confirmed before this play installs
