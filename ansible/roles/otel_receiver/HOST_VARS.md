@@ -25,9 +25,12 @@ the state directory `~/.local/state/livespec-otel-receiver/`. It never touches
 daemon file left in that checkout is no longer referenced by anything; it is
 the checkout owner's to delete.
 
-**What the role only refers to.** `otel_receiver_env_file` carries
-`HONEYCOMB_INGEST_KEY_LIVESPEC`. The role checks that the file exists and names
-it in the unit's `EnvironmentFile=`; it never writes, copies or reads it.
+**The environment file.** `otel_receiver_env_file` carries
+`HONEYCOMB_INGEST_KEY_LIVESPEC`, and the unit names it in `EnvironmentFile=`.
+By default the role only checks that it exists. A host that sets
+`otel_receiver_env_from_controller` has it RENDERED when it is absent, mode
+0600, from that control-node variable (the credential wrapper supplies it); an
+existing file is never overwritten and never read back.
 
 | variable | default | meaning |
 | --- | --- | --- |
@@ -35,6 +38,7 @@ it in the unit's `EnvironmentFile=`; it never writes, copies or reads it.
 | `otel_receiver_user` / `otel_receiver_group` | `ubuntu` | the account it runs as |
 | `otel_receiver_home` | `/home/ubuntu` | that account's home |
 | `otel_receiver_env_file` | (none; required) | the ingest-key environment file |
+| `otel_receiver_env_from_controller` | `""` | control-node variable to render that file from when absent |
 | `otel_receiver_orchestrator_version` | `v0.211.0` (role default) | the release the receiver runs |
 
 ```yaml
@@ -44,6 +48,16 @@ otel_receiver_user: cwoolley
 otel_receiver_group: cwoolley
 otel_receiver_home: /home/cwoolley
 otel_receiver_env_file: /home/cwoolley/.fabro/storage/otel-receiver.env
+```
+
+```yaml
+# gmktec-xubuntu (no file on the host; rendered from the credential wrapper)
+otel_receiver_enabled: true
+otel_receiver_user: cwoolley
+otel_receiver_group: cwoolley
+otel_receiver_home: /home/cwoolley
+otel_receiver_env_file: /home/cwoolley/.fabro/storage/otel-receiver.env
+otel_receiver_env_from_controller: HONEYCOMB_INGEST_KEY_LIVESPEC
 ```
 
 ## Operator procedure

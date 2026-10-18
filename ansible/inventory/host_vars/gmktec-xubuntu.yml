@@ -59,3 +59,101 @@ docker_engine_k3s_server_argv: [sudo, -u, cwoolley, -H, ssh, -o, BatchMode=yes, 
 docker_sandbox_slice_memory_high: 12G
 docker_sandbox_slice_memory_max: 14G
 docker_sandbox_slice_cpu_quota: "1400%"
+
+# --- container_reclaim ---
+container_reclaim_canonical_host: gmktec-xubuntu.perch-rudd.ts.net
+container_reclaim_system_hostname: gmktec-xubuntu
+
+# --- disk_guard ---
+# hp's threshold. gmktec's root filesystem is 458G with 365G free (measured
+# 2026-10-18), and it is the only disk the container stores can use.
+disk_guard_threshold_gb: 40
+
+# --- sandbox_storage ---
+# OPTED OUT: gmktec-xubuntu has one disk (nvme0n1, Lexar NM790 2TB; measured
+# 2026-10-18), so there is no second disk to put swap and the container stores
+# on. ansible/fabro-hosts.yml skips the role on this word alone.
+sandbox_storage_enabled: false
+
+# --- sccache_redis ---
+# Half of hp's figures. The redis container runs under Docker's cgroup-parent,
+# inside the 14G sandbox slice coordinator ruling R138 sized, so every byte it
+# holds is a byte a sandbox cannot.
+sccache_redis_bind_addr: 172.17.0.1
+sccache_redis_port: 6379
+sccache_redis_maxmemory: 2gb
+sccache_redis_container_memory: 3g
+
+# --- storage_reclaim ---
+storage_reclaim_canonical_host: gmktec-xubuntu.perch-rudd.ts.net
+storage_reclaim_system_hostname: gmktec-xubuntu
+storage_reclaim_service_user: cwoolley
+storage_reclaim_home: /home/cwoolley
+
+# --- otel_receiver ---
+# The receiver every Fabro instance on this host exports to on the Docker bridge
+# gateway, as on hp. The ingest-key file is RENDERED from the control node's
+# credential wrapper when absent, so nothing on this host is placed by hand.
+otel_receiver_enabled: true
+otel_receiver_user: cwoolley
+otel_receiver_group: cwoolley
+otel_receiver_home: /home/cwoolley
+otel_receiver_env_file: /home/cwoolley/.fabro/storage/otel-receiver.env
+otel_receiver_env_from_controller: HONEYCOMB_INGEST_KEY_LIVESPEC
+
+# --- factory_kubeconfig ---
+# cwoolley is the only login account on this host (measured 2026-10-18).
+factory_kubeconfig_ssh_user: cwoolley
+
+# --- fabro_server ---
+# The current Fabro server (plan petri-factory-on-gmktec): the Petri-era v0.382
+# carrier adeefec, production web UI, the same build hp's fabro-server-candidate
+# runs. One instance, on the fleet port, under the account's own ~/.fabro.
+fabro_server_host_user: cwoolley
+fabro_server_host_group: cwoolley
+fabro_server_host_home: /home/cwoolley
+fabro_server_host_checkout: /home/cwoolley/repos/livespec-orchestrator-beads-fabro
+# The host has no checkout (measured 2026-10-18), so the role clones it. Public.
+fabro_server_host_checkout_remote: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
+# A fresh instance has no settings.toml to preserve, so the role writes it.
+fabro_server_manage_settings: true
+fabro_server_instances:
+  - unit_name: fabro-server
+    home_dir: /home/cwoolley/.fabro
+    port: 32276
+    canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32276
+    cli_target_url: http://127.0.0.1:32276
+    # ONE. Each livespec-ci sandbox is sized 8GB, and the sandbox slice's
+    # memory_max is 14G (R138), so a second concurrent run would push the slice
+    # into reclaim and OOM. Raise it only with the slice, after the day of load
+    # R138 asks for.
+    max_concurrent_runs: 1
+    github_app_id: "3668528"
+    otel_dropin: present
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
+    binary_sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
+    # The tag the orchestrator workflow pins today
+    # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
+    # python-agent-v1.114.1). On this engine the catalog, not the workflow
+    # table, decides the image, so the two must be bumped together.
+    environments:
+      - id: livespec-ci
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+        cpu: 4
+        memory: 8GB
+    # Created in the instance's vault only when it lacks the name, never
+    # overwritten (roles/fabro_server/tasks/vault.yml). The App key comes from
+    # the control node's credential wrapper. OPENAI_API_KEY is NOT a key: an
+    # ACP-only graph fails admission with fabro.model.no_ready_provider unless
+    # some provider is configured, which is why hp's candidate carries the same
+    # placeholder (fabro-currency research 007).
+    vault_secrets:
+      - name: GITHUB_APP_PRIVATE_KEY
+        type: file
+        description: GitHub App 3668528 private key
+        from_controller_env: GITHUB_PRIVATE_KEY
+      - name: OPENAI_API_KEY
+        type: token
+        description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
+        value: placeholder-not-a-real-key
+    service_state: running

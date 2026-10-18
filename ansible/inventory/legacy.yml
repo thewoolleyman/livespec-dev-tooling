@@ -69,6 +69,12 @@ all:
           hosts:
             hp-xubuntu:
               ansible_user: cwoolley
+            # The current Fabro server's host (plan petri-factory-on-gmktec). An
+            # untainted CI node too, so it is in ci_pool, sandbox_hosts and
+            # docker_engine_hosts; its Docker must be confirmed by
+            # ansible/docker-engine.yml before fabro-hosts.yml installs a server.
+            gmktec-xubuntu:
+              ansible_user: cwoolley
         usb_backup_hosts:
           hosts:
             poweredge-xubuntu:

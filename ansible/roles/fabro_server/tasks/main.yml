@@ -94,6 +94,14 @@
     # the only default that leaves the catalog of an instance predating the
     # axis exactly as its server holds it.
     fabro_server_environments: "{{ fabro_server_instance.environments | default([]) }}"
+    # OPTIONAL, and EMPTY by default, for the same reason: the vault entries
+    # this instance must hold, each created only when the vault lacks its name
+    # and never overwritten (tasks/vault.yml). An entry spells `name`, `type`
+    # (`token` or `file`), an optional `description`, and EITHER
+    # `from_controller_env` — the control-node variable the value is read from,
+    # for a real credential — OR `value`, for a committed non-secret
+    # placeholder.
+    fabro_server_vault_secrets: "{{ fabro_server_instance.vault_secrets | default([]) }}"
 
 - name: Refuse an instance mapping that does not spell every axis
   # render-unit.sh exited 3 naming the one variable a values file had missed.
@@ -418,6 +426,124 @@
     # reaches here: ansible.builtin.git aborts the play.
     - not (fabro_server_checkout_clone.changed | default(false))
 
+# --- the instance's state root, its server.env, and Docker access ------------
+#
+# A factory host that has never run this instance has none of these, and each
+# used to be a refusal whose only way through was a step by hand: start the
+# server once to create its state directory and server.env, and add the service
+# account to the docker group. The fleet host guard denies both, and the plan
+# assertion "nothing on that host is set up by hand beyond the role's documented
+# out-of-band state" forbids them, so the role takes them. On a host that
+# already has them every task below is a no-op.
+
+- name: Create this instance's state root, storage directory and binary directory
+  # Owned by the service account. The mode only ADDS the owner's bits and never
+  # removes any: an existing directory keeps the mode it has — hp-xubuntu's
+  # parked mi-homelab instance holds 0700 on both, measured 2026-10-18, and a
+  # literal 0755 would have loosened them — while a new one is created under
+  # the usual umask, 0755. The binary directory is here because the staged copy
+  # below writes beside binary_path, and ansible.builtin.copy refuses a
+  # destination whose parent does not exist.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ fabro_server_host_user }}"
+    group: "{{ fabro_server_host_group }}"
+    mode: u+rwx
+  become: true
+  loop:
+    - "{{ fabro_server_home_dir }}"
+    - "{{ fabro_server_home_dir }}/storage"
+    - "{{ fabro_server_binary_path | dirname }}"
+
+- name: Generate the instance's server.env when it has none
+  # Fabro's own formats (fabro-util session_secret.rs and dev_token.rs at the
+  # carrier commit adeefec): SESSION_SECRET is 32 random bytes as 64 hex
+  # characters, FABRO_DEV_TOKEN is `fabro_dev_` plus 32 random bytes as 64 hex
+  # characters. Both are generated ON THE HOST, so neither value ever reaches
+  # the controller, a variable, a module argument or the process table: the
+  # argv below carries only the program and the path.
+  #
+  # `creates:` makes it idempotent and is what keeps an existing file — and so
+  # a running server's dev token, which the Dispatcher and the environment
+  # catalog requests authenticate with — untouched. O_EXCL makes the same
+  # promise a second time, at the moment of the write. Under `--check` the
+  # command module honours `creates:`, so a drift read of a fresh host reports
+  # the generation as a would-be change and writes nothing.
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import os, secrets, sys
+        fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write("SESSION_SECRET=" + secrets.token_hex(32) + "\n")
+            handle.write("FABRO_DEV_TOKEN=fabro_dev_" + secrets.token_hex(32) + "\n")
+      - "{{ fabro_server_home_dir }}/storage/server.env"
+    creates: "{{ fabro_server_home_dir }}/storage/server.env"
+  become: true
+  become_user: "{{ fabro_server_host_user }}"
+  register: fabro_server_env_generate
+
+- name: Look for the Docker engine guard's state root and its commit marker
+  # The docker_engine role refuses a host on which ANY account is in the docker
+  # group until its guarded install reaches the commit point, and on a host it
+  # rolled back the group already exists with nobody in it (gmktec-xubuntu,
+  # 2026-10-18). So the group existing is not the question; the guard having
+  # committed is. A host whose Docker predates the guard (hp-xubuntu, vps) has
+  # no state root at all, and there the group is all that is required.
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  become: true
+  register: fabro_server_docker_guard
+  check_mode: false
+  loop:
+    - "{{ fabro_server_docker_engine_state_root }}"
+    - "{{ fabro_server_docker_engine_state_root }}/confirmed"
+
+- name: Read the docker group
+  ansible.builtin.command:
+    argv: [getent, group, docker]
+  register: fabro_server_docker_group
+  changed_when: false
+  failed_when: fabro_server_docker_group.rc not in [0, 2]
+  check_mode: false
+
+- name: Decide whether this host's Docker is ready for the service account
+  ansible.builtin.set_fact:
+    fabro_server_docker_ready: >-
+      {{ fabro_server_docker_group.rc == 0
+      and (not fabro_server_docker_guard.results[0].stat.exists
+           or fabro_server_docker_guard.results[1].stat.exists) }}
+  check_mode: false
+
+- name: Refuse a running instance on a host whose Docker is not ready
+  # Every sandbox this instance launches is a container, so a server without
+  # Docker access fails every run at its first stage. Refused here, before the
+  # unit is installed, rather than discovered at the canary.
+  ansible.builtin.assert:
+    that:
+      - fabro_server_docker_ready | bool
+    fail_msg: >-
+      {{ inventory_hostname }} has no docker group, or its guarded Docker
+      install has not committed ({{ fabro_server_docker_engine_state_root }}/confirmed
+      is absent). Converge ansible/docker-engine.yml on this host first; this
+      role adds {{ fabro_server_host_user }} to the docker group only after
+      that guard has committed.
+    success_msg: this host's Docker is ready for the service account
+  when: fabro_server_service_state == 'running'
+
+- name: Put the service account in the docker group
+  # append: true, so no other supplementary group is touched. A no-op on every
+  # host whose account is already a member (hp-xubuntu and vps, 2026-10-18).
+  ansible.builtin.user:
+    name: "{{ fabro_server_host_user }}"
+    groups: [docker]
+    append: true
+  become: true
+  when: fabro_server_docker_ready | bool
+
 - name: Look for the instance's generated server environment file
   ansible.builtin.stat:
     path: "{{ fabro_server_home_dir }}/storage/server.env"
@@ -430,12 +556,15 @@
     that:
       - fabro_server_env_file.stat.exists
     fail_msg: >-
-      {{ fabro_server_home_dir }}/storage/server.env does not exist. It holds
-      this instance's generated SESSION_SECRET and FABRO_DEV_TOKEN, is
-      mode 0600, and is created by Fabro itself — never by this role and never
-      by the installer it replaces. Start the instance's server once by hand to
-      generate it, then re-run.
+      {{ fabro_server_home_dir }}/storage/server.env does not exist, and the
+      task above that generates it did not create it. It holds this instance's
+      SESSION_SECRET and FABRO_DEV_TOKEN at mode 0600; read that task's output.
     success_msg: the instance's server.env exists
+  # Skipped for exactly one run: a dry run of a host whose server.env the task
+  # above would generate. Under --check it wrote nothing, so the stat still
+  # reports the file absent, and refusing would forbid the drift read of the
+  # very host the generation exists for.
+  when: not (ansible_check_mode and fabro_server_env_generate.changed)
 
 - name: Probe for the variable names the instance's server.env must carry
   # A grep on the host rather than a slurp back to the controller: the file
@@ -460,6 +589,7 @@
   loop:
     - SESSION_SECRET
     - FABRO_DEV_TOKEN
+  when: not (ansible_check_mode and fabro_server_env_generate.changed)
 
 - name: Refuse an instance whose server.env is missing a required variable
   ansible.builtin.assert:
@@ -472,6 +602,7 @@
       without it has no browser auth. Regenerate the file rather than editing
       one in by hand.
     success_msg: the instance's server.env carries both required variables
+  when: not (ansible_check_mode and fabro_server_env_generate.changed)
 
 # TWO PRECONDITIONS HAVE NO CHECK, AND FAKING ONE WOULD BE WORSE THAN NONE.
 #
@@ -485,11 +616,11 @@
 # host. Its absence shows up as a console that answers on loopback and not on
 # the canonical host.
 #
-# The GitHub App private key lives inside the instance's own Fabro vault, put
-# there with `fabro secret set GITHUB_APP_PRIVATE_KEY --value-stdin`. Reading
-# the vault to check would mean holding a private key in a play's variables to
-# prove it exists. Its absence shows up the first time the instance tries to
-# act as its App.
+# The GitHub App private key lives inside the instance's own Fabro vault. An
+# instance that declares it under `vault_secrets` has it created there from the
+# control node's environment once the server answers (tasks/vault.yml), and only
+# its NAME is ever checked. An instance that does not declare it owns it out of
+# band, and its absence shows up the first time the instance acts as its App.
 
 - name: Probe for the curl the installed verifier runs at every unit start
   # install.sh required curl and jq. Only curl survives: it is what
@@ -1178,8 +1309,30 @@
   changed_when: false
   check_mode: false
   when:
-    - fabro_server_environments | length > 0
+    - (fabro_server_environments | length > 0) or (fabro_server_vault_secrets | length > 0)
     - fabro_server_service_state == 'running'
+
+- name: Create the vault entries this instance declares and lacks
+  # Before the environment catalog, because a sandbox environment is no use to
+  # an instance that cannot yet act as its GitHub App.
+  ansible.builtin.include_tasks: vault.yml
+  when:
+    - fabro_server_vault_secrets | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) == 200
+
+- name: Note that this instance's declared vault entries were not reached
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} on {{ inventory_hostname }} declares
+      {{ fabro_server_vault_secrets | length }} vault entr(ies), and its server
+      did not answer http://127.0.0.1:{{ fabro_server_port }}/api/v1/health, so
+      its vault was neither read nor written. Expected on a dry run against an
+      instance this role has not installed yet.
+  when:
+    - fabro_server_vault_secrets | length > 0
+    - fabro_server_service_state == 'running'
+    - fabro_server_catalog_health.status | default(-1) != 200
 
 - name: Create or update each sandbox environment this instance declares
   # `loop_var` rather than Ansible's `item`, because the included file is read by

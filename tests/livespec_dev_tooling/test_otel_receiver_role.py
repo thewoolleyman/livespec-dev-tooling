@@ -114,20 +114,34 @@ def test_the_unit_runs_the_tracked_entry_point_from_that_clone() -> None:
     assert "WorkingDirectory={{ otel_receiver_state_dir }}" in unit, unit
 
 
-def test_the_role_never_writes_the_environment_file() -> None:
+def test_the_role_writes_the_environment_file_only_by_the_opt_in_create_only_render() -> None:
     unit = _UNIT.read_text(encoding="utf-8")
     assert "EnvironmentFile={{ otel_receiver_env_file }}" in unit, unit
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    assert (
+        _scalar(text=defaults, name="otel_receiver_env_from_controller") == ""
+    ), "the render is opt-in: by default the file is provisioned outside the role"
+    opt_in = "when: otel_receiver_env_from_controller | length > 0"
+    renders = []
     for task in _tasks():
         if "otel_receiver_env_file" not in task:
             continue
         writes = re.search(
             r"^  ansible\.builtin\.(copy|template|file|lineinfile|blockinfile):", task, re.MULTILINE
         )
-        assert writes is None, f"a task that names the env file writes something:\n{task}"
-        targets = re.findall(r"^    (?:path|dest): (.+)$", task, re.MULTILINE)
-        assert all("otel_receiver_env_file" not in target for target in targets) or (
-            "ansible.builtin.stat:" in task
-        ), task
+        if writes is None:
+            continue
+        assert opt_in in task, f"a write naming the env file is not gated on the opt-in:\n{task}"
+        if writes[1] == "file":
+            assert 'path: "{{ otel_receiver_env_file | dirname }}"' in task, task
+            assert "state: directory" in task, task
+            continue
+        assert writes[1] == "copy", task
+        assert "force: false" in task, f"the render must never overwrite an existing file:\n{task}"
+        assert "no_log: true" in task, f"the render must never display the key:\n{task}"
+        assert 'mode: "0600"' in task, task
+        renders.append(task)
+    assert len(renders) == 1, renders
 
 
 def test_a_restart_needs_the_operators_lever() -> None:

@@ -334,3 +334,11 @@ fabro_server_environment_template_id: default
 # --- shared, host-invariant destinations -----------------------------------
 fabro_server_libexec_dir: /usr/local/libexec
 fabro_server_unit_dir: /etc/systemd/system
+
+# Where the docker_engine role's guarded install keeps its state, and so where
+# its commit marker `confirmed` appears. The service account is put in the
+# docker group only on a host with no such directory (its Docker predates the
+# guard) or with the marker present: before the commit point that guard refuses
+# a host on which any account is in the group. Kept equal to
+# docker_engine_state_root in roles/docker_engine/defaults/main.yml.
+fabro_server_docker_engine_state_root: /var/lib/docker-engine-guard
