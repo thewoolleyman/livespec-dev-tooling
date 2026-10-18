@@ -655,8 +655,9 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Fabro factory registry",
-    "test": "tests.livespec_dev_tooling.test_fabro_factory_registry_role.test_the_committed_inventory_declares_a_registry_that_resolves",
-    "reason": "Integration-tier (module-level `pytest.mark.integration`; the AST marker route direction 4 accepts beside the `tests.consumer` prefix allowlist). The mapped arm runs the committed `fabro_factory_registry` role under the pinned `ansible-core` against this repository's OWN inventory, which is the one thing a synthetic fixture cannot assert: that the registry `ansible/inventory/group_vars/dev_hosts.yml` declares resolves, for every `dev_hosts` host, to an `https://` address built from the named instance's `canonical_host`. The section's other paragraphs are held by the module's siblings — the empty-object default, the whole-file replacement that drops an undeclared entry, the root-owned world-readable mode read off the install task, the `--tags` narrowing read from `--list-tasks` over the committed play, and the five refusals, each proven to stop the play before the install task runs on any host. A clause-level arm is what catches the failure this section exists to prevent: a declaration that looks right and names an instance the inventory does not have, which would leave every registry-backed factory in fifteen repositories unresolvable."
+    "test": "TODO",
+    "reason": "A real test at the required tier is owed for this heading; livespec-dev-tooling-txadim owns it.",
+    "work_item": "livespec-dev-tooling-txadim"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -757,7 +758,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the fabro-hosts play renders the factory registry from the inventory's factory names",
-    "test": "tests.livespec_dev_tooling.test_fabro_factory_registry_role.test_each_declared_factory_resolves_to_its_instances_https_address",
-    "reason": "Integration-tier (module-level `pytest.mark.integration`, the AST marker route of direction 4). The mapped arm is the scenario's first Given/Then pair: `fabro_factory_registry` maps `legacy` to one host's instance WITH a `docker_host` and `petri` to another's WITHOUT one, and the committed role — run, not read, because every claim here is a claim about what `selectattr` through `hostvars` resolves — renders exactly those two entries, each `server` being `https://` plus that instance's `canonical_host`, with `docker_host` on `legacy` alone. Its control arm asserts the bare `canonical_host` is NOT the value, so a role that dropped the scheme cannot pass. The scenario's remaining Givens are the module's siblings: the re-point onto a third host, the undeclared name that must be GONE rather than merged, the empty object for an inventory that declares nothing, the `--tags` run that selects no rendering task, and the five <invalid> examples — the last proven both by the play failing and by the install task never appearing, paired against a valid registry that reaches it."
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-txadim owns it.",
+    "work_item": "livespec-dev-tooling-txadim"
   }
 ]
