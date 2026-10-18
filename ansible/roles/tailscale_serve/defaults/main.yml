@@ -1,0 +1,11 @@
+---
+# tailscale_serve — the `tailscale serve` mappings that publish a host's
+# loopback-only services on the tailnet. See HOST_VARS.md.
+#
+# Empty by default, so a host in the play that declares nothing is left exactly
+# as it is: the role neither adds nor removes a mapping it was not given. Each
+# entry is a mapping with two keys:
+#
+#   https_port  the tailnet HTTPS port the node serves on (e.g. 32276)
+#   backend     the loopback URL it proxies to (e.g. http://127.0.0.1:32276)
+tailscale_serve_mappings: []

@@ -157,3 +157,10 @@ fabro_server_instances:
         description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
         value: placeholder-not-a-real-key
     service_state: running
+
+# tailscale_serve: publish the fabro-server instance's loopback port on the
+# tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
+# hp-xubuntu and vps made theirs by hand and declare nothing (roles/tailscale_serve/HOST_VARS.md).
+tailscale_serve_mappings:
+  - https_port: 32276
+    backend: http://127.0.0.1:32276

@@ -93,6 +93,11 @@
     # see the role's HOST_VARS.md for the announced-window procedure.
     - role: otel_receiver
       tags: [otel_receiver]
+    # The `tailscale serve` mappings that publish this host's loopback-only Fabro
+    # instances on the tailnet. Empty unless the host declares some, so hosts
+    # whose mappings were made by hand are left as they are; see HOST_VARS.md.
+    - role: tailscale_serve
+      tags: [tailscale_serve]
   tasks:
     - name: Refuse a Fabro target unit this host does not declare
       ansible.builtin.assert:

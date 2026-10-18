@@ -1,0 +1,68 @@
+---
+# tailscale_serve — publish each declared loopback service on the tailnet with
+# `tailscale serve`, so a factory host's Fabro server is reachable at
+# https://<host>.perch-rudd.ts.net:<port> without a step by hand.
+#
+# WHY THIS IS A ROLE. tailscale-admin documents each mapping as a one-line
+# `sudo tailscale serve --bg --https=<port> <backend>` an operator runs on the
+# host, and the fleet host guard refuses that to an agent: a host is changed
+# only by a committed converge. Measured 2026-10-18: gmktec-xubuntu's first
+# fabro-hosts.yml converge brought its Fabro server up on 127.0.0.1:32276,
+# which answered on loopback and not at https://gmktec-xubuntu.perch-rudd.ts.net:32276
+# (curl 000, against hp-xubuntu's 200 on the same path), so the Dispatcher had
+# no route to it.
+#
+# ADDITIVE ONLY. The role never turns a mapping off and never touches a port
+# it was not given. A host whose mappings were made by hand (hp-xubuntu, vps)
+# declares nothing and is left exactly as it is.
+#
+# The mapping persists in tailscaled's own state (`--bg`), so there is no unit
+# here: once set it survives tailscaled restarts and reboots.
+
+- name: Read this node's tailscale serve configuration
+  ansible.builtin.command:
+    argv: [tailscale, serve, status]
+  become: true
+  register: tailscale_serve_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: tailscale_serve_mappings | length > 0
+
+- name: Name each declared mapping's disposition in the run output
+  # Ansible skips a `command` under --check, so without this a drift read would
+  # say nothing about whether a converge would publish a mapping.
+  ansible.builtin.debug:
+    msg: >-
+      :{{ item.https_port }} -> {{ item.backend }}
+      {{ 'is already served; nothing to do'
+         if ((':' ~ item.https_port ~ ' ') in (tailscale_serve_status.stdout | default(''))
+             and ('proxy ' ~ item.backend) in (tailscale_serve_status.stdout | default('')))
+         else 'is not served and will be published' }}
+  loop: "{{ tailscale_serve_mappings }}"
+  loop_control:
+    label: ":{{ item.https_port }}"
+
+- name: Publish each declared mapping this node does not already serve
+  # A mapping counts as served when the status names the port AND the backend
+  # it proxies to, which is how `tailscale serve status` renders one:
+  #   https://<host>.<tailnet>.ts.net:<port> (tailnet only)
+  #   |-- / proxy <backend>
+  # A port served to some other backend is re-pointed at the declared one.
+  # Under --check this reports the change without making it.
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - serve
+      - --bg
+      - --yes
+      - "--https={{ item.https_port }}"
+      - "{{ item.backend }}"
+  become: true
+  loop: "{{ tailscale_serve_mappings }}"
+  loop_control:
+    label: ":{{ item.https_port }} -> {{ item.backend }}"
+  when: >-
+    not ((':' ~ item.https_port ~ ' ') in (tailscale_serve_status.stdout | default(''))
+    and ('proxy ' ~ item.backend) in (tailscale_serve_status.stdout | default('')))
+  changed_when: true
