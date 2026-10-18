@@ -1,0 +1,45 @@
+---
+# fabro_factory_registry — which Fabro server instance answers to each logical
+# factory name, published for the Dispatcher that runs natively on this host.
+# See HOST_VARS.md.
+#
+# THE INVENTORY VARIABLE IS NOT DECLARED HERE, DELIBERATELY. The registry is
+# `fabro_factory_registry`, a name the specification fixes
+# (`SPECIFICATION/non-functional-requirements.md` §"Fabro factory registry"),
+# declared once in `ansible/inventory/group_vars/dev_hosts.yml`. A role default
+# of that exact name would be a role-scoped variable whose name is the role's
+# own without the prefix every other variable in this tree carries, which
+# `ansible-lint`'s `var-naming[no-role-prefix]` refuses. So the role's DEFAULT
+# for it rides the one expression every task below reads it through: an
+# inventory that declares no registry resolves to no entries at all.
+#
+# THE EMPTY MAPPING IS A REAL ANSWER rather than a skip: with no entries the
+# role still renders the file, holding the empty object, so a Dispatcher reading
+# it refuses a registry-backed factory by name instead of resolving one out of a
+# stale file an earlier converge left behind.
+#
+# Each entry is keyed by the logical factory name and carries:
+#
+#   host         the inventory name of the host that serves it
+#   unit_name    the `unit_name` of one mapping in that host's
+#                `fabro_server_instances`
+#   docker_host  OPTIONAL — the container daemon's address, spelled as the
+#                Docker CLI spells `DOCKER_HOST`
+fabro_factory_registry_entries: "{{ fabro_factory_registry | default({}) | dict2items }}"
+
+# WHERE THE REGISTRY IS WRITTEN, as a variable rather than a literal in the task.
+# The default is the path the specification names
+# (`SPECIFICATION/non-functional-requirements.md` §"Fabro factory registry"), so a
+# converge publishes exactly what it did before and no inventory declares this.
+#
+# IT EXISTS SO THAT A TEST NEED NOT CONVERGE THE MACHINE IT RUNS ON. The role's
+# tests run the committed tasks — every claim here is a claim about what Jinja
+# resolves through `hostvars`, which only a run can answer — and a run whose dest
+# is the real path reads that path even under `--check`: `--diff` reports the
+# install task against whatever the host holds. So the suite's verdict depended on
+# whether the machine already had the file. It silently did: the control node
+# acquired it in v1.118.0's apply on 2026-10-18 and every pre-push from it failed
+# from 19:43Z, while master CI and every factory sandbox — none of which hold the
+# file — stayed green (work-item livespec-dev-tooling-7qfnh6). Both tasks below
+# derive from this one variable, so overriding it moves the directory too.
+fabro_factory_registry_dest: /etc/livespec/fabro-factories.json

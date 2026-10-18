@@ -1,0 +1,169 @@
+---
+# fabro_factory_registry — render `/etc/livespec/fabro-factories.json`, the file
+# that tells a natively-running Dispatcher which Fabro server instance answers
+# to each logical factory name.
+#
+# WHY THIS IS A ROLE. The maintainer ruled on 2026-10-15 (plan
+# `petri-factory-on-gmktec`, epic `bd-ib-fyozyd`) that no playbook, role or
+# committed factory entry may name a machine hostname, and that a factory is
+# bound to a machine only in the gitops inventory. A repository's
+# `dispatcher.factories` entry may therefore declare `"registry": true` and
+# carry no address at all (livespec-orchestrator-beads-fabro `contracts.md`
+# §"Factory addresses resolved from a host registry"); the address it resolves
+# by name comes from this file. Moving a factory from one instance to another
+# is then a change to `fabro_factory_registry` plus this converge, and the
+# Kubernetes move that is already planned changes no repository.
+#
+# THE INVENTORY IS THE SINGLE DECLARATION. The mapping lives once, in
+# `ansible/inventory/group_vars/dev_hosts.yml`, and this role resolves it
+# through `hostvars`: a factory's instance may live on ANY inventory host, not
+# only on a host in the group this role runs on, which is why the entry names
+# the host rather than being scanned out of one group's host_vars.
+#
+# REFUSED BEFORE WRITING, ON EVERY HOST. The validation below is one block with
+# `any_errors_fatal`, so a registry no host can resolve ends the play while
+# every host's file is still untouched. That ordering is the specification's
+# ("MUST refuse, before it writes the registry on any host") and not merely a
+# per-host failure: the mapping is declared at the GROUP level, so an
+# unresolvable entry is unresolvable everywhere, and a run that wrote it on the
+# hosts it reached first would leave the fleet half-converged onto a registry
+# the maintainer never meant.
+
+- name: Refuse an unresolvable Fabro factory before any host writes a registry
+  any_errors_fatal: true
+  block:
+    - name: Refuse a Fabro factory whose name is blank
+      ansible.builtin.assert:
+        that:
+          - item.key is string
+          - (item.key | trim | length) > 0
+        fail_msg: >-
+          fabro_factory_registry declares the factory {{ item.key | to_json }},
+          whose name is not a string that is non-empty once surrounding
+          whitespace is removed. The factory name is what a repository's
+          dispatcher.factories entry is resolved BY, so a blank one names
+          nothing.
+        success_msg: the factory {{ item.key }} has a usable name
+      loop: "{{ fabro_factory_registry_entries }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Refuse a Fabro factory whose host is not an inventory host
+      ansible.builtin.assert:
+        that:
+          - (item.value.host | default('')) in groups['all']
+        fail_msg: >-
+          the factory {{ item.key }} names the host
+          {{ item.value.host | default('') | to_json }}, which this inventory
+          does not declare. A factory is bound to a machine only in the
+          inventory, so its host must be the inventory name of the host that
+          serves it.
+        success_msg: the factory {{ item.key }} names an inventory host
+      loop: "{{ fabro_factory_registry_entries }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # Ordered after the host check on purpose: `hostvars[...]` below is only
+    # meaningful once the host is known to exist, and `any_errors_fatal` has
+    # already ended the play by the time this task would have resolved it.
+    - name: Refuse a Fabro factory whose unit_name matches no instance on its host
+      ansible.builtin.assert:
+        that:
+          - >-
+            (hostvars[item.value.host].fabro_server_instances | default([])
+             | selectattr('unit_name', 'equalto', item.value.unit_name | default(''))
+             | list | length) > 0
+        fail_msg: >-
+          the factory {{ item.key }} names the unit
+          {{ item.value.unit_name | default('') | to_json }} on the host
+          {{ item.value.host }}, whose fabro_server_instances declares no
+          mapping with that unit_name. A factory names ONE Fabro server
+          instance, and that instance is where its address comes from.
+        success_msg: the factory {{ item.key }} matches an instance on its host
+      loop: "{{ fabro_factory_registry_entries }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Refuse a Fabro factory whose instance has no canonical host
+      ansible.builtin.assert:
+        that:
+          - >-
+            (((hostvars[item.value.host].fabro_server_instances
+               | selectattr('unit_name', 'equalto', item.value.unit_name)
+               | first).canonical_host | default('')) | trim | length) > 0
+        fail_msg: >-
+          the factory {{ item.key }} matches the unit {{ item.value.unit_name }}
+          on the host {{ item.value.host }}, whose canonical_host is not a
+          string that is non-empty once surrounding whitespace is removed. The
+          server address is https:// followed by that value, so a blank one
+          would publish the scheme and nothing else.
+        success_msg: the factory {{ item.key }} resolves to a canonical host
+      loop: "{{ fabro_factory_registry_entries }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Refuse a Fabro factory whose docker_host is blank
+      ansible.builtin.assert:
+        that:
+          - item.value.docker_host is string
+          - (item.value.docker_host | trim | length) > 0
+        fail_msg: >-
+          the factory {{ item.key }} declares the docker_host
+          {{ item.value.docker_host | to_json }}, which is not a string that is
+          non-empty once surrounding whitespace is removed. docker_host is
+          OPTIONAL — a factory whose container daemon has no address declares
+          none at all rather than declaring an empty one.
+        success_msg: the factory {{ item.key }} declares a usable docker_host
+      loop: "{{ fabro_factory_registry_entries }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: item.value.docker_host is defined
+
+# Accumulated rather than built in one expression because Jinja has no way to
+# map a per-entry derivation over a mapping without a loop, and an accumulator
+# fed by `combine` keeps the derivation itself a pure expression: each
+# iteration re-reads the fact the previous one set and adds exactly one entry.
+- name: Start this host's Fabro factory registry empty
+  ansible.builtin.set_fact:
+    fabro_factory_registry_resolved: {}
+
+- name: Resolve each declared Fabro factory to its instance's address
+  ansible.builtin.set_fact:
+    fabro_factory_registry_resolved: >-
+      {{ fabro_factory_registry_resolved | combine({
+           item.key: {
+             'server': 'https://' ~ ((hostvars[item.value.host].fabro_server_instances
+                                      | selectattr('unit_name', 'equalto', item.value.unit_name)
+                                      | first).canonical_host | trim)
+           } | combine({'docker_host': item.value.docker_host | trim}
+                       if item.value.docker_host is defined else {})
+         }) }}
+  loop: "{{ fabro_factory_registry_entries }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Create the directory this host's Fabro factory registry lives in
+  ansible.builtin.file:
+    path: "{{ fabro_factory_registry_dest | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+# WHOLE-FILE, which is what makes an entry the inventory no longer declares
+# disappear: the content is the derived mapping and nothing else, so a converge
+# that runs this task leaves the file holding exactly what the inventory says.
+# World-readable because the Dispatcher reads it as the operator, and it holds
+# no secret — only names and addresses that are already in the inventory.
+#
+# The dest is `fabro_factory_registry_dest`, defaulting to the path the
+# specification names; see `defaults/main.yml` for why it is a variable.
+- name: Install this host's Fabro factory registry
+  ansible.builtin.copy:
+    content: "{{ fabro_factory_registry_resolved | to_nice_json }}\n"
+    dest: "{{ fabro_factory_registry_dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
