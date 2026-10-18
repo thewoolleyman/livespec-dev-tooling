@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.117.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.117.1...v1.117.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **fleet:** a phase that finds nothing clears the findings it left before ([e5a99ca](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e5a99ca95018a111d4647cf9a09da9d9dd568fda))
+* **fleet:** a reported footprint residue ends the rollback as partial ([cb1241f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cb1241f6bec396d25d4f9e6aed31a81084583c64))
+* **fleet:** remove Docker's footprint only once the daemon is inactive ([cd3b4a7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cd3b4a74b11080bbe4f104f0702ce533dbb4c573))
+* **fleet:** the footprint sweep reports a residual Docker chain too ([fe96e28](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fe96e281fbc3a86b2f945001738bc3f7af3fcf35))
+
 ## [1.117.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.117.0...v1.117.1) (2026-10-18)
 
 
