@@ -326,10 +326,20 @@ fabro_server_otel_dropin_default: unmanaged
 #
 # For an environment the catalog already holds, that entry IS its own base. For
 # one it does not hold yet, this names the entry to derive from: `default`, the
-# environment every Fabro server seeds, so a factory host always has one. It is
-# not a per-instance axis because an instance that needed a different base would
-# be declaring a second environment, which the axis already expresses.
+# docker environment `fabro install` seeds. It is not a per-instance axis because
+# an instance that needed a different base would be declaring a second
+# environment, which the axis already expresses.
 fabro_server_environment_template_id: default
+
+# The entry a new environment falls back to when the catalog holds neither the
+# declared id nor `default`. Only `fabro install` seeds `default` (the server
+# itself never seeds on startup), and this role writes server.env itself rather
+# than running install, so a server it brings up from nothing has no `default`.
+# Measured 2026-10-18 on gmktec-xubuntu's first converge, carrier adeefec: the
+# catalog held `local` alone. `local` is still the server's own answer, so its
+# fields carry the build's schema; the role sets only its provider to `docker`,
+# which the declaration already implies by naming a docker image.
+fabro_server_environment_fallback_template_id: local
 
 # --- shared, host-invariant destinations -----------------------------------
 fabro_server_libexec_dir: /usr/local/libexec

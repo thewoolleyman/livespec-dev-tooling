@@ -990,3 +990,43 @@ def test_every_pipefail_shell_task_in_the_role_names_a_shell_that_has_pipefail()
         "the role must still reach its API with a shell request; this arm guards the "
         "interpreter those requests need, and with none left it guards nothing"
     )
+
+
+# --- a server the role brought up from nothing ------------------------------
+
+_FALLBACK_READ = "Read the seeded entry a new environment falls back to"
+_FALLBACK_DEFAULT = "fabro_server_environment_fallback_template_id"
+
+
+def test_a_new_environment_falls_back_to_the_seeded_local_entry_as_a_docker_base() -> None:
+    """A server with no `default` entry still yields a base read from the server itself.
+
+    Measured 2026-10-18 on gmktec-xubuntu's first fabro-hosts converge (carrier adeefec):
+    the catalog held `local` alone, because only `fabro install` seeds `default` and this
+    role never runs install, so the converge refused with nothing to derive from.
+    """
+    assert _catalog_defaults().get(_FALLBACK_DEFAULT) == "local", (
+        f"the role must default {_FALLBACK_DEFAULT} to 'local', the entry a server this "
+        f"role brought up from nothing still holds"
+    )
+    read = _named(name=_FALLBACK_READ, source=_ENVIRONMENT_TASKS)
+    assert (
+        f"{{{{ {_FALLBACK_DEFAULT} }}}}" in read
+    ), f"the fallback read must request the entry {_FALLBACK_DEFAULT} names;\nread={read!r}"
+    assert f"{_NOT}({_PRESENT_FACT} | bool)" in _conditions(
+        body=read, field="when"
+    ), "the fallback read must run only for an environment the catalog does not hold"
+    assert (
+        _task_index(name=_TEMPLATE_READ, source=_ENVIRONMENT_TASKS)
+        < _task_index(name=_FALLBACK_READ, source=_ENVIRONMENT_TASKS)
+        < _task_index(name=_BASE_TASK, source=_ENVIRONMENT_TASKS)
+    ), "the fallback is read after the template and before the base is resolved"
+    expression = next(iter(_set_facts(name=_BASE_TASK, source=_ENVIRONMENT_TASKS).values()))
+    assert "fabro_server_environment_fallback_read" in expression, (
+        f"the base must resolve from the fallback read when the template is absent;\n"
+        f"expression={expression!r}"
+    )
+    assert "combine({'provider': 'docker'})" in expression, (
+        f"a base taken from the fallback must have its provider set to docker, the one "
+        f"field the declaration implies by naming a docker image;\nexpression={expression!r}"
+    )
