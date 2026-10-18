@@ -128,19 +128,8 @@ fabro_server_instances:
     # build in the web console. The engine source is identical; only the SPA
     # differs. A rebuild without NODE_ENV=production regresses the console to
     # the dev UI. Provenance is in BUILD_INFO beside the binary.
-    #
-    # PROBE WINDOW, TEMPORARY (plan kubernetes-sandbox-backend, bd-ib-n7zj4a in
-    # the livespec-orchestrator-beads-fabro tenant). The v0.382 bundle build
-    # above (sha256 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1,
-    # /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro) is swapped
-    # for the k8s-plugin-wiring probe build: the same carrier 28a65c09 plus fork
-    # PR 12 and its local Petri half (47ecff8, which also lets an environment
-    # name a plugin provider), built with NODE_ENV=production;
-    # provenance in BUILD_INFO beside it. Reverted to the bundle build, and the
-    # kubernetes provider and k8s-probe environment below removed, once the
-    # probe is captured.
-    binary_source: /home/ubuntu/.local/state/fabro-k8s-probe/f8568f82f-petri-47ecff8/fabro
-    binary_sha256: 7bd18eff12bade41c97d7be475bef5956619703249aa7a194a4280191ae8b2a1
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
+    binary_sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
     # The sandbox environment the factory's own runs are prepared in. Measured
     # 2026-10-11: this instance's catalog held only the server's seeded `default`
     # entry — buildpack-deps:noble, 2 CPU, 4GB — so the canary run dispatched to
@@ -157,31 +146,6 @@ fabro_server_instances:
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
         cpu: 4
         memory: 8GB
-      # PROBE WINDOW, TEMPORARY: the environment the bd-ib-n7zj4a probe runs
-      # select. Its provider is the kubernetes plugin declared below, and its
-      # envelope is the Definition of Done's own (cpu 2, memory 4GB, which the
-      # pod must carry as requests and limits of 2 and 4096Mi).
-      - id: k8s-probe
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
-        cpu: 2
-        memory: 4GB
-        provider: kubernetes
-    # PROBE WINDOW, TEMPORARY: the Kubernetes sandbox-driver plugin the
-    # sandbox_driver_kubernetes role installs, at that role's pinned digest.
-    # The protocol clears a plugin's environment, so HOME (where the plugin
-    # reads ~/.config/sandbox-driver-kubernetes/config.toml) and PATH are
-    # passed through. HOME is this instance's home_env.
-    sandbox_providers:
-      kubernetes:
-        path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: acd90b1560e4950ef81ab17a618230412fb026b2dbb2cc412e73e9b17b2f0714
-        inherit_env:
-          - HOME
-          - PATH
-        # Petri refuses a plugin backend with no configured host address: it
-        # cannot infer how a sandbox pod reaches Petri's services on this host.
-        # hp's wired LAN address, the one k3s pins and every factory node routes.
-        host_address: 192.168.1.4
     # Spelled rather than defaulted: this instance is deliberately RUNNING, and
     # the word is what the cutover flips on the fleet instance instead.
     service_state: running
@@ -198,14 +162,6 @@ lan_ssh_fallback_must_stay_running:
   - docker.service
   - fabro-server.service
   - fabro-server-candidate.service
-
-# --- sandbox_driver_kubernetes ---
-# PROBE WINDOW, TEMPORARY (bd-ib-n7zj4a): the hp-candidate instance runs with
-# HOME=/home/cwoolley/.fabro-candidate, and the plugin it launches inherits that
-# HOME, so its config is rendered there as well as in the account home.
-sandbox_driver_kubernetes_config_homes:
-  - /home/cwoolley
-  - /home/cwoolley/.fabro-candidate
 
 # --- otel_receiver ---
 # The account and environment file of the hand-installed unit this role
