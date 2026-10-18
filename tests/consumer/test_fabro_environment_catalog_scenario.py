@@ -141,6 +141,16 @@ _CANDIDATE_ENVIRONMENT = {
     "cpu": "4",
     "memory": "8GB",
 }
+# PROBE WINDOW, TEMPORARY (bd-ib-n7zj4a, livespec-orchestrator-beads-fabro tenant):
+# the Kubernetes plugin probe's environment, declared beside the factory's own and
+# removed with it when the window closes.
+_PROBE_ENVIRONMENT = {
+    "id": "k8s-probe",
+    "image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5",
+    "cpu": "2",
+    "memory": "4GB",
+    "provider": "kubernetes",
+}
 
 # One instance of a host's committed `fabro_server_instances`, and the nested catalog
 # block it may carry. `unit_name` opens every instance mapping in both files, which is
@@ -760,7 +770,7 @@ def test_the_hp_candidate_declares_the_environment_the_factory_workflow_dispatch
         f"doc={declared[_ROLE_DOC]} inventory={declared[_INVENTORY]}"
     )
     for source, environments in declared.items():
-        assert environments == [dict(_CANDIDATE_ENVIRONMENT)], (
+        assert environments == [dict(_CANDIDATE_ENVIRONMENT), dict(_PROBE_ENVIRONMENT)], (
             f"{source.name}: {_CANDIDATE_UNIT} MUST declare exactly the one environment the "
             f"factory's own workflow dispatches into — id {_CANDIDATE_ENVIRONMENT['id']}, "
             f"image {_CANDIDATE_ENVIRONMENT['image']}, cpu {_CANDIDATE_ENVIRONMENT['cpu']}, "
