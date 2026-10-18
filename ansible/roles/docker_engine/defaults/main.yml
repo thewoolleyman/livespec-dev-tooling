@@ -159,7 +159,12 @@ docker_engine_tailscale_ssh_argv:
   - ControlMaster=no
   - -o
   - ControlPath=none
-  - "{{ (ansible_user ~ '@') if ansible_user is defined else '' }}{{ ansible_host | default(inventory_hostname) }}"
+  # Through hostvars: these probes run delegated to the control node, where a
+  # bare `ansible_host` resolves to the DELEGATE (localhost), not this host.
+  - >-
+    {{ ((hostvars[inventory_hostname]['ansible_user'] ~ '@')
+    if hostvars[inventory_hostname]['ansible_user'] is defined else '')
+    ~ (hostvars[inventory_hostname]['ansible_host'] | default(inventory_hostname)) }}
   - "true"
 # The direct-LAN OpenSSH fallback (role lan_ssh_fallback), through the
 # `<host>-lan` alias that role renders on the control node.
