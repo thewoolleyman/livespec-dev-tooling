@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.114.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.114.1...v1.114.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **fleet:** let the guard's interfaces probe ignore pod veths on a recorded bridge ([b462cbd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b462cbddd981ae36c21833c30b24bae10678c15a))
+* **fleet:** never let a recorded docker0 confer the guard's veth allowance ([524572e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/524572e379be36764b3d75d9516f624d0d68634b))
+* **fleet:** record each interface's master in the guard's link reader ([1455349](https://github.com/thewoolleyman/livespec-dev-tooling/commit/14553492b204ddb7d910635513ad080b4d834a96))
+
 ## [1.114.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.114.0...v1.114.1) (2026-10-18)
 
 
