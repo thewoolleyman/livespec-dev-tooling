@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.117.2...v1.118.0) (2026-10-18)
+
+
+### Features
+
+* **ansible:** render the Fabro factory registry from the inventory's factory names ([1374d19](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1374d19edab4821a278cc06a97b7bdc6917a0c7c))
+
 ## [1.117.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.117.1...v1.117.2) (2026-10-18)
 
 
