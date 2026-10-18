@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.116.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.115.1...v1.116.0) (2026-10-18)
+
+
+### Features
+
+* **gate:** provision a consumer's cross-repo sibling clones in the gate pod ([ecc7fb1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ecc7fb1af127c7ca6e8908ad12184baf67186a5b))
+
 ## [1.115.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.115.0...v1.115.1) (2026-10-18)
 
 
