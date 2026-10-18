@@ -1308,6 +1308,28 @@ _LINKS_WITH_INTRUDER = _LINKS_WITH_CANARY + _lines(
     "13: br-lab: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN",
 )
 
+# The same read on a CI node whose pods start during the window: every
+# pod adds a veth on `cni0`, k3s's bridge, which the pre-install read
+# above already recorded. Measured 2026-10-18 on gmktec-xubuntu, where
+# EIGHTEEN of these appeared inside one window and rolled the run back
+# (gate 20261018T030444Z-3778031, run r2026101803080120e0).
+_LINKS_WITH_POD_VETHS = _LINKS_WITH_CANARY + _lines(
+    "14: veth13671da9@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 master cni0 state UP",
+    "15: veth1c9e020c@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 master cni0 state UP",
+)
+
+# And the same read with a SECOND veth on `docker0`: a Docker-side
+# endpoint that is not the canary's, which is the thing the probe is for.
+_LINKS_WITH_SECOND_DOCKER_VETH = _LINKS_WITH_POD_VETHS + _lines(
+    "16: veth4d2b17c8@if9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master docker0 state UP",
+)
+
+# And with a bridge something else made while the pods churned: not a
+# veth, mastered by nothing, outside the `docker0`-only cleanup entirely.
+_LINKS_WITH_POD_VETHS_AND_BRIDGE = _LINKS_WITH_POD_VETHS + _lines(
+    "17: br-lab: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN",
+)
+
 # The canary's OWN view of its namespace: its `eth0` names the host-side
 # index of its veth pair after `@if`, which is how the pair is
 # identified by the canary's endpoint rather than guessed from a name.
@@ -1415,6 +1437,64 @@ def test_the_interface_reader_records_each_interface_s_master(tmp_path: Path) ->
     )
     recorded = json.loads((snapshot / witness.INTERFACE_SNAPSHOT).read_text(encoding="utf-8"))
     assert recorded == _SNAPSHOT_NAMES
+
+
+def test_a_sample_ignores_pod_veths_on_a_bridge_the_snapshot_recorded(tmp_path: Path) -> None:
+    """A veth that joined a RECORDED bridge is k3s's churn; one on `docker0` is not.
+
+    This is the interface counterpart of the firewall comparison's
+    `KUBE-*` / `FLANNEL-*` carve-out: a CI node admits pods while the
+    window runs and each one adds a veth to `cni0`, so a rule that
+    failed on any new interface failed EVERY window on the only kind of
+    host the guard is for -- measured on gmktec-xubuntu, where 18 pod
+    veths rolled a clean install back.
+
+    The bridge is attested by the RECORDED NAME and nothing else: a
+    master this host already had is a subsystem that was already
+    running, while `docker0` is absent from every snapshot the preflight
+    takes, so Docker's own veths keep failing the sample and keep being
+    named. A new interface mastered by nothing -- a bridge, another
+    subsystem's link -- is outside the `docker0`-only cleanup entirely
+    and still fails.
+    """
+    witness = importlib.import_module(_WITNESS_MODULE)
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+
+    snapshot = tmp_path / "before"
+    witness.write_interface_snapshot(
+        destination=snapshot, runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_BEFORE})
+    )
+
+    churning = witness.interface_probe(
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_WITH_POD_VETHS}),
+        snapshot=snapshot,
+        canary_veth_index="12",
+    )
+    assert (churning.name, churning.passed, churning.error) == (
+        witness.INTERFACE_PROBE,
+        True,
+        "",
+    )
+
+    docker_side = witness.interface_probe(
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_WITH_SECOND_DOCKER_VETH}),
+        snapshot=snapshot,
+        canary_veth_index="12",
+    )
+    assert (docker_side.passed, docker_side.error) == (
+        False,
+        "these interfaces appeared since the snapshot: ('veth4d2b17c8',)",
+    )
+
+    unmastered = witness.interface_probe(
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_WITH_POD_VETHS_AND_BRIDGE}),
+        snapshot=snapshot,
+        canary_veth_index="12",
+    )
+    assert (unmastered.passed, unmastered.error) == (
+        False,
+        "these interfaces appeared since the snapshot: ('br-lab',)",
+    )
 
 
 _FIREWALL_MODULE = "livespec_dev_tooling.fleet._docker_engine_guard_sample_firewall"
