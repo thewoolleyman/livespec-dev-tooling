@@ -778,6 +778,22 @@ Then the package step MUST refuse naming docker.io
 
 And it MUST NOT run `dpkg --unpack` or `dpkg -i`
 
+## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded
+
+Given a run whose interface snapshot records the bridge `cni0`
+
+And during the observation window a new veth appears whose master is `cni0`
+
+When the observer takes a sample
+
+Then the interfaces probe MUST pass for that veth
+
+Given the same run, and a new veth appears whose master is `docker0` and that is not the canary's
+
+When the observer takes a sample
+
+Then the interfaces probe MUST fail naming that veth
+
 ## Scenario: a delegated gate Job for a repository missing its declared recipe reports red naming the recipe
 
 Given a consuming repository that switches delegation on and declares a check recipe for its gate
