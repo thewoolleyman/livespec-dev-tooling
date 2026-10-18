@@ -53,3 +53,8 @@ docker_sandbox_slice_daemon_service: docker.service
 # one who ran the converge, and a recap line is gone when the terminal scrolls.
 # Only the drained restart clears it.
 docker_sandbox_slice_pending_restart_marker: /var/lib/docker-sandbox-slice/restart-pending
+
+# Where the docker_engine role's guarded install keeps its state; its commit
+# marker is `confirmed` inside it. Kept equal to docker_engine_state_root in
+# roles/docker_engine/defaults/main.yml.
+docker_sandbox_slice_docker_engine_state_root: /var/lib/docker-engine-guard
