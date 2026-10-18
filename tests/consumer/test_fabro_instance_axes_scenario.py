@@ -157,8 +157,8 @@ _REPLACE_FACT = "fabro_server_binary_replace"
 # arms below check — a test that derived them from its own subject would assert nothing.
 # Since 2026-10-16 it is the production-web-UI rebuild of the same commit (adeefec4c,
 # NODE_ENV=production), replacing the dev-UI build effe9d03.
-_CANDIDATE_BINARY_SOURCE = "/home/ubuntu/.local/state/fabro-k8s-probe/f8568f82f-petri-47ecff8/fabro"
-_CANDIDATE_BINARY_SHA256 = "7bd18eff12bade41c97d7be475bef5956619703249aa7a194a4280191ae8b2a1"
+_CANDIDATE_BINARY_SOURCE = "/home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro"
+_CANDIDATE_BINARY_SHA256 = "26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1"
 
 # The hp-xubuntu instances this scenario is about: the fleet instance, which omits
 # both axes, and the candidate instance the fabro-currency cutover moves production
