@@ -42,7 +42,24 @@
 #      never falls back — and a tree that provides them runs them in order, so
 #      the preflight is proven not to refuse everything;
 #   O. a mutant with the preflight deleted is CAUGHT by case N's own check, and
-#      an entry that is not a plain `just` invocation is refused at render time.
+#      an entry that is not a plain `just` invocation is refused at render time;
+#   P. the CROSS-REPO SIBLINGS the gated repository registers in its own
+#      `.livespec.jsonc` are cloned anonymously from github.com into the
+#      directory the Job exports as LIVESPEC_SIBLING_CLONES_ROOT, before any
+#      recipe runs — a repository registering none renders the command it has
+#      today (compared against the template with the step's line deleted), a
+#      url no pod could anonymously fetch is refused naming the sibling, and a
+#      clone that FAILS is the verdict.
+#
+# WHY P EXISTS (livespec-dev-tooling-s35dcb). livespec core's cross-repo readers
+# resolve a cited sibling at `$LIVESPEC_SIBLING_CLONES_ROOT/<sibling>` when that
+# variable is set and at `/data/projects/<sibling>` otherwise — a fleet-host
+# path no pod has — and an absent path is read as an EMPTY heading set rather
+# than as an error. Measured 2026-10-18 on gate-livespec-e0a55a1a58f6:
+# `doctor-no-cross-spec-reference` failed livespec
+# SPECIFICATION/constraints.md:298 for a citation that IS allowlisted, on a tree
+# whose master CI was green. The consumer's own CI clones its siblings for that
+# same check; the gate is meant to judge the tree the way CI does.
 #
 # WHY M, N AND O EXIST (livespec-dev-tooling-saxz). The pod command was a
 # CONSTANT naming this repository's own recipes, so a consuming repository
@@ -475,6 +492,22 @@ exit 0
 STUB
 chmod +x "${STUB_DIR}/just"
 
+# A `git` for case P's sibling clones, answering `clone` without reaching the
+# network and CREATING NOTHING: a real clone makes its destination and every
+# parent of it, and a stub that did the same would leave the pod's clones root
+# on the host running this suite.
+cat > "${STUB_DIR}/git" <<'STUB'
+#!/usr/bin/env bash
+printf 'git %s\n' "$*" >> "${STUB_LOG}"
+if [ "${1:-}" = "clone" ]; then
+  [ -n "${CLONE_FAILS}" ] && exit 1
+  exit 0
+fi
+[ "${3:-}" = "rev-parse" ] && echo "0000000000000000000000000000000000000000"
+exit 0
+STUB
+chmod +x "${STUB_DIR}/git"
+
 gate_script() {
   # The gate container's shell script, dedented out of a rendered manifest.
   awk '
@@ -489,11 +522,13 @@ gate_script() {
 
 run_gate_script() {
   # run_gate_script <manifest> <space-separated recipes the tree provides>
+  #                 [<non-empty to make every sibling clone fail>]
   # Leaves the invocation log at ${SCRATCH}/stub.log and returns the script's
   # own exit status, which IS the Job's verdict.
   : > "${SCRATCH}/stub.log"
   gate_script "$1" > "${SCRATCH}/gate-script.sh"
   PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
+    CLONE_FAILS="${3:-}" \
     bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
 }
 
@@ -551,6 +586,136 @@ elif grep -qF 'is not a plain just invocation' "${SCRATCH}/injection.err"; then
   pass "a --check-suite entry carrying shell is refused at render time"
 else
   fail "refused without naming the cause: $(cat "${SCRATCH}/injection.err")"
+fi
+
+echo "== P. the Job provisions the cross-repo siblings its checks read =="
+# livespec core's cross-repo readers resolve a cited sibling at
+# `$LIVESPEC_SIBLING_CLONES_ROOT/<sibling>` when that variable is set and at the
+# manifest's `/data/projects/<sibling>` otherwise — a path present in no pod,
+# whose absence they read as an EMPTY heading set rather than as an error. So an
+# unprovisioned sibling is a GREEN gate on citations nothing validated, which is
+# why all four arms below exist: the clones happen, a repository registering
+# none renders the command it had, a url the pod cannot anonymously fetch is
+# refused, and a clone that FAILS is the verdict.
+make_siblings() {
+  # make_siblings <dir> <slug>=<github_url> ...
+  local dir="$1" first=1 pair
+  shift
+  {
+    printf '{\n  "cross_repo_targets": {\n'
+    for pair in "$@"; do
+      [ "${first}" -eq 1 ] || printf ',\n'
+      first=0
+      printf '    "%s": {\n      "github_url": "%s",\n      "local_clone": "/data/projects/%s"\n    }' \
+        "${pair%%=*}" "${pair#*=}" "${pair%%=*}"
+    done
+    printf '\n  }\n}\n'
+  } > "${dir}/.livespec.jsonc"
+}
+# Dedented out of the gate script, so a line number here is a line number in
+# the script the pod runs.
+sibling_root() { gate_script "$1" | sed -n "s/^export LIVESPEC_SIBLING_CLONES_ROOT='\(.*\)'$/\1/p"; }
+script_line() { gate_script "$1" | grep -n -- "$2" | head -1 | cut -d: -f1; }
+last_script_line() { gate_script "$1" | grep -n -- "$2" | tail -1 | cut -d: -f1; }
+
+repo_siblings="${SCRATCH}/repo-siblings"
+make_repo "${repo_siblings}" "${IMG_A}"
+make_siblings "${repo_siblings}" \
+  "widget-core=https://github.com/acme/widget-core" \
+  "widget-docs=https://github.com/acme/widget-docs"
+siblings_out="${SCRATCH}/siblings.yaml"
+if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
+     --check-suite verify > "${siblings_out}" 2>/dev/null; then
+  clones_root="$(sibling_root "${siblings_out}")"
+  cloned=0
+  for slug in widget-core widget-docs; do
+    grep -qF "git clone --quiet --depth 1 'https://github.com/acme/${slug}' '${clones_root}/${slug}'" \
+      "${siblings_out}" || cloned=1
+  done
+  if [ -z "${clones_root}" ]; then
+    fail "the gate container exports no sibling-clones root, so the readers resolve /data/projects"
+  elif [ "${cloned}" -ne 0 ]; then
+    fail "a registered sibling is not cloned where the readers look: $(gate_script "${siblings_out}" | grep -c 'git clone ')"
+  elif [ "$(gate_script "${siblings_out}" | grep -c 'git clone ')" != "2" ]; then
+    fail "the Job does not clone exactly one sibling per registered target"
+  elif [ "$(last_script_line "${siblings_out}" 'git clone ')" -ge "$(script_line "${siblings_out}" '^just ')" ]; then
+    fail "a check-suite recipe runs before the siblings are provisioned"
+  elif grep -F 'git clone ' "${siblings_out}" | grep -qF '@'; then
+    fail "a credential rides a sibling clone: $(grep -F 'git clone ' "${siblings_out}")"
+  else
+    pass "each registered sibling is cloned anonymously into the exported root, before any recipe"
+  fi
+else
+  fail "renderer errored on a repository registering cross-repo siblings"
+fi
+
+# The fixture above is the FIRST one in this suite to carry a `.livespec.jsonc`
+# without a `compat.pinned`, and it proved the renderer died there — exit 1,
+# nothing on stderr, which the client reports as `NO_VERDICT`. The module
+# promises an absent field is an ANSWER, so the fallback is asserted here where
+# the shape that reaches it lives.
+if grep -qF '"pinned"' "${repo_siblings}/.livespec.jsonc"; then
+  fail "the siblings fixture pins a core release, so the absent-field fallback is untested"
+elif [ -z "$(gate_script "${siblings_out}" | grep -F 'livespec core ref master' || true)" ]; then
+  fail "a .livespec.jsonc with no compat.pinned did not fall back to master: $(gate_script "${siblings_out}" | grep -F 'livespec core ref')"
+else
+  pass "a .livespec.jsonc carrying no compat.pinned renders the master fallback, not a refusal"
+fi
+
+# The control, and the whole of the no-declaration claim: `repo-a` registers
+# nothing, and its gate script is compared — executable line for executable
+# line — against the SAME template with the step's placeholder line deleted,
+# which IS the template that shipped before the step existed.
+nostep="${SCRATCH}/nostep-template.yaml"
+grep -vF '@@GATE_SIBLING_CLONES@@' "${TEMPLATE}" > "${nostep}"
+nostep_out="${SCRATCH}/nostep.yaml"
+executable_gate_script() { gate_script "$1" | grep -vE '^[[:space:]]*(#|$)'; }
+if [ "$(grep -cF '@@GATE_SIBLING_CLONES@@' "${TEMPLATE}")" != "1" ]; then
+  fail "the template does not carry exactly one sibling-clone placeholder"
+elif GATE_JOB_TEMPLATE="${nostep}" "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" > "${nostep_out}" 2>/dev/null; then
+  if [ -n "$(sibling_root "${default_out}")" ] ||
+     [ -n "$(gate_script "${default_out}" | grep -F 'git clone ' || true)" ]; then
+    fail "a repository registering no siblings still renders a clone step"
+  elif [ "$(executable_gate_script "${default_out}")" != "$(executable_gate_script "${nostep_out}")" ]; then
+    fail "a repository registering no siblings got a different command than it has today"
+  else
+    pass "a repository registering no siblings renders no step and keeps today's command"
+  fi
+else
+  fail "renderer errored on the no-step mutant template instead of rendering it"
+fi
+
+repo_badurl="${SCRATCH}/repo-badurl"
+make_repo "${repo_badurl}" "${IMG_A}"
+make_siblings "${repo_badurl}" "widget-core=git@github.com:acme/widget-core.git"
+if "${RENDERER}" --repo-root "${repo_badurl}" --tree-hash "${HASH_A}" \
+     > /dev/null 2>"${SCRATCH}/badurl.err"; then
+  fail "a sibling the pod cannot anonymously clone was rendered anyway"
+elif grep -qF 'cross_repo_targets.widget-core' "${SCRATCH}/badurl.err"; then
+  pass "a sibling url that is not an anonymous github.com https url is refused, naming it"
+else
+  fail "refused without naming the sibling: $(cat "${SCRATCH}/badurl.err")"
+fi
+
+if run_gate_script "${siblings_out}" "verify" "fail-the-clones"; then
+  fail "a gate whose sibling clone FAILED reported a GREEN verdict"
+elif ! grep -qF "cannot clone cross-repo sibling 'widget-core'" "${SCRATCH}/gate.err"; then
+  fail "red, but the message does not name the sibling: $(cat "${SCRATCH}/gate.err")"
+elif [ -n "$(grep -E '^just ' "${SCRATCH}/stub.log" | grep -vF -- '--show' || true)" ]; then
+  fail "a check-suite recipe RAN despite an unprovisioned sibling: $(cat "${SCRATCH}/stub.log")"
+else
+  pass "a sibling that will not clone is red, names the sibling, and runs no recipe"
+fi
+
+if run_gate_script "${siblings_out}" "verify"; then
+  if [ "$(grep -cF 'git clone ' "${SCRATCH}/stub.log")" = "2" ]; then
+    pass "the same Job with clones that succeed runs its recipe — the refusal is the clone"
+  else
+    fail "the clean run did not clone both siblings: $(cat "${SCRATCH}/stub.log")"
+  fi
+else
+  fail "the gate refused a tree whose siblings cloned cleanly: $(cat "${SCRATCH}/gate.err")"
 fi
 
 echo

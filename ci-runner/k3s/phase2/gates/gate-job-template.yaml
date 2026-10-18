@@ -281,6 +281,38 @@ spec:
               # cause behind core's own "livespec core not found" from a
               # consumer's `check-doctor-static`.
               echo ":: gate: livespec core ref @@LIVESPEC_CORE_REF@@ -> LIVESPEC_CORE_PLUGIN_ROOT=${LIVESPEC_CORE_PLUGIN_ROOT:-<unset>}"
+              # THE CROSS-REPO SIBLINGS this consumer's own checks READ, cloned
+              # from github.com and pointed at through
+              # LIVESPEC_SIBLING_CLONES_ROOT — exactly as that consumer's CI
+              # does it (livespec-dev-tooling-s35dcb). Substituted by
+              # render-gate-job.sh from the gated repository's own
+              # `.livespec.jsonc` `cross_repo_targets`, and EMPTY for a
+              # repository that registers none, whose command is then the one it
+              # has always had.
+              #
+              # WHY A MISSING CLONE IS A SILENT WRONG ANSWER, which is the whole
+              # reason this is a step rather than a nicety. livespec core's
+              # cross-repo readers resolve a cited sibling at
+              # `$LIVESPEC_SIBLING_CLONES_ROOT/<sibling>` when that variable is
+              # set and at the manifest's `local_clone` otherwise —
+              # `/data/projects/<sibling>`, a fleet-host path no pod has. An
+              # absent path does not ERROR there: it reads as an EMPTY heading
+              # set, so every allowlist entry for that sibling is dropped and a
+              # correctly allowlisted citation is reported "not allowlisted".
+              # Measured 2026-10-18 on gate-livespec-e0a55a1a58f6:
+              # `doctor-no-cross-spec-reference` failed livespec
+              # SPECIFICATION/constraints.md:298 on a tree whose master CI was
+              # green and which passes that check locally.
+              #
+              # BEFORE THE PREFLIGHT, for the same reason the core report above
+              # is: provisioning the environment the suite judges in is not part
+              # of judging it, and a clone that fails must be the verdict rather
+              # than one red member of a run that may not have reached it.
+              #
+              # ANONYMOUS, so no credential is passed in for them — the same
+              # property that lets the livespec core init container above carry
+              # no env block at all.
+              @@GATE_SIBLING_CLONES@@
               for recipe in @@GATE_RECIPE_NAMES@@; do
                 if just --show "${recipe}" > /dev/null 2>&1; then
                   continue

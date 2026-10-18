@@ -163,9 +163,19 @@ fi
 #
 # An ABSENT file or field is an ANSWER, not a refusal: the consumer pins
 # nothing and gets the same `master` fallback its CI step takes.
+#
+# THE `|| true` IS WHAT MAKES THE FIELD'S ABSENCE AN ANSWER, and without it the
+# sentence above was false: `grep` exits 1 when it matches nothing, `pipefail`
+# carries that out of the pipeline, and `set -e` aborts an assignment whose
+# command substitution failed — so a `.livespec.jsonc` carrying no `pinned`
+# killed the renderer HERE, exit 1 with NOTHING on stderr, which the gate client
+# reports as `NO_VERDICT: render-gate-job did not complete`. Unreachable until a
+# repository had a reason to carry that file without pinning a release, which is
+# exactly what registering cross-repo siblings gives it. Same disposition as the
+# `|| true` on the `git remote get-url origin` read above.
 if [ -z "${livespec_core_ref}" ] && [ -f "${repo_root}/.livespec.jsonc" ]; then
   livespec_core_ref="$(grep -oE '"pinned"[[:space:]]*:[[:space:]]*"[^"]*"' "${repo_root}/.livespec.jsonc" \
-    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/')"
+    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/' || true)"
 fi
 [ -n "${livespec_core_ref}" ] || livespec_core_ref="${LIVESPEC_CORE_REF_FALLBACK}"
 # The value goes into the pod's shell script, so the character set is bounded
@@ -176,6 +186,142 @@ case "${livespec_core_ref}" in
     echo "FATAL: livespec core ref '${livespec_core_ref}' is not a plain git ref name" >&2
     exit 2 ;;
 esac
+
+# --- the cross-repo siblings this consumer's checks READ (livespec-dev-tooling-s35dcb)
+# WHY THE POD HAS TO PROVISION THESE. livespec core's cross-repo readers —
+# `doctor-no-cross-spec-reference` validating an `external_references` citation
+# against the cited sibling's real headings, and the wiring-completeness arm
+# reading each registered sibling's justfile — resolve a sibling at
+# `$LIVESPEC_SIBLING_CLONES_ROOT/<sibling>` when that variable is set and at the
+# manifest's `cross_repo_targets.<sibling>.local_clone` otherwise, which is
+# `/data/projects/<sibling>`: a fleet-host path, present in no pod. AN ABSENT
+# PATH DOES NOT ERROR THERE — it reads as an EMPTY heading set, every allowlist
+# entry for that sibling is dropped, and a correctly allowlisted citation is
+# reported "not allowlisted". Measured 2026-10-18 on gate-livespec-e0a55a1a58f6,
+# which failed livespec SPECIFICATION/constraints.md:298 on a tree whose master
+# CI was green and which passes the same check locally.
+#
+# THE CONSUMER'S OWN CI ALREADY DOES EXACTLY THIS, which is the standard a gate
+# is held to: livespec's `.github/workflows/ci.yml` step "Clone sibling repos
+# for cross-repo wiring check" shallow-clones its siblings from github.com into
+# `$RUNNER_TEMP/sibling-clones` and exports the variable for
+# `check-doctor-static`. These are anonymous fetches of PUBLIC repositories,
+# the same kind as the livespec core fetch above, so no credential enters the
+# pod for them either.
+#
+# WHICH SIBLINGS: every key of the gated repository's own `.livespec.jsonc`
+# `cross_repo_targets`, which IS the map a reader looks a cited sibling up in —
+# so a sibling a check can read about is a sibling the pod has. The repository's
+# OWN key is deliberately NOT excluded: core's host detection keys on the
+# project root's BASENAME, and a gate pod's root is `/workspace`, so a
+# repository's own key resolves through the override like any other and would
+# otherwise be the one missing path.
+#
+# A repository that registers no targets renders NO step and keeps the command
+# it has today — the renderer substitutes an empty block, which removes the
+# placeholder's whole line.
+GATE_SIBLING_CLONES_ROOT="/tmp/gate-sibling-clones"
+
+# Read with awk rather than a JSON parser for the same reason the `compat.pinned`
+# grep above is: the file is JSONC and this renderer must stay dependency-free.
+# It walks brace DEPTH inside the `cross_repo_targets` object and emits one
+# `<slug><TAB><github_url>` row per key.
+#
+# THE COMMENT STRIP RUNS ON A STRING-FREE COPY, and that is load-bearing rather
+# than fastidious: a `github_url` value carries `//` in its scheme, so stripping
+# `//`-comments off the raw line truncates the very value being read (it did,
+# on the first draft). Taking the strings out first also keeps a brace inside
+# any value or trailing comment from moving the depth counter.
+read_cross_repo_targets() {
+  awk '
+    {
+      line = $0
+      clean = line
+      gsub(/"[^"]*"/, "", clean)
+      sub(/\/\/.*$/, "", clean)
+    }
+    clean !~ /[^ \t]/ { next }
+    inside == 0 {
+      if (line ~ /"cross_repo_targets"[ \t]*:/ && clean ~ /:[ \t]*\{/) { inside = 1; depth = 1 }
+      next
+    }
+    {
+      if (depth == 1 && clean ~ /:[ \t]*\{/ && match(line, /"[^"]+"[ \t]*:/)) {
+        name = substr(line, RSTART + 1, RLENGTH - 1)
+        sub(/"[ \t]*:$/, "", name)
+        url = ""
+      }
+      if (depth == 2 && match(line, /"github_url"[ \t]*:[ \t]*"[^"]*"/)) {
+        url = substr(line, RSTART, RLENGTH)
+        sub(/^"github_url"[ \t]*:[ \t]*"/, "", url)
+        sub(/"$/, "", url)
+      }
+      depth += gsub(/\{/, "{", clean) - gsub(/\}/, "}", clean)
+      if (depth == 1 && name != "") { print name "\t" url; name = ""; url = "" }
+      if (depth < 1) exit
+    }
+  ' "$1"
+}
+
+sibling_rows=()
+if [ -f "${repo_root}/.livespec.jsonc" ]; then
+  mapfile -t sibling_rows < <(read_cross_repo_targets "${repo_root}/.livespec.jsonc")
+fi
+
+gate_sibling_clone_lines=""
+if [ "${#sibling_rows[@]}" -gt 0 ]; then
+  # NO `mkdir -p` FOR THE ROOT: `git clone` creates its destination and every
+  # parent of it, so the first clone makes the root and a pre-created one would
+  # be a directory a run that clones NOTHING still leaves behind.
+  gate_sibling_clone_lines="export LIVESPEC_SIBLING_CLONES_ROOT='${GATE_SIBLING_CLONES_ROOT}'
+echo \":: gate: cross-repo siblings -> LIVESPEC_SIBLING_CLONES_ROOT=${GATE_SIBLING_CLONES_ROOT}\""
+fi
+for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
+  sibling_name="${row%%$'\t'*}"
+  sibling_url="${row#*$'\t'}"
+  # Both values go into the pod's shell script, so their character sets are
+  # bounded HERE rather than trusted. A slug is a repository name and a path
+  # segment; everything else is a way to write shell into a manifest.
+  case "${sibling_name}" in
+    "" | *[!A-Za-z0-9._-]* | .* )
+      echo "FATAL: .livespec.jsonc cross_repo_targets names '${sibling_name}', which is not a plain repository slug" >&2
+      exit 1 ;;
+  esac
+  # ANONYMOUS https ON github.com, asserted rather than assumed. A url carrying
+  # userinfo would put a credential into a manifest, and one pointing elsewhere
+  # cannot be fetched by a pod holding no credential at all — either way the
+  # answer is a refusal naming the sibling, not a gate that silently skips it
+  # and reports green on a sibling nothing read.
+  case "${sibling_url}" in
+    https://github.com/?*/?*) : ;;
+    *)
+      echo "FATAL: .livespec.jsonc cross_repo_targets.${sibling_name} declares github_url '${sibling_url}', which is not an anonymous https://github.com/<owner>/<repo> url the gate pod can clone" >&2
+      exit 1 ;;
+  esac
+  case "${sibling_url}" in
+    *[!A-Za-z0-9:/._-]* | *@*)
+      echo "FATAL: .livespec.jsonc cross_repo_targets.${sibling_name} declares github_url '${sibling_url}', which carries characters a gate manifest must not reproduce" >&2
+      exit 1 ;;
+  esac
+  # SHALLOW, like the core fetch and like the consumer's own CI step: nothing
+  # reads a sibling's history — a reader wants its current headings and its
+  # current justfile — and a full clone of six siblings on a pod whose cache is
+  # cold every run is bytes spent on nothing.
+  #
+  # THE FAILURE IS THE VERDICT. A sibling that will not clone is the one case
+  # this step must never shrug off, because the shrug is indistinguishable from
+  # success: the readers would carry on against an absent path and report green.
+  # The termination-log write is best-effort for the same reason the preflight's
+  # is — the message is EVIDENCE and the exit status is the verdict.
+  gate_sibling_clone_lines="${gate_sibling_clone_lines}
+if ! git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'; then
+  unclonable=\"FATAL: cannot clone cross-repo sibling '${sibling_name}' from ${sibling_url}. Its checks would read the absent clone as an EMPTY tree and silently drop every allowlisted citation to it, so no recipe was run; this gate is RED.\"
+  echo \"\${unclonable}\" >&2
+  { printf '%s\\n' \"\${unclonable}\" > /dev/termination-log; } 2> /dev/null || true
+  exit 1
+fi
+echo \":: gate: sibling ${sibling_name} at \$(git -C '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}' rev-parse HEAD)\""
+done
 
 # --- requirement 1: the image comes from the gated repo's own workflow --------
 workflow="${repo_root}/.github/workflows/ci.yml"
@@ -321,6 +467,9 @@ substitute LIVESPEC_CORE_URL "${LIVESPEC_CORE_URL}"
 substitute LIVESPEC_CORE_REF "${livespec_core_ref}"
 substitute GATE_RECIPE_NAMES "${quoted_recipe_names}"
 substitute_block GATE_RECIPES "${gate_recipe_lines}"
+# An EMPTY block removes the placeholder's whole line, which is exactly what a
+# repository registering no cross-repo siblings must render.
+substitute_block GATE_SIBLING_CLONES "${gate_sibling_clone_lines}"
 
 # A token added to the template without a matching substitution above is caught
 # HERE, at render time, rather than by the API server or — worse — by a gate that
