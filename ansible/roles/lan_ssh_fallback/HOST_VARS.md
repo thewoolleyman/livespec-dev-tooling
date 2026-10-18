@@ -52,7 +52,7 @@ lan_ssh_fallback_interface: enp11s0
 lan_ssh_fallback_address: 192.168.1.4
 lan_ssh_fallback_must_stay_running:
   [tailscaled.service, k3s-agent.service, docker.service,
-   fabro-server.service, fabro-server-candidate.service]
+   fabro-server.service]
 # gmktec-xubuntu
 lan_ssh_fallback_interface: eno1
 lan_ssh_fallback_address: 192.168.1.156

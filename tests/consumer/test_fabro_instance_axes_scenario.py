@@ -1070,9 +1070,10 @@ def test_hp_xubuntu_declares_the_candidate_instance_in_the_document_and_the_inve
             f"against the shared binary is the hand-installed drift this play exists to "
             f"end, re-expressed rather than fixed"
         )
-        assert instance["service_state"] == "running", (
-            f"{source.name}: the candidate is declared running, not parked: the cutover "
-            f"moves production onto this build"
+        assert instance["service_state"] == "stopped", (
+            f"{source.name}: the candidate is declared parked, not running: the "
+            f"maintainer ruled on 2026-10-18 that gmktec-xubuntu replaces hp as the "
+            f"Petri-era factory's home, so this build now serves from gmktec"
         )
         assert _required_keys() <= frozenset(instance), (
             f"{source.name}: the candidate must spell every key the role requires; "
