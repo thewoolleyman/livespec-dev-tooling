@@ -1237,3 +1237,68 @@ def test_the_footprint_phase_removes_nothing_until_the_guarded_units_report_inac
 
     assert later.calls_named(name="remove_firewall_footprint") != ()
     assert later.clock == phases.INACTIVE_POLL_SECONDS
+
+
+def _child_reports_residue(*, fake: Any, root: Path, run: str, residue: str) -> None:
+    """Make the footprint phase's child record `residue`, as the real child does.
+
+    The phase runs in its own PROCESS: it writes its findings beside the
+    run's other rollback records and the driver reads them back off
+    disk. Only the spawn seam is faked here, so the write the real child
+    performs is faked with it — the driver's half of that contract is
+    what this exercises.
+    """
+    spawn = fake.run_phase_child
+
+    def recording_spawn(*, argv: tuple[str, ...]) -> bool:
+        if argv[-1] == "footprint-removal":
+            record = _rollback_record(root=root, run=run, name="footprint-removal.findings")
+            record.parent.mkdir(parents=True, exist_ok=True)
+            _ = record.write_text(residue, encoding="utf-8")
+        return spawn(argv=argv)
+
+    fake.run_phase_child = recording_spawn
+
+
+def test_a_reported_footprint_residue_fails_the_rule_postcondition(
+    tmp_path: Path,
+) -> None:
+    """Specification "Rollback": residue the REMOVAL saw cannot read as clean.
+
+    The removal's own post-removal sweep is the one read taken while the
+    dying daemon is still the thing that recreates chains, and on
+    gmktec-xubuntu on 2026-10-18 that window is precisely where the
+    residue appeared: the chains were back by the next run's snapshot
+    and the firing had already recorded `rolled-back` with no failed
+    postcondition. `rolled-back` is FINAL — it retires the dead-man and
+    frees the host's one reservation — so a firing whose own removal
+    reported a leftover Docker chain or rule must end `rollback-partial`
+    even when the later whole-host read answers that everything holds.
+
+    Fail-closed, and in the same direction the absent-snapshot rule
+    already goes: the run rests at `rollback-partial`, the record NAMES
+    the postcondition, the final check makes the phase eligible again,
+    and a `verify` after a repair is what promotes it.
+    """
+    rollback = _driver()
+    fake = _reporting_fake(root=tmp_path)
+    fake.postconditions = dict.fromkeys(_SPECIFIED_POSTCONDITIONS, True)
+    _record_phase(root=tmp_path, run="run-a", phase="started")
+    _child_reports_residue(
+        fake=fake, root=tmp_path, run="run-a", residue="ipv4 filter -N DOCKER-FORWARD"
+    )
+
+    outcome = rollback.run_rollback(
+        run="run-a", env=_env(root=tmp_path, host=fake), decision=_decision()
+    )
+
+    assert _phase_of(root=tmp_path, run="run-a") == "rollback-partial"
+    assert json.loads(
+        _rollback_record(root=tmp_path, run="run-a", name="outcome.json").read_text(
+            encoding="utf-8"
+        )
+    ) == {"outcome": "rollback-partial", "failed_postconditions": ["no Docker rule"]}
+    assert "no Docker rule" in outcome.reason
+    # And the phase is eligible again, so the next dead-man firing
+    # re-enters it rather than trusting the success it just recorded.
+    assert "footprint-removal" not in _surviving_successes(root=tmp_path, run="run-a")
