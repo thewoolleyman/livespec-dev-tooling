@@ -26,3 +26,20 @@
 #   docker_host  OPTIONAL — the container daemon's address, spelled as the
 #                Docker CLI spells `DOCKER_HOST`
 fabro_factory_registry_entries: "{{ fabro_factory_registry | default({}) | dict2items }}"
+
+# WHERE THE REGISTRY IS WRITTEN, as a variable rather than a literal in the task.
+# The default is the path the specification names
+# (`SPECIFICATION/non-functional-requirements.md` §"Fabro factory registry"), so a
+# converge publishes exactly what it did before and no inventory declares this.
+#
+# IT EXISTS SO THAT A TEST NEED NOT CONVERGE THE MACHINE IT RUNS ON. The role's
+# tests run the committed tasks — every claim here is a claim about what Jinja
+# resolves through `hostvars`, which only a run can answer — and a run whose dest
+# is the real path reads that path even under `--check`: `--diff` reports the
+# install task against whatever the host holds. So the suite's verdict depended on
+# whether the machine already had the file. It silently did: the control node
+# acquired it in v1.118.0's apply on 2026-10-18 and every pre-push from it failed
+# from 19:43Z, while master CI and every factory sandbox — none of which hold the
+# file — stayed green (work-item livespec-dev-tooling-7qfnh6). Both tasks below
+# derive from this one variable, so overriding it moves the directory too.
+fabro_factory_registry_dest: /etc/livespec/fabro-factories.json

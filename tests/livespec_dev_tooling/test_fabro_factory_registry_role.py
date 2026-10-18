@@ -18,23 +18,38 @@ same `ansible-core` pin `just ansible-apply` uses, exactly as the sibling
 reached: the synthetic dev hosts connect locally and the factory hosts are never
 connected to at all, because only their inventory variables are read.
 
-WHY `--check`, AND WHAT THE REPORT TASK IS. The role's own write task is
-`/etc/livespec/fabro-factories.json`, root-owned — a real converge of the machine
-this suite runs on. `--check` makes the role's `file` and `copy` tasks compute and
-change nothing, and the test's own report task carries `check_mode: false` so it
-alone writes, under `tmp_path`. Its `content` is not a transcription: it is READ
-out of the committed install task, so the bytes asserted below are rendered from
-the committed expression. `ansible_become: false` on the synthetic dev hosts
-overrides the role's task-level `become: true` (measured on ansible-core 2.21.4:
-a connection variable overrides the keyword), so the run needs no privilege.
+WHY EVERY RUN RE-POINTS THE DESTINATION, AND WHY `--check` IS NOT ENOUGH. The
+role's destination is the variable `fabro_factory_registry_dest`, whose default is
+the real `/etc/livespec/fabro-factories.json`; every converge below overrides it
+with a path inside that run's own `tmp_path` tree. `--check` alone does not make
+the real path irrelevant, which is the defect this module was rewritten for: a
+`--check --diff` run still DIFFS the dest against whatever the machine holds
+there, so `test_the_role_would_write_exactly_the_bytes_the_report_task_renders`
+read an install diff of all `+` lines on a host without the file and a
+no-op-or-partial diff on a host with it. The control node acquired the file on
+2026-10-18 and every pre-push from it failed on `assert 0 == 2`, while master CI
+and the factory sandboxes stayed green — the worst shape, a verdict that depends
+on the machine rather than on the committed role. Re-pointing the dest, not the
+check mode, is what makes a host that already holds the registry pass exactly as
+a host without it does. `--check` is still passed, because the role's `file` and
+`copy` tasks would otherwise really create the temporary tree, and the test's own
+report task carries `check_mode: false` so it alone writes. Its `content` is not
+a transcription: it is READ out of the committed install task, so the bytes
+asserted below are rendered from the committed expression. `ansible_become:
+false` on the synthetic dev hosts overrides the role's task-level `become: true`
+(measured on ansible-core 2.21.4: a connection variable overrides the keyword),
+so the run needs no privilege.
 
-WHAT IS STATED RATHER THAN RUN, AND WHY. Two Thens are not about resolution. The
-file's OWNERSHIP is the install task's `owner`/`group`/`mode`, which `--check`
+WHAT IS STATED RATHER THAN RUN, AND WHY. Three Thens are not about resolution.
+The file's OWNERSHIP is the install task's `owner`/`group`/`mode`, which `--check`
 declines to apply and a non-root CI container could not apply anyway; it is read
-off the committed task. And "a `--tags` run that runs no rendering task leaves the
-file unchanged" is a claim about SELECTION, so it is answered by running
-`ansible-playbook --list-tasks` over the committed play both ways — a real run of
-the committed file that reaches no host — rather than by re-describing the tag.
+off the committed task. The DEFAULT destination is likewise read off the role,
+because the one run that would prove it by converging is the real converge of
+this machine no test may perform. And "a `--tags` run that runs no rendering task
+leaves the file unchanged" is a claim about SELECTION, so it is answered by
+running `ansible-playbook --list-tasks` over the committed play both ways — a
+real run of the committed file that reaches no host — rather than by
+re-describing the tag.
 
 CONTROL ARMS. The refusal arms are paired with a valid registry that must NOT
 refuse, and each asserts the install task never appeared, against the valid arm
@@ -72,7 +87,8 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _ROLE_DOC = _ROLE / "HOST_VARS.md"
 
-_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
+_DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
+_DEST_VAR = "fabro_factory_registry_dest"
 _INSTALL_TASK = "Install this host's Fabro factory registry"
 _RESOLVED_FACT = "fabro_factory_registry_resolved"
 _TIMEOUT_SECONDS = 600
@@ -147,7 +163,7 @@ def _read(*, path: Path) -> str:
     """
     assert path.is_file(), (
         f"{path.relative_to(_REPO_ROOT)} must exist: nothing else renders "
-        f"{_REGISTRY_PATH}, so a dispatching host without it resolves no factory"
+        f"{_DEFAULT_REGISTRY_PATH}, so a dispatching host without it resolves no factory"
     )
     return path.read_text(encoding="utf-8")
 
@@ -162,7 +178,7 @@ def _install_task() -> str:
     )
     assert body is not None, (
         f"{_TASKS} must declare a task named {_INSTALL_TASK!r}: it is the only task that "
-        f"writes {_REGISTRY_PATH}, so a test that cannot find it is checking nothing"
+        f"writes {_DEFAULT_REGISTRY_PATH}, so a test that cannot find it is checking nothing"
     )
     return body["body"]
 
@@ -261,6 +277,22 @@ def _ansible(*, cwd: Path, argv: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _dest(*, tmp_path: Path, name: str) -> Path:
+    """Where the converge named `name` renders the registry: inside its OWN tree.
+
+    Derived from the run's name rather than returned by `_converge`, so that an arm
+    which needs the destination — to read the role's own `--diff` out of the output,
+    or to assert the real path went unnamed — asks for it by the same name it
+    converged under, and `_converge` keeps its three-value result.
+
+    The parent directory is created HERE, not by the role: `--check` makes the
+    role's `file` task compute and create nothing, so a destination whose parent
+    does not exist would make the install task's diff a report about a missing
+    directory rather than about the registry's bytes.
+    """
+    return tmp_path / name / "dest" / "fabro-factories.json"
+
+
 def _converge(
     *,
     tmp_path: Path,
@@ -272,28 +304,47 @@ def _converge(
     root = tmp_path / name
     reports = root / "reports"
     reports.mkdir(parents=True)
+    dest = _dest(tmp_path=tmp_path, name=name)
+    dest.parent.mkdir(parents=True)
     hosts = _write_fixture(root=root, registry=registry, per_host=per_host)
     play = root / "play.yml"
     play.write_text(_play(reports=reports), encoding="utf-8")
-    done = _ansible(cwd=root, argv=["-i", str(hosts), "--check", "--diff", str(play)])
+    done = _ansible(
+        cwd=root,
+        argv=[
+            "-i",
+            str(hosts),
+            "--check",
+            "--diff",
+            "-e",
+            json.dumps({_DEST_VAR: str(dest)}),
+            str(play),
+        ],
+    )
     rendered = {path.stem: path.read_text(encoding="utf-8") for path in reports.glob("*.json")}
     return done.returncode, done.stdout + done.stderr, rendered
 
 
-# The bytes the role's OWN install task would write, lifted out of its `--diff`
-# output. The report task renders the committed `content` expression, but it is
-# still the test's task; this is the role's, and the two must agree exactly.
-_INSTALL_DIFF = re.compile(
-    rf"^\+\+\+ after: {re.escape(_REGISTRY_PATH)}\n@@[^\n]*\n(?P<body>(?:\+.*\n)+)",
-    re.MULTILINE,
-)
+def _would_write(*, output: str, dest: Path) -> list[str]:
+    """Every host's `--check --diff` rendering of the registry, as file content.
 
+    The bytes the role's OWN install task would write, lifted out of its `--diff`
+    output. The report task renders the committed `content` expression, but it is
+    still the test's task; this is the role's, and the two must agree exactly.
 
-def _would_write(*, output: str) -> list[str]:
-    """Every host's `--check --diff` rendering of the registry, as file content."""
+    The diff is keyed on the run's own destination rather than on the role's
+    default. Keyed on the default it was keyed on the machine: the install diff of
+    a dest the host already holds is not the install diff of one it does not, so
+    the arm below passed or failed by whether `/etc/livespec/fabro-factories.json`
+    happened to exist where pytest ran.
+    """
+    install_diff = re.compile(
+        rf"^\+\+\+ after: {re.escape(str(dest))}\n@@[^\n]*\n(?P<body>(?:\+.*\n)+)",
+        re.MULTILINE,
+    )
     return [
         "".join(f"{line[1:]}\n" for line in block["body"].splitlines())
-        for block in _INSTALL_DIFF.finditer(output)
+        for block in install_diff.finditer(output)
     ]
 
 
@@ -328,13 +379,14 @@ def test_each_declared_factory_resolves_to_its_instances_https_address(*, tmp_pa
 def test_the_role_would_write_exactly_the_bytes_the_report_task_renders(*, tmp_path: Path) -> None:
     code, output, rendered = _converge(tmp_path=tmp_path, registry=_DECLARED, name="bytes")
     assert code == 0, output
-    would = _would_write(output=output)
+    dest = _dest(tmp_path=tmp_path, name="bytes")
+    would = _would_write(output=output, dest=dest)
     assert len(would) == len(
         _DEV_HOSTS
     ), f"the role's own install task must report a rendering per dev host:\n{output}"
     for host, text in sorted(rendered.items()):
         assert text in would, (
-            f"what the role would write to {_REGISTRY_PATH} on {host} must be exactly what "
+            f"what the role would write to {dest} on {host} must be exactly what "
             f"the committed content expression renders; got {would!r} against {text!r}"
         )
 
@@ -369,8 +421,73 @@ def test_a_converge_drops_every_entry_the_inventory_no_longer_declares(*, tmp_pa
     ), f"the previous address must be gone from the rendered file: {second['dev-one']}"
 
 
+def test_the_registry_destination_is_a_role_variable_defaulting_to_the_committed_path() -> None:
+    """The dest is a variable, so a test can converge the role without converging a host.
+
+    Read rather than run, because the one converge that would prove the DEFAULT is the
+    real converge of the machine pytest runs on. What is run instead is every arm above:
+    each overrides this variable into its own `tmp_path`, which only a role that reads
+    the destination through it can honour.
+
+    Both tasks must read it. The `file` task creating the parent directory is the role's
+    other reference to the real tree, and a run that re-pointed only the install task
+    would still converge `/etc/livespec` on the host it ran on.
+    """
+    assert _install_key(key="dest") == f"{{{{ {_DEST_VAR} }}}}", (
+        f"the install task must write to {_DEST_VAR}, not to a literal path: a role whose "
+        f"destination cannot be overridden can only be tested against the real file, which "
+        f"makes the verdict depend on whether the machine already holds it"
+    )
+    assert re.search(
+        rf"^{re.escape(_DEST_VAR)}: {re.escape(_DEFAULT_REGISTRY_PATH)}$",
+        _read(path=_DEFAULTS),
+        re.MULTILINE,
+    ), (
+        f"{_DEFAULTS} must default {_DEST_VAR} to {_DEFAULT_REGISTRY_PATH} exactly: the "
+        f"specification names that path as what a converge renders, so the override is a "
+        f"testing seam and never a change to what the fleet publishes"
+    )
+    assert f"{{{{ {_DEST_VAR} | dirname }}}}" in _read(path=_TASKS), (
+        "the directory task must derive its path from the same variable, or a run that "
+        f"overrides {_DEST_VAR} still creates {Path(_DEFAULT_REGISTRY_PATH).parent}"
+    )
+
+
+def test_no_converge_in_this_module_names_the_registry_the_host_may_already_hold(
+    *, tmp_path: Path
+) -> None:
+    """A converge must not reach the real path at all — not even to diff against it.
+
+    This is the arm that fails on the defect rather than merely surviving it. `--check`
+    stops the role from WRITING the real file but not from READING it: the `--diff`
+    output of an install task pointed at `/etc/livespec/fabro-factories.json` reports
+    against whatever that host holds, which is why this module passed in CI and in every
+    factory sandbox while failing every pre-push from the control node that had just
+    converged itself.
+
+    Paired with a positive arm, so that a run which named nothing because it rendered
+    nothing cannot pass: the run's own destination must appear in the role's diff.
+    """
+    code, output, rendered = _converge(tmp_path=tmp_path, registry=_DECLARED, name="tmponly")
+    assert code == 0, output
+    assert _DEFAULT_REGISTRY_PATH not in output, (
+        f"no task of a converge may name {_DEFAULT_REGISTRY_PATH}: a host that already "
+        f"holds it must pass exactly as a host without it does, and a run that diffs "
+        f"against it does not:\n{output}"
+    )
+    dest = _dest(tmp_path=tmp_path, name="tmponly")
+    assert _would_write(output=output, dest=dest), (
+        f"the role's install task must have reported its rendering at {dest}, or this arm "
+        f"proves only that a run which rendered nothing named nothing:\n{output}"
+    )
+    assert sorted(rendered) == sorted(_DEV_HOSTS), output
+    assert not dest.exists(), (
+        f"--check must leave the temporary destination unwritten too: {dest} is the role's "
+        f"own write, and only the test's report task may produce a file"
+    )
+
+
 def test_the_rendered_file_is_root_owned_and_world_readable() -> None:
-    assert _install_key(key="dest") == _REGISTRY_PATH
     assert _install_key(key="owner") == "root"
     assert _install_key(key="group") == "root"
     assert _install_key(key="mode") == "0644", "the Dispatcher reads this file as its own user"
@@ -455,6 +572,8 @@ def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: 
     ), f"{_GROUP_VARS} is the one place the registry may be declared"
     reports = tmp_path / "committed"
     reports.mkdir()
+    dest = tmp_path / "committed-dest" / "fabro-factories.json"
+    dest.parent.mkdir()
     play = tmp_path / "committed.yml"
     play.write_text(_play(reports=reports), encoding="utf-8")
     done = _ansible(
@@ -464,11 +583,16 @@ def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: 
             str(_LEGACY_INVENTORY),
             "--check",
             "-e",
-            json.dumps({"ansible_become": False}),
+            json.dumps({"ansible_become": False, _DEST_VAR: str(dest)}),
             str(play),
         ],
     )
     output = done.stdout + done.stderr
+    assert _DEFAULT_REGISTRY_PATH not in output, (
+        f"the one arm that runs against this repository's OWN inventory is also the one "
+        f"most likely to be run on a dispatching host, so it too must name nothing under "
+        f"{Path(_DEFAULT_REGISTRY_PATH).parent}:\n{output}"
+    )
     assert done.returncode == 0, output
     rendered = [json.loads(path.read_text(encoding="utf-8")) for path in reports.glob("*.json")]
     assert rendered, f"the dev_hosts group must have rendered the committed registry: {output}"
@@ -490,3 +614,11 @@ def test_the_role_documents_the_variable_it_reads() -> None:
     doc = _read(path=_ROLE_DOC)
     for token in ("fabro_factory_registry", "`host`", "`unit_name`", "`docker_host`", "`{}`"):
         assert token in doc, f"{_ROLE_DOC} must document {token}"
+    assert f"`{_DEST_VAR}`" in doc, (
+        f"{_ROLE_DOC} must document {_DEST_VAR}: it is an inventory-overridable variable "
+        f"of this role, and the table of what the role reads is where an operator looks"
+    )
+    assert f"`{_DEFAULT_REGISTRY_PATH}`" in doc, (
+        f"{_ROLE_DOC} must document {_DEST_VAR}'s default as {_DEFAULT_REGISTRY_PATH}: a "
+        f"destination variable whose default is undocumented reads as a required value"
+    )

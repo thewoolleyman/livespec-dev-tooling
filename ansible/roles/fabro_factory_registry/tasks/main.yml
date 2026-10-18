@@ -144,7 +144,7 @@
 
 - name: Create the directory this host's Fabro factory registry lives in
   ansible.builtin.file:
-    path: /etc/livespec
+    path: "{{ fabro_factory_registry_dest | dirname }}"
     state: directory
     owner: root
     group: root
@@ -156,10 +156,13 @@
 # that runs this task leaves the file holding exactly what the inventory says.
 # World-readable because the Dispatcher reads it as the operator, and it holds
 # no secret — only names and addresses that are already in the inventory.
+#
+# The dest is `fabro_factory_registry_dest`, defaulting to the path the
+# specification names; see `defaults/main.yml` for why it is a variable.
 - name: Install this host's Fabro factory registry
   ansible.builtin.copy:
     content: "{{ fabro_factory_registry_resolved | to_nice_json }}\n"
-    dest: /etc/livespec/fabro-factories.json
+    dest: "{{ fabro_factory_registry_dest }}"
     owner: root
     group: root
     mode: "0644"
