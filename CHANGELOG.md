@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.114.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.114.0...v1.114.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **ansible:** docker_engine's Tailscale SSH probe targets the host, not the controller ([6a81f29](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6a81f29b22060bc3a8422e6cea12bb3e9fe9034d))
+
 ## [1.114.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.113.1...v1.114.0) (2026-10-18)
 
 
