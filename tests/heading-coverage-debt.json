@@ -8,13 +8,6 @@
   },
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Fabro factory registry",
-    "work_item": "livespec-dev-tooling-txadim",
-    "first_seen": "2026-10-18"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
@@ -40,12 +33,5 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the fabro-hosts play renders the factory registry from the inventory's factory names",
-    "work_item": "livespec-dev-tooling-txadim",
-    "first_seen": "2026-10-18"
   }
 ]

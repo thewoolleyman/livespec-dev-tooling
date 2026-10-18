@@ -143,6 +143,17 @@
     # needs (livespec-ifwnqj.2).
     - role: gha_runner
       tags: [gha_runner]
+    # Which Fabro server instance answers to each logical factory name, as the
+    # Dispatcher running natively on this host reads it from
+    # /etc/livespec/fabro-factories.json. Reached through this GROUP play rather
+    # than named per host, so a machine that joins the group inherits it; the
+    # mapping itself is declared once, in inventory/group_vars/dev_hosts.yml.
+    # A Dispatcher inside a factory sandbox or a cluster gate Job reads no such
+    # file, which is why the sandbox-host play above does not render it. Its own
+    # tag converges the registry alone, and a run narrowed past that tag leaves
+    # an existing file exactly as it is.
+    - role: fabro_factory_registry
+      tags: [fabro_factory_registry]
   tasks:
     - name: Refuse a Fabro target unit this host does not declare
       ansible.builtin.assert:
