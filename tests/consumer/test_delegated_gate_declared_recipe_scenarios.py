@@ -48,6 +48,7 @@ pytestmark = pytest.mark.consumer
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _RENDERER = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "gates" / "render-gate-job.sh"
+_TEMPLATE = _RENDERER.parent / "gate-job-template.yaml"
 
 # The empty tree's hash — a real git object name, and the one the canned
 # `rev-parse HEAD^{tree}` below answers with.
@@ -100,6 +101,25 @@ _CORE_CONTAINER = "fetch-livespec-core"
 # CI step takes when `.livespec.jsonc` carries no `pinned` field.
 _CORE_REF_WHEN_UNPINNED = "master"
 
+# The variable livespec core's cross-repo readers resolve a cited sibling's
+# clone through, and the template token the renderer fills with the step that
+# provisions it. Both are named because the claim spans them: an absent step in
+# a non-declaring repository's Job must be a RENDERED absence, which is only
+# meaningful while the template it rendered from still carries the step.
+_SIBLING_ROOT_VARIABLE = "LIVESPEC_SIBLING_CLONES_ROOT"
+_SIBLING_ROOT_EXPORT = f"export {_SIBLING_ROOT_VARIABLE}="
+_SIBLING_TOKEN = "@@GATE_SIBLING_CLONES@@"
+
+# The siblings two fixture consumers declare. Deliberately NOT fleet repository
+# names: a renderer that reached for a hardcoded list could not produce either
+# set, and the two sets differ so one renderer answering both proves the clones
+# are DERIVED from the repository under test.
+_WIDGET_SIBLINGS = (
+    ("widget-core", "https://github.com/acme/widget-core"),
+    ("widget-docs", "https://github.com/acme/widget-docs"),
+)
+_GADGET_SIBLINGS = (("gadget-core", "https://github.com/acme/gadget-core"),)
+
 # The two `kubectl get job --output json` payloads one run sees, in order: a Job
 # Kueue has not admitted yet, and then the condition that means the gate ran and
 # was RED. Conditions carry `status` as well as `type`, because a Job reports
@@ -112,14 +132,80 @@ _JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status":
 # existence probe answers no; anything else succeeds, so a recipe that DID run
 # would leave a green gate and a log line, and the assertions can tell the two
 # failure shapes apart.
+#
+# IT ALSO RECORDS THE SIBLING-CLONES ROOT IT INHERITED, and only when that
+# variable is SET. That is the one way to observe from outside the pod whether
+# the checks would resolve a cited sibling through the provisioned clones or
+# through the `/data/projects/<sibling>` path no pod has — the question this
+# whole step exists to answer. Recording it conditionally keeps a non-declaring
+# repository's log exactly what it has always been.
+#
+# AND IT ANSWERS `--show` FROM `PROVIDED`, which defaults to EMPTY — the
+# provides-nothing Given every arm written before it relies on. A caller that
+# names the recipes its fixture tree carries gets a `just` that admits them,
+# which is how an arm whose subject is a LATER step reaches that step at all.
 _JUST_STUB = """#!/usr/bin/env bash
+if [ -n "${LIVESPEC_SIBLING_CLONES_ROOT:-}" ]; then
+  printf 'sibling-root %s\\n' "${LIVESPEC_SIBLING_CLONES_ROOT}" >> "${STUB_LOG}"
+fi
 printf 'just %s\\n' "$*" >> "${STUB_LOG}"
-[ "${1:-}" = "--show" ] && exit 1
+if [ "${1:-}" = "--show" ]; then
+  case " ${PROVIDED:-} " in
+    *" ${2} "*) exit 0 ;;
+    *)          exit 1 ;;
+  esac
+fi
+exit 0
+"""
+
+# A `git` that NEVER REACHES THE NETWORK, because these fixture siblings are
+# `github.com/acme/*` and a real clone of them is both a network call this suite
+# forbids itself and a 404. A `clone` succeeds, or — under `CLONE_FAILS` — fails
+# the way a sibling that cannot be fetched does, which is the Given of the
+# red-gate arm. It CREATES NOTHING: a real `git clone` would make its
+# destination and every parent of it, and a stub that did the same would leave
+# the pod's clones root on the host running these tests.
+_GIT_STUB = """#!/usr/bin/env bash
+printf 'git %s\\n' "$*" >> "${STUB_LOG}"
+if [ "${1:-}" = "clone" ]; then
+  [ -n "${CLONE_FAILS:-}" ] && exit 1
+  exit 0
+fi
+[ "${3:-}" = "rev-parse" ] && echo "0000000000000000000000000000000000000000"
 exit 0
 """
 
 
-def _a_consumer_repository(*, root: Path, declaration: str, core_pin: str | None = None) -> Path:
+def _cross_repo_targets_block(*, siblings: tuple[tuple[str, str], ...]) -> str:
+    """The `cross_repo_targets` map, in the shape a real `.livespec.jsonc` writes it.
+
+    Each entry carries the `local_clone` a fleet host has and a gate pod does
+    not, because that path is the whole reason the step under test exists: with
+    no provisioned root the cross-repo readers resolve it, find nothing, and
+    read the absence as an EMPTY heading set rather than as an error.
+    """
+    entries = ",\n".join(
+        "\n".join(
+            [
+                f'    "{name}": {{',
+                f'      "github_url": "{url}",',
+                f'      "local_clone": "/data/projects/{name}",',
+                '      "default_branch": "master"',
+                "    }",
+            ]
+        )
+        for name, url in siblings
+    )
+    return '  "cross_repo_targets": {\n' + entries + "\n  }"
+
+
+def _a_consumer_repository(
+    *,
+    root: Path,
+    declaration: str,
+    core_pin: str | None = None,
+    siblings: tuple[tuple[str, str], ...] = (),
+) -> Path:
     """A fixture consuming repository, with the one workflow the renderer reads.
 
     `declaration` is the body of its `[tool.livespec_dev_tooling]` block, so a
@@ -130,16 +216,28 @@ def _a_consumer_repository(*, root: Path, declaration: str, core_pin: str | None
     `.livespec.jsonc` `compat.pinned` — the same field its CI resolves core at.
     `None` writes no `.livespec.jsonc` at all, which is the consumer that pins
     nothing.
+
+    `siblings` are the `(slug, github_url)` pairs its `.livespec.jsonc`
+    registers under `cross_repo_targets` — the same map a cross-repo reader
+    looks a cited sibling up in. The empty default writes no such block, which
+    is the consumer that declares no siblings at all.
     """
     root.mkdir(parents=True, exist_ok=True)
-    if core_pin is not None:
+    if core_pin is not None or siblings:
+        pinned = core_pin or _CORE_REF_WHEN_UNPINNED
+        blocks = [
+            "\n".join(
+                [
+                    '  "widget": {',
+                    f'    "compat": {{ "livespec": ">=0.1.0,<1.0.0", "pinned": "{pinned}" }}',
+                    "  }",
+                ]
+            )
+        ]
+        if siblings:
+            blocks.append(_cross_repo_targets_block(siblings=siblings))
         _ = (root / ".livespec.jsonc").write_text(
-            "{\n"
-            '  "widget": {\n'
-            '    "compat": { "livespec": ">=0.1.0,<1.0.0", "pinned": "' + core_pin + '" }\n'
-            "  }\n"
-            "}\n",
-            encoding="utf-8",
+            "{\n" + ",\n".join(blocks) + "\n}\n", encoding="utf-8"
         )
     workflow = root / ".github" / "workflows" / "ci.yml"
     workflow.parent.mkdir(parents=True)
@@ -314,6 +412,66 @@ def _recipes_run(*, manifest: str) -> list[str]:
         for line in _container_script(manifest=manifest, name="gate")
         if line.strip().startswith("just ")
     ]
+
+
+def _executable_script(*, manifest: str, name: str) -> list[str]:
+    """One container's script with its comment lines dropped.
+
+    The template explains the sibling-clone step at length, and prose about a
+    step must never read as the step: every claim below about what a
+    non-declaring repository's command does NOT carry is made of these lines.
+    """
+    return [
+        line
+        for line in _container_script(manifest=manifest, name=name)
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def _exported_sibling_clones_root(*, manifest: str) -> str:
+    """The directory the gate container exports as the sibling-clones root.
+
+    Read off the script rather than asserted as a literal, so the tests can pin
+    the RELATIONSHIP the step exists for — the clones land where the variable
+    the readers consult actually points — rather than a path constant that
+    would be satisfied by a variable naming an empty directory.
+    """
+    exported = [
+        line.strip()
+        for line in _executable_script(manifest=manifest, name="gate")
+        if line.strip().startswith(_SIBLING_ROOT_EXPORT)
+    ]
+    assert len(exported) == 1, (
+        "the gate container does not export exactly one sibling-clones root, so "
+        f"the cross-repo readers resolve a cited sibling somewhere else: {exported}"
+    )
+    return exported[0].removeprefix(_SIBLING_ROOT_EXPORT).strip().strip("'\"")
+
+
+def _sibling_clone_commands(*, manifest: str) -> list[str]:
+    """Every `git clone` the gate container runs, in order.
+
+    Matched anywhere in the line rather than at its start, because the clone is
+    the subject of an `if ! … ; then` — the same shape the init containers above
+    use to make a failed fetch the Job's own verdict.
+    """
+    return [
+        line.strip()
+        for line in _executable_script(manifest=manifest, name="gate")
+        if "git clone " in line
+    ]
+
+
+def _index_of_first_recipe(*, manifest: str) -> int:
+    """Where the check suite STARTS in the gate container's script.
+
+    Anchored to a line that STARTS with `just `, so the preflight's own
+    `if just --show …` existence probe does not count as the suite having
+    begun — "before the first check-suite recipe runs" is a claim about the
+    recipes, and the probe runs nothing.
+    """
+    lines = _executable_script(manifest=manifest, name="gate")
+    return next(index for index, line in enumerate(lines) if line.strip().startswith("just "))
 
 
 def _pre_push_hook_recipes() -> tuple[str, ...]:
@@ -537,12 +695,26 @@ def test_the_gate_job_resolves_livespec_core_at_the_consumers_pinned_release(
     assert "@github.com" not in core_block
 
 
-def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, str, list[str]]:
+def _run_the_pod_script(
+    *,
+    manifest: str,
+    root: Path,
+    clone_fails: bool = False,
+    provides: tuple[str, ...] = (),
+) -> tuple[int, str, str, list[str]]:
     """Run the rendered pod script here, against a `just` that provides nothing.
 
     This is the scenario's When, minus the cluster: the Job's verdict IS this
     script's exit status, and what it invoked is the only way to tell "refused
     before running anything" apart from "ran something and it failed".
+
+    `clone_fails` makes the stub `git` refuse every `clone`, which is the Given
+    of a sibling the pod cannot fetch. The stub never reaches the network either
+    way — see `_GIT_STUB`.
+
+    `provides` are the recipes the fixture tree carries. The default is NONE,
+    which is the provides-nothing Given; naming them is what lets an arm whose
+    subject sits after the preflight reach it.
 
     Returns the exit status, STDOUT, stderr and the invocation log, in that
     order. Both streams are returned because the pod writes to each for a
@@ -554,9 +726,10 @@ def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, str, li
     """
     stub_dir = root / "bin"
     stub_dir.mkdir(parents=True)
-    stub = stub_dir / "just"
-    _ = stub.write_text(_JUST_STUB, encoding="utf-8")
-    stub.chmod(0o755)
+    for name, body in (("just", _JUST_STUB), ("git", _GIT_STUB)):
+        stub = stub_dir / name
+        _ = stub.write_text(body, encoding="utf-8")
+        stub.chmod(0o755)
     log = root / "invocations.log"
     script = root / "gate-script.sh"
     _ = script.write_text(
@@ -566,12 +739,21 @@ def _run_the_pod_script(*, manifest: str, root: Path) -> tuple[int, str, str, li
     # The pod's OWN declared environment, which Kubernetes would apply and this
     # host would otherwise shadow — see `_literal_env`.
     env.update(_literal_env(manifest=manifest, container="gate"))
+    # THE SAME SHADOWING HAZARD, for a variable no env block declares. A Fabro
+    # sandbox exports a real `LIVESPEC_SIBLING_CLONES_ROOT` naming its own
+    # sibling checkouts, and the pod gets this variable from its SCRIPT rather
+    # than from Kubernetes — so an inherited value would make a Job that
+    # provisions nothing look exactly like one that provisioned correctly.
+    _ = env.pop(_SIBLING_ROOT_VARIABLE, None)
     env.update(
         {
             "PATH": f"{stub_dir}{os.pathsep}{env['PATH']}",
             "STUB_LOG": str(log),
+            "PROVIDED": " ".join(provides),
         }
     )
+    if clone_fails:
+        env["CLONE_FAILS"] = "1"
     completed = subprocess.run(
         ["bash", str(script)],
         cwd=str(root),
@@ -708,3 +890,253 @@ def test_the_verdict_stream_reports_whether_livespec_core_was_resolved(*, tmp_pa
     assert "logs" in streamed
     assert "--follow" in streamed
     assert f"job/gate-widget-{_TREE[:12]}" in streamed
+
+
+def _gate_script_from_a_template_without_the_sibling_step(
+    *, root: Path, scratch: Path
+) -> list[str]:
+    """`root`'s gate script, rendered from the template with the step's LINE deleted.
+
+    The control that makes "exactly as before" measurable rather than asserted.
+    A template whose `@@GATE_SIBLING_CLONES@@` line is gone is the template this
+    repository shipped before the step existed, so a non-declaring repository's
+    command matching this one — line for executable line — is the whole of the
+    claim that nothing changed for it.
+    """
+    mutant = scratch / "template-without-the-step.yaml"
+    scratch.mkdir(parents=True, exist_ok=True)
+    _ = mutant.write_text(
+        "\n".join(
+            line
+            for line in _TEMPLATE.read_text(encoding="utf-8").splitlines()
+            if _SIBLING_TOKEN not in line
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [str(_RENDERER), "--repo-root", str(root), "--tree-hash", _TREE],
+        cwd=str(root),
+        env={**os.environ, "GATE_JOB_TEMPLATE": str(mutant)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    return _executable_script(manifest=completed.stdout, name="gate")
+
+
+def test_the_gate_job_provisions_the_sibling_clones_the_consumers_checks_read(
+    *, tmp_path: Path
+) -> None:
+    """The pod gets the cited siblings, anonymously, before any recipe runs.
+
+    livespec core validates every `external_references` entry against the cited
+    sibling's REAL headings, read at whatever `resolve_effective_local_clone`
+    returns: `$LIVESPEC_SIBLING_CLONES_ROOT/<sibling>` when that variable is
+    set, and otherwise the manifest's own `local_clone` —
+    `/data/projects/<sibling>`, which exists on a fleet host and NOWHERE in a
+    gate pod. A MISSING PATH IS NOT AN ERROR THERE: the reader takes it as an
+    empty heading set and drops every allowlist entry for that sibling, so a
+    correctly allowlisted citation is reported "not allowlisted". Measured
+    2026-10-18 on Job gate-livespec-e0a55a1a58f6, which failed
+    `doctor-no-cross-spec-reference` at livespec
+    `SPECIFICATION/constraints.md:298` on a tree whose master CI was green and
+    which passes that check locally.
+
+    THE CONSUMER'S OWN CI ALREADY DOES THIS, and a gate is held to judging the
+    tree the way CI does: livespec's workflow step "Clone sibling repos for
+    cross-repo wiring check" shallow-clones its siblings from github.com into
+    `$RUNNER_TEMP/sibling-clones` and exports the variable for
+    `check-doctor-static`.
+
+    TWO FIXTURES, BECAUSE THE SET MUST BE DERIVED. A hardcoded list could
+    satisfy either arm alone and not both; these declare different siblings and
+    one renderer answers each with its own. The clones are asserted against the
+    EXPORTED root rather than a path literal, because the property the readers
+    depend on is that the directory the variable names is the directory the
+    clones landed in — and the last arm observes exactly that from outside the
+    pod, by running the script and reading the root `just` inherited.
+
+    AND NO CREDENTIAL REACHES THE POD FOR THEM, which is what makes this the
+    same kind of fetch as the livespec core one above: these are public
+    repositories on github.com over anonymous https, so there is nothing in the
+    clone commands to leak or rotate.
+    """
+    declaring = _a_consumer_repository(
+        root=tmp_path / "declaring", declaration="", siblings=_WIDGET_SIBLINGS
+    )
+    other = _a_consumer_repository(
+        root=tmp_path / "other", declaration="", siblings=_GADGET_SIBLINGS
+    )
+
+    manifest = _rendered_for(repo_root=declaring)
+    clones_root = _exported_sibling_clones_root(manifest=manifest)
+    clones = _sibling_clone_commands(manifest=manifest)
+
+    assert clones_root.startswith(
+        "/"
+    ), f"the sibling-clones root is not an absolute path in the pod: {clones_root!r}"
+    assert not clones_root.startswith("/workspace"), (
+        "the gate clones its siblings INTO the tree under test, so the aggregate "
+        f"judges a worktree the gate itself dirtied: {clones_root!r}"
+    )
+    assert len(clones) == len(
+        _WIDGET_SIBLINGS
+    ), f"the Job does not clone one sibling per declared target: {clones}"
+    for (name, url), command in zip(_WIDGET_SIBLINGS, clones, strict=True):
+        assert f"'{url}'" in command, f"{name} is not cloned from its declared url: {command}"
+        assert (
+            f"'{clones_root}/{name}'" in command
+        ), f"{name} is not cloned where the readers resolve it: {command}"
+        assert "--depth" in command, f"the {name} clone is not shallow: {command}"
+        assert "@" not in command, f"a credential rides the {name} clone: {command}"
+
+    assert [
+        command.split("'")[1]
+        for command in _sibling_clone_commands(manifest=_rendered_for(repo_root=other))
+    ] == [url for _name, url in _GADGET_SIBLINGS], (
+        "a second declaration renders the same clones, so the set is a constant "
+        "rather than the repository's own"
+    )
+
+    first_recipe = _index_of_first_recipe(manifest=manifest)
+    script = _executable_script(manifest=manifest, name="gate")
+    assert max(script.index(command) for command in clones) < first_recipe
+    assert (
+        next(
+            index
+            for index, line in enumerate(script)
+            if line.strip().startswith(_SIBLING_ROOT_EXPORT)
+        )
+        < first_recipe
+    )
+
+    returncode, _stdout, _stderr, invoked = _run_the_pod_script(
+        manifest=manifest, root=tmp_path / "pod", provides=_FALL_THROUGH_SUITE
+    )
+
+    assert returncode == 0, f"the gate refused a tree whose siblings cloned cleanly: {invoked}"
+    assert f"sibling-root {clones_root}" in invoked, (
+        "the gate's own check suite does not inherit the provisioned root, so a "
+        f"cited sibling still resolves at /data/projects: {invoked}"
+    )
+    assert max(
+        index for index, line in enumerate(invoked) if line.startswith("git clone ")
+    ) < invoked.index(
+        f"just {_FALL_THROUGH_SUITE[0]}"
+    ), f"a check-suite recipe ran before its siblings were provisioned: {invoked}"
+
+
+def test_a_consumer_declaring_no_cross_repo_siblings_gets_the_command_it_has_today(
+    *, tmp_path: Path
+) -> None:
+    """A repository that declares nothing renders no step, and nothing else moves.
+
+    The absence has to be a RENDERED one. A test that only looked for missing
+    `git clone` lines would pass just as well against a template that had never
+    carried the step at all, so the first arm asserts the template DOES carry
+    it — the step is there, and this repository's render of it is empty.
+
+    THE CONTROL IS THE WHOLE POINT OF THE SECOND HALF. "Exactly as before" is
+    measured against the same template with the step's line deleted, which IS
+    the template that shipped before this step existed: executable line for
+    executable line, the two commands are the same script. And the pod run
+    closes it behaviourally — the suite runs with the variable UNSET, so a
+    cited sibling resolves exactly where it resolved yesterday rather than
+    through a root holding no clones, which would be strictly worse than not
+    provisioning at all.
+    """
+    silent = _a_consumer_repository(root=tmp_path / "silent", declaration="")
+    pinning_only = _a_consumer_repository(
+        root=tmp_path / "pinning-only", declaration="", core_pin="v0.42.1"
+    )
+
+    assert _SIBLING_TOKEN in _TEMPLATE.read_text(encoding="utf-8"), (
+        "the template carries no sibling-clone step at all, so no repository's "
+        "Job can provision the clones its cross-repo readers need"
+    )
+
+    for repo_root in (silent, pinning_only):
+        manifest = _rendered_for(repo_root=repo_root)
+        script = _executable_script(manifest=manifest, name="gate")
+
+        assert [line for line in script if _SIBLING_ROOT_VARIABLE in line] == []
+        assert _sibling_clone_commands(manifest=manifest) == []
+        assert _recipes_run(manifest=manifest) == [
+            f"just {recipe}" for recipe in _FALL_THROUGH_SUITE
+        ]
+        assert script == _gate_script_from_a_template_without_the_sibling_step(
+            root=repo_root, scratch=repo_root / "control"
+        )
+
+    manifest = _rendered_for(repo_root=silent)
+    _returncode, _stdout, _stderr, invoked = _run_the_pod_script(
+        manifest=manifest, root=tmp_path / "pod"
+    )
+
+    assert [line for line in invoked if line.startswith("sibling-root")] == []
+    assert [line for line in invoked if line.startswith("git ")] == []
+
+
+def test_a_gate_whose_sibling_clone_fails_is_red_and_names_that_sibling(*, tmp_path: Path) -> None:
+    """A sibling the pod cannot fetch is a RED gate, named, before any recipe runs.
+
+    This is the failure mode the step must not have. An unfetched sibling does
+    not make a cross-repo reader fail — it makes it read an empty tree and drop
+    the allowlist entries it would have validated, which is a GREEN gate on a
+    tree nothing judged. So the clone's own failure has to be the verdict, and
+    it has to arrive before the suite starts rather than as one red member among
+    a run that may or may not have reached it.
+
+    THE TWO ARMS ARE JOINED BY A VALUE, as in the missing-recipe scenario above:
+    the message the pod actually produced is the message the canned cluster
+    reports as the failed pod's termination message, so the verdict naming the
+    sibling is the pod's own wording reaching an operator. `refuses_push` and
+    the absent green token are asserted too — a verdict nobody acts on still
+    completes a push.
+
+    AND THE LAST ARM IS THE CONTROL. The same manifest, with a clone that
+    succeeds, runs the declared recipe: the refusal is the clone failing, not
+    the step refusing everything.
+    """
+    consumer = _a_consumer_repository(
+        root=tmp_path / "declaring",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+        siblings=_WIDGET_SIBLINGS,
+    )
+    manifest = _rendered_for(repo_root=consumer)
+    failed, _url = _WIDGET_SIBLINGS[0]
+
+    returncode, _stdout, stderr, invoked = _run_the_pod_script(
+        manifest=manifest,
+        root=tmp_path / "failing",
+        clone_fails=True,
+        provides=(_CONSUMER_RECIPE,),
+    )
+
+    assert returncode != 0
+    assert (
+        f"'{failed}'" in stderr
+    ), f"the gate is red but does not name the sibling it could not clone: {stderr!r}"
+    assert [
+        line for line in invoked if line.startswith(f"just {_CONSUMER_RECIPE}")
+    ] == [], f"a check-suite recipe ran despite an unprovisioned sibling: {invoked}"
+
+    cluster = _CannedWorldRealRenderer(pod_message=stderr.strip())
+    verdict = run_delegated_gate(
+        repo_root=consumer, renderer=_RENDERER, runner=cluster, sleeper=_no_sleep
+    )
+
+    assert verdict.state == GATE_FAILED
+    assert verdict.token_written is False
+    assert verdict.refuses_push is True
+    assert failed in verdict.detail
+    assert not [argv for argv in cluster.argvs if "green_token" in " ".join(argv)]
+
+    code, _out, _err, ran = _run_the_pod_script(
+        manifest=manifest, root=tmp_path / "clean", provides=(_CONSUMER_RECIPE,)
+    )
+
+    assert code == 0, f"the gate refused a tree whose siblings cloned cleanly: {ran}"
+    assert f"just {_CONSUMER_RECIPE}" in ran
