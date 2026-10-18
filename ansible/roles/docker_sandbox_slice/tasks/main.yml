@@ -96,9 +96,28 @@
   become: true
   register: docker_sandbox_slice_dockerd
 
+- name: Look for the Docker engine guard's state root and its commit marker
+  # A host the guard ROLLED BACK keeps the packages it unpacked, dockerd
+  # included, with every unit disabled and no daemon running (gmktec-xubuntu,
+  # 2026-10-18). Until that guard commits, the daemon and its daemon.json are
+  # the guard's, exactly as on a host with no dockerd at all. A host whose
+  # Docker predates the guard (hp-xubuntu, vps) has no state root, and there
+  # the binary is the whole answer.
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  become: true
+  register: docker_sandbox_slice_guard
+  check_mode: false
+  loop:
+    - "{{ docker_sandbox_slice_docker_engine_state_root }}"
+    - "{{ docker_sandbox_slice_docker_engine_state_root }}/confirmed"
+
 - name: Hold whether this host has a container daemon
   ansible.builtin.set_fact:
-    docker_sandbox_slice_daemon_present: "{{ docker_sandbox_slice_dockerd.stat.exists }}"
+    docker_sandbox_slice_daemon_present: >-
+      {{ docker_sandbox_slice_dockerd.stat.exists
+      and (not docker_sandbox_slice_guard.results[0].stat.exists
+           or docker_sandbox_slice_guard.results[1].stat.exists) }}
 
 - name: Refuse a daemon that is not on the systemd cgroup driver
   when: docker_sandbox_slice_daemon_present | bool

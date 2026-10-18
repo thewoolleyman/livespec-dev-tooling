@@ -31,6 +31,7 @@ something to differ from — and so the sizing rationale is not lost.
 | `docker_sandbox_slice_daemon_config` | `/etc/docker/daemon.json` | the daemon configuration the role edits |
 | `docker_sandbox_slice_daemon_service` | `docker.service` | the unit a drained restart restarts |
 | `docker_sandbox_slice_pending_restart_marker` | `/var/lib/docker-sandbox-slice/restart-pending` | where a converge records that the running daemon has not loaded the envelope |
+| `docker_sandbox_slice_docker_engine_state_root` | `/var/lib/docker-engine-guard` | the docker_engine guard's state root. Where it exists without its `confirmed` marker the guard has not committed (or rolled back, leaving `dockerd` on disk), so the role treats the host as having no daemon and leaves the daemon configuration to the guard |
 
 ```yaml
 # hp-xubuntu — every value is the role default; shown, not required.
