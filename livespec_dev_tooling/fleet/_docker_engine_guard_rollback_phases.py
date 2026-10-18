@@ -242,6 +242,14 @@ def run_phase(*, run: str, env: GuardEnv, phase: str) -> GuardOutcome:
     outcome, never a raise: this module runs on a bare host interpreter
     where the Result railway is not importable, so the outcome carries
     the refusal instead.
+
+    The findings record is REPLACED outright, which is why a phase that
+    found nothing removes it rather than leaving it alone. The driver's
+    final check reads the footprint phase's record and fails that
+    phase's postcondition on it, so a file an earlier firing left behind
+    would hold a repaired host at `rollback-partial` forever: every
+    later firing would re-enter the phase, find nothing, and the check
+    would still read the stale report.
     """
     body = PHASE_BODIES.get(phase)
     if body is None:
@@ -252,11 +260,11 @@ def run_phase(*, run: str, env: GuardEnv, phase: str) -> GuardOutcome:
             reason=f"{phase} is not one of this guard's rollback phases",
         )
     findings = body(context=_PhaseContext(host=env.host, snapshot=env.paths.snapshot_dir(run=run)))
+    record = env.paths.rollback_dir(run=run) / f"{phase}.findings"
     if findings:
-        write_durable(
-            path=env.paths.rollback_dir(run=run) / f"{phase}.findings",
-            data="\n".join(findings),
-        )
+        write_durable(path=record, data="\n".join(findings))
+    else:
+        record.unlink(missing_ok=True)
     return GuardOutcome(
         operation="rollback",
         run=run,
