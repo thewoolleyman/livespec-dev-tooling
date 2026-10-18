@@ -361,7 +361,7 @@ The guard MUST read each effective resync interval from `/etc/rancher/k3s/config
 - **Sysctls.** The sysctl probe requires the five watched values to equal the snapshot.
 - **k3s witness.** The preflight records the containerd PID of `k3s-agent.service` and the paths `/run/containerd/s` and `/run/containerd/runc/k8s.io`. A sample fails when that PID has changed or either path is missing.
 - **Containers and networks.** The canary's cgroup is resolved through `systemctl show -p ControlGroup fabro-sandbox.slice`. A sample fails when any container other than the canary exists, or when any Docker network other than `bridge`, `host` and `none` exists.
-- **Interfaces.** A sample fails when any interface other than `docker0` and the canary's one veth pair has appeared since the snapshot.
+- **Interfaces.** A sample fails when any interface other than `docker0`, the canary's one veth pair, and a veth whose master is a bridge recorded in the snapshot has appeared since the snapshot. A veth whose master is `docker0` or any other interface absent from the snapshot fails the sample unless it is the canary's.
 - **Firewall.** A sample's firewall comparison covers the built-in chain policies of both families, the rules of `INPUT`, `FORWARD`, `OUTPUT`, `PREROUTING` and `POSTROUTING`, and the contents of `ts-*` chains. It skips the contents of `KUBE-*` and `FLANNEL-*` chains.
 
 A failed probe MUST be re-run once immediately, and MUST count as failed only when it fails twice. Every probe failure MUST be recorded with the probe's name and its error.
