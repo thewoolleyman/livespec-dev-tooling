@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.117.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.117.0...v1.117.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **ansible:** fabro_server logs its own CLI in before the quiet-server probe ([422aa8e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/422aa8ef61f88a8d05da16ebe59bc2b107994f12))
+
 ## [1.117.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.116.2...v1.117.0) (2026-10-18)
 
 
