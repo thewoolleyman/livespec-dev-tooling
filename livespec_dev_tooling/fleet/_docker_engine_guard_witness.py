@@ -240,13 +240,26 @@ def write_interface_snapshot(*, destination: Path, runner: GuardCommandRunner) -
 def interface_probe(
     *, runner: GuardCommandRunner, snapshot: Path, canary_veth_index: str
 ) -> ProbeResult:
-    """Whether anything but `docker0` and the canary's veth has appeared.
+    """Whether anything but `docker0`, the canary's veth and a recorded bridge's own has appeared.
 
     Compared against the RECORDED set rather than against names the
     guard knows, because this host already carries `cni0`, `flannel.1`
     and k3s's own veths -- a probe that listed the interfaces it
     expected would have to enumerate another subsystem's, and would go
     wrong the moment that subsystem added one.
+
+    A link whose MASTER is a name the snapshot recorded is that same
+    subsystem adding one WHILE THE WINDOW RUNS, which is ordinary on the
+    only kind of host the guard is for: a CI node admits pods, and each
+    pod puts a veth on `cni0`. Without this the rule failed every window
+    on a live node -- measured 2026-10-18 on gmktec-xubuntu, 18 pod
+    veths in one window, a clean install rolled back. The master is
+    attested by the recorded NAME and nothing else, which is exactly
+    what makes it safe to allow: `docker0` is absent from every
+    snapshot the preflight takes (it refuses a host that already has
+    one), so Docker's own veths are never on a recorded master and keep
+    failing the sample. This is the interface counterpart of the
+    firewall comparison's `KUBE-*` / `FLANNEL-*` carve-out.
 
     An UNIDENTIFIED canary veth is a failure rather than a wildcard:
     the pair is allowed because the guard created it and can delete it,
@@ -260,7 +273,13 @@ def interface_probe(
     }
     pair: set[str] = {links[canary_veth_index].name} if canary_veth_index in links else set()
     allowed: set[str] = recorded | {DOCKER_BRIDGE} | pair
-    appeared = tuple(sorted(link.name for link in links.values() if link.name not in allowed))
+    appeared = tuple(
+        sorted(
+            link.name
+            for link in links.values()
+            if link.name not in allowed and link.master not in recorded
+        )
+    )
     return ProbeResult(
         name=INTERFACE_PROBE,
         passed=not appeared,
