@@ -38,10 +38,11 @@ from livespec_dev_tooling.fleet._docker_engine_guard_cluster_probes import (
     services_probe,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_pod_probes import (
+    PodNamespace,
     api_probe,
     dns_probe,
     https_probe,
-    pod_namespace_pid,
+    pod_namespace_probe,
 )
 from livespec_dev_tooling.fleet._docker_engine_guard_sample import Probe, build_sample
 from livespec_dev_tooling.fleet._docker_engine_guard_sample_firewall import firewall_probe
@@ -182,13 +183,19 @@ def host_probes(
 ) -> tuple[Probe, ...]:
     """Every probe of one sample, each bound to what it needs, in reported order.
 
-    The pod's namespace PID and the canary's PID are resolved ONCE per
-    sample and shared by the probes that need them. Resolving them per
-    probe would cost three more reads and, worse, could hand two probes
-    two different pods: this host's CI pool deletes and creates pods
-    continuously, so "the pod" is only well defined within one sample.
+    The canary's PID is resolved ONCE per sample, and the pod's
+    namespace is resolved once per sample TOO -- but through a holder
+    rather than a value, because the two are not alike. The canary is
+    the guard's own container and lives as long as the window does,
+    while the pods on this host come and go under an ARC listener: a
+    PID bound into three probes is a PID that can be dead by the time
+    the second of them runs, and the retry that exists to tell a
+    transient from a change would then re-enter the same dead
+    namespace. The holder shares one pod while it keeps answering and
+    forgets it the moment a probe fails there, so "the pod" stays well
+    defined within a sample without outliving the pod itself.
     """
-    namespace = pod_namespace_pid(runner=runner)
+    namespace = PodNamespace(runner=runner)
     canary = canary_pid(runner=runner, canary=parameters.canary)
     return (
         partial(services_probe, runner=runner, must_stay_running=parameters.must_stay_running),
@@ -201,20 +208,30 @@ def host_probes(
             k3s_server_argv=parameters.k3s_server_argv,
         ),
         partial(
-            dns_probe,
-            runner=runner,
-            pid=namespace,
-            server=parameters.kube_dns_address,
-            name=parameters.dns_name,
+            pod_namespace_probe,
+            namespace=namespace,
+            probe=partial(
+                dns_probe,
+                runner=runner,
+                server=parameters.kube_dns_address,
+                name=parameters.dns_name,
+            ),
         ),
         partial(
-            api_probe,
-            runner=runner,
-            pid=namespace,
-            address=parameters.api_address,
-            port=parameters.api_port,
+            pod_namespace_probe,
+            namespace=namespace,
+            probe=partial(
+                api_probe,
+                runner=runner,
+                address=parameters.api_address,
+                port=parameters.api_port,
+            ),
         ),
-        partial(https_probe, runner=runner, pid=namespace),
+        partial(
+            pod_namespace_probe,
+            namespace=namespace,
+            probe=partial(https_probe, runner=runner),
+        ),
         partial(sysctl_probe, runner=runner, snapshot=snapshot),
         partial(
             k3s_witness_probe,
