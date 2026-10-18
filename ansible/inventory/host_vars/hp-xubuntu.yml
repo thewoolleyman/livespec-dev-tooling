@@ -146,9 +146,13 @@ fabro_server_instances:
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
         cpu: 4
         memory: 8GB
-    # Spelled rather than defaulted: this instance is deliberately RUNNING, and
-    # the word is what the cutover flips on the fleet instance instead.
-    service_state: running
+    # STOPPED 2026-10-18 (livespec-dev-tooling-hkf457, plan bd-ib-fyozyd): the
+    # maintainer ruled that gmktec-xubuntu replaces hp as the Petri-era
+    # factory's home, so the current Fabro server now serves from gmktec and
+    # this hp instance is parked. Unit, drop-in, settings.toml, binary and
+    # state directory are all KEPT; the role stops and disables the unit and
+    # never restarts it. Bring it back by flipping this word to running.
+    service_state: stopped
 
 # --- lan_ssh_fallback ---
 # OpenSSH binds the WIRED LAN address only (never the tailnet address); the
@@ -161,7 +165,6 @@ lan_ssh_fallback_must_stay_running:
   - k3s-agent.service
   - docker.service
   - fabro-server.service
-  - fabro-server-candidate.service
 
 # --- otel_receiver ---
 # The account and environment file of the hand-installed unit this role
