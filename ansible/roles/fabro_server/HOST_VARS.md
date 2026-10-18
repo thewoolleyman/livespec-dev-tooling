@@ -267,11 +267,20 @@ labels and its `env` map survive a converge untouched.
 
 For an environment the catalog already holds, that entry is its own base. For one
 it does not, `fabro_server_environment_template_id` names the entry to derive
-from — `default`, the environment every Fabro server seeds, so a factory host
-always has one. It is a role default rather than a per-instance axis because an
-instance that needed a different base would be declaring a second environment,
-which the axis already expresses. If neither the declared id nor that entry is in
-the catalog, the role refuses and writes nothing.
+from — `default`, the docker environment `fabro install` seeds. It is a role
+default rather than a per-instance axis because an instance that needed a
+different base would be declaring a second environment, which the axis already
+expresses.
+
+Only `fabro install` seeds `default`; the server never seeds on startup, and this
+role writes `server.env` itself rather than running install. So a server the role
+brings up from nothing has no `default` — measured 2026-10-18 on gmktec-xubuntu's
+first converge, whose catalog held `local` alone. For that case
+`fabro_server_environment_fallback_template_id` names the entry to fall back to,
+`local`: still the server's own answer, so its fields carry the build's schema,
+with only its provider set to `docker`, which the declaration already implies by
+naming a docker image. If none of the declared id, the template and the fallback
+is in the catalog, the role refuses and writes nothing.
 
 ### The credential, and why these tasks are not hidden
 

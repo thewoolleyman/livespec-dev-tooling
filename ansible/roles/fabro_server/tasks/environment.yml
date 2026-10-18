@@ -134,10 +134,35 @@
   check_mode: false
   when: not (fabro_server_environment_present | bool)
 
+- name: Read the seeded entry a new environment falls back to
+  # ONLY when the catalog holds neither this environment nor the template entry.
+  # `fabro install` is the only thing that seeds the template, and this role never
+  # runs install, so a server the role brought up from nothing holds the
+  # fallback entry alone (see `fabro_server_environment_fallback_template_id`).
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -euo pipefail
+      printf 'Authorization: Bearer %s\n' \
+        "$(sed -n 's/^FABRO_DEV_TOKEN=//p' "${FABRO_SERVER_ENV_FILE}" | tail -n 1)" |
+        curl --silent --show-error --header @- --header 'Accept: application/json' \
+          --write-out '\n%{http_code}' "${FABRO_ENVIRONMENT_URL}"
+  become: true
+  environment:
+    FABRO_SERVER_ENV_FILE: "{{ fabro_server_home_dir }}/storage/server.env"
+    FABRO_ENVIRONMENT_URL: "{{ fabro_server_environments_url }}/{{ fabro_server_environment_fallback_template_id }}"
+  register: fabro_server_environment_fallback_read
+  changed_when: false
+  check_mode: false
+  when:
+    - not (fabro_server_environment_present | bool)
+    - (fabro_server_environment_template_read.stdout_lines | default(['']))[-1] | trim != '200'
+
 - name: Resolve the catalog entry this environment's unnamed fields come from
-  # One fact, two sources, and the `| default([])` is what makes the skipped
-  # read above safe to read from: a task Ansible skipped registers a result with
-  # no stdout at all, so the template branch reads as an empty mapping and the
+  # One fact, three sources in order: the entry itself, the template, then the
+  # fallback with its provider set to docker. The `| default([])` is what makes a
+  # skipped read safe to read from: a task Ansible skipped registers a result
+  # with no stdout at all, so that branch reads as an empty mapping and the
   # refusal below names it rather than a Jinja error naming an attribute.
   ansible.builtin.set_fact:
     fabro_server_environment_base: >-
@@ -145,7 +170,11 @@
       else (fabro_server_environment_template_read.stdout_lines[:-1] | join('\n') | from_json
       if (fabro_server_environment_template_read.stdout_lines | default([]) | length > 0
       and (fabro_server_environment_template_read.stdout_lines[-1] | trim) == '200')
-      else {}) }}
+      else ((fabro_server_environment_fallback_read.stdout_lines[:-1] | join('\n') | from_json)
+      | combine({'provider': 'docker'})
+      if (fabro_server_environment_fallback_read.stdout_lines | default([]) | length > 0
+      and (fabro_server_environment_fallback_read.stdout_lines[-1] | trim) == '200')
+      else {})) }}
   check_mode: false
 
 - name: Refuse a declared environment the catalog cannot be extended from
@@ -155,7 +184,9 @@
     fail_msg: >-
       {{ fabro_server_environment.id }} is not in {{ fabro_server_unit_name }}'s
       catalog, and neither is the '{{ fabro_server_environment_template_id }}'
-      entry this role derives a new one from. Every field a declaration does not
+      entry this role derives a new one from, nor the
+      '{{ fabro_server_environment_fallback_template_id }}' entry it falls back
+      to. Every field a declaration does not
       name — the provider, the network policy, the lifecycle, the labels and the
       environment variables — is carried from that entry rather than guessed
       here, because the environments API requires every field it knows and
