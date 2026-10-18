@@ -1330,6 +1330,21 @@ _LINKS_WITH_POD_VETHS_AND_BRIDGE = _LINKS_WITH_POD_VETHS + _lines(
     "17: br-lab: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN",
 )
 
+# A pre-install read on a host that still carries an ADDRESSLESS
+# `docker0` left by an earlier purge. The preflight's interface
+# refusals are keyed on the `172.17.0.0/16` overlap, which a bridge
+# holding no address does not carry, so this name CAN reach a snapshot.
+_LINKS_BEFORE_WITH_STALE_BRIDGE = _LINKS_BEFORE + _lines(
+    "7: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN",
+)
+
+# The same host during the window: the canary's veth on `docker0` and a
+# second one that is not the canary's.
+_LINKS_WITH_STALE_BRIDGE_AND_VETHS = _LINKS_BEFORE_WITH_STALE_BRIDGE + _lines(
+    "12: veth9f0c1d@if2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master docker0 state UP",
+    "16: veth4d2b17c8@if9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master docker0 state UP",
+)
+
 # The canary's OWN view of its namespace: its `eth0` names the host-side
 # index of its veth pair after `@if`, which is how the pair is
 # identified by the canary's endpoint rather than guessed from a name.
@@ -1449,10 +1464,10 @@ def test_a_sample_ignores_pod_veths_on_a_bridge_the_snapshot_recorded(tmp_path: 
     host the guard is for -- measured on gmktec-xubuntu, where 18 pod
     veths rolled a clean install back.
 
-    The bridge is attested by the RECORDED NAME and nothing else: a
-    master this host already had is a subsystem that was already
-    running, while `docker0` is absent from every snapshot the preflight
-    takes, so Docker's own veths keep failing the sample and keep being
+    The bridge is attested by the RECORDED NAME: a master this host
+    already had is a subsystem that was already running. `docker0` is
+    excluded from those names BY NAME, which the sibling test below
+    drives, so Docker's own veths keep failing the sample and keep being
     named. A new interface mastered by nothing -- a bridge, another
     subsystem's link -- is outside the `docker0`-only cleanup entirely
     and still fails.
@@ -1494,6 +1509,43 @@ def test_a_sample_ignores_pod_veths_on_a_bridge_the_snapshot_recorded(tmp_path: 
     assert (unmastered.passed, unmastered.error) == (
         False,
         "these interfaces appeared since the snapshot: ('br-lab',)",
+    )
+
+
+def test_a_sample_fails_a_non_canary_veth_on_docker0_even_when_the_snapshot_recorded_it(
+    tmp_path: Path,
+) -> None:
+    """`docker0` confers the recorded-master allowance on NOTHING, snapshot or not.
+
+    The specification names it: a veth whose master is `docker0` fails
+    the sample unless it is the canary's. The reason the exclusion has
+    to be by NAME is that the snapshot can carry `docker0` -- the
+    preflight's interface refusals are keyed on the `172.17.0.0/16`
+    overlap, and an addressless bridge left by an earlier purge carries
+    no address to overlap. A probe that trusted the recorded names alone
+    would, on exactly that host, admit Docker's own veths: the one thing
+    it exists to catch.
+    """
+    witness = importlib.import_module(_WITNESS_MODULE)
+    netstate = importlib.import_module(_NETSTATE_MODULE)
+
+    snapshot = tmp_path / "before"
+    witness.write_interface_snapshot(
+        destination=snapshot,
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_BEFORE_WITH_STALE_BRIDGE}),
+    )
+    assert "docker0" in json.loads(
+        (snapshot / witness.INTERFACE_SNAPSHOT).read_text(encoding="utf-8")
+    )
+
+    intruded = witness.interface_probe(
+        runner=_Commands(answers={netstate.LINK_SHOW_ARGV: _LINKS_WITH_STALE_BRIDGE_AND_VETHS}),
+        snapshot=snapshot,
+        canary_veth_index="12",
+    )
+    assert (intruded.passed, intruded.error) == (
+        False,
+        "these interfaces appeared since the snapshot: ('veth4d2b17c8',)",
     )
 
 

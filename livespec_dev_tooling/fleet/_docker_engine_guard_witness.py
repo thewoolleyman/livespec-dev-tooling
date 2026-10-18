@@ -253,13 +253,19 @@ def interface_probe(
     only kind of host the guard is for: a CI node admits pods, and each
     pod puts a veth on `cni0`. Without this the rule failed every window
     on a live node -- measured 2026-10-18 on gmktec-xubuntu, 18 pod
-    veths in one window, a clean install rolled back. The master is
-    attested by the recorded NAME and nothing else, which is exactly
-    what makes it safe to allow: `docker0` is absent from every
-    snapshot the preflight takes (it refuses a host that already has
-    one), so Docker's own veths are never on a recorded master and keep
-    failing the sample. This is the interface counterpart of the
-    firewall comparison's `KUBE-*` / `FLANNEL-*` carve-out.
+    veths in one window, a clean install rolled back. This is the
+    interface counterpart of the firewall comparison's `KUBE-*` /
+    `FLANNEL-*` carve-out.
+
+    `docker0` confers that allowance on NOTHING, and is removed from the
+    recorded names BY NAME rather than left to the snapshot: the
+    preflight's interface refusals are keyed on the `172.17.0.0/16`
+    overlap, and an addressless `docker0` left by an earlier purge
+    carries no address to overlap -- so it CAN be recorded, and on
+    exactly that host a probe trusting the recorded names alone would
+    admit Docker's own veths. The bridge itself stays allowed, since
+    the install is expected to bring it up; its veths do not, unless
+    the canary's.
 
     An UNIDENTIFIED canary veth is a failure rather than a wildcard:
     the pair is allowed because the guard created it and can delete it,
@@ -273,11 +279,12 @@ def interface_probe(
     }
     pair: set[str] = {links[canary_veth_index].name} if canary_veth_index in links else set()
     allowed: set[str] = recorded | {DOCKER_BRIDGE} | pair
+    masters: set[str] = recorded - {DOCKER_BRIDGE}
     appeared = tuple(
         sorted(
             link.name
             for link in links.values()
-            if link.name not in allowed and link.master not in recorded
+            if link.name not in allowed and link.master not in masters
         )
     )
     return ProbeResult(
