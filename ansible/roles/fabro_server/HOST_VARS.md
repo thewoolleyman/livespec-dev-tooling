@@ -51,7 +51,7 @@ per instance and a `roles:` entry runs once per host.
 
 Every other key of an instance mapping must be spelled out — the role refuses a
 mapping that misses one, because an instance that inherited `unit_name`,
-`home_dir` or `port` would silently share the fleet server's state. These seven
+`home_dir` or `port` would silently share the fleet server's state. These eight
 are the exception, and they are safe to default for one reason: omitting one
 cannot make two instances collide. It only keeps the behaviour the instance had
 before the axis existed.
@@ -65,6 +65,7 @@ before the axis existed.
 | `environments` | `[]` — the role leaves whatever the instance's server holds alone | the instance's **sandbox environment catalog**: a list of entries, each spelling an `id`, a docker `image`, a `cpu` count and a `memory` size. The one axis that is not a file this role renders — a sandbox environment is server-managed state behind the instance's `/api/v1/environments` API. See "The sandbox environment catalog" below. |
 | `vault_secrets` | `[]` — the role leaves the instance's vault alone | vault entries the instance must hold: a list, each spelling a `name`, a `type` (`token` or `file`), an optional `description`, and either `from_controller_env` (the control-node variable a real credential is read from) or `value` (a committed non-secret placeholder). Each name the vault lacks is created once the server answers; a name it holds is never read, compared or overwritten. See "State the role provisions on a host that has none" below. |
 | `service_state` | `running` | `stopped` parks the instance in version control — unit, drop-in, `settings.toml` and state directory all KEPT on the host, the unit stopped and disabled, the restart handler never fired for it and the running-server verification skipped. Bring it back by flipping the word and re-applying. Refused while the instance is carrying runs, by the quiet-server guard that gates a restart. |
+| `sandbox_providers` | `{}` — the role renders no `[server.sandbox.providers]` table, so settings.toml is byte-identical to its pre-axis render | the third-party **sandbox-driver plugins** this instance may launch: a mapping from a provider kind (a lower-case name that is not `local`, `docker` or `daytona`) to that plugin's absolute `path`, its 64-hex-digit `sha256`, and optional `args`, `inherit_env` and `host_address` lists or values. Each becomes one `[server.sandbox.providers.<kind>]` table with `enabled = true`. Rendered only when settings.toml is written (`fabro_server_manage_settings`). An `environments` entry may then name that kind as its optional `provider`, which otherwise defaults to `docker`. See "Sandbox-driver plugin providers" below. |
 
 An instance that omits `binary_path` and `home_env` renders a unit **byte-identical**
 to the unit this role rendered before the two axes existed — asserted against a
@@ -742,3 +743,26 @@ needs to pass `fabro.model.no_ready_provider` admission. Its Docker comes from
 `ansible/docker-engine.yml`, which must be confirmed before this play installs
 the server.
 
+## Sandbox-driver plugin providers
+
+`sandbox_providers` is how version control tells an instance to launch a
+third-party sandbox-driver plugin, the Kubernetes plugin
+(`thewoolleyman/sandbox-driver-kubernetes`, installed by the
+`sandbox_driver_kubernetes` role) being the first. It is two halves, and both
+are needed before a run can use the plugin:
+
+1. The provider table in `settings.toml`. The plugin is launched by the
+   instance's workers with a CLEARED environment (sandbox-driver protocol v2), so
+   `inherit_env` must name every host variable the plugin reads: at least `HOME`,
+   which is where the plugin finds its `~/.config/sandbox-driver-kubernetes/config.toml`,
+   and `PATH`. `HOME` is the instance's `home_env`, so the
+   `sandbox_driver_kubernetes` role must render its plugin config into that
+   directory too (`sandbox_driver_kubernetes_config_homes`).
+2. A catalog environment whose `provider` names the kind. The derivation still
+   starts from a docker base entry. The declared provider replaces the base's,
+   and the image becomes the plugin's job image. An environment naming a kind the
+   instance does not declare is refused before the host is read.
+
+Declaring a provider requires a Fabro build that resolves an unbundled kind to
+the plugin backend (plan `kubernetes-sandbox-backend`, `bd-ib-n7zj4a`). A build
+without that wiring accepts the table but fails any run that selects the kind.

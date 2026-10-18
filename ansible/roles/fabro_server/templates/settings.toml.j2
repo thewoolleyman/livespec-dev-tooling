@@ -50,3 +50,19 @@ enabled = true
 # Must be the tailnet name, not loopback: Fabro 308-redirects / to this URL, so
 # a loopback value bounces remote browsers to their own 127.0.0.1.
 url = "https://{{ fabro_server_canonical_host }}"
+{% for kind, provider in fabro_server_sandbox_providers | dictsort %}
+
+[server.sandbox.providers.{{ kind }}]
+enabled = true
+path = "{{ provider.path }}"
+sha256 = "{{ provider.sha256 }}"
+{% if provider.args | default([]) | length > 0 %}
+args = {{ provider.args | to_json }}
+{% endif %}
+{% if provider.inherit_env | default([]) | length > 0 %}
+inherit_env = {{ provider.inherit_env | to_json }}
+{% endif %}
+{% if provider.host_address | default('') | length > 0 %}
+host_address = "{{ provider.host_address }}"
+{% endif %}
+{% endfor %}

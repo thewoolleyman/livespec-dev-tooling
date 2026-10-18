@@ -203,7 +203,7 @@
   # exists to end.
   ansible.builtin.assert:
     that:
-      - (fabro_server_environment_base.provider | default('')) == 'docker'
+      - (fabro_server_environment_base.provider | default('')) in ['docker', fabro_server_environment.provider | default('docker')]
     fail_msg: >-
       The catalog entry {{ fabro_server_environment.id }} would be derived from
       has provider '{{ fabro_server_environment_base.provider | default('none') }}',
@@ -248,7 +248,8 @@
     fabro_server_environment_settings: >-
       {{ fabro_server_environment_base
       | combine({'image': fabro_server_environment_image,
-      'resources': fabro_server_environment_resources})
+      'resources': fabro_server_environment_resources,
+      'provider': fabro_server_environment.provider | default(fabro_server_environment_base.provider)})
       | dict2items | rejectattr('key', 'in', _fabro_server_environment_response_only)
       | list | items2dict }}
   vars:
@@ -274,7 +275,9 @@
       {{ (fabro_server_environment_present | bool)
       and (fabro_server_environment_current.image.docker | default('')) == fabro_server_environment.image
       and (fabro_server_environment_current.resources.cpu | default(0) | int) == (fabro_server_environment.cpu | int)
-      and (fabro_server_environment_current.resources.memory | default('')) == fabro_server_environment.memory }}
+      and (fabro_server_environment_current.resources.memory | default('')) == fabro_server_environment.memory
+      and (fabro_server_environment_current.provider | default(''))
+      == (fabro_server_environment.provider | default(fabro_server_environment_current.provider | default(''))) }}
   check_mode: false
 
 - name: Name this environment's disposition in the run output

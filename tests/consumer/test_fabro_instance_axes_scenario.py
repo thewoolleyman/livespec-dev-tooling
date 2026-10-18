@@ -481,15 +481,15 @@ def _guarded_axes() -> tuple[str, ...]:
 def _evaluate_fallback(*, expression: str, variables: Mapping[str, str]) -> str:
     """One `default(...)` argument of the role's resolution, evaluated.
 
-    An EMPTY-LIST literal resolves to the empty string, which is as much as a renderer
+    An EMPTY-LIST or EMPTY-MAPPING literal resolves to the empty string, which is as much as a renderer
     that substitutes `{{ name }}` text can say about one. That is sound here only
     because such a default belongs to a STRUCTURAL axis — one whose value is a list
-    rather than a scalar — and the unit template names no structural axis: the arm that
+    or a mapping rather than a scalar — and the unit template names no structural axis: the arm that
     keeps the template inside this module's rendering vocabulary is what holds that
     true, so a template that grew one would fail there rather than render an empty
     string into a unit.
     """
-    if expression.strip() == "[]":
+    if expression.strip() in ("[]", "{}"):
         return ""
     resolved: list[str] = []
     for term in (part.strip() for part in expression.split("~")):
