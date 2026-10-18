@@ -58,6 +58,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.113.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.113.0...v1.113.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **fleet:** fence the guard's re-unpack to audited debs under the frontend lock ([e26afd7](https://github.com/thewoolleyman/livespec-dev-tooling/commit/e26afd75b571437ab53735cf41957e95ea371651))
+* **fleet:** name each half-installed guard leftover once, as dpkg's report repeats it ([00faabd](https://github.com/thewoolleyman/livespec-dev-tooling/commit/00faabd1d5d1c81d37c67073056b5a1e47f164f1))
+* **fleet:** never aim the guard's dpkg --configure at a half-installed package ([b0ab13d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b0ab13d9c426afc18a78dab99991b8e8b45854e9))
+* **fleet:** re-unpack a half-installed guard leftover from its audited archive ([45e1273](https://github.com/thewoolleyman/livespec-dev-tooling/commit/45e1273055ef47f527e0678b81a6f297b94a2938))
+* **fleet:** refuse a half-installed guard leftover no audited deb matches ([88e15f0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/88e15f08472cbc13d5f623f647f7920590f9e21b))
+
 ## [1.113.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.112.10...v1.113.0) (2026-10-17)
 
 
