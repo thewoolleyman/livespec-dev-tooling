@@ -146,6 +146,9 @@
       "SPECIFICATION/non-functional-requirements.md §\"Sibling spec ownership\"",
       "SPECIFICATION/non-functional-requirements.md §\"Test-Driven Development discipline\"",
       "SPECIFICATION/non-functional-requirements.md §\"Toolchain pins\""
+    ],
+    "livespec-orchestrator-beads-fabro": [
+      "SPECIFICATION/contracts.md §\"Factory addresses resolved from a host registry\""
     ]
   },
   // Planning/work-item-resolution registry. These targets are the repo slugs

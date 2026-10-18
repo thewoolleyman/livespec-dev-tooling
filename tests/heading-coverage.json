@@ -654,6 +654,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Fabro factory registry",
+    "test": "TODO",
+    "reason": "A real test at the required tier is owed for this heading; livespec-dev-tooling-txadim owns it.",
+    "work_item": "livespec-dev-tooling-txadim"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
     "test": "TODO",
     "reason": "A real test at the required tier is owed for this heading; livespec-dev-tooling-ubpufs owns it.",
@@ -745,5 +753,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-eaigbj owns it.",
     "work_item": "livespec-dev-tooling-eaigbj"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the fabro-hosts play renders the factory registry from the inventory's factory names",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-txadim owns it.",
+    "work_item": "livespec-dev-tooling-txadim"
   }
 ]
