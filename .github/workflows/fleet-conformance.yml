@@ -19,8 +19,10 @@
 # and reported as OUT-OF-VANTAGE here, naming the lane that does enforce
 # them: `just check-fleet-conformance-admin`
 # (livespec_dev_tooling/fleet/fleet_conformance_admin.py), the world-gate
-# lane wired into the `just check` aggregate and so run at pre-push under
-# the operator's own admin `gh` credentials.
+# lane that runs only in an operator's deliberate bare `just check` under
+# the operator's own admin `gh` credentials. Neither local hook gate runs
+# it (both pass `hook_gate=1`, and scripts/just/check.sh's
+# `hook_gate_skips` names it), and no CI workflow runs it.
 #
 # This comment previously claimed operator-local `just check` runs covered
 # those rows. It did not: `just check` does not set

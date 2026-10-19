@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-t2q4
-reason=Wire the new no_direct_github_access aggregate slug into the check-metadata-batch CI job (one line in .github/workflows/ci.yml). The factory App token cannot push workflow files (factory-exempt:workflow-only), so check-ci-matrix-completeness stays red until this lands. Maintainer authorized this workflow edit per-case on 2026-09-12; the approval:workflow-edit label was applied on their explicit instruction.
+work_item=livespec-dev-tooling-38wh
+reason=Correct two workflow comments (ci.yml above the check-fleet-conformance job, fleet-conformance.yml header) that wrongly say the admin-scoped fleet-conformance rows run at pre-push; both now name the one true venue, an operator's deliberate bare just check. Comment-only: no job, step, trigger or logic changes. The maintainer approved this workflow edit directly on 2026-10-18 and approval:workflow-edit is set on the item.
