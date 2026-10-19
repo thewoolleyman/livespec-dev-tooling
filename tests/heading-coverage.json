@@ -767,5 +767,37 @@
     "heading": "## Scenario: the fabro-hosts play renders the factory registry from the inventory's factory names",
     "test": "tests.livespec_dev_tooling.test_fabro_factory_registry_role.test_each_declared_factory_resolves_to_its_instances_https_address",
     "reason": "Integration-tier (module-level `pytest.mark.integration`, the AST marker route of direction 4). The mapped arm is the scenario's first Given/Then pair: `fabro_factory_registry` maps `legacy` to one host's instance WITH a `docker_host` and `petri` to another's WITHOUT one, and the committed role — run, not read, because every claim here is a claim about what `selectattr` through `hostvars` resolves — renders exactly those two entries, each `server` being `https://` plus that instance's `canonical_host`, with `docker_host` on `legacy` alone. Its control arm asserts the bare `canonical_host` is NOT the value, so a role that dropped the scheme cannot pass. The scenario's remaining Givens are the module's siblings: the re-point onto a third host, the undeclared name that must be GONE rather than merged, the empty object for an inventory that declares nothing, the `--tags` run that selects no rendering task, and the five <invalid> examples — the last proven both by the play failing and by the install task never appearing, paired against a valid registry that reaches it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a push of a tree holding a green token still runs the members that read state outside the tree",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-aape owns it.",
+    "work_item": "livespec-dev-tooling-aape"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a check aggregate member with no purity declaration fails the aggregate",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-aape owns it.",
+    "work_item": "livespec-dev-tooling-aape"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "work_item": "livespec-dev-tooling-cmgqnz"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "work_item": "livespec-dev-tooling-cmgqnz"
   }
 ]

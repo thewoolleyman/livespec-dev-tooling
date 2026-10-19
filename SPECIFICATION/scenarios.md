@@ -646,6 +646,34 @@ Then the push MUST be refused
 
 And the local `just check` fall-through MUST NOT run in place of the missing verdict
 
+## Scenario: a push of a tree holding a green token still runs the members that read state outside the tree
+
+Given a consuming repository's worktree with no uncommitted changes whose `HEAD` tree is the tree its green token names
+
+And the check set the pre-push gate's local fall-through runs holds a tree-pure member, a world-reading member, and a member that carries no purity declaration
+
+And the world-reading member fails for that tree
+
+When a git push of that tree runs the pre-push gate
+
+Then the world-reading member and the member that carries no purity declaration MUST run on the pushing host
+
+And the tree-pure member MUST NOT run
+
+And a gate Job MUST NOT be submitted to the `gates` namespace
+
+And the push MUST be refused
+
+## Scenario: a check aggregate member with no purity declaration fails the aggregate
+
+Given a member of livespec-dev-tooling's check aggregate that carries no purity declaration
+
+When livespec-dev-tooling's full `just check` aggregate runs
+
+Then the aggregate MUST exit non-zero
+
+And its output MUST name that member
+
 ## Scenario: a second controller cannot reserve the Docker engine install guard while a run is unfinished
 
 Given a factory host whose Docker engine install guard holds a current reservation for run A in phase `observing`
@@ -807,6 +835,38 @@ Then the gate Job MUST report a red verdict that names the missing recipe
 And the gate Job MUST NOT have run any recipe that only livespec-dev-tooling declares
 
 And the push MUST be refused, never completed
+
+## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+And the cluster's API server is unreachable from that host
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the push MUST be refused
+
+And the gate client MUST emit exactly one outcome event whose outcome is `no-verdict`
+
+And that event MUST carry the repository's name, the gated tree's hash, and the gate Job's name
+
+## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+And the gate Job for the committed tree at the pushing worktree's `HEAD` reports a green verdict
+
+And no receiver accepts the run's outcome event
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the push MUST complete
+
+And the gate client MUST report the same verdict, and exit with the same status, that it reports when the outcome event is delivered
 
 ## Scenario: the fabro-hosts play renders the factory registry from the inventory's factory names
 
