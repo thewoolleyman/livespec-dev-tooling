@@ -103,6 +103,11 @@ The files:
   the receiver that scrubs those spans is the DISPATCHING PROJECT's installed
   orchestrator plugin build, installs are per project, and a running
   dispatcher loop keeps its build until restarted (paid for 2026-09-07).
+- Read `.ai/honeycomb-query-credential.md` before running a Honeycomb query
+  from a script or timer, or before concluding that no credential can run
+  queries — `HONEYCOMB_CONFIG_KEY_LIVESPEC` reports `queries: false`, but
+  `HONEYCOMB_MCP_API_KEY_LIVESPEC` runs them through `mcp.honeycomb.io/mcp`
+  (a 2026-10-18 plan parked on a maintainer question it never needed).
 - Read `.ai/bulk-data-copies.md` before copying, migrating, or moving a data
   tree between disks or hosts on any fleet machine — a container store, a
   volume, a cache tier, a disk-to-disk move — and before reaching for `rsync`,
