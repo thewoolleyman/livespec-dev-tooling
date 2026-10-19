@@ -8,6 +8,13 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Host provisioning tree",
+    "work_item": "livespec-dev-tooling-k5q54n",
+    "first_seen": "2026-10-19"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
