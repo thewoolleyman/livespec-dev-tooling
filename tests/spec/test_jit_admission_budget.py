@@ -12,7 +12,8 @@ listener counts assigned jobs and needs no configuration), and the other THREE
 are static files that bound it —
 
 - `doubled repository logical ceiling` is a scale set's `maxRunners`, bounded
-  since 2026-09-06 to `max(2 x nominalQuota, 6)`;
+  since 2026-09-06 to `max(2 x nominalQuota, 6)` except where DERIVATION.md
+  records an exception;
 - `fair share of remaining host-wide capacity` is that repository's ClusterQueue
   `nominalQuota` inside the one cohort;
 - the physical cap is the node's `ci-runner.io/churn-slot` capacity, which the
@@ -64,6 +65,14 @@ _CHURN_SLOT = "ci-runner.io/churn-slot"
 # requires: `max(MULTIPLE x nominalQuota, FLOOR)`.
 _CEILING_MULTIPLE = 2
 _CEILING_FLOOR = 6
+
+# The recorded exceptions to that bound, keyed by ClusterQueue. Each one is a row
+# in DERIVATION.md "Recorded exceptions to the rule", carrying the measurement
+# that justifies it and the acceptance check that confirms or reverts it. A
+# ceiling matches its row here or the bound above, never anything else.
+_RECORDED_CEILING_EXCEPTIONS = {
+    "livespec-orchestrator-beads-fabro-cq": 12,
+}
 
 # The physical invariant, stated in the section itself.
 _PHYSICAL_CAP = 482
@@ -145,7 +154,7 @@ def _scale_set_ceilings() -> dict[str, tuple[str, int]]:
 
 
 def test_every_repository_ceiling_is_the_bounded_multiple_of_its_fair_share() -> None:
-    """`maxRunners == max(2 x nominalQuota, 6)`, asserted in both directions at once."""
+    """`maxRunners == max(2 x nominalQuota, 6)`, or its recorded exception, in both directions."""
     quotas = _cohort_quotas()
     ceilings = _scale_set_ceilings()
     assert quotas and ceilings, (
@@ -158,11 +167,14 @@ def test_every_repository_ceiling_is_the_bounded_multiple_of_its_fair_share() ->
         f"a quota with no scale set routed to it is capacity reserved for nobody; "
         f"unrouted={unrouted}"
     )
-    wrong = sorted(
-        f"{ceilings[cq][0]}: maxRunners={ceilings[cq][1]} quota={quota} "
-        f"expected={max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)}"
+    expected = {
+        cq: _RECORDED_CEILING_EXCEPTIONS.get(cq, max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR))
         for cq, quota in quotas.items()
-        if ceilings[cq][1] != max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
+    }
+    wrong = sorted(
+        f"{ceilings[cq][0]}: maxRunners={ceilings[cq][1]} quota={quota} " f"expected={expected[cq]}"
+        for cq, quota in quotas.items()
+        if ceilings[cq][1] != expected[cq]
     )
     assert not wrong, (
         f"each repository's ceiling must be the bounded multiple of its fair share. Too "

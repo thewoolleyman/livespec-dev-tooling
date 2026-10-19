@@ -890,6 +890,43 @@ The specification clause this bounds — livespec-dev-tooling
 ceiling" — is amended by the proposed change
 `scale-set-ceiling-bounded-to-fair-share` filed the same day.
 
+### Recorded exceptions to the rule
+
+A scale set MAY carry a `maxRunners` above `max(2 x nominalQuota, 6)` only as a
+recorded exception: a row in the table below that gives the measurement
+justifying it and the acceptance check that will confirm or revert it. The
+exception is a per-repository fact, not a new multiple; the rule above still
+derives every other scale set, and `tests/spec/test_jit_admission_budget.py`
+holds each ceiling to the rule or to its row here, never to anything else.
+
+| Repository | `nominalQuota` | Rule value | `maxRunners` | Recorded |
+|---|---|---|---|---|
+| `livespec-orchestrator-beads-fabro` | 2 | 6 | **12** | 2026-10-19 |
+
+**`livespec-orchestrator-beads-fabro`, 6 to 12 (2026-10-19).** The fleet
+capacity coordinator's 24-hour reading (livespec-dev-tooling epic
+`livespec-dev-tooling-dfixhe`, entries R229 and R243) found this scale set at
+its cap of 6 for 10.3 percent of the day and at 5 or more for 26.5 percent. Its
+queue wait was 52 s at the median while it was below the cap, against 293 s at
+the median and 995 s at the 90th percentile while it was at the cap. Over the
+same day poweredge was 91.8 percent idle and no other scale set spent any time
+at its cap. So the cap, not the host, was setting this repository's queue wait,
+and the cohort had idle quota to lend.
+
+The cost the rule guards against grows by six objects: the ten ceilings sum to
+104 instead of 98, so a fleet-wide backlog at C = 44 can hold at most 60 gated
+runner objects instead of 54. The relation `nominalQuota <= maxRunners` still
+holds (2 <= 12).
+
+Acceptance is measured 24 hours after the apply. It passes if this scale set's
+90th-percentile queue wait, while 6 or more of its runners are busy, is under
+500 s, and kine's `Slow SQL` rate has not risen. If either check fails, revert
+to the rule value. The demand weights behind every `nominalQuota` are separately
+due for re-derivation from seven days of measured CI job-hours (this
+repository's weight of 21 is a podman-era figure); if that re-derivation raises
+this repository's quota to 6 or more, the rule itself yields 12 and this row is
+deleted.
+
 ## The gates quota on gmktec-xubuntu (2026-09-08)
 
 **This section derives a quota that is NOT part of the apportionment above,
