@@ -65,9 +65,18 @@ docker_engine_k3s_server_argv: [sudo, -u, cwoolley, -H, ssh, -o, BatchMode=yes, 
 # pre-approved once gmktec has run a day at two with this slice's memory.peak
 # under 20 GB, /proc/pressure/memory full avg300 at 0, AND system + kubepods peak
 # + the new slice under 62 GiB with swap untouched.
-docker_sandbox_slice_memory_high: 16G
-docker_sandbox_slice_memory_max: 18G
-docker_sandbox_slice_cpu_quota: "1400%"
+# MAINTAINER DIRECTIVE R259 (2026-10-19, on livespec-dev-tooling-dfixhe)
+# supersedes the R138/R196 sizing above: EIGHT concurrent runs, slice 36G high /
+# 40G max, cpu quota 2800%. Measured basis (petri capacity sampler, fabro 0.382,
+# 2026-10-19): every run's sandbox ANON peaked at 2.61-2.64G; the earlier 10.3 GB
+# memory.peak was mostly page cache, which memory.high reclaims under pressure.
+# So 8 runs is about 21G anon. The 40G max can still oversubscribe the host if
+# system.slice (~21 GB), the kubepods.slice CI peak (27.4 GB) and a full slice all
+# coincide, so memory.high, not memory.max, is the working limit. Any sandbox OOM
+# on this host is an INFRASTRUCTURE ending (R235).
+docker_sandbox_slice_memory_high: 36G
+docker_sandbox_slice_memory_max: 40G
+docker_sandbox_slice_cpu_quota: "2800%"
 
 # --- container_reclaim ---
 container_reclaim_canonical_host: gmktec-xubuntu.perch-rudd.ts.net
@@ -86,7 +95,7 @@ sandbox_storage_enabled: false
 
 # --- sccache_redis ---
 # Half of hp's figures. The redis container runs under Docker's cgroup-parent,
-# inside the sandbox slice (18G since coordinator ruling R196), so every byte it
+# inside the sandbox slice (40G since maintainer directive R259), so every byte it
 # holds is a byte a sandbox cannot.
 sccache_redis_bind_addr: 172.17.0.1
 sccache_redis_port: 6379
@@ -132,11 +141,11 @@ fabro_server_instances:
     port: 32276
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32276
     cli_target_url: http://127.0.0.1:32276
-    # TWO (coordinator ruling R196). Each livespec-ci sandbox is sized 8GB and
-    # one run peaked at 10.3 GB, so two fit the 18G sandbox slice. Raise it only
-    # together with the slice; the next step, three runs at 30G, waits on the day
-    # of load the slice comment above names.
-    max_concurrent_runs: 2
+    # EIGHT (maintainer directive R259, superseding R196's two). Each livespec-ci
+    # sandbox has an 8GB hard limit and measured anon peaks of about 2.6G, so eight
+    # fit the 36G-high / 40G-max sandbox slice above. Change it only together with
+    # the slice.
+    max_concurrent_runs: 8
     github_app_id: "3668528"
     otel_dropin: present
     binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0389-bf5a2dc35/fabro
