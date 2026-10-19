@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.3...v1.118.4) (2026-10-19)
+
+
+### Bug Fixes
+
+* re-execute a delegated gate under the credential's owning group ([26fa9e3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/26fa9e32aa3210b9f5b195259fc051ddbc89966f))
+* refuse a push whose group re-execution reached no verdict ([53d847c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/53d847caee7ab4691fbc5a8a6f0f83464d4b3a2a))
+* repair an eligible host whose pushing process lacks the gates group ([b751474](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b75147499beb6c9c570a92b9c313d8459ea967df))
+* say an eligible host is eligible and name the group the gate will run under ([f70a0e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f70a0e9dac229fcd7b2825bcf48590d46fd035bd))
+
 ## [1.118.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.2...v1.118.3) (2026-10-18)
 
 
