@@ -63,8 +63,14 @@ _PRE_PUSH = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
 # `rev-parse HEAD^{tree}` below answers with.
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _RENDERER = Path("/opt/gates/render-gate-job.sh")
-_JOB = f"gate-widget-{_TREE[:12]}"
-_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {_JOB}\n"
+# The Job-name PREFIX the manifest asks the cluster to build on, and the name the
+# API server builds. A gate Job is named by the API server rather than by the
+# pushing host (livespec-dev-tooling-44fglo), so a tree whose previous gate Job
+# still exists can be gated again — the client reads the assigned name back off
+# its own submit, which is what the canned cluster below answers it with.
+_JOB_PREFIX = f"gate-widget-{_TREE[:12]}"
+_JOB = f"{_JOB_PREFIX}-x7k2q"
+_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: {_JOB_PREFIX}-\n"
 
 # The namespace the gate Job runs in, per the contract section.
 _NAMESPACE = "gates"
@@ -135,15 +141,24 @@ class _CannedCluster:
         _ = (cwd, stdin, stream)
         self.argvs.append(tuple(argv))
         if argv[0] == GATES_WRAPPER:
-            return self._cluster(polling="get" in argv)
+            return self._cluster(polling="get" in argv, submitting="create" in argv)
         if "rev-parse" in argv:
             return Success(GateCommandResult(returncode=0, stdout=f"{_TREE}\n", stderr=""))
         if argv[0] == str(_RENDERER):
             return Success(GateCommandResult(returncode=0, stdout=_MANIFEST, stderr=""))
         return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
 
-    def _cluster(self, *, polling: bool) -> GateCommandOutcome:
+    def _cluster(self, *, polling: bool, submitting: bool) -> GateCommandOutcome:
         """One cluster command: refused outright, or answered on the poll sequence.
+
+        THE UNREACHABLE DECISION IS MADE ONCE HERE, for every cluster command the
+        run issues, submit included — a second copy of it beside the submit is a
+        second place a lost cluster could be forgotten.
+
+        The SUBMIT answers as `kubectl create --output name` does: the created Job
+        NAMES ITSELF BACK, which is the only way the run learns which Job is its
+        own, since the manifest carries `generateName` and the name does not
+        exist until the API server assigns it (livespec-dev-tooling-44fglo).
 
         Only a POLL advances the sequence. Counting every cluster command would
         let the submit consume the not-admitted-yet answer, and the first poll
@@ -152,6 +167,8 @@ class _CannedCluster:
         """
         if self._unreachable:
             return Success(GateCommandResult(returncode=1, stdout="", stderr=_UNREACHABLE))
+        if submitting:
+            return Success(GateCommandResult(returncode=0, stdout=f"job.batch/{_JOB}\n", stderr=""))
         if not polling:
             return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
         self._polls += 1

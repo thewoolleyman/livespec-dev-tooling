@@ -61,13 +61,20 @@ __all__: list[str] = []
 
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _MIRROR = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/widget.git"
-_JOB = "gate-widget-4b825dc642cb"
-_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {_JOB}\n"
+# The name the API SERVER assigns this run's Job, and the prefix the manifest
+# asked it to build that name on. The request carries NEITHER: with a
+# `generateName` manifest the name does not exist until the submit returns, so
+# the client reads it back rather than being told one (the whole of
+# livespec-dev-tooling-44fglo, proven in `test_gate_job_identity`). Every
+# assertion below about the poll, the pod read and the log stream reads the
+# ASSIGNED name, which is what the canned cluster answers the submit with.
+_JOB_PREFIX = "gate-widget-4b825dc642cb"
+_JOB = f"{_JOB_PREFIX}-x7k2q"
+_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: {_JOB_PREFIX}-\n"
 _REQUEST = GateRunRequest(
     repo_root=Path("/repo"),
     mirror_url=_MIRROR,
     manifest=_MANIFEST,
-    job_name=_JOB,
 )
 
 
@@ -168,6 +175,12 @@ class _StubCluster:
             return f"{_TREE}\n"
         if kind == "get-job":
             return self._job_status_payload or _job_status(state=self._next_state())
+        if kind == "submit-job":
+            # `kubectl create --output name`'s own shape. The ASSIGNED name is
+            # the submit's only answer, and every later step addresses the Job
+            # by it, so a canned cluster that answered nothing here would leave
+            # the run with no Job to wait on.
+            return f"job.batch/{_JOB}\n"
         return ""
 
     def _next_state(self) -> str:
@@ -365,7 +378,13 @@ def test_the_diff_base_rides_the_same_atomic_push_as_the_tree_under_test() -> No
 
 
 def test_the_rendered_job_is_submitted_to_the_cluster_on_stdin() -> None:
-    """The manifest is submitted as rendered — this slice does not re-shape it."""
+    """The manifest is submitted as rendered — this slice does not re-shape it.
+
+    `--output name` rides the submit because the manifest carries `generateName`:
+    the Job's name does not exist until the API server assigns it, and the
+    created object naming itself back is how this run learns which Job is its
+    own (livespec-dev-tooling-44fglo).
+    """
     cluster = _StubCluster()
     _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
     submit = cluster.only(kind="submit-job")
@@ -378,6 +397,8 @@ def test_the_rendered_job_is_submitted_to_the_cluster_on_stdin() -> None:
         "create",
         "--filename",
         "-",
+        "--output",
+        "name",
     )
 
 

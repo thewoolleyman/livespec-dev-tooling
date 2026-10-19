@@ -27,6 +27,23 @@ and the value the Job's `initContainer` re-derives after checkout and refuses to
 proceed without, so a verdict cannot be separated from the tree it was produced
 against.
 
+IT DOES NOT NAME THE JOB, AND THAT IS THE ONE PLACE IT MUST NOT
+(livespec-dev-tooling-44fglo). A Job named by the tree alone can exist only once
+per tree, and the template keeps a finished Job for an hour, so for that hour a
+SECOND gate of one tree could not be submitted at all: `kubectl create` answers
+`AlreadyExists`, which arrives here as a step that did not complete and is
+reported as NO_VERDICT — the outcome reserved for a lost cluster. Measured
+2026-10-18: `gate-livespec-473f0ffdee14` ended Failed at 07:02:17Z and an
+independent replay of the same tree at 07:07Z was refused at submit. Two
+ordinary moves reach it — a push refused on a red verdict and retried after a
+cluster-side fix that changed nothing in the tree, and any independent replay of
+a just-gated tree. The manifest therefore carries `generateName`, the API SERVER
+assigns the name, and this client READS IT BACK off the submit rather than being
+told one: uniqueness belongs to the only party that can enforce it when two
+pushes of one tree race, and a suffix invented here could collide. The tree stays
+selectable through the manifest's `livespec.gate/tree-hash` label, which is what
+gathers every Job of one tree now that no name does.
+
 A SECOND REF RIDES THE SAME PUSH, and it is not a second identity: the mirror
 is created EMPTY (`git init --bare`), so it holds only what a gate push puts
 there, while eight members of the aggregate judge the commit range
@@ -161,14 +178,19 @@ class GateRunRequest:
     NEEDS and how it REACHES the world are different kinds of thing.
 
     `manifest` arrives already rendered, by `render-gate-job.sh` from the gated
-    repository's own workflow; `job_name` is the name that renderer was asked
-    for, since nothing here parses YAML to rediscover it.
+    repository's own workflow.
+
+    THERE IS NO JOB NAME HERE, and its absence is the fix for
+    livespec-dev-tooling-44fglo. A request used to carry the name the renderer
+    was asked for, and the run waited on exactly that — which is sound only while
+    one tree can have one Job. The manifest now carries `generateName`, so the
+    name does not exist until the API server assigns it and nothing that could
+    be bundled here would be it; the run learns its Job's name from the submit.
     """
 
     repo_root: Path
     mirror_url: str
     manifest: str
-    job_name: str
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 3600.0
@@ -181,6 +203,10 @@ class GateRunOutcome:
     `terminal_state` is the Job condition type the cluster reported, verbatim,
     and `logs_returncode` is the log stream's own exit code. Both are
     observations for S7b to interpret; neither is a decision.
+
+    `job_name` is the name the API SERVER gave this run's Job, read back off the
+    submit — so it names THIS run even when the same tree has been gated before
+    and the namespace still holds that gate's Job.
 
     `failure_message` is the failed pod's termination message, verbatim, and the
     empty string when there was none or when the gate did not fail. It is the
@@ -332,11 +358,18 @@ def _gate_a_pushed_tree(
 ) -> Result[GateRunOutcome, GateStepFailed]:
     """Submit, wait, stream — the section that owns the pushed ref.
 
-    `create` rather than `apply`: re-gating the same tree yields the same Job
-    name, and `apply` would silently ADOPT the existing object, making a re-run
-    a second attempt on the first run's Job. The template's `backoffLimit: 0`
-    states the same rule for the same reason — a gate verdict is a measurement,
-    so a re-run must be a new, separately identified gate.
+    `create` rather than `apply`, and `--output name` so the created object
+    names itself back. `apply` would silently ADOPT an object of the same name,
+    making a re-run a second attempt on the first run's Job; `create` against a
+    `generateName` manifest is how a re-run becomes a NEW Job instead, since the
+    API server assigns a name nothing can already hold. The template's
+    `backoffLimit: 0` states the same rule for the same reason — a gate verdict
+    is a measurement, so a re-run must be a new, separately identified gate.
+
+    EVERY LATER STEP USES THE ASSIGNED NAME, which is why it is read here, at
+    the one place the Job comes into existence: the poll, the pod read and the
+    log stream all address the Job, and a name chosen before the submit would
+    address whatever else happens to carry it — or nothing at all.
 
     The logs are streamed AFTER the terminal state rather than during: until
     Kueue admits the Job there is no pod to attach to, so a follow that starts
@@ -344,7 +377,7 @@ def _gate_a_pushed_tree(
     until it ends, which is a known and separable improvement rather than a
     property anything here depends on.
     """
-    submit_argv = [*_kubectl(request=request), "create", "--filename", "-"]
+    submit_argv = [*_kubectl(request=request), "create", "--filename", "-", "--output", "name"]
     submitted = require_success(
         step=_SUBMIT_STEP,
         argv=submit_argv,
@@ -352,7 +385,13 @@ def _gate_a_pushed_tree(
     )
     if isinstance(submitted, Failure):
         return Failure(submitted.failure())
-    terminal = _await_terminal_state(request=request, runner=runner, sleeper=sleeper)
+    named = _created_job_name(argv=submit_argv, stdout=submitted.unwrap().stdout)
+    if isinstance(named, Failure):
+        return Failure(named.failure())
+    job_name = named.unwrap()
+    terminal = _await_terminal_state(
+        request=request, runner=runner, sleeper=sleeper, job_name=job_name
+    )
     if isinstance(terminal, Failure):
         return Failure(terminal.failure())
     state = terminal.unwrap()
@@ -360,12 +399,14 @@ def _gate_a_pushed_tree(
     # whether to spend an API call, NOT an adjudication: the message is carried
     # verbatim either way and this slice still forms no opinion about it.
     message = (
-        "" if state == _COMPLETE_CONDITION else _failure_message(request=request, runner=runner)
+        ""
+        if state == _COMPLETE_CONDITION
+        else _failure_message(request=request, runner=runner, job_name=job_name)
     )
     logs_argv = [
         *_kubectl(request=request),
         "logs",
-        f"job/{request.job_name}",
+        f"job/{job_name}",
         "--all-containers",
         "--follow",
     ]
@@ -380,7 +421,7 @@ def _gate_a_pushed_tree(
     return streamed.map(
         lambda ran: GateRunOutcome(
             tree_hash=tree_hash,
-            job_name=request.job_name,
+            job_name=job_name,
             terminal_state=state,
             logs_returncode=ran.returncode,
             failure_message=message,
@@ -388,7 +429,37 @@ def _gate_a_pushed_tree(
     )
 
 
-def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner) -> str:
+def _created_job_name(*, argv: Sequence[str], stdout: str) -> Result[str, GateStepFailed]:
+    """The name the API SERVER gave this run's Job, off `create --output name`.
+
+    THE SUBMIT'S OWN ANSWER IS THE ONLY HANDLE ON THE JOB IT CREATED. With a
+    `generateName` manifest the name does not exist until the create returns, so
+    a submit this cannot be read out of leaves the run with nothing to poll,
+    nothing to stream and nothing to explain. That is the failure track rather
+    than a wait on the empty string: an unreadable answer is not a gate, and the
+    one thing a delegated gate may never do is report a verdict it did not
+    obtain.
+
+    `kubectl` prints the resource-qualified form (`job.batch/<name>`), so the
+    last `/`-separated segment is the name; the last non-empty LINE is taken
+    because a printer that ever prefaced it with a warning would otherwise make
+    the warning the name.
+    """
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    name = lines[-1].rsplit("/", maxsplit=1)[-1] if lines else ""
+    if not name:
+        return Failure(
+            GateStepFailed(
+                step=_SUBMIT_STEP,
+                argv=tuple(argv),
+                returncode=None,
+                detail=f"the submit named no Job, so there is none to wait on: {stdout!r}",
+            )
+        )
+    return Success(name)
+
+
+def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_name: str) -> str:
     """The failed pod's termination message, or the empty string.
 
     EVIDENCE, NEVER A VERDICT, which is why every unreadable shape answers the
@@ -404,7 +475,7 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner) -> s
         "get",
         "pods",
         "--selector",
-        f"job-name={request.job_name}",
+        f"job-name={job_name}",
         "--output",
         f"jsonpath={_TERMINATION_MESSAGE_JSONPATH}",
     ]
@@ -425,16 +496,20 @@ def _poll_budget(*, request: GateRunRequest) -> int:
 
 
 def _await_terminal_state(
-    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper
+    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
 ) -> Result[str, GateStepFailed]:
     """Poll the Job until it reports a terminal condition, or give up.
+
+    `job_name` is the name the submit came back with rather than one the request
+    carried, so the gate this waits on is the gate this run created — never a
+    gate of the same tree that some earlier push left in the namespace.
 
     A read that could not be MADE is not a gate that has not finished YET, so a
     refused `get` ends the wait rather than being polled through: continuing
     would spend the whole budget re-asking a question the cluster has already
     declined to answer.
     """
-    argv = [*_kubectl(request=request), "get", "job", request.job_name, "--output", "json"]
+    argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
     for _ in range(_poll_budget(request=request)):
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
@@ -454,7 +529,7 @@ def _await_terminal_state(
             argv=tuple(argv),
             returncode=None,
             detail=(
-                f"{request.job_name} reached no terminal condition "
+                f"{job_name} reached no terminal condition "
                 f"within {request.poll_timeout_seconds:g}s"
             ),
         )

@@ -180,9 +180,13 @@ GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = (
 # reader below needs no second branch for a shape it treats identically.
 _UNANSWERED = GateCommandResult(returncode=1, stdout="", stderr="")
 
-# The renderer's own default job name, computed here rather than parsed back out
-# of the manifest — and passed to it explicitly, so the name this client waits on
-# is the name it asked for even if that default ever moves.
+# How much of the tree hash the Job's name PREFIX carries. A prefix, never a
+# name: the manifest renders `metadata.generateName`, so the API server appends
+# the suffix that makes each run its own object and the client reads the assigned
+# name back off the submit (livespec-dev-tooling-44fglo). Computed here rather
+# than left to the renderer's identical default, and passed explicitly, so the
+# prefix this run renders with is the prefix this module names even if that
+# default ever moves.
 _JOB_NAME_TREE_CHARS = 12
 
 # What an OPTED-IN repository says when the host it is being pushed from holds no
@@ -387,7 +391,7 @@ def gate_remote_request(
     suite = declared_gate_check_suite(repo_root=repo_root)
     if isinstance(suite, Failure):
         return Failure(suite.failure())
-    job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
+    job_name_prefix = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -396,8 +400,8 @@ def gate_remote_request(
         tree_hash,
         "--repo",
         repo,
-        "--job-name",
-        job_name,
+        "--job-name-prefix",
+        job_name_prefix,
         *_check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(
@@ -410,7 +414,6 @@ def gate_remote_request(
             repo_root=repo_root,
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
-            job_name=job_name,
         )
     )
 

@@ -56,15 +56,19 @@ __all__: list[str] = []
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _MOVED_TREE = "9e2f1c8a0d4b6e5f3a7c1d9b8e0f2a4c6d8e0f2a"
 _MIRROR = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/widget.git"
-_JOB = "gate-widget-4b825dc642cb"
-_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {_JOB}\n"
+# The name the API SERVER assigns this run's Job, and the prefix the manifest
+# asked it to build that name on. The request carries neither: the manifest
+# renders `generateName`, so the name exists only once the submit returns and
+# the client reads it back (livespec-dev-tooling-44fglo).
+_JOB_PREFIX = "gate-widget-4b825dc642cb"
+_JOB = f"{_JOB_PREFIX}-x7k2q"
+_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: {_JOB_PREFIX}-\n"
 # A 30s timeout at the default 10s interval buys three polls, so the
 # never-finishes case gives up in three stubbed reads rather than 360.
 _REQUEST = GateRunRequest(
     repo_root=Path("/repo"),
     mirror_url=_MIRROR,
     manifest=_MANIFEST,
-    job_name=_JOB,
     poll_timeout_seconds=30.0,
 )
 _TOKEN_ARGV = (sys.executable, "-m", "livespec_dev_tooling.green_token", "write")
@@ -177,6 +181,12 @@ class _StubCluster:
     def _stdout(self, *, kind: str) -> str:
         if kind == "get-job":
             return _job_status(state=self._job_state)
+        if kind == "submit-job":
+            # `kubectl create --output name`'s own shape: the created Job naming
+            # itself back is how the run learns which Job is its own, so a
+            # canned submit that answered nothing would leave it nothing to
+            # wait on.
+            return f"job.batch/{_JOB}\n"
         return ""
 
 

@@ -128,6 +128,14 @@ _GADGET_SIBLINGS = (("gadget-core", "https://github.com/acme/gadget-core"),)
 _JOB_ADMITTING = json.dumps({"status": {}})
 _JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status": "True"}]}})
 
+# The Job-name PREFIX the rendered manifest asks the cluster to build on, and the
+# name the API server builds. A gate Job is named by the API server rather than
+# by the pushing host (livespec-dev-tooling-44fglo), so the run reads its own
+# Job's name back off the submit and the canned world below has to answer with
+# one.
+_JOB_PREFIX = f"gate-widget-{_TREE[:12]}"
+_JOB = f"{_JOB_PREFIX}-x7k2q"
+
 # A `just` that provides NOTHING the tree declares — the scenario's Given. Every
 # existence probe answers no; anything else succeeds, so a recipe that DID run
 # would leave a green gate and a log line, and the assertions can tell the two
@@ -311,6 +319,13 @@ class _CannedWorldRealRenderer:
         the realistic shape — no gate is terminal on its first poll — and the
         only way the client's wait is exercised at all.
         """
+        if "create" in argv:
+            # `kubectl create --output name`'s own shape. The created Job names
+            # itself back, which is the only way the run learns which Job is
+            # its own: the manifest carries `generateName`, so the name does not
+            # exist until the API server assigns it
+            # (livespec-dev-tooling-44fglo).
+            return f"job.batch/{_JOB}\n"
         if "pods" in argv:
             return self._pod_message
         if "job" in argv:
@@ -889,7 +904,9 @@ def test_the_verdict_stream_reports_whether_livespec_core_was_resolved(*, tmp_pa
     streamed = cluster.streamed[0]
     assert "logs" in streamed
     assert "--follow" in streamed
-    assert f"job/gate-widget-{_TREE[:12]}" in streamed
+    # The name the API SERVER assigned, read back off the submit — never the
+    # prefix the renderer was given, which names no Job.
+    assert f"job/{_JOB}" in streamed
 
 
 def _gate_script_from_a_template_without_the_sibling_step(

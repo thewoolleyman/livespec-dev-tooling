@@ -19,7 +19,21 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: @@JOB_NAME@@
+  # THE CLUSTER NAMES THIS JOB, and the tree alone must never name it
+  # (livespec-dev-tooling-44fglo). A fixed `name:` derived from the gated tree
+  # made the SECOND gate of one tree impossible for as long as the first Job
+  # existed — `ttlSecondsAfterFinished` below keeps a finished Job for an hour —
+  # because `kubectl create` answers `AlreadyExists` and the gate client reports
+  # that as NO_VERDICT, the outcome reserved for a lost cluster. Measured
+  # 2026-10-18: gate-livespec-473f0ffdee14 ended Failed at 07:02:17Z and an
+  # independent replay of the same tree at 07:07Z was refused at submit. The
+  # prefix still carries the tree so a Job is legible at a glance, and the API
+  # server appends the suffix that makes each run its own object — uniqueness
+  # belongs to the only party that can enforce it when two pushes of one tree
+  # race. The gate client reads the assigned name back off the submit; the
+  # `livespec.gate/tree-hash` label below is what still gathers every Job of one
+  # tree, now that the name no longer identifies one.
+  generateName: @@JOB_NAME_PREFIX@@
   namespace: gates
   labels:
     app.kubernetes.io/part-of: livespec-ci-gates
