@@ -58,9 +58,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
+from livespec_dev_tooling.gate_remote_verdict import GATE_NO_VERDICT
+
+# `structlog` is VENDORED, not installed; a bare import here would resolve only
+# when some earlier import in the process happened to run first.
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+import structlog  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "GATES_GROUP_REEXEC_ENV",
+    "GATES_GROUP_REMEDY",
+    "GATE_GROUP_NO_VERDICT",
     "GATE_MODULE",
     "GATE_RUNS_UNDER_GROUP",
     "SG",
@@ -100,6 +111,42 @@ GATE_RUNS_UNDER_GROUP = (
     "delegated gate is switched on and this host IS eligible, but this process does not "
     "carry the group that owns the gates kubeconfig, so the gate will run under that group"
 )
+
+# What an operator has to DO, as opposed to what went wrong. It names a fresh
+# login session first because that is the durable fix — the group database
+# already lists the user, so the next session carries the group without anyone
+# granting anything — and the one-command forms second. `/usr/bin/sg` is spelled
+# absolutely here for the same reason it is spelled absolutely in `SG`: on the
+# host this exists for, a bare `sg` is `ast-grep`.
+GATES_GROUP_REMEDY = (
+    "start a fresh login session so the pushing process carries the group; `newgrp "
+    "<group>` or `/usr/bin/sg <group> -c <command>` does the same for one shell or "
+    "one command"
+)
+
+# The refusal, in the one shape a gate is allowed to have when it decided
+# nothing. Falling through to the local aggregate here would be the defect this
+# module repairs, one layer out: the operator was just told the gate would run
+# under a group, so a push that quietly ran something else is exactly the
+# outcome that cannot be told apart afterwards.
+GATE_GROUP_NO_VERDICT = (
+    "delegated gate reached no verdict: this host is eligible, but the gate could not be "
+    "run under the group that owns the gates kubeconfig, so this push is refused rather "
+    "than falling through to an unannounced local run"
+)
+
+# Which of the two ways it failed. Carried as a detail rather than folded into
+# the message above because the remedy is the same and the diagnosis is not: one
+# is a host missing a program, the other is a group that was not the problem.
+_REEXEC_NEVER_STARTED = f"the re-execution never started — {SG} did not run"
+_REEXEC_STILL_UNREADABLE = (
+    "the re-execution ran and the credential is still unreadable, so the group was not "
+    "what was missing"
+)
+
+# The name this module's own diagnostics are attributed to, so a reader who
+# greps the event back finds the file that emitted it.
+_LOGGER = "gate_group_repair"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -273,8 +320,36 @@ def group_repair_status(*, opted_in: bool) -> int | None:
     tree and its verdict is the push's, while `None` means no re-execution was
     wanted and this process must carry on and gate. Collapsing them — a `0`
     for "nothing to do" — would complete a push on a gate that never ran.
+
+    BOTH FAILURE SHAPES REFUSE, and neither may answer `None`. A re-execution
+    that never started and one that ran and still could not read the credential
+    leave this process holding no verdict, and `None` here means "gate locally"
+    — which is the very fall-through the operator was just told would not
+    happen. The child's own check is the first branch: it is the re-executed run
+    reading its own result, which is the only place that answer exists.
     """
+    log = structlog.get_logger(_LOGGER)
+    attempted = reexecuted_gates_group()
+    if attempted is not None and not gates_kubeconfig_readable():
+        log.error(
+            GATE_GROUP_NO_VERDICT,
+            state=GATE_NO_VERDICT,
+            group=attempted,
+            detail=_REEXEC_STILL_UNREADABLE,
+            remedy=GATES_GROUP_REMEDY,
+        )
+        return 1
     group = group_repair_group(opted_in=opted_in)
     if group is None:
         return None
-    return run_under_gates_group(group=group)
+    status = run_under_gates_group(group=group)
+    if status is None:
+        log.error(
+            GATE_GROUP_NO_VERDICT,
+            state=GATE_NO_VERDICT,
+            group=group,
+            detail=_REEXEC_NEVER_STARTED,
+            remedy=GATES_GROUP_REMEDY,
+        )
+        return 1
+    return status
