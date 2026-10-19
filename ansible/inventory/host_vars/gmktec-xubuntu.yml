@@ -150,18 +150,20 @@ fabro_server_instances:
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
         cpu: 4
         memory: 8GB
-      # The Kubernetes sandbox backend's proof and canary environment (plan
-      # kubernetes-sandbox-backend, bd-ib-n7zj4a and bd-ib-nmuyjc.1 in the
-      # livespec-orchestrator-beads-fabro tenant). Its provider is the plugin
-      # declared under sandbox_providers below, and its envelope is the
-      # Definition of Done's own (cpu 2, memory 4GB, which the pod must carry
-      # as requests equal to limits: cpu 2 and 3815Mi, since Fabro's 4GB is
-      # decimal). Needs the 0.389 carrier or later: the v0.382 build refuses a
-      # provider other than local, docker or daytona.
-      - id: k8s-probe
+      # The Kubernetes twin of livespec-ci (plan kubernetes-sandbox-backend,
+      # bd-ib-n7zj4a and bd-ib-nmuyjc.1 in the livespec-orchestrator-beads-fabro
+      # tenant): the same image and envelope, provider the kubernetes plugin
+      # declared under sandbox_providers below. A dispatch reaches it only
+      # through a factory entry that names it (the canary's petri-k8s); the
+      # cutover is pointing the petri entry at it, and the rollback is pointing
+      # it back. The pod must carry requests equal to limits: cpu 4 and 7629Mi,
+      # since Fabro's 8GB is decimal. Needs the 0.389 carrier or later: the
+      # v0.382 build refuses a provider other than local, docker or daytona.
+      # Keep the image in step with livespec-ci's.
+      - id: livespec-ci-k8s
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
-        cpu: 2
-        memory: 4GB
+        cpu: 4
+        memory: 8GB
         provider: kubernetes
     # The Kubernetes sandbox-driver plugin the sandbox_driver_kubernetes role
     # installs on this host, at that role's pinned digest. The protocol clears a
