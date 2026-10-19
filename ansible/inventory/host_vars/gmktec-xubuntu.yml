@@ -139,8 +139,8 @@ fabro_server_instances:
     max_concurrent_runs: 2
     github_app_id: "3668528"
     otel_dropin: present
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
-    binary_sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0389-bf5a2dc35/fabro
+    binary_sha256: b70c2ec605985344d1fbc83d371b57673a2c391b0b5e8dd3413d3a3fa5ffb853
     # The tag the orchestrator workflow pins today
     # (.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml,
     # python-agent-v1.114.1). On this engine the catalog, not the workflow
