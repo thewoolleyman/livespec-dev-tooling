@@ -68,6 +68,7 @@ __all__: list[str] = [
     "gate_group_facts",
     "gates_group_reexec_argv",
     "group_repair_group",
+    "group_repair_status",
     "reexecuted_gates_group",
     "repairable_gates_group",
     "repairable_group",
@@ -262,3 +263,18 @@ def group_repair_group(*, opted_in: bool) -> str | None:
     if not opted_in or reexecuted_gates_group() is not None:
         return None
     return repairable_gates_group()
+
+
+def group_repair_status(*, opted_in: bool) -> int | None:
+    """The exit status a group re-execution decided, or `None` to gate RIGHT HERE.
+
+    The two answers are kept apart because they are different events rather
+    than different values: an integer means another process already gated this
+    tree and its verdict is the push's, while `None` means no re-execution was
+    wanted and this process must carry on and gate. Collapsing them — a `0`
+    for "nothing to do" — would complete a push on a gate that never ran.
+    """
+    group = group_repair_group(opted_in=opted_in)
+    if group is None:
+        return None
+    return run_under_gates_group(group=group)

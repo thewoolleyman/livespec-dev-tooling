@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -28,7 +29,12 @@ from typing import TYPE_CHECKING
 
 from returns.result import Failure, Success
 
-from livespec_dev_tooling.gate_group_repair import GateGroupFacts
+from livespec_dev_tooling.gate_group_repair import (
+    GATE_MODULE,
+    GATES_GROUP_REEXEC_ENV,
+    SG,
+    GateGroupFacts,
+)
 from livespec_dev_tooling.gate_remote_delegate import (
     GATE_CHECK_SUITE_FALL_THROUGH,
     GATE_MIRROR_ROOT,
@@ -896,6 +902,114 @@ def test_a_host_the_group_database_does_not_vouch_for_keeps_its_current_output(
     assert "gating locally" in on_ineligible
     assert "will run under" not in on_absent
     assert "will run under" not in on_ineligible
+
+
+def _sg_at(monkeypatch: pytest.MonkeyPatch, *, resolved: str | None) -> None:
+    """Make `shutil.which` answer for `/usr/bin/sg` the way the host under test would."""
+
+    def _answer(_program: str) -> str | None:
+        return resolved
+
+    monkeypatch.setattr(shutil, "which", _answer)
+
+
+def _a_local_gate_that_would_pass(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """Stub the gate this client runs HERE, and record whether it was reached.
+
+    It answers PASSED rather than raising, so a test that expected a
+    re-execution fails on the exit status it asserted — a genuine assertion
+    about the behaviour — rather than on a stub's own exception.
+    """
+    reached: list[object] = []
+
+    def _passed(**kwargs: object) -> GateVerdict:
+        reached.append(kwargs)
+        return GateVerdict(state=GATE_PASSED, detail="gated here", token_written=True)
+
+    monkeypatch.setattr("livespec_dev_tooling.gate_remote_delegate.run_delegated_gate", _passed)
+    return reached
+
+
+def _spawns_recorded(
+    monkeypatch: pytest.MonkeyPatch, *, returncode: int
+) -> list[dict[str, object]]:
+    """Record every re-execution spawn, answering `returncode` to each.
+
+    ONE recorder for the tests that expect a spawn and the tests that must prove
+    none happened: a recorder written separately for the second kind is never
+    called, so it asserts its own absence with a body nothing ever ran.
+    """
+    spawned: list[dict[str, object]] = []
+
+    def _fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        spawned.append({**kwargs, "argv": argv})
+        return subprocess.CompletedProcess(args=argv, returncode=returncode)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    return spawned
+
+
+def test_run_re_executes_itself_under_sg_and_answers_with_that_runs_exit_status(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The repair itself: the gate re-runs under the group and the CHILD's verdict is the answer.
+
+    The re-executed run is the one that reads the kubeconfig and submits the
+    Job, so its exit status is the push's — this process must not also gate
+    locally, and must not translate the child's answer into one of its own.
+
+    ONCE is asserted two ways, because a re-executing gate that could re-execute
+    again is an infinite push: exactly one spawn happens, and the child is handed
+    the sentinel naming the group that was tried, which is what makes it able to
+    tell that it IS the re-executed run.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _facts_at(monkeypatch=monkeypatch, facts=_ELIGIBLE_BUT_UNGROUPED)
+    monkeypatch.delenv(GATES_GROUP_REEXEC_ENV, raising=False)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    gated_here = _a_local_gate_that_would_pass(monkeypatch)
+    _sg_at(monkeypatch, resolved=SG)
+    spawned = _spawns_recorded(monkeypatch, returncode=7)
+
+    assert main() == 7
+    assert gated_here == []
+    assert len(spawned) == 1
+    assert spawned[0]["argv"] == [SG, _GATES_GROUP, "-c", f"{sys.executable} -m {GATE_MODULE} run"]
+    handed = spawned[0]["env"]
+    assert isinstance(handed, dict)
+    assert handed[GATES_GROUP_REEXEC_ENV] == _GATES_GROUP
+
+
+def test_a_credential_this_process_can_read_never_reaches_sg_on_either_command(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The path every delegating push already took, left untouched by the repair.
+
+    A process that can read the credential is missing no group, so there is
+    nothing to repair and nothing to narrate: `enabled` exits zero in silence
+    and `run` gates through the client it always did. The spawn recorder is the
+    load-bearing assertion — a repair that fired here would re-run every
+    delegated push inside a second process for no reason.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
+    )
+    monkeypatch.setenv("GATES_KUBECONFIG", str(_a_readable_credential(root=tmp_path)))
+    monkeypatch.delenv(GATES_GROUP_REEXEC_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+    gated_here = _a_local_gate_that_would_pass(monkeypatch)
+    _sg_at(monkeypatch, resolved=SG)
+    spawned = _spawns_recorded(monkeypatch, returncode=0)
+
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    assert main() == 0
+    assert len(gated_here) == 1
+    assert spawned == []
 
 
 def test_run_exits_zero_only_on_a_verdict_that_authorises_the_push(
