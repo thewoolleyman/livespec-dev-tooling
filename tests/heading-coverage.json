@@ -668,6 +668,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Host provisioning tree",
+    "test": "TODO",
+    "reason": "A real test at the required tier is owed for this heading; livespec-dev-tooling-k5q54n owns it.",
+    "work_item": "livespec-dev-tooling-k5q54n"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a second controller cannot reserve the Docker engine install guard while a run is unfinished",
     "test": "tests.consumer.test_docker_engine_guard_scenarios.test_a_second_controller_cannot_reserve_while_a_run_is_unfinished",
