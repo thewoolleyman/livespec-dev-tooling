@@ -62,6 +62,7 @@ from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_ku
 __all__: list[str] = [
     "GATES_GROUP_REEXEC_ENV",
     "GATE_MODULE",
+    "GATE_RUNS_UNDER_GROUP",
     "SG",
     "GateGroupFacts",
     "gate_group_facts",
@@ -87,6 +88,17 @@ GATES_GROUP_REEXEC_ENV = "LIVESPEC_GATES_GROUP_REEXEC"
 # than imported, because importing it here would close a cycle (it imports this
 # module to reach the repair).
 GATE_MODULE = "livespec_dev_tooling.gate_remote_delegate"
+
+# What an ELIGIBLE host says when only the pushing PROCESS is missing the group.
+# It is the counterpart of `gate_remote_delegate.GATED_LOCALLY` and replaces it
+# in exactly this case: that line says the host cannot read the credential,
+# which here is true of the process and false of the host, so printing it was
+# the defect — it sent the operator looking for a credential that was already
+# installed and already theirs.
+GATE_RUNS_UNDER_GROUP = (
+    "delegated gate is switched on and this host IS eligible, but this process does not "
+    "carry the group that owns the gates kubeconfig, so the gate will run under that group"
+)
 
 
 @dataclass(frozen=True, kw_only=True)

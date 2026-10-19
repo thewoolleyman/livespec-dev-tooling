@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 
 from returns.result import Failure, Success
 
+from livespec_dev_tooling.gate_group_repair import GateGroupFacts
 from livespec_dev_tooling.gate_remote_delegate import (
     GATE_CHECK_SUITE_FALL_THROUGH,
     GATE_MIRROR_ROOT,
@@ -776,6 +777,125 @@ def test_a_repository_that_has_not_opted_in_says_nothing_about_the_credential(
 
     assert code == 1
     assert capsys.readouterr().err == ""
+
+
+# ---------------------------------------------------------------------------
+# The ELIGIBLE host whose pushing process lacks the credential's group
+# ---------------------------------------------------------------------------
+
+# The group the VPS credential is owned by. Named here rather than inlined
+# because every assertion below is about whether this exact name reaches the
+# operator.
+_GATES_GROUP = "gates-client"
+
+
+def _facts_at(*, monkeypatch: pytest.MonkeyPatch, facts: GateGroupFacts) -> None:
+    """Make the host-and-process probes answer `facts`.
+
+    Injected at the FACTS seam rather than built on disk because the state the
+    repair exists for CANNOT be built here: it needs a credential the current
+    process cannot read, and this suite runs as root in the factory sandbox,
+    where a mode-0000 file is still perfectly readable.
+    """
+
+    def _answer() -> GateGroupFacts:
+        return facts
+
+    monkeypatch.setattr("livespec_dev_tooling.gate_group_repair.gate_group_facts", _answer)
+
+
+_ELIGIBLE_BUT_UNGROUPED = GateGroupFacts(
+    readable=False,
+    owning_group=_GATES_GROUP,
+    user_is_a_member=True,
+    process_carries_it=False,
+)
+
+# A genuinely ineligible host: the credential is there, and the group database
+# does not list this user in the group that owns it. `sg` would refuse them, so
+# there is nothing to repair.
+_NOT_IN_THE_GROUP_DATABASE = GateGroupFacts(
+    readable=False,
+    owning_group=_GATES_GROUP,
+    user_is_a_member=False,
+    process_carries_it=False,
+)
+
+
+def _an_opted_in_repo_on_an_unreadable_credential(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An opted-in repository whose gates kubeconfig this process cannot read.
+
+    The kubeconfig path is pointed at an absent file so the readability probe
+    the client calls DIRECTLY agrees with the injected record: the two have to
+    say the same thing, or the fixture is asserting against a state no host has.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
+    )
+    monkeypatch.setenv("GATES_KUBECONFIG", str(tmp_path / "unreadable.kubeconfig"))
+    monkeypatch.chdir(tmp_path)
+
+
+def test_an_eligible_host_whose_process_lacks_the_group_is_told_the_gate_runs_under_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The defect, from the probe the recipe branches on — measured on the VPS 2026-10-18.
+
+    There `/etc/ci-runner/gates.kubeconfig` is `0640 root:gates-client` and the
+    group database lists the login user in `gates-client`, so the HOST is
+    eligible — but a login session started before that membership was granted
+    does not carry the group. The read failed, this probe exited non-zero, and
+    the push ran the full local aggregate (about 17 minutes for
+    livespec-orchestrator-beads-fabro) behind the ordinary `GATED_LOCALLY` line.
+    Nothing said the host was eligible and nothing named the remedy; the same
+    push under `/usr/bin/sg gates-client` reached a verdict in 95 seconds.
+
+    So the probe now answers YES, because the host IS eligible, and says which
+    group the gate will run under. ONE line: this is a git hook's output, and
+    the operator reads it in the middle of a push.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _facts_at(monkeypatch=monkeypatch, facts=_ELIGIBLE_BUT_UNGROUPED)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    code = main()
+    printed = capsys.readouterr().err
+
+    assert code == 0
+    assert len(printed.strip().splitlines()) == 1
+    assert _GATES_GROUP in printed
+    assert "will run under" in printed
+    assert "gating locally" not in printed
+
+
+def test_a_host_the_group_database_does_not_vouch_for_keeps_its_current_output(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two shapes the repair must NOT reach, each left exactly as it was.
+
+    An ABSENT credential is the factory-sandbox and fresh-laptop case. A
+    credential whose owning group the group database does not list this user in
+    is a genuinely ineligible host — `sg` would refuse them there, so there is
+    nothing to repair and nothing new to say. Both keep the `GATED_LOCALLY`
+    line and the non-zero exit that IS the local fall-through.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    absent = main()
+    on_absent = capsys.readouterr().err
+    _facts_at(monkeypatch=monkeypatch, facts=_NOT_IN_THE_GROUP_DATABASE)
+    ineligible = main()
+    on_ineligible = capsys.readouterr().err
+
+    assert (absent, ineligible) == (1, 1)
+    assert "gating locally" in on_absent
+    assert "gating locally" in on_ineligible
+    assert "will run under" not in on_absent
+    assert "will run under" not in on_ineligible
 
 
 def test_run_exits_zero_only_on_a_verdict_that_authorises_the_push(

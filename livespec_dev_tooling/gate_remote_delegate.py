@@ -66,6 +66,7 @@ from livespec_dev_tooling.config import (
     load_gate_check_suite,
 )
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
+from livespec_dev_tooling.gate_group_repair import GATE_RUNS_UNDER_GROUP, group_repair_group
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandResult,
@@ -447,9 +448,16 @@ def main() -> int:
     this host's credential — because the exit code is the whole branch the recipe
     takes and a recipe cannot read the host for itself. It stays SILENT for a
     repository that has not opted in, so such a repository sees a pre-push
-    byte-for-byte the one it saw before this slice landed. It speaks in exactly
-    one case: switched ON, host ineligible, which is the case that would
-    otherwise gate differently without saying so.
+    byte-for-byte the one it saw before this slice landed.
+
+    IT SPEAKS IN TWO CASES, and they are opposites that used to be the same
+    answer. Switched ON and the host genuinely INELIGIBLE is the local
+    fall-through, which says so and exits non-zero. Switched ON and the host
+    ELIGIBLE while only this PROCESS lacks the credential's owning group is a
+    push that delegates after all, so it exits ZERO and names the group it will
+    run under — `gate_group_repair` carries why that re-execution grants nothing
+    a fresh login would not. Before that split, the second case printed the
+    first's line and ran the full local aggregate while looking correctly routed.
     """
     structlog.configure(
         processors=[
@@ -475,7 +483,12 @@ def main() -> int:
     if parsed.command == "enabled":
         if delegated_gate_selected(repo_root=repo_root):
             return 0
-        if delegated_gate_enabled(repo_root=repo_root):
+        opted_in = delegated_gate_enabled(repo_root=repo_root)
+        group = group_repair_group(opted_in=opted_in)
+        if group is not None:
+            log.warning(GATE_RUNS_UNDER_GROUP, group=group)
+            return 0
+        if opted_in:
             log.warning(GATED_LOCALLY, kubeconfig=str(gates_kubeconfig_path()))
         return 1
 
