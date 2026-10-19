@@ -66,7 +66,11 @@ from livespec_dev_tooling.config import (
     load_gate_check_suite,
 )
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
-from livespec_dev_tooling.gate_group_repair import GATE_RUNS_UNDER_GROUP, group_repair_group
+from livespec_dev_tooling.gate_group_repair import (
+    GATE_RUNS_UNDER_GROUP,
+    group_repair_group,
+    group_repair_status,
+)
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandResult,
@@ -492,6 +496,9 @@ def main() -> int:
             log.warning(GATED_LOCALLY, kubeconfig=str(gates_kubeconfig_path()))
         return 1
 
+    decided = group_repair_status(opted_in=delegated_gate_enabled(repo_root=repo_root))
+    if decided is not None:
+        return decided
     verdict = run_delegated_gate(
         repo_root=repo_root, renderer=resolve_renderer(repo_root=repo_root)
     )
