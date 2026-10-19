@@ -150,6 +150,35 @@ fabro_server_instances:
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
         cpu: 4
         memory: 8GB
+      # The Kubernetes sandbox backend's proof and canary environment (plan
+      # kubernetes-sandbox-backend, bd-ib-n7zj4a and bd-ib-nmuyjc.1 in the
+      # livespec-orchestrator-beads-fabro tenant). Its provider is the plugin
+      # declared under sandbox_providers below, and its envelope is the
+      # Definition of Done's own (cpu 2, memory 4GB, which the pod must carry
+      # as requests equal to limits: cpu 2 and 3815Mi, since Fabro's 4GB is
+      # decimal). Needs the 0.389 carrier or later: the v0.382 build refuses a
+      # provider other than local, docker or daytona.
+      - id: k8s-probe
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+        cpu: 2
+        memory: 4GB
+        provider: kubernetes
+    # The Kubernetes sandbox-driver plugin the sandbox_driver_kubernetes role
+    # installs on this host, at that role's pinned digest. The protocol clears a
+    # plugin's environment, so HOME (where the plugin reads
+    # ~/.config/sandbox-driver-kubernetes/config.toml; this instance runs with
+    # HOME=/home/cwoolley, where the role renders it) and PATH are passed
+    # through. Petri refuses a plugin backend with no host address, because it
+    # cannot infer how a sandbox pod reaches the run's services on this host:
+    # gmktec's wired LAN address (eno1), the one cluster nodes route to.
+    sandbox_providers:
+      kubernetes:
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        sha256: acd90b1560e4950ef81ab17a618230412fb026b2dbb2cc412e73e9b17b2f0714
+        inherit_env:
+          - HOME
+          - PATH
+        host_address: 192.168.1.156
     # Created in the instance's vault only when it lacks the name, never
     # overwritten (roles/fabro_server/tasks/vault.yml). The App key comes from
     # the control node's credential wrapper. OPENAI_API_KEY is NOT a key: an
