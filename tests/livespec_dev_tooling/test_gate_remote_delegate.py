@@ -980,6 +980,41 @@ def test_run_re_executes_itself_under_sg_and_answers_with_that_runs_exit_status(
     assert handed[GATES_GROUP_REEXEC_ENV] == _GATES_GROUP
 
 
+def test_a_group_re_execution_that_decides_nothing_refuses_the_push_and_names_the_remedy(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two ways the repair can fail, and the one thing neither may do: fall through.
+
+    A re-execution that NEVER STARTED (`sg` is not installed on this host) and
+    one that ran and STILL could not read the credential are different events,
+    and both leave this process holding no verdict. Falling through to the local
+    aggregate here is precisely the defect being fixed, one layer out: the push
+    would complete on a gate nobody chose, after the operator was told the gate
+    would run under a group. So each refuses, and each names the group that was
+    tried and the remedy — a fresh login session — because the diagnostic is the
+    only thing standing between the operator and the 17-minute local run.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _facts_at(monkeypatch=monkeypatch, facts=_ELIGIBLE_BUT_UNGROUPED)
+    monkeypatch.delenv(GATES_GROUP_REEXEC_ENV, raising=False)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    gated_here = _a_local_gate_that_would_pass(monkeypatch)
+    _sg_at(monkeypatch, resolved=None)
+
+    never_started = main()
+    on_never_started = capsys.readouterr().err
+    monkeypatch.setenv(GATES_GROUP_REEXEC_ENV, _GATES_GROUP)
+    still_unreadable = main()
+    on_still_unreadable = capsys.readouterr().err
+
+    assert (never_started, still_unreadable) == (1, 1)
+    assert gated_here == []
+    for printed in (on_never_started, on_still_unreadable):
+        assert GATE_NO_VERDICT in printed
+        assert _GATES_GROUP in printed
+        assert "fresh login session" in printed
+
+
 def test_a_credential_this_process_can_read_never_reaches_sg_on_either_command(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

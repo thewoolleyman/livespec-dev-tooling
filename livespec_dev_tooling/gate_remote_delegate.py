@@ -15,11 +15,28 @@ opted-in repository delegated from every host that cloned it; a host holding no
 gates credential then failed closed, which is correct for a gate and fatal for a
 factory — the push is refused and nothing says why. So the switch is now ANDed
 with host eligibility (`gate_credential.gates_kubeconfig_readable`): the pushing
-user must be able to read the gates kubeconfig on this host. Anywhere else the
-push takes the local `just check` fall-through and SAYS SO (`GATED_LOCALLY`),
-because an opted-in repository that quietly gates somewhere else is the one shape
-an operator cannot tell apart after the fact. Nothing about the fail-closed rule
-moves: once delegation IS selected, every no-verdict shape still refuses.
+user must be able to read the gates kubeconfig on this host. A host that is
+genuinely ineligible takes the local `just check` fall-through and SAYS SO
+(`GATED_LOCALLY`), because an opted-in repository that quietly gates somewhere
+else is the one shape an operator cannot tell apart after the fact. Nothing about
+the fail-closed rule moves: once delegation IS selected, every no-verdict shape
+still refuses.
+
+HOST ELIGIBILITY HAS A THIRD ANSWER, added 2026-10-19, and reading it as the
+second one was a defect: the HOST is eligible and only the PROCESS is not. On the
+VPS the credential is group-readable and the group database lists the pushing
+user, but a login session started before that membership was granted does not
+carry the group — so the read failed, this module printed `GATED_LOCALLY`, and
+the push ran the full local aggregate while looking correctly routed. Nothing
+said the host was eligible and nothing named the remedy. `gate_group_repair`
+recognises that exact state, says which group the gate will run under, and
+re-runs the gate once under it; its own docstring carries why that grants nothing
+a fresh login would not. It is a THIRD answer rather than a WIDENING of
+eligibility — a host with no credential, and a user the group database does not
+list, keep the fall-through and the line they have today — and it is fail-closed
+like every other arm: a re-execution that cannot start, or that runs and still
+cannot read the credential, refuses the push rather than falling through to a
+local run nobody announced.
 
 THE SWITCH IS PER-REPOSITORY AND DEFAULTS OFF. It is `delegated_gate` in the
 consuming repository's own `[tool.livespec_dev_tooling]` block — the same place
@@ -163,8 +180,11 @@ _CHECK_SUITE_STEP = "read-gate-check-suite"
 # `check-pre-push` raises: it is the recipe that consults this module's own
 # switch, so the default now runs it on the far side of a delegation. It cannot
 # delegate again, because `delegated_gate_selected` also requires a READABLE
-# gates kubeconfig and the gate pod holds none — so the pod's `check-pre-push`
-# takes its own local fall-through there exactly as a laptop's does.
+# gates kubeconfig and the gate pod holds none. The group repair does not reopen
+# that door either: it needs a credential FILE whose owning group resolves, and
+# a pod holding no credential at all has no group to re-run under — so the pod's
+# `check-pre-push` takes its own local fall-through there exactly as a laptop's
+# does.
 #
 # It is still the FALL-THROUGH's sequence and never this repository's own
 # declaration: `livespec-dev-tooling` adds `warm-typecheck` and its own
