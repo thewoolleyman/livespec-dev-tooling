@@ -58,6 +58,9 @@ _GUARD_BODY = re.compile(
     re.MULTILINE,
 )
 _MERGE_CALL = re.compile(r"^\s*(?:if\s+)?gh pr merge\b(?P<flags>.*)$", re.MULTILINE)
+# A shell line continuation: the flags of a wrapped `gh pr merge` call sit on the
+# NEXT physical line, so a line-based read would see none of them.
+_LINE_CONTINUATION = re.compile(r"\\\n\s*")
 
 
 def _guard_body() -> str:
@@ -117,7 +120,9 @@ def test_every_automated_merge_requests_rebase_and_never_a_prefix_destroying_str
     calls = [
         (path.name, matched.group("flags"))
         for path in sorted(_WORKFLOWS_DIR.glob("*.y*ml"))
-        for matched in _MERGE_CALL.finditer(path.read_text(encoding="utf-8"))
+        for matched in _MERGE_CALL.finditer(
+            _LINE_CONTINUATION.sub(" ", path.read_text(encoding="utf-8"))
+        )
     ]
     assert calls, (
         "this repository automates its merges, so at least one workflow must invoke "
