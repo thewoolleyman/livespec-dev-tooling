@@ -80,4 +80,5 @@ check-fabro-image-pin-lockstep
 check-no-direct-github-access
 check-no-workflow-edits
 check-shipped-path-release-guard
+check-tests-host-path-free
 check-uv-lock-version-sync
