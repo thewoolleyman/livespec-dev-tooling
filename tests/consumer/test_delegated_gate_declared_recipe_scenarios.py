@@ -127,6 +127,14 @@ _GADGET_SIBLINGS = (("gadget-core", "https://github.com/acme/gadget-core"),)
 # call a running gate terminal.
 _JOB_ADMITTING = json.dumps({"status": {}})
 _JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status": "True"}]}})
+# The name the API SERVER assigns, and what `kubectl create --output json`
+# answers with. The manifest asks for a `metadata.generateName`, so the Job's
+# name is an OUTPUT of the submit rather than something the renderer or the
+# client can predict (livespec-dev-tooling-44fglo).
+_ASSIGNED_JOB = "gate-widget-7f2qd"
+_CREATED = json.dumps(
+    {"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _ASSIGNED_JOB}}
+)
 
 # A `just` that provides NOTHING the tree declares — the scenario's Given. Every
 # existence probe answers no; anything else succeeds, so a recipe that DID run
@@ -313,6 +321,8 @@ class _CannedWorldRealRenderer:
         """
         if "pods" in argv:
             return self._pod_message
+        if "create" in argv:
+            return _CREATED
         if "job" in argv:
             self._polls += 1
             return _JOB_ADMITTING if self._polls == 1 else _JOB_FAILED
@@ -320,8 +330,8 @@ class _CannedWorldRealRenderer:
             return f"{_TREE}\n"
         if "get-url" in argv:
             return f"{_ORIGIN}\n"
-        # The push, the submit, the log stream and the ref collection: the
-        # client reads their exit codes, never their output.
+        # The push, the log stream and the ref collection: the client reads
+        # their exit codes, never their output.
         return ""
 
 
@@ -889,7 +899,7 @@ def test_the_verdict_stream_reports_whether_livespec_core_was_resolved(*, tmp_pa
     streamed = cluster.streamed[0]
     assert "logs" in streamed
     assert "--follow" in streamed
-    assert f"job/gate-widget-{_TREE[:12]}" in streamed
+    assert f"job/{_ASSIGNED_JOB}" in streamed
 
 
 def _gate_script_from_a_template_without_the_sibling_step(

@@ -16,10 +16,31 @@
 # WHY suspend: true — Kueue admits a Job by UNSUSPENDING it. A Job created
 # unsuspended bypasses the queue entirely and runs immediately against no quota,
 # which would defeat gates-cq. Kueue sets this back to false on admission.
+#
+# WHY generateName RATHER THAN name, and this is a defect this template once
+# had. The name used to be derived from the gated tree —
+# `gate-<repo>-<first 12 hex of the tree hash>` — while `ttlSecondsAfterFinished`
+# below keeps a finished Job for an hour. The gate client submits with
+# `kubectl create` ON PURPOSE, because a re-run must be a NEW, separately
+# identified measurement rather than a second attempt on the first run's Job. A
+# derived name made those two rules contradict each other: for an hour after a
+# tree's gate ended, every further gate of that tree was refused at submit with
+# `AlreadyExists` and the client reported NO_VERDICT — the state reserved for a
+# LOST CLUSTER. Measured 2026-10-18 on gate-livespec-473f0ffdee14, whose replay
+# five minutes later could not happen at all, and again 2026-10-19 on
+# gate-livespec-orchestrator-beads-fabro-228727afbe95, where two post-merge
+# janitors gated one master tree five seconds apart.
+#
+# The API server assigns the name instead, so two renders of one tree can never
+# request the same one. WHAT STILL IDENTIFIES THE TREE IS THE LABEL
+# `livespec.gate/tree-hash` below: every Job of one tree remains selectable by
+# it, which is the property the name was carrying and the only one anything
+# needed from it. The client no longer predicts the name either — it reads the
+# assigned one back off the submit.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: @@JOB_NAME@@
+  generateName: gate-@@REPO@@-
   namespace: gates
   labels:
     app.kubernetes.io/part-of: livespec-ci-gates

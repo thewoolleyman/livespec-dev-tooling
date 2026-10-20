@@ -56,15 +56,17 @@ __all__: list[str] = []
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _MOVED_TREE = "9e2f1c8a0d4b6e5f3a7c1d9b8e0f2a4c6d8e0f2a"
 _MIRROR = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/widget.git"
-_JOB = "gate-widget-4b825dc642cb"
-_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {_JOB}\n"
+# The name the API SERVER assigns: the manifest asks for a `generateName`, so
+# neither this suite nor the client can predict it.
+_JOB = "gate-widget-7f2qd"
+_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-widget-\n"
+_CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 # A 30s timeout at the default 10s interval buys three polls, so the
 # never-finishes case gives up in three stubbed reads rather than 360.
 _REQUEST = GateRunRequest(
     repo_root=Path("/repo"),
     mirror_url=_MIRROR,
     manifest=_MANIFEST,
-    job_name=_JOB,
     poll_timeout_seconds=30.0,
 )
 _TOKEN_ARGV = (sys.executable, "-m", "livespec_dev_tooling.green_token", "write")
@@ -177,6 +179,8 @@ class _StubCluster:
     def _stdout(self, *, kind: str) -> str:
         if kind == "get-job":
             return _job_status(state=self._job_state)
+        if kind == "submit-job":
+            return _CREATED
         return ""
 
 

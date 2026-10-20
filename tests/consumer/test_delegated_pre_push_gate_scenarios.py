@@ -63,8 +63,13 @@ _PRE_PUSH = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
 # `rev-parse HEAD^{tree}` below answers with.
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _RENDERER = Path("/opt/gates/render-gate-job.sh")
-_JOB = f"gate-widget-{_TREE[:12]}"
-_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {_JOB}\n"
+# The name the API SERVER assigns. The manifest asks for a `generateName`, so
+# the Job's name is an OUTPUT of the submit — which is what lets one tree be
+# gated twice inside a finished Job's TTL instead of being refused
+# `AlreadyExists` (livespec-dev-tooling-44fglo).
+_JOB = "gate-widget-7f2qd"
+_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-widget-\n"
+_CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 
 # The namespace the gate Job runs in, per the contract section.
 _NAMESPACE = "gates"
@@ -135,23 +140,29 @@ class _CannedCluster:
         _ = (cwd, stdin, stream)
         self.argvs.append(tuple(argv))
         if argv[0] == GATES_WRAPPER:
-            return self._cluster(polling="get" in argv)
+            return self._cluster(polling="get" in argv, submitting="create" in argv)
         if "rev-parse" in argv:
             return Success(GateCommandResult(returncode=0, stdout=f"{_TREE}\n", stderr=""))
         if argv[0] == str(_RENDERER):
             return Success(GateCommandResult(returncode=0, stdout=_MANIFEST, stderr=""))
         return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
 
-    def _cluster(self, *, polling: bool) -> GateCommandOutcome:
+    def _cluster(self, *, polling: bool, submitting: bool = False) -> GateCommandOutcome:
         """One cluster command: refused outright, or answered on the poll sequence.
 
         Only a POLL advances the sequence. Counting every cluster command would
         let the submit consume the not-admitted-yet answer, and the first poll
         would then read a terminal condition — quietly removing the wait this
         scenario's "only after that Job reports a green verdict" is about.
+
+        The SUBMIT answers with the created object, because that is where the
+        Job's name comes from: the manifest asks for a `generateName`, so the
+        name is assigned by the API server rather than rendered.
         """
         if self._unreachable:
             return Success(GateCommandResult(returncode=1, stdout="", stderr=_UNREACHABLE))
+        if submitting:
+            return Success(GateCommandResult(returncode=0, stdout=_CREATED, stderr=""))
         if not polling:
             return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
         self._polls += 1

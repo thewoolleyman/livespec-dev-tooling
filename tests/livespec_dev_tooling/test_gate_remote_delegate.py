@@ -61,7 +61,12 @@ _PRE_PUSH = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
 
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _RENDERER = Path("/opt/gates/render-gate-job.sh")
-_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: gate-widget-4b825dc642cb\n"
+_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-widget-\n"
+# The name the API SERVER assigns, in the shape its `generateName` suffix takes.
+# Neither this suite nor the client predicts it: that it cannot be predicted is
+# precisely what lets one tree be gated twice (livespec-dev-tooling-44fglo).
+_JOB = "gate-widget-7f2qd"
+_CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 
 # The canned clone's identity: an origin naming `widget` and a `--git-common-dir`
 # answer of a primary checkout's own `.git`, which is what git prints there.
@@ -293,22 +298,30 @@ _JOB_ADMITTING = json.dumps({"status": {}})
 _JOB_COMPLETE = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
 
 
+# Marker token → step name, tried IN ORDER: the first marker present in an argv
+# names the step, and `other` is what is left when none matches. The order is
+# load-bearing — `--git-common-dir` must be matched BEFORE `rev-parse`, because
+# the two identity probes and the tree read are all spelled `git rev-parse`.
+_STEP_MARKERS: tuple[tuple[str, str], ...] = (
+    ("--git-common-dir", "read-common-dir"),
+    ("rev-parse", "read-tree"),
+    ("get-url", "read-origin"),
+    ("create", "submit-job"),
+    ("get", "get-job"),
+)
+
+
 def _kind_of(*, argv: list[str]) -> str:
     """Name the step one argv belongs to, for the canned answers below.
 
-    `--git-common-dir` is matched BEFORE `rev-parse`, because the two identity
-    probes and the tree read are all spelled `git rev-parse`.
+    The renderer is recognised by its PATH rather than by a token, because it is
+    the one step that is not a `git` or `kubectl` subcommand at all.
     """
-    if "--git-common-dir" in argv:
-        return "read-common-dir"
-    if "rev-parse" in argv:
-        return "read-tree"
-    if "get-url" in argv:
-        return "read-origin"
     if argv[0] == str(_RENDERER):
         return "render"
-    if "get" in argv:
-        return "get-job"
+    for marker, kind in _STEP_MARKERS:
+        if marker in argv:
+            return kind
     return "other"
 
 
@@ -342,6 +355,10 @@ class _StubWorld:
             "read-origin": f"{origin}\n",
             "read-common-dir": f"{common_dir}\n",
             "render": _MANIFEST,
+            # `kubectl create --output json` answers with the created object,
+            # which is where the Job's ASSIGNED name — the one the manifest's
+            # `generateName` asked the API server for — comes from.
+            "submit-job": _CREATED,
             "other": "",
         }
 
@@ -381,21 +398,30 @@ def test_the_request_is_assembled_out_of_the_repository(*, tmp_path: Path) -> No
     assert isinstance(built, Success)
     request = built.unwrap()
     assert request.mirror_url == f"{GATE_MIRROR_ROOT}/widget.git"
-    assert request.job_name == f"gate-widget-{_TREE[:12]}"
     assert request.manifest == _MANIFEST
 
 
-def test_the_renderer_is_told_the_name_the_run_will_wait_on(*, tmp_path: Path) -> None:
-    """The job name is passed, not parsed back out of the rendered YAML."""
+def test_the_renderer_is_told_the_tree_and_asked_for_no_job_name(*, tmp_path: Path) -> None:
+    """The gated tree is passed; the Job's NAME is the cluster's to assign.
+
+    A name used to be computed here and handed to the renderer so the run would
+    wait on the name it asked for. That name was derived from the tree, and the
+    rendered Job survives its own run for `ttlSecondsAfterFinished` — so for an
+    hour after a tree's gate ended, every further gate of that tree was refused
+    at submit with `AlreadyExists` and reported NO_VERDICT, the state reserved
+    for a lost cluster (livespec-dev-tooling-44fglo). The manifest asks for a
+    `generateName` now, and the client reads the assigned name back off its own
+    submit — so a flag carrying a predicted name is not merely unused here, it
+    is the defect, and its absence is asserted.
+    """
     repo_root = tmp_path / "widget"
     repo_root.mkdir()
     runner = _StubWorld()
     _ = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
 
     render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
-    assert "--job-name" in render
-    assert f"gate-widget-{_TREE[:12]}" in render
     assert _TREE in render
+    assert "--job-name" not in render
 
 
 # ---------------------------------------------------------------------------
@@ -562,28 +588,36 @@ def test_a_push_from_a_linked_worktree_publishes_to_the_repositorys_mirror(
     assert built.unwrap().mirror_url == f"{GATE_MIRROR_ROOT}/{_REPOSITORY}.git"
 
 
-def test_one_job_name_covers_the_primary_checkout_and_a_worktree_alike(*, tmp_path: Path) -> None:
-    """Two directories, one repository, one tree — so exactly one Job name.
+def test_one_repository_identity_covers_the_primary_checkout_and_a_worktree_alike(
+    *, tmp_path: Path
+) -> None:
+    """Two directories, one repository — so one mirror and one rendered `--repo`.
 
     A directory-derived name made these two differ, which is a second identity
-    for the same gate: the same tree re-gated from the other checkout submits a
-    separately-named Job and waits on it, rather than naming the gate the tree
-    already has.
+    for the same gate: the mirror a push reaches, and the name the Job carries
+    in its labels and its in-cluster source URL, both followed the checkout
+    directory rather than the repository. A linked worktree's directory is its
+    BRANCH, so a push from one was refused with
+    `'<branch>.git' does not appear to be a git repository`.
+
+    The Job's own NAME is no longer part of that statement, because it is no
+    longer derived from anything here: the manifest asks the API server for a
+    `generateName` so that a re-gate of one tree is a new measurement rather
+    than an `AlreadyExists` refusal. What has to be stable across the two
+    checkouts is the REPOSITORY identity, which is what is asserted.
     """
-    expected = f"gate-{_REPOSITORY}-{_TREE[:12]}"
-    submitted: list[str] = []
+    identities: list[tuple[str, str]] = []
     for directory in (_REPOSITORY, _WORKTREE_DIR):
         repo_root = tmp_path / directory
         repo_root.mkdir()
-        built = gate_remote_request(
-            repo_root=repo_root,
-            renderer=_RENDERER,
-            runner=_StubWorld(origin=_REPOSITORY_ORIGIN),
-        )
+        runner = _StubWorld(origin=_REPOSITORY_ORIGIN)
+        built = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
         assert isinstance(built, Success)
-        submitted.append(built.unwrap().job_name)
+        render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
+        identities.append((built.unwrap().mirror_url, render[render.index("--repo") + 1]))
 
-    assert submitted == [expected, expected]
+    expected = (f"{GATE_MIRROR_ROOT}/{_REPOSITORY}.git", _REPOSITORY)
+    assert identities == [expected, expected]
 
 
 def test_the_renderer_is_told_the_repository_not_the_worktree(*, tmp_path: Path) -> None:
