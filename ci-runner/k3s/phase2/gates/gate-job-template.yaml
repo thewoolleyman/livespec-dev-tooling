@@ -104,9 +104,9 @@ spec:
       initContainers:
         # Fetches the exact tree under test from the in-cluster read-only mirror
         # (research/003 section E; built by R4.S4, livespec-dev-tooling-2hno).
-        # The ref is named after the tree hash, so one value identifies the tree,
-        # the ref and this Job — a gate cannot run against content other than
-        # what was pushed.
+        # The ref is the one THIS RUN pushed, named by @@GATE_REF@@, and the tree
+        # it resolves to is re-derived and checked against @@TREE_HASH@@ below —
+        # so a gate cannot run against content other than what was pushed.
         - name: fetch-tree
           image: @@IMAGE@@
           imagePullPolicy: IfNotPresent
@@ -134,13 +134,26 @@ spec:
               # its companion cannot exist — and a fetch that cannot find one
               # fails the Job here rather than letting the aggregate run against
               # an unresolvable base.
+              #
+              # THE REF IS PER RUN, NOT PER TREE, and that is a defect this
+              # template once had. Both refs were named `refs/gates/<tree hash>`
+              # alone, and the client DELETES them in a `finally` on its way out
+              # — so when two gates of one tree overlapped, whichever finished
+              # first deleted the ref the other run's pod had not fetched yet.
+              # Measured 2026-10-19: two post-merge janitors gated master tree
+              # 228727afbe95 five seconds apart; the losing run's cleanup removed
+              # the winner's input, this fetch died with `couldn't find remote
+              # ref`, and a correct merged tree read as a RED janitor. One
+              # collision cost BOTH gates their verdicts. The client now mints a
+              # ref per run and substitutes it here, so a run only ever collects
+              # refs no other run can be reading (livespec-dev-tooling-44fglo).
               if ! git fetch --quiet origin \
-                   "+refs/gates/@@TREE_HASH@@:refs/gates/@@TREE_HASH@@" \
-                   "+refs/gates/@@TREE_HASH@@.base:refs/remotes/origin/master"; then
-                echo "FATAL: cannot fetch refs/gates/@@TREE_HASH@@ and its .base companion from @@SOURCE_URL@@" >&2
+                   "+@@GATE_REF@@:@@GATE_REF@@" \
+                   "+@@GATE_REF@@.base:refs/remotes/origin/master"; then
+                echo "FATAL: cannot fetch @@GATE_REF@@ and its .base companion from @@SOURCE_URL@@" >&2
                 exit 1
               fi
-              git checkout --quiet --detach "refs/gates/@@TREE_HASH@@"
+              git checkout --quiet --detach "@@GATE_REF@@"
               actual="$(git rev-parse 'HEAD^{tree}')"
               if [ "${actual}" != "@@TREE_HASH@@" ]; then
                 echo "FATAL: fetched tree ${actual} is not the requested @@TREE_HASH@@" >&2

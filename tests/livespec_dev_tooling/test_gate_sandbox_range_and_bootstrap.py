@@ -44,6 +44,12 @@ _EXIT_TESTS = _GATES / "render-gate-job-exit-tests.sh"
 # the template edits, and the only form that is wrong in exactly one place.
 _TREE_TOKEN = "@@TREE_HASH@@"
 
+# The mirror ref the pod fetches, which is the ref THIS RUN pushed rather than
+# one named after the tree alone: the client deletes the refs it created on its
+# way out, so two gates of one tree sharing a ref name meant whichever finished
+# first deleted the other run's input (livespec-dev-tooling-44fglo).
+_GATE_REF_TOKEN = "@@GATE_REF@@"
+
 
 def _template_lines() -> list[str]:
     return _TEMPLATE.read_text(encoding="utf-8").splitlines()
@@ -221,7 +227,7 @@ def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> 
     shallow = [line for line in _fetch_tree_lines() if "--depth" in line]
     assert shallow == [], f"the gate fetch is still shallow: {shallow}"
     joined = "\n".join(_executable_lines())
-    assert f'"+refs/gates/{_TREE_TOKEN}:refs/gates/{_TREE_TOKEN}"' in joined
+    assert f'"+{_GATE_REF_TOKEN}:{_GATE_REF_TOKEN}"' in joined
 
 
 def test_the_base_companion_ref_lands_where_every_range_member_looks_for_it() -> None:
@@ -234,7 +240,7 @@ def test_the_base_companion_ref_lands_where_every_range_member_looks_for_it() ->
     fails there, where the message names the cause.
     """
     joined = "\n".join(_executable_lines())
-    assert f'"+refs/gates/{_TREE_TOKEN}.base:refs/remotes/origin/master"' in joined
+    assert f'"+{_GATE_REF_TOKEN}.base:refs/remotes/origin/master"' in joined
     assert "git merge-base HEAD origin/master" in joined
 
 
@@ -250,7 +256,7 @@ def test_the_template_and_the_client_spell_the_base_ref_suffix_identically() -> 
     ), "the client does not name a base-ref suffix for the template to agree with"
     suffix = gate_remote_client.GATE_BASE_REF_SUFFIX
     joined = "\n".join(_executable_lines())
-    assert f'"+refs/gates/{_TREE_TOKEN}{suffix}:refs/remotes/origin/master"' in joined
+    assert f'"+{_GATE_REF_TOKEN}{suffix}:refs/remotes/origin/master"' in joined
 
 
 def test_the_repository_bootstrap_precedes_the_aggregate_in_the_gate_container() -> None:

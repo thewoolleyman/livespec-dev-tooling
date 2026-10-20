@@ -30,11 +30,23 @@ against.
 A SECOND REF RIDES THE SAME PUSH, and it is not a second identity: the mirror
 is created EMPTY (`git init --bare`), so it holds only what a gate push puts
 there, while eight members of the aggregate judge the commit range
-`origin/master..HEAD` rather than a tree. `refs/gates/<tree>.base` carries this
+`origin/master..HEAD` rather than a tree. The `.base` companion carries this
 client's own `origin/master` and the pod's initContainer fetches it straight
 into `refs/remotes/origin/master`. The push is `--atomic` so a tree ref without
-its base cannot exist; the tree hash still names the tree, the served ref, this
-Job and the token.
+its base cannot exist.
+
+THE MIRROR REF IS NAMED PER RUN, NOT PER TREE, and `gate_ref` arrives on the
+request already carrying that name because the SAME value was rendered into the
+Job the pod will run. It used to be `refs/gates/<tree>` for every gate of one
+tree, which is a shared name under a `finally` that DELETES it: when two gates
+of one tree overlapped, whichever reached its cleanup first removed the ref the
+other run's pod had not fetched yet. Measured 2026-10-19 — two post-merge
+janitors gated master tree 228727afbe95 five seconds apart, the losing run's
+collection deleted the winner's input, its pod died with `couldn't find remote
+ref`, and a correct merged tree read as a RED janitor. ONE collision cost BOTH
+gates their verdicts, and concurrent same-tree gating is routine: every
+post-merge janitor in a repository gates the master tip. The tree hash still
+names the tree and the token; it no longer names the ref alone.
 
 THE MIRROR PUSHES RUN WITH THE PUSHING REPOSITORY'S HOOKS DISABLED, and that is
 what keeps this client from calling itself. git runs `pre-push` for EVERY push,
@@ -164,11 +176,20 @@ class GateRunRequest:
     repository's own workflow. There is NO job name here: the manifest asks for
     a `metadata.generateName`, so the name is assigned by the API server at
     submit and read back off that submit's own answer.
+
+    `gate_ref` is the mirror ref THIS RUN owns, and it is passed in rather than
+    derived here for one reason: the pod fetches whatever the manifest was
+    rendered with, so the ref this client pushes to and the ref the Job looks
+    for have to be ONE value decided in ONE place. The caller mints it per run
+    (`gate_remote_delegate`) because this client deletes the refs it created on
+    its way out, and a name shared with a concurrent gate of the same tree is a
+    name one run can delete while the other still needs it.
     """
 
     repo_root: Path
     mirror_url: str
     manifest: str
+    gate_ref: str
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 3600.0
@@ -229,8 +250,8 @@ def run_gate(
         # never pushed rather than on the code under test.
         "--atomic",
         request.mirror_url,
-        f"HEAD:refs/gates/{tree_hash}",
-        f"{GATE_RANGE_BASE_REF}:refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+        f"HEAD:{request.gate_ref}",
+        f"{GATE_RANGE_BASE_REF}:{request.gate_ref}{GATE_BASE_REF_SUFFIX}",
     ]
     pushed = require_success(
         step=_PUSH_STEP, argv=push_argv, outcome=runner(argv=push_argv, cwd=request.repo_root)
@@ -244,7 +265,7 @@ def run_gate(
             request=request, runner=runner, sleeper=sleeper, tree_hash=tree_hash
         )
     finally:
-        deleted = _delete_gate_ref(request=request, runner=runner, tree_hash=tree_hash)
+        deleted = _delete_gate_ref(request=request, runner=runner)
     if isinstance(gated, Failure):
         return gated
     if isinstance(deleted, Failure):
@@ -300,15 +321,20 @@ def _head_tree_hash(
     return lifted.map(lambda ran: ran.stdout.strip())
 
 
-def _delete_gate_ref(
-    *, request: GateRunRequest, runner: GateCommandRunner, tree_hash: str
-) -> StepOutcome:
+def _delete_gate_ref(*, request: GateRunRequest, runner: GateCommandRunner) -> StepOutcome:
     """Collect the refs this run created — the first of the two collectors.
 
     BOTH refs, because the push created both. The `.base` companion is the same
     kind of litter as the tree ref and accumulates at the same rate, so naming
     only the tree ref would halve the collection while looking complete — and
     the shortfall is invisible until the mirror's namespace is measured.
+
+    THE REFS THIS RUN CREATED, and nothing else, which is why `request.gate_ref`
+    names them rather than the tree hash. A collection keyed on the tree deleted
+    refs a CONCURRENT gate of the same tree was still relying on: measured
+    2026-10-19, the losing of two same-tree janitors deleted the winner's input
+    before its pod had fetched it, and both runs lost their verdicts to one
+    collision.
 
     THROUGH `_mirror_push` for the same reason the publish is: a `--delete` is a
     push, and git fires `pre-push` for it too, so a collection spelled with hooks
@@ -320,8 +346,8 @@ def _delete_gate_ref(
         *_mirror_push(),
         "--delete",
         request.mirror_url,
-        f"refs/gates/{tree_hash}",
-        f"refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+        request.gate_ref,
+        f"{request.gate_ref}{GATE_BASE_REF_SUFFIX}",
     ]
     return require_success(
         step=_DELETE_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)

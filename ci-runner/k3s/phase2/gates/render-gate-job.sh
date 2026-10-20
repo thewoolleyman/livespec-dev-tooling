@@ -23,7 +23,7 @@
 #   render-gate-job.sh --repo-root PATH --tree-hash SHA [--repo NAME]
 #                      [--gated-repository OWNER/REPO]
 #                      [--source-url URL] [--cpu N] [--memory SIZE]
-#                      [--parallelism N] [--ttl-seconds N]
+#                      [--parallelism N] [--ttl-seconds N] [--gate-ref REF]
 #                      [--livespec-core-ref REF]
 #                      [--check-suite 'RECIPE' ...]
 #
@@ -41,6 +41,14 @@
 # NO_VERDICT, the state reserved for a lost cluster. The gated tree is still
 # named by the `livespec.gate/tree-hash` label, which is what made the name
 # useful; the client reads the assigned name back off its own submit.
+#
+# --gate-ref is the mirror ref THIS RUN pushed the tree under test to, which the
+# pod fetches and checks out. It defaults to `refs/gates/<tree hash>` for a hand
+# render, and the gate client passes a PER-RUN ref instead. That is not
+# decoration: the client deletes the refs it created in a `finally`, so two
+# gates of one tree sharing a ref name meant whichever finished first deleted
+# the other run's input — measured 2026-10-19, when one such collision cost BOTH
+# post-merge janitors of master tree 228727afbe95 their verdicts.
 #
 # --check-suite is the GATED REPOSITORY'S OWN check recipes — one flag per `just`
 # invocation, run in the order given — and it is requirement 1's sibling
@@ -82,7 +90,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
 
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
-cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"
+cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
 livespec_core_ref=""
 check_suite=()
 
@@ -108,6 +116,7 @@ while [ $# -gt 0 ]; do
     --memory)            memory="$2"; shift 2 ;;
     --parallelism)       parallelism="$2"; shift 2 ;;
     --ttl-seconds)       ttl_seconds="$2"; shift 2 ;;
+    --gate-ref)          gate_ref="$2"; shift 2 ;;
     --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
@@ -128,6 +137,22 @@ esac
 
 [ -n "${repo}" ] || repo="$(basename "${repo_root}")"
 [ -n "${source_url}" ] || source_url="git://git-gates.gates.svc.cluster.local/${repo}.git"
+[ -n "${gate_ref}" ] || gate_ref="refs/gates/${tree_hash}"
+
+# The ref goes into the pod's shell script and into two refspecs, so its
+# character set is bounded HERE rather than trusted: a git ref name is
+# alphanumerics with `._/-` and everything else is a way to write shell into a
+# manifest. The `refs/gates/` prefix is required too — that namespace is what
+# ./prune-gate-refs.sh sweeps, so a ref outside it is one nothing ever collects.
+case "${gate_ref}" in
+  refs/gates/?*) : ;;
+  *) echo "FATAL: --gate-ref must name a ref under refs/gates/: ${gate_ref}" >&2; exit 2 ;;
+esac
+case "${gate_ref}" in
+  *[!A-Za-z0-9._/-]*)
+    echo "FATAL: --gate-ref '${gate_ref}' is not a plain git ref name" >&2
+    exit 2 ;;
+esac
 
 # --- the gated repository's github.com identity (R4.S7 slice B) ---------------
 # Derived from the gated clone's OWN origin, matched against the same two
@@ -463,6 +488,7 @@ substitute_block() {
 }
 
 substitute REPO              "${repo}"
+substitute GATE_REF          "${gate_ref}"
 substitute GATED_REPOSITORY  "${gated_repository}"
 substitute TREE_HASH         "${tree_hash}"
 substitute IMAGE             "${image}"
