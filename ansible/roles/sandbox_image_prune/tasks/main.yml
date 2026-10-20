@@ -1,0 +1,230 @@
+---
+# sandbox_image_prune — the 6-hourly prune that bounds the set of Fabro
+# sandbox images resident in the server node's containerd.
+#
+# Replaces ci-runner/k3s/phase2/warm-cache/sandbox-image-prune/
+# install-sandbox-image-prune.sh, which was deleted with this role. That
+# installer is recoverable at 356e0454, the last commit that touched it.
+#
+# WHY IT BECAME A ROLE (livespec-dev-tooling-xcscdz). The installer was
+# hand-run and deliberately NOT wired into the retired install-node.sh, so the
+# unit was a node-local mechanism of the server's profile that no committed
+# automation installed. ansible/ci-pool.yml is the node-provisioning stage of
+# the §"Runner-pool node rebuild recipe", and §"Scenario: a pool node is
+# rebuilt from bare metal by the recipe and its profile" requires every
+# node-local mechanism to reach the profile's declared state with no step
+# performed by hand.
+#
+# SERVER-ONLY, AND THE GATE IS IN THE PLAY. The prune's central gate is a
+# cluster-wide read of every workload's PodSpec — that is how it knows a
+# half-hourly CronJob still needs a tag from twelve releases ago — and only a
+# server holds the admin kubeconfig that read requires. An agent could prune on
+# node evidence alone; it MUST NOT, because "no container is using this image"
+# is exactly the wrong question. The consequence is stated rather than hidden:
+# an AGENT node's containerd is NOT pruned by this role, and bounding it needs
+# a scoped read-only credential on that node first.
+#
+# THE REFUSAL BELOW IS A REFUSAL, NOT A SELF-GATE. The `when:` that selects the
+# server lives on the `roles:` entry in ci-pool.yml, per the maintainer's
+# 2026-10-13 ruling. This role's first task asserts the same fact so that
+# reaching it on an agent FAILS LOUDLY instead of installing a destructive unit
+# on a node that cannot answer the question it asks — the hard refusal the
+# deleted installer made, preserved. A skip would be the thing the ruling
+# forbids; an error is not.
+#
+# APPLYING THIS RUNS THE PRUNE — ON MOST HOSTS, IMMEDIATELY, WITH --apply. The
+# timer carries BOTH OnBootSec=30min and Persistent=true, and OnBootSec is
+# measured from BOOT rather than from enablement, so on any host whose uptime
+# already exceeds 30 minutes that tick is in the past the instant the timer is
+# enabled and systemd activates prune-sandbox-images.service at once. There is
+# no 30-minute grace period on such a host: arming the timer IS starting the
+# service. MEASURED, not inferred — on poweredge-xubuntu, up 2 d 13 h, on
+# 2026-09-08, one hand run of the installer enabled the timer at 08:56:05 and
+# the service reported `removed 217 record(s), 0 skipped as newly referenced`
+# at 08:56:45. The gates held, but they held BY CONSTRUCTION. The behaviour is
+# deliberately UNCHANGED by this migration: the maintainer ruled on 2026-09-10
+# (livespec-dev-tooling-1fss) that the units and the install steps stand as
+# they are. Read what a tick did with
+# `sudo journalctl -u prune-sandbox-images.service --since '-10 min'`.
+#
+# IT ALSO RENDERS ONE DATA FILE, AND THAT IS THE ONLY REASON THIS ROLE READS
+# THE REPOSITORY. Prune gate 4(c) protects every sandbox image a manifest
+# COMMITTED HERE pins, not only the ones a live cluster object names — the gap
+# livespec-ifwnqj.7 recorded, where an isolation negative control pins a tag in
+# a `kind: Job` applied by hand, so no cluster object holds it between runs and
+# the prune listed it for removal. The prune cannot answer that itself: it runs
+# out of sandbox_image_prune_lib_dir, where no checkout is guaranteed to exist.
+# So the extraction happens on the CONTROLLER, where the repository
+# demonstrably does, and the result is installed beside the script.
+#
+# WHICH MAKES THE FILE A SNAPSHOT, as old as the last apply — the same "merging
+# is NOT deploying" property the installed script has, since that is a copy
+# too. Re-apply after any manifest change that pins an OLD tag; a pin to a
+# recent release is already inside the prune's newest-N window.
+
+- name: Refuse the sandbox-image prune on any node but the cluster server
+  ansible.builtin.assert:
+    that:
+      - cluster_role == 'server'
+    fail_msg: >-
+      this prune is SERVER-only, and {{ inventory_hostname }} is a
+      '{{ cluster_role }}'. Its central gate is a cluster-wide PodSpec read and
+      an agent holds no admin kubeconfig; pruning on node evidence alone would
+      delete images that only a between-runs CronJob or Job needs. Nothing was
+      installed
+    success_msg: "{{ inventory_hostname }} is the cluster server"
+
+- name: Read the prune's scope repository out of the prune script
+  # Read, never repeated: the scope IS the safety property, and two copies of
+  # it is one copy too many. A divergence would leave the prune protecting one
+  # repository while this role extracted pins for another, with nothing
+  # anywhere to notice.
+  ansible.builtin.set_fact:
+    sandbox_image_prune_repositories: >-
+      {{ lookup('ansible.builtin.file',
+      sandbox_image_prune_src_dir ~ '/' ~ sandbox_image_prune_script)
+      | regex_findall('^REPOSITORY="([^"]*)"$', multiline=True) }}
+
+- name: Refuse a prune script that does not name exactly one scope repository
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_prune_repositories | length == 1
+    fail_msg: >-
+      could not read exactly one REPOSITORY="..." line out of
+      {{ sandbox_image_prune_script }}; found
+      {{ sandbox_image_prune_repositories }}. This role extracts pins for
+      exactly the repository the prune protects and refuses to guess which one
+      that is
+    success_msg: >-
+      prune scope is {{ sandbox_image_prune_repositories | first }}
+
+- name: Collect every YAML file of this repository, on the controller
+  # DELIBERATELY WIDER THAN THE MANIFESTS ANYONE WOULD THINK TO NAME: every
+  # YAML file in the tree, with no allow-list of which files may carry a pin —
+  # the same shape as the prune's own text-scrape of the cluster dump, and for
+  # the same reason. An allow-list would drift invisibly, in exactly the way
+  # the original gap did.
+  ansible.builtin.find:
+    paths: "{{ sandbox_image_prune_repo_root }}"
+    patterns:
+      - "*.yaml"
+      - "*.yml"
+    excludes: "{{ sandbox_image_prune_scan_excludes }}"
+    recurse: true
+    file_type: file
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: sandbox_image_prune_manifests
+
+- name: Extract the references this repository's committed manifests pin
+  ansible.builtin.set_fact:
+    sandbox_image_prune_pins: >-
+      {{ query('ansible.builtin.file',
+      *(sandbox_image_prune_manifests.files | map(attribute='path') | list))
+      | join('\n')
+      | regex_findall((sandbox_image_prune_repositories | first | regex_escape)
+      ~ sandbox_image_prune_ref_pattern)
+      | unique | sort }}
+
+- name: Refuse an empty pin set
+  # Zero is refused, and it is the same refusal the prune makes when the file
+  # is missing. This repository pins at least the warm-cache CronJob image, so
+  # a scan finding nothing has looked at the wrong tree — and installing an
+  # empty file would disarm gate 4(c) SILENTLY, at the exact place it matters.
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_prune_pins | length > 0
+    fail_msg: >-
+      found no reference to {{ sandbox_image_prune_repositories | first }} in
+      any YAML file under {{ sandbox_image_prune_repo_root }}. This repository
+      pins at least the warm-cache CronJob image, so zero means the scan looked
+      at the wrong tree rather than a repository that pins nothing. Nothing was
+      installed
+    success_msg: >-
+      {{ sandbox_image_prune_pins | length }} reference(s) pinned by this
+      repository's committed manifests
+
+- name: Create the pool library directory
+  # Explicit, because --check cannot see past a missing parent.
+  ansible.builtin.file:
+    path: "{{ sandbox_image_prune_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the sandbox-image prune script
+  ansible.builtin.copy:
+    src: "{{ sandbox_image_prune_src_dir }}/{{ sandbox_image_prune_script }}"
+    dest: "{{ sandbox_image_prune_lib_dir }}/{{ sandbox_image_prune_script }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the prune's repo-pins file beside it
+  ansible.builtin.copy:
+    content: "{{ sandbox_image_prune_pins | join('\n') }}\n"
+    dest: "{{ sandbox_image_prune_lib_dir }}/{{ sandbox_image_prune_pins_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Check whether the sandbox-image prune timer is already installed
+  # Read BEFORE the tasks that write the units, so the arming below can be
+  # guarded rather than failing under --check on a unit systemd has not seen.
+  ansible.builtin.stat:
+    path: "{{ sandbox_image_prune_unit_dir }}/{{ sandbox_image_prune_timer }}"
+  register: sandbox_image_prune_timer_present
+  become: true
+
+- name: Install the sandbox-image prune units
+  ansible.builtin.copy:
+    src: "{{ sandbox_image_prune_src_dir }}/{{ item }}"
+    dest: "{{ sandbox_image_prune_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop:
+    - "{{ sandbox_image_prune_service }}"
+    - "{{ sandbox_image_prune_timer }}"
+  notify: Reload systemd for the sandbox-image prune units
+
+- name: Publish a changed sandbox-image prune unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the sandbox-image prune timer
+  # On a host up longer than the timer's OnBootSec this PRUNES NOW, with
+  # --apply — see the header. That is the behaviour the maintainer ruled stands.
+  ansible.builtin.systemd_service:
+    name: "{{ sandbox_image_prune_timer }}"
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or sandbox_image_prune_timer_present.stat.exists
+
+- name: Read the sandbox-image prune timer's active state
+  # A post-install verification of what the arming above produced, so it stays
+  # skipped under --check.
+  ansible.builtin.systemd_service:
+    name: "{{ sandbox_image_prune_timer }}"
+  register: sandbox_image_prune_timer_state
+  changed_when: false
+  failed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Refuse a sandbox-image prune timer that is not active
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_prune_timer_state.status.ActiveState | default('absent') == 'active'
+    fail_msg: >-
+      {{ sandbox_image_prune_timer }} is
+      '{{ sandbox_image_prune_timer_state.status.ActiveState | default("absent") }}',
+      expected 'active'
+    success_msg: "{{ sandbox_image_prune_timer }} is active"
+  when: not ansible_check_mode

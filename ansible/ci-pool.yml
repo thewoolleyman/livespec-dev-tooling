@@ -49,6 +49,30 @@
 # credential -> capacity -> taint: that is the safe opening order, and it is why
 # these two sit where they do rather than at the ends of the list.
 #
+# TWO MORE STEPS HAVE NO install-node.sh EQUIVALENT, AND THEY GO LAST
+# (livespec-dev-tooling-xcscdz). `ci_observability` and `sandbox_image_prune`
+# replace two HAND-RUN installers — ci-runner/observability/
+# install-observability.sh and ci-runner/k3s/phase2/warm-cache/
+# sandbox-image-prune/install-sandbox-image-prune.sh — that this playbook never
+# invoked and that the retired runbook never had a step for. Five node-local
+# timers of the server's profile therefore reached a rebuilt node only if an
+# operator remembered them, and the omission was SILENT: a drift report over a
+# playbook that never mentioned the units read zero changes, and an absent
+# host-silence heartbeat is indistinguishable from a host that is merely quiet.
+# Both are server-only and both are gated here, because neither role reads
+# `cluster_role`.
+#
+# THEY RUN AFTER ci_converge_unit, AND THAT ORDER IS THE WHOLE REASON THEY ARE
+# AT THE END rather than beside the other unit installers. Arming a timer that
+# is Persistent with an OnBootSec already in the past fires its MISSED tick at
+# once, so on a long-running host these two steps do not merely install: the
+# Kueue probe and the pool gauges READ THE CLUSTER on the spot, and the prune
+# makes a cluster-wide PodSpec read and then REMOVES IMAGES. Reaching them
+# before the converge has applied the ClusterQueues and the scale sets would
+# make the first read fail-closed — a red unit on a freshly rebuilt node that
+# only the next tick heals — and would ask the prune what the cluster needs
+# before the cluster says so.
+#
 # A THIRD AXIS OF GATING, ADDED FOR hp-xubuntu (livespec-dev-tooling-7we6po).
 # `cluster_role` answers "server or agent". It cannot answer "does this node
 # execute CI jobs at all", and hp-xubuntu is the first node for which the two
@@ -249,3 +273,17 @@
     # 10/10 — boot-time orphaned-scratch sweep; self-gated.
     - role: storage_sweep
       tags: [storage_sweep]
+    # 11 — the four node-local OTLP emitters, the host-silence heartbeat among
+    # them (see the header's "TWO MORE STEPS"). Server-only: three of the four
+    # read a cluster credential only the server holds or renders, and the
+    # server's own tick already covers the whole pool.
+    - role: ci_observability
+      tags: [ci_observability]
+      when: cluster_role == 'server'
+    # 12 — and LAST, because arming its timer prunes this node's containerd on
+    # the spot on any host up longer than OnBootSec. Server-only as a hard
+    # refusal, not a skip: the prune's central gate is a cluster-wide PodSpec
+    # read, and an agent holds no admin kubeconfig to make it with.
+    - role: sandbox_image_prune
+      tags: [sandbox_image_prune]
+      when: cluster_role == 'server'

@@ -56,8 +56,8 @@
 # The suite never runs as root and mutates nothing outside its own scratch dir.
 #
 # THE SCRIPT IS RUN OUT OF A FAKED INSTALL DIRECTORY, not out of this one. The
-# prune resolves its repo-pins file BESIDE ITS OWN LOCATION, exactly as
-# ../sandbox-image-prune/install-sandbox-image-prune.sh places it, so each case
+# prune resolves its repo-pins file BESIDE ITS OWN LOCATION, exactly as the
+# `sandbox_image_prune` Ansible role places it, so each case
 # below copies the script into a scratch directory laid out the way
 # /usr/local/lib/ci-runner-k3s is and runs it from there. That is the real
 # resolution path rather than a test-only override — a knob for "where are the

@@ -60,8 +60,8 @@
 # and leaving a red unit that the next tick heals.
 #
 # Source of truth: livespec-dev-tooling ci-runner/observability/ — install via
-# install-observability.sh, never hand-edit the live copy (the s2t
-# recreatability rule).
+# the ci_observability role of ../../ansible/ci-pool.yml, never hand-edit the
+# live copy (the s2t recreatability rule).
 [Unit]
 Description=CI runner pool per-repository queue and runner gauges (OTLP gauges to local collector)
 Wants=network-online.target

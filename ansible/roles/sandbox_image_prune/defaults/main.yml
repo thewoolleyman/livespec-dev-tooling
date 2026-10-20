@@ -1,0 +1,25 @@
+---
+sandbox_image_prune_src_dir: >-
+  {{ role_path }}/../../../ci-runner/k3s/phase2/warm-cache/sandbox-image-prune
+# The repository root, reached by walking up out of the roles tree rather than
+# guessed, and read ON THE CONTROLLER — the manifests the pins below are
+# extracted from live here, and the target node holds no checkout of them.
+sandbox_image_prune_repo_root: "{{ role_path }}/../../.."
+sandbox_image_prune_lib_dir: /usr/local/lib/ci-runner-k3s
+sandbox_image_prune_unit_dir: /etc/systemd/system
+sandbox_image_prune_script: prune-sandbox-images.sh
+# The prune resolves this name beside its OWN installed copy, so the two spell
+# it the same way by construction rather than by agreement.
+sandbox_image_prune_pins_name: prune-sandbox-images.repo-pins
+sandbox_image_prune_service: prune-sandbox-images.service
+sandbox_image_prune_timer: prune-sandbox-images.timer
+# The reference shape gate 4(c) protects: a tag or a digest pin of the scope
+# repository. NON-CAPTURING on purpose — a capture group would make
+# regex_findall return the suffix instead of the whole reference.
+sandbox_image_prune_ref_pattern: "(?::[A-Za-z0-9_][A-Za-z0-9_.-]*|@sha256:[0-9a-f]+)"
+# Not this repository's manifests: the git object store and a package install.
+# The same two the deleted installer's own scan excluded, and nothing else — a
+# path allow-list would drift silently the day someone adds a manifest.
+sandbox_image_prune_scan_excludes:
+  - .git
+  - .venv

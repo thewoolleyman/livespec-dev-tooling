@@ -181,21 +181,22 @@
 #
 # THE REPO-PINS FILE IS A SNAPSHOT, AND MERGING IS NOT DEPLOYING. Source 4(c)
 # reads ./prune-sandbox-images.repo-pins beside the INSTALLED copy of this
-# script — one image reference per line — written by
-# ./install-sandbox-image-prune.sh out of the repository tree it was run from.
+# script — one image reference per line — written by the `sandbox_image_prune`
+# role of ../../../../../ansible/ci-pool.yml, which extracts it on the ANSIBLE
+# CONTROLLER, where this repository demonstrably exists.
 # The prune cannot scan the repository itself: it runs on a node from
 # /usr/local/lib/ci-runner-k3s, where no checkout is guaranteed to exist. So
-# the file is as old as the last install, and a manifest whose pin changed
-# after that is not reflected until the installer runs again. That is the same
+# the file is as old as the last apply, and a manifest whose pin changed
+# after that is not reflected until the role runs again. That is the same
 # property every unit in this tree already has — the installed script is a
 # COPY, so editing the source in git changes nothing on a node until someone
 # re-installs — and it is spelled out here only because this one is a DATA
 # file, which reads like something the script derives afresh on each run and is
 # not. The direction of the staleness is the safe one: a pin DELETED from the
-# repository keeps protecting its image until the next install, while a NEWLY
+# repository keeps protecting its image until the next apply, while a NEWLY
 # added pin is not protected by this gate until then. A new pin is normally a
 # recent release, which the newest-N window already covers; a new pin to an OLD
-# tag is the case that needs the installer re-run before the next tick.
+# tag is the case that needs the role re-applied before the next tick.
 #
 # Requires: root, `crictl` (or `k3s crictl`), `kubectl` with a kubeconfig that
 # can list workloads cluster-wide, and python3 (to read crictl's JSON; it is
@@ -260,8 +261,8 @@ command -v kubectl >/dev/null 2>&1 || die "kubectl not found on PATH; gate 4(a) 
 # the installer places it. A pre-gate rather than a check at the point of use,
 # so a node missing it is told before a single image record is classified.
 REPO_PINS="${SCRIPT_DIR}/${SCRIPT_NAME%.sh}.repo-pins"
-[ -r "$REPO_PINS" ] || die "the repo-pins file '${REPO_PINS}' is missing or unreadable. ./install-sandbox-image-prune.sh writes it beside this script, and without it every image that ONLY a committed manifest pins — the isolation negative control's, for one — silently drops out of the protected set. Install it rather than running without it"
-[ -s "$REPO_PINS" ] || die "the repo-pins file '${REPO_PINS}' is empty. The installer refuses to write an empty one, so this is a truncated or hand-made file rather than a repository that pins nothing, and an empty protected source is the answer that would authorise removing what it exists to save"
+[ -r "$REPO_PINS" ] || die "the repo-pins file '${REPO_PINS}' is missing or unreadable. The sandbox_image_prune Ansible role writes it beside this script, and without it every image that ONLY a committed manifest pins — the isolation negative control's, for one — silently drops out of the protected set. Install it rather than running without it"
+[ -s "$REPO_PINS" ] || die "the repo-pins file '${REPO_PINS}' is empty. The sandbox_image_prune Ansible role refuses to write an empty one, so this is a truncated or hand-made file rather than a repository that pins nothing, and an empty protected source is the answer that would authorise removing what it exists to save"
 
 WORKDIR="$(mktemp -d)"
 cleanup() { rm -rf "$WORKDIR"; }

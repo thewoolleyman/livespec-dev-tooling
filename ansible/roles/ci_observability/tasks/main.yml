@@ -1,0 +1,129 @@
+---
+# ci_observability — the four node-local OTLP emitters of the server node's
+# profile: the host-silence heartbeat, the Kueue admission-webhook endpoint
+# probe, the build-cache gauges and the per-repository pool gauges.
+#
+# Replaces ci-runner/observability/install-observability.sh, which was deleted
+# with this role. That installer is recoverable at c13617d0, the last commit
+# that touched it.
+#
+# WHY IT BECAME A ROLE (livespec-dev-tooling-xcscdz). The installer was
+# HAND-RUN, and nothing else installed these units. ansible/ci-pool.yml is the
+# node-provisioning stage of the §"Runner-pool node rebuild recipe", so a node
+# rebuilt by the recipe came back with no heartbeat at all — and the failure was
+# SILENT in both directions: the drift report of a playbook that never mentioned
+# the units reported zero changes, and an absent heartbeat is indistinguishable
+# from a host that is merely quiet. The dead-man trigger would eventually fire,
+# which is the one mercy here; nothing else would.
+#
+# SERVER-ONLY, AND THE GATE IS IN THE PLAY. Three of the four units need a
+# cluster credential only the server holds or renders — the pool gauges and
+# (through its ExecStart) the webhook probe — and the server's own tick already
+# covers the whole pool, so an agent gains nothing from a second copy. The
+# `when:` lives on the `roles:` entry in ci-pool.yml rather than inside this
+# role, per the maintainer's 2026-10-13 ruling that one play plus the node's
+# profile must answer "what does this node get".
+#
+# WHAT THIS ROLE DELIBERATELY DOES NOT PROVISION, exactly as the installer did
+# not, because each would be a second source for something another converge
+# owns:
+#   * the LOCAL OTel collector on 127.0.0.1:4319 every unit POSTs to. It is the
+#     CI-runner-host shape of thewoolleyman/otel-collector, a separate install.
+#     Without it every tick exits 7 (`curl: (7)`), which is what happened from
+#     2026-08-15 to 2026-08-23 (livespec-s43svm.20).
+#   * the scoped read-only kubeconfig the webhook probe reads
+#     (CI_KUEUE_PROBE_KUBECONFIG). Apply ../../../ci-runner/observability/
+#     kueue-webhook-probe-rbac.yaml once and render the kubeconfig from the
+#     populated token Secret; the probe fails-closed without it rather than
+#     reporting a false zero.
+#   * the k3s admin kubeconfig the pool gauges read. The unit carries
+#     Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml, so a server already has
+#     it.
+#
+# THE INSTALLED SCRIPTS ARE COPIES, so merging is not deploying: re-running this
+# role is the only sanctioned way to update a live copy, and hand-editing one
+# under ci_observability_lib_dir makes the node disagree with its source.
+
+- name: Create the CI observability library directory
+  # Explicit, because --check cannot see past a missing parent: the copies below
+  # would report a would-be change and then fail only on a real apply.
+  ansible.builtin.file:
+    path: "{{ ci_observability_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the CI observability emitter scripts
+  ansible.builtin.copy:
+    src: "{{ ci_observability_src_dir }}/{{ item }}"
+    dest: "{{ ci_observability_lib_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ ci_observability_scripts }}"
+
+- name: Check which CI observability timers are already installed
+  # Read BEFORE the tasks that write the units, so the arming below can be
+  # guarded rather than failing under --check on a unit systemd has not seen.
+  ansible.builtin.stat:
+    path: "{{ ci_observability_unit_dir }}/{{ item }}"
+  register: ci_observability_timers_present
+  become: true
+  loop: "{{ ci_observability_timers }}"
+
+- name: Note which CI observability timers systemd has already seen
+  ansible.builtin.set_fact:
+    ci_observability_known_timers: >-
+      {{ ci_observability_timers_present.results
+      | selectattr('stat.exists') | map(attribute='item') | list }}
+
+- name: Install the CI observability units
+  ansible.builtin.copy:
+    src: "{{ ci_observability_src_dir }}/{{ item }}"
+    dest: "{{ ci_observability_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ ci_observability_services + ci_observability_timers }}"
+  notify: Reload systemd for the CI observability units
+
+- name: Publish a changed CI observability unit before arming it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the CI observability timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  become: true
+  loop: "{{ ci_observability_timers }}"
+  when: not ansible_check_mode or item in ci_observability_known_timers
+
+- name: Read the CI observability timers' active state
+  # A post-install verification of what the arming above produced, so it stays
+  # skipped under --check.
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+  register: ci_observability_timer_state
+  changed_when: false
+  failed_when: false
+  become: true
+  loop: "{{ ci_observability_timers }}"
+  when: not ansible_check_mode
+
+- name: Refuse a CI observability timer that is not active
+  ansible.builtin.assert:
+    that:
+      - item.status.ActiveState | default('absent') == 'active'
+    fail_msg: >-
+      {{ item.item }} is
+      '{{ item.status.ActiveState | default("absent") }}', expected 'active'
+    success_msg: "{{ item.item }} is active"
+  loop: "{{ ci_observability_timer_state.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('unknown') }}"
+  when: not ansible_check_mode
