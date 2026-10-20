@@ -161,6 +161,7 @@ def _run_module(
     *,
     cwd: Path,
     command: str,
+    targets: tuple[str, ...] = (),
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> _ModuleRun:
@@ -171,11 +172,24 @@ def _run_module(
     argv list and `cwd=` argument supplied. The `env` parameter is gone with
     the spawn: every call site took its default, and the scrub it selected now
     lands on the process environment through `_scrub_process_env`.
+
+    `targets` carries the check-target names the purity subcommands take as
+    their positional tail; the two token subcommands take none.
+
+    `SystemExit` is CAUGHT and reported as the exit code it carries, because
+    that is what the retired child reported too: `argparse` terminates the
+    process on an argv it cannot parse, and a caller of this module sees that
+    as a non-zero exit rather than as an exception. Letting it propagate would
+    make an unparseable argv an ERROR in the suite instead of the exit code the
+    assertion is about.
     """
     _scrub_process_env(monkeypatch=monkeypatch)
-    monkeypatch.setattr(sys, "argv", ["green-token", command])
+    monkeypatch.setattr(sys, "argv", ["green-token", command, *targets])
     monkeypatch.chdir(cwd)
-    returncode = _GREEN_TOKEN.main()
+    try:
+        returncode = _GREEN_TOKEN.main()
+    except SystemExit as exit_request:
+        returncode = exit_request.code if isinstance(exit_request.code, int) else 1
     captured = capsys.readouterr()
     return _ModuleRun(returncode=returncode, stdout=captured.out, stderr=captured.err)
 
@@ -387,6 +401,183 @@ def test_write_overwrites_existing_token(
     token = json.loads(token_path.read_text(encoding="utf-8"))
     expected = _head_tree_hash(repo=tmp_path)
     assert token.get("tree_hash") == expected
+
+
+def test_world_reading_prints_the_members_the_token_must_not_memoize(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`world-reading` names exactly the given targets the token may not stand in for.
+
+    The token memoizes only tree-pure members, so the pre-push gate has to be
+    able to ask which of ITS OWN check set reads state outside the tree. A
+    repository's aggregate is the population, not this library's slug set, so
+    the subcommand takes the targets rather than discovering them — which is
+    what lets the livespec justfile make the same decision without its own copy
+    of the list.
+    """
+    _ = (tmp_path / "check-targets.txt").write_text(
+        "check-local-pure  # purity: tree-pure\ncheck-local-world  # purity: world-reading\n",
+        encoding="utf-8",
+    )
+    given = (
+        "check-master-ci-green",
+        "check-file-lloc",
+        "check-local-world",
+        "check-local-pure",
+        "check-undeclared-member",
+    )
+
+    run = _run_module(
+        cwd=tmp_path,
+        command="world-reading",
+        targets=given,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert run.returncode == 0, f"stderr={run.stderr!r}"
+    assert run.stdout.splitlines() == [
+        "check-master-ci-green",
+        "check-local-world",
+        "check-undeclared-member",
+    ], (
+        f"the printed set must be exactly the given targets declared world-reading OR "
+        f"carrying no declaration — a shipped world gate, a repo-private world-reading "
+        f"member, and an undeclared one which defaults to world-reading — and must omit "
+        f"every tree-pure member; stdout={run.stdout!r}"
+    )
+
+
+def test_world_reading_refuses_an_empty_target_list(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No targets is no evidence, and an empty answer here reads as "memoize everything"."""
+    run = _run_module(cwd=tmp_path, command="world-reading", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert run.returncode != 0, (
+        f"an empty target list must FAIL rather than print nothing: a caller that reads an "
+        f"empty answer as 'no member reads outside the tree' would memoize the whole "
+        f"aggregate, which is the defect this subcommand exists to close; "
+        f"stdout={run.stdout!r} stderr={run.stderr!r}"
+    )
+
+
+def test_world_reading_refuses_a_malformed_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A declaration outside the vocabulary cannot be acted on, so nothing is memoized."""
+    _ = (tmp_path / "check-targets.txt").write_text(
+        "check-local-only  # purity: fairly-pure\n", encoding="utf-8"
+    )
+
+    run = _run_module(
+        cwd=tmp_path,
+        command="world-reading",
+        targets=("check-local-only",),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert run.returncode != 0, f"stdout={run.stdout!r}"
+    assert "fairly-pure" in run.stderr, (
+        f"the refusal must name the value it could not read, or the operator has no way "
+        f"to find the typo; stderr={run.stderr!r}"
+    )
+
+
+def test_undeclared_names_every_member_carrying_no_purity_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The second safeguard: an undeclared member is named, not quietly defaulted."""
+    _ = (tmp_path / "check-targets.txt").write_text(
+        "check-local-pure  # purity: tree-pure\ncheck-local-bare\n", encoding="utf-8"
+    )
+
+    run = _run_module(
+        cwd=tmp_path,
+        command="undeclared",
+        targets=("check-local-pure", "check-local-bare", "check-file-lloc"),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert run.returncode != 0, f"stdout={run.stdout!r} stderr={run.stderr!r}"
+    assert run.stdout.splitlines() == ["check-local-bare"], f"stdout={run.stdout!r}"
+    assert "check-local-bare" in run.stderr, (
+        f"`just check` relays this report, and the ratified scenario requires the "
+        f"aggregate's output to NAME the member; stderr={run.stderr!r}"
+    )
+
+
+def test_undeclared_exits_zero_when_every_member_declares_its_purity(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fully-declared aggregate is the normal case and must cost nothing."""
+    _ = (tmp_path / "check-targets.txt").write_text(
+        "check-local-pure  # purity: tree-pure\n", encoding="utf-8"
+    )
+
+    run = _run_module(
+        cwd=tmp_path,
+        command="undeclared",
+        targets=("check-local-pure", "check-master-ci-green"),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert run.returncode == 0, f"stdout={run.stdout!r} stderr={run.stderr!r}"
+    assert run.stdout == "", f"stdout={run.stdout!r}"
+
+
+def test_undeclared_refuses_an_empty_target_list(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An aggregate that passed this gate with no members audited proved nothing."""
+    run = _run_module(cwd=tmp_path, command="undeclared", monkeypatch=monkeypatch, capsys=capsys)
+
+    assert run.returncode != 0, f"stdout={run.stdout!r} stderr={run.stderr!r}"
+
+
+def test_undeclared_refuses_a_malformed_declaration(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A value outside the vocabulary fails the aggregate too, naming the member."""
+    _ = (tmp_path / "check-targets.txt").write_text(
+        "check-local-only  # purity: fairly-pure\n", encoding="utf-8"
+    )
+
+    run = _run_module(
+        cwd=tmp_path,
+        command="undeclared",
+        targets=("check-local-only",),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert run.returncode != 0, f"stdout={run.stdout!r}"
+    assert "check-local-only" in run.stderr, f"stderr={run.stderr!r}"
+
+
+def test_an_unknown_subcommand_is_refused_rather_than_defaulted(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The subcommand set is CLOSED: a name this module does not know exits non-zero.
+
+    Load-bearing for a shell caller. `scripts/just/check.sh` branches on this
+    module's exit status, so a mistyped or renamed subcommand that fell through
+    to a default would make the aggregate act on an answer about something
+    else — and `world-reading` and `undeclared` mean opposite things to their
+    caller. Refusing names the mistake instead.
+    """
+    run = _run_module(
+        cwd=tmp_path, command="world-readings", monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert run.returncode != 0, f"stdout={run.stdout!r} stderr={run.stderr!r}"
+    assert run.stdout == "", (
+        f"a refused subcommand must print no member names: a caller reading an empty "
+        f"stdout beside a zero exit would memoize everything; stdout={run.stdout!r}"
+    )
 
 
 def test_module_importable_without_running_main() -> None:
