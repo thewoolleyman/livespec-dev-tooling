@@ -463,13 +463,35 @@
       },
 
       "wip_cap": 10,
-      "default_factory": "hp",
+      // ONE registry-backed entry, naming no machine. The Dispatcher resolves
+      // `legacy` by name from `/etc/livespec/fabro-factories.json`, which this
+      // repository's own `fabro_factory_registry` role renders on every
+      // dispatching host from `ansible/inventory/group_vars/dev_hosts.yml` —
+      // THE ONE PLACE A FACTORY IS BOUND TO A MACHINE, per
+      // SPECIFICATION/non-functional-requirements.md §"Fabro factory registry"
+      // ("Machines are bound only in the inventory") and the maintainer's
+      // 2026-10-15 ruling on plan `petri-factory-on-gmktec`. A `server` beside
+      // `"registry": true` would leave the machine bound here and the registry
+      // unread, with routing working either way — which is why this entry
+      // carries no address at all.
+      //
+      // Routing is UNCHANGED by the switch: the registry maps `legacy` to
+      // hp-xubuntu's `fabro-server` instance, whose `canonical_host` is
+      // `hp-xubuntu.perch-rudd.ts.net:32276` — byte-identical to the address
+      // the retired `hp` entry carried. `legacy` names that INSTANCE and not
+      // its role, so the name survives a move of the instance between machines.
+      //
+      // The retired `vps` entry is gone rather than carried forward, and `hp`
+      // is not kept as an alias: a recorded item pin naming either falls back
+      // to `default_factory` under the ratified recorded-pin fallback, so
+      // neither needs an entry to resolve against. `petri` is deliberately
+      // absent — onboarding it here needs this repository's own bin and
+      // secret-channel settings and is a separate decision
+      // (work-item livespec-dev-tooling-knd3s7).
+      "default_factory": "legacy",
       "factories": {
-        "hp": {
-          "server": "https://hp-xubuntu.perch-rudd.ts.net:32276"
-        },
-        "vps": {
-          "server": "https://vps.perch-rudd.ts.net:32276"
+        "legacy": {
+          "registry": true
         }
       }
     }
