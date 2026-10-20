@@ -257,7 +257,20 @@
       },
       "auto_approve_ready": true,
       "acceptance_mode": "ai-only",
-      // CURRENT ROUTING (2026-10-19, coordinator ruling R261, maintainer
+      // CURRENT ROUTING (2026-10-20, coordinator ruling R267, maintainer
+      // direction to use all available tokens holistically). implement and fix
+      // stay codex-acp / gpt-5.6-terra / high with their claude-opus-5 fallback.
+      // Every other node is back on the Claude tier it ran before R261, with
+      // its R261 Codex model as the fallback, so each run draws on both pools:
+      // dod_gate, review and proof_verify on claude-opus-4-8 high, review_fix
+      // and proof_capture on claude-opus-5 high (Terra high fallback), pr and
+      // disposition on claude-sonnet-4-6 medium (Luna low fallback). KNOWN
+      // DIFFERENCE from the built-in defaults: those rendered
+      // claude-opus-4-8[1m], the 1M-context window, which a structured entry
+      // cannot express (_acp_model_catalog's alias note), so these nodes run
+      // the standard-context Opus 4.8.
+      //
+      // PREVIOUS ROUTING (2026-10-19, coordinator ruling R261, maintainer
       // direction: "switch factory nodes to codex corresponding models and use
       // those available tokens"). Every node is pinned Codex-primary, tier for
       // tier, replacing the built-in Claude defaults, which stay as each node's
@@ -372,15 +385,15 @@
         }
       },
       "acp_nodes": {
-        "dod_gate": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high" }] },
+        "dod_gate": { "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "review_fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "proof_capture": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
-        "proof_verify": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high" }] },
-        "review": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high" }] },
-        "pr": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium" }] },
-        "disposition": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium" }] }
+        "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "proof_capture": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "proof_verify": { "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "review": { "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
+        "pr": { "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] },
+        "disposition": { "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low" }] }
       },
 
       // Per-node ACP turn ceilings (contracts.md "ACP node timeouts", v081).
