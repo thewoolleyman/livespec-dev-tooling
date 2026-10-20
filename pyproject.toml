@@ -41,6 +41,28 @@ readme = "README.md"
 [tool.hatch.build.targets.wheel]
 packages = ["livespec_dev_tooling"]
 
+# THE DELEGATED GATE'S JOB RENDERER SHIPS WITH THE CLIENT THAT DRIVES IT
+# (stop-the-line R283, 2026-10-20). `livespec_dev_tooling.gate_remote_delegate`
+# decides which arguments a render carries; `render-gate-job.sh` decides which
+# it accepts. Those two used to ship on DIFFERENT paths — the client in this
+# wheel, the renderer a consuming repository falls back to only at
+# `/usr/local/lib/ci-runner-k3s/gates/`, installed by an ansible playbook
+# nothing re-converges — so a client that passed `--gate-ref` (released in
+# 1.118.5 / 1.118.6) met a renderer from 2026-10-18 that rejected it, and every
+# delegated push from every other fleet repository was refused until an operator
+# ran the apply by hand.
+#
+# Force-including the COMMITTED files keeps ONE source of truth: the tree under
+# `ci-runner/k3s/phase2/gates/` is the only copy edited, and the wheel carries
+# it to the path `GATE_RENDERER_PACKAGED` resolves. Both files are needed, not
+# just the script: `render-gate-job.sh` resolves `gate-job-template.yaml` next
+# to itself, so a renderer shipped alone would refuse with `template not found`.
+# Hatchling preserves each source's mode, so the renderer lands executable
+# (verified 0755 against a real `uv build`, 2026-10-20).
+[tool.hatch.build.targets.wheel.force-include]
+"ci-runner/k3s/phase2/gates/render-gate-job.sh" = "livespec_dev_tooling/gates/render-gate-job.sh"
+"ci-runner/k3s/phase2/gates/gate-job-template.yaml" = "livespec_dev_tooling/gates/gate-job-template.yaml"
+
 [dependency-groups]
 # Every Python dev tool is uv-managed via this table (resolved into
 # uv.lock; installed into a project-local .venv via

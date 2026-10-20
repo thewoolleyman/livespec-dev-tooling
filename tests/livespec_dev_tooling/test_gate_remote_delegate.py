@@ -39,7 +39,7 @@ from livespec_dev_tooling.gate_remote_delegate import (
     GATE_CHECK_SUITE_FALL_THROUGH,
     GATE_MIRROR_ROOT,
     GATE_RENDERER_IN_REPO,
-    GATE_RENDERER_INSTALLED,
+    GATE_RENDERER_PACKAGED,
     declared_gate_check_suite,
     delegated_gate_enabled,
     gate_remote_request,
@@ -435,9 +435,15 @@ def test_a_repository_carrying_the_renderer_uses_its_own(*, tmp_path: Path) -> N
     assert resolve_renderer(repo_root=tmp_path) == in_repo
 
 
-def test_every_other_repository_uses_the_converged_host_copy(*, tmp_path: Path) -> None:
-    """No in-tree renderer falls back to the path the converge installs."""
-    assert resolve_renderer(repo_root=tmp_path) == GATE_RENDERER_INSTALLED
+def test_every_other_repository_uses_the_copy_inside_this_package(*, tmp_path: Path) -> None:
+    """No in-tree renderer falls back to the copy the release ships with the client.
+
+    It is INSIDE the installed package rather than on the host, because the
+    converged host path this replaces moved only on a hand-run playbook: a
+    client released with `--gate-ref` met a renderer that rejected it and every
+    consuming repository's push was refused (stop-the-line R283, 2026-10-20).
+    """
+    assert resolve_renderer(repo_root=tmp_path) == GATE_RENDERER_PACKAGED
 
 
 # ---------------------------------------------------------------------------
