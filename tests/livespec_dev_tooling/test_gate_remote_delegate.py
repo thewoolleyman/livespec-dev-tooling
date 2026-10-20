@@ -342,6 +342,23 @@ def test_a_failed_local_gate_reruns_exactly_its_failing_pytest_node_ids(*, tmp_p
     assert f"uv run pytest {first} {second}" in invoked, invoked
 
 
+def test_a_reasonless_pytest_summary_still_replays_its_failing_node_id(*, tmp_path: Path) -> None:
+    """Terminal-width elision cannot make a failing node invisible to the replay."""
+    node_id = "tests/widget_test.py::test_a_name_that_consumes_the_terminal_width"
+
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=f"FAILED {node_id}",
+        pytest_exit="1",
+        pytest_output=f"FAILED {node_id}",
+    )
+
+    assert code == 1
+    assert f"uv run pytest {node_id}" in invoked, invoked
+    assert f"host-state divergence: {node_id}" in stdout
+
+
 def test_a_rerun_setup_failure_removes_its_temporary_checkout(*, tmp_path: Path) -> None:
     """Cleanup is owed even when the second temporary file cannot be allocated."""
     node_id = "tests/widget_test.py::test_one"

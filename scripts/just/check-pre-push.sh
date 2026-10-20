@@ -111,7 +111,7 @@ diagnose_host_state_divergence() {
     # therefore no host-state comparison to make.
     gate_text="$(<"$gate_output")"
     gate_text="${gate_text//\\n/$'\n'}"
-    mapfile -t failed_nodes < <(printf '%s\n' "$gate_text" | sed -n 's/^FAILED \([^[:space:]]*\) .*/\1/p')
+    mapfile -t failed_nodes < <(printf '%s\n' "$gate_text" | awk '$1 == "FAILED" { print $2 }')
     if [ "${#failed_nodes[@]}" -eq 0 ]; then
         return
     fi
@@ -163,7 +163,7 @@ diagnose_host_state_divergence() {
     rerun_status=$?
     set -e
     cat "$rerun_output"
-    mapfile -t rerun_failures < <(sed -n 's/^FAILED \([^[:space:]]*\) .*/\1/p' "$rerun_output")
+    mapfile -t rerun_failures < <(awk '$1 == "FAILED" { print $2 }' "$rerun_output")
     for node_id in "${failed_nodes[@]}"; do
         if printf '%s\n' "${rerun_failures[@]}" | grep -Fqx "$node_id"; then
             echo ":: pre-push: host-state divergence: ${node_id} also fails on green CI run ${green_run_id}"
