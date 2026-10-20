@@ -75,12 +75,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from livespec_dev_tooling._gate_remote_assembly import (
     assembly_refusal,
     check_suite_argv,
     declared_gate_check_suite,
+    gate_ref_tree_hash,
     gate_repo_name,
     per_run_gate_ref,
     renderer_refusal,
@@ -92,6 +94,12 @@ from livespec_dev_tooling.gate_group_repair import (
     group_repair_group,
     group_repair_status,
 )
+from livespec_dev_tooling.gate_outcome_telemetry import (
+    GATE_OUTCOME_FAILED_TREE,
+    GATE_OUTCOME_NO_VERDICT,
+    GATE_OUTCOME_PASSED,
+    emit_gate_outcome,
+)
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
@@ -101,7 +109,13 @@ from livespec_dev_tooling.gate_remote_invocation import (
     default_sleeper,
     require_success,
 )
-from livespec_dev_tooling.gate_remote_verdict import GATE_NO_VERDICT, GateVerdict, run_gated_push
+from livespec_dev_tooling.gate_remote_verdict import (
+    GATE_FAILED,
+    GATE_NO_VERDICT,
+    GATE_PASSED,
+    GateVerdict,
+    run_gated_push,
+)
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -163,6 +177,14 @@ GATE_RENDERER_PACKAGED = Path(__file__).resolve().parent / "gates" / "render-gat
 
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
+
+# The gate's verdict states, as the outcome vocabulary the event reports. A
+# MAPPING with a `no-verdict` default rather than a branch per state: the
+# verdict side is deliberately open — `gate_remote_verdict` refuses by omission
+# so a state nobody has enumerated cannot become a pass — and this table keeps
+# that same asymmetry, so a new state is reported as "nothing was decided"
+# rather than silently acquiring one of the two decided words.
+_GATE_OUTCOMES = {GATE_PASSED: GATE_OUTCOME_PASSED, GATE_FAILED: GATE_OUTCOME_FAILED_TREE}
 
 
 # What an OPTED-IN repository says when the host it is being pushed from holds no
@@ -290,6 +312,7 @@ def run_delegated_gate(
     renderer: Path,
     runner: GateCommandRunner = default_gate_command_runner,
     sleeper: Sleeper = default_sleeper,
+    emit: Callable[..., None] = emit_gate_outcome,
 ) -> GateVerdict:
     """Gate this repository's HEAD on the cluster and report S7b's verdict.
 
@@ -297,16 +320,46 @@ def run_delegated_gate(
     Job was ever submitted, so there is nothing that could have been red, and the
     distinction is the one a delegated gate exists to keep — a plumbing fault and
     a red tree want opposite responses from whoever reads the message.
+
+    THIS IS THE RUN THE OUTCOME EVENT COUNTS, so it emits on BOTH paths and on
+    neither path twice. The assembly-failure path is the one that most needs the
+    event and is the easiest to leave out: it stops before any Job exists, so
+    there is nothing on the cluster to find afterwards and the entire fault lives
+    in this process's own output. A run that emitted only after a submitted Job
+    would therefore be silent about exactly the faults an operator cannot
+    reconstruct — which is the gap this event was added to close.
+
+    THE EVENT IS EMITTED BEFORE THE VERDICT IS RETURNED and the emitter cannot
+    raise, so the ordering costs the caller nothing: `emit` swallows every
+    delivery failure and returns `None`, and a receiver that is down leaves this
+    function returning the identical verdict it returns when the span is
+    accepted. `emit` is injectable for the same reason `runner` and `sleeper`
+    are — so a test can read what one run reported without a receiver — never as
+    a switch for turning the signal off in production.
     """
     built = gate_remote_request(repo_root=repo_root, renderer=renderer, runner=runner)
     if isinstance(built, Failure):
         failure = built.failure()
+        # The assembly's failure track carries the step that could not be
+        # completed, not the identity it had read on the way there, so this
+        # event carries the outcome alone. Absent, per the contract, rather
+        # than re-derived here: a second read of a repository whose first read
+        # has just failed is a guess dressed as a measurement.
+        emit(outcome=GATE_OUTCOME_NO_VERDICT, repository=None, tree_hash=None, job_name=None)
         return GateVerdict(
             state=GATE_NO_VERDICT,
             detail=assembly_refusal(failure=failure),
             token_written=False,
         )
-    return run_gated_push(request=built.unwrap(), runner=runner, sleeper=sleeper)
+    request = built.unwrap()
+    verdict = run_gated_push(request=request, runner=runner, sleeper=sleeper)
+    emit(
+        outcome=_GATE_OUTCOMES.get(verdict.state, GATE_OUTCOME_NO_VERDICT),
+        repository=request.mirror_url.rsplit("/", maxsplit=1)[-1].removesuffix(".git"),
+        tree_hash=gate_ref_tree_hash(gate_ref=request.gate_ref),
+        job_name=verdict.job_name,
+    )
+    return verdict
 
 
 def main() -> int:

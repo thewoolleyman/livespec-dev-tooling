@@ -52,6 +52,7 @@ __all__: list[str] = [
     "assembly_refusal",
     "check_suite_argv",
     "declared_gate_check_suite",
+    "gate_ref_tree_hash",
     "gate_repo_name",
     "per_run_gate_ref",
     "renderer_refusal",
@@ -198,6 +199,19 @@ def per_run_gate_ref(*, tree_hash: str) -> str:
     seconds apart can tie on.
     """
     return f"{_GATE_REF_ROOT}/{tree_hash}-{uuid.uuid4().hex}"
+
+
+def gate_ref_tree_hash(*, gate_ref: str) -> str:
+    """Read back the tree hash out of a ref `per_run_gate_ref` named.
+
+    The EXACT inverse of the function above, and it lives beside it so the two
+    cannot drift: a reader written anywhere else would hold a second copy of the
+    ref format, and the nonce makes that format non-obvious enough that the copy
+    would be the thing that rots. The split is on the LAST `-` because the nonce
+    is a `uuid4().hex` and a tree hash is git's own hex — neither can contain
+    one — so the partition is unambiguous rather than merely usually right.
+    """
+    return gate_ref.removeprefix(f"{_GATE_REF_ROOT}/").rpartition("-")[0]
 
 
 def check_suite_argv(*, suite: tuple[str, ...]) -> list[str]:

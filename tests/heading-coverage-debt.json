@@ -37,20 +37,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event",
-    "work_item": "livespec-dev-tooling-cmgqnz",
-    "first_seen": "2026-10-19"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered",
-    "work_item": "livespec-dev-tooling-cmgqnz",
-    "first_seen": "2026-10-19"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
