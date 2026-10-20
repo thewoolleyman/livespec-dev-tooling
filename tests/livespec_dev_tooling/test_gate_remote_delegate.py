@@ -586,6 +586,26 @@ def test_one_job_name_covers_the_primary_checkout_and_a_worktree_alike(*, tmp_pa
     assert submitted == [expected, expected]
 
 
+def test_each_same_tree_request_gets_a_distinct_mirror_ref(*, tmp_path: Path) -> None:
+    """Concurrent gates own their input until their own cleanup runs."""
+    requests = []
+    for directory in (_REPOSITORY, _WORKTREE_DIR):
+        repo_root = tmp_path / directory
+        repo_root.mkdir()
+        built = gate_remote_request(
+            repo_root=repo_root,
+            renderer=_RENDERER,
+            runner=_StubWorld(origin=_REPOSITORY_ORIGIN),
+        )
+        assert isinstance(built, Success)
+        requests.append(built.unwrap())
+
+    assert hasattr(requests[0], "gate_ref")
+    refs = [request.gate_ref for request in requests]
+    assert refs[0] != refs[1]
+    assert all(ref.startswith(f"refs/gates/{_TREE}/") for ref in refs)
+
+
 def test_the_renderer_is_told_the_repository_not_the_worktree(*, tmp_path: Path) -> None:
     """`--repo` is the name the manifest itself carries, so it is passed too.
 
