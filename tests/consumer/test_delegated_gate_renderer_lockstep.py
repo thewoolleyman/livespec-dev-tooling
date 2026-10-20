@@ -42,8 +42,13 @@ import pytest
 from returns.result import Success
 
 import livespec_dev_tooling
-from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
+from livespec_dev_tooling.gate_remote_delegate import (
+    gate_remote_request,
+    resolve_renderer,
+    run_delegated_gate,
+)
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
+from livespec_dev_tooling.gate_remote_verdict import GATE_NO_VERDICT
 
 __all__: list[str] = []
 
@@ -72,6 +77,33 @@ _ENTRY = re.compile(r'^"(?P<source>[^"]+)" = "(?P<destination>[^"]+)"$', re.MULT
 # derives the mirror and the Job's `--repo` from.
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _ORIGIN = "git@github.com:acme/widget.git"
+
+# The argument this client learned most recently (livespec-dev-tooling-44fglo),
+# and so the one a renderer from the release before it rejects. It is the real
+# flag rather than an invented one because the skew arm below DERIVES its stale
+# renderer by deleting this flag's own arm from the committed script.
+_LAST_LEARNED = "--gate-ref"
+
+# The refusal a run used to carry for every consuming repository on 2026-10-20 —
+# true, and useless: it names neither the renderer reached nor the argument it
+# rejected, so an operator reading it cannot tell a skewed renderer from a lost
+# one.
+_UNHELPFUL = "render-gate-job did not complete"
+
+# The load-bearing half of the refusal that replaces it: not merely that a flag
+# was rejected, but that THIS CLIENT passes it — which is what makes the renderer
+# the thing out of date rather than the argument the thing that is wrong.
+_SKEW_CLAIM = "which this gate client passes"
+
+# A renderer that refuses an argument NOBODY passed — the control for the skew
+# recognition below. Written by hand rather than derived, because no real
+# renderer produces it: the point is that a stderr merely CARRYING the phrase
+# says nothing about this run's argv, so the client must not claim it does.
+_FOREIGN_ARGUMENT = "--not-an-argument-this-client-passes"
+_FOREIGN_REFUSAL = f"""#!/usr/bin/env bash
+echo "FATAL: unknown argument {_FOREIGN_ARGUMENT}" >&2
+exit 2
+"""
 
 
 def _wheel_force_include() -> dict[str, str]:
@@ -105,6 +137,39 @@ def _an_installed_package(*, root: Path) -> Path:
         _ = installed.write_bytes(carried.read_bytes())
         installed.chmod(carried.stat().st_mode & 0o777)
     return root
+
+
+def _a_renderer_one_release_older(*, root: Path) -> Path:
+    """The committed renderer with the argument this client learned last removed.
+
+    DERIVED from the real script rather than hand-written, so what it refuses and
+    the words it refuses in are the renderer's OWN behaviour: the single line
+    dropped is the `--gate-ref)` arm of its argument loop, which is exactly the
+    difference between the 2026-10-18 host copy and the client that shipped in
+    1.118.5. The `FATAL: unknown argument` wording, the exit code and every
+    other arm are untouched, so a change to how the renderer reports an unknown
+    flag reaches this fixture rather than passing against a frozen imitation.
+
+    The template rides beside it because that is where this script looks for it.
+    """
+    root.mkdir(parents=True)
+    older = root / _RENDERER
+    committed = (_REPO_ROOT / _GATES / _RENDERER).read_text(encoding="utf-8")
+    without = re.sub(rf"^\s*{re.escape(_LAST_LEARNED)}\).*\n", "", committed, flags=re.MULTILINE)
+    assert without != committed, f"the renderer has no {_LAST_LEARNED} arm left to drop"
+    _ = older.write_text(without, encoding="utf-8")
+    older.chmod(0o755)
+    _ = (root / _TEMPLATE).write_bytes((_REPO_ROOT / _GATES / _TEMPLATE).read_bytes())
+    return older
+
+
+def _a_renderer_refusing(*, root: Path, body: str) -> Path:
+    """A renderer whose whole behaviour is one refusal, for the control arm."""
+    root.mkdir(parents=True)
+    refusing = root / _RENDERER
+    _ = refusing.write_text(body, encoding="utf-8")
+    refusing.chmod(0o755)
+    return refusing
 
 
 def _a_consumer_repository(*, root: Path) -> Path:
@@ -209,3 +274,62 @@ def test_the_renderer_the_release_ships_accepts_every_argument_the_client_passes
     assert isinstance(built, Success), built
     request = built.unwrap()
     assert request.gate_ref in request.manifest
+
+
+def test_a_renderer_that_rejects_an_argument_is_named_in_the_refusal(*, tmp_path: Path) -> None:
+    """The second half of the repair: when skew DOES happen, the refusal says so.
+
+    Shipping the renderer with the client closes the gap that produced R283, but
+    it cannot close every way one can open — a checkout of THIS repository mid
+    rebase carries an in-tree renderer older than its own client, and that copy
+    is preferred over the packaged one on purpose. So the refusal must name the
+    renderer path it used and the argument that renderer rejected, which is the
+    one thing the message it replaces never did: `render-gate-job did not
+    complete, so no gate was submitted: FATAL: unknown argument --gate-ref` is
+    true of a skewed renderer and equally true of a renderer that is not there
+    at all, and distinguishing those two is the whole diagnostic.
+
+    The push is still REFUSED, and that is not softened: no verdict arrived, so
+    no token is written and the fall-through does not run in its place.
+    """
+    older = _a_renderer_one_release_older(root=tmp_path / "older-release")
+    consumer = _a_consumer_repository(root=tmp_path / "widget")
+
+    verdict = run_delegated_gate(
+        repo_root=consumer,
+        renderer=older,
+        runner=_CannedWorldRealRenderer(renderer=older),
+    )
+
+    assert verdict.state == GATE_NO_VERDICT
+    assert verdict.refuses_push is True
+    assert verdict.token_written is False
+    assert str(older) in verdict.detail, verdict.detail
+    assert _LAST_LEARNED in verdict.detail, verdict.detail
+    assert _UNHELPFUL not in verdict.detail, verdict.detail
+
+
+def test_a_refusal_naming_an_argument_this_client_never_passed_is_not_claimed_as_skew(
+    *, tmp_path: Path
+) -> None:
+    """The recognition is keyed on THIS run's argv, never on the phrase alone.
+
+    A renderer can print `unknown argument` about something it was handed by its
+    own internals, or in a message that has nothing to do with the flags this
+    client passes. Reading that as skew would name a flag the run never sent —
+    a confident, wrong diagnosis, which is worse than the generic sentence. So
+    the flag must appear in the argv this run issued; otherwise the run reports
+    the step that did not complete, exactly as it does for any other refusal.
+    """
+    refusing = _a_renderer_refusing(root=tmp_path / "confused", body=_FOREIGN_REFUSAL)
+    consumer = _a_consumer_repository(root=tmp_path / "widget")
+
+    verdict = run_delegated_gate(
+        repo_root=consumer,
+        renderer=refusing,
+        runner=_CannedWorldRealRenderer(renderer=refusing),
+    )
+
+    assert verdict.refuses_push is True
+    assert _UNHELPFUL in verdict.detail, verdict.detail
+    assert _SKEW_CLAIM not in verdict.detail, verdict.detail

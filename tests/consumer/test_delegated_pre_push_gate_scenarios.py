@@ -41,9 +41,9 @@ from pathlib import Path
 import pytest
 from returns.result import Success
 
+from livespec_dev_tooling._gate_remote_assembly import GATE_CHECK_SUITE_FALL_THROUGH
 from livespec_dev_tooling.gate_credential import GATES_KUBECONFIG_ENV, GATES_WRAPPER
 from livespec_dev_tooling.gate_remote_delegate import (
-    GATE_CHECK_SUITE_FALL_THROUGH,
     delegated_gate_enabled,
     delegated_gate_selected,
     main,
