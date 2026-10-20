@@ -114,8 +114,8 @@ __all__: list[str] = [
     "GATED_LOCALLY",
     "GATE_CHECK_SUITE_FALL_THROUGH",
     "GATE_MIRROR_ROOT",
-    "GATE_RENDERER_INSTALLED",
     "GATE_RENDERER_IN_REPO",
+    "GATE_RENDERER_PACKAGED",
     "declared_gate_check_suite",
     "delegated_gate_enabled",
     "delegated_gate_selected",
@@ -130,12 +130,36 @@ __all__: list[str] = [
 # another mirror builds its own `GateRunRequest`; this is the default path's.
 GATE_MIRROR_ROOT = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror"
 
-# The renderer, in the two places it exists: a checkout of THIS repository, which
-# carries it in-tree, and the converged host path the reconstruct unit installs.
-# A repository with neither renders nothing, the run reaches no verdict, and the
-# push is refused — which is why no third "guess a path" case is wanted here.
+# The renderer, in the two places it exists — AND BOTH OF THEM MOVE WITH THIS
+# CODE, which is the whole point. A checkout of THIS repository carries it
+# in-tree, so a renderer change is gated by the same push that makes it; every
+# OTHER repository reaches the copy the wheel ships INSIDE this package, beside
+# the client that drives it.
+#
+# THERE USED TO BE A THIRD PLACE, AND IT COST THE FLEET A DAY (stop-the-line
+# R283, 2026-10-20). The fallback was `/usr/local/lib/ci-runner-k3s/gates/
+# render-gate-job.sh`, installed only by the `gate_renderer` role in
+# `ansible/gates-kubeconfig.yml` — a playbook NOTHING re-converges: no timer,
+# unit or release hook ran it on the dev host. So when livespec-dev-tooling-44fglo
+# made this client pass `--gate-ref` and that client shipped in releases 1.118.5
+# and 1.118.6, the renderer reading it stayed at 2026-10-18, and every delegated
+# push from every other fleet repository was refused with `render-gate-job did
+# not complete ... FATAL: unknown argument --gate-ref` until an operator ran the
+# apply by hand. The writer of the arguments moved through the package release;
+# the reader moved only on a manual apply. That is the ordering class AGENTS.md
+# records as "confirm the reader before you write", and the repair is to leave
+# no reader that a release cannot reach.
+#
+# THE PACKAGED COPY IS NOT A SECOND SOURCE OF TRUTH. `pyproject.toml`'s
+# `[tool.hatch.build.targets.wheel.force-include]` carries the COMMITTED files
+# into the wheel — the renderer and the `gate-job-template.yaml` beside it,
+# because the renderer resolves its template next to itself — so one tree is
+# edited and the release carries it to every consumer.
+# `tests/consumer/test_delegated_gate_renderer_lockstep.py` holds that
+# declaration and this constant to each other, and runs the client's own argv
+# through the file the declaration ships.
 GATE_RENDERER_IN_REPO = Path("ci-runner/k3s/phase2/gates/render-gate-job.sh")
-GATE_RENDERER_INSTALLED = Path("/usr/local/lib/ci-runner-k3s/gates/render-gate-job.sh")
+GATE_RENDERER_PACKAGED = Path(__file__).resolve().parent / "gates" / "render-gate-job.sh"
 
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
@@ -333,14 +357,17 @@ def resolve_renderer(*, repo_root: Path) -> Path:
 
     Prefers the repository's own copy when it has one, so a change to the
     renderer is gated by the same push that makes it — and falls back to the
-    converged host path, which is what every other repository has. The fallback
+    copy inside THIS PACKAGE, which is what every other repository has. That
+    fallback cannot be older than the arguments this client passes, because it
+    arrives in the same wheel as this function; the converged host path it
+    replaces could, and was (see `GATE_RENDERER_PACKAGED` above). The fallback
     is returned unconditionally rather than checked: a path that is not there
     fails at the seam, as a step that did not run, with the argv in the report.
     """
     in_repo = repo_root / GATE_RENDERER_IN_REPO
     if in_repo.is_file():
         return in_repo
-    return GATE_RENDERER_INSTALLED
+    return GATE_RENDERER_PACKAGED
 
 
 def _answered(*, repo_root: Path, runner: GateCommandRunner, argv: list[str]) -> str:
