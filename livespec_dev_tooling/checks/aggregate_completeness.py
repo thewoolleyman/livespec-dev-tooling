@@ -83,6 +83,8 @@ from livespec_dev_tooling.canonical_checks import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _JUSTFILE_NAME = "justfile"
 _TARGET_INVENTORY_NAME = "check-targets.txt"

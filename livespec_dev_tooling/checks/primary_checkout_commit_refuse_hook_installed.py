@@ -219,6 +219,8 @@ from livespec_dev_tooling.checks._primary_checkout_unreadable import (  # noqa: 
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the git directory's installed hooks, which no tracked file carries
+
 
 # All three hooks the from-package installer writes; each MUST be present
 # and byte-identical to CANONICAL_HOOK_BODY.

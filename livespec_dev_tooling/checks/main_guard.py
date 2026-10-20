@@ -48,6 +48,8 @@ from livespec_dev_tooling.config import is_under_any_tree  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _PLUGIN_SCRIPTS_TREE = Path(".claude-plugin") / "scripts"
 _MAIN_GUARD_TEXTS = frozenset(

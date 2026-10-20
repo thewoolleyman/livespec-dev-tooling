@@ -27,6 +27,8 @@ __all__: list[str] = [
     "main",
 ]
 
+CHECK_PURITY = "world-reading"  # the `~/.claude` memory store outside the repository
+
 
 _CHECK_ID = "local_memory_drift_audit"
 _ARM_ENV = "LIVESPEC_LOCAL_MEMORY_DRIFT_AUDIT"

@@ -61,6 +61,8 @@ from livespec_dev_tooling.config import is_under_any_tree  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 def _is_wildcard_pattern(*, pattern: ast.pattern) -> bool:
     return isinstance(pattern, ast.MatchAs) and pattern.pattern is None and pattern.name is None

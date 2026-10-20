@@ -82,6 +82,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _INTRA_CLASS_RECEIVERS = frozenset({"self", "cls"})
 

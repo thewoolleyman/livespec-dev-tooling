@@ -91,6 +91,8 @@ from livespec_dev_tooling.install_no_shadow_ledger import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _CHECK_ID = "no_shadow_ledger_body_identical"
 # `4`, per this check's own contract in contracts.md: "exit `4`

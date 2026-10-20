@@ -61,6 +61,8 @@ from livespec_dev_tooling.checks._config_load import load_config_or_report  # no
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 # The agent-runtime directories whose `hooks/` subtree is a hook tree.
 _AGENT_RUNTIME_DIRS = frozenset({".claude", ".claude-plugin"})

@@ -50,6 +50,8 @@ from livespec_dev_tooling.config import MirrorPairing  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _BOOTSTRAP_REL = Path(".claude-plugin") / "scripts" / "bin" / "_bootstrap.py"
 

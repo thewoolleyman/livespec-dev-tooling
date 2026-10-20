@@ -71,6 +71,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 # The subprocess-spawning call targets we flag: a `subprocess.<fn>(...)`
 # or a bare `Popen(...)` / `run(...)` (imported-name) call. The argv

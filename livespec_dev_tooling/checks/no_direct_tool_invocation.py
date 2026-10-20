@@ -44,6 +44,8 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _LEFTHOOK_PATH = Path("lefthook.yml")
 _WORKFLOWS_DIR = Path(".github") / "workflows"

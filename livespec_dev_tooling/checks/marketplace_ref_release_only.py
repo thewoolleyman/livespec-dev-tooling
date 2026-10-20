@@ -37,6 +37,8 @@ import structlog  # noqa: E402  - vendor-path-aware import after sys.path insert
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _CHECK_ID = "marketplace_ref_release_only"
 _SETTINGS_RELPATH = (".claude", "settings.json")

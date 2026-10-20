@@ -100,6 +100,8 @@ __all__: list[str] = [
     "ResolutionOutcome",
 ]
 
+CHECK_PURITY = "world-reading"  # the plugin builds installed on the host
+
 
 _CHECK_ID = "plugin_resolution"
 _FAIL_EXIT = 4

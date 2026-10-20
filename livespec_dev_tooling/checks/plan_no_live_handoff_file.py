@@ -71,6 +71,8 @@ from livespec_dev_tooling.checks._branch_diff import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the `origin/master...HEAD` commit range
+
 
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_SEGMENT = "archive"

@@ -92,6 +92,8 @@ from livespec_dev_tooling.config import Config  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_DOMAIN_ERROR_RAISES_EXIST"
 _REASON = "domain-error raise outside `io/`/`errors.py` is banned"

@@ -187,6 +187,8 @@ from livespec_dev_tooling.config import load_scenario_tiers  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _MAIN_SPEC_ROOT = Path("SPECIFICATION")
 _SUB_SPEC_PARENT = Path("SPECIFICATION") / "templates"

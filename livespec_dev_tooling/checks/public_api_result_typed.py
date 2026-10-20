@@ -167,6 +167,8 @@ if TYPE_CHECKING:
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _RESULT_NAMES = frozenset({"Result", "IOResult"})
 # The one non-`commands/` location the spec names for the `main() -> int`

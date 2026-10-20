@@ -49,6 +49,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 def _decorator_terminal_name(*, decorator: ast.expr) -> str:
     if isinstance(decorator, ast.Call):

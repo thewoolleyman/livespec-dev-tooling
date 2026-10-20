@@ -84,6 +84,8 @@ from livespec_dev_tooling.checks._plan_record_timeline import timeline_findings 
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the work-items ledger
+
 
 _RUN_LEVER = "LIVESPEC_RUN_PLAN_RECORD_CONFORMANCE"
 _CRED_ENV = "BEADS_DOLT_PASSWORD"
