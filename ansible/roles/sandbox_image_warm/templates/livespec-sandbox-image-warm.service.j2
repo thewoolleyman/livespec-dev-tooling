@@ -1,0 +1,29 @@
+{#
+  The oneshot warm. Every value the script reads is passed here from the role's
+  variables, so the inventory is what changes a host's warm and the script's own
+  defaults are only what a hand run on a factory host falls back to.
+
+  Each Environment= line is QUOTED as a whole: the tag-prefix list is joined on
+  a space, and an unquoted assignment carrying a space would hand systemd a
+  second, nameless assignment rather than a list.
+-#}
+# {{ ansible_managed }}
+[Unit]
+Description=Warm this Fabro factory host's sandbox image store
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/sandbox_image_warm/HOST_VARS.md
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart={{ sandbox_image_warm_bin }}
+# A warm must never compete with the runs it exists to serve: it is background
+# work whose only deadline is "before the next dispatch needs the tag".
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec={{ sandbox_image_warm_timeout_start_sec }}
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_IMAGE={{ sandbox_image_warm_image }}"
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_TAG_PREFIXES={{ sandbox_image_warm_tag_prefixes | join(' ') }}"
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_PIN_URL={{ sandbox_image_warm_pin_url | trim }}"
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_DIR={{ sandbox_image_warm_lock_dir }}"
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_TIMEOUT_SECONDS={{ sandbox_image_warm_lock_timeout_seconds }}"
