@@ -25,18 +25,28 @@ WHAT FAILS. A host-path string literal that reaches
   `path`, or any `<prefix>_dest` / `<prefix>_path`, which is both an Ansible
   task body's destination and the `-e` extra-var a converge overrides it with
 
-is a finding naming the file, the line and the path. The literal is followed
-through plain name bindings to a fixed point, so a module-level
-`Path("/etc/…")` constant read inside a test is reported where it is READ,
-which is the line an author has to change.
+is a finding naming the file, the line and the path. Which paths an expression
+names, and the fixed-point name-following that reports a module-level constant
+at the line where it is USED, are the sibling `_tests_host_path_reach`'s half.
 
 WHAT PASSES. MENTIONING a host path is not using it. A test may hold the
 documented default of a role variable in a constant and assert that the role's
 `defaults/main.yml` declares it, because nothing in that reaches a filesystem —
 and that assertion is worth keeping, since the override is a testing seam and
-never a change to what the fleet publishes. A path DERIVED from the `tmp_path`
-fixture carries no host-path literal at all, so it never matches; an expression
-that mixes the fixture in is treated as derived from it.
+never a change to what the fleet publishes. A path derived from `tmp_path`
+never matches at all; the sibling module's docstring carries that rule.
+
+THE ONE EXEMPTION IS CONFIGURATION, NEVER A COMMENT. `ALLOW_LISTED_FIXTURES`
+below is this check's own configuration: a list of FIXTURE NAMES. A test that
+declares one of those fixtures as a parameter may reach host paths, because the
+fixture is then the single reviewed place that reach is centralised. Nothing a
+test module says about ITSELF exempts it — this check never reads comments, so a
+`# noqa`, a `# host-captured` marker and a paragraph of justification all leave
+both the finding and the exit status exactly as they were. Note what the two
+mechanisms are for: `tmp_path` is how a path is DERIVED, the allow-list is how
+host reach is PERMITTED, and declaring `tmp_path` never permits anything. The
+allow-list ships EMPTY — no test in this repository needs to reach a real host
+path today, and a name added to it is a deliberate edit to the check.
 
 REPO-PRIVATE CHECK. The module lives OUTSIDE `livespec_dev_tooling/checks/` so
 it stays out of the canonical (fleet-universal) slug set. This repository's
@@ -65,19 +75,25 @@ if str(_VENDOR_DIR) not in sys.path:
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 
+from livespec_dev_tooling._tests_host_path_reach import (  # noqa: E402
+    bound_names,
+    named_paths,
+    string_constants,
+)
+
 __all__: list[str] = []
 
 
+# THE CHECK'S OWN CONFIGURATION. A test that declares one of these fixtures as a
+# parameter may reach host paths; nothing else exempts one. Empty on purpose —
+# see the module docstring.
+ALLOW_LISTED_FIXTURES: frozenset[str] = frozenset()
+
 _TESTS_DIR = Path("tests")
-_HOST_ROOT = re.compile(r"^/(?:etc|opt|run|usr|var)(?:/|$)")
 
 # The destination key of an Ansible task body (`dest`, `path`) and of the
 # extra-var a converge re-points it with (`<role>_dest`, `<role>_path`).
 _DESTINATION_KEY = re.compile(r"^(?:\w+_)?(?:dest|destination|path)$")
-
-# The fixtures a path may be derived FROM. An expression that reaches one of
-# these is the sanctioned shape, whatever else it names.
-_DERIVING_NAMES = frozenset({"tmp_path", "tmp_path_factory"})
 
 # Methods that read, stat or write the path they are called on — pathlib's, plus
 # the two a file handle carries, because a handle opened on a host path is the
@@ -153,82 +169,6 @@ class _Finding(NamedTuple):
     kind: str
 
 
-def _host_paths(*, node: ast.AST) -> frozenset[str]:
-    """Every host-path string literal anywhere inside one expression."""
-    return frozenset(
-        child.value
-        for child in ast.walk(node)
-        if isinstance(child, ast.Constant)
-        and isinstance(child.value, str)
-        and _HOST_ROOT.match(child.value) is not None
-    )
-
-
-def _reached_names(*, node: ast.AST) -> frozenset[str]:
-    return frozenset(child.id for child in ast.walk(node) if isinstance(child, ast.Name))
-
-
-def _named_paths(*, node: ast.expr, bound: Mapping[str, frozenset[str]]) -> frozenset[str]:
-    """The host paths this expression names, or NOTHING when it derives from a fixture."""
-    names = _reached_names(node=node)
-    if names & _DERIVING_NAMES:
-        return frozenset()
-    return _host_paths(node=node).union(*(bound.get(name, frozenset()) for name in names))
-
-
-def _assignments(
-    *, tree: ast.Module, bound: Mapping[str, frozenset[str]]
-) -> Iterator[tuple[str, frozenset[str]]]:
-    """Each plain name binding, with the host paths its value names under `bound`."""
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign | ast.AnnAssign):
-            continue
-        value = node.value
-        if value is None:
-            continue
-        paths = _named_paths(node=value, bound=bound)
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        for target in targets:
-            for name in _reached_names(node=target):
-                yield name, paths
-
-
-def _bound_names(*, tree: ast.Module) -> Mapping[str, frozenset[str]]:
-    """Resolve name bindings to the host paths they name, to a fixed point.
-
-    Iterated rather than single-pass because the binding that names the literal
-    and the binding that carries it to the filesystem are often two statements
-    apart (`_ROOT = "/etc/livespec"` then `_REGISTRY = Path(_ROOT) / "x.json"`),
-    and `ast.walk` visits them in breadth-first order rather than in source
-    order. Monotone — every round only ever ADDS paths — so it terminates.
-    """
-    bound: dict[str, frozenset[str]] = {}
-    changed = True
-    while changed:
-        changed = False
-        for name, paths in _assignments(tree=tree, bound=bound):
-            merged = bound.get(name, frozenset()) | paths
-            if merged != bound.get(name, frozenset()):
-                bound[name] = merged
-                changed = True
-    return bound
-
-
-def _string_constants(*, tree: ast.Module) -> Mapping[str, str]:
-    """Module-level `NAME = "literal"` bindings, so a mapping KEY held in one resolves."""
-    constants: dict[str, str] = {}
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        value = node.value
-        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
-            continue
-        for target in node.targets:
-            for name in _reached_names(node=target):
-                constants[name] = value.value
-    return constants
-
-
 def _dotted(*, node: ast.expr) -> str:
     """The dotted name a call's callee spells, or a trailing-only name when it is computed."""
     parts: list[str] = []
@@ -246,10 +186,10 @@ def _call_findings(
     dotted = _dotted(node=node.func)
     if dotted in _READER_CALLS:
         for argument in (*node.args, *(keyword.value for keyword in node.keywords)):
-            for target in _named_paths(node=argument, bound=bound):
+            for target in named_paths(node=argument, bound=bound):
                 yield _Finding(path=path, line=node.lineno, target=target, kind=f"call:{dotted}")
     if isinstance(node.func, ast.Attribute) and node.func.attr in _READER_METHODS:
-        for target in _named_paths(node=node.func.value, bound=bound):
+        for target in named_paths(node=node.func.value, bound=bound):
             yield _Finding(
                 path=path, line=node.lineno, target=target, kind=f"method:{node.func.attr}"
             )
@@ -275,13 +215,42 @@ def _destination_findings(
         name = _key_name(node=key, constants=constants)
         if _DESTINATION_KEY.match(name) is None:
             continue
-        for target in _named_paths(node=value, bound=bound):
+        for target in named_paths(node=value, bound=bound):
             yield _Finding(path=path, line=value.lineno, target=target, kind=f"destination:{name}")
 
 
-def _module_findings(*, path: str, tree: ast.Module) -> list[_Finding]:
-    bound = _bound_names(tree=tree)
-    constants = _string_constants(tree=tree)
+def _parameters(*, node: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    """Every parameter name one function declares, however it is passed."""
+    arguments = node.args
+    return frozenset(
+        argument.arg
+        for argument in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
+    )
+
+
+def _lines(*, node: ast.AST) -> frozenset[int]:
+    return frozenset(
+        child.lineno for child in ast.walk(node) if isinstance(child, ast.stmt | ast.expr)
+    )
+
+
+def _exempt_lines(*, tree: ast.Module, allow_listed: frozenset[str]) -> frozenset[int]:
+    """Every line of a function that DECLARES an allow-listed fixture."""
+    return frozenset(
+        line
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and _parameters(node=node) & allow_listed
+        for line in _lines(node=node)
+    )
+
+
+def _module_findings(
+    *, path: str, tree: ast.Module, allow_listed: frozenset[str]
+) -> list[_Finding]:
+    bound = bound_names(tree=tree)
+    constants = string_constants(tree=tree)
+    exempt = _exempt_lines(tree=tree, allow_listed=allow_listed)
     findings: set[_Finding] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -290,16 +259,20 @@ def _module_findings(*, path: str, tree: ast.Module) -> list[_Finding]:
             findings.update(
                 _destination_findings(path=path, node=node, bound=bound, constants=constants)
             )
-    return sorted(findings, key=lambda finding: (finding.line, finding.kind, finding.target))
+    return sorted(
+        (finding for finding in findings if finding.line not in exempt),
+        key=lambda finding: (finding.line, finding.kind, finding.target),
+    )
 
 
-def _findings(*, cwd: Path) -> list[_Finding]:
+def _findings(*, cwd: Path, allow_listed: frozenset[str]) -> list[_Finding]:
     findings: list[_Finding] = []
     for file in sorted((cwd / _TESTS_DIR).rglob("*.py")):
         findings.extend(
             _module_findings(
                 path=str(file.relative_to(cwd)),
                 tree=ast.parse(file.read_text(encoding="utf-8")),
+                allow_listed=allow_listed,
             )
         )
     return findings
@@ -315,7 +288,7 @@ def main() -> int:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
     log = structlog.get_logger("tests_host_path_free")
-    findings = _findings(cwd=Path.cwd())
+    findings = _findings(cwd=Path.cwd(), allow_listed=ALLOW_LISTED_FIXTURES)
     for finding in findings:
         log.error(
             "a test names a real host path as a filesystem target",
