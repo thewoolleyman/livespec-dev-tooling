@@ -1,11 +1,22 @@
 # shellcheck shell=bash
 # Shared helpers for the docker_engine FAULTS suite. Source from a case script.
 cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." || exit 1
+# WHICH MACHINE HOSTS THE VMs IS THE INVENTORY'S DECISION, NEVER THIS FILE'S — the
+# same rule ansible/docker-engine-acceptance.yml states for its own play, and the
+# reason the guest key the play fetches is named after inventory_hostname
+# (livespec-dev-tooling-prdxxe). So the harness is TOLD, in one variable that
+# ../inventory-kvm.yml reads from the same environment, and it refuses before it
+# touches anything rather than guessing: pointed at the wrong machine, every case
+# would fail at its first ssh with a connection error, which reads as a broken VM
+# rather than as a harness nobody told where to run.
+FAULTS_KVM_HOST="${DOCKER_ENGINE_ACCEPTANCE_KVM_HOST:?set this to the inventory name of the KVM acceptance host (the docker_engine_acceptance_hosts group member) before running a FAULTS case}"
+# The login account on that host. A user is not a machine, so it stays a literal.
+FAULTS_KVM_USER="${DOCKER_ENGINE_ACCEPTANCE_KVM_USER:-cwoolley}"
 # Every driver writes its logs under tmp/faults (gitignored); a fresh worktree lacks it, and a
 # missing directory made every converge redirect fail while the driver still exited 0.
 mkdir -p tmp/faults || exit 1
-FAULTS_KEY=$HOME/.cache/docker-engine-guard-acceptance/poweredge-xubuntu/id_ed25519
-vm() { local i=$1; shift; ssh -i "$FAULTS_KEY" -o ProxyJump=cwoolley@poweredge-xubuntu -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -p $((2229 + 10 * i)) guard@127.0.0.1 "$@"; }
+FAULTS_KEY=$HOME/.cache/docker-engine-guard-acceptance/$FAULTS_KVM_HOST/id_ed25519
+vm() { local i=$1; shift; ssh -i "$FAULTS_KEY" -o ProxyJump="$FAULTS_KVM_USER@$FAULTS_KVM_HOST" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -p $((2229 + 10 * i)) guard@127.0.0.1 "$@"; }
 converge() { # converge <i> <log> [extra ansible args...]
   local i=$1 log=$2; shift 2
   mise exec -- just ansible-apply -i ansible/roles/docker_engine/acceptance/inventory-kvm.yml ansible/docker-engine.yml --limit "guard-vm-$i" "$@" > "$log" 2>&1
@@ -64,5 +75,5 @@ rolled_back_check() { # the FAULTS.md definition of "rolled back", as far as it 
 # mid-case. Masking them keeps every dpkg action on the guest the guard's own.
 restore() { # restore <i>: one instance back to the `baseline` snapshot, booted, k3s DNS answering, apt timers masked
   local i=$1
-  ssh -o BatchMode=yes cwoolley@poweredge-xubuntu "cd ~/docker-engine-guard-acceptance && export DOCKER_ENGINE_VM_BASE_DIR=\$HOME/.cache/docker-engine-guard-vm DOCKER_ENGINE_VM_LLM_BIND=0.0.0.0 DOCKER_ENGINE_VM_INSTANCE=$i && ./vm.sh down >/dev/null && ./vm.sh restore baseline >/dev/null && ./vm.sh up >/dev/null && for n in \$(seq 1 60); do ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers 2>/dev/null | awk '\$1 ~ /^coredns-/ && \$3 == \"Running\" {f=1} END {exit !f}' && break; sleep 5; [ \$n = 60 ] && { echo restore-$i-DNS-TIMEOUT; exit 1; }; done; ./vm.sh ssh sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1; ./vm.sh ssh sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || { echo restore-$i-APT-TIMER-MASK-FAILED; exit 1; }; for n in \$(seq 1 60); do ./vm.sh ssh sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || { echo restored-$i; exit 0; }; sleep 5; done; echo restore-$i-APT-BUSY; exit 1" && host_chains_save "$i"
+  ssh -o BatchMode=yes "$FAULTS_KVM_USER@$FAULTS_KVM_HOST" "cd ~/docker-engine-guard-acceptance && export DOCKER_ENGINE_VM_BASE_DIR=\$HOME/.cache/docker-engine-guard-vm DOCKER_ENGINE_VM_LLM_BIND=0.0.0.0 DOCKER_ENGINE_VM_INSTANCE=$i && ./vm.sh down >/dev/null && ./vm.sh restore baseline >/dev/null && ./vm.sh up >/dev/null && for n in \$(seq 1 60); do ./vm.sh ssh sudo k3s kubectl get pods -n kube-system --no-headers 2>/dev/null | awk '\$1 ~ /^coredns-/ && \$3 == \"Running\" {f=1} END {exit !f}' && break; sleep 5; [ \$n = 60 ] && { echo restore-$i-DNS-TIMEOUT; exit 1; }; done; ./vm.sh ssh sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1; ./vm.sh ssh sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || { echo restore-$i-APT-TIMER-MASK-FAILED; exit 1; }; for n in \$(seq 1 60); do ./vm.sh ssh sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || { echo restored-$i; exit 0; }; sleep 5; done; echo restore-$i-APT-BUSY; exit 1" && host_chains_save "$i"
 }
