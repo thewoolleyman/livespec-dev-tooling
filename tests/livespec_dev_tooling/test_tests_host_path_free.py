@@ -6,7 +6,9 @@ the machine pytest happens to run on rather than the committed tree
 (livespec-dev-tooling-vxkmab, from the 2026-10-18 F-az incident). The check fails
 such a module naming the file, the line and the path; it passes a module that
 derives every path from `tmp_path`, and it passes a module that merely NAMES a
-host path without reaching it. The committed tree must pass it.
+host path without reaching it. The one exemption is a FIXTURE NAME held in the
+check's own configuration, and a comment in a test module never is one. The
+committed tree must pass it.
 """
 
 from __future__ import annotations
@@ -24,6 +26,11 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "tests_host_path_free.py"
+
+# The check's OWN configuration: the allow-list of fixture names. Named here
+# because every arm below drives the check through it, which is exactly what an
+# operator adding a fixture to the allow-list does.
+_ALLOW_LIST = "ALLOW_LISTED_FIXTURES"
 
 # Three synthetic test modules, written into a throwaway `tests/` tree. Line
 # numbers are load-bearing: the check must name the line its finding is about,
@@ -95,6 +102,25 @@ def test_names_the_documented_default_without_reaching_it() -> None:
     assert _DOCUMENTED_DEFAULT.startswith("/etc/")
 """
 
+# Two reaches of the same kind: one in a test that DECLARES the fixture an
+# operator may put on the allow-list, one in a test that instead argues its case
+# in a comment. Only the first is ever exemptible.
+_FIXTURE_AND_COMMENT = """\
+from pathlib import Path
+
+
+def test_reads_the_real_registry(*, host_captured_registry: Path) -> None:
+    # The check's allow-list is what exempts this, never this comment.
+    assert host_captured_registry
+    assert Path("/etc/livespec/fabro-factories.json").read_text(encoding="utf-8")
+
+
+def test_reads_it_without_declaring_the_fixture() -> None:
+    # Exempt: this test has to read the real file. (It does not: a comment
+    # never exempts anything, because the check reads no comments at all.)
+    assert Path("/etc/livespec/sandbox-capabilities").is_file()
+"""
+
 
 def _load_check_module() -> ModuleType:
     """Import the check module fresh from its file path (the tree the RGR hook inspects)."""
@@ -112,11 +138,27 @@ class _CheckRun(NamedTuple):
 
 
 def _run_check(
-    *, cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    *,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    allow_listed: tuple[str, ...] = (),
 ) -> _CheckRun:
-    """Invoke the check's `main()` in-process under `cwd` and parse its findings."""
+    """Invoke the check's `main()` in-process under `cwd` and parse its findings.
+
+    `allow_listed` stands in for the check's own configuration for the duration
+    of the run, which is what an operator who adds a fixture name to it does.
+    Asserted to be a frozenset first: the allow-list has to live in the CHECK,
+    because that is what makes it reviewable rather than self-declared.
+    """
     monkeypatch.chdir(cwd)
-    rc = _load_check_module().main()
+    module = _load_check_module()
+    configured = getattr(module, _ALLOW_LIST, None)
+    assert isinstance(
+        configured, frozenset
+    ), f"the check must hold its allow-list of fixture names in `{_ALLOW_LIST}`"
+    monkeypatch.setattr(module, _ALLOW_LIST, frozenset(allow_listed))
+    rc = module.main()
     captured = capsys.readouterr()
     findings = [json.loads(line) for line in captured.err.splitlines() if line.strip()]
     return _CheckRun(returncode=rc, findings=findings)
@@ -211,3 +253,44 @@ def test_every_finding_carries_the_remediation_that_names_tmp_path(
     for item in run.findings:
         assert "tmp_path" in str(item["remediation"])
         assert item["level"] == "error"
+
+
+def test_a_fixture_on_the_configured_allow_list_exempts_the_test_that_declares_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Adding the fixture name to the check's configuration passes the test that declares it."""
+    _write(root=tmp_path, relative="tests/test_allowed.py", text=_FIXTURE_AND_COMMENT)
+    run = _run_check(
+        cwd=tmp_path,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+        allow_listed=("host_captured_registry",),
+    )
+    assert _reported(run=run) == [
+        ("tests/test_allowed.py", 13, "/etc/livespec/sandbox-capabilities", "method:is_file")
+    ]
+    assert run.returncode == 1
+
+
+def test_a_comment_never_exempts_a_host_path(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With nothing allow-listed, BOTH reaches fail — including the one a comment argues for."""
+    _write(root=tmp_path, relative="tests/test_allowed.py", text=_FIXTURE_AND_COMMENT)
+    run = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+    assert _reported(run=run) == [
+        (
+            "tests/test_allowed.py",
+            7,
+            "/etc/livespec/fabro-factories.json",
+            "method:read_text",
+        ),
+        ("tests/test_allowed.py", 13, "/etc/livespec/sandbox-capabilities", "method:is_file"),
+    ]
+    assert run.returncode == 1
+
+
+def test_the_shipped_allow_list_names_no_fixture() -> None:
+    """It ships EMPTY: no test in this repository needs to reach a real host path."""
+    configured = getattr(_load_check_module(), _ALLOW_LIST, None)
+    assert configured == frozenset()
