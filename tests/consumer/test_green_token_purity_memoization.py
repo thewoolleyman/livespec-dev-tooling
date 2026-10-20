@@ -39,14 +39,28 @@ answers from a configured declaration set by FILTERING the members it is
 asked about, so what the aggregate asks is observable: a query over fewer
 members yields fewer answers, which is what makes the hook-path omission
 measurable rather than assumed.
+
+ONE TOKEN, WRITTEN BY EITHER GATE, READ THE SAME WAY. A green DELEGATED
+verdict records its token through the same `green_token write` CLI a green
+local aggregate uses, and the pre-push probe's only predicate is
+`green_token check` — the token carries no provenance and the branch asks
+for none. The last test below closes that loop against the real module in a
+throwaway repository rather than asserting it in prose, because the loop is
+the whole reason a delegated pass does not exempt a later push of the same
+clean tree from its world-reading members.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import NamedTuple
+
+import pytest
 
 __all__: list[str] = []
 
@@ -327,4 +341,81 @@ def test_the_memoized_run_records_no_new_token(*, tmp_path: Path) -> None:
         f"the token for this tree already exists — that is why this path was taken — and a "
         f"run that executed only part of the check set must not be the thing that writes "
         f"it; invoked={run.invoked}"
+    )
+
+
+def _load_module(*, relative: str, name: str) -> ModuleType:
+    """Import a committed module fresh from its path, for an in-process drive.
+
+    Loaded by PATH rather than by package name so the test drives the committed
+    bytes, and REGISTERED in `sys.modules` before execution because
+    `dataclasses` resolves a deferred annotation through
+    `sys.modules[cls.__module__]` — an unregistered module makes that lookup
+    return None and the class body raise.
+    """
+    spec = importlib.util.spec_from_file_location(name, str(_REPO_ROOT / relative))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _init_repo(*, repo: Path) -> None:
+    """Initialize a throwaway git repository with one committed file."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "COVERAGE_", "COV_"))}
+    for argv in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "test@test.test"],
+        ["git", "config", "user.name", "Test User"],
+    ):
+        _ = subprocess.run(argv, cwd=str(repo), check=True, env=env)
+    _ = (repo / "README.md").write_text("baseline\n", encoding="utf-8")
+    _ = subprocess.run(["git", "add", "README.md"], cwd=str(repo), check=True, env=env)
+    _ = subprocess.run(
+        ["git", "commit", "-q", "-m", "chore: baseline"], cwd=str(repo), check=True, env=env
+    )
+
+
+def test_a_token_from_a_green_delegated_verdict_reaches_the_same_memoized_path(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A delegated pass does not exempt the next push of that tree from the live half.
+
+    Two links, both measured rather than asserted in prose. The delegated
+    client's token step IS the `green_token write` CLI — read off the committed
+    argv constant, so a change to either side breaks this rather than drifting
+    past it — and a token that CLI writes is accepted by the `green_token check`
+    the pre-push probe runs. The token carries no provenance and the probe asks
+    for none, so the route a sibling above asserts for a locally-written token
+    is the same route a delegated one takes: the world-reading members run on
+    the pushing host either way.
+    """
+    verdict = _load_module(
+        relative="livespec_dev_tooling/gate_remote_verdict.py", name="gate_verdict_under_test"
+    )
+    token_argv = list(verdict._GREEN_TOKEN_WRITE_ARGV)  # noqa: SLF001  — the committed constant.
+    assert token_argv[1:] == ["-m", "livespec_dev_tooling.green_token", "write"], (
+        f"a green delegated verdict must record the SAME token a green local aggregate "
+        f"records, through the same CLI; a second writer would be a second thing for the "
+        f"probe to understand; token_argv={token_argv}"
+    )
+
+    green_token = _load_module(
+        relative="livespec_dev_tooling/green_token.py", name="green_token_under_delegated_test"
+    )
+    _init_repo(repo=tmp_path)
+    for key in [name for name in os.environ if name.startswith(("GIT_", "COVERAGE_", "COV_"))]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    monkeypatch.setattr(sys, "argv", ["green-token", "write"])
+    assert green_token.main() == 0, f"stderr={capsys.readouterr().err!r}"
+    monkeypatch.setattr(sys, "argv", ["green-token", "check"])
+    matched = green_token.main()
+
+    assert matched == 0, (
+        f"the probe must MATCH a token the delegated writer recorded for this clean tree — "
+        f"that is what sends the later push down the memoized path, where the world-reading "
+        f"members still run; stderr={capsys.readouterr().err!r}"
     )
