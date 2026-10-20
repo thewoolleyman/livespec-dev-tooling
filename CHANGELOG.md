@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.10...v1.118.11) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ansible:** refuse a fabro readiness gate with no canonical host ([30f4281](https://github.com/thewoolleyman/livespec-dev-tooling/commit/30f4281bb7b46b292c167ce6d034a7db844cbb1b))
+* **ansible:** refuse a gates refresh with no control-plane node ([ab9e9a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ab9e9a6bc11f182c744ea08694bd92b1c455f6ed))
+* **ansible:** refuse a node-status refresh with no control-plane node ([c7eb232](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7eb2322148fd83276baaf8c5cb637b6bac3ba63))
+* **ansible:** render the restic snapshot tag from the inventory name ([58df708](https://github.com/thewoolleyman/livespec-dev-tooling/commit/58df70810c9bd9512f5f494a2966fe0365dddd85))
+* **ansible:** render the Samba source strings from the inventory name ([1d226e3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1d226e3c17e12ccd937afc364ad7f9a8123709c5))
+* **ansible:** tell the docker_engine acceptance harness its KVM host ([b9f7b1a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9f7b1a86379f18c8b800b1c9a0d4568da778bd5))
+* scan role executables for inventory machine names ([8623f79](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8623f79b89e4a433d973ea39119393dc9f1c50c4))
+
 ## [1.118.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.9...v1.118.10) (2026-10-20)
 
 
