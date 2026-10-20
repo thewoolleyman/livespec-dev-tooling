@@ -103,4 +103,6 @@ check-no-workflow-edits  # purity: world-reading
 # RANGE mode judges every non-merge commit in `origin/master..HEAD`, each
 # against its OWN message: the commits around the tree, not the tree.
 check-shipped-path-release-guard  # purity: world-reading
+# Reads only the committed test modules under tests/.
+check-tests-host-path-free  # purity: tree-pure
 check-uv-lock-version-sync  # purity: tree-pure

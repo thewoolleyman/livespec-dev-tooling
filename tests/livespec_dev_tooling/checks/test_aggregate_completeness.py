@@ -162,13 +162,20 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 80-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 81-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    # 80 since livespec-dev-tooling-prdxxe wired the repo-private
+    # 81 since livespec-dev-tooling-vxkmab wired the repo-private
+    # `check-tests-host-path-free` (no test under `tests/` reads, stats or writes
+    # a real host path, nor builds an Ansible task whose destination is one — a
+    # test that does grades the machine pytest runs on rather than the committed
+    # tree). It is repo-private rather than canonical because a canonical slug
+    # obliges every consumer to wire it into its own `just check` and CI matrix,
+    # while the tests it polices are this repository's own Ansible role tests.
+    # The 80th was livespec-dev-tooling-prdxxe's repo-private
     # `check-ansible-hostname-free` (no play or role under `ansible/` names a
     # machine; the inventory alone binds one). The 79th was
     # livespec-dev-tooling-t2q4's repo-private
@@ -190,7 +197,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     # stays EXACT rather than becoming a `>=`: its job is to make any change to
     # the inventory a deliberate edit here, and a lower bound would let a silent
     # drop through.
-    assert wired is not None and len(wired) == 80
+    assert wired is not None and len(wired) == 81
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None

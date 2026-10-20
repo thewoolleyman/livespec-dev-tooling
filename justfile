@@ -309,6 +309,7 @@ check:
         check-no-direct-github-access
         check-no-workflow-edits
         check-shipped-path-release-guard
+        check-tests-host-path-free
         check-uv-lock-version-sync
     )
     scripts/just/check.sh "${targets[@]}"
@@ -658,6 +659,22 @@ check-fabro-image-pin-lockstep:
 # discipline. A literal member of check-targets.txt's repo-private block.
 check-no-direct-github-access:
     uv run python -m livespec_dev_tooling.no_direct_github_access
+
+# Host-path Verifier for this repository's OWN tests (work-item
+# livespec-dev-tooling-vxkmab): fail when a test under `tests/` reads, stats or
+# writes an absolute path under /etc, /var, /usr, /opt or /run, or builds an
+# Ansible task whose destination is one, instead of deriving it from `tmp_path`.
+# Such a test grades the machine pytest runs on rather than the committed tree —
+# measured on 2026-10-18, when a role converged in `--check --diff` against its
+# default destination kept CI and every factory sandbox green while failing every
+# pre-push from the one host that had the file. Repo-private (the module
+# deliberately lives OUTSIDE livespec_dev_tooling/checks/, so
+# canonical_check_slugs never discovers it) because a canonical slug obliges
+# every consumer to wire it, and the tests this one polices are this
+# repository's own Ansible role tests; promotion would be its own cross-repo
+# epic. A literal member of check-targets.txt's repo-private block.
+check-tests-host-path-free:
+    uv run python -m livespec_dev_tooling.tests_host_path_free
 
 check-coverage:
     scripts/just/check-coverage.sh
