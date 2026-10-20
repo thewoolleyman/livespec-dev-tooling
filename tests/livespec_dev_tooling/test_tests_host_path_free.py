@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
@@ -26,6 +27,11 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CHECK_PATH = _REPO_ROOT / "livespec_dev_tooling" / "tests_host_path_free.py"
+
+# The two surfaces `scripts/just/check.sh` mirrors entry for entry, and the slug
+# that has to appear in both for the check to be a member of `just check`.
+_SLUG = "check-tests-host-path-free"
+_RECIPE_BODY = "uv run python -m livespec_dev_tooling.tests_host_path_free"
 
 # The check's OWN configuration: the allow-list of fixture names. Named here
 # because every arm below drives the check through it, which is exactly what an
@@ -294,3 +300,52 @@ def test_the_shipped_allow_list_names_no_fixture() -> None:
     """It ships EMPTY: no test in this repository needs to reach a real host path."""
     configured = getattr(_load_check_module(), _ALLOW_LIST, None)
     assert configured == frozenset()
+
+
+def _justfile() -> str:
+    return (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
+
+
+def _aggregate_targets() -> list[str]:
+    """The `check:` recipe's `targets=(...)` array, in order."""
+    array = re.search(r"\n    targets=\(\n(?P<body>(?:.*\n)*?)    \)\n", _justfile())
+    assert array is not None, "the justfile must carry the `check:` recipe's targets=(...) array"
+    return [
+        stripped
+        for line in array["body"].splitlines()
+        if (stripped := line.strip()).startswith("check-")
+    ]
+
+
+def _inventory_targets() -> list[str]:
+    """`check-targets.txt`, comments and blanks removed — what `scripts/just/check.sh` mirrors."""
+    text = (_REPO_ROOT / "check-targets.txt").read_text(encoding="utf-8")
+    return [
+        stripped
+        for line in text.splitlines()
+        if (stripped := line.split("#")[0].strip()).startswith("check-")
+    ]
+
+
+def test_the_check_is_a_member_of_this_repositorys_own_check_aggregate() -> None:
+    """Wired into `just check` on BOTH surfaces, and the recipe invokes the check module."""
+    wired = _aggregate_targets()
+    assert wired == _inventory_targets(), (
+        "the justfile targets array and check-targets.txt must mirror each other entry for "
+        "entry, or scripts/just/check.sh refuses the aggregate as drifted"
+    )
+    assert _SLUG in wired, f"{_SLUG} must be a member of this repository's `just check` aggregate"
+    assert (
+        f"\n{_SLUG}:\n    {_RECIPE_BODY}\n" in _justfile()
+    ), f"the justfile must declare `{_SLUG}:` invoking the check module"
+
+
+def test_the_check_is_repo_private_rather_than_a_canonical_slug() -> None:
+    """The placement decision: a canonical slug obliges EVERY consumer to wire it."""
+    canonical = _REPO_ROOT / "livespec_dev_tooling" / "checks" / "tests_host_path_free.py"
+    assert not canonical.exists(), (
+        "the check must stay OUT of livespec_dev_tooling/checks/: that directory IS the "
+        "canonical slug set, and a canonical slug obliges every consumer repository to wire "
+        "it into its own `just check` and CI matrix, while the host-path tests this one "
+        "polices are this repository's own Ansible role tests"
+    )
