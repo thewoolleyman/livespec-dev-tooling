@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.6...v1.118.7) (2026-10-20)
+
+
+### Bug Fixes
+
+* replay local pytest failures against green master ([22f2ff2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/22f2ff2491666c88f1feefc8bc9965eb837f8c07))
+
 ## [1.118.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.5...v1.118.6) (2026-10-20)
 
 
