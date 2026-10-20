@@ -84,6 +84,8 @@ from livespec_dev_tooling.checks._plan_ledger import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the work-items ledger
+
 
 _RUN_LEVER = "LIVESPEC_RUN_WORK_ITEM_STATUS_VOCABULARY"
 _CRED_ENV = "BEADS_DOLT_PASSWORD"

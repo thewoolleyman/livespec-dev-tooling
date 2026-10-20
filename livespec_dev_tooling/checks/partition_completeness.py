@@ -49,6 +49,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 class _Claim(NamedTuple):
     """One effective semantic ownership claim for a first-party Python file."""

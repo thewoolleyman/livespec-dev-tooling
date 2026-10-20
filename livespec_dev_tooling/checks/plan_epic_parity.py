@@ -49,6 +49,8 @@ from livespec_dev_tooling.checks._plan_record_model import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the work-items ledger
+
 
 _PLAN_DIR_NAME = "plan"
 _ARCHIVE_DIR_NAME = "archive"

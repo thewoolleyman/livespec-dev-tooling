@@ -87,6 +87,8 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _SKILLS_TREE = Path(".claude-plugin") / "skills"
 _PLUGIN_ROOT_TREE = Path(".claude-plugin")

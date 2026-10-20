@@ -98,6 +98,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 )
 
 __all__: list[str] = []
+
+CHECK_PURITY = "world-reading"  # the `origin/master...HEAD` commit range it scopes itself to
 # Isolated coverage data-file directory prefix. The script spawns its own
 # pytest as a subprocess; if we let pytest-cov default to `.coverage` the
 # inner data file would clash with any outer pytest-cov session that ALSO

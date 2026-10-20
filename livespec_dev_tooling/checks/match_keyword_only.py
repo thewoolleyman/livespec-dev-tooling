@@ -61,6 +61,8 @@ from livespec_dev_tooling.config import is_under_any_tree  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _THIRD_PARTY_POSITIONAL_OK = frozenset({"Success", "Failure", "IOSuccess", "IOFailure"})
 

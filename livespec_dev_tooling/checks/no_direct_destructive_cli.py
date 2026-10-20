@@ -58,6 +58,8 @@ from livespec_dev_tooling.config import load_destructive_cli_allowlist  # noqa: 
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _SCANNED_TREES = (
     Path("dev-tooling"),

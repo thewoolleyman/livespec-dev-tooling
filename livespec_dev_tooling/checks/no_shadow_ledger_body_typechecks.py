@@ -76,6 +76,8 @@ from livespec_dev_tooling.install_no_shadow_ledger import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _CHECK_ID = "no_shadow_ledger_body_typechecks"
 _FAIL_EXIT = 4

@@ -63,6 +63,8 @@ from livespec_dev_tooling.checks._config_load import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 # Matches a formatter-suppression directive at the start of a `#` comment
 # token, robust to the ruff/black spacing variants (`# fmt: off`,

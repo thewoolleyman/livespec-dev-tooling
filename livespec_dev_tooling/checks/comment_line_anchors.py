@@ -47,6 +47,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _LINE_ANCHOR_RE = re.compile("\\b[Ll]ines?\\s+~?\\d+(?:[-\\u2013\\u2014]\\d+)?")
 _REMINDER = (

@@ -104,6 +104,8 @@ from livespec_dev_tooling.checks._tool_backed_surfaces import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _JUSTFILE_NAME = "justfile"
 _TARGET_INVENTORY_NAME = "check-targets.txt"

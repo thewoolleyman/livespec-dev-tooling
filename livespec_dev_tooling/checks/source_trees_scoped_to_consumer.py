@@ -31,6 +31,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _CORE_PACKAGE_TREE = Path(".claude-plugin") / "scripts" / "livespec"
 _CORE_PROJECT_NAME = "livespec"

@@ -134,6 +134,8 @@ from livespec_dev_tooling.config import Config  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _BROAD_NAMES = frozenset({"Exception", "BaseException"})
 _TRY_STAR_NODE_NAME = "TryStar"

@@ -127,6 +127,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the `origin/master..HEAD` commit range and each commit's trailers
+
 
 # The prefix's ONLY remaining semantic: a `feat:`/`fix:` subject
 # staging a PASSING test alone declares a behavior change whose test

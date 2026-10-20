@@ -84,6 +84,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 # Per python-skill-script-style-requirements.md:
 # the canonical shebang wrapper has exactly five top-level
 # statements (docstring → bootstrap import → bootstrap() call →
