@@ -23,7 +23,7 @@
 #   render-gate-job.sh --repo-root PATH --tree-hash SHA [--repo NAME]
 #                      [--gated-repository OWNER/REPO]
 #                      [--source-url URL] [--cpu N] [--memory SIZE]
-#                      [--parallelism N] [--ttl-seconds N] [--job-name NAME]
+#                      [--parallelism N] [--ttl-seconds N]
 #                      [--livespec-core-ref REF]
 #                      [--check-suite 'RECIPE' ...]
 #
@@ -31,6 +31,16 @@
 # in-cluster read-only mirror R4.S4 builds. The resource defaults are the terms
 # ../kueue/cluster-queue-gates.yaml quotas: 5 cpu / 6Gi, three concurrent gates
 # under its 15 cpu / 24Gi.
+#
+# THERE IS NO --job-name, AND THAT IS THE POINT (livespec-dev-tooling-44fglo).
+# The manifest asks the API server for a `metadata.generateName`, so the Job's
+# name is ASSIGNED at submit rather than rendered here. A rendered name was
+# derived from the gated tree, and the template's `ttlSecondsAfterFinished`
+# keeps a finished Job for an hour — so for that hour every further gate of the
+# same tree was refused at submit with `AlreadyExists` and the client reported
+# NO_VERDICT, the state reserved for a lost cluster. The gated tree is still
+# named by the `livespec.gate/tree-hash` label, which is what made the name
+# useful; the client reads the assigned name back off its own submit.
 #
 # --check-suite is the GATED REPOSITORY'S OWN check recipes — one flag per `just`
 # invocation, run in the order given — and it is requirement 1's sibling
@@ -72,7 +82,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
 
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
-cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; job_name=""
+cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"
 livespec_core_ref=""
 check_suite=()
 
@@ -98,7 +108,6 @@ while [ $# -gt 0 ]; do
     --memory)            memory="$2"; shift 2 ;;
     --parallelism)       parallelism="$2"; shift 2 ;;
     --ttl-seconds)       ttl_seconds="$2"; shift 2 ;;
-    --job-name)          job_name="$2"; shift 2 ;;
     --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
@@ -110,15 +119,15 @@ done
 [ -d "${repo_root}" ] || { echo "FATAL: --repo-root ${repo_root} is not a directory" >&2; exit 2; }
 [ -f "${TEMPLATE}" ] || { echo "FATAL: template not found: ${TEMPLATE}" >&2; exit 1; }
 
-# A Kubernetes object name and a label value must both accept it, and the tree
-# hash goes into both, so refuse anything that is not a plain hex digest.
+# A Kubernetes label value must accept it, and the tree hash is what makes every
+# Job of one tree selectable now that the Job's own name is assigned by the API
+# server, so refuse anything that is not a plain hex digest.
 case "${tree_hash}" in
   *[!0-9a-f]* | "") echo "FATAL: --tree-hash must be lowercase hex: ${tree_hash}" >&2; exit 2 ;;
 esac
 
 [ -n "${repo}" ] || repo="$(basename "${repo_root}")"
 [ -n "${source_url}" ] || source_url="git://git-gates.gates.svc.cluster.local/${repo}.git"
-[ -n "${job_name}" ] || job_name="gate-${repo}-${tree_hash:0:12}"
 
 # --- the gated repository's github.com identity (R4.S7 slice B) ---------------
 # Derived from the gated clone's OWN origin, matched against the same two
@@ -453,7 +462,6 @@ substitute_block() {
   )"
 }
 
-substitute JOB_NAME          "${job_name}"
 substitute REPO              "${repo}"
 substitute GATED_REPOSITORY  "${gated_repository}"
 substitute TREE_HASH         "${tree_hash}"

@@ -205,11 +205,6 @@ GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = (
 # reader below needs no second branch for a shape it treats identically.
 _UNANSWERED = GateCommandResult(returncode=1, stdout="", stderr="")
 
-# The renderer's own default job name, computed here rather than parsed back out
-# of the manifest — and passed to it explicitly, so the name this client waits on
-# is the name it asked for even if that default ever moves.
-_JOB_NAME_TREE_CHARS = 12
-
 # What an OPTED-IN repository says when the host it is being pushed from holds no
 # readable gates credential. Printed rather than left silent because an opted-in
 # repository that quietly gates somewhere else is the one shape an operator
@@ -412,7 +407,6 @@ def gate_remote_request(
     suite = declared_gate_check_suite(repo_root=repo_root)
     if isinstance(suite, Failure):
         return Failure(suite.failure())
-    job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -421,8 +415,6 @@ def gate_remote_request(
         tree_hash,
         "--repo",
         repo,
-        "--job-name",
-        job_name,
         *_check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(
@@ -435,7 +427,6 @@ def gate_remote_request(
             repo_root=repo_root,
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
-            job_name=job_name,
         )
     )
 

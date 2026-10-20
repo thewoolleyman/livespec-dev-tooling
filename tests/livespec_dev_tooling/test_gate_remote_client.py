@@ -5,7 +5,7 @@ world is its `GateCommandRunner` seam, so a canned runner is the whole host and
 the whole cluster. No process is spawned, no mirror is pushed to, no manifest
 reaches an API server, and no ref is created anywhere.
 
-THREE PROPERTIES ARE LOAD-BEARING and each is here because its absence would be
+FOUR PROPERTIES ARE LOAD-BEARING and each is here because its absence would be
 SILENT.
 
 The first is the ref cleanup. One gated push creates one ref, and nothing in the
@@ -31,6 +31,15 @@ deciding pass from fail — and writing the green token on a pass — is S7b's j
 A client that quietly folded "the Job failed" into its own failure track would
 leave S7b nothing to interpret and would make a plumbing fault and a red tree
 indistinguishable, which is the one distinction the delegation has to keep.
+
+The fourth is that the Job's name is READ BACK off the submit rather than
+predicted. The manifest asks for a `generateName`, which is what makes a
+re-gate of one tree a new measurement instead of an `AlreadyExists` refusal — so
+the name does not exist until the API server has made one. A client that still
+derived the old `gate-<repo>-<tree[:12]>` name would poll, read and stream the
+PREVIOUS run's Job for the hour that one survives its TTL, and that Job already
+carries a terminal condition: another run's verdict would come back at once,
+with nothing anywhere raising an error.
 """
 
 from __future__ import annotations
@@ -61,13 +70,17 @@ __all__: list[str] = []
 
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _MIRROR = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/widget.git"
-_JOB = "gate-widget-4b825dc642cb"
-_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {_JOB}\n"
+# The name the API SERVER assigns, which is the only place a Job's name now
+# exists: the manifest asks for a `generateName`, so nothing here — and nothing
+# in the client — can predict it. The five random characters are Kubernetes's
+# own suffix shape.
+_JOB = "gate-widget-7f2qd"
+_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-widget-\n"
+_CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 _REQUEST = GateRunRequest(
     repo_root=Path("/repo"),
     mirror_url=_MIRROR,
     manifest=_MANIFEST,
-    job_name=_JOB,
 )
 
 
@@ -123,6 +136,7 @@ class _StubCluster:
         never_runs: Iterable[str] = (),
         raises: str | None = None,
         job_status_payload: str | None = None,
+        created_payload: str | None = None,
     ) -> None:
         self.calls: list[_Invocation] = []
         self.naps: list[float] = []
@@ -131,6 +145,7 @@ class _StubCluster:
         self._never_runs = frozenset(never_runs)
         self._raises = raises
         self._job_status_payload = job_status_payload
+        self._created_payload = created_payload
 
     def __call__(
         self,
@@ -168,6 +183,8 @@ class _StubCluster:
             return f"{_TREE}\n"
         if kind == "get-job":
             return self._job_status_payload or _job_status(state=self._next_state())
+        if kind == "submit-job":
+            return self._created_payload if self._created_payload is not None else _CREATED
         return ""
 
     def _next_state(self) -> str:
@@ -376,9 +393,66 @@ def test_the_rendered_job_is_submitted_to_the_cluster_on_stdin() -> None:
         "--namespace",
         "gates",
         "create",
+        "--output",
+        "json",
         "--filename",
         "-",
     )
+
+
+def test_every_later_step_names_the_job_the_cluster_assigned() -> None:
+    """The name is an OUTPUT of the submit, so nothing may predict it.
+
+    The manifest asks for a `generateName` — which is what lets a tree be
+    re-gated inside a finished Job's TTL instead of being refused
+    `AlreadyExists` — so the Job's name does not exist until the API server has
+    made one. A client that kept deriving the old `gate-<repo>-<tree[:12]>` name
+    would then poll, read and stream a DIFFERENT Job: inside that TTL window it
+    is the PREVIOUS run's Job, which already carries a terminal condition, so a
+    verdict about another run would come back immediately and nothing would
+    error. The assigned name here deliberately shares nothing with the tree
+    hash, so a derivation cannot accidentally match it.
+    """
+    assigned = "gate-widget-x9k2v"
+    cluster = _StubCluster(created_payload=json.dumps({"metadata": {"name": assigned}}))
+
+    outcome = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+
+    assert is_successful(outcome)
+    assert outcome.unwrap().job_name == assigned
+    assert cluster.only(kind="get-job").argv[-4:] == ("job", assigned, "--output", "json")
+    assert f"job/{assigned}" in cluster.only(kind="stream-logs").argv
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param("not json at all", id="unreadable"),
+        pytest.param(json.dumps({"metadata": {}}), id="no-name"),
+        pytest.param(json.dumps({"metadata": {"name": ""}}), id="empty-name"),
+    ],
+)
+def test_a_submit_that_names_no_job_fails_the_run_rather_than_guessing(*, payload: str) -> None:
+    """Fail closed: a Job nothing can find is not a gate that can be judged.
+
+    Falling back to the renderer's old derived name is the one thing this must
+    not do — that name is precisely the value whose reuse made a re-gate
+    impossible, and inside the TTL window it names the previous run's Job. The
+    step is reported as incomplete instead, which reaches `GATE_NO_VERDICT` and
+    refuses the push: the Job may well be running, and this run can no longer
+    tell.
+    """
+    cluster = _StubCluster(created_payload=payload)
+
+    outcome = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+
+    assert isinstance(outcome, Failure)
+    assert outcome.failure().step == "submit-gate-job"
+    assert "get-job" not in cluster.kinds
+    # The refs are still collected: the `finally` runs on this path as on every
+    # other, and a run that cannot find its own Job is exactly the run nobody
+    # else is left to clean up after.
+    assert cluster.kinds.count("delete-ref") == 1
 
 
 def test_every_cluster_command_runs_through_the_credential_wrapper() -> None:

@@ -148,6 +148,69 @@ def _rendered_gate_recipes(*, check_suite: tuple[str, ...]) -> list[str]:
     ]
 
 
+def _rendered_job_metadata(*, repo: str) -> list[str]:
+    """The RENDERED manifest's own top-level `metadata:` block, comments dropped.
+
+    Rendered rather than read off the template, because what the API server is
+    asked for is decided by the substitution: a template carrying the right
+    token and a renderer that fills it with a fixed name would satisfy every
+    source-level assertion and still request one name per tree.
+
+    Split at the first unindented line after `metadata:`, so the POD template's
+    own metadata — a different block, with its own labels — cannot answer for
+    the Job's identity.
+    """
+    completed = subprocess.run(
+        [
+            str(_GATES / "render-gate-job.sh"),
+            "--repo-root",
+            str(_REPO_ROOT),
+            "--tree-hash",
+            _TREE_HASH,
+            "--repo",
+            repo,
+        ],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    lines = completed.stdout.splitlines()
+    start = lines.index("metadata:")
+    body = takewhile(lambda line: line.startswith((" ", "\t")), lines[start + 1 :])
+    return [line for line in body if not line.lstrip().startswith("#")]
+
+
+def test_the_rendered_job_asks_the_cluster_to_name_it_and_keeps_its_tree_label() -> None:
+    """A re-gate is a NEW measurement, still selectable by the tree it gated.
+
+    The name used to be `gate-<repo>-<first 12 hex of the tree hash>` while the
+    template keeps a finished Job for an hour (`ttlSecondsAfterFinished`), and
+    the client submits with `kubectl create` on purpose — a re-run must be a
+    new, separately identified gate rather than a second attempt on the first
+    run's Job. Those two rules contradicted each other: for an hour after a
+    tree's gate ended, every further gate of that tree was refused at submit
+    with `AlreadyExists` and the client reported NO_VERDICT, which is the state
+    reserved for a LOST CLUSTER. Measured 2026-10-18 on gate-livespec-473f0ffdee14,
+    whose independent replay five minutes later could not happen at all, and
+    again 2026-10-19 when two post-merge janitors gated one master tree five
+    seconds apart (livespec-dev-tooling-44fglo).
+
+    SO BOTH HALVES ARE ASSERTED TOGETHER. `generateName` with no `name` is what
+    makes two renders of one tree request different Jobs; the
+    `livespec.gate/tree-hash` label is what keeps every Job of one tree
+    selectable, which is the only thing the derived name was carrying. Dropping
+    the name without the label would trade a gate that cannot re-run for a fleet
+    of gates nobody can attribute to a tree.
+    """
+    metadata = _rendered_job_metadata(repo="widget")
+
+    assert "  generateName: gate-widget-" in metadata
+    assert [line for line in metadata if line.startswith("  name:")] == []
+    assert f"    livespec.gate/tree-hash: {_TREE_HASH}" in metadata
+
+
 def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> None:
     """`--depth` anywhere in the fetch is the defect this slice removed.
 
