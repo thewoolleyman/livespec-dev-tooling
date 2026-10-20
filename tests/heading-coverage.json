@@ -788,16 +788,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "test": "tests.livespec_dev_tooling.test_gate_outcome_telemetry.test_each_gate_outcome_has_one_span_with_the_observable_gate_identity",
+    "reason": "Integration-tier (module-level pytest.mark.integration): asserts exactly one OTLP span for each verdict vocabulary value and its observable gate identity; livespec-dev-tooling-cmgqnz.",
     "work_item": "livespec-dev-tooling-cmgqnz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "test": "tests.livespec_dev_tooling.test_gate_outcome_telemetry.test_a_delegated_gate_verdict_is_unchanged_when_outcome_delivery_fails",
+    "reason": "Integration-tier (module-level pytest.mark.integration): exercises an unreachable OTLP receiver and proves emission failure is advisory; livespec-dev-tooling-cmgqnz.",
     "work_item": "livespec-dev-tooling-cmgqnz"
   }
 ]

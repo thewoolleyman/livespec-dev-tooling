@@ -1,0 +1,15 @@
+{
+  "dataset": "livespec-delegated-gate",
+  "name": "Delegated gate reached no verdict — client could not obtain a gate outcome",
+  "description": "Fires when a delegated gate client emits livespec.gate.outcome=no-verdict: delegation did not produce a verdict, which must be distinguished from a failing tree. Emitter: livespec-dev-tooling livespec_dev_tooling/gate_remote_delegate.py. Receiver: thewoolleyman/otel-collector config.ci-runner-host.yaml. Work item: livespec-dev-tooling-cmgqnz. Runbook: inspect the push log for the gate refusal, then check the gates kubeconfig, API server, submitted Job and host otel-collector service.",
+  "query": {
+    "calculations": [{"op": "COUNT"}],
+    "filters": [{"column": "livespec.gate.outcome", "op": "=", "value": "no-verdict"}],
+    "time_range": 600
+  },
+  "threshold": {"op": ">", "value": 0, "exceeded_limit": 1},
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [{"id": "jKw2EyfLJ3W"}],
+  "tags": [{"key": "service", "value": "delegated-gate"}, {"key": "kind", "value": "value"}]
+}

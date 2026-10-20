@@ -74,6 +74,7 @@ so a push is never completed on the strength of a gate that was never submitted.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -92,6 +93,7 @@ from livespec_dev_tooling.gate_group_repair import (
     group_repair_group,
     group_repair_status,
 )
+from livespec_dev_tooling.gate_outcome_telemetry import emit_gate_outcome
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
@@ -301,12 +303,25 @@ def run_delegated_gate(
     built = gate_remote_request(repo_root=repo_root, renderer=renderer, runner=runner)
     if isinstance(built, Failure):
         failure = built.failure()
-        return GateVerdict(
+        verdict = GateVerdict(
             state=GATE_NO_VERDICT,
             detail=assembly_refusal(failure=failure),
             token_written=False,
         )
-    return run_gated_push(request=built.unwrap(), runner=runner, sleeper=sleeper)
+        return verdict
+    request = built.unwrap()
+    verdict = run_gated_push(request=request, runner=runner, sleeper=sleeper)
+    outcome = {"PASSED": "passed", "FAILED": "failed-tree"}.get(verdict.state, "no-verdict")
+    repository = request.mirror_url.rsplit("/", maxsplit=1)[-1].removesuffix(".git")
+    tree_hash = request.gate_ref.removeprefix("refs/gates/").rpartition("-")[0]
+    match = re.search(r"gate Job ([^ ]+)", verdict.detail)
+    _ = emit_gate_outcome(
+        outcome=outcome,
+        repository=repository,
+        tree_hash=tree_hash,
+        job_name=match.group(1) if match is not None else None,
+    )
+    return verdict
 
 
 def main() -> int:
