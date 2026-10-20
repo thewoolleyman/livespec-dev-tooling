@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.8...v1.118.9) (2026-10-20)
+
+
+### Bug Fixes
+
+* warm a new sandbox image tag before two runs race its first pull ([89efb51](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89efb5158428e62f59b176d8200681f68223ccb2))
+
 ## [1.118.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.7...v1.118.8) (2026-10-20)
 
 
