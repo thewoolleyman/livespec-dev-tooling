@@ -257,6 +257,18 @@
       },
       "auto_approve_ready": true,
       "acceptance_mode": "ai-only",
+      // CURRENT ROUTING (2026-10-19, coordinator ruling R261, maintainer
+      // direction: "switch factory nodes to codex corresponding models and use
+      // those available tokens"). Every node is pinned Codex-primary, tier for
+      // tier, replacing the built-in Claude defaults, which stay as each node's
+      // fallback: the Opus-tier nodes run codex-acp / gpt-5.6-terra / high (their
+      // fallback is the built-in default they had, claude-opus-5 or the review
+      // input's claude-opus-4-8), and pr and disposition run codex-acp /
+      // gpt-5.6-luna / low with a claude-sonnet-4-6 fallback. Both Codex models
+      // answered a live ACP turn on the factory's Codex (ChatGPT) account that
+      // day, which is the REVERT CONDITION the pr note below names; the refused
+      // slugs that day were gpt-5.4-mini, gpt-5.4, gpt-5.3-codex-spark, gpt-6-luna
+      // and gpt-6-sol. The note below records why `pr` was parked on Claude.
       // wip_cap is a LEDGER-CLAIMS cap, not a CPU-derived one, and every
       // dispatcher engine on this repo shares it. Lowered 10 -> 4 on
       // 2026-09-06 (maintainer-directed): with the drain filling the cap,
@@ -334,8 +346,41 @@
       // REVERT CONDITION: a re-measured reachable-model table for codex-acp 1.10.0
       // naming a `pr`-tier slug that completes a turn. Tracked on
       // livespec-dev-tooling-zwsl.
+      // Codex model prices for the cost report: the published Standard,
+      // short-context USD per 1M tokens (developers.openai.com/api/docs/models/,
+      // verified 2026-10-19), cache writes at 1.25x input.
+      "model_catalog": {
+        "openai/gpt-5.6-terra": {
+          "display_name": "GPT-5.6 Terra",
+          "pricing": {
+            "model": "gpt-5.6-terra",
+            "input_usd_per_million": 2.0,
+            "output_usd_per_million": 12.0,
+            "cache_write_usd_per_million": 2.5,
+            "cache_read_usd_per_million": 0.2
+          }
+        },
+        "openai/gpt-5.6-luna": {
+          "display_name": "GPT-5.6 Luna",
+          "pricing": {
+            "model": "gpt-5.6-luna",
+            "input_usd_per_million": 0.2,
+            "output_usd_per_million": 1.2,
+            "cache_write_usd_per_million": 0.25,
+            "cache_read_usd_per_million": 0.02
+          }
+        }
+      },
       "acp_nodes": {
-        "pr": "npx -y @agentclientprotocol/claude-agent-acp"
+        "dod_gate": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high" }] },
+        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "review_fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "proof_capture": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "proof_verify": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high" }] },
+        "review": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high" }] },
+        "pr": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium" }] },
+        "disposition": { "agent": "codex-acp", "model": "gpt-5.6-luna", "effort": "low", "fallbacks": [{ "agent": "claude-acp", "model": "claude-sonnet-4-6", "effort": "medium" }] }
       },
 
       // Per-node ACP turn ceilings (contracts.md "ACP node timeouts", v081).
@@ -370,12 +415,24 @@
       // -- so over-provisioning here is safe; under-provisioning is what caused
       // the stall. Every other node (pr, review, disposition, proof_*, and the
       // terminal handlers) stays at the 1800s default, which it already met.
+      // LOWERED 2026-10-19 (coordinator ruling R261: run the factory on the
+      // Codex allowance). Every node timeout feeds the Codex credential-lifetime
+      // floor, and with proof_capture at 3600 the floor was 902100 s, longer
+      // than a fresh ten-day Codex token (864000 s), so no Codex-primary node
+      // could be admitted. proof_grade and proof_grade_route take
+      // livespec-orchestrator-beads-fabro's proven 600 s, and proof_capture
+      // drops 3600 -> 2900 s, the least cut that brings the floor to 839500 s
+      // (orchestrator's is 842580 s). Each 300 s of proof_capture moved the
+      // floor by 11400 s. This gives back part of the 2026-10-15 proof_capture
+      // raise (commit 04df2dc9): watch proof_capture timeouts on these runs.
       "node_timeouts": {
         "implement": 14400,
         "janitor": 3600,
         "fix": 3600,
         "review_fix": 7200,
-        "proof_capture": 3600
+        "proof_capture": 2900,
+        "proof_grade": 600,
+        "proof_grade_route": 600
       },
 
       "wip_cap": 10,
