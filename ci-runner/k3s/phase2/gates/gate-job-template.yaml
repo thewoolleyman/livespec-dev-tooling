@@ -356,7 +356,85 @@ spec:
                 { printf '%s\n' "${missing}" > /dev/termination-log; } 2> /dev/null || true
                 exit 1
               done
-              @@GATE_RECIPES@@
+              # THE RECIPES, CAPTURED — AND THE VERDICT DETAIL THEY OWN
+              # (livespec-dev-tooling-plbimj). Everything above this line is
+              # PROVISIONING, and each step above names itself in the
+              # termination message because its failure means no recipe ran at
+              # all. From here on the recipes run, and the message has to come
+              # from THEM.
+              #
+              # IT DID NOT, AND THE WRONG ANSWER WAS SILENT. Measured
+              # 2026-10-19 on gate-livespec-dev-tooling-54f19942138d: the red
+              # verdict read "FATAL: cannot clone cross-repo sibling
+              # 'widget-core' from https://github.com/acme/widget-core … so no
+              # recipe was run". The recipe HAD run (78 passed, 1 failed, 1
+              # skipped) and its one failure was `check-no-workflow-edits`;
+              # `acme/widget-core` is FIXTURE TEXT from this repository's own
+              # gate-renderer exit tests, which run inside that very aggregate
+              # and write the rendered refusal above to the pod's REAL
+              # `/dev/termination-log`. Nothing errored — the verdict was red
+              # either way — so the only cost was an operator sent after a
+              # clone failure that never happened on a repository registering
+              # no siblings at all.
+              #
+              # OWNERSHIP IS THE FIX, AND ORDER IS THE WHOLE OF IT. `>`
+              # truncates, so the LAST write wins: the detail below is written
+              # AFTER the recipes have finished, which is strictly after
+              # anything a member could have written mid-run. That holds for
+              # ANY member that writes the file, not only for the one this
+              # repository happens to ship — a gate pod runs the consumer's own
+              # aggregate and cannot know what is in it.
+              #
+              # THE NAMES COME FROM THE AGGREGATE'S OWN SUMMARY, which is why
+              # stdout is teed rather than read back from anywhere else. The
+              # fleet's dispatcher closes a red run with `Failed targets (N):`
+              # and one `  - <member>` line each
+              # (`livespec_dev_tooling.parallel_check_dispatcher`), and the
+              # LAST such block wins because a member's captured output can
+              # carry an earlier one verbatim — the same reason
+              # `worktree_pack/gate-run.sh` takes the last summary it finds.
+              # Stderr is deliberately NOT merged in: the streams mean
+              # different things here, and the summary is on stdout.
+              gate_failing_members() {
+                awk '
+                  { sub(/\r$/, "") }
+                  /^Failed targets \([0-9]+\):$/ { names = ""; collecting = 1; next }
+                  collecting && /^  - / { names = names (names == "" ? "" : " ") substr($0, 5); next }
+                  collecting { collecting = 0 }
+                  END { print names }
+                ' "$1"
+              }
+              recipe_log="$(mktemp)"
+              # errexit is suspended for the pipeline alone and REINSTATED
+              # inside it: a red first recipe must still stop the suite exactly
+              # as it does with no capture at all, while the status has to reach
+              # the lines below rather than killing the script at the pipe.
+              set +e
+              {
+                set -e
+                @@GATE_RECIPES@@
+              } | tee "${recipe_log}"
+              recipe_status="${PIPESTATUS[0]}"
+              set -e
+              if [ "${recipe_status}" -eq 0 ]; then
+                rm -f "${recipe_log}"
+                exit 0
+              fi
+              failing_members="$(gate_failing_members "${recipe_log}")"
+              rm -f "${recipe_log}"
+              if [ -n "${failing_members}" ]; then
+                red="FATAL: the gate check recipe RAN and these of its members FAILED: ${failing_members}. This gate is RED on the tree under test."
+              else
+                # A red run that named no member: an aggregate killed partway, a
+                # recipe that is not the fleet dispatcher, a summary shape this
+                # does not read. Say THAT, rather than leaving the last words to
+                # whatever a member wrote — the point is that the detail is the
+                # run's, and "I cannot name the member" is the run's answer too.
+                red="FATAL: the gate check recipe RAN and exited ${recipe_status} without naming a failing member in its summary. This gate is RED on the tree under test; read this Job's log for the cause."
+              fi
+              echo "${red}" >&2
+              { printf '%s\n' "${red}" > /dev/termination-log; } 2> /dev/null || true
+              exit "${recipe_status}"
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check
