@@ -179,9 +179,13 @@ fabro_server_instances:
     # plugin's environment, so HOME (where the plugin reads
     # ~/.config/sandbox-driver-kubernetes/config.toml; this instance runs with
     # HOME=/home/cwoolley, where the role renders it) and PATH are passed
-    # through. Petri refuses a plugin backend with no host address, because it
-    # cannot infer how a sandbox pod reaches the run's services on this host:
-    # gmktec's wired LAN address (eno1), the one cluster nodes route to.
+    # through. The process_spec is the sandbox every kubernetes sandbox is built
+    # from (Petri #122's registered provider); each run's environment resources
+    # replace its size (#131), so keep it equal to livespec-ci-k8s above: the
+    # same image, cpu 4, and 8GB lowered to mebibytes as 7629. Needs the next
+    # carrier (Petri #122 + #131, Fabro #1048); the 0.389 carrier has no
+    # process_spec and needed a host_address, which registered providers do not
+    # use and Fabro now rejects.
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
@@ -189,7 +193,10 @@ fabro_server_instances:
         inherit_env:
           - HOME
           - PATH
-        host_address: 192.168.1.156
+        process_spec:
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+          cpu_cores: 4
+          memory_mb: 7629
     # Created in the instance's vault only when it lacks the name, never
     # overwritten (roles/fabro_server/tasks/vault.yml). The App key comes from
     # the control node's credential wrapper. OPENAI_API_KEY is NOT a key: an
