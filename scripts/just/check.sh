@@ -27,6 +27,29 @@ fi
 
 export UV_NO_SYNC=1
 
+# Populate pyright's bundled node runtime + typeshed ONCE, serially, before
+# the dispatcher fans out — the justfile's `warm-typecheck` recipe, run here
+# for the LOCAL and CI aggregate the way the delegated gate pod already runs
+# it before `just hook_gate=1 check`.
+#
+# The `pyright==<pin>` PyPI wrapper fetches the node-based pyright (typeshed
+# bundled inside) on its FIRST invocation. Two members invoke it —
+# check-types and check-no-shadow-ledger-body-typechecks — and the dispatcher
+# starts them concurrently, so on a COLD cache they can race that first fetch
+# and read it half-written, which surfaces as pyright's "Stub file not found
+# for 'typing'" against an otherwise-green tree (livespec-dev-tooling-v572ul's
+# hp run 01M5C054VFF7: 24,727 missing-stub errors on a markdown-only change).
+# One serial invocation up front makes the fetch happen completely, before any
+# target can start a second one. On a warm cache it is a sub-second no-op.
+#
+# Fail-closed like the sync above: a warm-up that cannot complete leaves every
+# pyright member to cold-start, which is the state this exists to prevent
+# (work-item livespec-dev-tooling-tqloqv).
+if ! uv run pyright --version; then
+    echo "ERROR: up-front pyright warm-up ('uv run pyright --version') failed; aborting the check aggregate before any target starts" >&2
+    exit 1
+fi
+
 # Members the two LOCAL git-hook gates do NOT run. Consulted only when the
 # caller sets `hook_gate` (check-pre-commit.sh, check-pre-push.sh); a bare
 # `just check` sets nothing and still runs every member, so this omits a
