@@ -33,8 +33,16 @@ to the Talos fleet, delete its entry rather than porting anything.
 **Kubernetes desired state does not migrate into Ansible.** Kueue queues,
 ARC scale sets, gate Jobs, RBAC, the provisioner, warm-cache, sccache and
 crates-proxy stay as manifests and kustomizations under `../ci-runner/`,
-shaped so Flux could reconcile them unchanged. A playbook may `kubectl
-apply -k` them; it may not encode their ordering in tasks. What migrates
+but they are not yet Flux-shaped objects. At boot,
+`ci-runner/k3s/phase2/reconstruct/converge-ci-stack.sh` applies them through
+its shell-owned, ordered sequence of `kubectl apply -f` and `helm upgrade
+--install` commands. The one kustomization that exists is
+`ci-runner/k3s/phase2/kueue/core`, which that converge applies with `kubectl
+apply -k`; the shell retains the ordering between it and every other cluster
+operation. Migrating the rest into Flux-shaped kustomizations is deferred
+until a Flux decision is recorded, or `poweredge-xubuntu`'s workload moves to
+the Talos/Omni/Flux fleet. A playbook may install or invoke that converge; it
+may not encode the cluster-object ordering in Ansible tasks. What migrates
 here is host glue: files, systemd units, sysctls, pinned downloads, and
 host-side files rendered from cluster state.
 
