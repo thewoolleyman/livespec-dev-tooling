@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.11...v1.118.12) (2026-10-20)
+
+
+### Bug Fixes
+
+* expose the green token's world-reading and undeclared member queries ([9c72eb6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9c72eb6969bc7ff18f93cd4afb79319f0b6b2831))
+* refuse a check aggregate member that declares no purity ([7317cff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7317cff000600b1a3ea937403185fcf2b338cb8d))
+* resolve each check member's declared purity for the green token ([eb35575](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eb355756759e15fd8f37a4be6d1c2cd99d294fc0))
+* run the world-reading members on a push whose tree holds a green token ([fdd0ea8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fdd0ea878ae8c19eb109e50f1b1a40bbfdc2fded))
+
 ## [1.118.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.10...v1.118.11) (2026-10-20)
 
 
