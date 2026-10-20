@@ -16,6 +16,11 @@ the affected fleet tests pass in isolation but fail after a polluting test runs
 first. Resetting structlog's defaults at each test's teardown removes the
 cross-test leakage.
 
+Also hosts `_gate_outcome_receiver_is_never_the_hosts_own`, which points the
+delegated gate's outcome-event endpoint at a closed port for the whole suite —
+see that fixture for why a default would export this suite's canned gate runs
+into the fleet's real observability surface.
+
 Also hosts `z_rendering_git`, the GIT-VERSION double described on that fixture:
 a shim that makes any test observe the `%cI` rendering git 2.51 introduced,
 whatever git the host happens to carry.
@@ -45,6 +50,37 @@ def _reset_structlog_global_config() -> Iterator[None]:
     """Reset structlog's process-global config after each test (isolation)."""
     yield
     structlog.reset_defaults()
+
+
+# Port 1 on loopback: nothing listens there, so every attempt is refused at once
+# and `post_span` swallows it, which is the same no-op a host with no collector
+# produces. The same closed-port technique `test_otel_step_timer` uses to drive
+# the real poster without a receiver.
+_CLOSED_RECEIVER = "http://127.0.0.1:1"
+
+
+@pytest.fixture(autouse=True)
+def _gate_outcome_receiver_is_never_the_hosts_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the delegated gate's outcome endpoint at a closed port, suite-wide.
+
+    `gate_outcome_telemetry` DEFAULTS to `http://127.0.0.1:4319`, the loopback
+    OTLP receiver a host otel-collector serves — the right default for a
+    delegating host and the wrong one for a test suite. Eleven tests drive
+    `run_delegated_gate` against a canned cluster, so on any host running that
+    collector the suite would export its canned tree hashes and Job names into
+    the fleet's real observability surface. One of those runs reaches
+    `no-verdict`, which is exactly what the delegated-gate trigger alerts on, so
+    the suite would fire a production alert every time it ran and the signal
+    would stop meaning anything.
+
+    AUTOUSE RATHER THAN PER-CALL-SITE, because the failure mode is OMISSION: a
+    test added later that forgets to neutralise the emitter reintroduces the
+    whole fault silently, and nothing in its own output would say so. A test
+    that wants to assert what one run reported injects a recording `emit` or
+    monkeypatches `urlopen`; this fixture only guarantees that NOT doing so
+    cannot reach a real receiver.
+    """
+    monkeypatch.setenv("LIVESPEC_GATE_OTLP_ENDPOINT", _CLOSED_RECEIVER)
 
 
 # Real git does all the work; only the rendering of a full ISO instant's UTC

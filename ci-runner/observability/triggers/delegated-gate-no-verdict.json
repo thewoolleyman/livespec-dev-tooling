@@ -1,0 +1,46 @@
+{
+  "dataset": "livespec-delegated-gate",
+  "name": "Delegated gate: no verdict — a delegated push was refused with nothing decided",
+  "description": "Fires when a delegated gate run emits livespec.gate.outcome=no-verdict: the run obtained NO VERDICT, which is the delegation's fault rather than the pushing repository's, and is what a reader cannot otherwise tell apart from a red tree (outcome=failed-tree). livespec.gate.repository, .tree_hash and .job_name name the run; job_name is absent when the run stopped before the API server assigned one. Emitter: livespec-dev-tooling livespec_dev_tooling/gate_outcome_telemetry.py, called from livespec_dev_tooling/gate_remote_delegate.py. Receiver: thewoolleyman/otel-collector config.ci-runner-host.yaml. Item: livespec-dev-tooling-cmgqnz. Runbook: read the refused push's log for the step that did not complete; then on the pushing host check that /etc/ci-runner/gates.kubeconfig is readable by THAT process (a login session predating gates-client membership is not — use /usr/bin/sg), the gates namespace API server, and any Job the run did submit. Value trigger; silence is not evidence a delegated push succeeded.",
+  "query": {
+    "calculations": [
+      {
+        "op": "COUNT"
+      }
+    ],
+    "filters": [
+      {
+        "column": "livespec.gate.outcome",
+        "op": "=",
+        "value": "no-verdict"
+      }
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">",
+    "value": 0,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "delegated-gate"
+    },
+    {
+      "key": "component",
+      "value": "gate-client"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
