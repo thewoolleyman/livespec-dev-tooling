@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.9...v1.118.10) (2026-10-20)
+
+
+### Bug Fixes
+
+* name the renderer and the argument it rejected when a gate cannot render ([6f17116](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6f171168d1dd2a27dd94c3ed701fb1bb362313e8))
+* ship the gate Job renderer inside the release that drives it ([6aa291f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6aa291f565d0818b825611de8e9bc58c47bc6c57))
+
 ## [1.118.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.8...v1.118.9) (2026-10-20)
 
 
