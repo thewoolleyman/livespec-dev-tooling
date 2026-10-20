@@ -59,7 +59,9 @@ _SUBSET_RECIPE = "check-pre-commit-doc-only"
 
 # The full aggregate, and the hook-path omission list that is allowed to
 # shrink it — one literal assignment, so a growth of it is one visible diff.
-_FULL_AGGREGATE = re.compile(r"^just(?: [a-z_]+=\S+)* check$", re.MULTILINE)
+_FULL_AGGREGATE = re.compile(
+    r'^just(?: [a-z_]+=\S+)* check(?: >"\$gate_output" 2>&1)?$', re.MULTILINE
+)
 _HOOK_GATE_SKIPS = re.compile(r'^hook_gate_skips="(?P<slugs>[^"]*)"$', re.MULTILINE)
 
 
@@ -95,6 +97,10 @@ def test_the_push_gate_runs_the_full_aggregate_and_delegates_to_no_subset() -> N
         f"the push gate must invoke the FULL `just check` aggregate, which is what makes "
         f"`just check` the standard local safety net the section names; "
         f"script={_PRE_PUSH.relative_to(_REPO_ROOT)} lines={lines}"
+    )
+    assert 'cat "$gate_output"' in lines, (
+        "a captured pre-push aggregate must be relayed unchanged: its complete output is both "
+        "the operator's failure record and the source of any host-state diagnosis"
     )
 
 
