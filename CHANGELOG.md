@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.119.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.12...v1.119.0) (2026-10-20)
+
+
+### Features
+
+* **checks:** exempt a host path only through the check's own allow-list ([cc1e80d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cc1e80d53dca76a94e441c951419b6f256e46e1c))
+* **checks:** refuse a test that reaches a real host path ([86b840b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/86b840b7a0b735ff6580df2859a3843b033d3d88))
+
 ## [1.118.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.11...v1.118.12) (2026-10-20)
 
 
