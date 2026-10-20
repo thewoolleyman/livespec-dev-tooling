@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.4...v1.118.5) (2026-10-20)
+
+
+### Bug Fixes
+
+* give each delegated gate run its own mirror ref ([2c86596](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2c865963ac67157959790116ef2fa3df21f452cb))
+* let the cluster name each delegated gate Job ([6ac305e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6ac305e867d8c8a633c4dc7cf503bd0ecfa215e4))
+
 ## [1.118.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.3...v1.118.4) (2026-10-19)
 
 
