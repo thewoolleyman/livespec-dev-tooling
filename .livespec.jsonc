@@ -257,6 +257,13 @@
       },
       "auto_approve_ready": true,
       "acceptance_mode": "ai-only",
+      // AMENDED 2026-10-20 (coordinator R273, stability): implement is back on
+      // claude-acp / claude-opus-5 / high PRIMARY with codex-acp / gpt-5.6-terra /
+      // high as its fallback. Codex-Terra implement failed 3 of 4 runs with one
+      // signature, LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS (Red committed, Green amend
+      // or the full hook interrupted); it returns to Codex only after the measured
+      // root cause is fixed and one clean canary. fix stays on Terra for now.
+      //
       // CURRENT ROUTING (2026-10-20, coordinator ruling R267, maintainer
       // direction to use all available tokens holistically). implement and fix
       // stay codex-acp / gpt-5.6-terra / high with their claude-opus-5 fallback.
@@ -386,7 +393,7 @@
       },
       "acp_nodes": {
         "dod_gate": { "agent": "claude-acp", "model": "claude-opus-4-8", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
-        "implement": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
+        "implement": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "fix": { "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high", "fallbacks": [{ "agent": "claude-acp", "model": "claude-opus-5", "effort": "high" }] },
         "review_fix": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
         "proof_capture": { "agent": "claude-acp", "model": "claude-opus-5", "effort": "high", "fallbacks": [{ "agent": "codex-acp", "model": "gpt-5.6-terra", "effort": "high" }] },
