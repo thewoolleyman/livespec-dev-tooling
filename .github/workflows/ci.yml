@@ -628,6 +628,7 @@ jobs:
           just check-shell-quality || failed="$failed check-shell-quality"
           just check-skill-invocation-paths || failed="$failed check-skill-invocation-paths"
           just check-source-trees-scoped-to-consumer || failed="$failed check-source-trees-scoped-to-consumer"
+          just check-tests-host-path-free || failed="$failed check-tests-host-path-free"
           just check-tool-backed-check-completeness || failed="$failed check-tool-backed-check-completeness"
           just check-vendor-manifest || failed="$failed check-vendor-manifest"
           if [ -n "$failed" ]; then
