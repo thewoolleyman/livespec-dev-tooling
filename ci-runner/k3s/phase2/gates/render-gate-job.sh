@@ -23,7 +23,7 @@
 #   render-gate-job.sh --repo-root PATH --tree-hash SHA [--repo NAME]
 #                      [--gated-repository OWNER/REPO]
 #                      [--source-url URL] [--cpu N] [--memory SIZE]
-#                      [--parallelism N] [--ttl-seconds N] [--job-name NAME]
+#                      [--parallelism N] [--ttl-seconds N]
 #                      [--livespec-core-ref REF]
 #                      [--check-suite 'RECIPE' ...]
 #
@@ -72,7 +72,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMPLATE="${GATE_JOB_TEMPLATE:-${SCRIPT_DIR}/gate-job-template.yaml}"
 
 repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
-cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; job_name=""
+cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"
 livespec_core_ref=""
 check_suite=()
 
@@ -98,7 +98,6 @@ while [ $# -gt 0 ]; do
     --memory)            memory="$2"; shift 2 ;;
     --parallelism)       parallelism="$2"; shift 2 ;;
     --ttl-seconds)       ttl_seconds="$2"; shift 2 ;;
-    --job-name)          job_name="$2"; shift 2 ;;
     --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
@@ -118,7 +117,6 @@ esac
 
 [ -n "${repo}" ] || repo="$(basename "${repo_root}")"
 [ -n "${source_url}" ] || source_url="git://git-gates.gates.svc.cluster.local/${repo}.git"
-[ -n "${job_name}" ] || job_name="gate-${repo}-${tree_hash:0:12}"
 
 # --- the gated repository's github.com identity (R4.S7 slice B) ---------------
 # Derived from the gated clone's OWN origin, matched against the same two
@@ -453,7 +451,6 @@ substitute_block() {
   )"
 }
 
-substitute JOB_NAME          "${job_name}"
 substitute REPO              "${repo}"
 substitute GATED_REPOSITORY  "${gated_repository}"
 substitute TREE_HASH         "${tree_hash}"

@@ -148,6 +148,29 @@ def _rendered_gate_recipes(*, check_suite: tuple[str, ...]) -> list[str]:
     ]
 
 
+def test_the_rendered_job_requests_a_generated_name_and_keeps_its_tree_label() -> None:
+    """A re-gate is a new measurement, still selectable by the gated tree."""
+    completed = subprocess.run(
+        [
+            str(_GATES / "render-gate-job.sh"),
+            "--repo-root",
+            str(_REPO_ROOT),
+            "--tree-hash",
+            _TREE_HASH,
+        ],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    metadata = completed.stdout.split("\nspec:\n", maxsplit=1)[0]
+    assert "  generateName: gate-livespec-dev-tooling-\n" in metadata
+    assert "\n  name: " not in metadata
+    assert f"    livespec.gate/tree-hash: {_TREE_HASH}\n" in metadata
+
+
 def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> None:
     """`--depth` anywhere in the fetch is the defect this slice removed.
 

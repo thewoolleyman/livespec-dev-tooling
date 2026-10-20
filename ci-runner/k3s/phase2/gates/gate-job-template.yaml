@@ -19,7 +19,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: @@JOB_NAME@@
+  generateName: gate-@@REPO@@-
   namespace: gates
   labels:
     app.kubernetes.io/part-of: livespec-ci-gates
