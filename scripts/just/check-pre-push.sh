@@ -61,9 +61,32 @@ if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; the
     exit 0
 fi
 
+# THE TOKEN-MATCH PATH. A matching token means this tree is byte-identical to
+# one a green aggregate already judged, which makes the token a MEMOIZATION of
+# that judgement — and memoization is sound only for a pure function. `just
+# check` is not one: some members read state outside the tree (master's CI
+# status, live branch protection, the ledger, the commits around the tree) and
+# give a different answer for the same tree. So the token stands in for the
+# TREE-PURE members only, and the world-reading ones run here, now, on the
+# pushing host.
+#
+# This REPLACED a bare `exit 0`, which was unsound rather than merely
+# optimistic: measured 2026-09-08 on the livespec primary checkout, a
+# SEVEN-WEEK-OLD token carrying `{"tree_hash": ...}` and nothing else — no
+# expiry, no record of what was checked — would have skipped
+# `check-master-ci-green` outright and landed a push on a red master on the
+# strength of an observation made weeks earlier. Nothing warned; the skip
+# logged at info as a match (work-item livespec-dev-tooling-aape).
+#
+# It stays ABOVE the delegated-gate switch, and `exec`s rather than falling
+# through, because the ratified scenario requires that no gate Job be submitted
+# on this path: the tree has been gated once already, and the only thing still
+# owed is the live half, which the cluster cannot answer better than this host.
+# The memoized run's exit status IS this gate's verdict, so a world-reading
+# member that fails refuses the push.
 if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
-    echo ":: pre-push: green token matched - tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
-    exit 0
+    echo ":: pre-push: green token matched - tree byte-identical to last green check, so the token stands in for this tree's TREE-PURE members only; the world-reading members run here (CI is authoritative)"
+    exec just hook_gate=1 token_match=1 check
 fi
 
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec

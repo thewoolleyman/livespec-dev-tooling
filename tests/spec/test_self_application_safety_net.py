@@ -30,10 +30,13 @@ Both are read off the committed shell rather than by running the aggregate: the
 scripts ARE the wiring under assertion, and running `just check` from inside the
 suite it gates would be a second execution of it rather than a test of it.
 
-The green-token skip in the pre-push script is not a subset and is not asserted
-against: it skips the aggregate only for a tree byte-identical to one the
-aggregate already passed, which is a caching argument rather than a narrowing of
-what runs.
+The green-token path in the pre-push script is not a subset and is not asserted
+against. Its narrowing is keyed on each member's own PURITY declaration rather
+than on a change class: for a tree byte-identical to one the aggregate already
+passed, the token stands in for the members whose verdict that tree alone
+decides, and every member that reads state outside the tree still runs on the
+pushing host — which is what keeps a caching argument from becoming a weaker
+verdict. `tests.consumer.test_green_token_purity_memoization` holds that path.
 """
 
 from __future__ import annotations

@@ -325,13 +325,25 @@ def test_a_refused_delegated_gate_refuses_the_push(*, tmp_path: Path) -> None:
     assert code == 1
 
 
-def test_the_green_token_skip_path_is_untouched(*, tmp_path: Path) -> None:
-    """A matching token still exits 0 without consulting the switch at all."""
+def test_the_green_token_path_never_consults_the_switch(*, tmp_path: Path) -> None:
+    """A matching token still bypasses delegation — but it no longer bypasses the gate.
+
+    The token memoizes only the members whose verdict the committed tree alone
+    decides, so a match runs the aggregate's WORLD-READING members here rather
+    than exiting 0 (`token_match=1`; the contract is this repository's own
+    SPECIFICATION/contracts.md, in the token-memoization part of its delegated
+    pre-push gate section, v080). What this slice owns is unchanged and is the
+    whole of what is asserted here: the switch is not consulted and no gate Job
+    is submitted, because the tree has already been gated once and the only
+    half still owed is the live one, which the cluster cannot answer better
+    than the pushing host. The memoized run itself belongs to
+    `tests.consumer.test_green_token_purity_memoization`.
+    """
     code, _stdout, invoked = _run_pre_push(tmp_path=tmp_path, green_probe_exit="0", switch_exit="0")
 
     assert code == 0
     assert not [line for line in invoked if "gate_remote_delegate" in line]
-    assert not [line for line in invoked if line.startswith("just ")]
+    assert "just hook_gate=1 token_match=1 check" in invoked
 
 
 def test_a_failed_local_gate_reruns_exactly_its_failing_pytest_node_ids(*, tmp_path: Path) -> None:
