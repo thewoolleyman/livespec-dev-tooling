@@ -172,6 +172,10 @@ case "$*" in
     *green_token*)                       exit "${GREEN_TOKEN_EXIT}" ;;
     *"gate_remote_delegate enabled")     exit "${SWITCH_EXIT}" ;;
     *"gate_remote_delegate run")         exit "${GATE_RUN_EXIT}" ;;
+    *"pytest"*)
+        printf '%s\\n' "${PYTEST_OUTPUT:-}"
+        exit "${PYTEST_EXIT:-0}"
+        ;;
 esac
 exit 0
 """
@@ -187,6 +191,9 @@ exit 0
 
 _GH_STUB = """#!/usr/bin/env bash
 printf 'gh %s\\n' "$*" >> "${STUB_LOG}"
+if [ "${GH_EXIT:-0}" != "0" ]; then
+    exit "${GH_EXIT}"
+fi
 printf '%s\\n' "${GREEN_RUN:-17\\t0123456789abcdef}"
 """
 
@@ -200,6 +207,25 @@ if [ "$1 $2" = "worktree remove" ]; then
 fi
 """
 
+_MKTEMP_STUB = """#!/usr/bin/env bash
+mkdir -p "${TMP_ROOT}"
+count_file="${TMP_ROOT}/mktemp-count"
+count=0
+if [ -f "$count_file" ]; then
+    count="$(cat "$count_file")"
+fi
+count=$((count + 1))
+printf '%s' "$count" > "$count_file"
+if [ "${MKTEMP_FAIL_RERUN:-0}" = "1" ] && [ "$count" = "3" ]; then
+    exit 1
+fi
+path="${TMP_ROOT}/mktemp-${count}"
+if [ "$1" = "-d" ]; then
+    mkdir -p "$path"
+fi
+printf '%s\\n' "$path"
+"""
+
 
 def _run_pre_push(
     *,
@@ -209,6 +235,11 @@ def _run_pre_push(
     gate_run_exit: str = "0",
     check_exit: str = "0",
     check_output: str = "",
+    mktemp_fail_rerun: str = "0",
+    pytest_exit: str = "0",
+    pytest_output: str = "",
+    gh_exit: str = "0",
+    green_run: str = "17\\t0123456789abcdef",
 ) -> tuple[int, str, list[str]]:
     """Run the real `check-pre-push.sh` against stub `uv` and `just`.
 
@@ -221,6 +252,7 @@ def _run_pre_push(
         ("just", _JUST_STUB),
         ("gh", _GH_STUB),
         ("git", _GIT_STUB),
+        ("mktemp", _MKTEMP_STUB),
     ):
         stub = stub_dir / name
         _ = stub.write_text(body, encoding="utf-8")
@@ -236,6 +268,12 @@ def _run_pre_push(
             "GATE_RUN_EXIT": gate_run_exit,
             "CHECK_EXIT": check_exit,
             "CHECK_OUTPUT": check_output,
+            "TMP_ROOT": str(tmp_path / "temps"),
+            "MKTEMP_FAIL_RERUN": mktemp_fail_rerun,
+            "PYTEST_EXIT": pytest_exit,
+            "PYTEST_OUTPUT": pytest_output,
+            "GH_EXIT": gh_exit,
+            "GREEN_RUN": green_run,
         }
     )
     completed = subprocess.run(
@@ -302,6 +340,63 @@ def test_a_failed_local_gate_reruns_exactly_its_failing_pytest_node_ids(*, tmp_p
 
     assert code == 1
     assert f"uv run pytest {first} {second}" in invoked, invoked
+
+
+def test_a_rerun_setup_failure_removes_its_temporary_checkout(*, tmp_path: Path) -> None:
+    """Cleanup is owed even when the second temporary file cannot be allocated."""
+    node_id = "tests/widget_test.py::test_one"
+
+    code, _stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=f"FAILED {node_id} - host-only failure",
+        mktemp_fail_rerun="1",
+    )
+
+    assert code == 1
+    assert any(line.startswith("git worktree remove --force") for line in invoked), invoked
+    assert not (tmp_path / "temps" / "mktemp-2").exists()
+
+
+def test_only_node_ids_that_also_fail_on_green_master_are_host_state_divergences(
+    *, tmp_path: Path
+) -> None:
+    """A green-master pass is not divergence; the matching failure is narrated."""
+    host_only = "tests/widget_test.py::test_one"
+    divergent = "tests/widget_test.py::test_two"
+
+    code, stdout, _invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=(
+            f"FAILED {host_only} - host-only failure\nFAILED {divergent} - shared failure"
+        ),
+        pytest_exit="1",
+        pytest_output=f"FAILED {divergent} - shared failure",
+        green_run="12345\\t0123456789abcdef",
+    )
+
+    assert code == 1
+    assert f"host-state divergence: {divergent}" in stdout
+    assert "green CI run 12345" in stdout
+    assert f"host-state divergence: {host_only}" not in stdout
+
+
+def test_an_unavailable_green_ci_run_skips_diagnosis_without_permitting_the_push(
+    *, tmp_path: Path
+) -> None:
+    """The auxiliary network read cannot turn the original refusal into a pass."""
+    node_id = "tests/widget_test.py::test_one"
+
+    code, stdout, _invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="7",
+        check_output=f"FAILED {node_id} - host-only failure",
+        gh_exit="1",
+    )
+
+    assert code == 7
+    assert "host-state divergence check skipped" in stdout
 
 
 # ---------------------------------------------------------------------------
