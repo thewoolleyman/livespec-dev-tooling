@@ -172,7 +172,7 @@ def test_a_green_aggregate_prints_no_digest() -> None:
     ["check-pre-push.sh", "check-pre-commit.sh"],
 )
 def test_both_hook_aggregates_route_through_the_dispatcher(script_name: str) -> None:
-    """Each hook gate reaches the aggregate as a bare `just … check` line.
+    """Each hook gate reaches the aggregate through its canonical `just … check` line.
 
     The digest is emitted by the dispatcher, so the pre-commit half of the
     acceptance criteria holds only while both gates keep running the SAME
@@ -185,13 +185,18 @@ def test_both_hook_aggregates_route_through_the_dispatcher(script_name: str) -> 
     invocations = [
         line.strip()
         for line in script.splitlines()
-        if line.strip().startswith("just ") and line.strip().endswith(" check")
+        if line.strip().startswith("just ") and " check" in line
     ]
 
     assert invocations, f"{script_name} no longer invokes the `just check` aggregate"
     assert all(
         "|" not in line for line in invocations
     ), f"{script_name} pipes the aggregate; the dispatcher's tail would no longer be the tail"
+    if script_name == "check-pre-push.sh":
+        assert 'cat "$gate_output"' in script, (
+            "the pre-push hook may capture the aggregate to diagnose individual pytest failures, "
+            "but it must relay the dispatcher's complete output afterward"
+        )
     dispatcher_line = "uv run python -m livespec_dev_tooling.parallel_check_dispatcher"
     check_sh = (_REPO_ROOT / "scripts" / "just" / "check.sh").read_text(encoding="utf-8")
     assert dispatcher_line in check_sh
