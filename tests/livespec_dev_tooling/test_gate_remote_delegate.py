@@ -29,6 +29,10 @@ from typing import TYPE_CHECKING
 
 from returns.result import Failure, Success
 
+from livespec_dev_tooling._gate_remote_assembly import (
+    GATE_CHECK_SUITE_FALL_THROUGH,
+    declared_gate_check_suite,
+)
 from livespec_dev_tooling.gate_group_repair import (
     GATE_MODULE,
     GATES_GROUP_REEXEC_ENV,
@@ -36,11 +40,9 @@ from livespec_dev_tooling.gate_group_repair import (
     GateGroupFacts,
 )
 from livespec_dev_tooling.gate_remote_delegate import (
-    GATE_CHECK_SUITE_FALL_THROUGH,
     GATE_MIRROR_ROOT,
     GATE_RENDERER_IN_REPO,
     GATE_RENDERER_PACKAGED,
-    declared_gate_check_suite,
     delegated_gate_enabled,
     gate_remote_request,
     main,
