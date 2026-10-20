@@ -81,11 +81,19 @@
   # snapshots, restore, check, unlock, forget, exec) that a human needs long
   # after any playbook has exited.
   #
+  # TEMPLATED RATHER THAN COPIED, for one value: the `--host` tag its `backup`
+  # and its `forget` share. That tag is the identity retention is keyed on, and
+  # it is this machine's inventory name, because a machine is bound only through
+  # the inventory (livespec-dev-tooling-prdxxe). On the one converged host the
+  # rendered bytes equal the copied ones, so the change converges with no diff
+  # and the snapshot chain keeps its tag.
+  #
   # `validate` replaces the installer's post-install `bash -n`: the syntax check
   # now runs on the temporary file, so a broken runner never reaches
-  # {{ restic_backup_bin }} at all.
-  ansible.builtin.copy:
-    src: vps-restic-backup.sh
+  # {{ restic_backup_bin }} at all — and a RENDERED runner is exactly where that
+  # guard earns its keep.
+  ansible.builtin.template:
+    src: vps-restic-backup.sh.j2
     dest: "{{ restic_backup_bin }}"
     owner: root
     group: root
