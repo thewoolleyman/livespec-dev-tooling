@@ -114,12 +114,12 @@ spec:
               # fails the Job here rather than letting the aggregate run against
               # an unresolvable base.
               if ! git fetch --quiet origin \
-                   "+refs/gates/@@TREE_HASH@@:refs/gates/@@TREE_HASH@@" \
-                   "+refs/gates/@@TREE_HASH@@.base:refs/remotes/origin/master"; then
+                   "+@@GATE_REF@@:@@GATE_REF@@" \
+                   "+@@GATE_REF@@.base:refs/remotes/origin/master"; then
                 echo "FATAL: cannot fetch refs/gates/@@TREE_HASH@@ and its .base companion from @@SOURCE_URL@@" >&2
                 exit 1
               fi
-              git checkout --quiet --detach "refs/gates/@@TREE_HASH@@"
+              git checkout --quiet --detach "@@GATE_REF@@"
               actual="$(git rev-parse 'HEAD^{tree}')"
               if [ "${actual}" != "@@TREE_HASH@@" ]; then
                 echo "FATAL: fetched tree ${actual} is not the requested @@TREE_HASH@@" >&2

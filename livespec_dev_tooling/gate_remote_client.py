@@ -169,6 +169,7 @@ class GateRunRequest:
     mirror_url: str
     manifest: str
     job_name: str
+    gate_ref: str = ""
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 3600.0
@@ -215,6 +216,7 @@ def run_gate(
     if isinstance(tree, Failure):
         return Failure(tree.failure())
     tree_hash = tree.unwrap()
+    gate_ref = request.gate_ref or f"refs/gates/{tree_hash}"
     push_argv = [
         *_mirror_push(),
         # `--atomic` is what makes the two refs ONE FACT. The mirror is created
@@ -224,8 +226,8 @@ def run_gate(
         # never pushed rather than on the code under test.
         "--atomic",
         request.mirror_url,
-        f"HEAD:refs/gates/{tree_hash}",
-        f"{GATE_RANGE_BASE_REF}:refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+        f"HEAD:{gate_ref}",
+        f"{GATE_RANGE_BASE_REF}:{gate_ref}{GATE_BASE_REF_SUFFIX}",
     ]
     pushed = require_success(
         step=_PUSH_STEP, argv=push_argv, outcome=runner(argv=push_argv, cwd=request.repo_root)
@@ -239,7 +241,7 @@ def run_gate(
             request=request, runner=runner, sleeper=sleeper, tree_hash=tree_hash
         )
     finally:
-        deleted = _delete_gate_ref(request=request, runner=runner, tree_hash=tree_hash)
+        deleted = _delete_gate_ref(request=request, runner=runner, gate_ref=gate_ref)
     if isinstance(gated, Failure):
         return gated
     if isinstance(deleted, Failure):
@@ -296,7 +298,7 @@ def _head_tree_hash(
 
 
 def _delete_gate_ref(
-    *, request: GateRunRequest, runner: GateCommandRunner, tree_hash: str
+    *, request: GateRunRequest, runner: GateCommandRunner, gate_ref: str
 ) -> StepOutcome:
     """Collect the refs this run created — the first of the two collectors.
 
@@ -315,8 +317,8 @@ def _delete_gate_ref(
         *_mirror_push(),
         "--delete",
         request.mirror_url,
-        f"refs/gates/{tree_hash}",
-        f"refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+        gate_ref,
+        f"{gate_ref}{GATE_BASE_REF_SUFFIX}",
     ]
     return require_success(
         step=_DELETE_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
@@ -344,7 +346,7 @@ def _gate_a_pushed_tree(
     until it ends, which is a known and separable improvement rather than a
     property anything here depends on.
     """
-    submit_argv = [*_kubectl(request=request), "create", "--filename", "-"]
+    submit_argv = [*_kubectl(request=request), "create", "--output", "json", "--filename", "-"]
     submitted = require_success(
         step=_SUBMIT_STEP,
         argv=submit_argv,
@@ -352,7 +354,13 @@ def _gate_a_pushed_tree(
     )
     if isinstance(submitted, Failure):
         return Failure(submitted.failure())
-    terminal = _await_terminal_state(request=request, runner=runner, sleeper=sleeper)
+    try:
+        created_name = json.loads(submitted.unwrap().stdout)["metadata"]["name"]
+    except (KeyError, TypeError, json.JSONDecodeError):
+        job_name = request.job_name
+    else:
+        job_name = created_name if isinstance(created_name, str) else request.job_name
+    terminal = _await_terminal_state(request=request, runner=runner, sleeper=sleeper, job_name=job_name)
     if isinstance(terminal, Failure):
         return Failure(terminal.failure())
     state = terminal.unwrap()
@@ -360,12 +368,12 @@ def _gate_a_pushed_tree(
     # whether to spend an API call, NOT an adjudication: the message is carried
     # verbatim either way and this slice still forms no opinion about it.
     message = (
-        "" if state == _COMPLETE_CONDITION else _failure_message(request=request, runner=runner)
+        "" if state == _COMPLETE_CONDITION else _failure_message(request=request, runner=runner, job_name=job_name)
     )
     logs_argv = [
         *_kubectl(request=request),
         "logs",
-        f"job/{request.job_name}",
+        f"job/{job_name}",
         "--all-containers",
         "--follow",
     ]
@@ -380,7 +388,7 @@ def _gate_a_pushed_tree(
     return streamed.map(
         lambda ran: GateRunOutcome(
             tree_hash=tree_hash,
-            job_name=request.job_name,
+            job_name=job_name,
             terminal_state=state,
             logs_returncode=ran.returncode,
             failure_message=message,
@@ -388,7 +396,7 @@ def _gate_a_pushed_tree(
     )
 
 
-def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner) -> str:
+def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_name: str) -> str:
     """The failed pod's termination message, or the empty string.
 
     EVIDENCE, NEVER A VERDICT, which is why every unreadable shape answers the
@@ -404,7 +412,7 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner) -> s
         "get",
         "pods",
         "--selector",
-        f"job-name={request.job_name}",
+        f"job-name={job_name}",
         "--output",
         f"jsonpath={_TERMINATION_MESSAGE_JSONPATH}",
     ]
@@ -425,7 +433,7 @@ def _poll_budget(*, request: GateRunRequest) -> int:
 
 
 def _await_terminal_state(
-    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper
+    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
 ) -> Result[str, GateStepFailed]:
     """Poll the Job until it reports a terminal condition, or give up.
 
@@ -434,7 +442,7 @@ def _await_terminal_state(
     would spend the whole budget re-asking a question the cluster has already
     declined to answer.
     """
-    argv = [*_kubectl(request=request), "get", "job", request.job_name, "--output", "json"]
+    argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
     for _ in range(_poll_budget(request=request)):
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
@@ -454,7 +462,7 @@ def _await_terminal_state(
             argv=tuple(argv),
             returncode=None,
             detail=(
-                f"{request.job_name} reached no terminal condition "
+                f"{job_name} reached no terminal condition "
                 f"within {request.poll_timeout_seconds:g}s"
             ),
         )

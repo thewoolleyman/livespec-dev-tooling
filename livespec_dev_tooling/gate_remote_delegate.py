@@ -75,6 +75,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 
 from livespec_dev_tooling.config import (
@@ -413,6 +414,7 @@ def gate_remote_request(
     if isinstance(suite, Failure):
         return Failure(suite.failure())
     job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
+    gate_ref = f"refs/gates/{tree_hash}/{uuid.uuid4().hex}"
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -421,6 +423,8 @@ def gate_remote_request(
         tree_hash,
         "--repo",
         repo,
+        "--gate-ref",
+        gate_ref,
         "--job-name",
         job_name,
         *_check_suite_argv(suite=suite.unwrap()),
@@ -436,6 +440,7 @@ def gate_remote_request(
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
             job_name=job_name,
+            gate_ref=gate_ref,
         )
     )
 
