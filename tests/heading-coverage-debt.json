@@ -37,13 +37,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a check aggregate member with no purity declaration fails the aggregate",
-    "work_item": "livespec-dev-tooling-aape",
-    "first_seen": "2026-10-19"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event",
     "work_item": "livespec-dev-tooling-cmgqnz",
     "first_seen": "2026-10-19"

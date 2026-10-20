@@ -780,9 +780,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a check aggregate member with no purity declaration fails the aggregate",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-aape owns it.",
-    "work_item": "livespec-dev-tooling-aape"
+    "test": "tests.consumer.test_check_aggregate_purity_declarations.test_a_member_with_no_purity_declaration_fails_the_aggregate_and_is_named",
+    "reason": "Consumer-tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`): drives the real committed `scripts/just/check.sh` end to end over a fixture inventory, against stub `uv` and `just` executables on PATH that record their argv, so the scenario's two Then-lines are read off what the aggregate actually does rather than off the script's text — it exits non-zero, its output names the undeclared member, and it dispatches no target and records no green token after the refusal. Its sibling asserts the other half the refusal rests on: that the audit covers every one of the aggregate's own members and runs before any target starts (work-item livespec-dev-tooling-aape)."
   },
   {
     "spec_root": "SPECIFICATION",

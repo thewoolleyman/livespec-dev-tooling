@@ -50,6 +50,37 @@ if ! uv run pyright --version; then
     exit 1
 fi
 
+# PURITY-DECLARATION AUDIT, over this aggregate's OWN member list, before any
+# target starts.
+#
+# The green token is keyed on the HEAD tree's hash, so it MEMOIZES — and
+# memoization is sound only for a pure function. `just check` is not one: some
+# members read state outside the tree (master's CI status, live branch
+# protection, the ledger, the commits around the tree) and give a different
+# answer for the same tree. Each member therefore declares its own purity:
+# a member this library SHIPS declares `CHECK_PURITY` in its own
+# `livespec_dev_tooling/checks/<slug>.py`; a repo-private member declares a
+# `# purity: <value>` annotation on its `check-targets.txt` line.
+#
+# WHY THIS GATE EXISTS AT ALL, given that an undeclared member is already
+# treated as world-reading and therefore still runs: without it the safe
+# default is SILENT. A new member that declares nothing joins the set the token
+# may not memoize, every push pays for it, and the saving the token exists for
+# shrinks with nobody noticing. The refusal is what makes the default visible.
+#
+# It runs BEFORE dispatch on purpose. A registry defect found after a full
+# aggregate run has already cost the operator the very run it was meant to make
+# trustworthy — and it writes no token, because a token recorded by a run that
+# refused its own member list would memoize a verdict the aggregate never
+# reached. The ratified scenario is in SPECIFICATION/scenarios.md ("a check
+# aggregate member with no purity declaration fails the aggregate").
+if ! undeclared_members=$(uv run python -m livespec_dev_tooling.green_token undeclared "${targets[@]}"); then
+    printf 'ERROR: these check aggregate members carry no purity declaration: %s\n' \
+        "${undeclared_members//$'\n'/ }" >&2
+    printf 'The green token memoizes only members whose verdict the committed tree alone decides. Declare a shipped check as CHECK_PURITY in its own livespec_dev_tooling/checks/<slug>.py module, and a repo-private member as a "# purity: tree-pure" or "# purity: world-reading" annotation on its check-targets.txt line.\n' >&2
+    exit 1
+fi
+
 # Members the two LOCAL git-hook gates do NOT run. Consulted only when the
 # caller sets `hook_gate` (check-pre-commit.sh, check-pre-push.sh); a bare
 # `just check` sets nothing and still runs every member, so this omits a
