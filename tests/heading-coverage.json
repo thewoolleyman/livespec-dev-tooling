@@ -787,16 +787,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "test": "tests.livespec_dev_tooling.test_gate_outcome_telemetry.test_a_delegated_gate_run_that_reaches_no_verdict_emits_a_no_verdict_event",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): drives the real `run_delegated_gate` end to end against a canned cluster whose API server refuses the submit, so the scenario's three Then-lines are read off what one run actually reported — the push is refused, EXACTLY ONE event is emitted, its outcome is the word `no-verdict`, and it carries the repository and the gated tree's hash. The Job's name is absent because that run never obtained one, which is §\"Delegated pre-push gate\"'s never-guessed rule; its presence on an adjudicated run is asserted by the sibling test that reaches `passed` and `failed-tree` (work-item livespec-dev-tooling-cmgqnz).",
     "work_item": "livespec-dev-tooling-cmgqnz"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "test": "tests.livespec_dev_tooling.test_gate_outcome_telemetry.test_a_delegated_gate_verdict_is_unchanged_when_its_event_cannot_be_delivered",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): runs the SAME green gate twice through the REAL emitter against one canned cluster — once with a receiver that accepts the span, once with one that refuses the connection — and compares the two verdicts to EACH OTHER rather than to a constant, which is the claim the scenario makes: the push completes, and the verdict and the status it produces are the same ones a delivered event produces (work-item livespec-dev-tooling-cmgqnz).",
     "work_item": "livespec-dev-tooling-cmgqnz"
   }
 ]

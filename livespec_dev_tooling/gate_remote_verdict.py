@@ -117,11 +117,21 @@ class GateVerdict:
     tree HEAD has since left is a true verdict about a tree nobody is pushing.
     Collapsing them into one boolean would lose exactly the case an operator
     needs the `detail` to explain.
+
+    `job_name` is the name the API server assigned to the Job that produced this
+    verdict, carried OUT of the run as a field rather than left only in the
+    `detail` prose: `gate_outcome_telemetry` puts it on the outcome span as its
+    own attribute, and an emitter that scraped it out of a human sentence would
+    read the one verdict whose sentence does not name it — a pass — as a run
+    with no Job at all. It is `None` exactly when no verdict was adjudicated,
+    because the name is only ever read back off a submit that happened; the
+    contract requires such a value to be ABSENT from the event, never guessed.
     """
 
     state: str
     detail: str
     token_written: bool
+    job_name: str | None = None
 
     @property
     def refuses_push(self) -> bool:
@@ -170,7 +180,10 @@ def _adjudicate(
     """Read the terminal condition as the exit code it stands in for."""
     if outcome.terminal_state != _COMPLETE:
         return GateVerdict(
-            state=GATE_FAILED, detail=_failed_detail(outcome=outcome), token_written=False
+            state=GATE_FAILED,
+            detail=_failed_detail(outcome=outcome),
+            token_written=False,
+            job_name=outcome.job_name,
         )
     return _write_green_token(outcome=outcome, request=request, runner=runner)
 
@@ -194,9 +207,9 @@ def _failed_detail(*, outcome: GateRunOutcome) -> str:
     return f"{ended}: {outcome.failure_message}" if outcome.failure_message else ended
 
 
-def _passed_without_token(*, detail: str) -> GateVerdict:
+def _passed_without_token(*, detail: str, job_name: str) -> GateVerdict:
     """A true green verdict the client cannot hand on — so it does not."""
-    return GateVerdict(state=GATE_PASSED, detail=detail, token_written=False)
+    return GateVerdict(state=GATE_PASSED, detail=detail, token_written=False, job_name=job_name)
 
 
 def _current_head_tree(
@@ -225,14 +238,16 @@ def _write_green_token(
             detail=(
                 f"the gate passed on tree {outcome.tree_hash}, but HEAD's tree could not be "
                 f"re-read, so no token was written: {current.failure().detail}"
-            )
+            ),
+            job_name=outcome.job_name,
         )
     if current.unwrap() != outcome.tree_hash:
         return _passed_without_token(
             detail=(
                 f"the gate passed on tree {outcome.tree_hash}, but HEAD now resolves to "
                 f"{current.unwrap()}; that tree was never gated, so no token was written"
-            )
+            ),
+            job_name=outcome.job_name,
         )
     argv = list(_GREEN_TOKEN_WRITE_ARGV)
     written = require_success(
@@ -243,10 +258,12 @@ def _write_green_token(
             detail=(
                 f"the gate passed on tree {outcome.tree_hash}, but the green token could not "
                 f"be written: {written.failure().detail}"
-            )
+            ),
+            job_name=outcome.job_name,
         )
     return GateVerdict(
         state=GATE_PASSED,
         detail=f"the gate passed on tree {outcome.tree_hash}; its green token completes the push",
         token_written=True,
+        job_name=outcome.job_name,
     )
