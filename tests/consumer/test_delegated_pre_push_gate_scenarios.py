@@ -420,7 +420,17 @@ def test_an_opted_in_push_from_an_eligible_host_completes_on_a_green_cluster_ver
     assert len(submit) == 1
     assert submit[0][:4] == (GATES_WRAPPER, "kubectl", "--namespace", _NAMESPACE)
     assert _TREE in cluster.issued(needle="--tree-hash")[0]
-    assert [argv for argv in cluster.argvs if f"HEAD:refs/gates/{_TREE}" in argv]
+    # ONE ref, decided once: the client pushes the tree to the ref it told the
+    # RENDERER about, so the pod fetches what was pushed. The ref carries a
+    # per-run component — two gates of one tree must not share the ref either of
+    # them deletes on its way out (livespec-dev-tooling-44fglo) — which is why
+    # the pushed refspec is read against the rendered value rather than against
+    # a literal: a per-run ref the pod was not told about would leave every Job
+    # looking for a ref nothing pushed, and a literal assertion could not see it.
+    rendered = cluster.issued(needle="--gate-ref")[0]
+    gate_ref = rendered[rendered.index("--gate-ref") + 1]
+    assert gate_ref.startswith(f"refs/gates/{_TREE}-")
+    assert [argv for argv in cluster.argvs if f"HEAD:{gate_ref}" in argv]
     # Two polls: the run waited through a Job that had not been admitted yet.
     assert len(cluster.issued(needle="get")) == 2
     assert [

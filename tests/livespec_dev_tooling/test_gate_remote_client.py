@@ -77,10 +77,16 @@ _MIRROR = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror/widget.g
 _JOB = "gate-widget-7f2qd"
 _MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-widget-\n"
 _CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
+# The mirror ref THIS run owns. It carries the gated tree AND a per-run nonce,
+# because the client deletes the refs it created on its way out: a name shared
+# with a concurrent gate of the same tree is a name one run can delete while the
+# other's pod has not fetched it yet.
+_GATE_REF = f"refs/gates/{_TREE}-4c1d9f3b2a7e"
 _REQUEST = GateRunRequest(
     repo_root=Path("/repo"),
     mirror_url=_MIRROR,
     manifest=_MANIFEST,
+    gate_ref=_GATE_REF,
 )
 
 
@@ -298,7 +304,7 @@ def test_the_emulated_hook_does_re_enter_the_gate_for_a_push_that_leaves_hooks_l
     host = _PrePushHookedHost(cluster=cluster)
 
     outcome = host(
-        argv=["git", "push", "--atomic", _MIRROR, f"HEAD:refs/gates/{_TREE}"],
+        argv=["git", "push", "--atomic", _MIRROR, f"HEAD:{_GATE_REF}"],
         cwd=_REQUEST.repo_root,
     )
 
@@ -320,8 +326,8 @@ def test_the_tree_under_test_is_pushed_to_the_mirror_at_a_ref_named_for_its_tree
         "push",
         "--atomic",
         _MIRROR,
-        f"HEAD:refs/gates/{_TREE}",
-        f"origin/master:refs/gates/{_TREE}.base",
+        f"HEAD:{_GATE_REF}",
+        f"origin/master:{_GATE_REF}.base",
     )
     assert outcome.unwrap().tree_hash == _TREE
 
@@ -376,8 +382,8 @@ def test_the_diff_base_rides_the_same_atomic_push_as_the_tree_under_test() -> No
     push = cluster.only(kind="push-ref")
     assert "--atomic" in push.argv
     assert push.argv[-2:] == (
-        f"HEAD:refs/gates/{_TREE}",
-        f"origin/master:refs/gates/{_TREE}.base",
+        f"HEAD:{_GATE_REF}",
+        f"origin/master:{_GATE_REF}.base",
     )
 
 
@@ -561,9 +567,42 @@ def test_the_gate_ref_is_deleted_on_the_success_path() -> None:
         "push",
         "--delete",
         _MIRROR,
-        f"refs/gates/{_TREE}",
-        f"refs/gates/{_TREE}.base",
+        _GATE_REF,
+        f"{_GATE_REF}.base",
     )
+
+
+def test_the_run_never_touches_the_tree_named_ref_a_concurrent_gate_might_hold() -> None:
+    """The collision that cost TWO gates their verdicts, read off the argv.
+
+    Both refs used to be named `refs/gates/<tree hash>` alone, and the
+    collection above runs in a `finally` — so when two gates of one tree
+    overlapped, whichever reached its cleanup first deleted the ref the other
+    run's pod had not fetched yet. Measured 2026-10-19: two post-merge janitors
+    gated master tree 228727afbe95 five seconds apart, the losing run's
+    collection removed the winner's input, that pod died with `couldn't find
+    remote ref`, and a correct merged tree read as a RED janitor.
+
+    THE ABSENCE IS WHAT IS ASSERTED, not merely the presence of the per-run ref.
+    A client that pushed its own ref and ALSO collected the tree-named one would
+    satisfy every other assertion here and still reach into a concurrent run's
+    input — and it would do so silently, because deleting a ref that is not
+    there succeeds just as quietly as deleting one that is.
+    """
+    cluster = _StubCluster()
+
+    _ = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+
+    shared = f"refs/gates/{_TREE}"
+    published = cluster.only(kind="push-ref").argv
+    collected = cluster.only(kind="delete-ref").argv
+    assert [arg for arg in collected if arg.startswith("refs/")] == [
+        _GATE_REF,
+        f"{_GATE_REF}.base",
+    ]
+    assert shared not in collected
+    assert f"{shared}.base" not in collected
+    assert f"HEAD:{shared}" not in published
 
 
 def test_the_gate_ref_is_deleted_when_a_step_fails() -> None:

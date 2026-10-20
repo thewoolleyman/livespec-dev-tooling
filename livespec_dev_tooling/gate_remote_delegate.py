@@ -75,6 +75,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 
 from livespec_dev_tooling.config import (
@@ -205,6 +206,11 @@ GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = (
 # reader below needs no second branch for a shape it treats identically.
 _UNANSWERED = GateCommandResult(returncode=1, stdout="", stderr="")
 
+# The mirror-ref namespace the gate pod fetches from and `prune-gate-refs.sh`
+# sweeps. A run's own ref is this, the gated tree, and a nonce — see
+# `_per_run_gate_ref`.
+_GATE_REF_ROOT = "refs/gates"
+
 # What an OPTED-IN repository says when the host it is being pushed from holds no
 # readable gates credential. Printed rather than left silent because an opted-in
 # repository that quietly gates somewhere else is the one shape an operator
@@ -282,6 +288,34 @@ def declared_gate_check_suite(*, repo_root: Path) -> Result[tuple[str, ...], Gat
             )
         )
     return Success(declared or GATE_CHECK_SUITE_FALL_THROUGH)
+
+
+def _per_run_gate_ref(*, tree_hash: str) -> str:
+    """Name the mirror ref THIS run owns, and no other run can be using.
+
+    THE NONCE IS THE WHOLE POINT. The ref was `refs/gates/<tree hash>` for every
+    gate of one tree, and the client deletes the refs it created in a `finally`
+    — so when two gates of one tree overlapped, whichever reached its cleanup
+    first deleted the ref the other run's pod had not fetched yet. Measured
+    2026-10-19: two post-merge janitors gated master tree 228727afbe95 five
+    seconds apart, the losing run's collection removed the winner's input, that
+    pod died with `couldn't find remote ref`, and a correct merged tree read as a
+    RED janitor. One collision cost BOTH gates their verdicts, and concurrent
+    same-tree gating is routine rather than exotic: every post-merge janitor in a
+    repository gates the master tip.
+
+    FLAT rather than `refs/gates/<tree>/<nonce>`, because git cannot hold a ref
+    at a path and a ref under it at the same time: an orphan `refs/gates/<tree>`
+    left behind by an older client — the exact litter the mirror's sweep exists
+    to collect — would make every nested push a directory/file conflict, which
+    is a refused push and so a NO_VERDICT.
+
+    `uuid4` rather than a counter or a clock: the runs that collide are in
+    DIFFERENT PROCESSES on different hosts, so nothing shared is available to
+    them, and a second-resolution timestamp is exactly what two janitors five
+    seconds apart can tie on.
+    """
+    return f"{_GATE_REF_ROOT}/{tree_hash}-{uuid.uuid4().hex}"
 
 
 def _check_suite_argv(*, suite: tuple[str, ...]) -> list[str]:
@@ -407,6 +441,7 @@ def gate_remote_request(
     suite = declared_gate_check_suite(repo_root=repo_root)
     if isinstance(suite, Failure):
         return Failure(suite.failure())
+    gate_ref = _per_run_gate_ref(tree_hash=tree_hash)
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -415,6 +450,8 @@ def gate_remote_request(
         tree_hash,
         "--repo",
         repo,
+        "--gate-ref",
+        gate_ref,
         *_check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(
@@ -427,6 +464,7 @@ def gate_remote_request(
             repo_root=repo_root,
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
+            gate_ref=gate_ref,
         )
     )
 

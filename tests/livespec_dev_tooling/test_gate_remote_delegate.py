@@ -620,6 +620,42 @@ def test_one_repository_identity_covers_the_primary_checkout_and_a_worktree_alik
     assert identities == [expected, expected]
 
 
+def test_each_gate_of_one_tree_is_given_its_own_mirror_ref(*, tmp_path: Path) -> None:
+    """Two gates of ONE tree must not share the ref either of them deletes.
+
+    The ref was `refs/gates/<tree hash>` for every gate of a tree, and the
+    client deletes the refs it created in a `finally` — so when two gates of one
+    tree overlapped, whichever reached its cleanup first deleted the ref the
+    other run's pod had not fetched yet. Measured 2026-10-19: two post-merge
+    janitors gated master tree 228727afbe95 five seconds apart, the losing run's
+    collection removed the winner's input, that pod died with `couldn't find
+    remote ref`, and a correct merged tree read as a RED janitor. ONE collision
+    cost BOTH gates their verdicts (livespec-dev-tooling-44fglo).
+
+    ASSERTED THROUGH THE RENDERER, because the ref has to be ONE value in TWO
+    places: the client pushes to it and the POD fetches whatever the manifest
+    was rendered with. A per-run ref the renderer was not told about would leave
+    every pod looking for a ref nothing pushed.
+
+    Two different checkout directories of ONE repository is the cheapest way to
+    drive two assemblies of the same tree; the ref must differ even though the
+    repository, the tree and therefore the mirror are identical.
+    """
+    rendered: list[str] = []
+    for directory in (_REPOSITORY, _WORKTREE_DIR):
+        repo_root = tmp_path / directory
+        repo_root.mkdir()
+        runner = _StubWorld(origin=_REPOSITORY_ORIGIN)
+        built = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
+        assert isinstance(built, Success)
+        render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
+        assert "--gate-ref" in render, "the renderer is told no per-run gate ref"
+        rendered.append(render[render.index("--gate-ref") + 1])
+
+    assert all(ref.startswith(f"refs/gates/{_TREE}-") for ref in rendered)
+    assert rendered[0] != rendered[1]
+
+
 def test_the_renderer_is_told_the_repository_not_the_worktree(*, tmp_path: Path) -> None:
     """`--repo` is the name the manifest itself carries, so it is passed too.
 
@@ -722,11 +758,19 @@ def test_a_complete_gate_over_the_pushed_tree_authorises_the_push(*, tmp_path: P
     # The push is found by "a git that pushes" rather than by a fixed prefix,
     # because the client sets `core.hooksPath` on that invocation: a `git push`
     # from inside a `pre-push` hook fires that same hook and delegates again.
-    assert (
-        f"{GATE_MIRROR_ROOT}/widget.git",
-        f"HEAD:refs/gates/{_TREE}",
-        f"origin/master:refs/gates/{_TREE}.base",
-    ) == (next(argv for argv in runner.argvs if argv[0] == "git" and "push" in argv)[-3:])
+    #
+    # The REF is matched by its `refs/gates/<tree hash>` stem rather than
+    # literally: it carries a per-run component, so that two gates of one tree
+    # cannot delete each other's input, and which component this run minted is
+    # not what this scenario is about. That the ref pushed here is the ref the
+    # POD was told to fetch is asserted end to end in
+    # tests.consumer.test_delegated_pre_push_gate_scenarios.
+    mirror, published, base = next(
+        argv for argv in runner.argvs if argv[0] == "git" and "push" in argv
+    )[-3:]
+    assert mirror == f"{GATE_MIRROR_ROOT}/widget.git"
+    assert published.startswith(f"HEAD:refs/gates/{_TREE}")
+    assert base == f"origin/master:{published.removeprefix('HEAD:')}.base"
     # Two polls: the run waited through a Job that had not been admitted yet
     # rather than reading a verdict off the first answer it got.
     assert len([argv for argv in runner.argvs if "get" in argv]) == 2

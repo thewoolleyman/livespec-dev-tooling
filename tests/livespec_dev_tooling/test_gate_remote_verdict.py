@@ -63,10 +63,14 @@ _MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-wi
 _CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 # A 30s timeout at the default 10s interval buys three polls, so the
 # never-finishes case gives up in three stubbed reads rather than 360.
+# The mirror ref THIS run owns — the gated tree AND a per-run nonce, so that two
+# gates of one tree cannot delete each other's input.
+_GATE_REF = f"refs/gates/{_TREE}-4c1d9f3b2a7e"
 _REQUEST = GateRunRequest(
     repo_root=Path("/repo"),
     mirror_url=_MIRROR,
     manifest=_MANIFEST,
+    gate_ref=_GATE_REF,
     poll_timeout_seconds=30.0,
 )
 _TOKEN_ARGV = (sys.executable, "-m", "livespec_dev_tooling.green_token", "write")
@@ -206,8 +210,11 @@ def test_the_token_is_written_for_the_same_tree_that_named_the_mirror_ref() -> N
     cluster = _StubCluster()
     _ = run_gated_push(request=_REQUEST, runner=cluster, sleeper=_no_sleep)
     # `[-2]`, not `[-1]`: the tree refspec is followed by the `.base` companion
-    # that carries the gate's diff base into the pod.
-    assert cluster.only(kind="push-ref").argv[-2] == f"HEAD:refs/gates/{_TREE}"
+    # that carries the gate's diff base into the pod. The ref carries a per-run
+    # component too, so the TREE is what this reads out of it — which is the
+    # claim being made: the token is written for the tree that was pushed.
+    assert cluster.only(kind="push-ref").argv[-2] == f"HEAD:{_GATE_REF}"
+    assert _GATE_REF.startswith(f"refs/gates/{_TREE}-")
     assert [call.argv for call in cluster.calls if call.kind == "read-tree"] == [
         _READ_TREE_ARGV,
         _READ_TREE_ARGV,
