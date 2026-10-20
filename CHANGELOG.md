@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.7...v1.118.8) (2026-10-20)
+
+
+### Bug Fixes
+
+* warm pyright once before just check's parallel fan-out ([64fc09d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/64fc09d7e57b54f75e4f644231596247df31ded6))
+
 ## [1.118.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.6...v1.118.7) (2026-10-20)
 
 
