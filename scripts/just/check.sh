@@ -114,6 +114,50 @@ if [[ -n "${red_staged:-}" ]]; then
     effective_skip="${effective_skip} ${red_skip}"
 fi
 
+# THE MEMOIZED RUN. `token_match` is set by check-pre-push.sh, and by nothing
+# else, when the green token names this worktree's HEAD tree and the worktree is
+# clean. The token memoizes only the members whose verdict the committed tree
+# alone decides, so this run SKIPS those and still runs every member that reads
+# state outside the tree — master's CI status, live branch protection, the
+# ledger, the commits around the tree. What the token used to do instead was
+# skip the whole aggregate, which let a seven-week-old observation stand in for
+# a live one (work-item livespec-dev-tooling-aape).
+#
+# The population is the members this run would otherwise execute, i.e. the
+# targets MINUS everything already skipped. That subtraction is why the one
+# member the hook path omits never reaches the question: a member this run will
+# not execute must not appear in the list of members it reports as having run.
+#
+# FAIL-CLOSED on a resolver that cannot answer. `world-reading` exits non-zero
+# on an empty target list or a malformed declaration, and either one lands here,
+# where nothing is memoized and the whole gate is refused — never on a narrowed
+# run whose narrowing rests on an answer we could not get.
+if [[ -n "${token_match:-}" ]]; then
+    gated=()
+    for target in "${targets[@]}"; do
+        case " ${effective_skip} " in
+            *" ${target} "*) continue ;;
+        esac
+        gated+=("${target}")
+    done
+    if ! world_reading_members=$(uv run python -m livespec_dev_tooling.green_token \
+        world-reading "${gated[@]}"); then
+        echo "ERROR: could not resolve which members read state outside the tree; refusing to memoize any of them" >&2
+        exit 1
+    fi
+    memoized=0
+    for target in "${gated[@]}"; do
+        if printf '%s\n' "${world_reading_members}" | grep -Fqx -- "${target}"; then
+            printf ':: green token matched: running world-reading member %s\n' "${target}"
+        else
+            effective_skip="${effective_skip} ${target}"
+            memoized=$((memoized + 1))
+        fi
+    done
+    printf ':: green token matched: skipped %d tree-pure member(s) on the strength of the token; CI is authoritative\n' \
+        "${memoized}"
+fi
+
 uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effective_skip}" -- "${targets[@]}" || exit 1
 
 # `hook_gate` is deliberately NOT disqualifying here, unlike `skip` and
@@ -123,6 +167,12 @@ uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "${effect
 # gate the hooks run. Disqualifying it would leave the token never written
 # from either hook, so every push would re-run the whole aggregate that
 # pre-commit had just run.
-if [[ -z "${skip:-}" && -z "${red_staged:-}" ]]; then
+#
+# `token_match` IS disqualifying, and for the reason `skip` is: that run
+# executed only part of the check set. The token for this tree already exists —
+# that is why the run took this path at all — so there is nothing to record,
+# and a partial run must never be the thing that stamps the marker standing for
+# a whole one.
+if [[ -z "${skip:-}" && -z "${red_staged:-}" && -z "${token_match:-}" ]]; then
     uv run python -m livespec_dev_tooling.green_token write || true
 fi

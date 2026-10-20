@@ -89,6 +89,26 @@ export red_staged := ""
 # absorbing tkzf).
 export hook_gate := ""
 
+# `token_match` — set to a non-empty value by `check-pre-push` alone, when the
+# green token names this worktree's HEAD tree and the worktree is clean. When
+# set, `scripts/just/check.sh` runs only the aggregate members that read state
+# OUTSIDE the tree and UNIONs the rest into `skip`, because the token memoizes
+# only the members whose verdict the committed tree alone decides. Which is
+# which comes from each member's own purity declaration, resolved by
+# `livespec_dev_tooling.check_purity`; the contract is this repository's own
+# SPECIFICATION/contracts.md, in the token-memoization part of its delegated
+# pre-push gate section (v080).
+#
+# Default empty, so every other caller — a bare `just check`, pre-commit, CI —
+# is unchanged and still runs every member. Like `hook_gate` this is a CALLER
+# distinction and not a lever on any check: no recipe body changes, and nothing
+# an agent can set demotes a member from a run that did not ask for the
+# memoized subset. The narrowing is derived from declarations the member itself
+# carries, and a member with NO declaration counts as world-reading and runs —
+# which is also why `just check` refuses an undeclared member rather than
+# letting the saving shrink unnoticed (work-item livespec-dev-tooling-aape).
+export token_match := ""
+
 # Default to listing targets when no recipe is invoked.
 default:
     @just --list
