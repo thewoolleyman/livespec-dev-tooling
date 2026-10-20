@@ -183,7 +183,26 @@ exit 0
 
 _JUST_STUB = """#!/usr/bin/env bash
 printf 'just %s\\n' "$*" >> "${STUB_LOG}"
+if [ "$*" = "hook_gate=1 check" ]; then
+    printf '%s\\n' "${CHECK_OUTPUT:-}"
+    exit "${CHECK_EXIT:-0}"
+fi
 exit 0
+"""
+
+_GH_STUB = """#!/usr/bin/env bash
+printf 'gh %s\\n' "$*" >> "${STUB_LOG}"
+printf '%s\\n' "${GREEN_RUN:-17\\t0123456789abcdef}"
+"""
+
+_GIT_STUB = """#!/usr/bin/env bash
+printf 'git %s\\n' "$*" >> "${STUB_LOG}"
+if [ "$1 $2" = "worktree add" ]; then
+    mkdir -p "$4"
+fi
+if [ "$1 $2" = "worktree remove" ]; then
+    rm -rf "$4"
+fi
 """
 
 
@@ -193,14 +212,21 @@ def _run_pre_push(
     green_probe_exit: str = "1",
     switch_exit: str = "1",
     gate_run_exit: str = "0",
-) -> tuple[int, list[str]]:
+    check_exit: str = "0",
+    check_output: str = "",
+) -> tuple[int, str, list[str]]:
     """Run the real `check-pre-push.sh` against stub `uv` and `just`.
 
     Returns the script's exit code and every command it invoked, in order.
     """
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
-    for name, body in (("uv", _UV_STUB), ("just", _JUST_STUB)):
+    for name, body in (
+        ("uv", _UV_STUB),
+        ("just", _JUST_STUB),
+        ("gh", _GH_STUB),
+        ("git", _GIT_STUB),
+    ):
         stub = stub_dir / name
         _ = stub.write_text(body, encoding="utf-8")
         stub.chmod(0o755)
@@ -213,6 +239,8 @@ def _run_pre_push(
             "GREEN_TOKEN_EXIT": green_probe_exit,
             "SWITCH_EXIT": switch_exit,
             "GATE_RUN_EXIT": gate_run_exit,
+            "CHECK_EXIT": check_exit,
+            "CHECK_OUTPUT": check_output,
         }
     )
     completed = subprocess.run(
@@ -224,7 +252,7 @@ def _run_pre_push(
         check=False,
     )
     invoked = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-    return completed.returncode, invoked
+    return completed.returncode, completed.stdout, invoked
 
 
 def test_the_switch_off_takes_the_local_aggregate_fall_through(*, tmp_path: Path) -> None:
@@ -234,7 +262,7 @@ def test_the_switch_off_takes_the_local_aggregate_fall_through(*, tmp_path: Path
     the fall-through is byte-for-byte the local aggregate it has always been, and
     the delegated client is never asked to gate anything.
     """
-    code, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="1")
+    code, _stdout, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="1")
 
     assert code == 0
     assert "just hook_gate=1 check" in invoked
@@ -243,7 +271,7 @@ def test_the_switch_off_takes_the_local_aggregate_fall_through(*, tmp_path: Path
 
 def test_the_switch_on_delegates_instead_of_running_the_aggregate(*, tmp_path: Path) -> None:
     """With the switch ON the SAME fall-through reaches the client instead."""
-    code, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0")
+    code, _stdout, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0")
 
     assert code == 0
     assert [line for line in invoked if "gate_remote_delegate run" in line]
@@ -252,18 +280,33 @@ def test_the_switch_on_delegates_instead_of_running_the_aggregate(*, tmp_path: P
 
 def test_a_refused_delegated_gate_refuses_the_push(*, tmp_path: Path) -> None:
     """The client's exit code IS the hook's — a refusal stops the push."""
-    code, _invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0", gate_run_exit="1")
+    code, _stdout, _invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0", gate_run_exit="1")
 
     assert code == 1
 
 
 def test_the_green_token_skip_path_is_untouched(*, tmp_path: Path) -> None:
     """A matching token still exits 0 without consulting the switch at all."""
-    code, invoked = _run_pre_push(tmp_path=tmp_path, green_probe_exit="0", switch_exit="0")
+    code, _stdout, invoked = _run_pre_push(tmp_path=tmp_path, green_probe_exit="0", switch_exit="0")
 
     assert code == 0
     assert not [line for line in invoked if "gate_remote_delegate" in line]
     assert not [line for line in invoked if line.startswith("just ")]
+
+
+def test_a_failed_local_gate_reruns_exactly_its_failing_pytest_node_ids(*, tmp_path: Path) -> None:
+    """A local pytest failure is replayed against the selected green master tree."""
+    first = "tests/widget_test.py::test_one"
+    second = "tests/widget_test.py::test_two[param]"
+
+    code, _stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=f"FAILED {first} - host-only failure\\nFAILED {second} - host-only failure",
+    )
+
+    assert code == 1
+    assert f"uv run pytest {first} {second}" in invoked, invoked
 
 
 # ---------------------------------------------------------------------------
