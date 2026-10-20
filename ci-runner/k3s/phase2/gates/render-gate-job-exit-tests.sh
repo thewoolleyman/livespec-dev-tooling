@@ -613,7 +613,12 @@ make_siblings() {
   } > "${dir}/.livespec.jsonc"
 }
 # Dedented out of the gate script, so a line number here is a line number in
-# the script the pod runs.
+# the script the pod runs. A caller matching a recipe invocation must allow
+# LEADING WHITESPACE: the recipes run inside a captured brace group, so they are
+# indented in the rendered script (livespec-dev-tooling-plbimj). A `^just `
+# pattern matches nothing there and yields an EMPTY line number, which `[ -ge ]`
+# reports as `integer expression expected` and the arm then reads as a PASS —
+# which is how this very edit first presented.
 sibling_root() { gate_script "$1" | sed -n "s/^export LIVESPEC_SIBLING_CLONES_ROOT='\(.*\)'$/\1/p"; }
 script_line() { gate_script "$1" | grep -n -- "$2" | head -1 | cut -d: -f1; }
 last_script_line() { gate_script "$1" | grep -n -- "$2" | tail -1 | cut -d: -f1; }
@@ -627,6 +632,7 @@ siblings_out="${SCRATCH}/siblings.yaml"
 if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
      --check-suite verify > "${siblings_out}" 2>/dev/null; then
   clones_root="$(sibling_root "${siblings_out}")"
+  first_recipe="$(script_line "${siblings_out}" '^ *just ')"
   cloned=0
   for slug in widget-core widget-docs; do
     grep -qF "git clone --quiet --depth 1 'https://github.com/acme/${slug}' '${clones_root}/${slug}'" \
@@ -638,7 +644,9 @@ if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
     fail "a registered sibling is not cloned where the readers look: $(gate_script "${siblings_out}" | grep -c 'git clone ')"
   elif [ "$(gate_script "${siblings_out}" | grep -c 'git clone ')" != "2" ]; then
     fail "the Job does not clone exactly one sibling per registered target"
-  elif [ "$(last_script_line "${siblings_out}" 'git clone ')" -ge "$(script_line "${siblings_out}" '^just ')" ]; then
+  elif [ -z "${first_recipe}" ]; then
+    fail "the gate script carries no check-suite recipe line, so the ordering arm below is vacuous"
+  elif [ "$(last_script_line "${siblings_out}" 'git clone ')" -ge "${first_recipe}" ]; then
     fail "a check-suite recipe runs before the siblings are provisioned"
   elif grep -F 'git clone ' "${siblings_out}" | grep -qF '@'; then
     fail "a credential rides a sibling clone: $(grep -F 'git clone ' "${siblings_out}")"
