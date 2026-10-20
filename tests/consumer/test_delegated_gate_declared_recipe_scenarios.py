@@ -120,6 +120,27 @@ _WIDGET_SIBLINGS = (
 )
 _GADGET_SIBLINGS = (("gadget-core", "https://github.com/acme/gadget-core"),)
 
+# The member that really failed on gate-livespec-dev-tooling-54f19942138d, and
+# the fixture line the verdict named INSTEAD of it (livespec-dev-tooling-plbimj).
+# The text is this repository's own rendered sibling-clone refusal, which its
+# gate-renderer exit tests produce and run from inside the gate's own aggregate
+# — so it reaches the pod as one member's captured output on a tree that
+# registers no siblings whatsoever.
+_RED_MEMBER = "check-no-workflow-edits"
+_FIXTURE_FATAL_FRAGMENT = "cannot clone cross-repo sibling"
+_MEMBER_FIXTURE_FATAL = (
+    f"FATAL: {_FIXTURE_FATAL_FRAGMENT} 'widget-core' from "
+    "https://github.com/acme/widget-core. Its checks would read the absent clone as an "
+    "EMPTY tree and silently drop every allowlisted citation to it, so no recipe was "
+    "run; this gate is RED."
+)
+
+# The redirect that makes the pod's own last words the cluster's termination
+# message. Read as a literal because the ORDERING claim below is about this
+# write: `>` truncates, so the LAST one wins, and a member that wrote the file
+# mid-run loses to a write the pod makes after its recipes.
+_TERMINATION_WRITE = "> /dev/termination-log"
+
 # The two `kubectl get job --output json` payloads one run sees, in order: a Job
 # Kueue has not admitted yet, and then the condition that means the gate ran and
 # was RED. Conditions carry `status` as well as `type`, because a Job reports
@@ -127,6 +148,14 @@ _GADGET_SIBLINGS = (("gadget-core", "https://github.com/acme/gadget-core"),)
 # call a running gate terminal.
 _JOB_ADMITTING = json.dumps({"status": {}})
 _JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status": "True"}]}})
+# The name the API SERVER assigns, and what `kubectl create --output json`
+# answers with. The manifest asks for a `metadata.generateName`, so the Job's
+# name is an OUTPUT of the submit rather than something the renderer or the
+# client can predict (livespec-dev-tooling-44fglo).
+_ASSIGNED_JOB = "gate-widget-7f2qd"
+_CREATED = json.dumps(
+    {"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _ASSIGNED_JOB}}
+)
 
 # A `just` that provides NOTHING the tree declares — the scenario's Given. Every
 # existence probe answers no; anything else succeeds, so a recipe that DID run
@@ -144,6 +173,13 @@ _JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status":
 # provides-nothing Given every arm written before it relies on. A caller that
 # names the recipes its fixture tree carries gets a `just` that admits them,
 # which is how an arm whose subject is a LATER step reaches that step at all.
+#
+# UNDER `FAILING_MEMBER` IT IS A RED AGGREGATE rather than a green one, and it
+# writes the SHAPE the fleet's own dispatcher writes: each member's CAPTURED
+# OUTPUT first, then the summary block that closes the run. Both halves matter
+# to the arm that uses it — the captured half is where a member's fixture text
+# lives, and the summary half is the only place the run names which members
+# failed (`livespec_dev_tooling.parallel_check_dispatcher._emit_summary`).
 _JUST_STUB = """#!/usr/bin/env bash
 if [ -n "${LIVESPEC_SIBLING_CLONES_ROOT:-}" ]; then
   printf 'sibling-root %s\\n' "${LIVESPEC_SIBLING_CLONES_ROOT}" >> "${STUB_LOG}"
@@ -154,6 +190,13 @@ if [ "${1:-}" = "--show" ]; then
     *" ${2} "*) exit 0 ;;
     *)          exit 1 ;;
   esac
+fi
+if [ -n "${FAILING_MEMBER:-}" ]; then
+  printf '\\n::: just %s [FAILED, wall: 1.0s]\\n' "${FAILING_MEMBER}"
+  printf '%s\\n' "${MEMBER_CAPTURED_OUTPUT:-}"
+  printf '\\n--- parallel check summary ---\\npassed: 78, failed: 1, skipped: 1\\n'
+  printf '\\nFailed targets (1):\\n  - %s\\n' "${FAILING_MEMBER}"
+  exit 1
 fi
 exit 0
 """
@@ -313,6 +356,8 @@ class _CannedWorldRealRenderer:
         """
         if "pods" in argv:
             return self._pod_message
+        if "create" in argv:
+            return _CREATED
         if "job" in argv:
             self._polls += 1
             return _JOB_ADMITTING if self._polls == 1 else _JOB_FAILED
@@ -320,8 +365,8 @@ class _CannedWorldRealRenderer:
             return f"{_TREE}\n"
         if "get-url" in argv:
             return f"{_ORIGIN}\n"
-        # The push, the submit, the log stream and the ref collection: the
-        # client reads their exit codes, never their output.
+        # The push, the log stream and the ref collection: the client reads
+        # their exit codes, never their output.
         return ""
 
 
@@ -701,6 +746,8 @@ def _run_the_pod_script(
     root: Path,
     clone_fails: bool = False,
     provides: tuple[str, ...] = (),
+    failing_member: str = "",
+    member_captured_output: str = "",
 ) -> tuple[int, str, str, list[str]]:
     """Run the rendered pod script here, against a `just` that provides nothing.
 
@@ -715,6 +762,11 @@ def _run_the_pod_script(
     `provides` are the recipes the fixture tree carries. The default is NONE,
     which is the provides-nothing Given; naming them is what lets an arm whose
     subject sits after the preflight reach it.
+
+    `failing_member` makes the recipe RUN and go red on that one member, and
+    `member_captured_output` is what that member printed — the Given of a tree
+    whose recipe reached its own members rather than one whose provisioning
+    stopped short of them.
 
     Returns the exit status, STDOUT, stderr and the invocation log, in that
     order. Both streams are returned because the pod writes to each for a
@@ -754,6 +806,9 @@ def _run_the_pod_script(
     )
     if clone_fails:
         env["CLONE_FAILS"] = "1"
+    if failing_member:
+        env["FAILING_MEMBER"] = failing_member
+        env["MEMBER_CAPTURED_OUTPUT"] = member_captured_output
     completed = subprocess.run(
         ["bash", str(script)],
         cwd=str(root),
@@ -889,7 +944,7 @@ def test_the_verdict_stream_reports_whether_livespec_core_was_resolved(*, tmp_pa
     streamed = cluster.streamed[0]
     assert "logs" in streamed
     assert "--follow" in streamed
-    assert f"job/gate-widget-{_TREE[:12]}" in streamed
+    assert f"job/{_ASSIGNED_JOB}" in streamed
 
 
 def _gate_script_from_a_template_without_the_sibling_step(
@@ -1140,3 +1195,88 @@ def test_a_gate_whose_sibling_clone_fails_is_red_and_names_that_sibling(*, tmp_p
 
     assert code == 0, f"the gate refused a tree whose siblings cloned cleanly: {ran}"
     assert f"just {_CONSUMER_RECIPE}" in ran
+
+
+def test_a_red_members_verdict_names_the_member_not_a_fatal_from_its_own_output(
+    *, tmp_path: Path
+) -> None:
+    """A red MEMBER is named as the cause; a `FATAL:` it printed is not.
+
+    THE DEFECT THIS CLOSES, MEASURED 2026-10-19 (livespec-dev-tooling-plbimj).
+    The red verdict of `gate-livespec-dev-tooling-54f19942138d` read "FATAL:
+    cannot clone cross-repo sibling 'widget-core' from
+    https://github.com/acme/widget-core … so no recipe was run". Both halves
+    were false: the recipe ran (78 passed, 1 failed, 1 skipped) and its one
+    failure was `check-no-workflow-edits`. `acme/widget-core` is FIXTURE TEXT
+    belonging to this repository's own gate-renderer exit tests, which run
+    inside the gate's own aggregate and write the rendered refusal to the pod's
+    real `/dev/termination-log`. So the one line an operator reads sent them
+    after a clone failure that never happened, on a repository registering no
+    siblings at all.
+
+    THE FIX IS OWNERSHIP, AND THAT IS WHAT THE LAST ARM ASSERTS. The pod writes
+    the verdict detail AFTER its recipes have run and TRUNCATES the termination
+    log doing so, so a member that wrote that file mid-run cannot be the message
+    the cluster reports. Nothing here can observe the real
+    `/dev/termination-log` — the write is best-effort and this host has no such
+    file — so the arms join on the string the pod puts on BOTH streams, exactly
+    as the missing-recipe and failed-clone scenarios above do, plus the rendered
+    script's own ordering.
+
+    The provisioning verdicts are NOT changed by any of this: the two scenarios
+    above are the regression guard for them, and they still read the pod's own
+    words for a failed clone and a missing recipe.
+    """
+    consumer = _a_consumer_repository(
+        root=tmp_path / "declaring",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+    )
+    manifest = _rendered_for(repo_root=consumer)
+
+    returncode, stdout, stderr, invoked = _run_the_pod_script(
+        manifest=manifest,
+        root=tmp_path / "pod",
+        provides=(_CONSUMER_RECIPE,),
+        failing_member=_RED_MEMBER,
+        member_captured_output=_MEMBER_FIXTURE_FATAL,
+    )
+
+    # The Given, asserted rather than assumed: the recipe RAN, and the fixture
+    # `FATAL:` really is inside that member's own captured output.
+    assert invoked == [f"just --show {_CONSUMER_RECIPE}", f"just {_CONSUMER_RECIPE}"]
+    assert _MEMBER_FIXTURE_FATAL in stdout
+    # The verdict STATE and the exit status are untouched by this item.
+    assert returncode == 1
+
+    assert _RED_MEMBER in stderr, (
+        "the gate is red on a member but its message does not name that member, so the "
+        f"one line an operator reads cannot be acted on: {stderr!r}"
+    )
+    assert _FIXTURE_FATAL_FRAGMENT not in stderr, (
+        "a `FATAL:` line from inside a member's captured output became the pod's own "
+        f"last words: {stderr!r}"
+    )
+
+    cluster = _CannedWorldRealRenderer(pod_message=stderr.strip())
+    verdict = run_delegated_gate(
+        repo_root=consumer, renderer=_RENDERER, runner=cluster, sleeper=_no_sleep
+    )
+
+    assert verdict.state == GATE_FAILED
+    assert verdict.token_written is False
+    assert verdict.refuses_push is True
+    assert _RED_MEMBER in verdict.detail
+    assert _FIXTURE_FATAL_FRAGMENT not in verdict.detail
+    assert not [argv for argv in cluster.argvs if "green_token" in " ".join(argv)]
+
+    # THE MECHANISM, in the rendered script: a member's mid-run write to the
+    # termination log is overwritten because the pod's own write comes after the
+    # recipes and truncates. Without this the two arms above would hold only for
+    # a pod whose members happened to leave the file alone.
+    script = _executable_script(manifest=manifest, name="gate")
+    writes = [index for index, line in enumerate(script) if _TERMINATION_WRITE in line]
+    assert writes, f"the gate container never writes its own termination message: {script}"
+    assert max(writes) > _index_of_first_recipe(manifest=manifest), (
+        "every termination-log write the gate container makes precedes its recipes, so a "
+        "member that writes that file mid-run is the message the cluster reports"
+    )

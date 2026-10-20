@@ -41,6 +41,10 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 
 __all__: list[str] = []
 
+CHECK_PURITY = (
+    "world-reading"  # the tool binaries installed on the host, whose `--version` it reads
+)
+
 
 _MISE_PATH = Path(".mise.toml")
 _TOOLS_TABLE_HEADER = re.compile(r"^\[tools\]\s*$")

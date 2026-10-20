@@ -175,16 +175,25 @@ spec:
             readOnlyRootFilesystem: false
             capabilities:
               drop: ["ALL"]
+          # SIZED FROM A MEASUREMENT (livespec-dev-tooling-g2ez52). A gate fetch
+          # is FULL history (./gate-job-template.yaml), and the pack-objects it
+          # forks is charged to this pod. Measured 2026-10-19 against a copy of
+          # the orchestrator mirror, cold cache, peak of the serving cgroup:
+          # 47 MiB for one fetch and 133 MiB for three at once while the mirror
+          # held 64 unconsolidated packs (the OOM-kill at the former 64Mi), and
+          # 6 MiB / 14 MiB once ./prune-gate-refs.sh repacks it. 256Mi is ~2x
+          # the WORST measured case, so the daemon survives three concurrent
+          # gates even if the repack stops running; repacked, it is ~18x.
           resources:
             requests:
               cpu: "50m"
-              memory: "64Mi"
+              memory: "256Mi"
             limits:
               # No cpu limit (throttling a fetch would look like a hung gate);
               # the memory limit equals the request so the daemon is
               # Guaranteed-class for memory and is not evicted under node
               # pressure while a gate is fetching through it.
-              memory: "64Mi"
+              memory: "256Mi"
           readinessProbe:
             tcpSocket:
               port: git

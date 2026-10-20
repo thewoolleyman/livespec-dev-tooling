@@ -119,6 +119,8 @@ from livespec_dev_tooling.config import (  # noqa: E402  — vendor-path-aware.
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _JUSTFILE_NAME = "justfile"
 _TARGET_INVENTORY_NAME = "check-targets.txt"

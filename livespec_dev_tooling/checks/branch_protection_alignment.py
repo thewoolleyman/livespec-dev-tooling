@@ -134,6 +134,8 @@ from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # live branch-protection settings read from the GitHub API
+
 
 _CI_YML_PATH = Path(".github/workflows/ci.yml")
 

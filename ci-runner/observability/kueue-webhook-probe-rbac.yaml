@@ -31,9 +31,10 @@
 # boot (../k3s/phase2/datastore-tmpfs/), so this ServiceAccount is wiped at
 # each boot; a hand-rendered kubeconfig (as this was first done, 2026-08-28)
 # then pointed at a dead account and the probe failed every five minutes
-# after the 2026-09-02 reboot. install-observability.sh still does NOT apply
-# this — it installs the host-side units; the converge owns the cluster-side
-# identity. To re-render by hand between boots:
+# after the 2026-09-02 reboot. The ci_observability role of
+# ../../ansible/ci-pool.yml still does NOT apply this — it installs the
+# host-side units; the converge owns the cluster-side identity. To re-render by
+# hand between boots:
 #   sudo systemctl start converge-ci-stack.service   (idempotent)
 apiVersion: v1
 kind: ServiceAccount

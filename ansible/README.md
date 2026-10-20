@@ -32,11 +32,24 @@ to the Talos fleet, delete its entry rather than porting anything.
 
 **Kubernetes desired state does not migrate into Ansible.** Kueue queues,
 ARC scale sets, gate Jobs, RBAC, the provisioner, warm-cache, sccache and
-crates-proxy stay as manifests and kustomizations under `../ci-runner/`,
-shaped so Flux could reconcile them unchanged. A playbook may `kubectl
-apply -k` them; it may not encode their ordering in tasks. What migrates
-here is host glue: files, systemd units, sysctls, pinned downloads, and
-host-side files rendered from cluster state.
+crates-proxy stay under `../ci-runner/`, and they are NOT yet Flux-shaped.
+They are applied at boot by the shell converge
+`../ci-runner/k3s/phase2/reconstruct/converge-ci-stack.sh`, with
+`kubectl apply -f` and `helm upgrade --install`, and their ORDERING is held
+in that shell — not in a kustomization graph and not by any reconciler.
+Exactly ONE kustomization exists, `../ci-runner/k3s/phase2/kueue/core`,
+which that converge applies as one
+`kubectl apply --server-side --force-conflicts -k`.
+
+Migrating the rest into Flux-shaped kustomizations is DEFERRED, because no
+Flux decision exists for this substrate. It is reconsidered on either of two
+conditions: a Flux decision is recorded, or `poweredge-xubuntu` — the pool's
+k3s server — has its workload moved to the Talos/Omni/Flux fleet, at which
+point the sunset rule above applies and nothing here is ported anyway. Until
+then a playbook may install or invoke that converge; it may not encode the
+cluster objects' ordering in tasks. What migrates here is host glue: files,
+systemd units, sysctls, pinned downloads, and host-side files rendered from
+cluster state.
 
 ## Playbooks run from committed source
 

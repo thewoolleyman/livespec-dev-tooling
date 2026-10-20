@@ -27,7 +27,10 @@
 #      ../kueue/cluster-queue-gates.yaml — one live object, one committed
 #      source, the same split ./gates-rbac.yaml keeps;
 #   J. nothing in this slice references /var/lib/git, the package-owned path
-#      research/003 correction 3 moved the mirror off.
+#      research/003 correction 3 moved the mirror off;
+#   K. the sweep folds a mirror's per-push packs into one, and an object no
+#      ref reaches but pushed inside the cutoff survives it -- the pack bloat
+#      that OOM-killed the daemon (livespec-dev-tooling-g2ez52).
 #
 # HOW IT STAYS OFF THE HOST AND OFF THE CLUSTER. `kubectl` is a FAKE on this
 # suite's own PATH that accepts the converge's apply/patch/rollout calls and
@@ -269,6 +272,43 @@ if out="$("${PRUNE}" --mirror-root "$(dirname "${MIRROR_M}")" --max-age-seconds 
   fi
 else
   fail "E: the sweep exited non-zero on the mtime mirror: ${out}"
+fi
+
+echo "== K. the sweep consolidates per-push packs and keeps recent unreachable objects =="
+MIRROR_K="${SCRATCH}/mirror-pack/pack-repo.git"
+mkdir -p "$(dirname "${MIRROR_K}")"
+git init --quiet --bare --shared=0664 "${MIRROR_K}"
+git config --file "${MIRROR_K}/config" core.logAllRefUpdates true
+# unpackLimit 1 makes every push land as its own pack, as a full-history gate
+# push does in production.
+git config --file "${MIRROR_K}/config" receive.unpackLimit 1
+touch "${MIRROR_K}/git-daemon-export-ok"
+for n in 1 2 3; do
+  echo "pack ${n}" > "${SRC}/file"
+  git -C "${SRC}" commit --quiet -am "pack ${n}"
+  git -C "${SRC}" push --quiet "${MIRROR_K}" "HEAD:refs/gates/pack-${n}"
+done
+# An object no ref reaches, written just now: what a push in flight looks like.
+orphan="$(git -C "${SRC}" rev-parse HEAD)"
+git --git-dir="${MIRROR_K}" update-ref -d refs/gates/pack-3
+packs_before="$(find "${MIRROR_K}/objects/pack" -name '*.pack' | wc -l)"
+if out="$("${PRUNE}" --mirror-root "$(dirname "${MIRROR_K}")" --max-age-seconds "${CUTOFF_SECONDS}" 2>&1)"; then
+  # The cruft pack holds the orphan; every other object is in ONE pack.
+  packs_after="$(find "${MIRROR_K}/objects/pack" -name '*.pack' | wc -l)"
+  if [ "${packs_before}" -lt 3 ]; then
+    fail "K: the fixture produced ${packs_before} packs, not one per push"
+  elif [ "${packs_after}" -gt 2 ]; then
+    fail "K: ${packs_before} packs became ${packs_after}; the sweep did not consolidate them"
+  elif ! git --git-dir="${MIRROR_K}" cat-file -e "${orphan}"; then
+    fail "K: an unreachable object pushed inside the ${CUTOFF_SECONDS}s cutoff was deleted"
+  elif ! git --git-dir="${MIRROR_K}" rev-parse --verify --quiet refs/gates/pack-2 >/dev/null \
+       || ! git --git-dir="${MIRROR_K}" fsck --connectivity-only --no-dangling 2>/dev/null; then
+    fail "K: the mirror is not connected after the repack"
+  else
+    pass "${packs_before} per-push packs became ${packs_after} (one plus cruft), recent unreachable kept"
+  fi
+else
+  fail "K: the sweep exited non-zero on the pack mirror: ${out}"
 fi
 
 echo "== G. the daemon manifest is read-only by construction =="

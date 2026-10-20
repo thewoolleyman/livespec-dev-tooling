@@ -61,9 +61,32 @@ if [ "${ref_updates}" -gt 0 ] && [ "${ref_updates}" -eq "${deleted_refs}" ]; the
     exit 0
 fi
 
+# THE TOKEN-MATCH PATH. A matching token means this tree is byte-identical to
+# one a green aggregate already judged, which makes the token a MEMOIZATION of
+# that judgement — and memoization is sound only for a pure function. `just
+# check` is not one: some members read state outside the tree (master's CI
+# status, live branch protection, the ledger, the commits around the tree) and
+# give a different answer for the same tree. So the token stands in for the
+# TREE-PURE members only, and the world-reading ones run here, now, on the
+# pushing host.
+#
+# This REPLACED a bare `exit 0`, which was unsound rather than merely
+# optimistic: measured 2026-09-08 on the livespec primary checkout, a
+# SEVEN-WEEK-OLD token carrying `{"tree_hash": ...}` and nothing else — no
+# expiry, no record of what was checked — would have skipped
+# `check-master-ci-green` outright and landed a push on a red master on the
+# strength of an observation made weeks earlier. Nothing warned; the skip
+# logged at info as a match (work-item livespec-dev-tooling-aape).
+#
+# It stays ABOVE the delegated-gate switch, and `exec`s rather than falling
+# through, because the ratified scenario requires that no gate Job be submitted
+# on this path: the tree has been gated once already, and the only thing still
+# owed is the live half, which the cluster cannot answer better than this host.
+# The memoized run's exit status IS this gate's verdict, so a world-reading
+# member that fails refuses the push.
 if uv run python -m livespec_dev_tooling.green_token check 2>&1; then
-    echo ":: pre-push: green token matched - tree byte-identical to last green check; skipping full aggregate (CI is authoritative)"
-    exit 0
+    echo ":: pre-push: green token matched - tree byte-identical to last green check, so the token stands in for this tree's TREE-PURE members only; the world-reading members run here (CI is authoritative)"
+    exec just hook_gate=1 token_match=1 check
 fi
 
 # The DELEGATED-GATE fall-through (R4.S7c of plan livespec
@@ -93,9 +116,101 @@ if uv run python -m livespec_dev_tooling.gate_remote_delegate enabled; then
     exec uv run python -m livespec_dev_tooling.gate_remote_delegate run
 fi
 
+diagnose_host_state_divergence() {
+    local gate_output="$1"
+    local gate_text
+    local green_run
+    local green_run_id
+    local green_sha
+    local checkout
+    local rerun_output
+    local rerun_status
+    local node_id
+    local -a failed_nodes
+    local -a rerun_failures
+
+    # Pytest's short summary is the one stable place the aggregate exposes the
+    # individual node ids. A non-pytest check failure has no node to replay and
+    # therefore no host-state comparison to make.
+    gate_text="$(<"$gate_output")"
+    gate_text="${gate_text//\\n/$'\n'}"
+    mapfile -t failed_nodes < <(printf '%s\n' "$gate_text" | awk '$1 == "FAILED" { print $2 }')
+    if [ "${#failed_nodes[@]}" -eq 0 ]; then
+        return
+    fi
+
+    # `gh run list` is newest-first. Ask for the last 20 master runs before
+    # selecting the first success, rather than asking GitHub for 20 successes:
+    # the latter could silently reach arbitrarily far back through red runs.
+    if ! green_run="$(gh run list --workflow CI --branch master --limit 20 \
+        --json databaseId,headSha,conclusion \
+        --jq '.[] | select(.conclusion == "success") | [.databaseId, .headSha] | @tsv' \
+        2>/dev/null)"; then
+        echo ":: pre-push: host-state divergence check skipped: unable to determine a green CI run"
+        return
+    fi
+    green_run="$(printf '%s\n' "$green_run" | sed -n '1p')"
+    if [ -z "$green_run" ]; then
+        echo ":: pre-push: host-state divergence check skipped: no successful CI workflow run among the last 20 master runs"
+        return
+    fi
+    # `gh --jq @tsv` writes a real tab. Accept an escaped tab too, because a
+    # transport that preserves JSON-style escapes still names the same pair.
+    green_run="${green_run//\\t/$'\t'}"
+    IFS=$'\t' read -r green_run_id green_sha <<<"$green_run"
+    if [ -z "$green_run_id" ] || [ -z "$green_sha" ]; then
+        echo ":: pre-push: host-state divergence check skipped: green CI run did not identify its commit"
+        return
+    fi
+
+    if ! git fetch --quiet origin master; then
+        echo ":: pre-push: host-state divergence check skipped: could not fetch origin/master"
+        return
+    fi
+    if ! checkout="$(mktemp -d)"; then
+        echo ":: pre-push: host-state divergence check skipped: could not create a temporary checkout"
+        return
+    fi
+    if ! git worktree add --detach "$checkout" "$green_sha"; then
+        rm -rf "$checkout"
+        echo ":: pre-push: host-state divergence check skipped: could not check out green CI commit"
+        return
+    fi
+
+    rerun_output="$(mktemp)"
+    set +e
+    (
+        cd "$checkout"
+        uv run pytest "${failed_nodes[@]}"
+    ) >"$rerun_output" 2>&1
+    rerun_status=$?
+    set -e
+    cat "$rerun_output"
+    mapfile -t rerun_failures < <(awk '$1 == "FAILED" { print $2 }' "$rerun_output")
+    for node_id in "${failed_nodes[@]}"; do
+        if printf '%s\n' "${rerun_failures[@]}" | grep -Fqx "$node_id"; then
+            echo ":: pre-push: host-state divergence: ${node_id} also fails on green CI run ${green_run_id}"
+        fi
+    done
+    rm -f "$rerun_output"
+    git worktree remove --force "$checkout" || true
+    rm -rf "$checkout"
+    return "$rerun_status"
+}
+
 # `hook_gate=1` omits the world-gate members enumerated in check.sh. The
 # aggregate is otherwise unchanged, so PR gate ≡ master gate still holds for
 # every member CI runs: the one omitted member is not in the CI matrix either,
 # because the App installation token CI authenticates with deliberately lacks
 # admin scope (work-item livespec-dev-tooling-mmqe, absorbing tkzf).
-just hook_gate=1 check
+gate_output="$(mktemp)"
+trap 'rm -f "$gate_output"' EXIT
+set +e
+just hook_gate=1 check >"$gate_output" 2>&1
+gate_status=$?
+set -e
+cat "$gate_output"
+if [ "$gate_status" -ne 0 ]; then
+    diagnose_host_state_divergence "$gate_output" || true
+    exit "$gate_status"
+fi

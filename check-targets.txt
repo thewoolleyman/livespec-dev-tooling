@@ -68,16 +68,39 @@ check-work-item-status-vocabulary
 check-wrapper-shape
 
 # Repo-private block.
-check-ansible-lint
-check-ansible-hostname-free
-check-lint
-check-format
-check-types
-check-coverage
-check-fleet-conformance
-check-fleet-conformance-admin
-check-fabro-image-pin-lockstep
-check-no-direct-github-access
-check-no-workflow-edits
-check-shipped-path-release-guard
-check-uv-lock-version-sync
+#
+# Each line carries this member's PURITY DECLARATION as a `# purity: <value>`
+# annotation, read by `livespec_dev_tooling.check_purity` and required by this
+# repository's own SPECIFICATION/contracts.md, in the token-memoization part of
+# its delegated pre-push gate section (v080): the green token may memoize a
+# `tree-pure` member, whose verdict
+# the committed tree alone decides, and may never memoize a `world-reading` one,
+# whose verdict can change while the tree does not. A member with NO declaration
+# counts as world-reading and fails this repository's own aggregate, so the
+# saving cannot shrink unnoticed. The canonical block above carries no
+# annotations on purpose: a check this repository SHIPS declares its own purity
+# as a `CHECK_PURITY` constant in its own `livespec_dev_tooling/checks/<slug>.py`
+# module, so the declaration travels with the library to every consumer. Only a
+# member that exists ONLY here is declared here.
+check-ansible-lint  # purity: tree-pure
+check-ansible-hostname-free  # purity: tree-pure
+check-lint  # purity: tree-pure
+check-format  # purity: tree-pure
+check-types  # purity: tree-pure
+check-coverage  # purity: tree-pure
+# Fetches `.livespec-fleet-manifest.jsonc` from livespec master and sweeps ~35
+# GitHub API reads across the fleet: a verdict about nine OTHER repositories at
+# this instant.
+check-fleet-conformance  # purity: world-reading
+# The admin-scoped twin, reading those repositories' live branch-protection
+# state. One sibling's settings already refused a hand push here on 2026-09-06.
+check-fleet-conformance-admin  # purity: world-reading
+check-fabro-image-pin-lockstep  # purity: tree-pure
+check-no-direct-github-access  # purity: tree-pure
+# Scopes itself to the `<base>...HEAD` range plus the staged, unstaged and
+# untracked working set — none of which the committed tree determines.
+check-no-workflow-edits  # purity: world-reading
+# RANGE mode judges every non-merge commit in `origin/master..HEAD`, each
+# against its OWN message: the commits around the tree, not the tree.
+check-shipped-path-release-guard  # purity: world-reading
+check-uv-lock-version-sync  # purity: tree-pure

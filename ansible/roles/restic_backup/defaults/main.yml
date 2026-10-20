@@ -9,6 +9,14 @@ restic_backup_config_dir: /etc/vps-restic-backup
 restic_backup_exclude_file: "{{ restic_backup_config_dir }}/excludes.txt"
 restic_backup_unit_dir: /etc/systemd/system
 
+# The restic `--host` tag the runner files its snapshots under, and the identity
+# its `forget` keys retention on. This machine's inventory name and nothing else:
+# a machine is bound only through the inventory (livespec-dev-tooling-prdxxe), and
+# the one converged host's inventory name is already the tag its existing chain
+# carries, so rendering it preserves that history rather than orphaning it under a
+# tag no run writes to again.
+restic_backup_host_tag: "{{ inventory_hostname }}"
+
 # Twice daily. 03:30 sits 30 minutes after arq_root_snapshot's 03:00 build so
 # the two never contend for disk, even though restic backs up the LIVE paths and
 # not that snapshot.

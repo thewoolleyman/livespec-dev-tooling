@@ -161,6 +161,8 @@ __all__: list[str] = [
     "_update_baseline",
 ]
 
+CHECK_PURITY = "tree-pure"
+
 _BASELINE_PATH = Path(".mutmut-baseline.json")
 _RUN_ENV_VAR = "LIVESPEC_RUN_MUTATION"
 # Paths to mutate are configured in [tool.mutmut] in pyproject.toml;

@@ -110,7 +110,7 @@
     append: true
   become: true
 
-- name: Install the refresh tool's ssh-identity and group env-file
+- name: Install the refresh tool's pool-fact env-file
   # The runtime refresh tool runs as root at gate time, and root has no tailnet
   # identity, so it drops the ssh FETCH to gates_kubeconfig_ssh_user via sudo -u.
   # It also has to reproduce the credential's OWNERSHIP when it replaces the
@@ -118,12 +118,20 @@
   # delivered here rather than baked into the shipped script. Not no_log and mode
   # 0644 on purpose: it carries a username and a group name, never a secret —
   # the credential itself is the 0640 file below.
+  #
+  # THE CONTROL-PLANE NODE JOINED THEM for the same reason and one more: it is the
+  # one value in this role that used to name a MACHINE inside a shipped script,
+  # while the role itself resolved it from the inventory
+  # (livespec-dev-tooling-prdxxe). Rendering it here leaves the inventory as the
+  # single place the pool's server is decided, and the tool refuses rather than
+  # guessing when nothing has delivered it.
   ansible.builtin.copy:
     content: |
       # Written by the gates_kubeconfig Ansible role. Read by
       # refresh-gates-kubeconfig at runtime. Carries no secret.
       GATES_SSH_USER={{ gates_kubeconfig_ssh_user }}
       GATES_GROUP={{ gates_kubeconfig_group }}
+      GATES_REMOTE_HOST={{ gates_kubeconfig_remote_host }}
     dest: "{{ gates_kubeconfig_ssh_env }}"
     owner: root
     group: root

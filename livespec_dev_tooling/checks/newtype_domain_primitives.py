@@ -58,6 +58,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 )
 
 __all__: list[str] = []
+
+CHECK_PURITY = "tree-pure"
 _DATACLASSES_TREE_GATE_BUG = "dataclasses_tree unexpectedly empty after role-key gate"
 _FIELD_TO_NEWTYPE: dict[str, str] = {
     "check_id": "CheckId",

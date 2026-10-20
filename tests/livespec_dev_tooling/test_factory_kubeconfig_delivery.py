@@ -89,7 +89,11 @@ _GATES_TASK_NAMES = (
     "Create the credential directory",
     "Create the group that may read the gates credential",
     "Put this host's login user in the gate-client group",
-    "Install the refresh tool's ssh-identity and group env-file",
+    # Renamed from "...ssh-identity and group env-file" when the pool's
+    # control-plane node joined those two facts in the same file
+    # (livespec-dev-tooling-mavj5i): the shipped refresh tool carries no machine
+    # name any more, so the env-file now delivers three pool facts rather than two.
+    "Install the refresh tool's pool-fact env-file",
     "Install the gates kubeconfig",
 )
 

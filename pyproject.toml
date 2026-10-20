@@ -23,7 +23,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "livespec-dev-tooling"
-version = "1.118.3"
+version = "1.118.12"
 description = "Shared enforcement-suite library for livespec-governed projects: ruff/pyright/coverage gates, AST checks, CI-alignment checks, red-green-replay discipline. Python package plus composite Actions and reusable workflows."
 requires-python = ">=3.10.16"
 authors = [
@@ -40,6 +40,28 @@ readme = "README.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["livespec_dev_tooling"]
+
+# THE DELEGATED GATE'S JOB RENDERER SHIPS WITH THE CLIENT THAT DRIVES IT
+# (stop-the-line R283, 2026-10-20). `livespec_dev_tooling.gate_remote_delegate`
+# decides which arguments a render carries; `render-gate-job.sh` decides which
+# it accepts. Those two used to ship on DIFFERENT paths — the client in this
+# wheel, the renderer a consuming repository falls back to only at
+# `/usr/local/lib/ci-runner-k3s/gates/`, installed by an ansible playbook
+# nothing re-converges — so a client that passed `--gate-ref` (released in
+# 1.118.5 / 1.118.6) met a renderer from 2026-10-18 that rejected it, and every
+# delegated push from every other fleet repository was refused until an operator
+# ran the apply by hand.
+#
+# Force-including the COMMITTED files keeps ONE source of truth: the tree under
+# `ci-runner/k3s/phase2/gates/` is the only copy edited, and the wheel carries
+# it to the path `GATE_RENDERER_PACKAGED` resolves. Both files are needed, not
+# just the script: `render-gate-job.sh` resolves `gate-job-template.yaml` next
+# to itself, so a renderer shipped alone would refuse with `template not found`.
+# Hatchling preserves each source's mode, so the renderer lands executable
+# (verified 0755 against a real `uv build`, 2026-10-20).
+[tool.hatch.build.targets.wheel.force-include]
+"ci-runner/k3s/phase2/gates/render-gate-job.sh" = "livespec_dev_tooling/gates/render-gate-job.sh"
+"ci-runner/k3s/phase2/gates/gate-job-template.yaml" = "livespec_dev_tooling/gates/gate-job-template.yaml"
 
 [dependency-groups]
 # Every Python dev tool is uv-managed via this table (resolved into
@@ -378,6 +400,7 @@ single_meaning_variants = [
 #   - fleet/merged_branch_sweep.py  main() → sweep report to stdout + unresolvable/manifest errors to stderr
 #   - parallel_check_dispatcher.py  _write() streams per-target subprocess output to stdout
 #   - red_leg_scope.py              _write() emits the computed Red skip set to stdout
+#   - green_token.py                _write() emits the world-reading / undeclared member names, one per line, to stdout
 #   - cross_repo/justfile_canonical_reconcile.py  main() → `::notice::` annotations to stdout
 #   - cross_repo/ci_yaml_canonical_reconcile.py  main() → in-place ci.yml matrix reconcile; `::notice::` / `::error::` annotations to stdout
 #   - cross_repo/fabro_image_pin_rewrite.py  main() → in-place fabro docker pin rewrite; `::error::` on miss
@@ -416,6 +439,18 @@ supervisor_entry_files = [
     "livespec_dev_tooling/fleet/_git_identity_host_probe.py",
     "livespec_dev_tooling/parallel_check_dispatcher.py",
     "livespec_dev_tooling/red_leg_scope.py",
+    # WHAT IT NEEDS, and only this one: `no_write_direct`. The `world-reading`
+    # and `undeclared` subcommands emit one check-target name per line on
+    # stdout, which `scripts/just/check.sh` and `scripts/just/check-pre-push.sh`
+    # read back — a report surface, exactly the category the three entries above
+    # were declared for. MEASURED for the other three: the file carries no broad
+    # `except Exception`, so `no_except_outside_io` is unused; its
+    # `raise SystemExit(main())` tail is already tolerated by
+    # `supervisor_discipline` outside the plugin-scripts tree; and its
+    # `main() -> int` is not consumed across any boundary, so
+    # `public_api_result_typed` is unused. The cost of the three it does not
+    # need is the same whole-file widening the block above records.
+    "livespec_dev_tooling/green_token.py",
     # --- Class B: the nine remaining `main() -> int` supervisors, declared
     # ONE AT A TIME with a written reason, never as a batch. Each was checked
     # against ALL FOUR exemptions above rather than against the one that

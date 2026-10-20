@@ -71,6 +71,8 @@ from coverage import (  # noqa: E402  — uv-managed dep, available post-vendor-
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 # Per v033 D2: every covered file must be at 100% line coverage.
 # The threshold is policy-set at 100.0 (no carveout); this constant

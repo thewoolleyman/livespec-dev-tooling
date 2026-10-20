@@ -44,6 +44,8 @@ from livespec_dev_tooling.checks._role_key_gate import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _EXEMPT_PATH_COMPONENTS = frozenset({"_vendor", "fixtures", "__pycache__"})
 

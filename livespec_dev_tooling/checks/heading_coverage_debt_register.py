@@ -166,6 +166,8 @@ from livespec_dev_tooling.heading_coverage_debt import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _SCOPE_ENV_VAR = "LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF"
 

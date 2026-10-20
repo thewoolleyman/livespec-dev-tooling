@@ -15,11 +15,28 @@ opted-in repository delegated from every host that cloned it; a host holding no
 gates credential then failed closed, which is correct for a gate and fatal for a
 factory — the push is refused and nothing says why. So the switch is now ANDed
 with host eligibility (`gate_credential.gates_kubeconfig_readable`): the pushing
-user must be able to read the gates kubeconfig on this host. Anywhere else the
-push takes the local `just check` fall-through and SAYS SO (`GATED_LOCALLY`),
-because an opted-in repository that quietly gates somewhere else is the one shape
-an operator cannot tell apart after the fact. Nothing about the fail-closed rule
-moves: once delegation IS selected, every no-verdict shape still refuses.
+user must be able to read the gates kubeconfig on this host. A host that is
+genuinely ineligible takes the local `just check` fall-through and SAYS SO
+(`GATED_LOCALLY`), because an opted-in repository that quietly gates somewhere
+else is the one shape an operator cannot tell apart after the fact. Nothing about
+the fail-closed rule moves: once delegation IS selected, every no-verdict shape
+still refuses.
+
+HOST ELIGIBILITY HAS A THIRD ANSWER, added 2026-10-19, and reading it as the
+second one was a defect: the HOST is eligible and only the PROCESS is not. On the
+VPS the credential is group-readable and the group database lists the pushing
+user, but a login session started before that membership was granted does not
+carry the group — so the read failed, this module printed `GATED_LOCALLY`, and
+the push ran the full local aggregate while looking correctly routed. Nothing
+said the host was eligible and nothing named the remedy. `gate_group_repair`
+recognises that exact state, says which group the gate will run under, and
+re-runs the gate once under it; its own docstring carries why that grants nothing
+a fresh login would not. It is a THIRD answer rather than a WIDENING of
+eligibility — a host with no credential, and a user the group database does not
+list, keep the fall-through and the line they have today — and it is fail-closed
+like every other arm: a re-execution that cannot start, or that runs and still
+cannot read the credential, refuses the push rather than falling through to a
+local run nobody announced.
 
 THE SWITCH IS PER-REPOSITORY AND DEFAULTS OFF. It is `delegated_gate` in the
 consuming repository's own `[tool.livespec_dev_tooling]` block — the same place
@@ -60,15 +77,23 @@ import argparse
 import sys
 from pathlib import Path
 
-from livespec_dev_tooling.config import (
-    ConfigParseError,
-    load_delegated_gate,
-    load_gate_check_suite,
+from livespec_dev_tooling._gate_remote_assembly import (
+    assembly_refusal,
+    check_suite_argv,
+    declared_gate_check_suite,
+    gate_repo_name,
+    per_run_gate_ref,
+    renderer_refusal,
 )
+from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
+from livespec_dev_tooling.gate_group_repair import (
+    GATE_RUNS_UNDER_GROUP,
+    group_repair_group,
+    group_repair_status,
+)
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
-    GateCommandResult,
     GateCommandRunner,
     GateStepFailed,
     Sleeper,
@@ -89,11 +114,9 @@ from returns.result import Failure, Result, Success  # noqa: E402  — same.
 
 __all__: list[str] = [
     "GATED_LOCALLY",
-    "GATE_CHECK_SUITE_FALL_THROUGH",
     "GATE_MIRROR_ROOT",
-    "GATE_RENDERER_INSTALLED",
     "GATE_RENDERER_IN_REPO",
-    "declared_gate_check_suite",
+    "GATE_RENDERER_PACKAGED",
     "delegated_gate_enabled",
     "delegated_gate_selected",
     "gate_remote_request",
@@ -107,83 +130,40 @@ __all__: list[str] = [
 # another mirror builds its own `GateRunRequest`; this is the default path's.
 GATE_MIRROR_ROOT = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror"
 
-# The renderer, in the two places it exists: a checkout of THIS repository, which
-# carries it in-tree, and the converged host path the reconstruct unit installs.
-# A repository with neither renders nothing, the run reaches no verdict, and the
-# push is refused — which is why no third "guess a path" case is wanted here.
+# The renderer, in the two places it exists — AND BOTH OF THEM MOVE WITH THIS
+# CODE, which is the whole point. A checkout of THIS repository carries it
+# in-tree, so a renderer change is gated by the same push that makes it; every
+# OTHER repository reaches the copy the wheel ships INSIDE this package, beside
+# the client that drives it.
+#
+# THERE USED TO BE A THIRD PLACE, AND IT COST THE FLEET A DAY (stop-the-line
+# R283, 2026-10-20). The fallback was `/usr/local/lib/ci-runner-k3s/gates/
+# render-gate-job.sh`, installed only by the `gate_renderer` role in
+# `ansible/gates-kubeconfig.yml` — a playbook NOTHING re-converges: no timer,
+# unit or release hook ran it on the dev host. So when livespec-dev-tooling-44fglo
+# made this client pass `--gate-ref` and that client shipped in releases 1.118.5
+# and 1.118.6, the renderer reading it stayed at 2026-10-18, and every delegated
+# push from every other fleet repository was refused with `render-gate-job did
+# not complete ... FATAL: unknown argument --gate-ref` until an operator ran the
+# apply by hand. The writer of the arguments moved through the package release;
+# the reader moved only on a manual apply. That is the ordering class AGENTS.md
+# records as "confirm the reader before you write", and the repair is to leave
+# no reader that a release cannot reach.
+#
+# THE PACKAGED COPY IS NOT A SECOND SOURCE OF TRUTH. `pyproject.toml`'s
+# `[tool.hatch.build.targets.wheel.force-include]` carries the COMMITTED files
+# into the wheel — the renderer and the `gate-job-template.yaml` beside it,
+# because the renderer resolves its template next to itself — so one tree is
+# edited and the release carries it to every consumer.
+# `tests/consumer/test_delegated_gate_renderer_lockstep.py` holds that
+# declaration and this constant to each other, and runs the client's own argv
+# through the file the declaration ships.
 GATE_RENDERER_IN_REPO = Path("ci-runner/k3s/phase2/gates/render-gate-job.sh")
-GATE_RENDERER_INSTALLED = Path("/usr/local/lib/ci-runner-k3s/gates/render-gate-job.sh")
+GATE_RENDERER_PACKAGED = Path(__file__).resolve().parent / "gates" / "render-gate-job.sh"
 
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
-_REPO_NAME_STEP = "derive-repo-name"
-_CHECK_SUITE_STEP = "read-gate-check-suite"
 
-# What a consuming repository that declares no gate suite gets: the SHARED
-# PRE-PUSH SEQUENCE its own local fall-through runs, which is three steps rather
-# than one (freeze-driver rulings R92 and R100, 2026-10-17). `lefthook.yml`'s
-# `pre-push` block installs the worktree pack, this repository's own gate adds
-# the commit-refuse-hook install, and that hook then calls exactly ONE recipe:
-# `check-pre-push`.
-#
-# THE LAST ENTRY IS A RECIPE NAME AND CARRIES NO JUST-VARIABLE OVERRIDE, which
-# is what R100 corrected. R92 wrote `hook_gate=1 check` here on the premise that
-# every fleet consumer's pre-push ends in THIS repository's
-# `scripts/just/check-pre-push.sh` and therefore in that invocation. It does
-# not: each repository ships its own pre-push script —
-# livespec-orchestrator-beads-fabro's ends in
-# `just check-skipping check-codex-skill-picker` — and `hook_gate` is a `just`
-# variable only this repository's justfile declares (`export hook_gate := ""`).
-# `just` REFUSES a command-line override of an undeclared variable, so every
-# consumer lacking that declaration was red before its aggregate ran at all:
-# measured 2026-10-17, Job gate-livespec-orchestrator-beads-fabro-ee118f8fd5dc
-# died with `error: Variable 'hook_gate' overridden on the command line but not
-# present in justfile` on a tree whose master CI was green.
-#
-# WHAT IS ACTUALLY UNIFORM ACROSS THE FLEET IS THE RECIPE NAME. Every
-# repository's lefthook `pre-push` calls `just check-pre-push` — verified in
-# livespec, livespec-overseer, livespec-driver-claude,
-# livespec-console-beads-fabro and livespec-orchestrator-beads-fabro — and the
-# renderer's preflight tests for a RECIPE, never for a variable, so a consumer
-# that lacks it gets the existing red verdict naming the missing recipe rather
-# than `just`'s own refusal to parse an override.
-#
-# THE TWO INSTALLS STAY, and the single `check` this default once was is why.
-# `/workspace` in the gate pod is a `git init` + fetch, not a bootstrapped
-# clone, so without them the pack and the commit-refuse hooks are simply absent
-# and `check-primary-checkout-commit-refuse-hook-installed` and
-# `check-no-workflow-edits` judge the SANDBOX rather than the tree under test.
-#
-# NOTHING RE-DELEGATES INSIDE THE POD, which is the one new question
-# `check-pre-push` raises: it is the recipe that consults this module's own
-# switch, so the default now runs it on the far side of a delegation. It cannot
-# delegate again, because `delegated_gate_selected` also requires a READABLE
-# gates kubeconfig and the gate pod holds none — so the pod's `check-pre-push`
-# takes its own local fall-through there exactly as a laptop's does.
-#
-# It is still the FALL-THROUGH's sequence and never this repository's own
-# declaration: `livespec-dev-tooling` adds `warm-typecheck` and its own
-# `hook_gate=1 check`, which no other repository carries, and baking those into
-# the shared Job made every consumer red on every green tree
-# (livespec-dev-tooling-saxz). The sequence is pinned to `lefthook.yml` by
-# `tests.consumer.test_delegated_gate_declared_recipe_scenarios`, which reads
-# each step back out of the file that owns it, so a step that moves there fails
-# that test rather than silently reddening a consumer's gate.
-GATE_CHECK_SUITE_FALL_THROUGH: tuple[str, ...] = (
-    "install-worktree-pack",
-    "install-commit-refuse-hooks",
-    "check-pre-push",
-)
-
-# What `_answered` reads back when a probe did not answer at all — a git that is
-# not on PATH, a spawn that failed. Non-zero rather than empty stdout so the one
-# reader below needs no second branch for a shape it treats identically.
-_UNANSWERED = GateCommandResult(returncode=1, stdout="", stderr="")
-
-# The renderer's own default job name, computed here rather than parsed back out
-# of the manifest — and passed to it explicitly, so the name this client waits on
-# is the name it asked for even if that default ever moves.
-_JOB_NAME_TREE_CHARS = 12
 
 # What an OPTED-IN repository says when the host it is being pushed from holds no
 # readable gates credential. Printed rather than left silent because an opted-in
@@ -230,133 +210,22 @@ def delegated_gate_selected(*, repo_root: Path) -> bool:
     return delegated_gate_enabled(repo_root=repo_root) and gates_kubeconfig_readable()
 
 
-def declared_gate_check_suite(*, repo_root: Path) -> Result[tuple[str, ...], GateStepFailed]:
-    """Name the `just` invocations THIS repository declares for its gate.
-
-    The gate Job runs the gated repository's OWN recipes and nothing else, so
-    this is the one place the command is decided — and `GATE_CHECK_SUITE_FALL_THROUGH`
-    is the documented default a repository that declares nothing gets: the
-    shared pre-push sequence its own local fall-through runs, never a recipe
-    only some other repository has.
-
-    A MALFORMED DECLARATION FAILS THE STEP rather than falling back, which is
-    the opposite disposition from `delegated_gate_enabled` above and
-    deliberately so. There, a doubt resolves to "run the full local aggregate",
-    which is strict. Here, the run has ALREADY delegated, so the only thing a
-    fallback could do is gate the tree on a recipe the repository did not
-    declare — which the contract forbids in as many words. A step that did not
-    complete reaches `GATE_NO_VERDICT`, and the push is refused.
-    """
-    try:
-        declared = load_gate_check_suite(repo_root=repo_root)
-    except ConfigParseError as unreadable:
-        return Failure(
-            GateStepFailed(
-                step=_CHECK_SUITE_STEP,
-                argv=(),
-                returncode=None,
-                detail=(
-                    "gate_check_suite in the [tool.livespec_dev_tooling] block of "
-                    f"{repo_root}/pyproject.toml cannot be read: {unreadable}"
-                ),
-            )
-        )
-    return Success(declared or GATE_CHECK_SUITE_FALL_THROUGH)
-
-
-def _check_suite_argv(*, suite: tuple[str, ...]) -> list[str]:
-    """The renderer flags that carry one declared suite, in declaration order.
-
-    Repeated rather than one delimited value: a `just` invocation may carry
-    spaces (`hook_gate=1 check`), so any single-argument spelling would need a
-    separator the entries are then forbidden to contain.
-    """
-    return [flag for recipe in suite for flag in ("--check-suite", recipe)]
-
-
 def resolve_renderer(*, repo_root: Path) -> Path:
     """Name the `render-gate-job.sh` this run should use.
 
     Prefers the repository's own copy when it has one, so a change to the
     renderer is gated by the same push that makes it — and falls back to the
-    converged host path, which is what every other repository has. The fallback
+    copy inside THIS PACKAGE, which is what every other repository has. That
+    fallback cannot be older than the arguments this client passes, because it
+    arrives in the same wheel as this function; the converged host path it
+    replaces could, and was (see `GATE_RENDERER_PACKAGED` above). The fallback
     is returned unconditionally rather than checked: a path that is not there
     fails at the seam, as a step that did not run, with the argv in the report.
     """
     in_repo = repo_root / GATE_RENDERER_IN_REPO
     if in_repo.is_file():
         return in_repo
-    return GATE_RENDERER_INSTALLED
-
-
-def _answered(*, repo_root: Path, runner: GateCommandRunner, argv: list[str]) -> str:
-    """One probe's stdout, with every did-not-answer shape as the empty string.
-
-    A command that never RAN and a command that ran and REFUSED are kept apart
-    everywhere a gate's verdict depends on the difference. Here they do not
-    differ: either way this probe named nothing, and the caller's next move is
-    the same — ask the other probe, and fail closed if it is silent too.
-    """
-    ran = runner(argv=argv, cwd=repo_root).value_or(_UNANSWERED)
-    return ran.stdout.strip() if ran.returncode == 0 else ""
-
-
-def _repo_name_from_url(*, url: str) -> str:
-    """The last path component of a remote URL, without its `.git` suffix.
-
-    Both canonical forms reduce the same way, so no regex is wanted: the
-    separator after the host is `/` for https and `:` for the scp-style form,
-    and splitting on each in turn reaches the final segment of either. A URL
-    carrying credentials — a Fabro sandbox's origin does — contributes nothing
-    past the host, so no secret can reach the name this returns.
-    """
-    tail = url.rstrip("/").rsplit("/", maxsplit=1)[-1].rsplit(":", maxsplit=1)[-1]
-    return tail.removesuffix(".git")
-
-
-def _gate_repo_name(*, repo_root: Path, runner: GateCommandRunner) -> Result[str, GateStepFailed]:
-    """Name the REPOSITORY this push gates — never the directory it runs in.
-
-    `repo_root.name` was that name until 2026-10-11, and it is right only for a
-    primary checkout. A LINKED WORKTREE'S DIRECTORY IS ITS BRANCH, so a push
-    from `~/.worktrees/<repo>/<branch>` named the mirror, the Job and the
-    renderer's `--repo` after the branch. The gate mirror holds one bare
-    repository per repository, so that push was refused with
-    `'<branch>.git' does not appear to be a git repository` — and since the
-    primary checkout refuses pushes outright, the opt-in was unusable from every
-    checkout it was meant to gate.
-
-    The origin remote is asked FIRST because it is the repository's own
-    identity rather than a fact about this host's directory layout, and it reads
-    identically in a worktree and in the checkout the worktree was added from.
-    `--git-common-dir` is the fallback for a clone with no origin: from inside a
-    worktree it answers the PRIMARY checkout's `.git`, so its parent is the
-    repository directory even there. A clone that answers neither names nothing,
-    and naming nothing is a step that did not complete — the gate is never
-    submitted against a guessed mirror.
-    """
-    origin_argv = ["git", "remote", "get-url", "origin"]
-    from_origin = _repo_name_from_url(
-        url=_answered(repo_root=repo_root, runner=runner, argv=origin_argv)
-    )
-    if from_origin:
-        return Success(from_origin)
-    common_argv = ["git", "rev-parse", "--git-common-dir"]
-    common_dir = _answered(repo_root=repo_root, runner=runner, argv=common_argv)
-    from_common_dir = (repo_root / common_dir).resolve().parent.name if common_dir else ""
-    if from_common_dir:
-        return Success(from_common_dir)
-    return Failure(
-        GateStepFailed(
-            step=_REPO_NAME_STEP,
-            argv=tuple(common_argv),
-            returncode=None,
-            detail=(
-                "neither the origin remote URL nor the parent of the git common "
-                f"directory names a repository for {repo_root}"
-            ),
-        )
-    )
+    return GATE_RENDERER_PACKAGED
 
 
 def gate_remote_request(
@@ -380,14 +249,14 @@ def gate_remote_request(
     if isinstance(tree, Failure):
         return Failure(tree.failure())
     tree_hash = tree.unwrap().stdout.strip()
-    named = _gate_repo_name(repo_root=repo_root, runner=runner)
+    named = gate_repo_name(repo_root=repo_root, runner=runner)
     if isinstance(named, Failure):
         return Failure(named.failure())
     repo = named.unwrap()
     suite = declared_gate_check_suite(repo_root=repo_root)
     if isinstance(suite, Failure):
         return Failure(suite.failure())
-    job_name = f"gate-{repo}-{tree_hash[:_JOB_NAME_TREE_CHARS]}"
+    gate_ref = per_run_gate_ref(tree_hash=tree_hash)
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -396,21 +265,21 @@ def gate_remote_request(
         tree_hash,
         "--repo",
         repo,
-        "--job-name",
-        job_name,
-        *_check_suite_argv(suite=suite.unwrap()),
+        "--gate-ref",
+        gate_ref,
+        *check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(
         step=_RENDER_STEP, argv=render_argv, outcome=runner(argv=render_argv, cwd=repo_root)
     )
     if isinstance(rendered, Failure):
-        return Failure(rendered.failure())
+        return Failure(renderer_refusal(renderer=renderer, failure=rendered.failure()))
     return Success(
         GateRunRequest(
             repo_root=repo_root,
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
-            job_name=job_name,
+            gate_ref=gate_ref,
         )
     )
 
@@ -434,7 +303,7 @@ def run_delegated_gate(
         failure = built.failure()
         return GateVerdict(
             state=GATE_NO_VERDICT,
-            detail=f"{failure.step} did not complete, so no gate was submitted: {failure.detail}",
+            detail=assembly_refusal(failure=failure),
             token_written=False,
         )
     return run_gated_push(request=built.unwrap(), runner=runner, sleeper=sleeper)
@@ -447,9 +316,16 @@ def main() -> int:
     this host's credential — because the exit code is the whole branch the recipe
     takes and a recipe cannot read the host for itself. It stays SILENT for a
     repository that has not opted in, so such a repository sees a pre-push
-    byte-for-byte the one it saw before this slice landed. It speaks in exactly
-    one case: switched ON, host ineligible, which is the case that would
-    otherwise gate differently without saying so.
+    byte-for-byte the one it saw before this slice landed.
+
+    IT SPEAKS IN TWO CASES, and they are opposites that used to be the same
+    answer. Switched ON and the host genuinely INELIGIBLE is the local
+    fall-through, which says so and exits non-zero. Switched ON and the host
+    ELIGIBLE while only this PROCESS lacks the credential's owning group is a
+    push that delegates after all, so it exits ZERO and names the group it will
+    run under — `gate_group_repair` carries why that re-execution grants nothing
+    a fresh login would not. Before that split, the second case printed the
+    first's line and ran the full local aggregate while looking correctly routed.
     """
     structlog.configure(
         processors=[
@@ -475,10 +351,18 @@ def main() -> int:
     if parsed.command == "enabled":
         if delegated_gate_selected(repo_root=repo_root):
             return 0
-        if delegated_gate_enabled(repo_root=repo_root):
+        opted_in = delegated_gate_enabled(repo_root=repo_root)
+        group = group_repair_group(opted_in=opted_in)
+        if group is not None:
+            log.warning(GATE_RUNS_UNDER_GROUP, group=group)
+            return 0
+        if opted_in:
             log.warning(GATED_LOCALLY, kubeconfig=str(gates_kubeconfig_path()))
         return 1
 
+    decided = group_repair_status(opted_in=delegated_gate_enabled(repo_root=repo_root))
+    if decided is not None:
+        return decided
     verdict = run_delegated_gate(
         repo_root=repo_root, renderer=resolve_renderer(repo_root=repo_root)
     )

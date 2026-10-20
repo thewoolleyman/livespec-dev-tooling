@@ -88,6 +88,8 @@ from livespec_dev_tooling.config import is_under_any_tree  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _IMPLICIT_FIRST_PARAMS = frozenset({"self", "cls"})
 _SORT_FUNC_NAMES = frozenset({"sort", "sorted"})

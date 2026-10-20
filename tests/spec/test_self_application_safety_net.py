@@ -30,10 +30,13 @@ Both are read off the committed shell rather than by running the aggregate: the
 scripts ARE the wiring under assertion, and running `just check` from inside the
 suite it gates would be a second execution of it rather than a test of it.
 
-The green-token skip in the pre-push script is not a subset and is not asserted
-against: it skips the aggregate only for a tree byte-identical to one the
-aggregate already passed, which is a caching argument rather than a narrowing of
-what runs.
+The green-token path in the pre-push script is not a subset and is not asserted
+against. Its narrowing is keyed on each member's own PURITY declaration rather
+than on a change class: for a tree byte-identical to one the aggregate already
+passed, the token stands in for the members whose verdict that tree alone
+decides, and every member that reads state outside the tree still runs on the
+pushing host — which is what keeps a caching argument from becoming a weaker
+verdict. `tests.consumer.test_green_token_purity_memoization` holds that path.
 """
 
 from __future__ import annotations
@@ -59,7 +62,9 @@ _SUBSET_RECIPE = "check-pre-commit-doc-only"
 
 # The full aggregate, and the hook-path omission list that is allowed to
 # shrink it — one literal assignment, so a growth of it is one visible diff.
-_FULL_AGGREGATE = re.compile(r"^just(?: [a-z_]+=\S+)* check$", re.MULTILINE)
+_FULL_AGGREGATE = re.compile(
+    r'^just(?: [a-z_]+=\S+)* check(?: >"\$gate_output" 2>&1)?$', re.MULTILINE
+)
 _HOOK_GATE_SKIPS = re.compile(r'^hook_gate_skips="(?P<slugs>[^"]*)"$', re.MULTILINE)
 
 
@@ -95,6 +100,10 @@ def test_the_push_gate_runs_the_full_aggregate_and_delegates_to_no_subset() -> N
         f"the push gate must invoke the FULL `just check` aggregate, which is what makes "
         f"`just check` the standard local safety net the section names; "
         f"script={_PRE_PUSH.relative_to(_REPO_ROOT)} lines={lines}"
+    )
+    assert 'cat "$gate_output"' in lines, (
+        "a captured pre-push aggregate must be relayed unchanged: its complete output is both "
+        "the operator's failure record and the source of any host-state diagnosis"
     )
 
 

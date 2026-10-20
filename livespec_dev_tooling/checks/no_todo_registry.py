@@ -141,6 +141,8 @@ from livespec_dev_tooling.checks._work_item_liveness import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _COVERAGE_PATH = Path("tests") / "heading-coverage.json"
 _FAIL_ENV_VAR = "LIVESPEC_FAIL_IF_HEADING_COVERAGE_TODOS_EXIST"

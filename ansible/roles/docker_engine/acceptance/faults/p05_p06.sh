@@ -15,7 +15,7 @@ if [ "$CASE" = p06 ]; then
   W6=$PWD/tmp/faults/p06-ssh-vm$I.sh
   printf '#!/usr/bin/env bash\n[ -e %q ] && { echo "p06: injected failure" >&2; exit 255; }\nexec "$@"\n' "$FLAG" > "$W6"; chmod +x "$W6"
   KEY=$FAULTS_KEY PORT=$((2229 + 10 * I))
-  argv=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' bash "$W6" ssh -i "$KEY" -J cwoolley@poweredge-xubuntu -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 -o ControlMaster=no -o ControlPath=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null guard@127.0.0.1 true)
+  argv=$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' bash "$W6" ssh -i "$KEY" -J "$FAULTS_KVM_USER@$FAULTS_KVM_HOST" -p "$PORT" -o BatchMode=yes -o ConnectTimeout=15 -o ControlMaster=no -o ControlPath=none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null guard@127.0.0.1 true)
   extra=(-e "{\"docker_engine_tailscale_ssh_argv\": $argv}")
 fi
 xq=""; [ ${#extra[@]} -gt 0 ] && xq=$(printf '%q ' "${extra[@]}")

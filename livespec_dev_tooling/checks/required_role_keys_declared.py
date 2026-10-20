@@ -31,6 +31,8 @@ __all__: list[str] = [
     "main",
 ]
 
+CHECK_PURITY = "tree-pure"
+
 
 _CHECK_ID = "required_role_keys_declared"
 _JUSTFILE_NAME = "justfile"

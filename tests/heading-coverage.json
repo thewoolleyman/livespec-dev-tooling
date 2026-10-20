@@ -767,5 +767,36 @@
     "heading": "## Scenario: the fabro-hosts play renders the factory registry from the inventory's factory names",
     "test": "tests.livespec_dev_tooling.test_fabro_factory_registry_role.test_each_declared_factory_resolves_to_its_instances_https_address",
     "reason": "Integration-tier (module-level `pytest.mark.integration`, the AST marker route of direction 4). The mapped arm is the scenario's first Given/Then pair: `fabro_factory_registry` maps `legacy` to one host's instance WITH a `docker_host` and `petri` to another's WITHOUT one, and the committed role — run, not read, because every claim here is a claim about what `selectattr` through `hostvars` resolves — renders exactly those two entries, each `server` being `https://` plus that instance's `canonical_host`, with `docker_host` on `legacy` alone. Its control arm asserts the bare `canonical_host` is NOT the value, so a role that dropped the scheme cannot pass. The scenario's remaining Givens are the module's siblings: the re-point onto a third host, the undeclared name that must be GONE rather than merged, the empty object for an inventory that declares nothing, the `--tags` run that selects no rendering task, and the five <invalid> examples — the last proven both by the play failing and by the install task never appearing, paired against a valid registry that reaches it."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a push of a tree holding a green token still runs the members that read state outside the tree",
+    "test": "tests.consumer.test_green_token_purity_memoization.test_the_memoized_run_runs_every_world_reading_member_the_hook_path_keeps",
+    "reason": "Consumer-tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`): drives BOTH committed halves of the token-match path end to end against stub `uv` and `just` executables on PATH that record their argv, over a fixture inventory holding exactly the scenario's Given — a tree-pure member, a world-reading member, and a member carrying no purity declaration. The mapped arm is the scenario's first Then-line, read off the `--skip` list the real `scripts/just/check.sh` hands the dispatcher: neither the world-reading member nor the undeclared one may be in it. The stub resolver answers by FILTERING the members it is asked about against a configured declaration set, so the aggregate's own question is observable through its answer rather than assumed — which is what makes the hook-path omission measurable. The remaining Then-lines are the module's siblings: the tree-pure member IS in that skip list, `scripts/just/check-pre-push.sh` routes a token match to the memoized run instead of exiting 0, it never consults the delegated-gate switch so no gate Job is submitted, a failing member refuses the push through the exit status the hook reads, the run names each world-reading member it ran and counts what it skipped, and it records no new token. A token MISS keeps the unchanged path. The pre-existing defect the arms convict is measured, not hypothetical: a seven-week-old token on the livespec primary checkout would have skipped `check-master-ci-green` outright (work-item livespec-dev-tooling-aape).",
+    "work_item": "livespec-dev-tooling-aape"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a check aggregate member with no purity declaration fails the aggregate",
+    "test": "tests.consumer.test_check_aggregate_purity_declarations.test_a_member_with_no_purity_declaration_fails_the_aggregate_and_is_named",
+    "reason": "Consumer-tier (the `tests.consumer` node-id prefix this repository declares in `scenario_tiers`): drives the real committed `scripts/just/check.sh` end to end over a fixture inventory, against stub `uv` and `just` executables on PATH that record their argv, so the scenario's two Then-lines are read off what the aggregate actually does rather than off the script's text — it exits non-zero, its output names the undeclared member, and it dispatches no target and records no green token after the refusal. Its sibling asserts the other half the refusal rests on: that the audit covers every one of the aggregate's own members and runs before any target starts (work-item livespec-dev-tooling-aape)."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate run that reaches no verdict emits a no-verdict outcome event",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "work_item": "livespec-dev-tooling-cmgqnz"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate verdict is unchanged when its outcome event cannot be delivered",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-cmgqnz owns it.",
+    "work_item": "livespec-dev-tooling-cmgqnz"
   }
 ]

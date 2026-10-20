@@ -57,6 +57,8 @@ from livespec_dev_tooling.checks._ai_references import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 class _Scan(NamedTuple):
     """One working-tree scan: how much was inspected, and what dangled.

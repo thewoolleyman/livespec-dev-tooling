@@ -4,8 +4,14 @@
 # converge's reconfigure completes it (the reconfigured record covers the new keys).
 set -uo pipefail
 cd "$(dirname "$0")/../../../../.." || exit 1
-KEY=$HOME/.cache/docker-engine-guard-acceptance/poweredge-xubuntu/id_ed25519
-vm0() { ssh -i "$KEY" -o ProxyJump=cwoolley@poweredge-xubuntu -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -p 2229 guard@127.0.0.1 "$@"; }
+# WHICH MACHINE HOSTS THE VMs IS THE INVENTORY'S DECISION, NEVER THIS FILE'S
+# (livespec-dev-tooling-prdxxe). Told in one variable that ../inventory-kvm.yml and
+# lib.sh read from the same environment; refused before anything is touched.
+KVM_HOST="${DOCKER_ENGINE_ACCEPTANCE_KVM_HOST:?set this to the inventory name of the KVM acceptance host (the docker_engine_acceptance_hosts group member) before running a FAULTS case}"
+# The login account on that host. A user is not a machine, so it stays a literal.
+KVM_USER="${DOCKER_ENGINE_ACCEPTANCE_KVM_USER:-cwoolley}"
+KEY=$HOME/.cache/docker-engine-guard-acceptance/$KVM_HOST/id_ed25519
+vm0() { ssh -i "$KEY" -o ProxyJump="$KVM_USER@$KVM_HOST" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -p 2229 guard@127.0.0.1 "$@"; }
 state() {
   vm0 'sudo python3 - <<PY
 import json, hashlib, glob

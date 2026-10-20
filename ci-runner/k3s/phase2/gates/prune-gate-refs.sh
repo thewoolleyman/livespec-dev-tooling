@@ -45,6 +45,19 @@
 # is what makes it safe against a push in flight: objects a running push has
 # written but not yet referenced are seconds old, far inside the cutoff.
 #
+# PACKS, not just loose objects. `git prune` reclaims LOOSE objects only, and a
+# gate push almost never leaves any: the client's earlier refs have been
+# deleted, so the push finds no common history and sends the whole of it as one
+# new PACK (receive.unpackLimit). With gc.auto=0 nothing ever consolidated
+# those, so every push added a near-full copy of the history. Measured
+# 2026-10-19 (livespec-dev-tooling-g2ez52): the orchestrator mirror held 64
+# packs of ~21 MB, 1.2 GB for 43k distinct objects, and the daemon's
+# pack-objects needed 47 MiB per fetch and 133 MiB for three at once -- the
+# OOM-kill at its 64 Mi limit. `git repack -a -d --cruft` folds every pack into
+# one (22 MB, 6 MiB per fetch, measured on a copy of that mirror). The
+# unreachable objects go into a cruft pack and expire on the SAME cutoff as the
+# prune above, so a push in flight is exactly as safe as it already was.
+#
 # WHY IT MAY RE-EXEC ITSELF. The mirrors are owned by the account the SSH
 # receive path lands as, and git refuses to operate on a repository owned by
 # another user. Rather than hardcode that account in a systemd unit — a second
@@ -170,6 +183,12 @@ for repo_dir in "${MIRROR_ROOT}"/*.git; do
     status=1
   fi
 
+  if [ "${DRY_RUN}" -eq 1 ]; then
+    echo "  would run: git --git-dir=${repo_dir} repack -a -d -q --cruft --cruft-expiration=${MAX_AGE_SECONDS} seconds ago"
+  elif ! git --git-dir="${repo_dir}" repack -a -d -q --cruft --cruft-expiration="${MAX_AGE_SECONDS} seconds ago"; then
+    echo "ERROR: git repack failed in ${repo_dir}" >&2
+    status=1
+  fi
   echo "  $(basename "${repo_dir}"): pruned ${pruned}, kept ${kept}, unaged ${unaged}"
   total_pruned=$((total_pruned + pruned))
   total_kept=$((total_kept + kept))

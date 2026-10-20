@@ -4,7 +4,20 @@
 set -euo pipefail
 
 BASE_URL="${FABRO_BASE_URL:-http://127.0.0.1:32276}"
-CANONICAL_HOST="${FABRO_CANONICAL_HOST:-vps.perch-rudd.ts.net:32276}"
+# NO DEFAULT, AND THE REFUSAL IS THE POINT. The canonical host is the instance's
+# own `canonical_host`, which the fabro_server role renders into the unit as
+# FABRO_CANONICAL_HOST (templates/fabro-server.service.j2); a machine is bound
+# only through the inventory (livespec-dev-tooling-prdxxe). A literal default
+# here named ONE instance's tailnet address and was wrong for every other
+# instance, and it could not fail loudly: the probe would send a `Host:` header
+# for somebody else's server, the reverse proxy would answer 404, and the unit
+# would report the console unverified rather than report that nobody told it
+# which host it serves. Refusing names the variable instead.
+if [[ -z "${FABRO_CANONICAL_HOST:-}" ]]; then
+    echo "ERROR: FABRO_CANONICAL_HOST is unset; the fabro_server role renders it from the instance's canonical_host" >&2
+    exit 1
+fi
+CANONICAL_HOST="${FABRO_CANONICAL_HOST}"
 RUNS_URL="${BASE_URL}/runs"
 LOGIN_URL="${BASE_URL}/login"
 ATTEMPTS="${FABRO_WEB_VERIFY_ATTEMPTS:-60}"

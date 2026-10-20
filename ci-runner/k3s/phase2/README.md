@@ -125,7 +125,10 @@ fleet-wide backlog on the tiered host — while a bounded ceiling leaves the
 surplus queued on GitHub at no cost. The `2 x` keeps borrowing reachable;
 the floor of 6 keeps a one-slot repository from draining a lone matrix one
 job at a time. Derivation and the ten values: `kueue/DERIVATION.md`
-"Bounding maxRunners to the quota (2026-09-06)".
+"Bounding maxRunners to the quota (2026-09-06)". A scale set departs from
+the rule only as a recorded exception with its measurement and acceptance
+check (`kueue/DERIVATION.md` "Recorded exceptions to the rule"; since
+2026-10-19 `livespec-orchestrator-beads-fabro` at 12).
 
 Both are still needed. `maxRunners` alone gives no fair sharing;
 `nominalQuota` alone lets Kueue admit workloads ARC's scale set then

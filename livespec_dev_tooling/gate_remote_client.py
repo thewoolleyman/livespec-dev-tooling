@@ -30,11 +30,23 @@ against.
 A SECOND REF RIDES THE SAME PUSH, and it is not a second identity: the mirror
 is created EMPTY (`git init --bare`), so it holds only what a gate push puts
 there, while eight members of the aggregate judge the commit range
-`origin/master..HEAD` rather than a tree. `refs/gates/<tree>.base` carries this
+`origin/master..HEAD` rather than a tree. The `.base` companion carries this
 client's own `origin/master` and the pod's initContainer fetches it straight
 into `refs/remotes/origin/master`. The push is `--atomic` so a tree ref without
-its base cannot exist; the tree hash still names the tree, the served ref, this
-Job and the token.
+its base cannot exist.
+
+THE MIRROR REF IS NAMED PER RUN, NOT PER TREE, and `gate_ref` arrives on the
+request already carrying that name because the SAME value was rendered into the
+Job the pod will run. It used to be `refs/gates/<tree>` for every gate of one
+tree, which is a shared name under a `finally` that DELETES it: when two gates
+of one tree overlapped, whichever reached its cleanup first removed the ref the
+other run's pod had not fetched yet. Measured 2026-10-19 — two post-merge
+janitors gated master tree 228727afbe95 five seconds apart, the losing run's
+collection deleted the winner's input, its pod died with `couldn't find remote
+ref`, and a correct merged tree read as a RED janitor. ONE collision cost BOTH
+gates their verdicts, and concurrent same-tree gating is routine: every
+post-merge janitor in a repository gates the master tip. The tree hash still
+names the tree and the token; it no longer names the ref alone.
 
 THE MIRROR PUSHES RUN WITH THE PUSHING REPOSITORY'S HOOKS DISABLED, and that is
 what keeps this client from calling itself. git runs `pre-push` for EVERY push,
@@ -161,14 +173,23 @@ class GateRunRequest:
     NEEDS and how it REACHES the world are different kinds of thing.
 
     `manifest` arrives already rendered, by `render-gate-job.sh` from the gated
-    repository's own workflow; `job_name` is the name that renderer was asked
-    for, since nothing here parses YAML to rediscover it.
+    repository's own workflow. There is NO job name here: the manifest asks for
+    a `metadata.generateName`, so the name is assigned by the API server at
+    submit and read back off that submit's own answer.
+
+    `gate_ref` is the mirror ref THIS RUN owns, and it is passed in rather than
+    derived here for one reason: the pod fetches whatever the manifest was
+    rendered with, so the ref this client pushes to and the ref the Job looks
+    for have to be ONE value decided in ONE place. The caller mints it per run
+    (`gate_remote_delegate`) because this client deletes the refs it created on
+    its way out, and a name shared with a concurrent gate of the same tree is a
+    name one run can delete while the other still needs it.
     """
 
     repo_root: Path
     mirror_url: str
     manifest: str
-    job_name: str
+    gate_ref: str
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 3600.0
@@ -181,6 +202,11 @@ class GateRunOutcome:
     `terminal_state` is the Job condition type the cluster reported, verbatim,
     and `logs_returncode` is the log stream's own exit code. Both are
     observations for S7b to interpret; neither is a decision.
+
+    `job_name` is the name the API SERVER assigned, read back off the submit,
+    rather than one this client predicted: the manifest asks for a
+    `generateName` so that a re-gate of one tree is a new measurement instead of
+    an `AlreadyExists` refusal.
 
     `failure_message` is the failed pod's termination message, verbatim, and the
     empty string when there was none or when the gate did not fail. It is the
@@ -224,8 +250,8 @@ def run_gate(
         # never pushed rather than on the code under test.
         "--atomic",
         request.mirror_url,
-        f"HEAD:refs/gates/{tree_hash}",
-        f"{GATE_RANGE_BASE_REF}:refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+        f"HEAD:{request.gate_ref}",
+        f"{GATE_RANGE_BASE_REF}:{request.gate_ref}{GATE_BASE_REF_SUFFIX}",
     ]
     pushed = require_success(
         step=_PUSH_STEP, argv=push_argv, outcome=runner(argv=push_argv, cwd=request.repo_root)
@@ -239,7 +265,7 @@ def run_gate(
             request=request, runner=runner, sleeper=sleeper, tree_hash=tree_hash
         )
     finally:
-        deleted = _delete_gate_ref(request=request, runner=runner, tree_hash=tree_hash)
+        deleted = _delete_gate_ref(request=request, runner=runner)
     if isinstance(gated, Failure):
         return gated
     if isinstance(deleted, Failure):
@@ -295,15 +321,20 @@ def _head_tree_hash(
     return lifted.map(lambda ran: ran.stdout.strip())
 
 
-def _delete_gate_ref(
-    *, request: GateRunRequest, runner: GateCommandRunner, tree_hash: str
-) -> StepOutcome:
+def _delete_gate_ref(*, request: GateRunRequest, runner: GateCommandRunner) -> StepOutcome:
     """Collect the refs this run created — the first of the two collectors.
 
     BOTH refs, because the push created both. The `.base` companion is the same
     kind of litter as the tree ref and accumulates at the same rate, so naming
     only the tree ref would halve the collection while looking complete — and
     the shortfall is invisible until the mirror's namespace is measured.
+
+    THE REFS THIS RUN CREATED, and nothing else, which is why `request.gate_ref`
+    names them rather than the tree hash. A collection keyed on the tree deleted
+    refs a CONCURRENT gate of the same tree was still relying on: measured
+    2026-10-19, the losing of two same-tree janitors deleted the winner's input
+    before its pod had fetched it, and both runs lost their verdicts to one
+    collision.
 
     THROUGH `_mirror_push` for the same reason the publish is: a `--delete` is a
     push, and git fires `pre-push` for it too, so a collection spelled with hooks
@@ -315,8 +346,8 @@ def _delete_gate_ref(
         *_mirror_push(),
         "--delete",
         request.mirror_url,
-        f"refs/gates/{tree_hash}",
-        f"refs/gates/{tree_hash}{GATE_BASE_REF_SUFFIX}",
+        request.gate_ref,
+        f"{request.gate_ref}{GATE_BASE_REF_SUFFIX}",
     ]
     return require_success(
         step=_DELETE_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
@@ -332,11 +363,26 @@ def _gate_a_pushed_tree(
 ) -> Result[GateRunOutcome, GateStepFailed]:
     """Submit, wait, stream — the section that owns the pushed ref.
 
-    `create` rather than `apply`: re-gating the same tree yields the same Job
-    name, and `apply` would silently ADOPT the existing object, making a re-run
-    a second attempt on the first run's Job. The template's `backoffLimit: 0`
-    states the same rule for the same reason — a gate verdict is a measurement,
-    so a re-run must be a new, separately identified gate.
+    `create` rather than `apply`: `apply` would silently ADOPT an existing
+    object, making a re-run a second attempt on the first run's Job. The
+    template's `backoffLimit: 0` states the same rule for the same reason — a
+    gate verdict is a measurement, so a re-run must be a new, separately
+    identified gate.
+
+    THAT RULE ONLY BECAME TRUE WHEN THE NAME STOPPED BEING DERIVED. The manifest
+    used to carry `metadata.name` as `gate-<repo>-<first 12 hex of the tree
+    hash>`, and the template keeps a finished Job for `ttlSecondsAfterFinished`
+    — an hour. So for an hour after a tree's gate ended, `create` refused every
+    further gate of that tree with `AlreadyExists` and this client reported
+    NO_VERDICT, which is the state reserved for a LOST CLUSTER: the re-run was
+    not a second attempt, it simply could not happen. The manifest now asks for a
+    `generateName`, so the API server assigns a distinct name to every submit and
+    the `create` stays exactly as strict as it was.
+
+    WHICH MEANS THE NAME IS AN OUTPUT OF THE SUBMIT, not an input to it, and
+    `--output json` is how it is read. Every later step names the Job — the wait,
+    the pod read, the log stream — so the one thing this must never do is GUESS
+    it: a guessed name is a run that waits on a Job that is not its own.
 
     The logs are streamed AFTER the terminal state rather than during: until
     Kueue admits the Job there is no pod to attach to, so a follow that starts
@@ -344,7 +390,7 @@ def _gate_a_pushed_tree(
     until it ends, which is a known and separable improvement rather than a
     property anything here depends on.
     """
-    submit_argv = [*_kubectl(request=request), "create", "--filename", "-"]
+    submit_argv = [*_kubectl(request=request), "create", "--output", "json", "--filename", "-"]
     submitted = require_success(
         step=_SUBMIT_STEP,
         argv=submit_argv,
@@ -352,7 +398,13 @@ def _gate_a_pushed_tree(
     )
     if isinstance(submitted, Failure):
         return Failure(submitted.failure())
-    terminal = _await_terminal_state(request=request, runner=runner, sleeper=sleeper)
+    named = _created_job_name(argv=submit_argv, payload=submitted.unwrap().stdout)
+    if isinstance(named, Failure):
+        return Failure(named.failure())
+    job_name = named.unwrap()
+    terminal = _await_terminal_state(
+        request=request, runner=runner, sleeper=sleeper, job_name=job_name
+    )
     if isinstance(terminal, Failure):
         return Failure(terminal.failure())
     state = terminal.unwrap()
@@ -360,12 +412,14 @@ def _gate_a_pushed_tree(
     # whether to spend an API call, NOT an adjudication: the message is carried
     # verbatim either way and this slice still forms no opinion about it.
     message = (
-        "" if state == _COMPLETE_CONDITION else _failure_message(request=request, runner=runner)
+        ""
+        if state == _COMPLETE_CONDITION
+        else _failure_message(request=request, runner=runner, job_name=job_name)
     )
     logs_argv = [
         *_kubectl(request=request),
         "logs",
-        f"job/{request.job_name}",
+        f"job/{job_name}",
         "--all-containers",
         "--follow",
     ]
@@ -380,7 +434,7 @@ def _gate_a_pushed_tree(
     return streamed.map(
         lambda ran: GateRunOutcome(
             tree_hash=tree_hash,
-            job_name=request.job_name,
+            job_name=job_name,
             terminal_state=state,
             logs_returncode=ran.returncode,
             failure_message=message,
@@ -388,7 +442,47 @@ def _gate_a_pushed_tree(
     )
 
 
-def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner) -> str:
+def _unreadable(*, step: str, argv: Sequence[str], detail: str) -> GateStepFailed:
+    """One shape for a step whose COMMAND ran and whose ANSWER was unusable.
+
+    `returncode=None` is the distinction this exists to keep, and it is why the
+    four sites below share it rather than each spelling a refusal: the command
+    did not fail, so there is no exit code to report — what failed is the read.
+    Both reach `GATE_NO_VERDICT` and refuse the push, and both must, but only one
+    of them is a cluster saying no.
+    """
+    return GateStepFailed(step=step, argv=tuple(argv), returncode=None, detail=detail)
+
+
+def _created_job_name(*, argv: Sequence[str], payload: str) -> Result[str, GateStepFailed]:
+    """The name the API server ASSIGNED this Job, read off the submit's answer.
+
+    A FAILURE, never a fallback. The manifest carries `generateName` rather than
+    `name`, so there is no name to fall back TO: the renderer's old derived name
+    is exactly the value that made a re-gate impossible, and reinstating it here
+    as a guess would put this run back to waiting on another run's Job — or on
+    nothing at all. A submit whose answer cannot be read is therefore a step that
+    did not complete, which reaches `GATE_NO_VERDICT` and refuses the push, and
+    that is sound: the Job may well be running, but nothing left can find it.
+    """
+    try:
+        parsed = cast("_JobPayload", json.loads(payload))
+    except json.JSONDecodeError as unreadable:
+        detail = f"unreadable submit response: {unreadable}"
+        return Failure(_unreadable(step=_SUBMIT_STEP, argv=argv, detail=detail))
+    assigned = parsed.get("metadata", {}).get("name")
+    if isinstance(assigned, str) and assigned:
+        return Success(assigned)
+    return Failure(
+        _unreadable(
+            step=_SUBMIT_STEP,
+            argv=argv,
+            detail="the submit response carries no metadata.name for the created Job",
+        )
+    )
+
+
+def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_name: str) -> str:
     """The failed pod's termination message, or the empty string.
 
     EVIDENCE, NEVER A VERDICT, which is why every unreadable shape answers the
@@ -404,7 +498,7 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner) -> s
         "get",
         "pods",
         "--selector",
-        f"job-name={request.job_name}",
+        f"job-name={job_name}",
         "--output",
         f"jsonpath={_TERMINATION_MESSAGE_JSONPATH}",
     ]
@@ -425,7 +519,7 @@ def _poll_budget(*, request: GateRunRequest) -> int:
 
 
 def _await_terminal_state(
-    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper
+    *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
 ) -> Result[str, GateStepFailed]:
     """Poll the Job until it reports a terminal condition, or give up.
 
@@ -434,7 +528,7 @@ def _await_terminal_state(
     would spend the whole budget re-asking a question the cluster has already
     declined to answer.
     """
-    argv = [*_kubectl(request=request), "get", "job", request.job_name, "--output", "json"]
+    argv = [*_kubectl(request=request), "get", "job", job_name, "--output", "json"]
     for _ in range(_poll_budget(request=request)):
         lifted = require_success(
             step=_AWAIT_STEP, argv=argv, outcome=runner(argv=argv, cwd=request.repo_root)
@@ -448,17 +542,8 @@ def _await_terminal_state(
         if state is not None:
             return Success(state)
         sleeper(seconds=request.poll_interval_seconds)
-    return Failure(
-        GateStepFailed(
-            step=_AWAIT_STEP,
-            argv=tuple(argv),
-            returncode=None,
-            detail=(
-                f"{request.job_name} reached no terminal condition "
-                f"within {request.poll_timeout_seconds:g}s"
-            ),
-        )
-    )
+    gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
+    return Failure(_unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
 
 
 def _terminal_condition(*, argv: Sequence[str], payload: str) -> Result[str | None, GateStepFailed]:
@@ -473,14 +558,8 @@ def _terminal_condition(*, argv: Sequence[str], payload: str) -> Result[str | No
     try:
         parsed = cast("_JobPayload", json.loads(payload))
     except json.JSONDecodeError as unreadable:
-        return Failure(
-            GateStepFailed(
-                step=_AWAIT_STEP,
-                argv=tuple(argv),
-                returncode=None,
-                detail=f"unreadable job status: {unreadable}",
-            )
-        )
+        detail = f"unreadable job status: {unreadable}"
+        return Failure(_unreadable(step=_AWAIT_STEP, argv=argv, detail=detail))
     conditions = cast("_Conditions", parsed.get("status", {}).get("conditions", ()))
     for condition in conditions:
         asserted = condition.get("status") == _CONDITION_ASSERTED

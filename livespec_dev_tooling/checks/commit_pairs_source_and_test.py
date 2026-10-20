@@ -122,6 +122,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the staged index and the pending commit's message
+
 
 _RED_TRAILER_TOKEN: str = "TDD-Red-Test-File-Checksum:"
 _GREEN_TRAILER_TOKEN: str = "TDD-Green-Verified-At:"

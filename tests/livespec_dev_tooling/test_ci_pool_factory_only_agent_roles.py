@@ -129,6 +129,15 @@ _POWEREDGE_ROLES = (
     "factory_reach_check",
     "datastore_tmpfs",
     "storage_sweep",
+    # The five node-local timers two hand-run installers used to carry
+    # (livespec-dev-tooling-xcscdz). Server-only, and LAST: arming the prune's
+    # timer removes images on the spot, so it follows every role that could
+    # still install a manifest pinning one.
+    # `tests/livespec_dev_tooling/test_ci_pool_observability_and_prune_units.py`
+    # resolves which role installs which timer, and that each is reached on the
+    # server alone.
+    "ci_observability",
+    "sandbox_image_prune",
 )
 _GMKTEC_ROLES = (
     "k3s_config",

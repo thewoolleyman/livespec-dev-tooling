@@ -518,25 +518,79 @@ def _inventory_k3s_server() -> str:
     return server["host"]
 
 
-def test_the_refresh_tool_and_the_role_name_the_same_control_plane_node() -> None:
-    """An un-provisioned host must fail against the right name, not an empty string.
-
-    The shipped script's fallback and the role's default are two spellings of one
-    pool fact, and a disagreement would make a converged node and an
-    un-provisioned one pull from different hosts. The role resolves the server
-    from the inventory (livespec-dev-tooling-prdxxe), so the script's literal
-    fallback must equal the inventory's `ci_pool` server.
-    """
-    shipped = re.search(
-        r'^REMOTE_HOST="\$\{NODE_STATUS_REMOTE_HOST:-(?P<host>[^}"]+)\}"$',
-        _REFRESH_TOOL.read_text(encoding="utf-8"),
-        re.MULTILINE,
+def _run_refresh_without_a_remote_host(*, tmp_path: Path) -> tuple[int, str, list[str]]:
+    """Run the shipped refresh tool with NO `NODE_STATUS_REMOTE_HOST` delivered."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "argv.log"
+    for name in ("ssh", "sudo"):
+        _shim(bin_dir=bin_dir, name=name, body=_FETCH_SHIM.format(name=name))
+    _shim(bin_dir=bin_dir, name="id", body=_ID_SHIM)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COVERAGE_", "COV_CORE_"))}
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    env.update(
+        {
+            "ARGV_LOG": str(log),
+            "FAKE_EUID": "0",
+            "FIXTURE_OUT": _FIXTURE_KUBECONFIG,
+            # An absent env-file: this is what the tool meets on a host the role
+            # has not converged, which is the case the removed default covered.
+            "NODE_STATUS_REFRESH_ENV": str(tmp_path / "absent.env"),
+            "NODE_STATUS_NODE_NAME": _AGENT_NODE,
+            "NODE_STATUS_KUBECONFIG": str(tmp_path / "node-status-kubeconfig"),
+        }
     )
-    defaults = _ROLE_DEFAULTS.read_text(encoding="utf-8")
+    env.pop("NODE_STATUS_REMOTE_HOST", None)
+    completed = subprocess.run(
+        ["bash", str(_REFRESH_TOOL)],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    invoked = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
+    return completed.returncode, completed.stdout + completed.stderr, invoked
 
-    assert shipped is not None
+
+def test_the_refresh_tool_refuses_when_no_control_plane_node_was_delivered(
+    *, tmp_path: Path
+) -> None:
+    """A machine is named by the inventory or by nobody — never by a shipped script.
+
+    The tool used to default `NODE_STATUS_REMOTE_HOST` to one pool's control-plane
+    node, so that machine lived in two places: this script's literal and the
+    role's inventory resolution. Two spellings of one pool fact can disagree with
+    nothing naming the mismatch, and the losing one fetches a bearer token from a
+    host that is not this pool's control plane at all
+    (livespec-dev-tooling-mavj5i).
+
+    So it refuses, naming the variable, and `ssh` — faked here and its argv logged
+    — is never reached. The empty log is the load-bearing half: a tool that
+    attempted the fetch first would have contacted whatever the wrong name
+    resolved to before finding out it was wrong.
+    """
+    code, output, invoked = _run_refresh_without_a_remote_host(tmp_path=tmp_path)
+
+    assert code != 0
+    assert "NODE_STATUS_REMOTE_HOST" in output
+    assert invoked == []
+
+
+def test_the_role_resolves_the_control_plane_node_from_the_ci_pools_server() -> None:
+    """The other half: the role resolves the server and hands it to the tool.
+
+    Asserted against the inventory rather than against a literal — the pool's
+    server is the `ci_pool` member whose `cluster_role` says so
+    (livespec-dev-tooling-prdxxe) — and the tool's own source is asserted to carry
+    that name NOWHERE, which is what makes the refusal above the only path an
+    un-provisioned host can take.
+    """
+    defaults = _ROLE_DEFAULTS.read_text(encoding="utf-8")
+    shipped = _REFRESH_TOOL.read_text(encoding="utf-8")
+
     assert "selectattr('cluster_role', 'equalto', 'server')" in defaults
-    assert shipped["host"] == _inventory_k3s_server()
+    assert _inventory_k3s_server() not in shipped
 
 
 def test_the_boot_converge_remints_every_agent_nodes_node_status_rbac() -> None:

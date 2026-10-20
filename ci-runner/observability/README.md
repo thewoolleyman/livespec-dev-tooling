@@ -7,9 +7,12 @@ units themselves are described in the `observability/` row of
 triggers and the board that those emissions exist for — and how each is
 applied.
 
-`install-observability.sh` is the only sanctioned way to install or update the
-live copies of the units on the host. It does not touch Honeycomb; the two
-appliers below do, and only they.
+The `ci_observability` role of [`../../ansible/ci-pool.yml`](../../ansible/ci-pool.yml),
+applied with `just ansible-apply ansible/ci-pool.yml`, is the only sanctioned
+way to install or update the live copies of the units on the host. It replaced
+the hand-run `install-observability.sh` (recoverable at `c13617d0`), which the
+playbook never invoked — so a node rebuilt by the recipe came back silent. The
+role does not touch Honeycomb; the two appliers below do, and only they.
 
 ## The two datasets, and why a reader has to know
 
@@ -141,7 +144,7 @@ board's lifecycle panel, or the panel silently under-reports.
 Honeycomb creates a dataset on its first datapoint and a column on its first
 value. The first three panels read gauges that already exist; the other two
 read `livespec.ci_pool.*` columns and a `ci-runner-pool` dataset that no
-datapoint has created until `install-observability.sh` has run on the host.
+datapoint has created until the `ci_observability` role has converged the host.
 
 `apply-boards.sh` therefore resolves each panel independently: a query the API
 refuses is reported, that panel is dropped from this apply, the rest are

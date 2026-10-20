@@ -108,6 +108,8 @@ from livespec_dev_tooling.checks._ci_matrix_parse import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _CI_YML_PATH = Path(".github") / "workflows" / "ci.yml"
 _CI_GREEN_JOB = "ci-green"

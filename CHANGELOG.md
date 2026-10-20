@@ -58,6 +58,83 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.118.12](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.11...v1.118.12) (2026-10-20)
+
+
+### Bug Fixes
+
+* expose the green token's world-reading and undeclared member queries ([9c72eb6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9c72eb6969bc7ff18f93cd4afb79319f0b6b2831))
+* refuse a check aggregate member that declares no purity ([7317cff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7317cff000600b1a3ea937403185fcf2b338cb8d))
+* resolve each check member's declared purity for the green token ([eb35575](https://github.com/thewoolleyman/livespec-dev-tooling/commit/eb355756759e15fd8f37a4be6d1c2cd99d294fc0))
+* run the world-reading members on a push whose tree holds a green token ([fdd0ea8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fdd0ea878ae8c19eb109e50f1b1a40bbfdc2fded))
+
+## [1.118.11](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.10...v1.118.11) (2026-10-20)
+
+
+### Bug Fixes
+
+* **ansible:** refuse a fabro readiness gate with no canonical host ([30f4281](https://github.com/thewoolleyman/livespec-dev-tooling/commit/30f4281bb7b46b292c167ce6d034a7db844cbb1b))
+* **ansible:** refuse a gates refresh with no control-plane node ([ab9e9a6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ab9e9a6bc11f182c744ea08694bd92b1c455f6ed))
+* **ansible:** refuse a node-status refresh with no control-plane node ([c7eb232](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c7eb2322148fd83276baaf8c5cb637b6bac3ba63))
+* **ansible:** render the restic snapshot tag from the inventory name ([58df708](https://github.com/thewoolleyman/livespec-dev-tooling/commit/58df70810c9bd9512f5f494a2966fe0365dddd85))
+* **ansible:** render the Samba source strings from the inventory name ([1d226e3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1d226e3c17e12ccd937afc364ad7f9a8123709c5))
+* **ansible:** tell the docker_engine acceptance harness its KVM host ([b9f7b1a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9f7b1a86379f18c8b800b1c9a0d4568da778bd5))
+* scan role executables for inventory machine names ([8623f79](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8623f79b89e4a433d973ea39119393dc9f1c50c4))
+
+## [1.118.10](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.9...v1.118.10) (2026-10-20)
+
+
+### Bug Fixes
+
+* name the renderer and the argument it rejected when a gate cannot render ([6f17116](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6f171168d1dd2a27dd94c3ed701fb1bb362313e8))
+* ship the gate Job renderer inside the release that drives it ([6aa291f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6aa291f565d0818b825611de8e9bc58c47bc6c57))
+
+## [1.118.9](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.8...v1.118.9) (2026-10-20)
+
+
+### Bug Fixes
+
+* warm a new sandbox image tag before two runs race its first pull ([89efb51](https://github.com/thewoolleyman/livespec-dev-tooling/commit/89efb5158428e62f59b176d8200681f68223ccb2))
+
+## [1.118.8](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.7...v1.118.8) (2026-10-20)
+
+
+### Bug Fixes
+
+* warm pyright once before just check's parallel fan-out ([64fc09d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/64fc09d7e57b54f75e4f644231596247df31ded6))
+
+## [1.118.7](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.6...v1.118.7) (2026-10-20)
+
+
+### Bug Fixes
+
+* replay local pytest failures against green master ([22f2ff2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/22f2ff2491666c88f1feefc8bc9965eb837f8c07))
+
+## [1.118.6](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.5...v1.118.6) (2026-10-20)
+
+
+### Bug Fixes
+
+* **gates:** name the red members in a delegated gate verdict, not a member's FATAL ([b4d921c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b4d921c895ed8caa93d9f8d79145df1ba3b0ec9f))
+
+## [1.118.5](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.4...v1.118.5) (2026-10-20)
+
+
+### Bug Fixes
+
+* give each delegated gate run its own mirror ref ([2c86596](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2c865963ac67157959790116ef2fa3df21f452cb))
+* let the cluster name each delegated gate Job ([6ac305e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6ac305e867d8c8a633c4dc7cf503bd0ecfa215e4))
+
+## [1.118.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.3...v1.118.4) (2026-10-19)
+
+
+### Bug Fixes
+
+* re-execute a delegated gate under the credential's owning group ([26fa9e3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/26fa9e32aa3210b9f5b195259fc051ddbc89966f))
+* refuse a push whose group re-execution reached no verdict ([53d847c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/53d847caee7ab4691fbc5a8a6f0f83464d4b3a2a))
+* repair an eligible host whose pushing process lacks the gates group ([b751474](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b75147499beb6c9c570a92b9c313d8459ea967df))
+* say an eligible host is eligible and name the group the gate will run under ([f70a0e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f70a0e9dac229fcd7b2825bcf48590d46fd035bd))
+
 ## [1.118.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.118.2...v1.118.3) (2026-10-18)
 
 

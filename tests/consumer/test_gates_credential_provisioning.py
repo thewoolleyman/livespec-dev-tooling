@@ -559,6 +559,15 @@ def _run_refresh(
                 "FIXTURE_OUT": _FIXTURE_KUBECONFIG,
                 "GATES_SSH_ENV": str(tmp_path / "absent.env"),
                 "GATES_KUBECONFIG": str(dest),
+                # The pool's control-plane node, supplied the way the role
+                # supplies it (it renders GATES_REMOTE_HOST into the env-file
+                # above). The tool carries no default for it and refuses without
+                # it, because a machine is bound only through the inventory
+                # (livespec-dev-tooling-mavj5i); the refusal itself is read in
+                # `tests/livespec_dev_tooling/
+                # test_gates_kubeconfig_remote_host_required.py`. The name is
+                # invented here and lives nowhere else.
+                "GATES_REMOTE_HOST": "a-control-plane-node",
             },
         ),
         capture_output=True,

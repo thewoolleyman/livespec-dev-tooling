@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -28,12 +29,20 @@ from typing import TYPE_CHECKING
 
 from returns.result import Failure, Success
 
-from livespec_dev_tooling.gate_remote_delegate import (
+from livespec_dev_tooling._gate_remote_assembly import (
     GATE_CHECK_SUITE_FALL_THROUGH,
+    declared_gate_check_suite,
+)
+from livespec_dev_tooling.gate_group_repair import (
+    GATE_MODULE,
+    GATES_GROUP_REEXEC_ENV,
+    SG,
+    GateGroupFacts,
+)
+from livespec_dev_tooling.gate_remote_delegate import (
     GATE_MIRROR_ROOT,
     GATE_RENDERER_IN_REPO,
-    GATE_RENDERER_INSTALLED,
-    declared_gate_check_suite,
+    GATE_RENDERER_PACKAGED,
     delegated_gate_enabled,
     gate_remote_request,
     main,
@@ -54,7 +63,12 @@ _PRE_PUSH = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
 
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _RENDERER = Path("/opt/gates/render-gate-job.sh")
-_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: gate-widget-4b825dc642cb\n"
+_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-widget-\n"
+# The name the API SERVER assigns, in the shape its `generateName` suffix takes.
+# Neither this suite nor the client predicts it: that it cannot be predicted is
+# precisely what lets one tree be gated twice (livespec-dev-tooling-44fglo).
+_JOB = "gate-widget-7f2qd"
+_CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 
 # The canned clone's identity: an origin naming `widget` and a `--git-common-dir`
 # answer of a primary checkout's own `.git`, which is what git prints there.
@@ -165,13 +179,58 @@ case "$*" in
     *green_token*)                       exit "${GREEN_TOKEN_EXIT}" ;;
     *"gate_remote_delegate enabled")     exit "${SWITCH_EXIT}" ;;
     *"gate_remote_delegate run")         exit "${GATE_RUN_EXIT}" ;;
+    *"pytest"*)
+        printf '%s\\n' "${PYTEST_OUTPUT:-}"
+        exit "${PYTEST_EXIT:-0}"
+        ;;
 esac
 exit 0
 """
 
 _JUST_STUB = """#!/usr/bin/env bash
 printf 'just %s\\n' "$*" >> "${STUB_LOG}"
+if [ "$*" = "hook_gate=1 check" ]; then
+    printf '%s\\n' "${CHECK_OUTPUT:-}"
+    exit "${CHECK_EXIT:-0}"
+fi
 exit 0
+"""
+
+_GH_STUB = """#!/usr/bin/env bash
+printf 'gh %s\\n' "$*" >> "${STUB_LOG}"
+if [ "${GH_EXIT:-0}" != "0" ]; then
+    exit "${GH_EXIT}"
+fi
+printf '%s\\n' "${GREEN_RUN:-17\\t0123456789abcdef}"
+"""
+
+_GIT_STUB = """#!/usr/bin/env bash
+printf 'git %s\\n' "$*" >> "${STUB_LOG}"
+if [ "$1 $2" = "worktree add" ]; then
+    mkdir -p "$4"
+fi
+if [ "$1 $2" = "worktree remove" ]; then
+    rm -rf "$4"
+fi
+"""
+
+_MKTEMP_STUB = """#!/usr/bin/env bash
+mkdir -p "${TMP_ROOT}"
+count_file="${TMP_ROOT}/mktemp-count"
+count=0
+if [ -f "$count_file" ]; then
+    count="$(cat "$count_file")"
+fi
+count=$((count + 1))
+printf '%s' "$count" > "$count_file"
+if [ "${MKTEMP_FAIL_RERUN:-0}" = "1" ] && [ "$count" = "3" ]; then
+    exit 1
+fi
+path="${TMP_ROOT}/mktemp-${count}"
+if [ "$1" = "-d" ]; then
+    mkdir -p "$path"
+fi
+printf '%s\\n' "$path"
 """
 
 
@@ -181,14 +240,27 @@ def _run_pre_push(
     green_probe_exit: str = "1",
     switch_exit: str = "1",
     gate_run_exit: str = "0",
-) -> tuple[int, list[str]]:
+    check_exit: str = "0",
+    check_output: str = "",
+    mktemp_fail_rerun: str = "0",
+    pytest_exit: str = "0",
+    pytest_output: str = "",
+    gh_exit: str = "0",
+    green_run: str = "17\\t0123456789abcdef",
+) -> tuple[int, str, list[str]]:
     """Run the real `check-pre-push.sh` against stub `uv` and `just`.
 
     Returns the script's exit code and every command it invoked, in order.
     """
     stub_dir = tmp_path / "bin"
     stub_dir.mkdir()
-    for name, body in (("uv", _UV_STUB), ("just", _JUST_STUB)):
+    for name, body in (
+        ("uv", _UV_STUB),
+        ("just", _JUST_STUB),
+        ("gh", _GH_STUB),
+        ("git", _GIT_STUB),
+        ("mktemp", _MKTEMP_STUB),
+    ):
         stub = stub_dir / name
         _ = stub.write_text(body, encoding="utf-8")
         stub.chmod(0o755)
@@ -201,6 +273,14 @@ def _run_pre_push(
             "GREEN_TOKEN_EXIT": green_probe_exit,
             "SWITCH_EXIT": switch_exit,
             "GATE_RUN_EXIT": gate_run_exit,
+            "CHECK_EXIT": check_exit,
+            "CHECK_OUTPUT": check_output,
+            "TMP_ROOT": str(tmp_path / "temps"),
+            "MKTEMP_FAIL_RERUN": mktemp_fail_rerun,
+            "PYTEST_EXIT": pytest_exit,
+            "PYTEST_OUTPUT": pytest_output,
+            "GH_EXIT": gh_exit,
+            "GREEN_RUN": green_run,
         }
     )
     completed = subprocess.run(
@@ -212,7 +292,7 @@ def _run_pre_push(
         check=False,
     )
     invoked = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
-    return completed.returncode, invoked
+    return completed.returncode, completed.stdout, invoked
 
 
 def test_the_switch_off_takes_the_local_aggregate_fall_through(*, tmp_path: Path) -> None:
@@ -222,7 +302,7 @@ def test_the_switch_off_takes_the_local_aggregate_fall_through(*, tmp_path: Path
     the fall-through is byte-for-byte the local aggregate it has always been, and
     the delegated client is never asked to gate anything.
     """
-    code, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="1")
+    code, _stdout, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="1")
 
     assert code == 0
     assert "just hook_gate=1 check" in invoked
@@ -231,7 +311,7 @@ def test_the_switch_off_takes_the_local_aggregate_fall_through(*, tmp_path: Path
 
 def test_the_switch_on_delegates_instead_of_running_the_aggregate(*, tmp_path: Path) -> None:
     """With the switch ON the SAME fall-through reaches the client instead."""
-    code, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0")
+    code, _stdout, invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0")
 
     assert code == 0
     assert [line for line in invoked if "gate_remote_delegate run" in line]
@@ -240,18 +320,119 @@ def test_the_switch_on_delegates_instead_of_running_the_aggregate(*, tmp_path: P
 
 def test_a_refused_delegated_gate_refuses_the_push(*, tmp_path: Path) -> None:
     """The client's exit code IS the hook's — a refusal stops the push."""
-    code, _invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0", gate_run_exit="1")
+    code, _stdout, _invoked = _run_pre_push(tmp_path=tmp_path, switch_exit="0", gate_run_exit="1")
 
     assert code == 1
 
 
-def test_the_green_token_skip_path_is_untouched(*, tmp_path: Path) -> None:
-    """A matching token still exits 0 without consulting the switch at all."""
-    code, invoked = _run_pre_push(tmp_path=tmp_path, green_probe_exit="0", switch_exit="0")
+def test_the_green_token_path_never_consults_the_switch(*, tmp_path: Path) -> None:
+    """A matching token still bypasses delegation — but it no longer bypasses the gate.
+
+    The token memoizes only the members whose verdict the committed tree alone
+    decides, so a match runs the aggregate's WORLD-READING members here rather
+    than exiting 0 (`token_match=1`; the contract is this repository's own
+    SPECIFICATION/contracts.md, in the token-memoization part of its delegated
+    pre-push gate section, v080). What this slice owns is unchanged and is the
+    whole of what is asserted here: the switch is not consulted and no gate Job
+    is submitted, because the tree has already been gated once and the only
+    half still owed is the live one, which the cluster cannot answer better
+    than the pushing host. The memoized run itself belongs to
+    `tests.consumer.test_green_token_purity_memoization`.
+    """
+    code, _stdout, invoked = _run_pre_push(tmp_path=tmp_path, green_probe_exit="0", switch_exit="0")
 
     assert code == 0
     assert not [line for line in invoked if "gate_remote_delegate" in line]
-    assert not [line for line in invoked if line.startswith("just ")]
+    assert "just hook_gate=1 token_match=1 check" in invoked
+
+
+def test_a_failed_local_gate_reruns_exactly_its_failing_pytest_node_ids(*, tmp_path: Path) -> None:
+    """A local pytest failure is replayed against the selected green master tree."""
+    first = "tests/widget_test.py::test_one"
+    second = "tests/widget_test.py::test_two[param]"
+
+    code, _stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=f"FAILED {first} - host-only failure\\nFAILED {second} - host-only failure",
+    )
+
+    assert code == 1
+    assert f"uv run pytest {first} {second}" in invoked, invoked
+
+
+def test_a_reasonless_pytest_summary_still_replays_its_failing_node_id(*, tmp_path: Path) -> None:
+    """Terminal-width elision cannot make a failing node invisible to the replay."""
+    node_id = "tests/widget_test.py::test_a_name_that_consumes_the_terminal_width"
+
+    code, stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=f"FAILED {node_id}",
+        pytest_exit="1",
+        pytest_output=f"FAILED {node_id}",
+    )
+
+    assert code == 1
+    assert f"uv run pytest {node_id}" in invoked, invoked
+    assert f"host-state divergence: {node_id}" in stdout
+
+
+def test_a_rerun_setup_failure_removes_its_temporary_checkout(*, tmp_path: Path) -> None:
+    """Cleanup is owed even when the second temporary file cannot be allocated."""
+    node_id = "tests/widget_test.py::test_one"
+
+    code, _stdout, invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=f"FAILED {node_id} - host-only failure",
+        mktemp_fail_rerun="1",
+    )
+
+    assert code == 1
+    assert any(line.startswith("git worktree remove --force") for line in invoked), invoked
+    assert not (tmp_path / "temps" / "mktemp-2").exists()
+
+
+def test_only_node_ids_that_also_fail_on_green_master_are_host_state_divergences(
+    *, tmp_path: Path
+) -> None:
+    """A green-master pass is not divergence; the matching failure is narrated."""
+    host_only = "tests/widget_test.py::test_one"
+    divergent = "tests/widget_test.py::test_two"
+
+    code, stdout, _invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="1",
+        check_output=(
+            f"FAILED {host_only} - host-only failure\nFAILED {divergent} - shared failure"
+        ),
+        pytest_exit="1",
+        pytest_output=f"FAILED {divergent} - shared failure",
+        green_run="12345\\t0123456789abcdef",
+    )
+
+    assert code == 1
+    assert f"host-state divergence: {divergent}" in stdout
+    assert "green CI run 12345" in stdout
+    assert f"host-state divergence: {host_only}" not in stdout
+
+
+def test_an_unavailable_green_ci_run_skips_diagnosis_without_permitting_the_push(
+    *, tmp_path: Path
+) -> None:
+    """The auxiliary network read cannot turn the original refusal into a pass."""
+    node_id = "tests/widget_test.py::test_one"
+
+    code, stdout, _invoked = _run_pre_push(
+        tmp_path=tmp_path,
+        check_exit="7",
+        check_output=f"FAILED {node_id} - host-only failure",
+        gh_exit="1",
+    )
+
+    assert code == 7
+    assert "host-state divergence check skipped" in stdout
 
 
 # ---------------------------------------------------------------------------
@@ -268,9 +449,15 @@ def test_a_repository_carrying_the_renderer_uses_its_own(*, tmp_path: Path) -> N
     assert resolve_renderer(repo_root=tmp_path) == in_repo
 
 
-def test_every_other_repository_uses_the_converged_host_copy(*, tmp_path: Path) -> None:
-    """No in-tree renderer falls back to the path the converge installs."""
-    assert resolve_renderer(repo_root=tmp_path) == GATE_RENDERER_INSTALLED
+def test_every_other_repository_uses_the_copy_inside_this_package(*, tmp_path: Path) -> None:
+    """No in-tree renderer falls back to the copy the release ships with the client.
+
+    It is INSIDE the installed package rather than on the host, because the
+    converged host path this replaces moved only on a hand-run playbook: a
+    client released with `--gate-ref` met a renderer that rejected it and every
+    consuming repository's push was refused (stop-the-line R283, 2026-10-20).
+    """
+    assert resolve_renderer(repo_root=tmp_path) == GATE_RENDERER_PACKAGED
 
 
 # ---------------------------------------------------------------------------
@@ -286,22 +473,30 @@ _JOB_ADMITTING = json.dumps({"status": {}})
 _JOB_COMPLETE = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
 
 
+# Marker token → step name, tried IN ORDER: the first marker present in an argv
+# names the step, and `other` is what is left when none matches. The order is
+# load-bearing — `--git-common-dir` must be matched BEFORE `rev-parse`, because
+# the two identity probes and the tree read are all spelled `git rev-parse`.
+_STEP_MARKERS: tuple[tuple[str, str], ...] = (
+    ("--git-common-dir", "read-common-dir"),
+    ("rev-parse", "read-tree"),
+    ("get-url", "read-origin"),
+    ("create", "submit-job"),
+    ("get", "get-job"),
+)
+
+
 def _kind_of(*, argv: list[str]) -> str:
     """Name the step one argv belongs to, for the canned answers below.
 
-    `--git-common-dir` is matched BEFORE `rev-parse`, because the two identity
-    probes and the tree read are all spelled `git rev-parse`.
+    The renderer is recognised by its PATH rather than by a token, because it is
+    the one step that is not a `git` or `kubectl` subcommand at all.
     """
-    if "--git-common-dir" in argv:
-        return "read-common-dir"
-    if "rev-parse" in argv:
-        return "read-tree"
-    if "get-url" in argv:
-        return "read-origin"
     if argv[0] == str(_RENDERER):
         return "render"
-    if "get" in argv:
-        return "get-job"
+    for marker, kind in _STEP_MARKERS:
+        if marker in argv:
+            return kind
     return "other"
 
 
@@ -335,6 +530,10 @@ class _StubWorld:
             "read-origin": f"{origin}\n",
             "read-common-dir": f"{common_dir}\n",
             "render": _MANIFEST,
+            # `kubectl create --output json` answers with the created object,
+            # which is where the Job's ASSIGNED name — the one the manifest's
+            # `generateName` asked the API server for — comes from.
+            "submit-job": _CREATED,
             "other": "",
         }
 
@@ -374,21 +573,30 @@ def test_the_request_is_assembled_out_of_the_repository(*, tmp_path: Path) -> No
     assert isinstance(built, Success)
     request = built.unwrap()
     assert request.mirror_url == f"{GATE_MIRROR_ROOT}/widget.git"
-    assert request.job_name == f"gate-widget-{_TREE[:12]}"
     assert request.manifest == _MANIFEST
 
 
-def test_the_renderer_is_told_the_name_the_run_will_wait_on(*, tmp_path: Path) -> None:
-    """The job name is passed, not parsed back out of the rendered YAML."""
+def test_the_renderer_is_told_the_tree_and_asked_for_no_job_name(*, tmp_path: Path) -> None:
+    """The gated tree is passed; the Job's NAME is the cluster's to assign.
+
+    A name used to be computed here and handed to the renderer so the run would
+    wait on the name it asked for. That name was derived from the tree, and the
+    rendered Job survives its own run for `ttlSecondsAfterFinished` — so for an
+    hour after a tree's gate ended, every further gate of that tree was refused
+    at submit with `AlreadyExists` and reported NO_VERDICT, the state reserved
+    for a lost cluster (livespec-dev-tooling-44fglo). The manifest asks for a
+    `generateName` now, and the client reads the assigned name back off its own
+    submit — so a flag carrying a predicted name is not merely unused here, it
+    is the defect, and its absence is asserted.
+    """
     repo_root = tmp_path / "widget"
     repo_root.mkdir()
     runner = _StubWorld()
     _ = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
 
     render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
-    assert "--job-name" in render
-    assert f"gate-widget-{_TREE[:12]}" in render
     assert _TREE in render
+    assert "--job-name" not in render
 
 
 # ---------------------------------------------------------------------------
@@ -555,28 +763,72 @@ def test_a_push_from_a_linked_worktree_publishes_to_the_repositorys_mirror(
     assert built.unwrap().mirror_url == f"{GATE_MIRROR_ROOT}/{_REPOSITORY}.git"
 
 
-def test_one_job_name_covers_the_primary_checkout_and_a_worktree_alike(*, tmp_path: Path) -> None:
-    """Two directories, one repository, one tree — so exactly one Job name.
+def test_one_repository_identity_covers_the_primary_checkout_and_a_worktree_alike(
+    *, tmp_path: Path
+) -> None:
+    """Two directories, one repository — so one mirror and one rendered `--repo`.
 
     A directory-derived name made these two differ, which is a second identity
-    for the same gate: the same tree re-gated from the other checkout submits a
-    separately-named Job and waits on it, rather than naming the gate the tree
-    already has.
+    for the same gate: the mirror a push reaches, and the name the Job carries
+    in its labels and its in-cluster source URL, both followed the checkout
+    directory rather than the repository. A linked worktree's directory is its
+    BRANCH, so a push from one was refused with
+    `'<branch>.git' does not appear to be a git repository`.
+
+    The Job's own NAME is no longer part of that statement, because it is no
+    longer derived from anything here: the manifest asks the API server for a
+    `generateName` so that a re-gate of one tree is a new measurement rather
+    than an `AlreadyExists` refusal. What has to be stable across the two
+    checkouts is the REPOSITORY identity, which is what is asserted.
     """
-    expected = f"gate-{_REPOSITORY}-{_TREE[:12]}"
-    submitted: list[str] = []
+    identities: list[tuple[str, str]] = []
     for directory in (_REPOSITORY, _WORKTREE_DIR):
         repo_root = tmp_path / directory
         repo_root.mkdir()
-        built = gate_remote_request(
-            repo_root=repo_root,
-            renderer=_RENDERER,
-            runner=_StubWorld(origin=_REPOSITORY_ORIGIN),
-        )
+        runner = _StubWorld(origin=_REPOSITORY_ORIGIN)
+        built = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
         assert isinstance(built, Success)
-        submitted.append(built.unwrap().job_name)
+        render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
+        identities.append((built.unwrap().mirror_url, render[render.index("--repo") + 1]))
 
-    assert submitted == [expected, expected]
+    expected = (f"{GATE_MIRROR_ROOT}/{_REPOSITORY}.git", _REPOSITORY)
+    assert identities == [expected, expected]
+
+
+def test_each_gate_of_one_tree_is_given_its_own_mirror_ref(*, tmp_path: Path) -> None:
+    """Two gates of ONE tree must not share the ref either of them deletes.
+
+    The ref was `refs/gates/<tree hash>` for every gate of a tree, and the
+    client deletes the refs it created in a `finally` — so when two gates of one
+    tree overlapped, whichever reached its cleanup first deleted the ref the
+    other run's pod had not fetched yet. Measured 2026-10-19: two post-merge
+    janitors gated master tree 228727afbe95 five seconds apart, the losing run's
+    collection removed the winner's input, that pod died with `couldn't find
+    remote ref`, and a correct merged tree read as a RED janitor. ONE collision
+    cost BOTH gates their verdicts (livespec-dev-tooling-44fglo).
+
+    ASSERTED THROUGH THE RENDERER, because the ref has to be ONE value in TWO
+    places: the client pushes to it and the POD fetches whatever the manifest
+    was rendered with. A per-run ref the renderer was not told about would leave
+    every pod looking for a ref nothing pushed.
+
+    Two different checkout directories of ONE repository is the cheapest way to
+    drive two assemblies of the same tree; the ref must differ even though the
+    repository, the tree and therefore the mirror are identical.
+    """
+    rendered: list[str] = []
+    for directory in (_REPOSITORY, _WORKTREE_DIR):
+        repo_root = tmp_path / directory
+        repo_root.mkdir()
+        runner = _StubWorld(origin=_REPOSITORY_ORIGIN)
+        built = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
+        assert isinstance(built, Success)
+        render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
+        assert "--gate-ref" in render, "the renderer is told no per-run gate ref"
+        rendered.append(render[render.index("--gate-ref") + 1])
+
+    assert all(ref.startswith(f"refs/gates/{_TREE}-") for ref in rendered)
+    assert rendered[0] != rendered[1]
 
 
 def test_the_renderer_is_told_the_repository_not_the_worktree(*, tmp_path: Path) -> None:
@@ -681,11 +933,19 @@ def test_a_complete_gate_over_the_pushed_tree_authorises_the_push(*, tmp_path: P
     # The push is found by "a git that pushes" rather than by a fixed prefix,
     # because the client sets `core.hooksPath` on that invocation: a `git push`
     # from inside a `pre-push` hook fires that same hook and delegates again.
-    assert (
-        f"{GATE_MIRROR_ROOT}/widget.git",
-        f"HEAD:refs/gates/{_TREE}",
-        f"origin/master:refs/gates/{_TREE}.base",
-    ) == (next(argv for argv in runner.argvs if argv[0] == "git" and "push" in argv)[-3:])
+    #
+    # The REF is matched by its `refs/gates/<tree hash>` stem rather than
+    # literally: it carries a per-run component, so that two gates of one tree
+    # cannot delete each other's input, and which component this run minted is
+    # not what this scenario is about. That the ref pushed here is the ref the
+    # POD was told to fetch is asserted end to end in
+    # tests.consumer.test_delegated_pre_push_gate_scenarios.
+    mirror, published, base = next(
+        argv for argv in runner.argvs if argv[0] == "git" and "push" in argv
+    )[-3:]
+    assert mirror == f"{GATE_MIRROR_ROOT}/widget.git"
+    assert published.startswith(f"HEAD:refs/gates/{_TREE}")
+    assert base == f"origin/master:{published.removeprefix('HEAD:')}.base"
     # Two polls: the run waited through a Job that had not been admitted yet
     # rather than reading a verdict off the first answer it got.
     assert len([argv for argv in runner.argvs if "get" in argv]) == 2
@@ -776,6 +1036,268 @@ def test_a_repository_that_has_not_opted_in_says_nothing_about_the_credential(
 
     assert code == 1
     assert capsys.readouterr().err == ""
+
+
+# ---------------------------------------------------------------------------
+# The ELIGIBLE host whose pushing process lacks the credential's group
+# ---------------------------------------------------------------------------
+
+# The group the VPS credential is owned by. Named here rather than inlined
+# because every assertion below is about whether this exact name reaches the
+# operator.
+_GATES_GROUP = "gates-client"
+
+
+def _facts_at(*, monkeypatch: pytest.MonkeyPatch, facts: GateGroupFacts) -> None:
+    """Make the host-and-process probes answer `facts`.
+
+    Injected at the FACTS seam rather than built on disk because the state the
+    repair exists for CANNOT be built here: it needs a credential the current
+    process cannot read, and this suite runs as root in the factory sandbox,
+    where a mode-0000 file is still perfectly readable.
+    """
+
+    def _answer() -> GateGroupFacts:
+        return facts
+
+    monkeypatch.setattr("livespec_dev_tooling.gate_group_repair.gate_group_facts", _answer)
+
+
+_ELIGIBLE_BUT_UNGROUPED = GateGroupFacts(
+    readable=False,
+    owning_group=_GATES_GROUP,
+    user_is_a_member=True,
+    process_carries_it=False,
+)
+
+# A genuinely ineligible host: the credential is there, and the group database
+# does not list this user in the group that owns it. `sg` would refuse them, so
+# there is nothing to repair.
+_NOT_IN_THE_GROUP_DATABASE = GateGroupFacts(
+    readable=False,
+    owning_group=_GATES_GROUP,
+    user_is_a_member=False,
+    process_carries_it=False,
+)
+
+
+def _an_opted_in_repo_on_an_unreadable_credential(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An opted-in repository whose gates kubeconfig this process cannot read.
+
+    The kubeconfig path is pointed at an absent file so the readability probe
+    the client calls DIRECTLY agrees with the injected record: the two have to
+    say the same thing, or the fixture is asserting against a state no host has.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
+    )
+    monkeypatch.setenv("GATES_KUBECONFIG", str(tmp_path / "unreadable.kubeconfig"))
+    monkeypatch.chdir(tmp_path)
+
+
+def test_an_eligible_host_whose_process_lacks_the_group_is_told_the_gate_runs_under_it(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The defect, from the probe the recipe branches on — measured on the VPS 2026-10-18.
+
+    There `/etc/ci-runner/gates.kubeconfig` is `0640 root:gates-client` and the
+    group database lists the login user in `gates-client`, so the HOST is
+    eligible — but a login session started before that membership was granted
+    does not carry the group. The read failed, this probe exited non-zero, and
+    the push ran the full local aggregate (about 17 minutes for
+    livespec-orchestrator-beads-fabro) behind the ordinary `GATED_LOCALLY` line.
+    Nothing said the host was eligible and nothing named the remedy; the same
+    push under `/usr/bin/sg gates-client` reached a verdict in 95 seconds.
+
+    So the probe now answers YES, because the host IS eligible, and says which
+    group the gate will run under. ONE line: this is a git hook's output, and
+    the operator reads it in the middle of a push.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _facts_at(monkeypatch=monkeypatch, facts=_ELIGIBLE_BUT_UNGROUPED)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    code = main()
+    printed = capsys.readouterr().err
+
+    assert code == 0
+    assert len(printed.strip().splitlines()) == 1
+    assert _GATES_GROUP in printed
+    assert "will run under" in printed
+    assert "gating locally" not in printed
+
+
+def test_a_host_the_group_database_does_not_vouch_for_keeps_its_current_output(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two shapes the repair must NOT reach, each left exactly as it was.
+
+    An ABSENT credential is the factory-sandbox and fresh-laptop case. A
+    credential whose owning group the group database does not list this user in
+    is a genuinely ineligible host — `sg` would refuse them there, so there is
+    nothing to repair and nothing new to say. Both keep the `GATED_LOCALLY`
+    line and the non-zero exit that IS the local fall-through.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+
+    absent = main()
+    on_absent = capsys.readouterr().err
+    _facts_at(monkeypatch=monkeypatch, facts=_NOT_IN_THE_GROUP_DATABASE)
+    ineligible = main()
+    on_ineligible = capsys.readouterr().err
+
+    assert (absent, ineligible) == (1, 1)
+    assert "gating locally" in on_absent
+    assert "gating locally" in on_ineligible
+    assert "will run under" not in on_absent
+    assert "will run under" not in on_ineligible
+
+
+def _sg_at(monkeypatch: pytest.MonkeyPatch, *, resolved: str | None) -> None:
+    """Make `shutil.which` answer for `/usr/bin/sg` the way the host under test would."""
+
+    def _answer(_program: str) -> str | None:
+        return resolved
+
+    monkeypatch.setattr(shutil, "which", _answer)
+
+
+def _a_local_gate_that_would_pass(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """Stub the gate this client runs HERE, and record whether it was reached.
+
+    It answers PASSED rather than raising, so a test that expected a
+    re-execution fails on the exit status it asserted — a genuine assertion
+    about the behaviour — rather than on a stub's own exception.
+    """
+    reached: list[object] = []
+
+    def _passed(**kwargs: object) -> GateVerdict:
+        reached.append(kwargs)
+        return GateVerdict(state=GATE_PASSED, detail="gated here", token_written=True)
+
+    monkeypatch.setattr("livespec_dev_tooling.gate_remote_delegate.run_delegated_gate", _passed)
+    return reached
+
+
+def _spawns_recorded(
+    monkeypatch: pytest.MonkeyPatch, *, returncode: int
+) -> list[dict[str, object]]:
+    """Record every re-execution spawn, answering `returncode` to each.
+
+    ONE recorder for the tests that expect a spawn and the tests that must prove
+    none happened: a recorder written separately for the second kind is never
+    called, so it asserts its own absence with a body nothing ever ran.
+    """
+    spawned: list[dict[str, object]] = []
+
+    def _fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        spawned.append({**kwargs, "argv": argv})
+        return subprocess.CompletedProcess(args=argv, returncode=returncode)
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    return spawned
+
+
+def test_run_re_executes_itself_under_sg_and_answers_with_that_runs_exit_status(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The repair itself: the gate re-runs under the group and the CHILD's verdict is the answer.
+
+    The re-executed run is the one that reads the kubeconfig and submits the
+    Job, so its exit status is the push's — this process must not also gate
+    locally, and must not translate the child's answer into one of its own.
+
+    ONCE is asserted two ways, because a re-executing gate that could re-execute
+    again is an infinite push: exactly one spawn happens, and the child is handed
+    the sentinel naming the group that was tried, which is what makes it able to
+    tell that it IS the re-executed run.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _facts_at(monkeypatch=monkeypatch, facts=_ELIGIBLE_BUT_UNGROUPED)
+    monkeypatch.delenv(GATES_GROUP_REEXEC_ENV, raising=False)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    gated_here = _a_local_gate_that_would_pass(monkeypatch)
+    _sg_at(monkeypatch, resolved=SG)
+    spawned = _spawns_recorded(monkeypatch, returncode=7)
+
+    assert main() == 7
+    assert gated_here == []
+    assert len(spawned) == 1
+    assert spawned[0]["argv"] == [SG, _GATES_GROUP, "-c", f"{sys.executable} -m {GATE_MODULE} run"]
+    handed = spawned[0]["env"]
+    assert isinstance(handed, dict)
+    assert handed[GATES_GROUP_REEXEC_ENV] == _GATES_GROUP
+
+
+def test_a_group_re_execution_that_decides_nothing_refuses_the_push_and_names_the_remedy(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two ways the repair can fail, and the one thing neither may do: fall through.
+
+    A re-execution that NEVER STARTED (`sg` is not installed on this host) and
+    one that ran and STILL could not read the credential are different events,
+    and both leave this process holding no verdict. Falling through to the local
+    aggregate here is precisely the defect being fixed, one layer out: the push
+    would complete on a gate nobody chose, after the operator was told the gate
+    would run under a group. So each refuses, and each names the group that was
+    tried and the remedy — a fresh login session — because the diagnostic is the
+    only thing standing between the operator and the 17-minute local run.
+    """
+    _an_opted_in_repo_on_an_unreadable_credential(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    _facts_at(monkeypatch=monkeypatch, facts=_ELIGIBLE_BUT_UNGROUPED)
+    monkeypatch.delenv(GATES_GROUP_REEXEC_ENV, raising=False)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    gated_here = _a_local_gate_that_would_pass(monkeypatch)
+    _sg_at(monkeypatch, resolved=None)
+
+    never_started = main()
+    on_never_started = capsys.readouterr().err
+    monkeypatch.setenv(GATES_GROUP_REEXEC_ENV, _GATES_GROUP)
+    still_unreadable = main()
+    on_still_unreadable = capsys.readouterr().err
+
+    assert (never_started, still_unreadable) == (1, 1)
+    assert gated_here == []
+    for printed in (on_never_started, on_still_unreadable):
+        assert GATE_NO_VERDICT in printed
+        assert _GATES_GROUP in printed
+        assert "fresh login session" in printed
+
+
+def test_a_credential_this_process_can_read_never_reaches_sg_on_either_command(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The path every delegating push already took, left untouched by the repair.
+
+    A process that can read the credential is missing no group, so there is
+    nothing to repair and nothing to narrate: `enabled` exits zero in silence
+    and `run` gates through the client it always did. The spawn recorder is the
+    load-bearing assertion — a repair that fired here would re-run every
+    delegated push inside a second process for no reason.
+    """
+    _write_pyproject(
+        repo_root=tmp_path,
+        body="[tool.livespec_dev_tooling]\ndelegated_gate = true\n",
+    )
+    monkeypatch.setenv("GATES_KUBECONFIG", str(_a_readable_credential(root=tmp_path)))
+    monkeypatch.delenv(GATES_GROUP_REEXEC_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+    gated_here = _a_local_gate_that_would_pass(monkeypatch)
+    _sg_at(monkeypatch, resolved=SG)
+    spawned = _spawns_recorded(monkeypatch, returncode=0)
+
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "enabled"])
+    assert main() == 0
+    assert capsys.readouterr().err == ""
+
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    assert main() == 0
+    assert len(gated_here) == 1
+    assert spawned == []
 
 
 def test_run_exits_zero_only_on_a_verdict_that_authorises_the_push(

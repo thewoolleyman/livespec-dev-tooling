@@ -32,6 +32,8 @@ import structlog  # noqa: E402  - vendor-path-aware import after sys.path insert
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _CHECK_ID = "fleet_marketplace_relative_sources"
 _MARKETPLACE = "marketplace.json"

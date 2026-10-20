@@ -100,6 +100,8 @@ from livespec_dev_tooling.just_recipe_headers import recipe_body_offset  # noqa:
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _JUSTFILE_NAME = "justfile"
 _CHECK_PREFIX = "check-"

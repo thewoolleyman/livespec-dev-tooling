@@ -15,7 +15,7 @@
 [global]
    server role = standalone server
    workgroup = WORKGROUP
-   server string = vps Arq backup source
+   server string = {{ inventory_hostname }} Arq backup source
 
    interfaces = {{ arq_smb_source_loopback_address }}
    bind interfaces only = yes
@@ -41,7 +41,7 @@
    panic action = /usr/share/samba/panic-action %d
 
 [{{ arq_smb_source_share_name }}]
-   comment = vps root-state snapshot for Arq backup
+   comment = {{ inventory_hostname }} root-state snapshot for Arq backup
    path = {{ arq_smb_source_share_path }}
    browseable = no
    read only = yes

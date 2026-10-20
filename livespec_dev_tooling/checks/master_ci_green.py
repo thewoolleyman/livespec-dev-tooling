@@ -118,6 +118,8 @@ from livespec_dev_tooling.checks._gate_context import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "world-reading"  # the `ci-green` check run on master's head commit, read from GitHub
+
 
 class _CiGreenCheckRun(TypedDict, total=False):
     """Shape of one check-run record from the commit check-runs endpoint.

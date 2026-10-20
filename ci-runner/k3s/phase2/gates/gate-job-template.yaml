@@ -16,10 +16,31 @@
 # WHY suspend: true — Kueue admits a Job by UNSUSPENDING it. A Job created
 # unsuspended bypasses the queue entirely and runs immediately against no quota,
 # which would defeat gates-cq. Kueue sets this back to false on admission.
+#
+# WHY generateName RATHER THAN name, and this is a defect this template once
+# had. The name used to be derived from the gated tree —
+# `gate-<repo>-<first 12 hex of the tree hash>` — while `ttlSecondsAfterFinished`
+# below keeps a finished Job for an hour. The gate client submits with
+# `kubectl create` ON PURPOSE, because a re-run must be a NEW, separately
+# identified measurement rather than a second attempt on the first run's Job. A
+# derived name made those two rules contradict each other: for an hour after a
+# tree's gate ended, every further gate of that tree was refused at submit with
+# `AlreadyExists` and the client reported NO_VERDICT — the state reserved for a
+# LOST CLUSTER. Measured 2026-10-18 on gate-livespec-473f0ffdee14, whose replay
+# five minutes later could not happen at all, and again 2026-10-19 on
+# gate-livespec-orchestrator-beads-fabro-228727afbe95, where two post-merge
+# janitors gated one master tree five seconds apart.
+#
+# The API server assigns the name instead, so two renders of one tree can never
+# request the same one. WHAT STILL IDENTIFIES THE TREE IS THE LABEL
+# `livespec.gate/tree-hash` below: every Job of one tree remains selectable by
+# it, which is the property the name was carrying and the only one anything
+# needed from it. The client no longer predicts the name either — it reads the
+# assigned one back off the submit.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: @@JOB_NAME@@
+  generateName: gate-@@REPO@@-
   namespace: gates
   labels:
     app.kubernetes.io/part-of: livespec-ci-gates
@@ -83,9 +104,9 @@ spec:
       initContainers:
         # Fetches the exact tree under test from the in-cluster read-only mirror
         # (research/003 section E; built by R4.S4, livespec-dev-tooling-2hno).
-        # The ref is named after the tree hash, so one value identifies the tree,
-        # the ref and this Job — a gate cannot run against content other than
-        # what was pushed.
+        # The ref is the one THIS RUN pushed, named by @@GATE_REF@@, and the tree
+        # it resolves to is re-derived and checked against @@TREE_HASH@@ below —
+        # so a gate cannot run against content other than what was pushed.
         - name: fetch-tree
           image: @@IMAGE@@
           imagePullPolicy: IfNotPresent
@@ -113,13 +134,26 @@ spec:
               # its companion cannot exist — and a fetch that cannot find one
               # fails the Job here rather than letting the aggregate run against
               # an unresolvable base.
+              #
+              # THE REF IS PER RUN, NOT PER TREE, and that is a defect this
+              # template once had. Both refs were named `refs/gates/<tree hash>`
+              # alone, and the client DELETES them in a `finally` on its way out
+              # — so when two gates of one tree overlapped, whichever finished
+              # first deleted the ref the other run's pod had not fetched yet.
+              # Measured 2026-10-19: two post-merge janitors gated master tree
+              # 228727afbe95 five seconds apart; the losing run's cleanup removed
+              # the winner's input, this fetch died with `couldn't find remote
+              # ref`, and a correct merged tree read as a RED janitor. One
+              # collision cost BOTH gates their verdicts. The client now mints a
+              # ref per run and substitutes it here, so a run only ever collects
+              # refs no other run can be reading (livespec-dev-tooling-44fglo).
               if ! git fetch --quiet origin \
-                   "+refs/gates/@@TREE_HASH@@:refs/gates/@@TREE_HASH@@" \
-                   "+refs/gates/@@TREE_HASH@@.base:refs/remotes/origin/master"; then
-                echo "FATAL: cannot fetch refs/gates/@@TREE_HASH@@ and its .base companion from @@SOURCE_URL@@" >&2
+                   "+@@GATE_REF@@:@@GATE_REF@@" \
+                   "+@@GATE_REF@@.base:refs/remotes/origin/master"; then
+                echo "FATAL: cannot fetch @@GATE_REF@@ and its .base companion from @@SOURCE_URL@@" >&2
                 exit 1
               fi
-              git checkout --quiet --detach "refs/gates/@@TREE_HASH@@"
+              git checkout --quiet --detach "@@GATE_REF@@"
               actual="$(git rev-parse 'HEAD^{tree}')"
               if [ "${actual}" != "@@TREE_HASH@@" ]; then
                 echo "FATAL: fetched tree ${actual} is not the requested @@TREE_HASH@@" >&2
@@ -322,7 +356,85 @@ spec:
                 { printf '%s\n' "${missing}" > /dev/termination-log; } 2> /dev/null || true
                 exit 1
               done
-              @@GATE_RECIPES@@
+              # THE RECIPES, CAPTURED — AND THE VERDICT DETAIL THEY OWN
+              # (livespec-dev-tooling-plbimj). Everything above this line is
+              # PROVISIONING, and each step above names itself in the
+              # termination message because its failure means no recipe ran at
+              # all. From here on the recipes run, and the message has to come
+              # from THEM.
+              #
+              # IT DID NOT, AND THE WRONG ANSWER WAS SILENT. Measured
+              # 2026-10-19 on gate-livespec-dev-tooling-54f19942138d: the red
+              # verdict read "FATAL: cannot clone cross-repo sibling
+              # 'widget-core' from https://github.com/acme/widget-core … so no
+              # recipe was run". The recipe HAD run (78 passed, 1 failed, 1
+              # skipped) and its one failure was `check-no-workflow-edits`;
+              # `acme/widget-core` is FIXTURE TEXT from this repository's own
+              # gate-renderer exit tests, which run inside that very aggregate
+              # and write the rendered refusal above to the pod's REAL
+              # `/dev/termination-log`. Nothing errored — the verdict was red
+              # either way — so the only cost was an operator sent after a
+              # clone failure that never happened on a repository registering
+              # no siblings at all.
+              #
+              # OWNERSHIP IS THE FIX, AND ORDER IS THE WHOLE OF IT. `>`
+              # truncates, so the LAST write wins: the detail below is written
+              # AFTER the recipes have finished, which is strictly after
+              # anything a member could have written mid-run. That holds for
+              # ANY member that writes the file, not only for the one this
+              # repository happens to ship — a gate pod runs the consumer's own
+              # aggregate and cannot know what is in it.
+              #
+              # THE NAMES COME FROM THE AGGREGATE'S OWN SUMMARY, which is why
+              # stdout is teed rather than read back from anywhere else. The
+              # fleet's dispatcher closes a red run with `Failed targets (N):`
+              # and one `  - <member>` line each
+              # (`livespec_dev_tooling.parallel_check_dispatcher`), and the
+              # LAST such block wins because a member's captured output can
+              # carry an earlier one verbatim — the same reason
+              # `worktree_pack/gate-run.sh` takes the last summary it finds.
+              # Stderr is deliberately NOT merged in: the streams mean
+              # different things here, and the summary is on stdout.
+              gate_failing_members() {
+                awk '
+                  { sub(/\r$/, "") }
+                  /^Failed targets \([0-9]+\):$/ { names = ""; collecting = 1; next }
+                  collecting && /^  - / { names = names (names == "" ? "" : " ") substr($0, 5); next }
+                  collecting { collecting = 0 }
+                  END { print names }
+                ' "$1"
+              }
+              recipe_log="$(mktemp)"
+              # errexit is suspended for the pipeline alone and REINSTATED
+              # inside it: a red first recipe must still stop the suite exactly
+              # as it does with no capture at all, while the status has to reach
+              # the lines below rather than killing the script at the pipe.
+              set +e
+              {
+                set -e
+                @@GATE_RECIPES@@
+              } | tee "${recipe_log}"
+              recipe_status="${PIPESTATUS[0]}"
+              set -e
+              if [ "${recipe_status}" -eq 0 ]; then
+                rm -f "${recipe_log}"
+                exit 0
+              fi
+              failing_members="$(gate_failing_members "${recipe_log}")"
+              rm -f "${recipe_log}"
+              if [ -n "${failing_members}" ]; then
+                red="FATAL: the gate check recipe RAN and these of its members FAILED: ${failing_members}. This gate is RED on the tree under test."
+              else
+                # A red run that named no member: an aggregate killed partway, a
+                # recipe that is not the fleet dispatcher, a summary shape this
+                # does not read. Say THAT, rather than leaving the last words to
+                # whatever a member wrote — the point is that the detail is the
+                # run's, and "I cannot name the member" is the run's answer too.
+                red="FATAL: the gate check recipe RAN and exited ${recipe_status} without naming a failing member in its summary. This gate is RED on the tree under test; read this Job's log for the cause."
+              fi
+              echo "${red}" >&2
+              { printf '%s\n' "${red}" > /dev/termination-log; } 2> /dev/null || true
+              exit "${recipe_status}"
           env:
             # R4.S6 (livespec-dev-tooling-ul61): declares to the check aggregate
             # that this run is a delegated gate authorising a push, so a check

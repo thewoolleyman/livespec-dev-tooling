@@ -62,6 +62,8 @@ from livespec_dev_tooling.config import (  # noqa: E402
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 # The `.buffer.write` forms are banned identically to the plain writes:
 # `sys.stdout.buffer.write(...)` / `sys.stderr.buffer.write(...)` reach the

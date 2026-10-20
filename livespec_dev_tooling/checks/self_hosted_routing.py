@@ -79,6 +79,8 @@ from livespec_dev_tooling.checks._self_hosted_routing_parse import (  # noqa: E4
 
 __all__: list[str] = []
 
+CHECK_PURITY = "tree-pure"
+
 
 _WORKFLOWS_DIR = Path(".github") / "workflows"
 _WORKFLOW_GLOBS = ("*.yml", "*.yaml")

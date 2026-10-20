@@ -65,9 +65,9 @@ cmd_backup() {
     restic backup "${BACKUP_PATHS[@]}" \
         --one-file-system \
         --exclude-file "${EXCLUDE_FILE}" \
-        --host vps --tag scheduled
+        --host {{ restic_backup_host_tag }} --tag scheduled
     # Retention applies only to this host's scheduled snapshots.
-    restic forget --host vps --tag scheduled "${RETENTION[@]}" --prune
+    restic forget --host {{ restic_backup_host_tag }} --tag scheduled "${RETENTION[@]}" --prune
 }
 
 cmd_doctor() {

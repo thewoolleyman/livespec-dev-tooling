@@ -41,9 +41,9 @@ from pathlib import Path
 import pytest
 from returns.result import Success
 
+from livespec_dev_tooling._gate_remote_assembly import GATE_CHECK_SUITE_FALL_THROUGH
 from livespec_dev_tooling.gate_credential import GATES_KUBECONFIG_ENV, GATES_WRAPPER
 from livespec_dev_tooling.gate_remote_delegate import (
-    GATE_CHECK_SUITE_FALL_THROUGH,
     delegated_gate_enabled,
     delegated_gate_selected,
     main,
@@ -63,8 +63,13 @@ _PRE_PUSH = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
 # `rev-parse HEAD^{tree}` below answers with.
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _RENDERER = Path("/opt/gates/render-gate-job.sh")
-_JOB = f"gate-widget-{_TREE[:12]}"
-_MANIFEST = f"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {_JOB}\n"
+# The name the API SERVER assigns. The manifest asks for a `generateName`, so
+# the Job's name is an OUTPUT of the submit — which is what lets one tree be
+# gated twice inside a finished Job's TTL instead of being refused
+# `AlreadyExists` (livespec-dev-tooling-44fglo).
+_JOB = "gate-widget-7f2qd"
+_MANIFEST = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  generateName: gate-widget-\n"
+_CREATED = json.dumps({"apiVersion": "batch/v1", "kind": "Job", "metadata": {"name": _JOB}})
 
 # The namespace the gate Job runs in, per the contract section.
 _NAMESPACE = "gates"
@@ -135,23 +140,29 @@ class _CannedCluster:
         _ = (cwd, stdin, stream)
         self.argvs.append(tuple(argv))
         if argv[0] == GATES_WRAPPER:
-            return self._cluster(polling="get" in argv)
+            return self._cluster(polling="get" in argv, submitting="create" in argv)
         if "rev-parse" in argv:
             return Success(GateCommandResult(returncode=0, stdout=f"{_TREE}\n", stderr=""))
         if argv[0] == str(_RENDERER):
             return Success(GateCommandResult(returncode=0, stdout=_MANIFEST, stderr=""))
         return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
 
-    def _cluster(self, *, polling: bool) -> GateCommandOutcome:
+    def _cluster(self, *, polling: bool, submitting: bool = False) -> GateCommandOutcome:
         """One cluster command: refused outright, or answered on the poll sequence.
 
         Only a POLL advances the sequence. Counting every cluster command would
         let the submit consume the not-admitted-yet answer, and the first poll
         would then read a terminal condition — quietly removing the wait this
         scenario's "only after that Job reports a green verdict" is about.
+
+        The SUBMIT answers with the created object, because that is where the
+        Job's name comes from: the manifest asks for a `generateName`, so the
+        name is assigned by the API server rather than rendered.
         """
         if self._unreachable:
             return Success(GateCommandResult(returncode=1, stdout="", stderr=_UNREACHABLE))
+        if submitting:
+            return Success(GateCommandResult(returncode=0, stdout=_CREATED, stderr=""))
         if not polling:
             return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
         self._polls += 1
@@ -409,7 +420,17 @@ def test_an_opted_in_push_from_an_eligible_host_completes_on_a_green_cluster_ver
     assert len(submit) == 1
     assert submit[0][:4] == (GATES_WRAPPER, "kubectl", "--namespace", _NAMESPACE)
     assert _TREE in cluster.issued(needle="--tree-hash")[0]
-    assert [argv for argv in cluster.argvs if f"HEAD:refs/gates/{_TREE}" in argv]
+    # ONE ref, decided once: the client pushes the tree to the ref it told the
+    # RENDERER about, so the pod fetches what was pushed. The ref carries a
+    # per-run component — two gates of one tree must not share the ref either of
+    # them deletes on its way out (livespec-dev-tooling-44fglo) — which is why
+    # the pushed refspec is read against the rendered value rather than against
+    # a literal: a per-run ref the pod was not told about would leave every Job
+    # looking for a ref nothing pushed, and a literal assertion could not see it.
+    rendered = cluster.issued(needle="--gate-ref")[0]
+    gate_ref = rendered[rendered.index("--gate-ref") + 1]
+    assert gate_ref.startswith(f"refs/gates/{_TREE}-")
+    assert [argv for argv in cluster.argvs if f"HEAD:{gate_ref}" in argv]
     # Two polls: the run waited through a Job that had not been admitted yet.
     assert len(cluster.issued(needle="get")) == 2
     assert [
