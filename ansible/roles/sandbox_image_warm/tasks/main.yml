@@ -1,0 +1,111 @@
+---
+# sandbox_image_warm — install and arm the host-side sandbox image warm.
+#
+# Work-item livespec-dev-tooling-dq3km7; plan delegated-gate-fleet-rollout, epic
+# livespec-dev-tooling-mvalxq. Governed by the "One play, applied after a drift
+# read" clause of the `## Fabro factory host provisioning` section of
+# SPECIFICATION/non-functional-requirements.md: every Fabro factory control this
+# repository installs on a host is a role ansible/fabro-hosts.yml includes for
+# that host, with every host-specific value read from host_vars.
+#
+# THIS CONVERGE RESTARTS NOTHING AND DRAINS NOTHING. The warm is a oneshot unit
+# of its own; arming its timer touches neither dockerd nor any Fabro server, so
+# unlike the sandbox envelope this role needs no operator restart window. What
+# it changes on the host is one script, two units and one enabled timer.
+#
+# WHY THE TIMER IS STARTED BY THE CONVERGE AND NOT LEFT TO THE NEXT BOOT. A
+# control whose whole purpose is to run ahead of the next dispatch is worth
+# nothing while it sits installed and idle, and the acceptance condition is
+# explicitly that no operator command runs by hand. Enabling without starting
+# would make the first warm wait for a reboot of a host that is deliberately
+# long-lived.
+
+- name: Refuse an empty value in any field of the sandbox image warm
+  # Jinja catches an UNDEFINED variable on its own, but an empty string
+  # substitutes silently — and an empty image, prefix list or pin URL yields a
+  # warm that runs on the timer's cadence, reads nothing and reports success,
+  # which is the silent shape this control exists to remove rather than add.
+  ansible.builtin.assert:
+    that:
+      - sandbox_image_warm_bin | string | length > 0
+      - sandbox_image_warm_unit_dir | string | length > 0
+      - sandbox_image_warm_service | string | length > 0
+      - sandbox_image_warm_timer | string | length > 0
+      - sandbox_image_warm_image | string | length > 0
+      - sandbox_image_warm_tag_prefixes | length > 0
+      - (sandbox_image_warm_pin_url | trim | length) > 0
+      - sandbox_image_warm_lock_dir | string | length > 0
+      - sandbox_image_warm_lock_timeout_seconds | string | length > 0
+      - sandbox_image_warm_on_boot_sec | string | length > 0
+      - sandbox_image_warm_on_unit_active_sec | string | length > 0
+      - sandbox_image_warm_randomized_delay_sec | string | length > 0
+      - sandbox_image_warm_timeout_start_sec | string | length > 0
+    fail_msg: >-
+      Every field of the sandbox image warm must carry a non-empty value; check
+      this host's host_vars against the role defaults.
+    success_msg: every field of the sandbox image warm carries a value
+
+- name: Refuse a sandbox image tag prefix that would not name a tag
+  # A blank prefix renders the reference `<image>:-v<version>`, which no
+  # registry holds, so every tick would fail to pull a tag that does not exist
+  # and the host would never warm the tag it actually needs.
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - (item | trim | length) > 0
+    fail_msg: >-
+      sandbox_image_warm_tag_prefixes declares the prefix {{ item | to_json }},
+      which is not a string that is non-empty once surrounding whitespace is
+      removed. A prefix is the layer half of the tag `<prefix>-v<version>`.
+    success_msg: the prefix {{ item }} can name a tag
+  loop: "{{ sandbox_image_warm_tag_prefixes }}"
+
+- name: Install the sandbox image warm runner
+  # `validate` runs bash's own parser over the staged copy, so a warm that
+  # cannot be parsed is refused here rather than discovered as a failed timer
+  # unit hours later.
+  ansible.builtin.copy:
+    src: sandbox-image-warm.sh
+    dest: "{{ sandbox_image_warm_bin }}"
+    owner: root
+    group: root
+    mode: "0750"
+    validate: bash -n %s
+  become: true
+
+- name: Check whether the sandbox image warm timer unit is already installed
+  # Read for the enable-and-start task below: under --check the unit files are
+  # not written, so a host that does not already carry the timer has nothing for
+  # systemd to enable and the module would fail describing a missing unit rather
+  # than reporting the converge it would perform.
+  ansible.builtin.stat:
+    path: "{{ sandbox_image_warm_unit_dir }}/{{ sandbox_image_warm_timer }}"
+  become: true
+  register: sandbox_image_warm_timer_unit
+
+- name: Install the sandbox image warm service unit
+  ansible.builtin.template:
+    src: livespec-sandbox-image-warm.service.j2
+    dest: "{{ sandbox_image_warm_unit_dir }}/{{ sandbox_image_warm_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the sandbox image warm timer unit
+  ansible.builtin.template:
+    src: livespec-sandbox-image-warm.timer.j2
+    dest: "{{ sandbox_image_warm_unit_dir }}/{{ sandbox_image_warm_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Enable and start the sandbox image warm timer
+  ansible.builtin.systemd_service:
+    name: "{{ sandbox_image_warm_timer }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or sandbox_image_warm_timer_unit.stat.exists

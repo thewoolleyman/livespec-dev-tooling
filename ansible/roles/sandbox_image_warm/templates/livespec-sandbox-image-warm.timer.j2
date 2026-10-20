@@ -1,0 +1,23 @@
+{#
+  The timer is what makes this control need NO operator command: once it is
+  enabled and started, the host re-reads the pin on its own cadence and a new
+  sandbox image tag arrives in the local image store without anyone applying
+  anything. A warm armed only by a playbook run would lag the pin exactly as
+  the gate renderer lagged the gate client.
+
+  Persistent=true so a host that was down across a bump warms on its next boot
+  rather than waiting out a whole interval first.
+-#}
+# {{ ansible_managed }}
+[Unit]
+Description=Periodic warm of this Fabro factory host's sandbox image store
+
+[Timer]
+OnBootSec={{ sandbox_image_warm_on_boot_sec }}
+OnUnitActiveSec={{ sandbox_image_warm_on_unit_active_sec }}
+Persistent=true
+RandomizedDelaySec={{ sandbox_image_warm_randomized_delay_sec }}
+Unit={{ sandbox_image_warm_service }}
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,47 @@
+---
+# sandbox_image_warm — keep a docker Fabro factory host's local image store
+# ahead of the sandbox image tag its runs are about to need. See HOST_VARS.md
+# for the operator procedure, the rollback and the condition under which this
+# control is retired.
+
+sandbox_image_warm_bin: /usr/local/sbin/livespec-sandbox-image-warm
+sandbox_image_warm_unit_dir: /etc/systemd/system
+sandbox_image_warm_service: livespec-sandbox-image-warm.service
+sandbox_image_warm_timer: livespec-sandbox-image-warm.timer
+
+# The image whose tags are warmed, and the LAYER prefixes of the tags within it.
+# A factory host warms one reference per prefix: `<image>:<prefix>-v<version>`.
+# `python-agent` is the layer the orchestrator's implement workflow dispatches
+# into; a host that serves a differently-pinned workflow adds that layer here
+# rather than taking a second role.
+sandbox_image_warm_image: ghcr.io/thewoolleyman/livespec-fabro-sandbox
+sandbox_image_warm_tag_prefixes:
+  - python-agent
+
+# WHERE THE VERSION COMES FROM, and why it is not declared per host. The tag a
+# repository dispatches on is this repository's released version, because the
+# release fan-out rewrites every consumer's `docker =` pin to it. Reading that
+# version from master names the tag the fleet is about to dispatch on; a tag
+# written into host_vars would only ever name the tag whose bump an operator
+# last applied by hand.
+sandbox_image_warm_pin_url: >-
+  https://raw.githubusercontent.com/thewoolleyman/livespec-dev-tooling/master/.release-please-manifest.json
+
+# One lock file per warmed reference, on tmpfs: the lock has no meaning across a
+# reboot, and a stale lock file under /var would outlive the pull it guarded.
+sandbox_image_warm_lock_dir: /run/livespec-sandbox-image-warm
+# How long a warm waits for a concurrent warm's pull before giving up. Generous
+# on purpose: waiting is the whole point, and the alternative to waiting is the
+# second concurrent pull that tore down the first one's leases. A warm that hits
+# this ceiling exits non-zero and pulls NOTHING.
+sandbox_image_warm_lock_timeout_seconds: 1800
+
+# The cadence. Short enough that a pin bump is warmed long before a dispatch
+# reaches the new tag, cheap enough to run on that cadence forever: a tick whose
+# tag is already held reads the local image store and exits.
+sandbox_image_warm_on_boot_sec: 2min
+sandbox_image_warm_on_unit_active_sec: 5min
+sandbox_image_warm_randomized_delay_sec: 30
+# Bounds ONE warm, layer download included; the lock wait above is bounded
+# separately and is the larger of the two concerns.
+sandbox_image_warm_timeout_start_sec: 45min

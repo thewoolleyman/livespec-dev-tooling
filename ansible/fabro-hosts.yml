@@ -74,6 +74,14 @@
     - role: sandbox_storage
       tags: [sandbox_storage]
       when: sandbox_storage_enabled | default(true) | bool
+    # The warm that keeps this host's local image store ahead of the sandbox
+    # image tag its runs are about to need, so a new tag is never first pulled
+    # by two concurrent runs racing each other's containerd leases
+    # (livespec-dev-tooling-dq3km7). The converge arms a timer and restarts
+    # nothing, so it needs no drained window; see the role's HOST_VARS.md for
+    # the derivation of the tag, the rollback and what retires the control.
+    - role: sandbox_image_warm
+      tags: [sandbox_image_warm]
     # The `factory` namespace credential the Kubernetes sandbox backend
     # launches a run's pod with (livespec-dev-tooling-sqobqv). Reached through
     # this GROUP play rather than named per host, so a machine that joins the
