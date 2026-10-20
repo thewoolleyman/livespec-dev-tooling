@@ -945,18 +945,20 @@ it. What this prune bounds is the RECORD count.
 **Where source 4(c)'s data comes from, and how old it is.** The prune
 runs on a node out of `/usr/local/lib/ci-runner-k3s`, where no checkout
 of this repository is guaranteed to exist, so it cannot scan the
-repository itself. `install-sandbox-image-prune.sh` does the scan
-instead, from the tree it is run out of, and installs the result beside
-the script as `prune-sandbox-images.repo-pins` — one image reference per
-line. That makes the file a SNAPSHOT, as old as the last install: a
+repository itself. The `sandbox_image_prune` role of
+[`../../../../ansible/ci-pool.yml`](../../../../ansible/ci-pool.yml) does
+the scan instead, on the ANSIBLE CONTROLLER — where this repository
+demonstrably exists — and installs the result beside the script as
+`prune-sandbox-images.repo-pins` — one image reference per
+line. That makes the file a SNAPSHOT, as old as the last apply: a
 manifest whose pin changed afterwards is not protected until the
-installer runs again. It is the same "merging is not deploying" property
+role runs again. It is the same "merging is not deploying" property
 every unit in this tree has, since the installed script is a copy too,
 and the staleness leans safe — a pin DELETED from the repository keeps
-protecting its image until the next install, while a NEWLY added pin is
+protecting its image until the next apply, while a NEWLY added pin is
 unprotected by this gate until then. A new pin is normally a recent
 release the newest-N window already covers; a new pin to an OLD tag is
-the case that needs the installer re-run.
+the case that needs the role re-applied.
 
 ### Paths
 
@@ -967,9 +969,9 @@ the case that needs the installer re-run.
 | `registry-mirror/install-registry-mirror.sh` | Renders that template for the run's role and writes `/etc/rancher/k3s/registries.yaml`. Role and carrier address are DERIVED from the profile (`CLUSTER_ROLE`, and the host of `CLUSTER_JOIN_ADDRESS` on an agent), or given explicitly with `--role` / `--mirror-endpoint`. Idempotent — a second run with the same inputs says "unchanged" and writes nothing — and it REFUSES rather than overwrites a `registries.yaml` it did not write, since a hand-written one may carry private-registry credentials. Never restarts k3s. `--dry-run` prints the rendered file and the command sequence and executes nothing. |
 | `registry-mirror/converge-registry-mirror.sh` | The idempotent apply of the cluster objects, with a config-hash stamp so an edit rolls the pod and a bounded rollout wait. Same shape as `../crates-proxy/converge-crates-proxy.sh`, including `--dry-run`. |
 | `sandbox-image-prune/prune-sandbox-images.sh` | The policy. Reports by default; `--apply` removes; `--keep N` sets the per-family budget. Its header states all five gates in full. Reads `prune-sandbox-images.repo-pins` beside its own installed copy as gate 4(c), and refuses to run if that file is missing or empty. |
-| `sandbox-image-prune/prune-sandbox-images.repo-pins` | NOT in this repository — a data file RENDERED by the installer into `/usr/local/lib/ci-runner-k3s/` beside the script, holding every reference to the scope repository found in this repository's YAML. Regenerated on every install, so re-run the installer after committing a manifest that pins an old tag. |
+| `sandbox-image-prune/prune-sandbox-images.repo-pins` | NOT in this repository — a data file RENDERED by the `sandbox_image_prune` Ansible role into `/usr/local/lib/ci-runner-k3s/` beside the script, holding every reference to the scope repository found in this repository's YAML. Regenerated on every apply, so re-apply after committing a manifest that pins an old tag. |
 | `sandbox-image-prune/prune-sandbox-images.service` + `.timer` | One oneshot pass with `--apply` spelled out in the unit, `Requires=k3s.service` (a safety ordering: without the API server the central gate cannot be answered, and an agent runs `k3s-agent.service`, so the unit cannot start there), every 6 hours with the first tick 30 minutes after boot. |
-| `sandbox-image-prune/install-sandbox-image-prune.sh` | Installs the script to `/usr/local/lib/ci-runner-k3s/` and enables the TIMER (never the service). Also renders the repo-pins file above: it reads the scope repository OUT OF the prune script rather than repeating it, scans every YAML file in the repository tree (`.git` and `.venv` excluded) for a reference to it, and REFUSES to install if the scan finds none — zero means the scan looked at the wrong tree, and an empty pins file would disarm gate 4(c) silently. SERVER-only, as a hard refusal. `--dry-run` prints the plan, including the real extracted pins, and installs nothing. |
+| `../../../../ansible/roles/sandbox_image_prune/` | NOT in this tree, and the only installer: the Ansible role that installs the script to `/usr/local/lib/ci-runner-k3s/` and arms the TIMER (never the service). Also renders the repo-pins file above: it reads the scope repository OUT OF the prune script rather than repeating it, scans every YAML file in the repository tree (`.git` and `.venv` excluded) for a reference to it, and REFUSES to install if the scan finds none — zero means the scan looked at the wrong tree, and an empty pins file would disarm gate 4(c) silently. SERVER-only, as a hard refusal rather than a skip. `just ansible-drift ansible/ci-pool.yml` prints the plan and changes nothing. It replaced a hand-run `install-sandbox-image-prune.sh` (`livespec-dev-tooling-xcscdz`; recoverable at `356e0454`) that this playbook never invoked, so a rebuilt node came back with no prune timer at all. |
 | `sandbox-image-prune/prune-sandbox-images-exit-tests.sh` | The prune's exit tests, with `crictl` and `kubectl` faked and every `rmi` sent to a tripwire, so the decisions are proved without a containerd, a cluster, root, or a single image removed anywhere: the ARC runner image is never named; a CronJob-only tag survives while the older release beside it does not; a one-release family keeps its release where a global newest-N would starve it; v1.5.0 is pruned while v1.49.0 is kept; a record holding one kept tag is kept whole; the paired digest ref is shown going with the tag; a bare run removes nothing; `--apply` removes exactly the candidates; a failing and an empty cluster read each stop the run; and a candidate that becomes referenced mid-run is skipped. It also covers gate 4(c) by running the script out of a scratch directory laid out the way the installer lays out `/usr/local/lib/ci-runner-k3s` — the real resolution path, rather than a test-only override that would amount to a knob for aiming a fail-closed gate at a file of the caller's choosing: a release pinned ONLY by a committed manifest is kept, the same fixture with that pin absent from the repository lists it for removal (so the protection is shown to come from that source), and an absent or empty pins file each stop the run. |
 
 ### The measured after-state
@@ -1008,10 +1010,13 @@ freshly provisioned node gets NONE of them from `ansible/ci-pool.yml` today
 2. `sudo registry-mirror/install-registry-mirror.sh <profile>` on each
    node. It takes effect at that node's next k3s start, which this
    installer deliberately does not perform.
-3. `sudo sandbox-image-prune/install-sandbox-image-prune.sh <server profile>`,
-   then run ONE report pass by hand —
-   `sudo /usr/local/lib/ci-runner-k3s/prune-sandbox-images.sh` — and read
-   the candidate list for that node before the timer's first `--apply`.
+3. `just ansible-apply ansible/ci-pool.yml --tags sandbox_image_prune`,
+   which installs the prune and arms its timer on the server node. On a
+   host up longer than the timer's `OnBootSec=30min` that arming fires the
+   missed tick AT ONCE, with `--apply`, so there is no window in which to
+   read the candidate list first: to see one, apply on a host booted less
+   than 30 minutes ago, or read what the tick did afterwards with
+   `sudo journalctl -u prune-sandbox-images.service --since '-10 min'`.
 4. The mirror's cluster half is rebuilt on every boot by
    `../reconstruct/converge-ci-stack.sh` step 8d, and
    the `ci_converge_unit` Ansible role copies `registry-mirror/`
@@ -1024,13 +1029,18 @@ freshly provisioned node gets NONE of them from `ansible/ci-pool.yml` today
 
 ### The half that is open
 
-**A freshly provisioned node carries neither half.** `ansible/ci-pool.yml`
-(like the retired `install-node.sh` before it) has no role for `registry-mirror/install-registry-mirror.sh` or
-`sandbox-image-prune/install-sandbox-image-prune.sh`, so a cattle
-rebuild of the NODE (as opposed to the cluster, which step 8d covers)
-comes up with no `registries.yaml` and no prune timer until an operator
-runs steps 2 and 3 by hand. Found by the independent acceptance review
-of `livespec-h96p` on 2026-09-09; tracked on `livespec-dev-tooling-y1t5`.
+**A freshly provisioned node carries the mirror's node half, and nothing
+installs it.** `ansible/ci-pool.yml` (like the retired `install-node.sh`
+before it) has no role for `registry-mirror/install-registry-mirror.sh`,
+so a cattle rebuild of the NODE (as opposed to the cluster, which step 8d
+covers) comes up with no `registries.yaml` until an operator runs step 2
+by hand. Found by the independent acceptance review of `livespec-h96p` on
+2026-09-09; tracked on `livespec-dev-tooling-y1t5`.
+
+The PRUNE half of that finding is closed (`livespec-dev-tooling-xcscdz`):
+the `sandbox_image_prune` role is a `ci-pool.yml` role now, gated to the
+server node, so step 3 is performed by the committed apply rather than by
+hand and a rebuilt node comes back with its prune timer armed.
 
 **An agent node's containerd is not pruned.** The prune's central gate is
 a cluster-wide PodSpec read, and only a server holds the admin
