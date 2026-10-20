@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-38wh
-reason=Correct two workflow comments (ci.yml above the check-fleet-conformance job, fleet-conformance.yml header) that wrongly say the admin-scoped fleet-conformance rows run at pre-push; both now name the one true venue, an operator's deliberate bare just check. Comment-only: no job, step, trigger or logic changes. The maintainer approved this workflow edit directly on 2026-10-18 and approval:workflow-edit is set on the item.
+work_item=livespec-dev-tooling-vxkmab
+reason=Wire `just check-tests-host-path-free` into ci.yml's check-metadata-batch step (one added line, in alphabetical order) and retire its PROVISIONAL repo_local_ci_skips declaration in pyproject.toml, discharging vxkmab's host-captured CI-membership assertion. No other job, step, trigger or logic changes. Host route per coordinator ruling R323; approval:workflow-edit is applied to the item by the coordinator under the maintainer's relayed pre-approval (R344).
