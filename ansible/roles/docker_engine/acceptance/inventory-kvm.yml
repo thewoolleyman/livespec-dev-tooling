@@ -6,23 +6,44 @@
 #   ansible-playbook -i ansible/roles/docker_engine/acceptance/inventory-kvm.yml \
 #     ansible/docker-engine.yml --limit guard-vm-<i>
 # It is never merged into the fleet inventory. The VMs are the ones
-# ansible/docker-engine-acceptance.yml boots on poweredge-xubuntu (the
+# ansible/docker-engine-acceptance.yml boots on the KVM acceptance host (the
 # docker_engine_acceptance_hosts group, coordinator ruling R59). Instance i
 # forwards SSH on that host's 127.0.0.1:<2229+10i> and the LLM-health stub on
 # its 0.0.0.0:<2280+10i>. The controller reaches each guest by jumping through
-# cwoolley@poweredge-xubuntu, with the guest key the play's `baseline` action
-# fetched to the control node. Everything else matches inventory.yml.
+# that host, with the guest key the play's `baseline` action fetched to the
+# control node. Everything else matches inventory.yml.
+#
+# WHICH MACHINE IS THAT HOST IS THE FLEET INVENTORY'S DECISION, NEVER THIS
+# FILE'S — the same rule the play states for itself, and the reason the key it
+# fetches is named after inventory_hostname (livespec-dev-tooling-prdxxe). This
+# file is a STANDALONE inventory, so it cannot read the fleet's groups; it is
+# told instead, through the one environment variable the FAULTS case scripts
+# read from the same place (faults/lib.sh), so the harness has a single source
+# for the fact. Unset, the ProxyJump target is incomplete and every connection
+# fails at once — the case scripts refuse outright and name the variable.
 all:
   children:
     docker_engine_hosts:
       vars:
-        docker_engine_acceptance_key: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/docker-engine-guard-acceptance/poweredge-xubuntu/id_ed25519"
+        docker_engine_acceptance_kvm_host: "{{ lookup('ansible.builtin.env', 'DOCKER_ENGINE_ACCEPTANCE_KVM_HOST') }}"
+        # The login account on that host. A user is not a machine, so it stays a
+        # literal, overridable for the same reason the scripts allow it.
+        docker_engine_acceptance_kvm_user: "{{ lookup('ansible.builtin.env', 'DOCKER_ENGINE_ACCEPTANCE_KVM_USER') | default('cwoolley', true) }}"
+        # Where the play's `baseline` action fetched the guest key to: it names
+        # the directory after the acceptance host's inventory name, so this is
+        # DERIVED from the fact above rather than spelled a second time.
+        docker_engine_acceptance_key_dir: >-
+          {{ lookup('ansible.builtin.env', 'HOME') }}/.cache/docker-engine-guard-acceptance/{{
+          docker_engine_acceptance_kvm_host }}
+        docker_engine_acceptance_key: "{{ docker_engine_acceptance_key_dir }}/id_ed25519"
+        docker_engine_acceptance_kvm_login: >-
+          {{ docker_engine_acceptance_kvm_user }}@{{ docker_engine_acceptance_kvm_host }}
         ansible_host: 127.0.0.1
         ansible_user: guard
         ansible_become: true
         ansible_ssh_private_key_file: "{{ docker_engine_acceptance_key }}"
         ansible_ssh_common_args: >-
-          -o ProxyJump=cwoolley@poweredge-xubuntu
+          -o ProxyJump={{ docker_engine_acceptance_kvm_login }}
           -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
         # Each guest is its own single-node k3s server (baseline.sh), named
         # guard-vm, which root reaches over ssh as guard-vm.
@@ -49,13 +70,13 @@ all:
       hosts:
         guard-vm-0:
           ansible_port: 2229
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2280/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2280/health"
           docker_engine_tailscale_ssh_argv: &vm0_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2229"
             - -o
@@ -75,13 +96,13 @@ all:
           docker_engine_lan_fallback_ssh_argv: *vm0_new_session
         guard-vm-1:
           ansible_port: 2239
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2290/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2290/health"
           docker_engine_tailscale_ssh_argv: &vm1_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2239"
             - -o
@@ -101,13 +122,13 @@ all:
           docker_engine_lan_fallback_ssh_argv: *vm1_new_session
         guard-vm-2:
           ansible_port: 2249
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2300/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2300/health"
           docker_engine_tailscale_ssh_argv: &vm2_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2249"
             - -o
@@ -127,13 +148,13 @@ all:
           docker_engine_lan_fallback_ssh_argv: *vm2_new_session
         guard-vm-3:
           ansible_port: 2259
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2310/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2310/health"
           docker_engine_tailscale_ssh_argv: &vm3_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2259"
             - -o
@@ -153,13 +174,13 @@ all:
           docker_engine_lan_fallback_ssh_argv: *vm3_new_session
         guard-vm-4:
           ansible_port: 2269
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2320/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2320/health"
           docker_engine_tailscale_ssh_argv: &vm4_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2269"
             - -o
@@ -179,13 +200,13 @@ all:
           docker_engine_lan_fallback_ssh_argv: *vm4_new_session
         guard-vm-5:
           ansible_port: 2279
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2330/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2330/health"
           docker_engine_tailscale_ssh_argv: &vm5_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2279"
             - -o
@@ -205,13 +226,13 @@ all:
           docker_engine_lan_fallback_ssh_argv: *vm5_new_session
         guard-vm-6:
           ansible_port: 2289
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2340/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2340/health"
           docker_engine_tailscale_ssh_argv: &vm6_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2289"
             - -o
@@ -231,13 +252,13 @@ all:
           docker_engine_lan_fallback_ssh_argv: *vm6_new_session
         guard-vm-7:
           ansible_port: 2299
-          docker_engine_llm_health_url: http://poweredge-xubuntu:2350/health
+          docker_engine_llm_health_url: "http://{{ docker_engine_acceptance_kvm_host }}:2350/health"
           docker_engine_tailscale_ssh_argv: &vm7_new_session
             - ssh
             - -i
             - "{{ docker_engine_acceptance_key }}"
             - -J
-            - cwoolley@poweredge-xubuntu
+            - "{{ docker_engine_acceptance_kvm_login }}"
             - -p
             - "2299"
             - -o
