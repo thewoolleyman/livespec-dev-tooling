@@ -8,7 +8,10 @@ gates_kubeconfig_bin_dir: /usr/local/bin
 gates_kubeconfig_dest: /etc/ci-runner/gates.kubeconfig
 # The control-plane node that renders the credential on every boot.
 # The k3s server is resolved from the inventory, never named here: the ci_pool
-# member whose cluster_role is server (livespec-dev-tooling-prdxxe).
+# member whose cluster_role is server (livespec-dev-tooling-prdxxe). It is also
+# delivered to the runtime refresh tool in the env-file below as
+# GATES_REMOTE_HOST — the tool carries no default for it and refuses without it,
+# so this resolution is the ONE place the pool's server is decided.
 gates_kubeconfig_remote_host: >-
   {{ groups['ci_pool'] | map('extract', hostvars)
      | selectattr('cluster_role', 'defined')
