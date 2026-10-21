@@ -653,6 +653,14 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an authority-reading member of an opted-in push runs on the pushing host and joins the delegated verdict",
+    "test": "TODO",
+    "reason": "Spec-first, ratified 2026-10-21 for work-item livespec-dev-tooling-gpttcc (plan delegated-gate-fleet-rollout). The implementation child filed under epic livespec-dev-tooling-mvalxq owes the consumer-tier test, through the GateCommandRunner seam: an authority-declaring member that is absent from the Job's run set, runs host-side, ANDs into the verdict, and refuses naming itself.",
+    "work_item": "livespec-dev-tooling-gpttcc"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Fabro factory registry",
     "test": "tests.livespec_dev_tooling.test_fabro_factory_registry_role.test_the_committed_inventory_declares_a_registry_that_resolves",
