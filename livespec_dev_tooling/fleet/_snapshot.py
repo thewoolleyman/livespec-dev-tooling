@@ -170,7 +170,7 @@ class TreeSnapshot:
     ref: str
     root: Path
     file_count: int
-    handle: tempfile.TemporaryDirectory[str] = field(compare=False, repr=False)
+    handle: tempfile.TemporaryDirectory[str] | None = field(default=None, compare=False, repr=False)
 
 
 SnapshotResult = IOResult[TreeSnapshot, SnapshotUnavailable]

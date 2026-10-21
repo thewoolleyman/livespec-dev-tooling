@@ -42,6 +42,10 @@ from livespec_dev_tooling.fleet._gh_runner import (  # noqa: E402
 from livespec_dev_tooling.fleet._invocation_failure import (  # noqa: E402
     InvocationNotPerformed,
 )
+from livespec_dev_tooling.fleet._local_tree import checked_out_tree  # noqa: E402
+from livespec_dev_tooling.fleet._member_tree_snapshot import (  # noqa: E402
+    member_tree_snapshot,
+)
 from livespec_dev_tooling.fleet._origin_remote import (  # noqa: E402
     OriginRemoteUnresolved,
     owner_or_origin,
@@ -58,7 +62,6 @@ from livespec_dev_tooling.fleet._snapshot import (  # noqa: E402
     GhDownloader,
     SnapshotResult,
     default_gh_downloader,
-    memoized_snapshot,
 )
 from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload  # noqa: E402
 
@@ -346,10 +349,14 @@ class FleetContext:
         return result.stdout
 
     def tree(self, *, repo: str) -> TreeState:
-        """Memoized recursive canonical-ref tree for `repo` (one API call per run)."""
+        """Memoized checked-out self tree or canonical-ref sibling tree for `repo`."""
         cached = self.tree_cache.get(repo)
         if cached is not None:
             return cached
+        if self.local_root is not None and repo == self.local_repo:
+            state = checked_out_tree(root=self.local_root)
+            self.tree_cache[repo] = state
+            return state
         ref = self.canonical_ref(repo=repo)
         payload = self.api_object(
             path=f"repos/{self.owner}/{repo}/git/trees/{ref}?recursive=1", operation="tree"
@@ -361,24 +368,19 @@ class FleetContext:
         return state
 
     def member_tree_snapshot(self, *, repo: str) -> SnapshotResult:
-        """`repo`'s whole tree at its canonical ref, materialized once per run.
+        """`repo`'s whole tree at its checked-out or canonical-ref vantage, once per run.
 
         ONE API call where a per-file `file_text` walk costs one per file —
         the difference `livespec-dev-tooling-k76y` measured at ~653 reads per
         run against a pool shared by all nine repos' automation.
 
-        Pinned through `canonical_ref` for the same reason `file_text` and
-        `tree` are: a row that reads the archive and then the tree must never
+        The self member returns its checkout root: CI must grade the commit it
+        checked out, and copying it through a remote archive would restore the
+        repair deadlock this vantage prevents. Siblings remain pinned through
+        `canonical_ref`, so a row that reads their archive and tree cannot
         resolve the two against divergent branches.
         """
-        return memoized_snapshot(
-            cache=self.snapshot_cache,
-            download=self.download_gh,
-            owner=self.owner,
-            repo=repo,
-            ref=self.canonical_ref(repo=repo),
-            record=self.record_read_failure,
-        )
+        return member_tree_snapshot(ctx=self, repo=repo)
 
     def installed_repos(self) -> frozenset[str] | None:
         """Repos visible to the current App installation token; None = can't read.
