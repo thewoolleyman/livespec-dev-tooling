@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.120.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.120.0...v1.120.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* report a gates credential refresh in the push's own output ([08e7327](https://github.com/thewoolleyman/livespec-dev-tooling/commit/08e732761744dd419c87137351fc83b3c4da8eb4))
+
 ## [1.120.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.119.0...v1.120.0) (2026-10-21)
 
 
