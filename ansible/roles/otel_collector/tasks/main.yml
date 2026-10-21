@@ -1,8 +1,9 @@
 ---
 # otel_collector -- the VPS's system service, deployed without its development
-# checkout.  The raw URL is the collector repository's merged main branch:
-# `just ansible-drift ansible/dev-host.yml --tags otel_collector` reports the
-# pending config, and the matching ansible-apply is the only deploy path.
+# checkout.  The raw URL is read on the control node from the collector
+# repository's merged main branch. `copy` compares that content under --check,
+# so `just ansible-drift ansible/dev-host.yml --tags otel_collector` reports
+# real config drift; the matching ansible-apply is the only deploy path.
 
 - name: Refuse to render a collector environment without its controller credentials
   ansible.builtin.assert:
@@ -39,9 +40,9 @@
   no_log: true
   notify: Restart the collector when its managed inputs change
 
-- name: Download the merged collector configuration
-  ansible.builtin.get_url:
-    url: https://raw.githubusercontent.com/thewoolleyman/otel-collector/main/config.yaml
+- name: Install the merged collector configuration
+  ansible.builtin.copy:
+    content: "{{ lookup('ansible.builtin.url', otel_collector_config_url, split_lines=False) }}"
     dest: "{{ otel_collector_config_path }}"
     owner: root
     group: root

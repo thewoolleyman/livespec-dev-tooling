@@ -99,9 +99,10 @@ just ansible-apply ansible/dev-host.yml --tags otel_collector
 
 Run both commands from the VPS control node under
 `/usr/local/bin/with-livespec-env.sh`, which supplies the collector's
-Honeycomb credentials. The role restarts the service only when its managed
-configuration, environment file, or unit changed; an already-converged apply
-does not interrupt it.
+Honeycomb credentials (`HONEYCOMB_API_KEY`, `HONEYCOMB_API_ENDPOINT`, and
+`HONEYCOMB_INGEST_KEY_LIVESPEC`). The role restarts the service only when its
+managed configuration, environment file, or unit changed; an already-converged
+apply does not interrupt it.
 
 `reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
 the only play here that reboots a host. It is an ordinary

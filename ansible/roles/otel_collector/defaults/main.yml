@@ -3,6 +3,7 @@
 # branch.  It is copied into /etc rather than run from /data/projects so the
 # service is independent of a developer checkout on its host.
 otel_collector_config_path: /etc/otel-collector/config.yaml
+otel_collector_config_url: https://raw.githubusercontent.com/thewoolleyman/otel-collector/main/config.yaml
 otel_collector_environment_path: /etc/otel-collector/collector.env
 otel_collector_unit_path: /etc/systemd/system/otel-collector.service
 otel_collector_unit_name: otel-collector.service
@@ -15,4 +16,5 @@ otel_collector_group: ubuntu
 # otel_collector_user; no value is logged or stored in the repository.
 otel_collector_environment_keys:
   - HONEYCOMB_API_KEY
+  - HONEYCOMB_API_ENDPOINT
   - HONEYCOMB_INGEST_KEY_LIVESPEC
