@@ -299,7 +299,7 @@ def _livespec_jsonc_gaps(*, text: str) -> tuple[WiringGap, ...]:
 
     The key's VALUE is not asserted: `optional` is the sanctioned, reviewable
     opt-out, and this row asserts that the repo CHOSE — the same shape as the
-    sibling `foreman-valve-declared` row. An unparseable config is a gap
+    sibling `acceptance-mode-declared` row. An unparseable config is a gap
     rather than a skip because the bytes were read: this is a definitive
     statement about the committed file, not a failed read.
 

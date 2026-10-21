@@ -348,3 +348,28 @@ def test_worktree_pack_wired_row_is_scoped_by_class_and_manual_only() -> None:
     assert row.obligation_type == "committed-file"
     assert row.reconcile is None
     assert row.manual_hint
+
+
+def test_the_retired_foreman_valve_row_is_not_registered() -> None:
+    # RETIREMENT, not a narrowing (livespec-dev-tooling-6nwn4c). The obligation
+    # this row enforced no longer exists: livespec-overseer SPECIFICATION v047
+    # (`retire-foreman-grooming-and-supervisor-seats`, maintainer ruling
+    # 2026-09-06) deleted the foreman-valve-disposition contract whole and
+    # transferred the capability by name to the orchestrator's valve-policy enum
+    # on attention items, and overseer commit b773755a removed both the foreman
+    # seat's `.livespec.jsonc` keys and the
+    # `overseer/foreman_valve_policy.effective_valve_disposition` resolver the
+    # row's entire rationale rested on.
+    #
+    # So the row's registered premise — ALL_CLASSES because "every governed
+    # member runs foreman seats" — has been false since 2026-09-06, and a
+    # registered row cannot be harmlessly left behind: it kept the scheduled
+    # `Fleet conformance` sweep RED on livespec-overseer (run 39658243579,
+    # 2026-10-21T19:06Z) over a key that repo correctly no longer declares, and
+    # the only way to clear that finding would have been to write a dead value
+    # back into 14 repos.
+    #
+    # Asserted against the TABLE rather than against the absence of the module,
+    # because the table is what both engines walk: a row file left on disk
+    # enforces nothing, while a registration is the whole defect.
+    assert "foreman-valve-declared" not in {row.row_id for row in OBLIGATION_ROWS}

@@ -60,9 +60,6 @@ from livespec_dev_tooling.fleet._rows_files import (
     assert_pin_freshness_workflow,
     assert_release_dispatch_workflow,
 )
-from livespec_dev_tooling.fleet._rows_foreman_valve import (
-    assert_foreman_valve_declared,
-)
 from livespec_dev_tooling.fleet._rows_instructions import (
     AGENT_INSTRUCTION_SURFACE_HINT,
     assert_agent_ai_references_resolve,
@@ -230,28 +227,16 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
             "in a repo-local commit"
         ),
     ),
-    # ARMED AT BIRTH, 2026-08-21, and the precondition was measured before the
-    # row was registered rather than after: the fleet-wide fan-out landed FIRST
-    # and all 14 governed members were re-measured on their own origin/master
-    # as declaring the key. The sibling decision-authority row above shipped
-    # DISARMED for the reason plan/rop-railway-enforcement/ records; that
-    # ordering is respected here, not skipped. Arming at birth is safe ONLY
-    # because the offender count was already zero.
-    #
-    # ALL_CLASSES: every governed member runs foreman seats, and every one of
-    # them should have CHOSEN a valve disposition rather than inherited the
-    # fail-closed default in silence.
-    _manual_committed_file_row(
-        row_id="foreman-valve-declared",
-        assert_member=assert_foreman_valve_declared,
-        manual_hint=(
-            "declare livespec-overseer.foreman_valve_disposition in .livespec.jsonc "
-            '(either "consensus" or "report-only" — the row asserts that the repo '
-            "CHOSE, not which way), in a repo-local commit. An absent key silently "
-            "fail-closes to report-only, where the foreman surfaces every human valve "
-            "and acts on none"
-        ),
-    ),
+    # RETIRED 2026-10-21 (livespec-dev-tooling-6nwn4c): the `foreman-valve-
+    # declared` row stood here, at ALL_CLASSES, on the premise that every
+    # governed member runs foreman seats. livespec-overseer SPECIFICATION v047
+    # (`retire-foreman-grooming-and-supervisor-seats`, maintainer ruling
+    # 2026-09-06) deleted the foreman valve disposition contract whole and moved
+    # the capability to the orchestrator's valve-policy enum on attention items,
+    # and overseer b773755a removed the resolver the row's rationale rested on —
+    # so the row demanded a retired key and held the scheduled sweep red over a
+    # finding no member could act on. An obligation whose contract is gone is
+    # retired, not narrowed: there is no surviving population that owes it.
     _manual_committed_file_row(
         row_id="agent-ai-references-resolve",
         assert_member=assert_agent_ai_references_resolve,
