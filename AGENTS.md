@@ -128,6 +128,12 @@ The files:
   auditing `.livespec.jsonc` keys across the fleet, or re-running a coverage
   report that died with `NoSource` — each records a plausible, error-free
   wrong answer measured in this fleet.
+- Read `.ai/plan-resume-pointer-reads.md` before calling `resume_directive`
+  to inspect a plan, or before trusting a plan's `next_action` whose
+  `required_result` is an `item_comment` marker. The call persists a new
+  pointer when it reads the old one as satisfied, and on 2026-10-21 an
+  `item_comment` wait satisfied itself through its own progress-event comment,
+  so a read silently advanced epic mvalxq to a premature review step.
 
 ## Backlog drive — this repo has no foreman seat
 
