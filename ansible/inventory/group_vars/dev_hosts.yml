@@ -13,8 +13,8 @@
 #
 # THE ONE PLACE A FACTORY IS BOUND TO A MACHINE (maintainer ruling 2026-10-15,
 # plan `petri-factory-on-gmktec`, epic `bd-ib-fyozyd`). Moving a factory is a
-# change to the two keys below plus a converge; no play, role or committed
-# factory entry names the machine. See
+# change to one entry's two keys below plus a converge; no play, role or
+# committed factory entry names the machine. See
 # `ansible/roles/fabro_factory_registry/HOST_VARS.md`.
 #
 # A factory name names the INSTANCE, never its role, and stays the same for that
@@ -22,15 +22,29 @@
 # `petri` is the current Fabro server. Which one a repository dispatches to by
 # default is carried by its own `dispatcher.default_factory`, so the cutover
 # between them renames nothing and leaves no item's recorded factory orphaned.
-# The Kubernetes move adds a third name and retires `petri`.
+# The Kubernetes move adds a further name and retires `petri`.
 #
-# Neither entry declares a `docker_host`: no repository's committed factory table
+# `mi-homelab` is the SECOND instance on the machine `legacy` serves from — the
+# org factory, its own GitHub App on its own port and state root — so the two
+# entries differ only by `unit_name`. It is declared because the homelab
+# repository's committed `dispatcher.factories` routes to that instance by
+# address, and a registry name is what lets that table drop the hostname
+# ("Machines are bound only in the inventory"). That instance is `service_state:
+# stopped` in hp's host_vars while the homelab project is on hold, which the
+# registry neither reads nor cares about: a name resolves to its instance's
+# `canonical_host` whether the unit runs or not, which is what lets the instance
+# come back by flipping that one word with nothing to re-declare here.
+#
+# No entry declares a `docker_host`: no repository's committed factory table
 # declares one today, and publishing one would newly turn on the Dispatcher's
 # remote container sweep.
 fabro_factory_registry:
   legacy:
     host: hp-xubuntu
     unit_name: fabro-server
+  mi-homelab:
+    host: hp-xubuntu
+    unit_name: fabro-server-mi-homelab
   petri:
     host: gmktec-xubuntu
     unit_name: fabro-server

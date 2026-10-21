@@ -89,6 +89,7 @@ _ROLE_DOC = _ROLE / "HOST_VARS.md"
 
 _DEFAULT_REGISTRY_PATH = "/etc/livespec/fabro-factories.json"
 _DEST_VAR = "fabro_factory_registry_dest"
+_FLEET_UNIT = "fabro-server"
 _INSTALL_TASK = "Install this host's Fabro factory registry"
 _RESOLVED_FACT = "fabro_factory_registry_resolved"
 _TIMEOUT_SECONDS = 600
@@ -112,6 +113,19 @@ _INSTANCES: Mapping[str, list[dict[str, str]]] = {
     ],
 }
 _DOCKER_HOST = "ssh://operator@factory-one.tailnet.example"
+
+# THIS repository's own committed registry, which the arms at the end of this
+# module read instead of the synthetic fleet above. `mi-homelab` is a SECOND Fabro
+# server instance on the machine `legacy` already serves from, so the two entries
+# differ only by `unit_name`: the name names the INSTANCE and never the machine or
+# the role, per the Fabro factory registry clause of
+# `SPECIFICATION/non-functional-requirements.md`, which is what lets the homelab
+# repository drop the address from its own committed factory table (work-item
+# `livespec-dev-tooling-r6kagr`).
+_COMMITTED_FACTORIES = ("legacy", "mi-homelab", "petri")
+_MI_HOMELAB = "mi-homelab"
+_MI_HOMELAB_HOST = "hp-xubuntu"
+_MI_HOMELAB_UNIT = "fabro-server-mi-homelab"
 
 # The scenario's first Given: `legacy` on one host WITH a docker_host, `petri` on
 # another WITHOUT one.
@@ -597,9 +611,112 @@ def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: 
     rendered = [json.loads(path.read_text(encoding="utf-8")) for path in reports.glob("*.json")]
     assert rendered, f"the dev_hosts group must have rendered the committed registry: {output}"
     for entries in rendered:
-        assert sorted(entries) == ["legacy", "petri"], entries
+        assert sorted(entries) == sorted(_COMMITTED_FACTORIES), entries
         for name, entry in entries.items():
             assert entry["server"].startswith("https://"), (name, entry)
+        addresses = {entry["server"] for entry in entries.values()}
+        assert len(addresses) == len(entries), (
+            "each committed factory name must resolve to its OWN instance's address: two "
+            "names sharing one address is a `unit_name` that selected the wrong mapping, "
+            f"which resolves perfectly well and routes both factories to one server: {entries}"
+        )
+
+
+def _committed_registry(*, tmp_path: Path) -> dict[str, dict[str, str]]:
+    """`fabro_factory_registry` as THIS repository's committed inventory declares it.
+
+    Read through Ansible's own loader rather than by matching the file's text, because
+    the mapping the role resolves is the PARSED declaration: a reader that re-implemented
+    the YAML would be asserting against its own parse rather than against the one a
+    converge would use. The run reaches the `dev_hosts` group over the local connection
+    the committed inventory gives it, gathers no facts, runs no role, and writes only
+    inside `tmp_path`.
+    """
+    reports = tmp_path / "declared"
+    reports.mkdir()
+    play = tmp_path / "declared.yml"
+    play.write_text(
+        json.dumps(
+            [
+                {
+                    "hosts": "dev_hosts",
+                    "gather_facts": False,
+                    "tasks": [
+                        {
+                            "name": "Report the registry the committed inventory declares",
+                            "ansible.builtin.copy": {
+                                "content": "{{ fabro_factory_registry | to_json }}",
+                                "dest": f"{reports}/{{{{ inventory_hostname }}}}.json",
+                                "mode": "0644",
+                            },
+                        }
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    done = _ansible(
+        cwd=_REPO_ROOT,
+        argv=[
+            "-i",
+            str(_LEGACY_INVENTORY),
+            "-e",
+            json.dumps({"ansible_become": False}),
+            str(play),
+        ],
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode == 0, output
+    reported = sorted({path.read_text(encoding="utf-8") for path in reports.glob("*.json")})
+    assert len(reported) == 1, (
+        "the dev_hosts group must have reported exactly one registry. The registry is a "
+        "GROUP value, so no report at all is a group that never ran and two different "
+        f"reports are a per-host declaration the specification forbids: {reported}\n{output}"
+    )
+    declared: dict[str, dict[str, str]] = json.loads(reported[0])
+    return declared
+
+
+def test_the_committed_registry_declares_mi_homelab_as_its_own_instance(*, tmp_path: Path) -> None:
+    """The hp `:32277` instance has a factory name, so homelab can stop committing an address.
+
+    Three names, and `mi-homelab` is the one this arm is about. Its `host` and `unit_name`
+    are asserted as a WHOLE entry rather than key by key: an entry carrying an extra key
+    is a declaration the role would also render, and `docker_host` in particular would
+    newly turn on the Dispatcher's remote container sweep, so no entry may grow one by
+    transcription from a sibling.
+
+    The two unchanged names are asserted as well, in the two ways they can regress. Both
+    still address a `fabro-server` unit, so neither was re-pointed onto this new instance;
+    and `legacy` names the SAME machine as `mi-homelab`, which is the fact that makes
+    `unit_name` the only thing separating them — a `mi-homelab` declared with `legacy`'s
+    unit would resolve to `legacy`'s address and route homelab's dispatches into the
+    fleet factory. The sibling arm above catches that from the other side, by asserting
+    the three resolved addresses are distinct.
+    """
+    registry = _committed_registry(tmp_path=tmp_path)
+    assert sorted(registry) == sorted(_COMMITTED_FACTORIES), (
+        f"{_GROUP_VARS.relative_to(_REPO_ROOT)} must declare exactly {_COMMITTED_FACTORIES}: "
+        f"got {sorted(registry)}"
+    )
+    assert registry[_MI_HOMELAB] == {"host": _MI_HOMELAB_HOST, "unit_name": _MI_HOMELAB_UNIT}, (
+        f"{_MI_HOMELAB} must name the instance it addresses and nothing else, so that a "
+        f"repository dispatching there resolves its address by name: {registry[_MI_HOMELAB]}"
+    )
+    for name in ("legacy", "petri"):
+        assert (
+            registry[name]["unit_name"] == _FLEET_UNIT
+        ), f"{name} must be unchanged by this declaration: {registry[name]}"
+    assert registry["legacy"]["host"] == registry[_MI_HOMELAB]["host"], (
+        f"{_MI_HOMELAB} is a second instance on the machine legacy already serves from, so "
+        f"`unit_name` is the only thing that separates them: {registry}"
+    )
+    for name, entry in registry.items():
+        assert "docker_host" not in entry, (
+            f"{name} must declare no docker_host: no repository's committed factory table "
+            f"declares one, and publishing one turns on the remote container sweep: {entry}"
+        )
 
 
 def test_the_role_documents_the_variable_it_reads() -> None:

@@ -81,12 +81,22 @@ fabro_factory_registry:
   legacy:
     host: <the inventory host of the 0.254 instance>
     unit_name: fabro-server
+  mi-homelab:
+    host: <the same host as legacy>
+    unit_name: fabro-server-mi-homelab
   petri:
     host: <the inventory host of the current Fabro server>
     unit_name: fabro-server
 ```
 
-Neither entry declares a `docker_host`: no repository's committed factory table
+`mi-homelab` is the SECOND instance on the machine `legacy` serves from, so the
+two entries differ only by `unit_name` — which is what naming the INSTANCE buys:
+the org factory and the fleet factory move independently even while they share a
+machine. That instance is stopped in its host_vars while the homelab project is
+on hold, and a name resolves to its instance's `canonical_host` whether the unit
+runs or not, so nothing here changes when it comes back.
+
+No entry declares a `docker_host`: no repository's committed factory table
 declares one today (measured 2026-10-18 across the fleet's `.livespec.jsonc`
 files), and publishing one would newly turn on the Dispatcher's remote container
 sweep. Add one deliberately, with the reason beside it, not by transcription.
