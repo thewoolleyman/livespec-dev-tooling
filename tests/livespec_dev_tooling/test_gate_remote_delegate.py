@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,7 @@ from livespec_dev_tooling._gate_remote_assembly import (
     GATE_CHECK_SUITE_FALL_THROUGH,
     declared_gate_check_suite,
 )
+from livespec_dev_tooling.gate_credential import GATES_WRAPPER
 from livespec_dev_tooling.gate_group_repair import (
     GATE_MODULE,
     GATES_GROUP_REEXEC_ENV,
@@ -60,6 +62,21 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PRE_PUSH = _REPO_ROOT / "scripts" / "just" / "check-pre-push.sh"
+_WRAPPER_SCRIPT = (
+    _REPO_ROOT / "ansible" / "roles" / "gates_kubeconfig" / "files" / "with-gates-kubeconfig"
+)
+
+# The line `with-gates-kubeconfig` writes to stderr when the API server refuses
+# the gates credential and it refreshes once, READ OUT OF THE SHIPPED SCRIPT
+# rather than restated here. The wrapper is that line's only writer, and the
+# whole point of the assertions below is that the operator sees the line the
+# wrapper actually produces: a suite that restated it would keep passing against
+# a wrapper that had reworded or dropped it, which is a test that has stopped
+# checking anything. `test_gate_credential.py` reads the same script for the
+# same reason, for the credential path and the variable name.
+_WRAPPER_REFRESH_ECHO = re.compile(
+    r'echo "(?P<notice>with-gates-kubeconfig: credential rejected[^"]*)"'
+)
 
 _TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 _RENDERER = Path("/opt/gates/render-gate-job.sh")
@@ -500,6 +517,18 @@ def _kind_of(*, argv: list[str]) -> str:
     return "other"
 
 
+def _wrapper_refresh_notice() -> str:
+    """The refresh line the shipped `with-gates-kubeconfig` writes to stderr."""
+    found = _WRAPPER_REFRESH_ECHO.search(_WRAPPER_SCRIPT.read_text(encoding="utf-8"))
+    assert found is not None, (
+        f"{_WRAPPER_SCRIPT.name} must echo a `with-gates-kubeconfig: credential "
+        f"rejected ...` line when the API server refuses the credential; these "
+        f"tests drive the wrapper's OWN line rather than a restatement of it, so "
+        f"a wrapper that no longer writes one leaves them asserting nothing"
+    )
+    return found["notice"]
+
+
 class _StubWorld:
     """Every command a delegated push issues, canned.
 
@@ -508,6 +537,13 @@ class _StubWorld:
     names. `origin` and `common_dir` are the clone's two identity answers, so a
     linked worktree is expressed as a `repo_root` whose directory name differs
     from the repository those two name.
+
+    `refreshed` names the steps whose captured stderr carries the credential
+    wrapper's refresh notice — the only trace a rejected-and-repaired gates
+    credential leaves anywhere. It is independent of `refuse` because the two
+    combinations are different scenarios: a refresh on a step that then SUCCEEDS
+    is the self-heal nothing used to report, and one on a step that then FAILS
+    rides the failing step's `detail` as it always has.
 
     The polls are answered in sequence rather than from one canned payload, so a
     run has to WAIT at least once before it sees a verdict. That is the realistic
@@ -519,11 +555,16 @@ class _StubWorld:
         self,
         *,
         refuse: tuple[str, ...] = (),
+        refreshed: tuple[str, ...] = (),
         origin: str = _ORIGIN_URL,
         common_dir: str = _COMMON_DIR,
     ) -> None:
         self.argvs: list[tuple[str, ...]] = []
         self._refuse = refuse
+        self._refreshed = refreshed
+        # Read from the shipped wrapper only when a scenario asks for it, so a
+        # suite whose scenarios need no refresh never depends on that file.
+        self._notice = _wrapper_refresh_notice() if refreshed else ""
         self._polls = 0
         self._stdout = {
             "read-tree": f"{_TREE}\n",
@@ -553,15 +594,37 @@ class _StubWorld:
         _ = (cwd, stdin, stream)
         self.argvs.append(tuple(argv))
         kind = _kind_of(argv=argv)
+        # The notice arrives as the FIRST of several stderr lines, because that
+        # is where the wrapper writes it: the rejected attempt's own output has
+        # already been passed through by the time the refresh is announced. A
+        # refusal therefore carries the notice AND the command's complaint, so
+        # the surfacing has to pick one line out of a stream rather than read a
+        # stderr that holds nothing else.
+        notice = f"{self._notice}\n" if kind in self._refreshed else ""
         if kind in self._refuse:
-            return Success(GateCommandResult(returncode=1, stdout="", stderr=f"{kind} refused"))
+            return Success(
+                GateCommandResult(returncode=1, stdout="", stderr=f"{notice}{kind} refused")
+            )
         stdout = self._poll() if kind == "get-job" else self._stdout[kind]
-        return Success(GateCommandResult(returncode=0, stdout=stdout, stderr=""))
+        return Success(GateCommandResult(returncode=0, stdout=stdout, stderr=notice))
 
 
 def _no_sleep(*, seconds: float) -> None:
     """The poll wait, canned — the run's only source of time."""
     _ = seconds
+
+
+def _narration(*, capsys: pytest.CaptureFixture[str]) -> str:
+    """Everything one delegated push printed, both streams together.
+
+    BOTH, because which stream carries it is the recipe entry point's choice
+    rather than this assertion's subject: `main()` points structlog at stderr,
+    while the default configuration this suite's own autouse reset leaves behind
+    prints to stdout. What the tests below are about is whether the operator saw
+    the line at all.
+    """
+    read = capsys.readouterr()
+    return read.out + read.err
 
 
 def test_the_request_is_assembled_out_of_the_repository(*, tmp_path: Path) -> None:
@@ -949,6 +1012,107 @@ def test_a_complete_gate_over_the_pushed_tree_authorises_the_push(*, tmp_path: P
     # Two polls: the run waited through a Job that had not been admitted yet
     # rather than reading a verdict off the first answer it got.
     assert len([argv for argv in runner.argvs if "get" in argv]) == 2
+
+
+# ---------------------------------------------------------------------------
+# The credential wrapper's refresh, reported by the push it happened during
+# ---------------------------------------------------------------------------
+
+
+def test_a_refreshed_credential_is_reported_by_a_push_whose_gate_then_passes(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The SILENT self-heal, made audible — and it was silent only when it WORKED.
+
+    The gates ServiceAccount's token is recreated at every control-plane boot,
+    so the first delegated push after one is EXPECTED to meet a credential the
+    API server refuses; `with-gates-kubeconfig` recognises that, refreshes once
+    and retries, and the line it writes to stderr is the only account anyone
+    gets of it. But every cluster command a delegated push issues is CAPTURED
+    rather than streamed, and a captured stderr is read only when the step
+    FAILED — `require_success` carries it as the failing step's `detail` and a
+    step that succeeded produces none. Measured 2026-10-21 on master v1.120.0
+    (6728f5ad): a refresh the retry repaired left no trace in the push's output
+    at all, so a credential that goes stale at every reboot and silently heals
+    itself was indistinguishable from one that never went stale — nobody could
+    see there was anything to fix.
+
+    The notice is asserted VERBATIM, as the shipped wrapper writes it, because a
+    paraphrase is not what an operator greps for.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+
+    verdict = run_delegated_gate(
+        repo_root=repo_root,
+        renderer=_RENDERER,
+        runner=_StubWorld(refreshed=("submit-job",)),
+        sleeper=_no_sleep,
+    )
+    narration = _narration(capsys=capsys)
+
+    assert verdict.state == GATE_PASSED
+    assert verdict.refuses_push is False
+    assert _wrapper_refresh_notice() in narration
+
+
+def test_a_refreshed_credential_is_reported_by_a_push_that_is_then_refused(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both routes at once: the one that already worked, and the one that did not.
+
+    A refresh inside the step that then FAILED has always reached the operator,
+    because `require_success` carries that step's whole captured stderr as the
+    refusal's `detail` — asserted here on `detail` so that route stays exactly
+    as it is. What was missing is the rest of a refused run: a refresh at an
+    EARLIER step that succeeded, on a push a LATER step then refuses, which left
+    no trace even though the push failed. Both are driven here, and the failing
+    step's stderr carries the command's own complaint beside the notice, so the
+    surfacing has to pick the wrapper's line out of a stream rather than hand
+    the whole stream over.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+
+    verdict = run_delegated_gate(
+        repo_root=repo_root,
+        renderer=_RENDERER,
+        runner=_StubWorld(refreshed=("submit-job", "get-job"), refuse=("get-job",)),
+        sleeper=_no_sleep,
+    )
+    narration = _narration(capsys=capsys)
+
+    assert verdict.state == GATE_NO_VERDICT
+    assert verdict.refuses_push is True
+    assert _wrapper_refresh_notice() in verdict.detail
+    assert _wrapper_refresh_notice() in narration
+
+
+def test_a_push_that_met_no_rejected_credential_reports_no_refresh(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The CONTROL — a line every push prints reports nothing at all.
+
+    The notice can only mean "this host's gates credential had gone stale" if it
+    is absent from the overwhelming majority of pushes, where the credential was
+    accepted first time. The same assertion is what keeps the surfacing NARROW:
+    a cluster command's stderr is captured rather than streamed on purpose, and
+    a client that passed the whole stream through on success would put every
+    `kubectl` warning on the operator's terminal and bury the one line that
+    matters — so the wrapper's NAME is asserted absent too, not merely its
+    refresh line.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+
+    verdict = run_delegated_gate(
+        repo_root=repo_root, renderer=_RENDERER, runner=_StubWorld(), sleeper=_no_sleep
+    )
+    narration = _narration(capsys=capsys)
+
+    assert verdict.state == GATE_PASSED
+    assert _wrapper_refresh_notice() not in narration
+    assert GATES_WRAPPER not in narration
 
 
 # ---------------------------------------------------------------------------
