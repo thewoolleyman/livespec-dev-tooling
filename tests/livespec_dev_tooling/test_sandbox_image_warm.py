@@ -141,6 +141,12 @@ set -uo pipefail
 printf '%s' "$STUB_PIN_BODY"
 """
 
+# ONE source for the stub set, so the writer (`_install_stubs`) and the watcher
+# (`_stub_identities`) can never disagree about which files the concurrency arm
+# must not see rewritten.
+_STUB_DIR_NAME = "bin"
+_STUBS: tuple[tuple[str, str], ...] = (("docker", _DOCKER_STUB), ("curl", _CURL_STUB))
+
 
 def _read(*, path: Path) -> str:
     """One committed file, asserting its presence before reading it.
@@ -158,10 +164,15 @@ def _read(*, path: Path) -> str:
 
 
 def _install_stubs(*, tmp_path: Path) -> Path:
-    """The stub `docker` and `curl`, idempotently — every arm calls this."""
-    stub_dir = tmp_path / "bin"
+    """The stub `docker` and `curl`, idempotently — every SEQUENTIAL arm calls this.
+
+    Idempotent is not concurrency-safe: each call rewrites every stub, so a
+    caller that may run while another warm is exec'ing one must reuse an
+    installation instead (`_warm_env`'s `install_stubs=False`).
+    """
+    stub_dir = tmp_path / _STUB_DIR_NAME
     stub_dir.mkdir(exist_ok=True)
-    for name, body in (("docker", _DOCKER_STUB), ("curl", _CURL_STUB)):
+    for name, body in _STUBS:
         stub = stub_dir / name
         stub.write_text(body, encoding="utf-8")
         stub.chmod(0o755)
@@ -170,14 +181,33 @@ def _install_stubs(*, tmp_path: Path) -> Path:
     return stub_dir
 
 
-def _warm_env(*, tmp_path: Path, pin_readable: bool) -> dict[str, str]:
+def _stub_identities(*, stub_dir: Path) -> dict[str, tuple[int, int]]:
+    """Each stub's inode and mtime — the observable that says it was not rewritten.
+
+    `write_text` TRUNCATES IN PLACE, so a rewritten stub keeps its inode and only
+    its mtime moves; comparing both names the rewrite either way, whether the
+    fixture replaced the file or overwrote it.
+    """
+    stats = {name: (stub_dir / name).stat() for name, _ in _STUBS}
+    return {name: (stat.st_ino, stat.st_mtime_ns) for name, stat in stats.items()}
+
+
+def _warm_env(*, tmp_path: Path, pin_readable: bool, install_stubs: bool = True) -> dict[str, str]:
     """The environment ONE warm invocation runs under.
 
     `PATH` is PREPENDED rather than replaced: the script resolves `flock`, `tr`,
     `sed` and `date` from the host, and a replaced `PATH` would make this module
     assert against a script that cannot run on a factory host either.
+
+    `install_stubs=False` REUSES stubs a caller already installed, and the
+    concurrency arm requires it: installing is `write_text` + `chmod` over every
+    stub, which TRUNCATES a file the sibling warm's `bash` may be exec'ing at
+    that instant, and Linux answers that exec with ETXTBSY. Measured 2026-10-20
+    in CI (PR #2705, run 39513824524): `sandbox-image-warm.sh: line 64:
+    .../bin/curl: Text file busy`, then one pull in the log instead of two — the
+    FIXTURE racing itself, not the script under test failing its property.
     """
-    bin_dir = _install_stubs(tmp_path=tmp_path)
+    bin_dir = _install_stubs(tmp_path=tmp_path) if install_stubs else tmp_path / _STUB_DIR_NAME
     store = tmp_path / "store"
     return os.environ | {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
@@ -193,13 +223,18 @@ def _warm_env(*, tmp_path: Path, pin_readable: bool) -> dict[str, str]:
     }
 
 
-def _warm(*, tmp_path: Path, pin_readable: bool = True) -> subprocess.CompletedProcess[str]:
+def _warm(
+    *, tmp_path: Path, pin_readable: bool = True, install_stubs: bool = True
+) -> subprocess.CompletedProcess[str]:
     """ONE warm invocation of the committed script.
 
     The script's presence is asserted HERE rather than left to `bash` to report,
     because an absent script exits non-zero and pulls nothing — which is
     indistinguishable from the refusal arms' expected answer. Without this guard
     the unreadable-pin arm passes against no script at all.
+
+    `install_stubs` reaches `_warm_env`, which documents why a CONCURRENT caller
+    must pass it as False.
     """
     _read(path=_SCRIPT)
     return subprocess.run(
@@ -208,7 +243,7 @@ def _warm(*, tmp_path: Path, pin_readable: bool = True) -> subprocess.CompletedP
         text=True,
         timeout=_TIMEOUT_SECONDS,
         check=False,
-        env=_warm_env(tmp_path=tmp_path, pin_readable=pin_readable),
+        env=_warm_env(tmp_path=tmp_path, pin_readable=pin_readable, install_stubs=install_stubs),
     )
 
 
@@ -239,11 +274,24 @@ def test_two_concurrent_warms_of_an_absent_tag_pull_it_exactly_once(*, tmp_path:
     shape that tore down each other's leases. One `pull-start` followed by its own
     `pull-end` is both halves of the remedy at once: the lock serialized the two
     callers, and the second re-checked the store inside it and pulled nothing.
+
+    The stubs are installed ONCE, here, and neither warm reinstalls them: an
+    `install_stubs=True` warm rewrites every stub as its first act, which
+    truncates a file the other warm's `bash` may be exec'ing and fails that exec
+    with ETXTBSY. The identity assertion below is what keeps that true — it is a
+    guard on this FIXTURE rather than on the script, and it fails
+    deterministically if a later edit lets either warm install stubs again.
     """
-    _install_stubs(tmp_path=tmp_path)
+    stub_dir = _install_stubs(tmp_path=tmp_path)
+    installed = _stub_identities(stub_dir=stub_dir)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        runs = [pool.submit(_warm, tmp_path=tmp_path) for _ in range(2)]
+        runs = [pool.submit(_warm, tmp_path=tmp_path, install_stubs=False) for _ in range(2)]
         results = [run.result() for run in runs]
+    assert _stub_identities(stub_dir=stub_dir) == installed, (
+        "neither concurrent warm may rewrite a stub the other may be exec'ing: a "
+        "rewritten stub makes this arm fail with `Text file busy` and one pull "
+        "instead of two, which reads as the script losing a property it kept"
+    )
     for done in results:
         assert done.returncode == 0, done.stdout + done.stderr
     assert _docker_log(tmp_path=tmp_path) == [
