@@ -29,6 +29,7 @@ from returns.result import Failure, Result, Success  # noqa: E402  — vendor-pa
 
 __all__: list[str] = [
     "ADOPTER_POSTURES",
+    "INSTRUCTION_ONLY_PROFILE",
     "PROFILE_LAYERS",
     "REPO_CLASSES",
     "Adopter",
@@ -42,6 +43,14 @@ __all__: list[str] = [
 # The ordered profile layers an adopter may declare (the cumulative
 # conformance partition: each layer adds obligations atop the prior).
 PROFILE_LAYERS = ("baseline", "fleet-infra", "orchestrator-plugin", "app")
+# The profile a TOOLCHAIN-LESS adopter declares INSTEAD of the layer
+# stack (livespec core v227): a repository carrying no justfile, no mise
+# configuration and no `.livespec.jsonc`, for which every layer
+# obligation above plugin currency is unsatisfiable by construction.
+# It is NOT a fifth layer — it REPLACES the `baseline` floor — so it is
+# spelled as the whole profile rather than as a member of
+# `PROFILE_LAYERS`.
+INSTRUCTION_ONLY_PROFILE = ("instruction-only",)
 # The adoption postures an adopter may hold toward the fleet pins.
 ADOPTER_POSTURES = ("released", "pinned", "none")
 
@@ -203,8 +212,9 @@ def _parse_adopter(*, entry: object) -> Adopter | None:
         return None
     if not isinstance(profile, list) or not profile:
         return None
+    accepted = (*PROFILE_LAYERS, *INSTRUCTION_ONLY_PROFILE)
     for layer in cast("list[object]", profile):
-        if not isinstance(layer, str) or layer not in PROFILE_LAYERS:
+        if not isinstance(layer, str) or layer not in accepted:
             return None
     if not isinstance(posture, str) or posture not in ADOPTER_POSTURES:
         return None
@@ -248,7 +258,7 @@ def parse_manifest(*, source: str) -> Result[Manifest, ManifestParseError]:
     `malformed-member` (missing `repo`, unknown `class`),
     `duplicate-member`, `adopters-not-list`, and `malformed-adopter`
     (missing/empty `repo`, a `profile` that is not a non-empty list of
-    known layers, or an unknown `posture`).
+    accepted profile values, or an unknown `posture`).
 
     CHECK ORDER IS PART OF THE CONTRACT NOW, because it decides which
     reason a doubly-malformed manifest reports, and that was previously
