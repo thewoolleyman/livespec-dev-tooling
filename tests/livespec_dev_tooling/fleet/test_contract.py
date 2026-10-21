@@ -148,6 +148,36 @@ def test_parse_manifest_accepts_the_instruction_only_adopter_profile() -> None:
     )
 
 
+# The `profile` values the reader contract names malformed, verbatim from
+# the governing scenario's `Examples of <invalid>` row. The first two are
+# the ones a MEMBERSHIP reading of the rule admits: `instruction-only`
+# replaces the `baseline` floor rather than adding to it, so naming it
+# beside a layer asks for a combination that does not exist. The third is
+# the plural misspelling (one character from the accepted value, and no
+# layer, so a reader that merely checked "contains something known"
+# would be wrong twice over), and the fourth is the empty list.
+_INVALID_PROFILES: list[str] = [
+    '["instruction-only", "baseline"]',
+    '["instruction-only", "orchestrator-plugin"]',
+    '["instructions-only"]',
+    "[]",
+]
+
+
+def test_parse_manifest_rejects_every_profile_that_is_not_exactly_instruction_only() -> None:
+    # The whole manifest is rejected, not the one entry: a malformed
+    # adopter is a document the fleet sweep must not act on, and the
+    # reason it reports is what sends the operator to the record.
+    for profile in _INVALID_PROFILES:
+        source = (
+            '{"owner": "acme", "fleet": [], "adopters": '
+            f'[{{"repo": "acme-host", "profile": {profile}, "posture": "released"}}]}}'
+        )
+        outcome = parse_manifest(source=source)
+        assert isinstance(outcome, Failure), (profile, outcome)
+        assert outcome.failure() == ManifestParseError(reason="malformed-adopter"), profile
+
+
 # Every malformed shape paired with the reason it MUST report. The pairs
 # are the point: the pre-conversion suite asserted `is None` for all of
 # them, which passed just as happily when two different causes collapsed
