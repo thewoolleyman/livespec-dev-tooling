@@ -164,7 +164,6 @@ _BEADS_CONFIG = (
 )
 _LIVESPEC_JSONC = (
     '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
-    '"livespec-overseer": {"foreman_valve_disposition": "consensus"}, '
     '"worktree_discipline": {"pack": "required"}, '
     '"implementation": {"plugin": "impl-beads"}, '
     '"impl-beads": {"dispatcher": {"acceptance_mode": "ai-only"}, '
