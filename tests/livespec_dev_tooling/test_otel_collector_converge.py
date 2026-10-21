@@ -45,6 +45,11 @@ _COLLECTOR_RAW_SOURCE = "https://raw.githubusercontent.com/thewoolleyman/otel-co
 # the running service back on a tree a `git pull` can change underneath it.
 _DEVELOPMENT_CHECKOUT_ROOT = "/data/projects"
 
+# Where a systemd unit has to land for systemd to read it. Held here as the
+# documented default the role declares, and compared against the role's
+# `defaults/main.yml` text -- nothing in this module reaches the directory.
+_SYSTEMD_UNIT_DIRECTORY = "/etc/systemd/system/"
+
 _DRIFT_COMMAND = "just ansible-drift ansible/dev-host.yml --tags otel_collector"
 _APPLY_COMMAND = "just ansible-apply ansible/dev-host.yml --tags otel_collector"
 
@@ -133,3 +138,50 @@ def test_a_converge_over_an_already_matching_host_restarts_nothing() -> None:
         if "ansible.builtin.command:" not in block:
             continue
         assert "changed_when: false" in block, block
+
+
+def test_the_same_converge_installs_the_services_systemd_unit() -> None:
+    """The unit is a template in this repository, installed by the same apply."""
+    assert _UNIT_TEMPLATE.is_file(), "the otel_collector role ships no unit template"
+
+    defaults = _DEFAULTS.read_text(encoding="utf-8")
+    assert "otel_collector_unit_name: otel-collector.service" in defaults, defaults
+    assert _SYSTEMD_UNIT_DIRECTORY in defaults, defaults
+    assert "otel_collector_environment_path:" in defaults, defaults
+
+    tasks = _TASKS.read_text(encoding="utf-8")
+    install = next(
+        block for block in _task_blocks(body=tasks) if "src: otel-collector.service.j2" in block
+    )
+    assert "ansible.builtin.template:" in install, install
+    assert 'dest: "{{ otel_collector_unit_path }}"' in install, install
+    assert "Reload systemd for the collector unit" in install, install
+    assert "Restart the collector onto its managed configuration" in install, install
+
+    handlers = _HANDLERS.read_text(encoding="utf-8")
+    assert "daemon_reload: true" in handlers, handlers
+
+    # The unit names managed variables only, so the running service reads
+    # nothing a development checkout can change underneath it. The companion
+    # assertion -- that no role value sits under that checkout at all -- is in
+    # the first test above, over the whole role tree including this template.
+    unit = _UNIT_TEMPLATE.read_text(encoding="utf-8")
+    assert (
+        "ExecStart={{ otel_collector_binary }} --config={{ otel_collector_config_path }}" in unit
+    ), unit
+    assert "EnvironmentFile={{ otel_collector_environment_path }}" in unit, unit
+
+    # The ingest keys that unit names are a precondition the converge asserts.
+    # It never writes, reads back or prints one, so no apply of this role needs
+    # a credential on the control node.
+    environment_blocks = [
+        block for block in _task_blocks(body=tasks) if "otel_collector_environment_path" in block
+    ]
+    assert environment_blocks, tasks
+    for block in environment_blocks:
+        for writer in (
+            "ansible.builtin.copy:",
+            "ansible.builtin.template:",
+            "ansible.builtin.slurp:",
+        ):
+            assert writer not in block, block

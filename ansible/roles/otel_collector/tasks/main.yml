@@ -34,6 +34,29 @@
     mode: "0755"
   become: true
 
+- name: Look for the collector's ingest-key environment file
+  # Only its existence is read here. The values reach the process through the
+  # unit's EnvironmentFile and nowhere else; this role never writes, reads back
+  # or prints one.
+  ansible.builtin.stat:
+    path: "{{ otel_collector_environment_path }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_environment_stat
+  check_mode: false
+
+- name: Refuse a host whose ingest-key environment file is missing
+  ansible.builtin.assert:
+    that:
+      - otel_collector_environment_stat.stat.exists
+      - otel_collector_environment_stat.stat.isreg
+    fail_msg: >-
+      {{ otel_collector_environment_path }} is not a regular file. It carries
+      the Honeycomb ingest keys the collector configuration reads, and placing
+      a secret is the operator's step, not this converge's. See
+      ansible/README.md for the one-time root-only placement, then re-run.
+    success_msg: the collector's environment file is present
+
 - name: Read the merged collector configuration on the control node
   # A control-node lookup rather than a download on the target, so the apply
   # and the `--check --diff` drift report compare the SAME bytes: the dry run
@@ -55,6 +78,47 @@
       untouched.
     success_msg: the merged configuration names receivers, exporters and a service
 
+- name: Name the environment keys the merged configuration reads
+  # Derived from the configuration itself rather than listed here, so the
+  # preflight below cannot go stale when the collector repository adds or drops
+  # one. `[$][{]` and `[}]` are character classes to keep the pattern free of
+  # backslash escapes.
+  ansible.builtin.set_fact:
+    otel_collector_required_environment_keys: >-
+      {{ otel_collector_merged_config
+         | regex_findall('[$][{]env:([A-Za-z_][A-Za-z0-9_]*)[}]') | unique | sort }}
+
+- name: Look for each environment key the merged configuration reads
+  # A read, never a write: `grep --quiet` prints nothing, so no value can reach
+  # the run's output. It runs under `--check` too, because a drift report that
+  # skipped it would report a host as ready whose collector would not start.
+  ansible.builtin.command:
+    argv:
+      - grep
+      - --quiet
+      - --regexp
+      - "^{{ item }}="
+      - "{{ otel_collector_environment_path }}"
+  become: true
+  loop: "{{ otel_collector_required_environment_keys }}"
+  register: otel_collector_environment_keys_read
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse an environment file missing a key the merged configuration reads
+  ansible.builtin.assert:
+    that:
+      - otel_collector_environment_keys_read.results | rejectattr('rc', 'equalto', 0) | length == 0
+    fail_msg: >-
+      {{ otel_collector_environment_path }} does not set
+      {{ otel_collector_environment_keys_read.results | rejectattr('rc', 'equalto', 0)
+         | map(attribute='item') | join(', ') }}. The merged collector
+      configuration reads those as ${env:...} and the collector refuses to
+      start without them, so nothing has been written and the running service
+      is untouched.
+    success_msg: the environment file sets every key the merged configuration reads
+
 - name: Install the merged collector configuration
   ansible.builtin.copy:
     content: "{{ otel_collector_merged_config }}"
@@ -64,6 +128,32 @@
     mode: "0644"
   become: true
   notify: Restart the collector onto its managed configuration
+
+- name: Look for a unit systemd already knows
+  # Read before the write below, so the handlers and the service task can tell
+  # a host this role has already converged from one where a `--check` run has
+  # written nothing and systemd therefore knows no such unit.
+  ansible.builtin.stat:
+    path: "{{ otel_collector_unit_path }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_unit_stat
+  check_mode: false
+
+- name: Install the collector's unit
+  ansible.builtin.template:
+    src: otel-collector.service.j2
+    dest: "{{ otel_collector_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd for the collector unit
+    - Restart the collector onto its managed configuration
+
+- name: Reload and restart now, before the service is managed
+  ansible.builtin.meta: flush_handlers
 
 - name: Keep the collector enabled and running
   # `started`, never `restarted`: this starts a collector that is down and
@@ -75,3 +165,7 @@
     enabled: true
     state: started
   become: true
+  # Same guard as the handlers: under `--check` on a host this role has never
+  # converged, the unit was deliberately not written, so systemd knows nothing
+  # to enable and the task would fail on the dry run's own omission.
+  when: not ansible_check_mode or otel_collector_unit_stat.stat.exists
