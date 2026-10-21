@@ -9,13 +9,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
-    "heading": "## Fleet manifest adopter profiles",
-    "work_item": "livespec-dev-tooling-4ldzr5",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
     "heading": "## Host provisioning tree",
     "work_item": "livespec-dev-tooling-k5q54n",
     "first_seen": "2026-10-19"
@@ -47,12 +40,5 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: the manifest reader accepts an instruction-only adopter and holds it to plugin currency only",
-    "work_item": "livespec-dev-tooling-4ldzr5",
-    "first_seen": "2026-10-21"
   }
 ]
