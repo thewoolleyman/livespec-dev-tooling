@@ -7,13 +7,14 @@ runners (the same fake idiom every other fleet test module reuses).
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from _gh_railway import lift_gh
-from returns.io import IOFailure
+from returns.io import IOFailure, IOSuccess
 from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.fleet._context import (
@@ -25,6 +26,7 @@ from livespec_dev_tooling.fleet._context import (
     resolve_owner,
     resolve_repo_name,
 )
+from livespec_dev_tooling.fleet._snapshot import DownloadOutcome
 
 if TYPE_CHECKING:
     import pytest
@@ -70,6 +72,44 @@ def repo_result(*, default_branch: str) -> GhResult:
     import json
 
     return GhResult(returncode=0, stdout=json.dumps({"default_branch": default_branch}), stderr="")
+
+
+def local_checkout(*, root: Path) -> Path:
+    """Create a committed checkout with every tree mode rows distinguish."""
+    _ = subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+    tracked = root / "tracked.txt"
+    _ = tracked.write_text("committed\n", encoding="utf-8")
+    os.symlink("tracked.txt", root / "link.txt")
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "tracked.txt"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    _ = subprocess.run(
+        ["git", "update-index", "--add", "--cacheinfo", "160000", blob, "vendor/dependency"],
+        cwd=root,
+        check=True,
+    )
+    _ = subprocess.run(["git", "add", "tracked.txt", "link.txt"], cwd=root, check=True)
+    _ = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Fleet Test",
+            "-c",
+            "user.email=fleet-test@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ],
+        cwd=root,
+        check=True,
+    )
+    _ = (root / "untracked.txt").write_text("not committed\n", encoding="utf-8")
+    return root
 
 
 _TREE_ARGS: tuple[str, ...] = ("api", "repos/acme/widget/git/trees/master?recursive=1")
@@ -309,6 +349,110 @@ def test_tree_is_memoized_per_repo() -> None:
     second = ctx.tree(repo="widget")
     assert first is second
     assert len(calls) == 2
+
+
+def test_self_member_tree_reads_only_the_checked_out_commit(*, tmp_path: Path) -> None:
+    """A repair PR's own tree must not be replaced by remote master."""
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    root = local_checkout(root=tmp_path)
+    ctx = FleetContext(
+        owner="acme",
+        run_gh=make_runner(table={}, calls=calls),
+        local_repo="widget",
+        local_root=root,
+    )
+
+    state = ctx.tree(repo="widget")
+
+    assert state.readable
+    assert state.paths == frozenset({"tracked.txt", "link.txt", "vendor/dependency"})
+    assert state.gitlink_paths == ("vendor/dependency",)
+    assert state.symlink_paths == ("link.txt",)
+    assert calls == []
+
+
+def test_self_member_tree_fails_closed_when_local_git_cannot_run(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unanswerable local tree is not mistaken for a committed empty tree."""
+    root = local_checkout(root=tmp_path)
+    monkeypatch.setenv("PATH", "")
+    ctx = FleetContext(
+        owner="acme",
+        run_gh=make_runner(table={}),
+        local_repo="widget",
+        local_root=root,
+    )
+
+    assert ctx.tree(repo="widget") == TreeState(readable=False)
+
+
+def test_self_member_tree_fails_closed_on_a_malformed_local_git_reply(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed local tree output cannot create a success-shaped empty tree."""
+    fake_git = tmp_path / "git"
+    _ = fake_git.write_text("#!/bin/sh\nprintf malformed\n", encoding="utf-8")
+    fake_git.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    ctx = FleetContext(
+        owner="acme",
+        run_gh=make_runner(table={}),
+        local_repo="widget",
+        local_root=tmp_path,
+    )
+
+    assert ctx.tree(repo="widget") == TreeState(readable=False)
+
+
+def test_self_member_snapshot_reads_the_checked_out_commit(*, tmp_path: Path) -> None:
+    """A snapshot consumer receives the self checkout, never a remote archive."""
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    downloads: list[list[str]] = []
+    root = local_checkout(root=tmp_path)
+
+    def download(*, args: list[str], dest: Path):
+        del dest
+        downloads.append(args)
+        return IOSuccess(DownloadOutcome(returncode=1, stderr="remote must not be read"))
+
+    ctx = FleetContext(
+        owner="acme",
+        run_gh=make_runner(table={}, calls=calls),
+        local_repo="widget",
+        local_root=root,
+        download_gh=download,
+    )
+
+    snapshot = ctx.member_tree_snapshot(repo="widget")
+
+    assert isinstance(snapshot, IOSuccess)
+    assert unsafe_perform_io(snapshot.unwrap()).root == root
+    assert unsafe_perform_io(snapshot.unwrap()).handle is None
+    assert ctx.member_tree_snapshot(repo="widget") is snapshot
+    assert calls == []
+    assert downloads == []
+    _ = download(args=[], dest=tmp_path / "never-read.tar.gz")
+    assert downloads == [[]]
+
+
+def test_self_member_snapshot_fails_closed_when_its_checkout_tree_is_unreadable(
+    *, tmp_path: Path
+) -> None:
+    """The local snapshot preserves an unreadable checkout as a named failure."""
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+    ctx = FleetContext(
+        owner="acme",
+        run_gh=make_runner(table={}, calls=calls),
+        local_repo="widget",
+        local_root=tmp_path,
+    )
+
+    snapshot = ctx.member_tree_snapshot(repo="widget")
+
+    assert isinstance(snapshot, IOFailure)
+    assert ctx.read_failures[-1].kind == "local_tree_unreadable"
+    assert calls == []
 
 
 def test_tree_unreadable_on_api_failure_or_bad_payload() -> None:
