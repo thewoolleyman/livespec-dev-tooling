@@ -1,0 +1,33 @@
+---
+# The dev host's own OpenTelemetry Collector, `otel-collector.service`
+# (livespec-dev-tooling-x36is7).
+#
+# The CONFIGURATION is owned by `thewoolleyman/otel-collector` and is read at
+# apply time from that repository's merged branch, so a change merged there
+# reaches this host by running this converge and by nothing else. Set
+# `otel_collector_config_ref` to a commit sha to hold the host at a known
+# configuration, or to roll one back.
+otel_collector_config_ref: main
+otel_collector_config_url: >-
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/config.yaml
+
+# Everything the service reads lives under this directory, put there by this
+# role. Until 2026-10-21 the collector ran out of the maintainer's development
+# checkout: a service whose configuration a `git pull` can change underneath it
+# is drift no committed command can see, and the only way a merged change
+# reached it was a hand restart.
+otel_collector_etc_dir: /etc/otel-collector
+otel_collector_config_path: "{{ otel_collector_etc_dir }}/config.yaml"
+
+otel_collector_unit_name: otel-collector.service
+
+# ASSERTED, NEVER INSTALLED. The pinned binary download belongs to the
+# collector repository's own installers, which choose its version; no shape of
+# it is this tree's to pick. A host without it fails this role's preflight
+# naming where to install it.
+otel_collector_binary: /usr/local/bin/otelcol-contrib
+
+# The account the collector runs as. It must already be in the `docker` group:
+# the configuration's `docker_stats` receiver reads the engine socket.
+otel_collector_user: ubuntu
+otel_collector_group: ubuntu

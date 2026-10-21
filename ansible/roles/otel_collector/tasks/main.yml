@@ -1,0 +1,72 @@
+---
+# otel_collector -- install the dev host's collector configuration from the
+# collector repository's merged branch and put the service on it.
+#
+# Applied from the control node by the committed drift and apply commands
+# (see ../../README.md). There is deliberately no checkout on the target for
+# the running service to read.
+
+- name: Look for the collector binary the unit runs
+  ansible.builtin.stat:
+    path: "{{ otel_collector_binary }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_binary_stat
+  check_mode: false
+
+- name: Refuse a host that does not already carry the collector binary
+  ansible.builtin.assert:
+    that:
+      - otel_collector_binary_stat.stat.exists
+      - otel_collector_binary_stat.stat.executable | default(false)
+    fail_msg: >-
+      {{ otel_collector_binary }} is not an executable file. The pinned
+      download belongs to the collector repository's own installers; install
+      it there, then re-run this converge.
+    success_msg: the collector binary is present
+
+- name: Create the directory the managed collector files live in
+  ansible.builtin.file:
+    path: "{{ otel_collector_etc_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Read the merged collector configuration on the control node
+  # A control-node lookup rather than a download on the target, so the apply
+  # and the `--check --diff` drift report compare the SAME bytes: the dry run
+  # then reports the real difference between what is merged and what the
+  # service is running, instead of whatever a target-side fetch found.
+  ansible.builtin.set_fact:
+    otel_collector_merged_config: >-
+      {{ lookup('ansible.builtin.url', otel_collector_config_url, split_lines=false) }}
+
+- name: Refuse a fetch that did not answer with a collector configuration
+  ansible.builtin.assert:
+    that:
+      - otel_collector_merged_config is search('(?m)^receivers:')
+      - otel_collector_merged_config is search('(?m)^exporters:')
+      - otel_collector_merged_config is search('(?m)^service:')
+    fail_msg: >-
+      {{ otel_collector_config_url }} did not answer with a collector
+      configuration. Nothing has been written and the running service is
+      untouched.
+    success_msg: the merged configuration names receivers, exporters and a service
+
+- name: Install the merged collector configuration
+  ansible.builtin.copy:
+    content: "{{ otel_collector_merged_config }}"
+    dest: "{{ otel_collector_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Put the collector on the merged configuration
+  ansible.builtin.systemd_service:
+    name: "{{ otel_collector_unit_name }}"
+    enabled: true
+    state: restarted
+  become: true

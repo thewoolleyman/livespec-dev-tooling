@@ -224,6 +224,28 @@ cluster admin is the reach of a credential no factory pod holds. Absent that
 file the role refuses and names the converge that renders it, rather than
 falling back (freeze ruling R70, `livespec-dev-tooling-jvnqwv`).
 
+`dev-host.yml`'s `otel_collector` role is how a change merged to
+`thewoolleyman/otel-collector`'s `config.yaml` reaches the dev host's running
+`otel-collector.service`. The role reads that file on the control node from
+the ref `otel_collector_config_ref` names (`main`, the merged branch, unless
+an operator pins a sha to hold or roll back the host) and installs it at
+`/etc/otel-collector/config.yaml`. Two commands, and no hand `systemctl`
+step:
+
+```bash
+just ansible-drift ansible/dev-host.yml --tags otel_collector
+just ansible-apply ansible/dev-host.yml --tags otel_collector
+```
+
+The collector ran out of the maintainer's `otel-collector` development
+checkout until 2026-10-21 (`livespec-dev-tooling-x36is7`), which is why a
+merged change needed a hand `sudo systemctl restart otel-collector` to take
+effect: the host's state lived in a tree a `git pull` could change underneath
+the service, so no drift report could see it and no committed command could
+converge it. The collector BINARY stays a precondition this role asserts and
+never installs — the pinned download belongs to the collector repository's own
+installers.
+
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that
 genuinely vary by machine live in `inventory/host_vars/<host>.yml` rather than

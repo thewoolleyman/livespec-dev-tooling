@@ -17,7 +17,7 @@
 # because this host carries services with very different interruption costs --
 # a timer is free to restart, a desktop session is not -- and because a
 # failure in one role's package step must not be able to withhold the other
-# sixteen.
+# seventeen.
 - name: Dev host services
   hosts: dev_hosts
   gather_facts: true
@@ -56,3 +56,5 @@
       tags: [honeycomb_mcp]
     - role: honeycomb_trigger_recipients_check
       tags: [honeycomb_trigger_recipients_check]
+    - role: otel_collector
+      tags: [otel_collector]
