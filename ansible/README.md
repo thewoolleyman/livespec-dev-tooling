@@ -237,14 +237,31 @@ just ansible-drift ansible/dev-host.yml --tags otel_collector
 just ansible-apply ansible/dev-host.yml --tags otel_collector
 ```
 
+The same role installs the UNIT, from its own
+`templates/otel-collector.service.j2`, and that unit names only managed paths
+— so the running service reads no checkout. The restart lives in a handler
+notified by the configuration and the unit, so a converge over a host that
+already matches reports no change and leaves the collector running
+untouched; `--check` on a host the role has never reached writes nothing and
+withholds the systemd steps rather than failing on its own omission.
+
 The collector ran out of the maintainer's `otel-collector` development
 checkout until 2026-10-21 (`livespec-dev-tooling-x36is7`), which is why a
-merged change needed a hand `sudo systemctl restart otel-collector` to take
-effect: the host's state lived in a tree a `git pull` could change underneath
-the service, so no drift report could see it and no committed command could
-converge it. The collector BINARY stays a precondition this role asserts and
-never installs — the pinned download belongs to the collector repository's own
-installers.
+merged change needed a hand restart to take effect: the host's state lived in
+a tree a `git pull` could change underneath the service, so no drift report
+could see it and no committed command could converge it.
+
+Two preconditions this role asserts and never provisions. The collector
+BINARY — the pinned download belongs to the collector repository's own
+installers. And `/etc/otel-collector/.env`, the Honeycomb ingest keys the
+configuration reads as `${env:…}`: placing a secret is the operator's step,
+and the role refuses an apply whose environment file is missing or does not
+set a key the merged configuration names (it derives that key list from the
+configuration, so it cannot go stale, and it reads the file with `grep
+--quiet`, never printing a value). Place it once, as root, from the key the
+host's collector already uses, mode 0600 `root:root` — the same shape
+`scripts/install-ci-runner-host.sh` and `scripts/install-hp-factory-host.sh`
+require in that repository.
 
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that

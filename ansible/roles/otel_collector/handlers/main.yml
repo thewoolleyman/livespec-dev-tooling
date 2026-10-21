@@ -3,9 +3,24 @@
 # the committed ones notifies nothing, so these never run and the collector is
 # left exactly as it was found -- which is the property that makes an apply
 # safe to run as often as a drift report.
+#
+# Order matters and is this file's order: systemd has to be told the unit
+# changed before anything tries to restart it. tasks/main.yml flushes both
+# straight after the unit is written, so the restart starts the NEW unit.
+#
+# Both carry the same guard. Under `--check` on a host this role has never
+# converged, nothing was written, so systemd knows no such unit and the
+# handler would fail on a fault the dry run itself invented.
+
+- name: Reload systemd for the collector unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or otel_collector_unit_stat.stat.exists
 
 - name: Restart the collector onto its managed configuration
   ansible.builtin.systemd_service:
     name: "{{ otel_collector_unit_name }}"
     state: restarted
   become: true
+  when: not ansible_check_mode or otel_collector_unit_stat.stat.exists

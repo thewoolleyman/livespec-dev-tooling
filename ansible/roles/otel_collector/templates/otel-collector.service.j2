@@ -1,0 +1,46 @@
+# {{ ansible_managed }}
+# otel-collector.service -- the dev host's OTel Collector, installed by
+# livespec-dev-tooling ansible/roles/otel_collector.
+#
+# TWO sources of truth, and neither is this file on the host. The COLLECTOR
+# CONFIGURATION belongs to thewoolleyman/otel-collector (config.yaml, read at
+# the ref otel_collector_config_ref names); THIS UNIT belongs to the role's
+# templates/otel-collector.service.j2. Change either at its source and re-run
+# the converge named in ansible/README.md. Never hand-edit the live copies and
+# never hand-restart the service: a hand step is a host change no drift report
+# can see, which is exactly what this unit replaced.
+#
+# Every path below is a managed one. The collector ran out of the maintainer's
+# development checkout until 2026-10-21, so a `git pull` there changed what the
+# service would read at its next start; nothing on this host records that, and
+# the running service now reads no checkout at all.
+#
+# DELIBERATELY NOT HARDENED beyond NoNewPrivileges. The sibling shapes in the
+# collector repository (the CI-runner host and the hp factory host) add
+# ProtectSystem=strict, ProtectHome and PrivateTmp because they run as a
+# dedicated system user that never had anything else. This host's collector has
+# always run as the login account, with hostmetrics scraping the whole machine;
+# adding a sandbox here is a behaviour change, not the transcription this
+# converge is, and belongs to its own decision.
+[Unit]
+Description=otel-collector -- host OTel Collector on the dev host
+Documentation=https://github.com/thewoolleyman/otel-collector
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User={{ otel_collector_user }}
+Group={{ otel_collector_group }}
+# The Honeycomb ingest keys the configuration reads as ${env:...}. Read by
+# systemd as root before the privilege drop; mode 0600 root:root. The converge
+# ASSERTS this file and the keys the merged configuration needs from it, and
+# never writes, reads back or prints a value.
+EnvironmentFile={{ otel_collector_environment_path }}
+ExecStart={{ otel_collector_binary }} --config={{ otel_collector_config_path }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

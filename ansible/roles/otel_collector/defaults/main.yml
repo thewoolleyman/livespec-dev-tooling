@@ -19,7 +19,14 @@ otel_collector_config_url: >-
 otel_collector_etc_dir: /etc/otel-collector
 otel_collector_config_path: "{{ otel_collector_etc_dir }}/config.yaml"
 
+# The Honeycomb ingest keys the configuration reads as `${env:...}`, which the
+# unit names in `EnvironmentFile=`. A PRECONDITION: the converge asserts the
+# file and the keys the merged configuration needs from it, and never writes,
+# reads back or prints a value. See ../../README.md for the one-time placement.
+otel_collector_environment_path: "{{ otel_collector_etc_dir }}/.env"
+
 otel_collector_unit_name: otel-collector.service
+otel_collector_unit_path: "/etc/systemd/system/{{ otel_collector_unit_name }}"
 
 # ASSERTED, NEVER INSTALLED. The pinned binary download belongs to the
 # collector repository's own installers, which choose its version; no shape of
