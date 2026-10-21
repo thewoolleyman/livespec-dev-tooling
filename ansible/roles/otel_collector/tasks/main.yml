@@ -63,10 +63,15 @@
     group: root
     mode: "0644"
   become: true
+  notify: Restart the collector onto its managed configuration
 
-- name: Put the collector on the merged configuration
+- name: Keep the collector enabled and running
+  # `started`, never `restarted`: this starts a collector that is down and
+  # leaves a running one alone. Putting a CHANGED configuration into the
+  # running process is the handler's job, so a converge that changed nothing
+  # interrupts nothing.
   ansible.builtin.systemd_service:
     name: "{{ otel_collector_unit_name }}"
     enabled: true
-    state: restarted
+    state: started
   become: true
