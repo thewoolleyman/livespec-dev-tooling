@@ -1,0 +1,83 @@
+---
+# otel_collector -- the VPS's system service, deployed without its development
+# checkout.  The raw URL is the collector repository's merged main branch:
+# `just ansible-drift ansible/dev-host.yml --tags otel_collector` reports the
+# pending config, and the matching ansible-apply is the only deploy path.
+
+- name: Refuse to render a collector environment without its controller credentials
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', item) | length > 0
+    fail_msg: >-
+      {{ item }} is absent from the control-node environment. Run this converge
+      under /usr/local/bin/with-livespec-env.sh; do not restore a checkout-based
+      EnvironmentFile.
+    success_msg: the collector credential is available on the control node
+  loop: "{{ otel_collector_environment_keys }}"
+  no_log: true
+
+- name: Create the managed collector directory
+  ansible.builtin.file:
+    path: "{{ otel_collector_config_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: Install the collector environment
+  ansible.builtin.copy:
+    content: |
+      {% for environment_key in otel_collector_environment_keys %}
+      {{ environment_key }}={{ lookup('ansible.builtin.env', environment_key) }}
+      {% endfor %}
+    dest: "{{ otel_collector_environment_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true
+  notify: Restart the collector when its managed inputs change
+
+- name: Download the merged collector configuration
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/thewoolleyman/otel-collector/main/config.yaml
+    dest: "{{ otel_collector_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the collector when its managed inputs change
+
+- name: Check whether systemd already knows the collector unit
+  ansible.builtin.stat:
+    path: "{{ otel_collector_unit_path }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_unit_present
+
+- name: Install the collector unit
+  ansible.builtin.template:
+    src: otel-collector.service.j2
+    dest: "{{ otel_collector_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify:
+    - Reload systemd for the collector unit
+    - Restart the collector when its managed inputs change
+
+- name: Publish a changed collector unit before managing its service
+  ansible.builtin.meta: flush_handlers
+
+- name: Keep the collector enabled and running
+  ansible.builtin.systemd_service:
+    name: "{{ otel_collector_unit_name }}"
+    enabled: true
+    state: started
+  become: true
+  # A dry run cannot make a newly rendered unit visible to systemd.  The
+  # would-be unit write is the truthful drift report; starting it would invent
+  # a failure against a unit the dry run deliberately did not install.
+  when: not ansible_check_mode or otel_collector_unit_present.stat.exists

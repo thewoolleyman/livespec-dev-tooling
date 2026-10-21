@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Installed by livespec-dev-tooling ansible/roles/otel_collector.  The service
+# reads only the managed /etc files below; it never reads a development checkout.
+[Unit]
+Description=OpenTelemetry Collector
+Documentation=https://github.com/thewoolleyman/otel-collector
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ otel_collector_user }}
+Group={{ otel_collector_group }}
+EnvironmentFile={{ otel_collector_environment_path }}
+ExecStart={{ otel_collector_binary }} --config={{ otel_collector_config_path }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

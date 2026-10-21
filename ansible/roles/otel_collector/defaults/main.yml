@@ -1,0 +1,18 @@
+---
+# The VPS collector is sourced from the collector repository's merged main
+# branch.  It is copied into /etc rather than run from /data/projects so the
+# service is independent of a developer checkout on its host.
+otel_collector_config_path: /etc/otel-collector/config.yaml
+otel_collector_environment_path: /etc/otel-collector/collector.env
+otel_collector_unit_path: /etc/systemd/system/otel-collector.service
+otel_collector_unit_name: otel-collector.service
+otel_collector_binary: /usr/local/bin/otelcol-contrib
+otel_collector_user: ubuntu
+otel_collector_group: ubuntu
+
+# The credential wrapper projects these on the control node.  The role writes
+# them only to the root-owned EnvironmentFile systemd reads before dropping to
+# otel_collector_user; no value is logged or stored in the repository.
+otel_collector_environment_keys:
+  - HONEYCOMB_API_KEY
+  - HONEYCOMB_INGEST_KEY_LIVESPEC

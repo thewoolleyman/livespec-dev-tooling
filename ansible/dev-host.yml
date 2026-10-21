@@ -54,5 +54,7 @@
       tags: [codex_config]
     - role: honeycomb_mcp
       tags: [honeycomb_mcp]
+    - role: otel_collector
+      tags: [otel_collector]
     - role: honeycomb_trigger_recipients_check
       tags: [honeycomb_trigger_recipients_check]

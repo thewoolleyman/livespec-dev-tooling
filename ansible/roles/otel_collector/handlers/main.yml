@@ -1,0 +1,15 @@
+---
+- name: Reload systemd for the collector unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or otel_collector_unit_present.stat.exists
+
+- name: Restart the collector when its managed inputs change
+  # A handler is the restart fence: an already-converged config, environment
+  # and unit notify nothing, so this does not interrupt a running collector.
+  ansible.builtin.systemd_service:
+    name: "{{ otel_collector_unit_name }}"
+    state: restarted
+  become: true
+  when: not ansible_check_mode or otel_collector_unit_present.stat.exists
