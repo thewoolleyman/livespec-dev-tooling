@@ -18,6 +18,9 @@ error in the filter-consuming preflight, warning everywhere else.
 from __future__ import annotations
 
 import textwrap
+from dataclasses import replace
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from _gh_railway import lift_gh
 
@@ -38,6 +41,10 @@ from livespec_dev_tooling.fleet._rows_beads import (
 )
 
 __all__: list[str] = []
+
+
+if TYPE_CHECKING:
+    import pytest
 
 
 _MEMBER = FleetMember(repo="widget", repo_class="impl-plugin")
@@ -150,6 +157,54 @@ def test_consistent_connection_passes() -> None:
         }
     )
     assert assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_self_member_reads_repaired_connection_files_from_the_local_checkout(
+    *, tmp_path: Path
+) -> None:
+    """A member CI grades its repair, not the still-drifted canonical ref."""
+    local_beads = tmp_path / BEADS_CONFIG_PATH
+    local_beads.parent.mkdir(parents=True)
+    _ = local_beads.write_text(_beads_config(), encoding="utf-8")
+    _ = (tmp_path / LIVESPEC_JSONC_PATH).write_text(_livespec_jsonc(), encoding="utf-8")
+    ctx = replace(
+        make_context(
+            table={
+                _BEADS_ARGS: _ok(text=_beads_config(prefix="drifted-master")),
+                _JSONC_ARGS: _ok(text=_livespec_jsonc()),
+            }
+        ),
+        local_repo=_MEMBER.repo,
+        local_root=tmp_path,
+    )
+
+    assert assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER) == RowPass()
+
+
+def test_self_member_local_file_read_failure_is_a_skip(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A local read failure remains distinguishable from an absent remote file."""
+
+    def unreadable(_: Path, *, encoding: str) -> str:
+        del encoding
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    ctx = replace(
+        make_context(
+            table={
+                _BEADS_ARGS: _ok(text=_beads_config()),
+                _JSONC_ARGS: _ok(text=_livespec_jsonc()),
+            }
+        ),
+        local_repo=_MEMBER.repo,
+        local_root=tmp_path,
+    )
+
+    outcome = assert_tenant_connection_consistency(ctx=ctx, member=_MEMBER)
+    assert isinstance(outcome, RowSkip)
+    assert ctx.read_failures[-1].kind == "local_file_unreadable"
 
 
 def test_mismatched_field_is_finding_naming_the_key() -> None:
