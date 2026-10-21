@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.121.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.120.1...v1.121.0) (2026-10-21)
+
+
+### Features
+
+* **fleet:** accept the instruction-only adopter profile ([c0319bc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c0319bc1c93b98ab88d10889c8f953400a213bb7))
+* **fleet:** hold instruction-only to the exact one-element profile ([cce450a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/cce450a48c369cb702112366d49717e91580d2e4))
+
 ## [1.120.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.120.0...v1.120.1) (2026-10-21)
 
 
