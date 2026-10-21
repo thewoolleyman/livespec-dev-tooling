@@ -196,29 +196,60 @@ def _parse_members(*, raw: object) -> Result[tuple[FleetMember, ...], _MemberFai
     return Success(tuple(members))
 
 
+def _parse_profile(*, profile: object) -> tuple[str, ...] | None:
+    """One adopter `profile` as its value tuple, or None when malformed.
+
+    Accepted in exactly TWO shapes, and the second is not a layer: a
+    non-empty list drawn entirely from `PROFILE_LAYERS`, or
+    `INSTRUCTION_ONLY_PROFILE` whole. Nothing may mix them.
+
+    Split out of `_parse_adopter` because the two-shape rule is its own
+    concern — it is the only part of an adopter entry whose validity is a
+    property of the WHOLE value rather than of each element, which is
+    exactly what the caller's per-key `isinstance` ladder cannot express.
+    `None` carries the whole answer here for the same reason it does in
+    `_parse_member`: one failure meaning.
+    """
+    if not isinstance(profile, list) or not profile:
+        return None
+    for value in cast("list[object]", profile):
+        if not isinstance(value, str):
+            return None
+    values = tuple(cast("list[str]", profile))
+    # The `instruction-only` rule is an IDENTITY on the whole list, not a
+    # membership test on its elements, and the difference is the whole of
+    # what this branch buys. A membership reading admits
+    # `["instruction-only", "baseline"]` — a profile asking for the
+    # toolchain-less floor AND the layer it replaces, which is not a
+    # combination that exists — and the manifest would then parse, so the
+    # sweep would act on it. The empty list is already refused above, and
+    # a one-element list that merely LOOKS like the value (the plural
+    # `instructions-only`) fails both arms.
+    if values != INSTRUCTION_ONLY_PROFILE and any(value not in PROFILE_LAYERS for value in values):
+        return None
+    return values
+
+
 def _parse_adopter(*, entry: object) -> Adopter | None:
     """One manifest adopter entry, or None when malformed.
 
     Left on `None` for the same reason as `_parse_member`: one failure
-    meaning, so the failure track would have a single inhabitant.
+    meaning, so the failure track would have a single inhabitant. The
+    `profile` rule lives in `_parse_profile`.
     """
     if not isinstance(entry, dict):
         return None
     record = cast("dict[str, object]", entry)
     repo = record.get("repo")
-    profile = record.get("profile")
     posture = record.get("posture")
     if not isinstance(repo, str) or not repo:
         return None
-    if not isinstance(profile, list) or not profile:
+    profile = _parse_profile(profile=record.get("profile"))
+    if profile is None:
         return None
-    accepted = (*PROFILE_LAYERS, *INSTRUCTION_ONLY_PROFILE)
-    for layer in cast("list[object]", profile):
-        if not isinstance(layer, str) or layer not in accepted:
-            return None
     if not isinstance(posture, str) or posture not in ADOPTER_POSTURES:
         return None
-    return Adopter(repo=repo, profile=tuple(cast("list[str]", profile)), posture=posture)
+    return Adopter(repo=repo, profile=profile, posture=posture)
 
 
 def _parse_adopters(*, raw: object) -> Result[tuple[Adopter, ...], _AdopterFailure]:
@@ -257,8 +288,9 @@ def parse_manifest(*, source: str) -> Result[Manifest, ManifestParseError]:
     `fleet-not-list` (under either `fleet` or `members`),
     `malformed-member` (missing `repo`, unknown `class`),
     `duplicate-member`, `adopters-not-list`, and `malformed-adopter`
-    (missing/empty `repo`, a `profile` that is not a non-empty list of
-    accepted profile values, or an unknown `posture`).
+    (missing/empty `repo`, a `profile` that is neither a non-empty list
+    of known layers nor exactly `INSTRUCTION_ONLY_PROFILE`, or an unknown
+    `posture`).
 
     CHECK ORDER IS PART OF THE CONTRACT NOW, because it decides which
     reason a doubly-malformed manifest reports, and that was previously
