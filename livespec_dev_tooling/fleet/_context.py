@@ -31,6 +31,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from livespec_dev_tooling.fleet._canonical_ref import resolve_canonical_ref  # noqa: E402
 from livespec_dev_tooling.fleet._gh_runner import (  # noqa: E402
     GhOutcome,
     GhResult,
@@ -149,19 +150,6 @@ def row_excluded(*, reason: str) -> RowPass:
     both engines share, not a string concatenation each call site re-derives.
     """
     return RowPass(note=f"{EXCLUDED_NOTE_PREFIX}{reason}")
-
-
-# Fallback ref when a repo's default branch cannot be resolved. The single
-# source of truth for a repo's canonical ref is `FleetContext.canonical_ref`,
-# resolved and memoized PER REPO: `file_text` and `tree` BOTH route through it
-# so the genuine-absence guard — which reads a member's file (file_text) and
-# then its tree (tree) to tell genuine absence from transient unreadability —
-# can never evaluate the two against divergent branches. Resolving per repo
-# (rather than pinning one global branch) is what lets a governed repo whose
-# default branch is not `master` be evaluated at all instead of skipping every
-# row; memoizing the FALLBACK too keeps the two reads together even when the
-# lookup fails mid-run.
-_CANONICAL_REF = "master"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -306,25 +294,31 @@ class FleetContext:
         behavior: an unresolvable lookup yields a can't-read skip downstream,
         never a false pass.
         """
-        cached = self.ref_cache.get(repo)
-        if cached is not None:
-            return cached
-        payload = self.api_object(path=f"repos/{self.owner}/{repo}", operation="repo_metadata")
-        resolved = _CANONICAL_REF
-        if isinstance(payload, dict):
-            branch = cast("dict[str, object]", payload).get("default_branch")
-            if isinstance(branch, str) and branch:
-                resolved = branch
-        self.ref_cache[repo] = resolved
-        return resolved
+        return resolve_canonical_ref(ctx=self, repo=repo)
 
     def file_text(self, *, repo: str, path: str) -> str | None:
-        """Raw file content at `repo`'s canonical ref via the contents API.
+        """Raw file content from the self checkout or a sibling's canonical ref.
 
-        The ref is pinned EXPLICITLY (`?ref=<canonical_ref>`) to match `tree`'s
-        pin, so a guard that reads a file and then the tree never resolves the
-        two against divergent branches. None on failure.
+        A member's own CI must grade the committed tree it checked out, so the
+        bound self member reads from `local_root`. Siblings stay pinned to their
+        canonical refs: a PR may repair its own declaration, but cannot forge a
+        sibling's state. The remote ref is pinned EXPLICITLY
+        (`?ref=<canonical_ref>`) to match `tree`'s pin, so a guard that reads a
+        sibling file and then its tree never resolves the two against divergent
+        branches. None on failure.
         """
+        if self.local_root is not None and repo == self.local_repo:
+            try:
+                return (self.local_root / path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as unreadable:
+                self.record_read_failure(
+                    operation="local_contents",
+                    path=f"{repo}:{path}",
+                    returncode=0,
+                    kind="local_file_unreadable",
+                    detail=str(unreadable),
+                )
+                return None
         result = gh_answer(
             outcome=self.run_gh(
                 args=[
