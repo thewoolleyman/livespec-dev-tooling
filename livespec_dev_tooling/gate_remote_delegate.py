@@ -88,7 +88,11 @@ from livespec_dev_tooling._gate_remote_assembly import (
     renderer_refusal,
 )
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
-from livespec_dev_tooling.gate_credential import gates_kubeconfig_path, gates_kubeconfig_readable
+from livespec_dev_tooling.gate_credential import (
+    gates_kubeconfig_path,
+    gates_kubeconfig_readable,
+    with_wrapper_notices,
+)
 from livespec_dev_tooling.gate_group_repair import (
     GATE_RUNS_UNDER_GROUP,
     group_repair_group,
@@ -336,7 +340,16 @@ def run_delegated_gate(
     accepted. `emit` is injectable for the same reason `runner` and `sleeper`
     are — so a test can read what one run reported without a receiver — never as
     a switch for turning the signal off in production.
+
+    THE RUNNER IS WRAPPED ONCE, HERE, so the credential wrapper's own notices
+    reach the operator from every step of the push rather than from the ones
+    that happened to fail. This is the outermost point at which a runner enters
+    a delegated push — the assembly reaches the world through it before any gate
+    exists, and so does the run — so a step cannot be added below that escapes
+    the narration. `gate_credential.with_wrapper_notices` carries why a refresh
+    that WORKED used to leave no trace at all.
     """
+    runner = with_wrapper_notices(runner=runner)
     built = gate_remote_request(repo_root=repo_root, renderer=renderer, runner=runner)
     if isinstance(built, Failure):
         failure = built.failure()

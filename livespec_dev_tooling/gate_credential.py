@@ -30,20 +30,47 @@ then necessarily the file the wrapper authenticates with, rather than two
 answers that happen to coincide on a converged host and diverge on any other.
 `tests/livespec_dev_tooling/test_gate_credential.py` holds the three constants
 against the wrapper's own bytes and the role's own destination.
+
+AND THIS MODULE IS ALSO WHERE THE WRAPPER'S ANSWER IS READ, not only where its
+command is built, because a refresh that WORKED used to leave no trace. Every
+cluster command a delegated push issues runs CAPTURED rather than streamed, and
+a captured stderr is read only when the step failed: `require_success` carries
+it as the failing step's `detail`, and a step that succeeded produces none. So
+the wrapper's refresh line reached the operator exactly when the push was ALSO
+refused. Measured 2026-10-21 on master v1.120.0 (6728f5ad) — a credential that
+goes stale at every control-plane boot and silently heals itself on the retry
+was indistinguishable from one that never went stale, and nothing told anyone
+there was a thing to fix. `with_wrapper_notices` closes that, at the same seam
+and for the same reason the prefix is applied here: the wrapper is this module's
+subject, in both directions.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+
+from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandRunner
+
+# `structlog` is VENDORED, not installed; a bare import here would resolve only
+# when some earlier import in the process happened to run first.
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+import structlog  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
     "GATES_KUBECONFIG_DEFAULT",
     "GATES_KUBECONFIG_ENV",
     "GATES_WRAPPER",
+    "WRAPPER_NOTICE_PREFIX",
     "gates_kubeconfig_path",
     "gates_kubeconfig_readable",
     "with_gates_kubeconfig",
+    "with_wrapper_notices",
+    "wrapper_notices",
 ]
 
 # Where the `gates_kubeconfig` role installs the credential, and the default the
@@ -62,6 +89,15 @@ GATES_KUBECONFIG_ENV = "GATES_KUBECONFIG"
 # not been converged fails at the seam as a command that did not run — which the
 # client reports as a gate that reached no verdict, never as a pass.
 GATES_WRAPPER = "with-gates-kubeconfig"
+
+# What every line the wrapper writes ABOUT ITSELF starts with, and the only thing
+# that tells those lines apart from the output of the command it carried. The
+# wrapper writes `with-gates-kubeconfig: credential rejected — refreshing once
+# and retrying` to stderr before it refreshes, and a refusal to refresh under its
+# own name too. LOCKSTEP WITH THE SHIPPED SCRIPT like the constants above:
+# `tests/livespec_dev_tooling/test_gate_remote_delegate.py` drives the wrapper's
+# OWN refresh line, read out of that file, rather than a restatement of it.
+WRAPPER_NOTICE_PREFIX = f"{GATES_WRAPPER}:"
 
 
 def gates_kubeconfig_path() -> Path:
@@ -104,3 +140,67 @@ def with_gates_kubeconfig(*, argv: list[str]) -> list[str]:
     step's `argv` sees both the wrapper and the command it carried.
     """
     return [GATES_WRAPPER, *argv]
+
+
+def wrapper_notices(*, stderr: str) -> tuple[str, ...]:
+    """The wrapper's OWN lines out of one captured stderr, and nothing else.
+
+    NARROW ON PURPOSE. A cluster command's stderr carries whatever `kubectl` had
+    to say as well, and keeping that noise OFF the operator's terminal is exactly
+    why the client captures these streams rather than streaming them. Handing the
+    whole stream over on success would put every deprecation warning and retry
+    hint in front of a push and bury the one line that means something. The
+    prefix is what separates the wrapper's account of itself from the output of
+    the command it carried.
+    """
+    return tuple(line for line in stderr.splitlines() if line.startswith(WRAPPER_NOTICE_PREFIX))
+
+
+def _notices_to_narrate(*, outcome: GateCommandOutcome) -> tuple[str, ...]:
+    """The wrapper notices of an invocation that RAN AND SUCCEEDED, or none.
+
+    SUCCESS ONLY, and the asymmetry is the whole point. A step that FAILED
+    already reports its entire captured stderr as the failing step's `detail`,
+    which the push's refusal prints, so narrating here as well would say the
+    same thing twice. The gap this closes is the opposite one: a rejection the
+    wrapper's retry REPAIRED leaves a step that succeeded, whose stderr nothing
+    anywhere goes on to read.
+
+    A command that never RAN carries no streams at all, so it answers none —
+    `value_or` rather than a branch, because "did not happen" and "ran and said
+    nothing" want the identical, empty answer here.
+    """
+    return outcome.map(
+        lambda ran: wrapper_notices(stderr=ran.stderr) if ran.returncode == 0 else ()
+    ).value_or(())
+
+
+def with_wrapper_notices(*, runner: GateCommandRunner) -> GateCommandRunner:
+    """Wrap `runner` so the wrapper's own notices reach the operator's terminal.
+
+    A DECORATOR AT THE SEAM, which is what makes it unskippable: the same
+    argument `with_gates_kubeconfig` makes for the command, applied to the
+    ANSWER. Every command one delegated push issues goes through a single runner,
+    so wrapping that runner once covers the submit, every poll, the pod read and
+    the assembly reaches too, and no step can be spelled in a way that drops the
+    narration.
+
+    The notice is re-emitted as the log EVENT, verbatim, rather than summarised:
+    an operator reading a push's output is looking for the wording the wrapper
+    writes on a host, and a paraphrase would not be it.
+    """
+    log = structlog.get_logger("gate_credential")
+
+    def narrated(
+        *,
+        argv: list[str],
+        cwd: Path,
+        stdin: str | None = None,
+        stream: bool = False,
+    ) -> GateCommandOutcome:
+        outcome = runner(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
+        for notice in _notices_to_narrate(outcome=outcome):
+            log.warning(notice)
+        return outcome
+
+    return narrated
