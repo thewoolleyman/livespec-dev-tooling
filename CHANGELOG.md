@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.121.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.121.1...v1.121.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **fleet:** retire the foreman-valve-declared obligation row ([ec0ff34](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ec0ff34c260b3b3106172b17b252e3396de28fbc))
+
 ## [1.121.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.121.0...v1.121.1) (2026-10-21)
 
 
