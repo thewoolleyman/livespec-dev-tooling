@@ -907,3 +907,23 @@ When `ansible/fabro-hosts.yml` converges and runs the rendering on any host
 Then the play MUST refuse before writing the registry on any host, naming that factory and the reason
 
 Examples of <invalid>: a name that is whitespace only; a `host` that is not an inventory host; a `unit_name` that matches no instance on its `host`; a matched instance whose `canonical_host` is whitespace only; a `docker_host` that is whitespace only
+
+## Scenario: the manifest reader accepts an instruction-only adopter and holds it to plugin currency only
+
+Given a `.livespec-fleet-manifest.jsonc` whose `adopters` array holds an entry with `profile` `["instruction-only"]` and `posture` `released`, and another with `profile` `["instruction-only"]` and `posture` `none`
+
+And the released adopter's repository carries no justfile, mise configuration or `.livespec.jsonc`, and its committed `.claude/settings.json` declares `livespecPluginCurrencySuccessor` with a non-empty `mechanism` and `documentedIn`
+
+When the manifest is parsed and the fleet-conformance sweep evaluates its adopters
+
+Then the parse MUST succeed, and the released adopter's adopter plugin-currency row MUST pass with no other row evaluated for it
+
+And the adopter with posture `none` MUST be reported posture-excluded without failing the sweep
+
+Given an adopter entry whose `profile` is <invalid>
+
+When the manifest is parsed
+
+Then the parse MUST fail with the `malformed-adopter` reason
+
+Examples of <invalid>: `["instruction-only", "baseline"]`; `["instruction-only", "orchestrator-plugin"]`; `["instructions-only"]`; the empty list
