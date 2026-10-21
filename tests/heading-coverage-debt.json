@@ -40,5 +40,12 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an authority-reading member of an opted-in push runs on the pushing host and joins the delegated verdict",
+    "work_item": "livespec-dev-tooling-gpttcc",
+    "first_seen": "2026-10-21"
   }
 ]

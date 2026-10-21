@@ -646,6 +646,24 @@ Then the push MUST be refused
 
 And the local `just check` fall-through MUST NOT run in place of the missing verdict
 
+## Scenario: an authority-reading member of an opted-in push runs on the pushing host and joins the delegated verdict
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And a pushing host where the pushing user can read the gates kubeconfig
+
+And a member of the repository's check set that declares it reads an authorization held outside the tree
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the gate Job MUST NOT run that member
+
+And the pre-push gate MUST run that member on the pushing host against the committed tree at the pushing worktree's `HEAD`
+
+And the push MUST complete only when the gate Job reports a green verdict and that member passes on the pushing host
+
+And when that member fails or cannot be evaluated on the pushing host, the push MUST be refused with a line naming the member and saying it ran on the pushing host
+
 ## Scenario: a push of a tree holding a green token still runs the members that read state outside the tree
 
 Given a consuming repository's worktree with no uncommitted changes whose `HEAD` tree is the tree its green token names
