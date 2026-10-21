@@ -84,6 +84,25 @@ source of truth for how the tool is invoked.
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 | `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
 
+### VPS collector
+
+`otel_collector` in `dev-host.yml` installs the VPS's `otel-collector.service`
+and its `/etc/otel-collector/config.yaml` from
+`thewoolleyman/otel-collector`'s merged `main` branch. The running service
+never reads `/data/projects/otel-collector`; a merged collector configuration
+reaches it only through this committed converge:
+
+```bash
+just ansible-drift ansible/dev-host.yml --tags otel_collector
+just ansible-apply ansible/dev-host.yml --tags otel_collector
+```
+
+Run both commands from the VPS control node under
+`/usr/local/bin/with-livespec-env.sh`, which supplies the collector's
+Honeycomb credentials. The role restarts the service only when its managed
+configuration, environment file, or unit changed; an already-converged apply
+does not interrupt it.
+
 `reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
 the only play here that reboots a host. It is an ordinary
 `just ansible-apply ansible/reboot-ci-server.yml -e
