@@ -84,9 +84,20 @@ fabro_factory_registry:
   petri:
     host: <the inventory host of the current Fabro server>
     unit_name: fabro-server
+  mi-homelab:
+    host: <the inventory host of the mi-homelab organisation's instance>
+    unit_name: fabro-server-mi-homelab
 ```
 
-Neither entry declares a `docker_host`: no repository's committed factory table
+`mi-homelab` is the one entry whose `unit_name` is not `fabro-server`, and that
+is the whole of it: its instance shares a machine with the instance `legacy`
+names, so the unit is the only key that tells the two apart. An entry naming
+`fabro-server` there would resolve to a valid address — the fleet instance's —
+and route that organisation's dispatches onto the fleet factory with nothing
+failing. Whether the instance is running is not the registry's business: it
+publishes where a factory IS.
+
+No entry declares a `docker_host`: no repository's committed factory table
 declares one today (measured 2026-10-18 across the fleet's `.livespec.jsonc`
 files), and publishing one would newly turn on the Dispatcher's remote container
 sweep. Add one deliberately, with the reason beside it, not by transcription.
