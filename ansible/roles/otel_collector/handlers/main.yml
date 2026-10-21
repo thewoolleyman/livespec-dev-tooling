@@ -1,0 +1,11 @@
+---
+# The restart fence. A converge over a host whose managed files already match
+# the committed ones notifies nothing, so these never run and the collector is
+# left exactly as it was found -- which is the property that makes an apply
+# safe to run as often as a drift report.
+
+- name: Restart the collector onto its managed configuration
+  ansible.builtin.systemd_service:
+    name: "{{ otel_collector_unit_name }}"
+    state: restarted
+  become: true

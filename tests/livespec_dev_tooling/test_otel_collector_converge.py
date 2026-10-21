@@ -91,3 +91,45 @@ def test_one_committed_converge_carries_a_merged_config_to_the_running_service()
     readme = _ANSIBLE_README.read_text(encoding="utf-8")
     assert _DRIFT_COMMAND in readme, readme
     assert _APPLY_COMMAND in readme, readme
+
+
+def test_a_converge_over_an_already_matching_host_restarts_nothing() -> None:
+    """The restart is a handler, so an unchanged run notifies it and it never fires."""
+    assert _HANDLERS.is_file(), "the otel_collector role has no handlers/main.yml"
+
+    handlers = _HANDLERS.read_text(encoding="utf-8")
+    restart = next(block for block in _task_blocks(body=handlers) if "state: restarted" in block)
+    assert 'name: "{{ otel_collector_unit_name }}"' in restart, restart
+
+    tasks = _TASKS.read_text(encoding="utf-8")
+    assert "state: restarted" not in tasks, (
+        "a restart outside a handler fires on every converge, including one that "
+        f"changed nothing:\n{tasks}"
+    )
+
+    # The one task that holds the service up starts a stopped collector and
+    # leaves a running one exactly as it is.
+    service = next(
+        block
+        for block in _task_blocks(body=tasks)
+        if "ansible.builtin.systemd_service:" in block and "state:" in block
+    )
+    assert "state: started" in service, service
+
+    # Each managed write compares content, reports no change when the host
+    # already matches, and therefore notifies the restart on change only.
+    config_install = next(
+        block
+        for block in _task_blocks(body=tasks)
+        if 'dest: "{{ otel_collector_config_path }}"' in block
+    )
+    assert "notify:" in config_install, config_install
+    for forbidden in ("ansible.builtin.get_url:", "ansible.builtin.shell:", "ansible.builtin.raw:"):
+        assert forbidden not in tasks, f"{forbidden} cannot report a converged host as converged"
+
+    # A read the role performs on the target is a read: it must never be able
+    # to report a change of its own on an already-matching host.
+    for block in _task_blocks(body=tasks):
+        if "ansible.builtin.command:" not in block:
+            continue
+        assert "changed_when: false" in block, block
