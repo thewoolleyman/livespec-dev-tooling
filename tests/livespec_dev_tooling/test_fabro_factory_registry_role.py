@@ -94,6 +94,17 @@ _RESOLVED_FACT = "fabro_factory_registry_resolved"
 _TIMEOUT_SECONDS = 600
 _ANSIBLE_CORE_PIN = re.compile(r"ansible-core==[0-9][0-9A-Za-z.]*")
 
+# The committed registry DECLARATION, as three nested matches rather than a walk over
+# the file's lines. The block is every indented line under the key; a factory is a
+# two-space-indented name; its keys are the four-space-indented scalars beneath it.
+_REGISTRY_BLOCK = re.compile(
+    r"^fabro_factory_registry:\n(?P<body>(?:(?:  |    )\S.*\n)+)", re.MULTILINE
+)
+_REGISTRY_FACTORY = re.compile(
+    r"^  (?P<name>[^\s:]+):\n(?P<keys>(?:    [^\s:]+: \S.*\n)+)", re.MULTILINE
+)
+_REGISTRY_KEY = re.compile(r"^    (?P<key>[^\s:]+): (?P<value>\S.*)$", re.MULTILINE)
+
 # The synthetic fleet. TWO dev hosts, because "refuses before writing on ANY host"
 # is a claim about the play and not about one machine; three factory hosts, because
 # the scenario re-points a factory onto a third.
@@ -135,6 +146,25 @@ _INVALID_REGISTRIES: dict[str, dict[str, dict[str, str]]] = {
     "blank-docker-host": {
         "legacy": {"host": "factory-one", "unit_name": "fabro-server", "docker_host": "  "}
     },
+}
+
+# What THIS repository's own inventory declares, stated WHOLE rather than as a
+# membership test, so that the arms below assert both the entry a change adds and
+# the entries it must leave alone. The third name is the one the `mi-homelab`
+# organisation's instance answers to: its unit is the SECOND Fabro server on
+# `hp-xubuntu`, so a registry that named `fabro-server` for it would resolve to
+# the fleet instance's address and route the organisation's dispatches onto the
+# fleet factory — which is why the `unit_name` is asserted here and the resolved
+# address is asserted against that instance's own `canonical_host` below. A
+# factory name names the INSTANCE, so this name stays with that instance for its
+# whole life (work-item `livespec-dev-tooling-r6kagr`).
+_HOMELAB_FACTORY = "mi-homelab"
+_HOMELAB_HOST = "hp-xubuntu"
+_HOMELAB_UNIT = "fabro-server-mi-homelab"
+_COMMITTED_FACTORIES: Mapping[str, Mapping[str, str]] = {
+    "legacy": {"host": "hp-xubuntu", "unit_name": "fabro-server"},
+    "petri": {"host": "gmktec-xubuntu", "unit_name": "fabro-server"},
+    _HOMELAB_FACTORY: {"host": _HOMELAB_HOST, "unit_name": _HOMELAB_UNIT},
 }
 
 
@@ -565,6 +595,74 @@ def test_the_dev_host_play_runs_the_rendering_and_a_narrowed_run_does_not() -> N
     )
 
 
+def _committed_registry() -> dict[str, dict[str, str]]:
+    """The committed `fabro_factory_registry` mapping, as the group_vars DECLARES it.
+
+    Parsed rather than converged, because which `host` and which `unit_name` a factory
+    name names is not recoverable from a converge: the render reports only the address
+    those two resolved to, and two instances on one machine can only be told apart by
+    the unit. The two readings are complementary and both arms run — this one asserts
+    the declaration, the converge below asserts that the same declaration resolves.
+
+    The parse is deliberately narrow, and matching rather than line-walking is what
+    keeps it so: the block is exactly a mapping of two-space-indented factory names to
+    four-space-indented scalar keys, which is the only shape the specification permits
+    here, so a declaration in any other shape matches nothing and is a finding rather
+    than a value this reader guesses at.
+    """
+    block = _REGISTRY_BLOCK.search(_read(path=_GROUP_VARS))
+    assert block is not None, (
+        f"{_GROUP_VARS} must declare `fabro_factory_registry` as an indented mapping of "
+        f"factory names: it is the one place the registry may be declared, and a reader "
+        f"that matched nothing would report an empty registry as the committed one"
+    )
+    return {
+        factory["name"]: {
+            key["key"]: key["value"].strip() for key in _REGISTRY_KEY.finditer(factory["keys"])
+        }
+        for factory in _REGISTRY_FACTORY.finditer(block["body"])
+    }
+
+
+def _committed_canonical_host(*, host: str, unit_name: str) -> str:
+    """One committed instance's `canonical_host`, read out of that host's host_vars.
+
+    Read rather than transcribed, so that an instance whose port or tailnet name
+    changes cannot leave this module asserting the address it used to publish while
+    the registry resolves the new one.
+    """
+    text = _read(path=_ANSIBLE / "inventory" / "host_vars" / f"{host}.yml")
+    instance = re.search(
+        rf"^  - unit_name: {re.escape(unit_name)}\n(?P<body>(?:(?!^  - ).*\n)*)",
+        text,
+        re.MULTILINE,
+    )
+    assert instance is not None, (
+        f"{host}'s host_vars must declare a `fabro_server_instances` mapping whose "
+        f"unit_name is {unit_name}: the registry entry naming it resolves through that "
+        f"mapping, and the play refuses the whole converge when it matches none"
+    )
+    found = re.search(r"^    canonical_host: (?P<value>\S+)$", instance["body"], re.MULTILINE)
+    assert found is not None, f"{host}'s {unit_name} instance must declare a canonical_host"
+    return found["value"]
+
+
+def test_the_committed_registry_names_the_mi_homelab_instance_beside_legacy_and_petri() -> None:
+    """Every factory name this repository's inventory declares, and what each names.
+
+    Stated as EQUALITY over the whole mapping rather than as a lookup of the name under
+    test, because the obligation has two halves: the organisation's instance acquires a
+    registry name, and the two names already in service — which other repositories
+    resolve their committed `"registry": true` entries by — keep the host and unit they
+    had. A membership test would pass on a change that re-pointed `legacy`.
+    """
+    assert _committed_registry() == _COMMITTED_FACTORIES, (
+        f"{_GROUP_VARS} must declare exactly these factories: without a registry name for "
+        f"the {_HOMELAB_UNIT} instance, the repository it serves cannot drop the machine "
+        f"address from its own committed factory table"
+    )
+
+
 def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: Path) -> None:
     declaration = _read(path=_GROUP_VARS)
     assert (
@@ -597,9 +695,15 @@ def test_the_committed_inventory_declares_a_registry_that_resolves(*, tmp_path: 
     rendered = [json.loads(path.read_text(encoding="utf-8")) for path in reports.glob("*.json")]
     assert rendered, f"the dev_hosts group must have rendered the committed registry: {output}"
     for entries in rendered:
-        assert sorted(entries) == ["legacy", "petri"], entries
+        assert sorted(entries) == sorted(_COMMITTED_FACTORIES), entries
         for name, entry in entries.items():
             assert entry["server"].startswith("https://"), (name, entry)
+        assert entries[_HOMELAB_FACTORY]["server"] == "https://" + _committed_canonical_host(
+            host=_HOMELAB_HOST, unit_name=_HOMELAB_UNIT
+        ), (
+            f"{_HOMELAB_FACTORY} must resolve to the {_HOMELAB_UNIT} instance's own address, "
+            f"not to another instance on {_HOMELAB_HOST}: {entries}"
+        )
 
 
 def test_the_role_documents_the_variable_it_reads() -> None:

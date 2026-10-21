@@ -18,13 +18,26 @@
 # `ansible/roles/fabro_factory_registry/HOST_VARS.md`.
 #
 # A factory name names the INSTANCE, never its role, and stays the same for that
-# instance's whole life: `legacy` is the 0.254 engine, which only retires, and
-# `petri` is the current Fabro server. Which one a repository dispatches to by
-# default is carried by its own `dispatcher.default_factory`, so the cutover
-# between them renames nothing and leaves no item's recorded factory orphaned.
-# The Kubernetes move adds a third name and retires `petri`.
+# instance's whole life: `legacy` is the 0.254 engine, which only retires,
+# `petri` is the current Fabro server, and `mi-homelab` is the second Fabro
+# server on `hp-xubuntu` — the one the `mi-homelab` organisation's GitHub App
+# publishes as. Which one a repository dispatches to by default is carried by its
+# own `dispatcher.default_factory`, so the fleet cutover between `legacy` and
+# `petri` renames nothing and leaves no item's recorded factory orphaned. The
+# Kubernetes move adds a further name and retires `petri`.
 #
-# Neither entry declares a `docker_host`: no repository's committed factory table
+# `mi-homelab` NAMES THE UNIT, NOT THE PORT. Its instance is the host's second
+# one, so the entry's `unit_name` is `fabro-server-mi-homelab` and not
+# `fabro-server`: the two live on the same machine and are told apart only by
+# that key, and an entry naming the wrong one resolves to a perfectly valid
+# address that routes the organisation's dispatches onto the fleet factory.
+# Declared here so the repository it serves can resolve its factory by name and
+# stop committing the machine address (work-item `livespec-dev-tooling-r6kagr`;
+# coordinator ruling R318, 2026-10-20). The instance is parked
+# (`service_state: stopped` in that host's host_vars) and that is irrelevant to
+# the registry, which publishes where a factory IS, never whether it is running.
+#
+# No entry declares a `docker_host`: no repository's committed factory table
 # declares one today, and publishing one would newly turn on the Dispatcher's
 # remote container sweep.
 fabro_factory_registry:
@@ -34,3 +47,6 @@ fabro_factory_registry:
   petri:
     host: gmktec-xubuntu
     unit_name: fabro-server
+  mi-homelab:
+    host: hp-xubuntu
+    unit_name: fabro-server-mi-homelab
