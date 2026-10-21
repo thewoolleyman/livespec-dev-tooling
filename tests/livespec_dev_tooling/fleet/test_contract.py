@@ -119,6 +119,35 @@ def test_parse_manifest_parses_adopters() -> None:
     )
 
 
+def test_parse_manifest_accepts_the_instruction_only_adopter_profile() -> None:
+    # The adopter-only profile livespec core ratified in its v227 for a
+    # TOOLCHAIN-LESS repository: one that carries no justfile, no mise
+    # configuration and no `.livespec.jsonc`, so every layer obligation
+    # above plugin currency is unsatisfiable there by construction.
+    #
+    # `instruction-only` REPLACES the `baseline` floor rather than adding
+    # to it, so the parsed profile is asserted as the WHOLE tuple rather
+    # than by membership: a membership assertion holds just as happily of
+    # a record that silently kept a layer beside it, which is exactly the
+    # confusion the one-element rule exists to prevent.
+    source = """\
+{
+  "owner": "acme",
+  "fleet": [
+    { "repo": "livespec", "class": "core" }
+  ],
+  "adopters": [
+    { "repo": "acme-host", "profile": ["instruction-only"], "posture": "released" }
+  ]
+}
+"""
+    outcome = parse_manifest(source=source)
+    assert isinstance(outcome, Success), outcome
+    assert outcome.unwrap().adopters == (
+        Adopter(repo="acme-host", profile=("instruction-only",), posture="released"),
+    )
+
+
 # Every malformed shape paired with the reason it MUST report. The pairs
 # are the point: the pre-conversion suite asserted `is None` for all of
 # them, which passed just as happily when two different causes collapsed
