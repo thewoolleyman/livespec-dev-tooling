@@ -1,11 +1,12 @@
-"""Consumer-tier: the `## Delegated pre-push gate` contract and its three scenarios.
+"""Consumer-tier: the `## Delegated pre-push gate` contract and its four scenarios.
 
 The registered coverage for the delegated pre-push gate section of this
-repository's `SPECIFICATION/contracts.md` and the three
+repository's `SPECIFICATION/contracts.md` and the four
 `SPECIFICATION/scenarios.md` scenarios that exercise it: an opted-in push from
 an INELIGIBLE host gating locally, an opted-in push from an ELIGIBLE host
-completing on a green cluster verdict, and an opted-in push being REFUSED when
-no verdict arrives.
+completing on a green cluster verdict, an opted-in push being REFUSED when
+no verdict arrives, and an AUTHORITY-READING member of an opted-in push running
+on the pushing host and joining the delegated verdict.
 
 NOTHING HERE REACHES A CLUSTER, A MIRROR OR A HOST. The gate client's only door
 to the world is its `GateCommandRunner` seam, so a canned runner IS the cluster;
@@ -39,9 +40,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from returns.pipeline import is_successful
 from returns.result import Success
+from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling._gate_remote_assembly import GATE_CHECK_SUITE_FALL_THROUGH
+from livespec_dev_tooling.check_authority import repository_authority_members
 from livespec_dev_tooling.gate_credential import GATES_KUBECONFIG_ENV, GATES_WRAPPER
 from livespec_dev_tooling.gate_remote_delegate import (
     delegated_gate_enabled,
@@ -84,6 +88,11 @@ _JOB_COMPLETE = json.dumps({"status": {"conditions": [{"type": "Complete", "stat
 # scenario's Given, verbatim enough that a reader recognises it in a log.
 _UNREACHABLE = "Unable to connect to the server: dial tcp 10.0.0.1:6443: i/o timeout"
 
+# A consuming repository's own two members: one declaring that it reads an
+# authorization held outside the tree, and one declaring none.
+_DECLARING_MEMBER = "check-widget-approval"
+_UNDECLARED_MEMBER = "check-widget-lint"
+
 
 def _opt_in(*, repo_root: Path) -> None:
     """Write the one `pyproject.toml` shape that switches delegation on."""
@@ -122,11 +131,20 @@ class _CannedCluster:
     `unreachable` makes every CLUSTER command fail the way an unreachable API
     server does, while the local `git` and renderer steps still succeed — which
     is the scenario's Given: the host is fine, the cluster is not.
+
+    `member_result` is what a `just <member>` run on the PUSHING HOST answers.
+    It is separate from `unreachable` because the two model opposite Givens: a
+    host that is fine and a cluster that is not, against a cluster that is fine
+    and an authorization the host will not grant.
     """
 
-    def __init__(self, *, unreachable: bool = False) -> None:
+    def __init__(
+        self, *, unreachable: bool = False, member_result: GateCommandOutcome | None = None
+    ) -> None:
         self.argvs: list[tuple[str, ...]] = []
+        self.cwds: list[Path] = []
         self._unreachable = unreachable
+        self._member_result = member_result
         self._polls = 0
 
     def __call__(
@@ -137,10 +155,13 @@ class _CannedCluster:
         stdin: str | None = None,
         stream: bool = False,
     ) -> GateCommandOutcome:
-        _ = (cwd, stdin, stream)
+        _ = (stdin, stream)
         self.argvs.append(tuple(argv))
+        self.cwds.append(cwd)
         if argv[0] == GATES_WRAPPER:
             return self._cluster(polling="get" in argv, submitting="create" in argv)
+        if argv[0] == "just" and self._member_result is not None:
+            return self._member_result
         if "rev-parse" in argv:
             return Success(GateCommandResult(returncode=0, stdout=f"{_TREE}\n", stderr=""))
         if argv[0] == str(_RENDERER):
@@ -184,6 +205,42 @@ class _CannedCluster:
 def _no_sleep(*, seconds: float) -> None:
     """The poll wait, canned — the run's only source of time."""
     _ = seconds
+
+
+def _nothing(**_kwargs: object) -> None:
+    """The outcome emitter, canned: a test reads a verdict without a receiver."""
+
+
+def _gate_job_member_block() -> str:
+    """The lines the check aggregate runs ONLY inside a delegated gate Job.
+
+    Delimited by the gate pod's own `LIVESPEC_GATE_CONTEXT` guard and the first
+    `fi` at column zero, so a skip that drifted out from under that signal — and
+    would therefore fire on a contributor's machine, where the member CAN read
+    its authorization — is not found here.
+    """
+    aggregate = (_REPO_ROOT / "scripts" / "just" / "check.sh").read_text(encoding="utf-8")
+    lines = aggregate.splitlines()
+    opened = lines.index('if [[ -n "${LIVESPEC_GATE_CONTEXT:-}" ]]; then')
+    return "\n".join(lines[opened + 1 : lines.index("fi", opened)])
+
+
+def _a_consumer_declaring_one_authority_member(*, repo_root: Path) -> None:
+    """An opted-in consumer whose check set holds one declaring member and one not."""
+    _opt_in(repo_root=repo_root)
+    _ = (repo_root / "check-targets.txt").write_text(
+        "# Canonical check inventory for `just check`.\n"
+        f"{_DECLARING_MEMBER}  # purity: world-reading  # authority: ledger\n"
+        f"{_UNDECLARED_MEMBER}  # purity: tree-pure\n",
+        encoding="utf-8",
+    )
+
+
+def _resolved_authority_members(*, repo_root: Path) -> tuple[str, ...]:
+    """The members `repo_root` declares, asserting the resolution itself succeeded."""
+    resolved = repository_authority_members(repo_root=repo_root)
+    assert is_successful(resolved), f"the authority resolution must succeed; got {resolved}"
+    return unsafe_perform_io(resolved.unwrap())
 
 
 # --- the recipe, against stub `uv` and `just` ------------------------------
@@ -488,3 +545,90 @@ def test_an_opted_in_push_is_refused_when_no_verdict_arrives(
 
     assert code == 1
     assert not [line for line in invoked if line.startswith("just ")]
+
+
+# --- scenario: an authority-reading member runs on the pushing host -------
+
+
+def test_an_authority_reading_member_runs_on_the_pushing_host_and_joins_the_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario: an authority-reading member of an opted-in push runs on the pushing host.
+
+    The Given adds one thing to the eligible-host scenario above: a member of
+    the repository's check set that declares it reads an AUTHORIZATION held
+    outside the tree. `check-widget-approval` carries that declaration as the
+    `# authority:` annotation on its `check-targets.txt` line; `check-widget-lint`
+    beside it carries none.
+
+    FOUR THENS, each asserted where it happens.
+
+    The gate Job MUST NOT run that member. Asserted at the place the Job's
+    member list is decided — `scripts/just/check.sh`, which resolves the
+    declaring members and adds them to the run's skip, and does so only under
+    the gate pod's own `LIVESPEC_GATE_CONTEXT` signal. A consumer-tier arm
+    cannot start a pod, and it does not have to: the skip is computed from the
+    committed declarations by shipped code, so what the pod will not run is
+    decidable here from the same two files the pod reads.
+
+    The pre-push gate MUST run that member on the pushing host against the
+    committed tree at `HEAD`. Asserted as an INVOCATION through the gate
+    client's own command seam: `just check-widget-approval`, in the pushing
+    worktree, on a push whose renderer was told that same tree's hash. The
+    member that declares nothing is NOT invoked here — it stays in the Job,
+    which is the fourth Definition-of-Done line and the direction a careless
+    implementation drains: moving members onto the pushing host one at a time
+    until the cluster gates nothing.
+
+    The push MUST complete only when BOTH are green. Two pushes gate the same
+    tree on the same green Job, the submit and the terminal poll identical in
+    each; the one whose member answered zero completes with its token written,
+    and the one whose member answered three is REFUSED on a green Job.
+
+    And that refusal MUST name the member and say it ran on the pushing host.
+    Both, because a push refused by a gate that passed explains nothing on its
+    own: the operator needs a member to re-run and needs to be told the Job is
+    not where to look. The measured defect this scenario closes is its mirror
+    image — on 2026-10-19 gate Job gate-livespec-dev-tooling-54f19942138d
+    refused an authorized tree with `check-no-workflow-edits: the ledger-held
+    authorization could not be evaluated -- FAILING CLOSED`, because the pod
+    holds no `bd` and no ledger credential.
+    """
+    repo = tmp_path / "widget"
+    repo.mkdir()
+    _a_consumer_declaring_one_authority_member(repo_root=repo)
+    _ = _an_eligible_host(tmp_path=tmp_path, monkeypatch=monkeypatch)
+    gate_job_block = _gate_job_member_block()
+
+    assert "livespec_dev_tooling.check_authority members" in gate_job_block
+    assert "effective_skip" in gate_job_block
+    assert _resolved_authority_members(repo_root=repo) == (_DECLARING_MEMBER,)
+
+    completing = _CannedCluster()
+    refusing = _CannedCluster(
+        member_result=Success(
+            GateCommandResult(returncode=3, stdout="", stderr="no approval label on the work item")
+        )
+    )
+    completed = run_delegated_gate(
+        repo_root=repo, renderer=_RENDERER, runner=completing, sleeper=_no_sleep, emit=_nothing
+    )
+    refused = run_delegated_gate(
+        repo_root=repo, renderer=_RENDERER, runner=refusing, sleeper=_no_sleep, emit=_nothing
+    )
+
+    assert completing.issued(needle=_DECLARING_MEMBER) == [("just", _DECLARING_MEMBER)]
+    assert completing.issued(needle=_UNDECLARED_MEMBER) == []
+    member_at = completing.argvs.index(("just", _DECLARING_MEMBER))
+    assert completing.cwds[member_at] == repo
+    assert _TREE in completing.issued(needle="--tree-hash")[0]
+
+    assert completed.state == GATE_PASSED
+    assert completed.token_written is True
+    assert completed.refuses_push is False
+
+    assert len(refusing.issued(needle="create")) == 1
+    assert refused.refuses_push is True
+    assert _DECLARING_MEMBER in refused.detail
+    assert "on the pushing host" in refused.detail
+    assert "no approval label on the work item" in refused.detail
