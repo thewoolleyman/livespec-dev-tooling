@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.121.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.121.2...v1.121.3) (2026-10-22)
+
+
+### Bug Fixes
+
+* worktree-reap never removes a live or factory-owned worktree ([d014034](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d0140348424d6761f3e008e261e62f6cefb2d9d1))
+
 ## [1.121.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.121.1...v1.121.2) (2026-10-21)
 
 
