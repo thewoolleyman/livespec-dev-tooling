@@ -56,7 +56,7 @@ spec:
           resources:
             - name: "ci-runner.io/churn-slot"
               # C = 44 (2026-09-11, plan k3s-on-gmktec-for-vps-usage / epic livespec-sab5gn R5, resolving livespec-dev-tooling-xa6o): churn-slot capacity is now PER-NODE and the Kueue cohort quota is cluster-wide, so the ten nominalQuotas sum to the TWO-NODE total poweredge 32 + gmktec 12 = 44; W = 516; poweredge stays at its 2026-09-06 soak-measured 32, gmktec is the derived first value 12 (plan research/001 §3.5); see DERIVATION.md "The derivation at C = 44 -- the two-node pool (2026-09-11)".
-              nominalQuota: 5
+              nominalQuota: 1
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue

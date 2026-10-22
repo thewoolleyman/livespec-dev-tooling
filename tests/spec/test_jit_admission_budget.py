@@ -70,9 +70,7 @@ _CEILING_FLOOR = 6
 # in DERIVATION.md "Recorded exceptions to the rule", carrying the measurement
 # that justifies it and the acceptance check that confirms or reverts it. A
 # ceiling matches its row here or the bound above, never anything else.
-_RECORDED_CEILING_EXCEPTIONS = {
-    "livespec-orchestrator-beads-fabro-cq": 12,
-}
+_RECORDED_CEILING_EXCEPTIONS: dict[str, int] = {}
 
 # The physical invariant, stated in the section itself.
 _PHYSICAL_CAP = 482
