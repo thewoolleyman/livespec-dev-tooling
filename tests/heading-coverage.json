@@ -822,5 +822,21 @@
     "test": "tests.consumer.test_instruction_only_adopter_scenario.test_a_released_instruction_only_adopter_is_held_to_plugin_currency_and_to_no_other_row",
     "reason": "Consumer-tier: the scenario driven over the shipped admin-lane path from the manifest TEXT — the reader, the per-class obligation table, the injected `GhRunner` seam, the member leg and the posture-gated adopter leg — with the released adopter's tree carrying ONLY `.claude/settings.json`, so the toolchain-less Given is load-bearing: any row but the currency row that reached it would find an absent justfile, mise configuration and `.livespec.jsonc`. \"No other row evaluated for it\" is asserted on two independent surfaces, the gh reads a recording runner saw and the two legs' own accounting, and a nonconformant-settings control arm in the same module keeps the pass earned rather than vacuous. The posture-`none` arm and the invalid-profile arm are its siblings there (livespec-dev-tooling-4ldzr5).",
     "work_item": "livespec-dev-tooling-4ldzr5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: worktree-reap leaves a worktree that a live process holds",
+    "test": "TODO",
+    "reason": "Integration-tier (the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-7i2z5j. Its implementation owes the test: a fixture repository with the canonical worktree-discipline pack, a merged clean secondary worktree in the stated condition, and `just worktree-reap --execute --force` asserting the SKIP line and that the worktree remains on disk.",
+    "work_item": "livespec-dev-tooling-7i2z5j"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: worktree-reap never removes a factory-owned source worktree",
+    "test": "TODO",
+    "reason": "Integration-tier (the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-7i2z5j. Its implementation owes the test: a fixture repository with the canonical worktree-discipline pack, a merged clean secondary worktree in the stated condition, and `just worktree-reap --execute --force` asserting the SKIP line and that the worktree remains on disk.",
+    "work_item": "livespec-dev-tooling-7i2z5j"
   }
 ]
