@@ -981,5 +981,21 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-reslr6 owns it.",
     "work_item": "livespec-dev-tooling-reslr6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-epcoja owns it.",
+    "work_item": "livespec-dev-tooling-epcoja"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-epcoja owns it.",
+    "work_item": "livespec-dev-tooling-epcoja"
   }
 ]
