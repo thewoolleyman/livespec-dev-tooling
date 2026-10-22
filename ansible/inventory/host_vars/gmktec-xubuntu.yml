@@ -159,6 +159,15 @@ fabro_server_instances:
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
         cpu: 4
         memory: 8GB
+      # Serves repositories whose workflow pins the python-rust-agent layer:
+      # livespec-console-beads-fabro, which builds Rust (R622). Its tag FOLLOWS
+      # THAT repository's pin (.fabro/workflows/implement-work-item/workflow.toml,
+      # python-rust-agent-v1.126.0), not the orchestrator's; bump the two
+      # together. Coordinator ruling R668 (2026-10-22).
+      - id: livespec-ci-rust
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.126.0
+        cpu: 4
+        memory: 8GB
     # Created in the instance's vault only when it lacks the name, never
     # overwritten (roles/fabro_server/tasks/vault.yml). The App key comes from
     # the control node's credential wrapper. OPENAI_API_KEY is NOT a key: an
