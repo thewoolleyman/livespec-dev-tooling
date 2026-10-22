@@ -202,4 +202,4 @@ template:
 # Recompute whenever C or this repo's quota changes. See ../kueue/DERIVATION.md
 # "Bounding maxRunners to the quota (2026-09-06)".
 minRunners: 0
-maxRunners: 12
+maxRunners: 6

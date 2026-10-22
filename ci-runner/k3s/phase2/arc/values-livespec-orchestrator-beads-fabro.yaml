@@ -220,4 +220,4 @@ template:
 # are in ../kueue/DERIVATION.md "Recorded exceptions to the rule"; revert to 6 if
 # the acceptance check fails.
 minRunners: 0
-maxRunners: 12
+maxRunners: 58
