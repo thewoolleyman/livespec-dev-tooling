@@ -44,14 +44,30 @@ class Terminal:
 
 
 def unreadable(*, step: str, argv: Sequence[str], detail: str) -> GateStepFailed:
-    """Represent a command that ran but returned an unusable answer."""
+    """One shape for a step whose COMMAND ran and whose ANSWER was unusable.
+
+    `returncode=None` is the distinction this exists to keep, and it is why its
+    callers share it rather than each spelling a refusal: the command did not
+    fail, so there is no exit code to report — what failed is the read. Both
+    reach `GATE_NO_VERDICT` and refuse the push, and both must, but only one of
+    them is a cluster saying no.
+    """
     return GateStepFailed(step=step, argv=tuple(argv), returncode=None, detail=detail)
 
 
 def created_job_name(
     *, argv: Sequence[str], payload: str, step: str
 ) -> Result[str, GateStepFailed]:
-    """Read the API server-assigned Job name from a create response."""
+    """The name the API server ASSIGNED this Job, read off the submit's answer.
+
+    A FAILURE, never a fallback. The manifest carries `generateName` rather than
+    `name`, so there is no name to fall back TO: the renderer's old derived name
+    is exactly the value that made a re-gate impossible, and reinstating it here
+    as a guess would put this run back to waiting on another run's Job — or on
+    nothing at all. A submit whose answer cannot be read is therefore a step that
+    did not complete, which reaches `GATE_NO_VERDICT` and refuses the push, and
+    that is sound: the Job may well be running, but nothing left can find it.
+    """
     try:
         parsed = cast("_JobPayload", json.loads(payload))
     except json.JSONDecodeError as error:
