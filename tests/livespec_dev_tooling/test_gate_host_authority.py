@@ -38,6 +38,7 @@ from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandOutcome,
     GateCommandResult,
 )
+from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED
 
 __all__: list[str] = []
 
@@ -254,3 +255,46 @@ def test_a_declaration_the_pushing_host_cannot_read_is_recorded_against_its_memb
     assert [(run.member, run.returncode) for run in recorded] == [(_DECLARING, None)]
     assert "ledger" in recorded[0].detail
     assert host.issued(needle="just") == []
+
+
+def test_a_delegated_push_completes_only_when_the_job_and_every_host_member_are_green(
+    *, tmp_path: Path
+) -> None:
+    """Scenario Then: the push completes only when the Job is green AND that member passes.
+
+    A CONJUNCTION, asserted in the one arm where the two halves disagree.
+    Both pushes below gate the same tree on the same green Job — the submit
+    happened and the poll reached `Complete` in each — so the only difference is
+    what the pushing host's authority-declaring member answered. The first
+    completes; the second is REFUSED on a green Job.
+
+    That second arm is the whole point of the exception. Before it, the member
+    ran where it could not read its authorization and failed there, so a correct
+    tree was refused; the repair must not land on the opposite error of letting
+    a tree through because the one host that CAN read the authorization was
+    never asked. The Job's verdict authorises nothing on its own.
+    """
+    repo = tmp_path / "widget"
+    repo.mkdir()
+    _a_delegating_repo(repo_root=repo, inventory=(f"{_DECLARING}  # authority: ledger",))
+    green = _CannedHost()
+    refusing = _CannedHost(
+        member_result=Success(
+            GateCommandResult(returncode=3, stdout="", stderr="no approval label on the work item")
+        )
+    )
+
+    completed = run_delegated_gate(
+        repo_root=repo, renderer=_RENDERER, runner=green, sleeper=_no_sleep, emit=_nothing
+    )
+    refused = run_delegated_gate(
+        repo_root=repo, renderer=_RENDERER, runner=refusing, sleeper=_no_sleep, emit=_nothing
+    )
+
+    assert completed.state == GATE_PASSED
+    assert completed.token_written is True
+    assert completed.refuses_push is False
+
+    assert len(refusing.issued(needle="create")) == 1
+    assert refusing.issued(needle=_DECLARING) == [("just", _DECLARING)]
+    assert refused.refuses_push is True
