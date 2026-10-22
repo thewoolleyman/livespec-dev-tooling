@@ -341,3 +341,60 @@ def test_a_member_that_fails_on_the_pushing_host_is_refused_by_a_line_that_names
     assert "on the pushing host" in refused.detail
     assert _TREE in refused.detail
     assert "no approval label on the work item" in refused.detail
+
+
+def test_a_member_the_pushing_host_cannot_evaluate_is_refused_as_that_members_failure(
+    *, tmp_path: Path
+) -> None:
+    """Scenario Then: a member that cannot be evaluated here is that member's own failure.
+
+    THE ONE DIRECTION THAT MUST NEVER INVERT. The pushing host is the only host
+    holding the authorization this member reads — that is the entire reason the
+    member is here rather than in the Job — so a host that cannot evaluate it
+    has produced no evidence at all, and the contract says in as many words that
+    such a push "refuses the push as that member's failure; it never treats an
+    unevaluated authorization as granted". Read the other way, an absent `just`
+    or a typo'd declaration would complete a push whose maintainer approval
+    nobody ever looked at, and nothing would say so.
+
+    AND IT MUST NOT CLAIM THE MEMBER RAN. The sibling arm's line says the member
+    FAILED on the pushing host, which is the right sentence for a member that
+    ran and was refused and the wrong one for a member that never started: an
+    operator told its authorization check failed will go looking at the work
+    item, when the fault is that `just` is not on this host's PATH. Both arms
+    refuse; only the words tell the operator where to go.
+
+    BOTH NON-ANSWERS ARRIVE THE SAME WAY, and that is deliberate. A member that
+    could not be RUN and a DECLARATION that could not be READ differ in where
+    the repair goes and not at all in what they license, so each is refused as
+    the named member's own failure.
+    """
+    repo = tmp_path / "widget"
+    repo.mkdir()
+    _a_delegating_repo(repo_root=repo, inventory=(f"{_DECLARING}  # authority: ledger",))
+    unrunnable = _CannedHost(
+        member_result=Failure(
+            GateCommandNotRun(argv=("just", _DECLARING), detail="just not on PATH")
+        )
+    )
+
+    refused = run_delegated_gate(
+        repo_root=repo, renderer=_RENDERER, runner=unrunnable, sleeper=_no_sleep, emit=_nothing
+    )
+
+    assert refused.state == GATE_HOST_AUTHORITY_REFUSED
+    assert refused.refuses_push is True
+    assert _DECLARING in refused.detail
+    assert "could not be evaluated on the pushing host" in refused.detail
+    assert "that member's own failure" in refused.detail
+    assert "just not on PATH" in refused.detail
+    assert "failed on the pushing host" not in refused.detail
+
+    _a_delegating_repo(repo_root=repo, inventory=(f"{_DECLARING}  # authority: beads",))
+    unreadable = run_delegated_gate(
+        repo_root=repo, renderer=_RENDERER, runner=_CannedHost(), sleeper=_no_sleep, emit=_nothing
+    )
+
+    assert unreadable.refuses_push is True
+    assert "could not be evaluated on the pushing host" in unreadable.detail
+    assert _DECLARING in unreadable.detail
