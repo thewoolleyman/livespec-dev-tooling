@@ -858,8 +858,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an opted-in push whose consumer names a private cross-repository sibling clones it with a read-only installation token",
-    "test": "TODO",
-    "reason": "Consumer-tier (integration-tier or above, the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-7kvh2d (coordinator R543). Its implementation owes the test, through the delegated-gate renderer and GateCommandRunner seams: a consumer naming a private sibling gets a clone authenticated by a minted contents:read token scoped to that sibling, and the rendered manifest never contains the token.",
+    "test": "tests.consumer.test_delegated_gate_declared_recipe_scenarios.test_a_private_sibling_uses_a_per_run_secret_without_putting_its_token_in_the_manifest",
+    "reason": "Consumer-tier (integration-tier or above, the scenario-tier floor): the REAL renderer is run as a subprocess against a fixture consumer whose `.livespec.jsonc` registers two siblings, one of them named private, and the rendered manifest is asserted to clone the private one through an `http.extraHeader` read out of a per-run Secret mount, to clone the public one anonymously with no credential at all, and to contain the Secret's NAME and no credential material. The host half of the scenario — that the pushing host mints the token, that only the private sibling's name and the Secret's name reach the render argv, that the Secret is owner-referenced to the Job so nothing long-lived holds the token, and that a host which cannot mint refuses the push as a missing verdict — is carried by `tests/livespec_dev_tooling/test_gate_private_sibling_token.py`, and the rendered shell is additionally driven end to end by `render-gate-job-exit-tests.sh` section Q. A live mint and an executed gate Job are host-captured by the work-item: neither exists in any sandbox (livespec-dev-tooling-7kvh2d).",
     "work_item": "livespec-dev-tooling-7kvh2d"
   }
 ]

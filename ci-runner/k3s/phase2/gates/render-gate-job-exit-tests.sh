@@ -726,6 +726,90 @@ else
   fail "the gate refused a tree whose siblings cloned cleanly: $(cat "${SCRATCH}/gate.err")"
 fi
 
+echo "== Q. a PRIVATE sibling clones with a mounted token the manifest never carries =="
+# The delegated pre-push gate's cross-repository siblings rule in
+# SPECIFICATION/contracts.md: a private sibling is cloned with a GitHub App
+# installation token the pushing
+# host mints, and that token "MUST NOT appear in the rendered manifest's text".
+# The renderer is told WHICH siblings are private and the NAME of the per-run
+# Secret holding the token, and that is ALL it is told — so these arms assert
+# both halves: the mount and authenticated clone are rendered, and no credential
+# material is anywhere in the output.
+#
+# The Secret name used here is deliberately token-SHAPED. If the renderer ever
+# started accepting a token instead of a name, the "no credential in the
+# manifest" arm below would have to catch it, and a bland fixture name would not
+# distinguish the two cases (work-item livespec-dev-tooling-7kvh2d).
+private_out="${SCRATCH}/private-sibling.yaml"
+private_secret="gate-sibling-token-9f2c1b4a7d6e"
+private_mount="/run/secrets/gate-private-siblings"
+if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
+     --check-suite verify --private-sibling widget-core \
+     --private-sibling-secret "${private_secret}" > "${private_out}" 2>"${SCRATCH}/private.err"; then
+  private_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-core'" | head -1)"
+  public_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-docs'" | head -1)"
+  if ! printf '%s' "${private_clone}" | grep -qF "http.extraHeader"; then
+    fail "the private sibling's clone carries no authorization: ${private_clone}"
+  elif ! printf '%s' "${private_clone}" | grep -qF "cat ${private_mount}/token"; then
+    fail "the private clone does not read its token from the mount: ${private_clone}"
+  elif printf '%s' "${public_clone}" | grep -qF "http.extraHeader"; then
+    fail "a PUBLIC sibling was given a credential: ${public_clone}"
+  elif ! grep -qF "mountPath: ${private_mount}" "${private_out}"; then
+    fail "the token Secret is not mounted into the gate container"
+  elif ! grep -qF "secretName: ${private_secret}" "${private_out}"; then
+    fail "the manifest declares no volume for the per-run token Secret"
+  elif [ "$(grep -cF "${private_secret}" "${private_out}")" != "3" ]; then
+    fail "the Secret name is not named exactly three times (mount, volume, volume name)"
+  else
+    pass "a private sibling mounts the per-run Secret and clones through it; a public one does not"
+  fi
+  # The point of the whole design: what the API server STORES holds no
+  # credential. `ghs_`/`ghp_`/`github_pat_` are GitHub's own token prefixes, and
+  # `Bearer <literal>` would be an interpolated header rather than the deferred
+  # `$(cat ...)` read the renderer emits.
+  if grep -qE 'gh[sprou]_|github_pat_|Authorization: Bearer [A-Za-z0-9]' "${private_out}"; then
+    fail "credential-shaped text is in the rendered manifest: $(grep -nE 'gh[sprou]_|github_pat_|Authorization: Bearer [A-Za-z0-9]' "${private_out}")"
+  else
+    pass "the rendered manifest carries no token — only the Secret's name and a deferred read"
+  fi
+else
+  fail "renderer errored on a repository with a private sibling: $(cat "${SCRATCH}/private.err")"
+fi
+
+# Two refusals, because each would otherwise render a Job that cannot start: a
+# mount with no Secret name, and a name the API server will not accept.
+if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
+     --private-sibling widget-core > /dev/null 2>"${SCRATCH}/nosecret.err"; then
+  fail "a private sibling was rendered with no Secret to read its token from"
+elif grep -qF 'requires --private-sibling-secret' "${SCRATCH}/nosecret.err"; then
+  pass "--private-sibling without --private-sibling-secret is refused at render time"
+else
+  fail "refused without naming the cause: $(cat "${SCRATCH}/nosecret.err")"
+fi
+
+if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
+     --private-sibling widget-core --private-sibling-secret 'Gate Token!' \
+     > /dev/null 2>"${SCRATCH}/badsecret.err"; then
+  fail "a Secret name Kubernetes cannot accept was reproduced into a manifest"
+elif grep -qF 'Kubernetes resource name' "${SCRATCH}/badsecret.err"; then
+  pass "a Secret name that is not a lowercase resource name is refused, naming it"
+else
+  fail "refused without naming the cause: $(cat "${SCRATCH}/badsecret.err")"
+fi
+
+# The clone is still THE VERDICT for a private sibling: an authenticated clone
+# that fails must be red and name the sibling, exactly as the anonymous one is.
+# Without this arm the authorization could be added and the refusal lost.
+if run_gate_script "${private_out}" "verify" "fail-the-clones"; then
+  fail "a gate whose PRIVATE sibling clone FAILED reported a GREEN verdict"
+elif ! grep -qF "cannot clone cross-repo sibling 'widget-core'" "${SCRATCH}/gate.err"; then
+  fail "red, but the message does not name the private sibling: $(cat "${SCRATCH}/gate.err")"
+elif grep -qE 'gh[sprou]_|github_pat_' "${SCRATCH}/gate.err"; then
+  fail "the refusal message leaked credential-shaped text: $(cat "${SCRATCH}/gate.err")"
+else
+  pass "a private sibling that will not clone is red, names it, and leaks no credential"
+fi
+
 echo
 if [ "${failures}" -eq 0 ]; then
   echo "ALL TESTS PASSED"

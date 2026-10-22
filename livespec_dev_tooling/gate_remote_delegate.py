@@ -108,6 +108,7 @@ from livespec_dev_tooling.gate_outcome_telemetry import (
     GATE_OUTCOME_PASSED,
     emit_gate_outcome,
 )
+from livespec_dev_tooling.gate_private_sibling_token import private_sibling_credential
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
@@ -137,6 +138,7 @@ from returns.result import Failure, Result, Success  # noqa: E402  — same.
 __all__: list[str] = [
     "GATED_LOCALLY",
     "GATE_MIRROR_ROOT",
+    "GATE_PRIVATE_SIBLING_TOKEN_HELPER",
     "GATE_RENDERER_IN_REPO",
     "GATE_RENDERER_PACKAGED",
     "delegated_gate_enabled",
@@ -182,6 +184,16 @@ GATE_MIRROR_ROOT = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror
 # through the file the declaration ships.
 GATE_RENDERER_IN_REPO = Path("ci-runner/k3s/phase2/gates/render-gate-job.sh")
 GATE_RENDERER_PACKAGED = Path(__file__).resolve().parent / "gates" / "render-gate-job.sh"
+# THE WRAPPER THAT IS THE ONLY REASON THE TOKEN MINTER CAN SEE A CREDENTIAL AT
+# ALL. The fleet's GitHub App id and private key are PROJECTED from 1Password by
+# `with-livespec-env.sh`, which SCRUBS the caller's environment — so the minter
+# cannot be handed those values and must be invoked THROUGH the wrapper, which
+# is why the wrapper rather than the minter is the program this client names.
+# It lives HERE rather than beside the minting code because it is a fact about
+# the HOST a push runs on, which is this module's subject; a test varies it
+# without a seam, exactly as it varies the renderer paths above, and a host that
+# does not carry it fails at the step with the argv in the report.
+GATE_PRIVATE_SIBLING_TOKEN_HELPER = Path("/usr/local/bin/with-livespec-env.sh")
 
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
@@ -286,7 +298,20 @@ def gate_remote_request(
     suite = declared_gate_check_suite(repo_root=repo_root)
     if isinstance(suite, Failure):
         return Failure(suite.failure())
+    credential = private_sibling_credential(
+        repo_root=repo_root, runner=runner, helper=GATE_PRIVATE_SIBLING_TOKEN_HELPER
+    )
+    if isinstance(credential, Failure):
+        return Failure(credential.failure())
+    private_siblings, private_sibling_token = credential.unwrap()
     gate_ref = per_run_gate_ref(tree_hash=tree_hash)
+    # THE SECRET'S NAME IS DERIVED FROM THE REF'S NONCE, so it is per-RUN rather
+    # than per-tree: two janitors gating one master tip concurrently must not
+    # name one Secret, or whichever created it second would be refused
+    # `AlreadyExists` and the first run's token would clone the second's
+    # siblings. It carries a name and no token — the manifest is the artifact an
+    # API server and a `kubectl get job -o yaml` expose.
+    private_sibling_secret = f"gate-sibling-token-{gate_ref.rsplit('-', maxsplit=1)[-1]}"
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -297,6 +322,8 @@ def gate_remote_request(
         repo,
         "--gate-ref",
         gate_ref,
+        *[flag for sibling in private_siblings for flag in ("--private-sibling", sibling)],
+        *(["--private-sibling-secret", private_sibling_secret] if private_siblings else []),
         *check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(
@@ -310,6 +337,8 @@ def gate_remote_request(
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
             gate_ref=gate_ref,
+            private_sibling_token=private_sibling_token,
+            private_sibling_secret=private_sibling_secret if private_siblings else "",
         )
     )
 
