@@ -47,5 +47,19 @@
     "heading": "## Scenario: an authority-reading member of an opted-in push runs on the pushing host and joins the delegated verdict",
     "work_item": "livespec-dev-tooling-gpttcc",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: worktree-reap leaves a worktree that a live process holds",
+    "work_item": "livespec-dev-tooling-7i2z5j",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: worktree-reap never removes a factory-owned source worktree",
+    "work_item": "livespec-dev-tooling-7i2z5j",
+    "first_seen": "2026-10-22"
   }
 ]

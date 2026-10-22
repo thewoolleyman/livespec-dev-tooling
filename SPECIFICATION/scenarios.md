@@ -945,3 +945,27 @@ When the manifest is parsed
 Then the parse MUST fail with the `malformed-adopter` reason
 
 Examples of <invalid>: `["instruction-only", "baseline"]`; `["instruction-only", "orchestrator-plugin"]`; `["instructions-only"]`; the empty list
+
+## Scenario: worktree-reap leaves a worktree that a live process holds
+
+Given a repository with the canonical worktree-discipline pack installed
+
+And a clean secondary worktree whose branch is merged into the base and which is the working directory of a live process
+
+When `just worktree-reap --execute --force` runs
+
+Then that worktree MUST be reported as SKIP with a reason naming the live process's pid
+
+And that worktree MUST remain on disk
+
+## Scenario: worktree-reap never removes a factory-owned source worktree
+
+Given a repository with the canonical worktree-discipline pack installed
+
+And a clean secondary worktree named `fabro-source-<id>` whose head is merged into the base and which no live process holds
+
+When `just worktree-reap --execute --force` runs
+
+Then that worktree MUST be reported as SKIP with a reason saying it is factory-owned
+
+And that worktree MUST remain on disk
