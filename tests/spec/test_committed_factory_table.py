@@ -15,23 +15,24 @@ resolves fine and never consults the file it was supposed to.
 So the two properties asserted here are properties of the committed
 `.livespec.jsonc` text, read the way the Dispatcher reads it:
 
-- **One registry-backed entry, named for the instance it addresses.** The table
-  declares exactly one factory, `legacy`, which declares `"registry": true` and
-  carries NO `server`. `"registry": true` with an address beside it is the shape
+- **Registry-backed entries, each named for the instance it addresses.** The
+  table declares exactly `legacy` and `petri`, and each declares
+  `"registry": true` and carries NO `server`. `"registry": true` with an address beside it is the shape
   that fails silently in the direction of the defect: the Dispatcher has an
   address to use, so routing works, the registry is never read, and the machine
   stays bound in this file. Asserting the ABSENCE of `server` is therefore
   load-bearing in a way asserting the presence of the flag is not.
 - **The default resolves through the registry too.** `default_factory` is
-  `legacy`, so a dispatch that names no factory takes the registry-backed entry
+  `petri` since the cutover (coordinator ruling R668, mirroring
+  livespec-orchestrator-beads-fabro bd-ib-iud52v), so a dispatch that names no factory takes the registry-backed entry
   rather than a second, address-carrying one. It is also the fallback a recorded
   item pin naming a retired factory lands on, which is why the table may not keep
   an address-carrying entry around for those pins to resolve against.
 
-`legacy` names the INSTANCE and not its role, per the same section's "A factory
+`legacy` and `petri` name INSTANCES and not roles, per the same section's "A factory
 name SHOULD name the Fabro server instance it addresses and SHOULD stay the same
 for that instance's whole life", so this repository's default survives a move of
-that instance between machines with no edit here.
+its instance between machines with no edit here.
 """
 
 from __future__ import annotations
@@ -49,9 +50,12 @@ _LIVESPEC_JSONC = _REPO_ROOT / ".livespec.jsonc"
 # The implementation-plugin block the `dispatcher` settings live under.
 _IMPL_PLUGIN = "livespec-orchestrator-beads-fabro"
 
-# The one factory name this repository dispatches to, resolved by name from the
+# The factory names this repository declares, each resolved by name from the
 # control node's rendered registry rather than from an address committed here.
-_REGISTRY_FACTORY = "legacy"
+_REGISTRY_FACTORIES = ["legacy", "petri"]
+
+# The factory a dispatch naming none takes.
+_DEFAULT_FACTORY = "petri"
 
 
 def _dispatcher_block() -> dict[str, object]:
@@ -63,32 +67,32 @@ def _dispatcher_block() -> dict[str, object]:
     return document[_IMPL_PLUGIN]["dispatcher"]
 
 
-def test_the_committed_factory_table_is_one_registry_backed_entry() -> None:
-    """`dispatcher.factories` is exactly `legacy`, registry-backed, with no address."""
+def test_every_committed_factory_entry_is_registry_backed_with_no_address() -> None:
+    """`dispatcher.factories` is exactly `legacy` and `petri`, each registry-backed, with no address."""
     factories = cast("dict[str, dict[str, object]]", _dispatcher_block()["factories"])
-    assert sorted(factories) == [_REGISTRY_FACTORY], (
-        f"`dispatcher.factories` MUST declare exactly one entry, `{_REGISTRY_FACTORY}`, so that "
-        f"no committed factory entry names a machine "
-        f'(`SPECIFICATION/non-functional-requirements.md` §"Fabro factory registry", '
-        f'"Machines are bound only in the inventory"); declared={sorted(factories)}'
+    assert sorted(factories) == _REGISTRY_FACTORIES, (
+        f"`dispatcher.factories` MUST declare exactly {_REGISTRY_FACTORIES}; "
+        f"declared={sorted(factories)}"
     )
-    entry = factories[_REGISTRY_FACTORY]
-    assert entry.get("registry") is True, (
-        f'the `{_REGISTRY_FACTORY}` entry MUST declare `"registry": true` so the Dispatcher '
-        f"resolves its address by name from `/etc/livespec/fabro-factories.json`; entry={entry}"
-    )
-    assert "server" not in entry, (
-        f"the `{_REGISTRY_FACTORY}` entry MUST carry no `server`: an address beside "
-        f'`"registry": true` leaves the machine bound in this file and the registry unread, '
-        f"with routing working either way; entry={entry}"
-    )
+    for name, entry in factories.items():
+        assert entry.get("registry") is True, (
+            f'the `{name}` entry MUST declare `"registry": true` so the Dispatcher resolves '
+            f"its address by name from `/etc/livespec/fabro-factories.json`; entry={entry}"
+        )
+        assert "server" not in entry, (
+            f"the `{name}` entry MUST carry no `server`, so that no committed factory entry "
+            f'names a machine (`SPECIFICATION/non-functional-requirements.md` §"Fabro factory '
+            f'registry", "Machines are bound only in the inventory"): an address beside '
+            f'`"registry": true` leaves the machine bound in this file and the registry unread, '
+            f"with routing working either way; entry={entry}"
+        )
 
 
 def test_the_committed_default_factory_is_the_registry_backed_entry() -> None:
-    """`dispatcher.default_factory` names the registry-backed entry."""
+    """`dispatcher.default_factory` names a registry-backed entry, `petri`."""
     default_factory = _dispatcher_block()["default_factory"]
-    assert default_factory == _REGISTRY_FACTORY, (
-        f"`dispatcher.default_factory` MUST be `{_REGISTRY_FACTORY}`, the registry-backed entry, "
+    assert default_factory == _DEFAULT_FACTORY, (
+        f"`dispatcher.default_factory` MUST be `{_DEFAULT_FACTORY}`, a registry-backed entry, "
         f"so a dispatch naming no factory — and a recorded item pin naming a retired factory, "
         f"which falls back to the default — resolves through the control node's registry; "
         f"declared={default_factory!r}"

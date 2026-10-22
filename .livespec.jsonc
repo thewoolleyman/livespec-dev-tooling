@@ -476,14 +476,32 @@
       // The retired `vps` entry is gone rather than carried forward, and `hp`
       // is not kept as an alias: a recorded item pin naming either falls back
       // to `default_factory` under the ratified recorded-pin fallback, so
-      // neither needs an entry to resolve against. `petri` is deliberately
-      // absent — onboarding it here needs this repository's own bin and
-      // secret-channel settings and is a separate decision
-      // (work-item livespec-dev-tooling-knd3s7).
-      "default_factory": "legacy",
+      // neither needs an entry to resolve against.
+      //
+      // `petri` — the gmktec-xubuntu :32276 Petri-era instance, also resolved
+      // by name through the registry — is onboarded with the bin and
+      // secret-channel settings that work-item livespec-dev-tooling-knd3s7
+      // left as a separate decision, mirroring livespec-orchestrator-beads-fabro
+      // (bd-ib-iud52v, PR #3461). `bin` pins the Petri-era client the engine
+      // needs, which takes precedence over the global `fabro_bin`;
+      // `secret_channel: native_secrets` hands credentials through that
+      // server's native secrets; and `environment: livespec-ci` selects the
+      // server-managed environment that supplies the sandbox image on petri.
+      // `default_factory` moved from `legacy` to `petri` under coordinator
+      // ruling R668 (2026-10-22), the maintainer-directed Fabro cutover.
+      // `legacy` stays declared, so an item already dispatched keeps its
+      // recorded pin and in-flight work finishes on hp; rollback is reverting
+      // this change.
+      "default_factory": "petri",
       "factories": {
         "legacy": {
           "registry": true
+        },
+        "petri": {
+          "registry": true,
+          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
+          "secret_channel": "native_secrets",
+          "environment": "livespec-ci"
         }
       }
     }
