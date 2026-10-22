@@ -22,12 +22,38 @@
 # by the time these objects are applied.
 #
 # LEAST PRIVILEGE: create, get, list and watch on `jobs` (batch) and `pods` (core),
-# plus get on `pods/log`, in namespace `gates` ONLY. Deliberately absent, and
-# asserted absent by gates-credential-exit-tests.sh: anything cluster-scoped, any
-# verb on `secrets`, and any `delete` — a finished Job is reaped by its own
+# plus get on `pods/log`, plus CREATE AND NOTHING ELSE on `secrets`, in namespace
+# `gates` ONLY. Deliberately absent, and asserted absent by
+# gates-credential-exit-tests.sh: anything cluster-scoped, any `delete`, and any
+# verb on `secrets` other than `create` — a finished Job is reaped by its own
 # ttlSecondsAfterFinished via the Job controller's authority, never by this
 # credential. `pods/log` is the gate's whole output channel, so `get` on it is the
 # one subresource grant.
+#
+# WHY `create` ON `secrets`, AND WHY THAT ALONE (work-item
+# livespec-dev-tooling-7kvh2d). A delegated push whose consumer's
+# `.livespec.jsonc` `cross_repo_targets` names a PRIVATE sibling has to get a
+# read-only GitHub App installation token — minted on the pushing host — into
+# that one gate Job's clone WITHOUT the token appearing in the rendered
+# manifest's text, which the API server stores and any `kubectl get job -o yaml`
+# hands back. The client therefore creates a per-run Secret holding the token and
+# OWNER-REFERENCES it to the Job it was minted for.
+#
+# THAT OWNERREFERENCE IS WHY ONE VERB IS ENOUGH. Kubernetes garbage collection
+# removes the Secret when its owning Job goes, so nothing has to delete it and
+# this credential gains no `delete` — the same reasoning that leaves Job reaping
+# to `ttlSecondsAfterFinished`. `get`, `list` and `watch` are likewise absent:
+# the client WRITES a token and never reads one back, and a credential that could
+# read Secrets in this namespace could read every other gate run's token.
+# `update` and `patch` are absent because the Secret is per run and is never
+# edited — a second gate of the same tree gets its own name, keyed on the per-run
+# gate ref's nonce.
+#
+# THE TOKEN IS NOT A STANDING CREDENTIAL, AND THIS FILE DECLARES NO SECRET FOR
+# IT. The only Secret declared below is the ServiceAccount token this manifest
+# has always carried; the per-run token Secret is created at submit time by the
+# gate client, named per run, and owned by its Job. Neither this file nor the
+# cluster holds a GitHub credential between runs.
 #
 # APPLIED ON EVERY BOOT by the reconstruct-on-boot converge
 # (../reconstruct/converge-ci-stack.sh, step 10b), which applies this manifest and
@@ -70,6 +96,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
