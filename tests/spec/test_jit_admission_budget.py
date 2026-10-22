@@ -244,6 +244,22 @@ def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
     assert "deducts one from `livespec-orchestrator-beads-fabro` (30 → 29)" in derivation
 
 
+def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None:
+    """The former 12-runner exception cannot outlive a rule value at or above 12."""
+    orchestrator = "livespec-orchestrator-beads-fabro-cq"
+    quota = _cohort_quotas()[orchestrator]
+    rule_value = max(_CEILING_MULTIPLE * quota, _CEILING_FLOOR)
+    derivation = _DERIVATION.read_text(encoding="utf-8")
+
+    assert rule_value == 58
+    assert rule_value >= 12
+    assert "## Recorded exceptions to the rule" not in derivation
+    assert (
+        "The Recorded exceptions to the rule table remains absent because 58 is not below 12."
+        in derivation
+    )
+
+
 def test_no_committed_admission_path_reaches_or_doubles_the_physical_cap() -> None:
     """ "no configuration or recovery path may derive or admit 964 runners"."""
     ceilings = _scale_set_ceilings()
