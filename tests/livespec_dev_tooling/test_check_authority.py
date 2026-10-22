@@ -45,6 +45,10 @@ _CHECK_SH = _REPO_ROOT / "scripts" / "just" / "check.sh"
 # firing on a contributor's machine, where the member CAN read its authorization.
 _GATE_CONTEXT_GUARD = 'if [[ -n "${LIVESPEC_GATE_CONTEXT:-}" ]]; then'
 
+# This repository's own repo-private member that reads a ledger-held
+# authorization — the `approval:workflow-edit` label on a named work item.
+_WORKFLOW_EDIT_GUARD = "check-no-workflow-edits"
+
 
 def _module() -> Any:
     """The module under test, imported here so its ABSENCE is a test failure."""
@@ -189,3 +193,25 @@ def test_the_members_subcommand_reports_the_set_and_refuses_a_registry_it_cannot
     refused = capsys.readouterr()
     assert refused.out == ""
     assert "check-widget-approval" in refused.err
+
+
+def test_this_repositorys_workflow_edit_guard_declares_the_ledger_authorization() -> None:
+    """`check-no-workflow-edits` reads a ledger-held authorization, and now says so.
+
+    THE MEMBER THAT PAID FOR THIS WHOLE EXCEPTION. It authorizes a workflow
+    change by reading the `approval:workflow-edit` label off a named work item
+    through `bd`, and it FAILS CLOSED when it cannot — which is right. A gate pod
+    holds neither `bd` nor the ledger credential, so inside the Job it can only
+    ever fail closed: measured 2026-10-19 on gate
+    `gate-livespec-dev-tooling-54f19942138d`, which refused an authorized tree
+    carrying its label with "the ledger-held authorization could not be
+    evaluated -- FAILING CLOSED". The verdict was correct about the pod and
+    wrong about the tree, and no credential may be added to the Job to fix it.
+
+    DECLARED ON ITS OWN INVENTORY LINE, because the member exists only in this
+    repository — there is no shipped `checks/<slug>.py` to carry a module
+    constant, exactly as its purity declaration already rides that same line.
+    Asserted through the live resolution rather than by reading the file,
+    because the resolution is what the delegated gate acts on.
+    """
+    assert _WORKFLOW_EDIT_GUARD in _members(repo_root=_REPO_ROOT)
