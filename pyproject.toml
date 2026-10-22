@@ -451,6 +451,18 @@ supervisor_entry_files = [
     # `public_api_result_typed` is unused. The cost of the three it does not
     # need is the same whole-file widening the block above records.
     "livespec_dev_tooling/green_token.py",
+    # WHAT IT NEEDS, and only this one: `no_write_direct`. The `members`
+    # subcommand emits one check-target name per line on stdout, which
+    # `scripts/just/check.sh` reads back to take those members out of a
+    # delegated gate Job's run set — the same report surface, read by the same
+    # script, as the entry directly above. MEASURED for the other three: the
+    # file carries no broad `except Exception`, so `no_except_outside_io` is
+    # unused; its `raise SystemExit(main())` tail is already tolerated by
+    # `supervisor_discipline` outside the plugin-scripts tree; and its
+    # `main() -> int` is not consumed across any boundary, so
+    # `public_api_result_typed` is unused. The cost of the three it does not
+    # need is the same whole-file widening the block above records.
+    "livespec_dev_tooling/check_authority.py",
     # --- Class B: the nine remaining `main() -> int` supervisors, declared
     # ONE AT A TIME with a written reason, never as a batch. Each was checked
     # against ALL FOUR exemptions above rather than against the one that
