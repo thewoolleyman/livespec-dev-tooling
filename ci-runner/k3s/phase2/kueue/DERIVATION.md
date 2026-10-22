@@ -169,13 +169,13 @@ number of simultaneously-running runner pods is bounded by a single
 integer on a single node object, not by agreement among eight
 independently-edited manifests.
 
-## Inputs
+## Historical inputs (superseded)
 
-**The demand weights `w_i`.** The podman-era `ci-runner-supervisor`
-apportioned the full 482-slot physical budget across the fleet by
-observed demand. Those values, read from the live host
-(`systemctl cat ci-runner-supervisor`, 2026-08-16, and journaled on
-`livespec-s43svm.15`), are this derivation's demand weights:
+**The podman-era demand weights `w_i`.** The historical derivations below
+used the `ci-runner-supervisor` apportionment of the full 482-slot physical
+budget across the fleet by observed demand. Those values, read from the live
+host (`systemctl cat ci-runner-supervisor`, 2026-08-16, and journaled on
+`livespec-s43svm.15`), were the inputs to those earlier derivations:
 
 | Repository | `w_i` |
 |---|---|
@@ -190,11 +190,12 @@ observed demand. Those values, read from the live host
 | **sum `W`** | **482** |
 
 They sum to exactly 482, the physical cap, because that is what they
-were: an apportionment OF that cap. Note carefully what they are and are
-not — `w_i` is a measured DEMAND WEIGHT, not the repository's logical
-ceiling. The two were conflated in a 2026-08-16 note on `README.md`; the
-distinction matters because the logical ceiling feeds `maxRunners` while
-the demand weight feeds `nominalQuota`.
+were: an apportionment OF that cap. They remain only as a historical record
+of earlier capacity decisions and must not be used as inputs to current
+manifests. The current inputs are the measured job-hours in
+"Measured job-hours re-derivation at C = 44 (2026-10-22)" below. In either
+derivation, a demand weight is not a repository's logical ceiling: the latter
+feeds `maxRunners`, while the former feeds `nominalQuota`.
 
 **The capacity `C`.** The `ci-runner.io/churn-slot` capacity currently
 registered on the node. It is `32` — first set to `64` on 2026-08-30 by the
