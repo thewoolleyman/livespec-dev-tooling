@@ -47,26 +47,5 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an authority-reading member of an opted-in push runs on the pushing host and joins the delegated verdict",
-    "work_item": "livespec-dev-tooling-gpttcc",
-    "first_seen": "2026-10-21"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an opted-in push whose consumer names a private cross-repository sibling clones it with a read-only installation token",
-    "work_item": "livespec-dev-tooling-7kvh2d",
-    "first_seen": "2026-10-22"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: dev host retention leaves an in-flight gate run and removes an aged terminal one",
-    "work_item": "livespec-dev-tooling-fj6dm5",
-    "first_seen": "2026-10-22"
   }
 ]
