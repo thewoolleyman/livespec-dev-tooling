@@ -58,3 +58,5 @@
       tags: [honeycomb_trigger_recipients_check]
     - role: otel_collector
       tags: [otel_collector]
+    - role: dev_host_retention
+      tags: [dev_host_retention]

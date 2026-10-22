@@ -1,0 +1,28 @@
+{#
+  The oneshot retention. Every value the script reads is passed here from the
+  role's variables, so the inventory is what changes a host's retention and the
+  script's own defaults are only what a hand run falls back to.
+
+  Each Environment= line is QUOTED as a whole: the checkout-root list is joined
+  on a space, and an unquoted assignment carrying a space would hand systemd a
+  second, nameless assignment rather than a list.
+-#}
+# {{ ansible_managed }}
+[Unit]
+Description=Reclaim this dev host's dangling images, uv cache and aged gate runs
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/dev_host_retention/HOST_VARS.md
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User={{ dev_host_retention_user }}
+ExecStart={{ dev_host_retention_bin }}
+# Reclamation must never compete with the work it exists to serve: it is
+# background work whose only deadline is "before the disk fills".
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec={{ dev_host_retention_timeout_start_sec }}
+Environment="LIVESPEC_DEV_HOST_RETENTION_DAYS={{ dev_host_retention_days }}"
+Environment="LIVESPEC_DEV_HOST_RETENTION_CHECKOUT_ROOTS={{ dev_host_retention_checkout_roots | join(' ') }}"
+Environment="LIVESPEC_DEV_HOST_RETENTION_FILESYSTEM={{ dev_host_retention_filesystem }}"

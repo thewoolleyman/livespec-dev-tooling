@@ -1,0 +1,121 @@
+---
+# dev_host_retention — install and arm the dev host's standing disk retention.
+#
+# Work-item livespec-dev-tooling-fj6dm5. Governed by the `## Dev host disk
+# retention` section of SPECIFICATION/non-functional-requirements.md, whose
+# "Provisioned, not hand-installed" clause requires the retention to run at
+# least daily from a systemd timer a role included by ansible/dev-host.yml
+# installs, with its script committed in that role and its retention period a
+# role variable documented in the role's HOST_VARS.md.
+#
+# THIS CONVERGE RESTARTS NOTHING AND DRAINS NOTHING. The retention is a oneshot
+# unit of its own; arming its timer touches neither dockerd nor any service on
+# the host. What it changes is one script, two units and one enabled timer.
+#
+# WHY THE TIMER IS STARTED BY THE CONVERGE AND NOT LEFT TO THE NEXT BOOT. The
+# dev host is deliberately long-lived — it is also the Ansible control node —
+# so "enabled" without "started" would leave the disk unguarded until a reboot
+# that may be months away, on a filesystem that was at 94% when this was filed.
+
+- name: Refuse an empty value in any field of the dev host retention
+  # Jinja catches an UNDEFINED variable on its own, but an empty string
+  # substitutes silently — and an empty bin path, unit name or filesystem
+  # yields a timer that fires daily and reclaims nothing, which is the silent
+  # shape this control exists to remove rather than add.
+  ansible.builtin.assert:
+    that:
+      - dev_host_retention_bin | string | length > 0
+      - dev_host_retention_unit_dir | string | length > 0
+      - dev_host_retention_service | string | length > 0
+      - dev_host_retention_timer | string | length > 0
+      - dev_host_retention_checkout_roots | length > 0
+      - dev_host_retention_filesystem | string | length > 0
+      - dev_host_retention_user | string | length > 0
+      - dev_host_retention_on_calendar | string | length > 0
+      - dev_host_retention_randomized_delay_sec | string | length > 0
+      - dev_host_retention_timeout_start_sec | string | length > 0
+    fail_msg: >-
+      Every field of the dev host retention must carry a non-empty value; check
+      this host's host_vars against the role defaults.
+    success_msg: every field of the dev host retention carries a value
+
+- name: Refuse a retention period that is not a whole number of days
+  # The value reaches the script through the unit's environment and is then
+  # multiplied into an epoch cutoff. A non-numeric value makes that arithmetic
+  # a shell error, which leaves every gate run in place while the timer reports
+  # success. A zero-day period is the opposite failure and just as silent: it
+  # makes every terminal run eligible the moment it finishes.
+  ansible.builtin.assert:
+    that:
+      - dev_host_retention_days | string is match('^[0-9]+$')
+      - dev_host_retention_days | int > 0
+    fail_msg: >-
+      dev_host_retention_days must be a whole number of days greater than zero,
+      got '{{ dev_host_retention_days }}'
+    success_msg: the retention period is a whole number of days
+
+- name: Refuse a checkout root that is not an absolute path
+  # The sweep descends one level from each root. A relative value would resolve
+  # against the unit's working directory, which is `/` for a systemd service,
+  # so it would silently sweep nothing rather than fail.
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item is match('^/')
+    fail_msg: >-
+      dev_host_retention_checkout_roots declares {{ item | to_json }}, which is
+      not an absolute path. A root is the directory the governed checkouts sit
+      directly inside.
+    success_msg: the checkout root {{ item }} is absolute
+  loop: "{{ dev_host_retention_checkout_roots }}"
+
+- name: Install the dev host retention script
+  # `validate` runs bash's own parser over the staged copy, so a retention that
+  # cannot be parsed is refused here rather than discovered as a failed timer
+  # unit a day later.
+  ansible.builtin.copy:
+    src: dev-host-retention.sh
+    dest: "{{ dev_host_retention_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  become: true
+
+- name: Check whether the dev host retention timer unit is already installed
+  # Read for the enable-and-start task below: under --check the unit files are
+  # not written, so a host that does not already carry the timer has nothing
+  # for systemd to enable and the module would fail describing a missing unit
+  # rather than reporting the converge it would perform.
+  ansible.builtin.stat:
+    path: "{{ dev_host_retention_unit_dir }}/{{ dev_host_retention_timer }}"
+  become: true
+  register: dev_host_retention_timer_unit
+
+- name: Install the dev host retention service unit
+  ansible.builtin.template:
+    src: livespec-dev-host-retention.service.j2
+    dest: "{{ dev_host_retention_unit_dir }}/{{ dev_host_retention_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the dev host retention timer unit
+  ansible.builtin.template:
+    src: livespec-dev-host-retention.timer.j2
+    dest: "{{ dev_host_retention_unit_dir }}/{{ dev_host_retention_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the dev host retention timer
+
+- name: Enable and start the dev host retention timer
+  ansible.builtin.systemd_service:
+    name: "{{ dev_host_retention_timer }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or dev_host_retention_timer_unit.stat.exists

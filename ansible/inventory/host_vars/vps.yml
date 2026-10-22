@@ -33,6 +33,12 @@ container_reclaim_canonical_host: vps.perch-rudd.ts.net
 # targets.
 container_reclaim_system_hostname: vmi3006760
 
+# --- dev_host_retention ---
+# The uv cache the retention prunes and the checkouts whose gate runs it sweeps
+# are this login's, not root's; a root run would prune root's empty cache and
+# leave the 52G one measured on 2026-10-21.
+dev_host_retention_user: ubuntu
+
 # --- fabro_server ---
 fabro_server_host_user: ubuntu
 fabro_server_host_group: ubuntu
