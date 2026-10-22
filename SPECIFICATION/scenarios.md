@@ -969,3 +969,17 @@ When `just worktree-reap --execute --force` runs
 Then that worktree MUST be reported as SKIP with a reason saying it is factory-owned
 
 And that worktree MUST remain on disk
+
+## Scenario: dev host retention leaves an in-flight gate run and removes an aged terminal one
+
+Given a governed checkout on the dev host whose `tmp/gate-runs` holds a terminal gate run older than the retention period
+
+And a gate run older than the retention period whose recorded process is still alive
+
+When one run of the dev host retention script completes
+
+Then the terminal gate run's directory MUST be removed
+
+And the live gate run's directory MUST remain in place
+
+And the run's log MUST name the removed directory and the root filesystem's free space before and after

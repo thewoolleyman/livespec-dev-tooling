@@ -2,6 +2,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Dev host disk retention",
+    "work_item": "livespec-dev-tooling-fj6dm5",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
     "work_item": "livespec-dev-tooling-ubpufs",
     "first_seen": "2026-10-15"
@@ -47,6 +54,13 @@
     "heading": "## Scenario: an authority-reading member of an opted-in push runs on the pushing host and joins the delegated verdict",
     "work_item": "livespec-dev-tooling-gpttcc",
     "first_seen": "2026-10-21"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: dev host retention leaves an in-flight gate run and removes an aged terminal one",
+    "work_item": "livespec-dev-tooling-fj6dm5",
+    "first_seen": "2026-10-22"
   },
   {
     "spec_root": "SPECIFICATION",
