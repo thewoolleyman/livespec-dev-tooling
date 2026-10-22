@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 
 from returns.result import Failure, Success
 
+from livespec_dev_tooling._gate_host_authority import GATE_HOST_AUTHORITY_REFUSED
 from livespec_dev_tooling._gate_remote_assembly import (
     GATE_CHECK_SUITE_FALL_THROUGH,
     declared_gate_check_suite,
@@ -544,6 +545,10 @@ _STEP_MARKERS: tuple[tuple[str, str], ...] = (
     ("get-url", "read-origin"),
     ("create", "submit-job"),
     ("get", "get-job"),
+    # LAST, and matched on the TOOL rather than on a subcommand: an
+    # authority-declaring member is invoked exactly as the aggregate invokes it,
+    # `just <member>`, and no other command a delegated push issues is a `just`.
+    ("just", "authority-member"),
 )
 
 
@@ -628,6 +633,7 @@ class _StubWorld:
             # which is where the Job's ASSIGNED name — the one the manifest's
             # `generateName` asked the API server for — comes from.
             "submit-job": _CREATED,
+            "authority-member": "",
             "other": "",
         }
 
@@ -1623,6 +1629,10 @@ def test_run_exits_non_zero_on_every_other_verdict(
 # two readings of ONE inventory rather than two lists that can drift apart.
 _JOB_FIELDS = ("job_name", "namespace", "job_started_at", "job_finished_at")
 
+# A member that declares it reads a ledger-held authorization, so the gate Job
+# does not run it and the pushing host must.
+_AUTHORITY_MEMBER = "check-widget-approval"
+
 
 def _verdict_line(
     *,
@@ -1775,3 +1785,45 @@ def test_a_verdict_line_carries_the_gate_jobs_own_start_and_finish_times(
     for reading in (both.get("job_started_at"), both.get("job_finished_at")):
         assert isinstance(reading, str), "a clock reading must reach the line as a string"
         assert datetime.strptime(reading, _ISO_8601_UTC).utcoffset() == timedelta(0)
+
+
+def test_a_push_a_green_job_cleared_and_this_host_refused_still_names_that_job(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The refused path that REBUILDS the verdict, and so is the one that drops fields.
+
+    A gate Job can be green and the push still refused: a member declaring that
+    it reads an authorization held outside the tree is not run by the Job, which
+    is handed none, so the pushing host runs it and a failure there refuses the
+    push under a state the Job never produced. That state arrives on a verdict
+    constructed AFTER the gate's own, from the gate's own — which makes it the
+    one path where the Job's identity and its clock readings are dropped by
+    omission rather than by intent.
+
+    It is also the path where a reader needs them most. The gate an operator was
+    watching PASSED, so the refusal reads as coming from nowhere, and the Job is
+    the first thing anyone will go looking for; a journal entry that names the
+    member but not the green Job beside it sends them to the wrong artifact.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+    _ = (repo_root / "check-targets.txt").write_text(
+        "# Canonical check inventory for `just check`.\n"
+        f"{_AUTHORITY_MEMBER}  # purity: world-reading  # authority: ledger\n",
+        encoding="utf-8",
+    )
+
+    status, refused = _verdict_line(
+        repo_root=repo_root,
+        runner=_StubWorld(terminal=_JOB_COMPLETE_TIMED, refuse=("authority-member",)),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert status == 1
+    assert refused.get("state") == GATE_HOST_AUTHORITY_REFUSED
+    assert _AUTHORITY_MEMBER in str(refused.get("detail"))
+    assert refused.get("job_name") == _JOB
+    assert refused.get("namespace") == GATE_NAMESPACE
+    assert refused.get("job_started_at") == _STARTED_AT
+    assert refused.get("job_finished_at") == _FINISHED_AT
