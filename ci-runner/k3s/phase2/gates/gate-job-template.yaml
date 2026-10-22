@@ -345,7 +345,10 @@ spec:
               #
               # ANONYMOUS, so no credential is passed in for them — the same
               # property that lets the livespec core init container above carry
-              # no env block at all.
+              # no env block at all. Private siblings are the exception: their
+              # clone command reads a short-lived App token from the per-run
+              # Secret mount substituted below. The token itself never enters
+              # this manifest, its logs or its termination message.
               @@GATE_SIBLING_CLONES@@
               for recipe in @@GATE_RECIPE_NAMES@@; do
                 if just --show "${recipe}" > /dev/null 2>&1; then
@@ -536,8 +539,10 @@ spec:
             # exactly as they did with no variable at all.
             - name: livespec-core
               mountPath: /livespec-core
+            @@GATE_PRIVATE_SIBLING_VOLUME_MOUNT@@
       volumes:
         - name: workspace
           emptyDir: {}
         - name: livespec-core
           emptyDir: {}
+        @@GATE_PRIVATE_SIBLING_VOLUME@@

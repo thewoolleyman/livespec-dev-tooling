@@ -1197,6 +1197,57 @@ def test_a_gate_whose_sibling_clone_fails_is_red_and_names_that_sibling(*, tmp_p
     assert f"just {_CONSUMER_RECIPE}" in ran
 
 
+def test_a_private_sibling_uses_a_per_run_secret_without_putting_its_token_in_the_manifest(
+    *, tmp_path: Path
+) -> None:
+    """A private sibling reads its token from the per-run Secret mount.
+
+    The renderer is deliberately given a distinctive token-like value only as
+    the Secret's *name*.  A real installation token never reaches its argv:
+    this assertion is about the rendered artifact an API server and Job log can
+    expose, so it must contain the mount reference and clone behaviour but not
+    credential material.
+    """
+    private_name, private_url = _WIDGET_SIBLINGS[0]
+    public_name, public_url = _WIDGET_SIBLINGS[1]
+    consumer = _a_consumer_repository(
+        root=tmp_path / "declaring", declaration="", siblings=_WIDGET_SIBLINGS
+    )
+    secret_name = "gate-sibling-token-7f2qd"
+    completed = subprocess.run(
+        [
+            str(_RENDERER),
+            "--repo-root",
+            str(consumer),
+            "--tree-hash",
+            _TREE,
+            "--private-sibling",
+            private_name,
+            "--private-sibling-secret",
+            secret_name,
+        ],
+        cwd=str(consumer),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = completed.stdout
+    private_clone = next(
+        line for line in _sibling_clone_commands(manifest=manifest) if f"'{private_url}'" in line
+    )
+    public_clone = next(
+        line for line in _sibling_clone_commands(manifest=manifest) if f"'{public_url}'" in line
+    )
+    assert "http.extraHeader" in private_clone
+    assert "/run/secrets/gate-private-siblings/token" in private_clone
+    assert "http.extraHeader" not in public_clone
+    assert f"name: {secret_name}" in manifest
+    assert "secretName: " + secret_name in manifest
+    assert "token-like-value" not in manifest
+
+
 def test_a_red_members_verdict_names_the_member_not_a_fatal_from_its_own_output(
     *, tmp_path: Path
 ) -> None:
