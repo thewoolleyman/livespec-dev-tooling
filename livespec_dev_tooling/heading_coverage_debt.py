@@ -10,9 +10,15 @@ Charter D3 of plan `fleet-heading-coverage-convergence` (epic
 > row's first-seen date). [...] The register is generated mechanically from
 > the live file at adoption, never authored by hand.
 
-This module is the register's shared VOCABULARY (its path, its key, its
-row schema, and how a `HEAD` copy is read) plus the MECHANICAL GENERATOR
-that produces it. The verdict lives next door in
+This module owns the register's SOURCES — its paths, how a working-tree copy
+and a `HEAD` copy are read, and what git history says about a row's first-seen
+date — plus the MECHANICAL GENERATOR that writes it. A row's own IDENTITY and
+SCHEMA (its key, including how a scenario-shaped registry row derives one, and
+the fields a register entry must carry) live in the private sibling
+`_heading_coverage_debt_keys`, which this module re-imports so the vocabulary
+every check reads keeps its single import site here. That split is by cohesion:
+nothing in the sibling opens the registry, the register or git, and nothing
+here decides what a row means. The verdict lives next door in
 `livespec_dev_tooling.checks.heading_coverage_debt_register`; the two are
 split because generation walks git history — a slow, write-side operation an
 author runs once per resolution — while the check is a fast, read-only gate
@@ -65,14 +71,10 @@ Preserving a date EARLIER than the git evidence is therefore correct and
 deliberate; only moving one later is forbidden, and the check next door
 enforces that direction on both the authored and the committed tier.
 
-That enforcement is why `as_calendar_date` and `live_todo_keys` live HERE
-rather than privately beside the direction that first needed them. Both now
-have two readers — the release-tier age bound and the committed-tier date
-comparison — and the two MUST agree, to the character, on which `first_seen`
-values are measurable and which registry rows a verdict may concern. Two
-copies of that judgement would let a row be unmeasurable to one reader and
-measurable to the other, which is an escape hatch rather than a disagreement:
-the row would be convicted by neither.
+That enforcement is why `as_calendar_date` and `live_todo_keys` are SHARED
+rather than private to the direction that first needed them; the measurement
+that paragraph records now lives with them, in
+`_heading_coverage_debt_keys`.
 
 ## ON THE `IOResult` RAILWAY — `livespec-dev-tooling-qndn.15`
 
@@ -118,7 +120,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, cast
 
@@ -135,12 +137,22 @@ import structlog  # noqa: E402  — vendor-path-aware import after sys.path inse
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
+from livespec_dev_tooling._heading_coverage_debt_keys import (  # noqa: E402
+    as_calendar_date,
+    configured_spec_root,
+    live_todo_keys,
+    register_key,
+    register_row_is_complete,
+    todo_rows,
+)
+
 __all__: list[str] = [
     "COVERAGE_PATH",
     "REGISTER_PATH",
     "HeadCopyIncomparable",
     "RowsUnreadable",
     "as_calendar_date",
+    "configured_spec_root",
     "first_seen_dates",
     "generate_register",
     "head_rows",
@@ -157,19 +169,6 @@ __all__: list[str] = [
 
 COVERAGE_PATH = Path("tests") / "heading-coverage.json"
 REGISTER_PATH = Path("tests") / "heading-coverage-debt.json"
-
-_KEY_FIELDS = (
-    "spec_root",
-    "spec_file",
-    "heading",
-)
-_REQUIRED_FIELDS = (
-    "spec_root",
-    "spec_file",
-    "heading",
-    "work_item",
-    "first_seen",
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -265,67 +264,6 @@ def load_rows(*, path: Path) -> IOResult[list[dict[str, object]], RowsUnreadable
             )
         )
     return IOSuccess(rows)
-
-
-def register_key(*, row: dict[str, object]) -> tuple[str, str, str] | None:
-    """The `(spec_root, spec_file, heading)` key of `row`; `None` when unkeyed.
-
-    A row missing any of the three, or carrying a non-string in one of them, has
-    no identity the ratchet can track on either side of the comparison, so it is
-    reported as unkeyed rather than silently keyed on a coerced value.
-    """
-    spec_root = row.get("spec_root")
-    spec_file = row.get("spec_file")
-    heading = row.get("heading")
-    if not (isinstance(spec_root, str) and isinstance(spec_file, str) and isinstance(heading, str)):
-        return None
-    return (spec_root, spec_file, heading)
-
-
-def register_row_is_complete(*, row: dict[str, object]) -> bool:
-    """Whether `row` carries every field the ratified register schema requires.
-
-    The key three plus `work_item` (who owes the test) and `first_seen` (when
-    the debt started). A register row without those last two is a row the age
-    bound and the liveness gate cannot judge — it would be debt with no owner
-    and no clock.
-    """
-    for field in _REQUIRED_FIELDS:
-        value = row.get(field)
-        if not isinstance(value, str) or not value.strip():
-            return False
-    return True
-
-
-def todo_rows(*, rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    """The `test: "TODO"` rows among `rows` — the debt the register tracks."""
-    return [row for row in rows if row.get("test") == "TODO"]
-
-
-def as_calendar_date(*, value: object) -> date | None:
-    """`value` read as an ISO calendar date; `None` when it is not one.
-
-    `None` is the UNMEASURABLE answer, and its callers convict on it. It is
-    never "assume today": a row whose date cannot be read would then be born
-    young on every run, and the bound would silently stop applying to exactly
-    the rows whose register entry is malformed.
-    """
-    if not isinstance(value, str):
-        return None
-    try:
-        return date.fromisoformat(value.strip())
-    except ValueError:
-        return None
-
-
-def live_todo_keys(*, registry_rows: list[dict[str, object]]) -> set[tuple[str, str, str]]:
-    """The keys of every live `TODO` row — the rows a date or age verdict may concern."""
-    keys: set[tuple[str, str, str]] = set()
-    for row in todo_rows(rows=registry_rows):
-        key = register_key(row=row)
-        if key is not None:
-            keys.add(key)
-    return keys
 
 
 def _git_stdout(*, cwd: Path, args: list[str]) -> str:
@@ -449,7 +387,7 @@ def _utc_calendar_date(*, committed_at: str) -> str:
     return datetime.fromisoformat(instant).astimezone(timezone.utc).date().isoformat()
 
 
-def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
+def first_seen_dates(*, cwd: Path, spec_root: str | None = None) -> dict[tuple[str, str, str], str]:
     """Key → UTC calendar date of the earliest commit whose registry carried it as `TODO`.
 
     Walks `git log --reverse` over the live registry path only — the file has a
@@ -462,6 +400,7 @@ def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
     taken as `%cs`, so the date this returns survives a rebase-merge — see
     `_utc_calendar_date` for the defect that bought the distinction.
     """
+    configured_root = spec_root if spec_root is not None else configured_spec_root(cwd=cwd)
     log = _git_stdout(
         cwd=cwd,
         args=["log", "--reverse", "--format=%H %cI", "--", COVERAGE_PATH.as_posix()],
@@ -472,7 +411,7 @@ def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
         committed_on = _utc_calendar_date(committed_at=committed_at)
         blob = _git_stdout(cwd=cwd, args=["show", f"{revision}:{COVERAGE_PATH.as_posix()}"])
         for row in todo_rows(rows=_rows_from_text(text=blob) or []):
-            key = register_key(row=row)
+            key = register_key(row=row, spec_root=configured_root)
             if key is not None and key not in dates:
                 dates[key] = committed_on
     return dates
@@ -533,10 +472,11 @@ def generate_register(
         return previous
     recorded = _recorded_first_seen(rows=unsafe_perform_io(previous.unwrap()))
     rows = todo_rows(rows=unsafe_perform_io(loaded.unwrap()))
-    dates = first_seen_dates(cwd=cwd)
+    spec_root = configured_spec_root(cwd=cwd)
+    dates = first_seen_dates(cwd=cwd, spec_root=spec_root)
     generated: list[tuple[tuple[str, str, str], dict[str, object]]] = []
     for row in rows:
-        key = register_key(row=row)
+        key = register_key(row=row, spec_root=spec_root)
         if key is None:
             continue
         work_item = row.get("work_item")
