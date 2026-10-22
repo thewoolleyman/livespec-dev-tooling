@@ -999,3 +999,117 @@ Then the gate Job MUST clone that sibling with an installation token scoped to t
 And the rendered gate manifest MUST NOT contain that token
 
 And the gate Job MUST run the consumer's recipe with that sibling's clone present
+
+## Scenario: a red master whose re-run passes is classified a flake and never merges a revert
+
+Given `master`'s gate job reports a completed failure on the newest commit
+
+When the reconcile run re-runs the failed jobs once and the re-run passes
+
+Then the run classifies the episode as a flake, MUST NOT merge any revert, and raises one needs-attention issue for the episode
+
+## Scenario: a genuine regression opens a held revert of the earliest red commit with a green parent
+
+Given a red `master` classified as a genuine regression, whose earliest red commit has a green parent and a pull request
+
+When the reconcile run takes its next step
+
+Then it opens a revert pull request with auto-merge held, whose forge-created commit restores the culprit's parent bytes and carries `This reverts commit <culprit sha>.`
+
+## Scenario: a later master commit touching a culprit path blocks the revert
+
+Given a genuine regression whose culprit changed a path that a later `master` commit also changed
+
+When the reconcile run takes its next step
+
+Then it MUST NOT create the revert and raises needs-attention naming the obstructing commit
+
+## Scenario: an unclaimed revert is released as soon as its own CI is green
+
+Given a held revert pull request with no valid fix-forward claim
+
+When the revert's own CI reports green
+
+Then the reconcile run releases the revert for merge
+
+## Scenario: a valid fix-forward claim holds the revert while the fix makes progress
+
+Given a held revert carrying a valid fix-forward claim naming one fix pull request
+
+When the fix makes a forward transition within the stall duration of its current step
+
+Then the reconcile run keeps the revert held
+
+## Scenario: a thrashing fix-forward releases the held revert
+
+Given a held revert carrying a valid fix-forward claim
+
+When the fix repeats red on the same check, adds a commit that does not reduce its failing checks, fails a new check, or merges while `master` stays red
+
+Then the reconcile run releases the revert
+
+## Scenario: a stalled or contested fix-forward releases the held revert
+
+Given a held revert carrying a valid fix-forward claim
+
+When no forward transition occurs within the current step's stall duration, or a second fix pull request is claimed
+
+Then the reconcile run releases the revert
+
+## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress
+
+Given `master` has been red longer than the configured hard cap and the revert's own CI is green
+
+When the reconcile run takes its next step
+
+Then it releases the revert even while a valid claim's fix is still making progress
+
+## Scenario: at the hard cap a revert whose CI is not green is not merged
+
+Given `master` has been red longer than the configured hard cap and the revert's own CI is not green
+
+When the reconcile run takes its next step
+
+Then it MUST NOT merge the revert and raises needs-attention
+
+## Scenario: a fix-forward claim from outside the claimant set is ignored
+
+Given a held revert whose only claim comes from an identity that is neither the maintainer's forge login nor the culprit pull request's opener with a `Claimed-By:` line
+
+When the reconcile run takes its next step
+
+Then it ignores the claim and treats the revert as unclaimed
+
+## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default
+
+Given the committed hard cap or a step's stall duration is absent or malformed
+
+When the reconcile run evaluates a held revert carrying a valid claim
+
+Then it does not hold the revert for the claim, and releases it only once its own CI is green
+
+## Scenario: a master red past the threshold with no revert in flight raises needs-attention
+
+Given `master` has been red longer than the configured threshold
+
+And no revert pull request is in flight
+
+When the reconcile run takes its next step
+
+Then it raises needs-attention for the episode
+
+## Scenario: a failed revert-path drill raises needs-attention
+
+Given the scheduled drill reverts a product-implementation change on a throwaway branch
+
+When the drill's revert is not merged green, including when the range gate convicts it
+
+Then the drill raises needs-attention
+
+## Scenario: a fleet member whose master-health shim is missing or drifted fails conformance
+
+Given a fleet member whose master-health reconcile shim is absent or differs from the canonical shim
+
+When fleet conformance evaluates the `workflow-master-health-reconcile` row
+
+Then the row reports an error-severity finding for that member

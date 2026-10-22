@@ -1,6 +1,13 @@
 [
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Master-health reconciler",
+    "work_item": "livespec-dev-tooling-zcp5vb",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
     "work_item": "livespec-dev-tooling-ubpufs",
@@ -40,5 +47,103 @@
     "heading": "## Scenario: a factory node keeps its factory label across a control-plane reboot",
     "work_item": "livespec-dev-tooling-izlx4g",
     "first_seen": "2026-10-16"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed revert-path drill raises needs-attention",
+    "work_item": "livespec-dev-tooling-yilv6p",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fix-forward claim from outside the claimant set is ignored",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fleet member whose master-health shim is missing or drifted fails conformance",
+    "work_item": "livespec-dev-tooling-reslr6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a genuine regression opens a held revert of the earliest red commit with a green parent",
+    "work_item": "livespec-dev-tooling-zcp5vb",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a master red past the threshold with no revert in flight raises needs-attention",
+    "work_item": "livespec-dev-tooling-4xrhck",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert",
+    "work_item": "livespec-dev-tooling-zcp5vb",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a thrashing fix-forward releases the held revert",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a valid fix-forward claim holds the revert while the fix makes progress",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green",
+    "work_item": "livespec-dev-tooling-zcp5vb",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: at the hard cap a revert whose CI is not green is not merged",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
+    "work_item": "livespec-dev-tooling-joqff6",
+    "first_seen": "2026-10-22"
   }
 ]
