@@ -87,6 +87,9 @@ from pathlib import Path
 from typing import TypeAlias, cast
 
 from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
+from livespec_dev_tooling.gate_private_sibling_token import (
+    create_private_sibling_token_secret,
+)
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
     GateStepFailed,
@@ -184,12 +187,22 @@ class GateRunRequest:
     (`gate_remote_delegate`) because this client deletes the refs it created on
     its way out, and a name shared with a concurrent gate of the same tree is a
     name one run can delete while the other still needs it.
+
+    `private_sibling_token` and `private_sibling_secret` are the ONE credential
+    this request may carry, and they are deliberately separate values: the
+    SECRET NAME is already inside `manifest` and is safe to print, while the
+    TOKEN appears nowhere in it. Both default to empty, which is the request of
+    every push whose repository names no private sibling — the overwhelming
+    majority — so the token-bearing path is entered only when a mint actually
+    happened rather than on every run.
     """
 
     repo_root: Path
     mirror_url: str
     manifest: str
     gate_ref: str
+    private_sibling_token: str = ""
+    private_sibling_secret: str = ""
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 3600.0
@@ -402,6 +415,21 @@ def _gate_a_pushed_tree(
     if isinstance(named, Failure):
         return Failure(named.failure())
     job_name = named.unwrap()
+    # ONLY when a token was actually minted, which is the state of a push whose
+    # repository names a PRIVATE cross-repo sibling and of no other. The step is
+    # AFTER the submit because the Secret is owner-referenced to the Job the
+    # API server has just assigned a UID; `gate_private_sibling_token` carries
+    # why that ordering is what keeps the credential from outliving the run.
+    if request.private_sibling_token:
+        delivered = create_private_sibling_token_secret(
+            request=request,
+            kubectl=_kubectl(request=request),
+            runner=runner,
+            job_name=job_name,
+            job_payload=submitted.unwrap().stdout,
+        )
+        if isinstance(delivered, Failure):
+            return Failure(delivered.failure())
     terminal = _await_terminal_state(
         request=request, runner=runner, sleeper=sleeper, job_name=job_name
     )

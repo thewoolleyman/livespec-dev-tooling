@@ -662,6 +662,70 @@ def test_the_renderer_is_told_the_tree_and_asked_for_no_job_name(*, tmp_path: Pa
     assert "--job-name" not in render
 
 
+def test_a_private_sibling_token_is_minted_on_the_host_and_never_passed_to_the_renderer(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only the private sibling name and Secret name reach the render argv.
+
+    The credential helper's stdout is the sole in-process token handoff.  The
+    render argv is deliberately inspected rather than the resulting YAML: a
+    token in this argv would be copied into the rendered manifest before any
+    cluster command could keep it private.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+    _ = (repo_root / ".livespec.jsonc").write_text(
+        """{
+  "cross_repo_targets": {
+    "private-sibling": {"github_url": "https://github.com/acme/private-sibling"},
+    "public-sibling": {"github_url": "https://github.com/acme/public-sibling"}
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    helper = tmp_path / "mint-private-siblings"
+    token = "ghs_private_sibling_token"
+
+    class _PrivateSiblingWorld(_StubWorld):
+        def __call__(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            stdin: str | None = None,
+            stream: bool = False,
+        ) -> GateCommandOutcome:
+            if argv[0] == str(helper):
+                self.argvs.append(tuple(argv))
+                return Success(
+                    GateCommandResult(
+                        returncode=0,
+                        stdout=json.dumps(
+                            {"private_siblings": ["private-sibling"], "token": token}
+                        ),
+                        stderr="",
+                    )
+                )
+            return super().__call__(argv=argv, cwd=cwd, stdin=stdin, stream=stream)
+
+    monkeypatch.setattr(
+        "livespec_dev_tooling.gate_remote_delegate.GATE_PRIVATE_SIBLING_TOKEN_HELPER",
+        helper,
+        raising=False,
+    )
+    runner = _PrivateSiblingWorld()
+    built = gate_remote_request(repo_root=repo_root, renderer=_RENDERER, runner=runner)
+
+    assert isinstance(built, Success)
+    render = next(argv for argv in runner.argvs if argv[0] == str(_RENDERER))
+    assert render[render.index("--private-sibling") + 1] == "private-sibling"
+    assert "public-sibling" not in render
+    assert "--private-sibling-secret" in render
+    assert token not in render
+    assert built.unwrap().private_sibling_token == token
+
+
 # ---------------------------------------------------------------------------
 # What the gate RUNS — the gated repository's own declaration
 # ---------------------------------------------------------------------------

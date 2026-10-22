@@ -38,7 +38,11 @@ from pathlib import Path
 import pytest
 from returns.result import Success
 
-from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, run_delegated_gate
+from livespec_dev_tooling.gate_remote_delegate import (
+    GATE_PRIVATE_SIBLING_TOKEN_HELPER,
+    gate_remote_request,
+    run_delegated_gate,
+)
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
 from livespec_dev_tooling.gate_remote_verdict import GATE_FAILED
 
@@ -345,6 +349,15 @@ class _CannedWorldRealRenderer:
                     stderr=completed.stderr,
                 )
             )
+        # The private-sibling minter answers "every declared sibling is PUBLIC",
+        # which is the world every fixture here is written for: each sibling of
+        # `_WIDGET_SIBLINGS` and `_GADGET_SIBLINGS` is asserted below to be
+        # cloned anonymously, so a canned answer naming one of them private
+        # would contradict the assertions it feeds. The private case is rendered
+        # directly, by the test that owns it, with no client in the way.
+        if argv[0] == str(GATE_PRIVATE_SIBLING_TOKEN_HELPER):
+            minted = json.dumps({"private_siblings": []})
+            return Success(GateCommandResult(returncode=0, stdout=minted, stderr=""))
         return Success(GateCommandResult(returncode=0, stdout=self._stdout(argv=argv), stderr=""))
 
     def _stdout(self, *, argv: list[str]) -> str:

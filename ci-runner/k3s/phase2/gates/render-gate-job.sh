@@ -192,22 +192,31 @@ if [ -z "${gated_repository}" ] && command -v git > /dev/null 2>&1; then
   esac
 fi
 
-# A private sibling needs a per-run Secret mount; a public one remains an
-# anonymous clone.  The client decides which targets are private on the
-# pushing host, where the App credential exists, and this renderer only carries
-# the Secret NAME — never its token — into the Job manifest.
+# --- the private siblings, and the Secret whose NAME is all that is passed ---
+# A private sibling needs a per-run Secret mount; a public one stays an
+# anonymous clone. WHICH targets are private is decided on the PUSHING HOST,
+# where the GitHub App credential exists — this renderer is told, never asked,
+# and it carries only the Secret's NAME into the manifest. The token itself
+# never enters this process: a manifest is stored by the API server and handed
+# back by any `kubectl get job -o yaml`, so a credential interpolated here
+# would be a credential published (the delegated pre-push gate's
+# cross-repository siblings rule in SPECIFICATION/contracts.md).
 if [ "${#private_siblings[@]}" -gt 0 ] && [ -z "${private_sibling_secret}" ]; then
   echo "FATAL: --private-sibling requires --private-sibling-secret" >&2
   exit 2
 fi
-case "${private_sibling_secret}" in
-  "" | ?*[!a-z0-9-]* | -* | *-)
-    [ -z "${private_sibling_secret}" ] || {
-      echo "FATAL: --private-sibling-secret must be a lowercase Kubernetes resource name" >&2
-      exit 2
-    }
-    ;;
-esac
+# The name is reproduced verbatim into YAML, so it is held to the DNS-1123 shape
+# Kubernetes accepts for a resource name — the same refusal-before-render
+# posture the sibling urls below get, rather than letting the API server reject
+# a manifest a gate has already waited on.
+if [ -n "${private_sibling_secret}" ]; then
+  case "${private_sibling_secret}" in
+    *[!a-z0-9-]* | -* | *-)
+      echo "FATAL: --private-sibling-secret '${private_sibling_secret}' is not a lowercase" \
+           "alphanumeric-and-dash Kubernetes resource name" >&2
+      exit 2 ;;
+  esac
+fi
 
 # --- the livespec core ref THIS consumer pins (R4.S7c part ii) ---------------
 # Derived from the gated clone's own `.livespec.jsonc` `compat.pinned`, which is
@@ -276,6 +285,12 @@ esac
 # it has today — the renderer substitutes an empty block, which removes the
 # placeholder's whole line.
 GATE_SIBLING_CLONES_ROOT="/tmp/gate-sibling-clones"
+
+# Where the per-run token Secret is mounted when a PRIVATE sibling is named.
+# One constant because two places have to agree inside one rendered manifest —
+# the volumeMount and the clone command that reads `<mount>/token` — and they
+# are written hundreds of lines apart.
+GATE_PRIVATE_SIBLING_MOUNT="/run/secrets/gate-private-siblings"
 
 # Read with awk rather than a JSON parser for the same reason the `compat.pinned`
 # grep above is: the file is JSONC and this renderer must stay dependency-free.
@@ -355,29 +370,41 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
       echo "FATAL: .livespec.jsonc cross_repo_targets.${sibling_name} declares github_url '${sibling_url}', which is not an anonymous https://github.com/<owner>/<repo> url the gate pod can clone" >&2
       exit 1 ;;
   esac
-  private=0
-  for named_private in "${private_siblings[@]}"; do
-    if [ "${named_private}" = "${sibling_name}" ]; then
-      private=1
-      break
-    fi
-  done
-  if [ "${private}" -eq 1 ]; then
-    private_sibling_volume_mount="- name: ${private_sibling_secret}
-  mountPath: /run/secrets/gate-private-siblings
-  readOnly: true"
-    private_sibling_volume="- name: ${private_sibling_secret}
-  secret:
-    secretName: ${private_sibling_secret}"
-    clone_command="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Bearer \$(cat /run/secrets/gate-private-siblings/token)\" git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'"
-  else
-    clone_command="git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'"
-  fi
   case "${sibling_url}" in
     *[!A-Za-z0-9:/._-]* | *@*)
       echo "FATAL: .livespec.jsonc cross_repo_targets.${sibling_name} declares github_url '${sibling_url}', which carries characters a gate manifest must not reproduce" >&2
       exit 1 ;;
   esac
+  # PRIVATE OR PUBLIC — the only thing that differs is where the clone's
+  # authorization comes from, and a public sibling keeps the bare `git clone` it
+  # has today: the url is identical, the refusal below is identical, and the
+  # difference is one env prefix. THE TOKEN IS NOT IN THE URL, deliberately: the
+  # refusal message a few lines down reproduces the url into both stderr and the
+  # termination message, so a credential embedded in it would be published by
+  # the very path that reports the failure (implementation note 3 on
+  # livespec-dev-tooling-7kvh2d). It is read out of the mounted Secret, inside
+  # the pod, at clone time — `http.extraHeader` rather than a credential helper
+  # because a helper needs a file git can execute and this needs no file at all.
+  private=0
+  for named_private in ${private_siblings[@]+"${private_siblings[@]}"}; do
+    if [ "${named_private}" = "${sibling_name}" ]; then
+      private=1
+      break
+    fi
+  done
+  clone_command="git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'"
+  if [ "${private}" -eq 1 ]; then
+    # The mount is declared once however many private siblings there are: ONE
+    # token covers all of them, because the host mints it scoped to exactly the
+    # set this gate run names.
+    private_sibling_volume_mount="- name: ${private_sibling_secret}
+  mountPath: ${GATE_PRIVATE_SIBLING_MOUNT}
+  readOnly: true"
+    private_sibling_volume="- name: ${private_sibling_secret}
+  secret:
+    secretName: ${private_sibling_secret}"
+    clone_command="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Bearer \$(cat ${GATE_PRIVATE_SIBLING_MOUNT}/token)\" ${clone_command}"
+  fi
   # SHALLOW, like the core fetch and like the consumer's own CI step: nothing
   # reads a sibling's history — a reader wants its current headings and its
   # current justfile — and a full clone of six siblings on a pod whose cache is
