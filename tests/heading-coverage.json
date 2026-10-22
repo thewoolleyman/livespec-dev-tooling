@@ -861,5 +861,125 @@
     "test": "tests.consumer.test_delegated_gate_declared_recipe_scenarios.test_a_private_sibling_uses_a_per_run_secret_without_putting_its_token_in_the_manifest",
     "reason": "Consumer-tier (integration-tier or above, the scenario-tier floor): the REAL renderer is run as a subprocess against a fixture consumer whose `.livespec.jsonc` registers two siblings, one of them named private, and the rendered manifest is asserted to clone the private one through an `http.extraHeader` read out of a per-run Secret mount, to clone the public one anonymously with no credential at all, and to contain the Secret's NAME and no credential material. The host half of the scenario — that the pushing host mints the token, that only the private sibling's name and the Secret's name reach the render argv, that the Secret is owner-referenced to the Job so nothing long-lived holds the token, and that a host which cannot mint refuses the push as a missing verdict — is carried by `tests/livespec_dev_tooling/test_gate_private_sibling_token.py`, and the rendered shell is additionally driven end to end by `render-gate-job-exit-tests.sh` section Q. A live mint and an executed gate Job are host-captured by the work-item: neither exists in any sandbox (livespec-dev-tooling-7kvh2d).",
     "work_item": "livespec-dev-tooling-7kvh2d"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Master-health reconciler",
+    "test": "TODO",
+    "reason": "A real test at the required tier is owed for this heading; livespec-dev-tooling-zcp5vb owns it.",
+    "work_item": "livespec-dev-tooling-zcp5vb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zcp5vb owns it.",
+    "work_item": "livespec-dev-tooling-zcp5vb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a genuine regression opens a held revert of the earliest red commit with a green parent",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zcp5vb owns it.",
+    "work_item": "livespec-dev-tooling-zcp5vb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-zcp5vb owns it.",
+    "work_item": "livespec-dev-tooling-zcp5vb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a valid fix-forward claim holds the revert while the fix makes progress",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a thrashing fix-forward releases the held revert",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: at the hard cap a revert whose CI is not green is not merged",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fix-forward claim from outside the claimant set is ignored",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-joqff6 owns it.",
+    "work_item": "livespec-dev-tooling-joqff6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a master red past the threshold with no revert in flight raises needs-attention",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-4xrhck owns it.",
+    "work_item": "livespec-dev-tooling-4xrhck"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a failed revert-path drill raises needs-attention",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-yilv6p owns it.",
+    "work_item": "livespec-dev-tooling-yilv6p"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a fleet member whose master-health shim is missing or drifted fails conformance",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-reslr6 owns it.",
+    "work_item": "livespec-dev-tooling-reslr6"
   }
 ]
