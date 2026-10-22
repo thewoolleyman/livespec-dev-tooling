@@ -843,16 +843,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Dev host disk retention",
-    "test": "TODO",
-    "reason": "Integration-tier. Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-fj6dm5. Its implementation owes the test: the committed retention script run against a fixture tree of terminal and live gate runs, a uv cache prune that cannot remove one path, and a stubbed docker, asserting what it removes, what it leaves, and its log lines.",
+    "test": "tests.livespec_dev_tooling.test_dev_host_retention.test_the_dev_host_play_installs_the_retention_script_and_its_daily_timer",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`): the section's governing \"Provisioned, not hand-installed\" clause, read off a real `--list-tasks` run of the committed `ansible/dev-host.yml` rather than off the play's text, so the role has to resolve and reach its arming task — plus the timer's calendar cadence and its `Persistent=true`. The section's three reclaim clauses and its retention-period clause are the four sibling arms in the same module, each driving the committed script against stubbed `docker` and `uv` on PATH and a fixture tree of gate runs: dangling-only image removal, the uv prune that names an unremovable path and continues, the terminal-and-aged removal against a live child's pid, and the period as a role variable the unit passes and HOST_VARS.md documents.",
     "work_item": "livespec-dev-tooling-fj6dm5"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: dev host retention leaves an in-flight gate run and removes an aged terminal one",
-    "test": "TODO",
-    "reason": "Integration-tier (the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-fj6dm5. Its implementation owes the test: the committed retention script run once against a fixture checkout holding an aged terminal gate run and an aged gate run whose recorded process is a live child, asserting the first is removed, the second remains, and the log names the removal and both free-space figures.",
+    "test": "tests.livespec_dev_tooling.test_dev_host_retention.test_a_run_removes_an_aged_terminal_gate_run_and_leaves_an_in_flight_one",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`, the scenario-tier floor): one run of the committed retention script over a fixture governed checkout holding an aged terminal gate run, an equally aged run whose recorded pid is a REAL live child, and a recent terminal run the age predicate must keep — so the scenario's first two Then-lines are read off what one run actually did, and neither a script that ignored liveness nor one that ignored age can pass. Its third Then-line, that the log names the removed directory and the free space before and after, is the sibling arm `test_a_run_logs_what_it_removed_and_the_free_space_before_and_after` over the same fixture.",
     "work_item": "livespec-dev-tooling-fj6dm5"
   }
 ]

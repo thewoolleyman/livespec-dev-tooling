@@ -1,0 +1,52 @@
+---
+# dev_host_retention — the maintainer's dev host reclaims disk on a timer
+# instead of waiting for a human to notice. See HOST_VARS.md for the operator
+# procedure, the rollback, and why cargo build targets are out of scope.
+
+dev_host_retention_bin: /usr/local/sbin/livespec-dev-host-retention
+dev_host_retention_unit_dir: /etc/systemd/system
+dev_host_retention_service: livespec-dev-host-retention.service
+dev_host_retention_timer: livespec-dev-host-retention.timer
+
+# THE RETENTION PERIOD, in whole days, and the only number in this role an
+# operator is expected to revisit. It bounds how long a TERMINAL gate run's
+# evidence survives under a governed checkout's `tmp/gate-runs`; a run whose
+# recorded process is still alive is kept whatever this says.
+#
+# 7 is chosen against how that evidence is actually read: a gate verdict is
+# consulted while the branch that produced it is open, and a branch older than
+# a week has either merged or been abandoned. The 4935 directories measured on
+# 2026-10-21 spanned months, so the vast majority of that 1.1G is evidence
+# nobody will open again.
+dev_host_retention_days: 7
+
+# Where this host's governed checkouts live. The sweep descends ONE level and
+# takes every directory that carries a `.git`, so adding a repository to the
+# host needs no inventory change. Linked worktrees need no entry either: a
+# worktree's gate runs are written to its PRIMARY checkout's store, which is
+# the whole reason a run outlives the worktree that started it.
+dev_host_retention_checkout_roots:
+  - /data/projects
+
+# The filesystem whose free space each run reports before and after. The dev
+# host's root filesystem holds every governed checkout, the uv cache and the
+# docker store, so one figure covers all three legs.
+dev_host_retention_filesystem: /
+
+# WHO THE RETENTION RUNS AS, and why it is not simply root. Two of the three
+# legs are per-user: `uv cache prune` prunes the cache of the user it runs as,
+# and the docker leg needs that user's access to the daemon socket. A root run
+# on the dev host would prune root's empty cache and leave the 52G one that was
+# actually measured. `root` is the default because it is the only value that is
+# right for a host nobody has set this on; a host with a login that owns the
+# checkouts sets that login here.
+dev_host_retention_user: root
+
+# The cadence. `daily` is the floor the ratified section states; the jitter
+# keeps a reclaim from landing in the same second as any other daily unit.
+dev_host_retention_on_calendar: daily
+dev_host_retention_randomized_delay_sec: 30m
+# Bounds ONE run. Generous because the gate-run sweep walks every run directory
+# of every governed checkout, and the first run after this role lands walks the
+# whole backlog.
+dev_host_retention_timeout_start_sec: 30min
