@@ -827,16 +827,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: worktree-reap leaves a worktree that a live process holds",
-    "test": "TODO",
-    "reason": "Integration-tier (the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-7i2z5j. Its implementation owes the test: a fixture repository with the canonical worktree-discipline pack, a merged clean secondary worktree in the stated condition, and `just worktree-reap --execute --force` asserting the SKIP line and that the worktree remains on disk.",
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_worktree_lib.test_reap_execute_force_leaves_a_worktree_a_live_process_is_running_in",
+    "reason": "Integration-tier (`pytest.mark.integration`): the canonical pack body driven end to end over a real git fixture — a primary with a bare origin, a rebase-landed secondary worktree the sibling merged-ness case asserts REMOVE for with nothing holding it, and a REAL spawned process whose working directory IS that worktree — asserting under `--execute --force` that the directory and its `.git` link survive. Three siblings in the same module carry the rest of the scenario's surface: the dry-run SKIP line naming the holder's pid, an open DESCRIPTOR held by a process running OUTSIDE the tree (a cwd-only probe reads that tree as idle), and the unobservable-process-table arm, which SKIPs with the gap named rather than guessing idle. Every one passes `--force`, since `--force` reaching a liveness skip is the original defect restated (livespec-dev-tooling-7i2z5j).",
     "work_item": "livespec-dev-tooling-7i2z5j"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: worktree-reap never removes a factory-owned source worktree",
-    "test": "TODO",
-    "reason": "Integration-tier (the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-7i2z5j. Its implementation owes the test: a fixture repository with the canonical worktree-discipline pack, a merged clean secondary worktree in the stated condition, and `just worktree-reap --execute --force` asserting the SKIP line and that the worktree remains on disk.",
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_worktree_lib.test_reap_execute_force_leaves_an_unheld_factory_source_worktree",
+    "reason": "Integration-tier (`pytest.mark.integration`): the canonical pack body driven end to end over a real git fixture carrying a `fabro-source-<id>` worktree branched AT master — so the merged-ness gate passes it by plain ancestry, which is how the 2026-10-21 sweep listed nine of them as REMOVE — with a complete, holder-free process table, because a paused or blocked factory run keeps its source tree with nothing running in it and a liveness test alone would hand it to the reaper. `--execute --force` must leave the directory and its `.git` link on disk, and the same run's negative control asserts the unmerged feature worktree WAS removed, so the factory tree's survival is the name gate holding rather than the command declining to act. Its sibling asserts the dry-run SKIP line says `factory-owned` (livespec-dev-tooling-7i2z5j).",
     "work_item": "livespec-dev-tooling-7i2z5j"
   },
   {
