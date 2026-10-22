@@ -58,6 +58,18 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.123.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.122.0...v1.123.0) (2026-10-22)
+
+
+### Features
+
+* carry a shipped check's authority declaration in its own module ([0faa601](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0faa601e2cdba30460a4a41d1628bb42a93b836e))
+* make the delegated verdict the conjunction of the Job and the pushing host ([961c19e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/961c19e63ed7765fde91339ab7670f4660eaa719))
+* name the member and the pushing host in an authority refusal ([afbc7c1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/afbc7c1138208e10379f9f2a5c94ddc9d755485d))
+* refuse an unevaluable authority member as that member's own failure ([ac5435e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ac5435edfbba680a3c732c3f93901b69e1614704))
+* resolve authority-declaring members out of a delegated gate Job's run set ([3750c55](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3750c556cc55e68b7f891653741ac64cd45d60b2))
+* run a delegated push's authority-declaring members on the pushing host ([045c753](https://github.com/thewoolleyman/livespec-dev-tooling/commit/045c75337984e3c3f14c4a3a24bab6a519a6a2b7))
+
 ## [1.122.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.121.3...v1.122.0) (2026-10-22)
 
 
