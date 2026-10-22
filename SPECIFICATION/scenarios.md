@@ -1113,3 +1113,23 @@ Given a fleet member whose master-health reconcile shim is absent or differs fro
 When fleet conformance evaluates the `workflow-master-health-reconcile` row
 
 Then the row reports an error-severity finding for that member
+
+## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served
+
+Given a livespec-dev-tooling release T whose livespec-fabro-sandbox semver tags are not yet served by ghcr.io
+
+When the release fan-out runs
+
+Then it MUST send no sibling-released dispatch while any of T's tags is absent
+
+And it MUST dispatch to every unexcluded sibling once all of T's tags are served
+
+## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags
+
+Given a livespec-dev-tooling release T whose livespec-fabro-sandbox tags are not all served after the 90-minute bound
+
+When the release fan-out reaches that bound
+
+Then the run MUST fail with an annotation naming each missing tag
+
+And it MUST send no sibling-released dispatch
