@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.125.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.124.1...v1.125.0) (2026-10-22)
+
+
+### Features
+
+* derive scenario-shaped heading coverage debt keys ([2bcf578](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2bcf578b6ed20eab66886a04a9e74d63084556b5))
+
 ## [1.124.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.124.0...v1.124.1) (2026-10-22)
 
 
