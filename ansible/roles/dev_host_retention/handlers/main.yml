@@ -1,0 +1,18 @@
+---
+- name: Restart the dev host retention timer
+  # A running timer keeps the schedule it loaded, so a changed .timer needs a
+  # restart to take effect. Restarting it is not disruptive: the service it
+  # triggers is oneshot, so the worst case is one skipped daily interval. A
+  # changed .service or a changed script needs no restart — the next firing
+  # re-reads both.
+  #
+  # The `when` is the same check-mode guard the arming task carries: under
+  # --check the notifying template wrote nothing, so a timer this host does not
+  # already have cannot be restarted, and failing here would blame the host for
+  # the dry run's own emptiness.
+  ansible.builtin.systemd_service:
+    name: "{{ dev_host_retention_timer }}"
+    state: restarted
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or dev_host_retention_timer_unit.stat.exists

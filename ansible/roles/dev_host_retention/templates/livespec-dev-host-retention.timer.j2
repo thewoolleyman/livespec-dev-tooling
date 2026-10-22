@@ -1,0 +1,18 @@
+{#
+  The timer is what makes this retention STANDING rather than a thing someone
+  remembers. The ratified section states a daily floor; `Persistent=true` is
+  what keeps a host that was down across a firing from waiting out a whole
+  interval before it reclaims anything.
+-#}
+# {{ ansible_managed }}
+[Unit]
+Description=Daily reclamation of this dev host's disk
+
+[Timer]
+OnCalendar={{ dev_host_retention_on_calendar }}
+Persistent=true
+RandomizedDelaySec={{ dev_host_retention_randomized_delay_sec }}
+Unit={{ dev_host_retention_service }}
+
+[Install]
+WantedBy=timers.target
