@@ -442,6 +442,21 @@ A failed probe MUST be re-run once immediately, and MUST count as failed only wh
 
 **Enforced in the aggregate.** Both obligations MUST be asserted by this repository's `just check` aggregate, as `check-ansible-inventory-hosts-covered` and `check-ansible-replaced-installers-retired`. They are repo-private checks, outside the canonical fleet-universal slug set, because this repository alone owns the provisioning tree. Each MUST fail the aggregate on any violation. A run that inspects nothing, with no inventory host or no in-repository replacement claim, MUST report itself as vacuous rather than as a pass.
 
+## Dev host disk retention
+
+**Scope.** This section states the standing disk retention on the maintainer's dev host, the host the `ansible/dev-host.yml` play selects through `dev_hosts`. That host is also the Ansible control node, and its root filesystem holds every governed checkout, their `tmp/gate-runs` directories, the uv cache and the docker store its factory and gate work leave behind.
+
+**Provisioned, not hand-installed.** The retention MUST run at least daily from a systemd timer that a role included by `ansible/dev-host.yml` installs, as §"Host provisioning tree" requires for every service on an inventory host. Its script MUST be committed in that role, and its retention period MUST be a role variable documented in the role's `HOST_VARS.md`.
+
+**What one run reclaims, and what it leaves.**
+
+- It MUST remove dangling docker images and MUST leave every tagged image and every image a container uses in place.
+- It MUST prune the uv cache. When the prune cannot remove a path, the run MUST log that path and continue with its remaining steps, never abort.
+- It MUST remove a gate-run directory under a governed checkout's `tmp/gate-runs` only when that run is TERMINAL — it carries a recorded exit code, or its recorded process is no longer alive — and is older than the retention period. It MUST leave a gate run whose recorded process is alive in place, whatever its age.
+- Each run MUST log what it removed and the root filesystem's free space before and after.
+
+Cargo build targets are deliberately outside this section: the large ones belong to the fabro repository's owner, whose retention rule governs them.
+
 ## Fleet manifest adopter profiles
 
 livespec-dev-tooling's manifest parser and its fleet-conformance sweep are the reader of the `adopters` array of livespec core's `.livespec-fleet-manifest.jsonc`, whose meaning livespec core's specification owns (its non-functional-requirements.md, "Profiles and the declarative manifest"). This section states only what that reader accepts and evaluates.

@@ -838,5 +838,21 @@
     "test": "TODO",
     "reason": "Integration-tier (the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-7i2z5j. Its implementation owes the test: a fixture repository with the canonical worktree-discipline pack, a merged clean secondary worktree in the stated condition, and `just worktree-reap --execute --force` asserting the SKIP line and that the worktree remains on disk.",
     "work_item": "livespec-dev-tooling-7i2z5j"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Dev host disk retention",
+    "test": "TODO",
+    "reason": "Integration-tier. Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-fj6dm5. Its implementation owes the test: the committed retention script run against a fixture tree of terminal and live gate runs, a uv cache prune that cannot remove one path, and a stubbed docker, asserting what it removes, what it leaves, and its log lines.",
+    "work_item": "livespec-dev-tooling-fj6dm5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: dev host retention leaves an in-flight gate run and removes an aged terminal one",
+    "test": "TODO",
+    "reason": "Integration-tier (the scenario-tier floor). Spec-first, ratified 2026-10-22 for work-item livespec-dev-tooling-fj6dm5. Its implementation owes the test: the committed retention script run once against a fixture checkout holding an aged terminal gate run and an aged gate run whose recorded process is a live child, asserting the first is removed, the second remains, and the log names the removal and both free-space figures.",
+    "work_item": "livespec-dev-tooling-fj6dm5"
   }
 ]
