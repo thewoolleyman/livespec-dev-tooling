@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -499,6 +500,38 @@ _JOB_COMPLETE = json.dumps({"status": {"conditions": [{"type": "Complete", "stat
 # all. The two are the delegated gate's two REFUSED paths and only this one has a
 # Job to name.
 _JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status": "True"}]}})
+
+# The Job's own two clock readings, spelled the way Kubernetes marshals a
+# `metav1.Time`: RFC3339 with a literal `Z`, which is ISO-8601 IN UTC.
+_STARTED_AT = "2026-10-22T06:11:35Z"
+_FINISHED_AT = "2026-10-22T06:19:02Z"
+# `%z` rather than a literal `Z` in the pattern, so what a parse against it
+# proves is that the field carries a real ISO-8601 OFFSET and that the offset is
+# zero — a pattern ending in a literal `Z` would consume that character without
+# ever reading it as one.
+_ISO_8601_UTC = "%Y-%m-%dT%H:%M:%S%z"
+
+# A terminal Job that reported both readings, and one that reported only a
+# start. The second is not a contrivance: Kubernetes sets `completionTime` when a
+# Job SUCCEEDS, so a Job that ended `Failed` routinely carries a start time and
+# no completion time at all.
+_JOB_COMPLETE_TIMED = json.dumps(
+    {
+        "status": {
+            "conditions": [{"type": "Complete", "status": "True"}],
+            "startTime": _STARTED_AT,
+            "completionTime": _FINISHED_AT,
+        }
+    }
+)
+_JOB_FAILED_STARTED_ONLY = json.dumps(
+    {
+        "status": {
+            "conditions": [{"type": "Failed", "status": "True"}],
+            "startTime": _STARTED_AT,
+        }
+    }
+)
 
 
 # Marker token → step name, tried IN ORDER: the first marker present in an argv
@@ -1682,3 +1715,63 @@ def test_a_verdict_line_names_the_gate_job_it_submitted_and_names_none_when_it_d
         assert decided.get("namespace") == GATE_NAMESPACE
     assert unsubmitted.get("state") == GATE_NO_VERDICT
     assert [field for field in _JOB_FIELDS if field in unsubmitted] == []
+
+
+def test_a_verdict_line_carries_the_gate_jobs_own_start_and_finish_times(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """WHEN the gate ran, off the Job's own clock — and nothing where it said nothing.
+
+    Naming the Job lets a dispatch journal FIND it; these two say when it ran,
+    which is what the journal entry is for — a verdict with no interval cannot be
+    lined up against the merge it gated, the queue it waited in, or the previous
+    run of the same suite. They are the JOB's readings (`status.startTime` and
+    `status.completionTime`) rather than this client's own wall-clock around the
+    poll, because the poll measures how long the CLIENT waited: that span opens
+    before Kueue has admitted the Job and is not the interval the gate ran in.
+
+    THE CONDITIONAL IS ASSERTED IN BOTH DIRECTIONS, because a Job sets its two
+    readings at different moments and a reader cannot tell a missing field from a
+    wrong one. A Job that reported both carries both; one that reported only a
+    start — the ordinary shape of a Job that ended `Failed` — carries that alone,
+    with no companion key invented beside it; and one that reported neither
+    carries neither, rather than two empty strings a parser would have to treat
+    as instants.
+
+    THE FORMAT IS ASSERTED AS A FORMAT, not merely as the string that went in,
+    because the field promises ISO-8601 UTC to a reader that will parse it.
+    `datetime.fromisoformat` is not the instrument: this repository pins Python
+    3.10.16, whose parser REJECTS the trailing `Z` Kubernetes writes — the same
+    version split `conftest`'s `z_rendering_git` fixture exists for — so the
+    claim is proven by parsing against an explicit `%z` and reading the offset.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+
+    both_status, both = _verdict_line(
+        repo_root=repo_root,
+        runner=_StubWorld(terminal=_JOB_COMPLETE_TIMED),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    started_status, started = _verdict_line(
+        repo_root=repo_root,
+        runner=_StubWorld(terminal=_JOB_FAILED_STARTED_ONLY),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    _, untimed = _verdict_line(
+        repo_root=repo_root, runner=_StubWorld(), monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert (both_status, started_status) == (0, 1)
+    assert both.get("job_started_at") == _STARTED_AT
+    assert both.get("job_finished_at") == _FINISHED_AT
+    assert started.get("job_started_at") == _STARTED_AT
+    assert "job_finished_at" not in started
+    assert [field for field in _JOB_FIELDS if field in untimed] == ["job_name", "namespace"]
+    # The LINE's own values are parsed, never the constants above: what is being
+    # proven is the shape of what a reader will receive.
+    for reading in (both.get("job_started_at"), both.get("job_finished_at")):
+        assert isinstance(reading, str), "a clock reading must reach the line as a string"
+        assert datetime.strptime(reading, _ISO_8601_UTC).utcoffset() == timedelta(0)
