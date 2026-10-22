@@ -752,6 +752,18 @@ if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
     fail "the private sibling's clone carries no authorization: ${private_clone}"
   elif ! printf '%s' "${private_clone}" | grep -qF "cat ${private_mount}/token"; then
     fail "the private clone does not read its token from the mount: ${private_clone}"
+  # THE SCHEME IS LOAD-BEARING, and asserting only the header's PRESENCE above
+  # is how R581 shipped: github.com's git smart-HTTP endpoint rejects an
+  # installation token sent as `Bearer`, which in a pod with no askPass reads
+  # as `could not read Username`. The accepted form is Basic with the username
+  # `x-access-token`. What that header actually EVALUATES to is proven by
+  # running it — `tests/consumer/test_delegated_gate_declared_recipe_scenarios.py`
+  # sends it to a `git` stub and compares it to an independently computed
+  # base64 — so these two arms pin the scheme and the username alone.
+  elif printf '%s' "${private_clone}" | grep -qF "Bearer"; then
+    fail "the private clone sends a Bearer header, which github.com rejects: ${private_clone}"
+  elif ! printf '%s' "${private_clone}" | grep -qF "Authorization: Basic \$(printf 'x-access-token:%s'"; then
+    fail "the private clone does not send Basic x-access-token: ${private_clone}"
   elif printf '%s' "${public_clone}" | grep -qF "http.extraHeader"; then
     fail "a PUBLIC sibling was given a credential: ${public_clone}"
   elif ! grep -qF "mountPath: ${private_mount}" "${private_out}"; then
@@ -765,10 +777,12 @@ if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
   fi
   # The point of the whole design: what the API server STORES holds no
   # credential. `ghs_`/`ghp_`/`github_pat_` are GitHub's own token prefixes, and
-  # `Bearer <literal>` would be an interpolated header rather than the deferred
-  # `$(cat ...)` read the renderer emits.
-  if grep -qE 'gh[sprou]_|github_pat_|Authorization: Bearer [A-Za-z0-9]' "${private_out}"; then
-    fail "credential-shaped text is in the rendered manifest: $(grep -nE 'gh[sprou]_|github_pat_|Authorization: Bearer [A-Za-z0-9]' "${private_out}")"
+  # a `Bearer`/`Basic` followed by a LITERAL would be an interpolated header
+  # rather than the deferred `$(...)` read the renderer emits. BOTH schemes are
+  # named: the renderer now sends Basic, and a pattern that still knew only the
+  # retired scheme would be blind to exactly the header being rendered.
+  if grep -qE 'gh[sprou]_|github_pat_|Authorization: (Bearer|Basic) [A-Za-z0-9]' "${private_out}"; then
+    fail "credential-shaped text is in the rendered manifest: $(grep -nE 'gh[sprou]_|github_pat_|Authorization: (Bearer|Basic) [A-Za-z0-9]' "${private_out}")"
   else
     pass "the rendered manifest carries no token — only the Secret's name and a deferred read"
   fi
