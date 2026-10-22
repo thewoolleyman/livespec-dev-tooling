@@ -73,11 +73,19 @@ __all__: list[str] = [
 # heard of refuses by construction — which is why adding one is safe here.
 GATE_HOST_AUTHORITY_REFUSED = "HOST_AUTHORITY_REFUSED"
 
-# What such a push says. It names no member yet; naming the one that refused is
-# the next thing this file owes its reader.
+# WHAT SUCH A PUSH SAYS, and every clause of it is load-bearing. A push refused
+# by a GREEN gate Job explains nothing on its own: the gate the operator is
+# watching passed, so the refusal reads as coming from nowhere. So the line names
+# the MEMBER (something to re-run), says it ran on the PUSHING HOST (the Job is
+# not where to look), names the TREE it judged (a member answering about another
+# tree would be visible), and ends with the MEMBER'S OWN OUTPUT — which is
+# usually the sentence that closes the investigation, as "no approval label on
+# the work item" would.
 _HOST_AUTHORITY_REFUSAL = (
-    "the gate Job reported a green verdict, but an authorization-declaring member of this "
-    "repository's check set did not pass on the pushing host, so this push is refused"
+    "{member} failed on the pushing host, where the pre-push gate ran it with this host's own "
+    "credentials against the committed tree {tree_hash} at the pushing worktree's HEAD. The "
+    "gate Job does not run it, because it declares it reads an authorization held outside the "
+    "tree and the Job is handed none; the Job's own verdict was green. {detail}"
 )
 
 
@@ -154,6 +162,19 @@ def run_host_authority_members(
     return tuple(ran)
 
 
+def _refusal(*, run: HostAuthorityRun) -> str:
+    """The one line a push refused by `run` carries.
+
+    EVERY refused member gets its own, and they are all reported rather than
+    only the first. The members here are a repository's authorizations, and an
+    operator who fixes one approval only to be refused by the second has paid
+    two full delegated gates to learn what one message could have said.
+    """
+    return _HOST_AUTHORITY_REFUSAL.format(
+        member=run.member, tree_hash=run.tree_hash, detail=run.detail
+    )
+
+
 def host_authority_decision(
     *, verdict: GateVerdict, ran: tuple[HostAuthorityRun, ...]
 ) -> GateVerdict:
@@ -175,11 +196,12 @@ def host_authority_decision(
     host either way. Retracting the token would re-gate the tree-pure members
     the Job did judge, for no verdict anyone would read differently.
     """
-    if all(run.returncode == 0 for run in ran):
+    refused = tuple(run for run in ran if run.returncode != 0)
+    if not refused:
         return verdict
     return GateVerdict(
         state=GATE_HOST_AUTHORITY_REFUSED,
-        detail=_HOST_AUTHORITY_REFUSAL,
+        detail="; ".join(_refusal(run=run) for run in refused),
         token_written=verdict.token_written,
         job_name=verdict.job_name,
     )

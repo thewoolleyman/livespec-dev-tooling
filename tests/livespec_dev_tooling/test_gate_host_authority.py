@@ -31,6 +31,7 @@ from typing import Any
 
 from returns.result import Failure, Success
 
+from livespec_dev_tooling._gate_host_authority import GATE_HOST_AUTHORITY_REFUSED
 from livespec_dev_tooling.gate_credential import GATES_WRAPPER
 from livespec_dev_tooling.gate_remote_delegate import run_delegated_gate
 from livespec_dev_tooling.gate_remote_invocation import (
@@ -298,3 +299,45 @@ def test_a_delegated_push_completes_only_when_the_job_and_every_host_member_are_
     assert len(refusing.issued(needle="create")) == 1
     assert refusing.issued(needle=_DECLARING) == [("just", _DECLARING)]
     assert refused.refuses_push is True
+
+
+def test_a_member_that_fails_on_the_pushing_host_is_refused_by_a_line_that_names_both(
+    *, tmp_path: Path
+) -> None:
+    """Scenario Then: refused with a line naming the member and saying it ran on the host.
+
+    THE LINE IS THE DELIVERABLE HERE, not the refusal. A refusal an operator
+    cannot localise is the defect this whole exception was filed against, in its
+    mirror image: on 2026-10-19 a correct tree was refused by a message that
+    named a member and a pod, and the operator's problem was working out that
+    the pod was the wrong place to have asked. A push refused by a GREEN Job has
+    the same hazard in reverse — nothing about a green gate explains why the
+    push stopped — so the line has to say WHICH member and WHERE it ran, or the
+    operator goes looking for a cluster fault that is not there.
+
+    FOUR things, and each is load-bearing. The member's NAME, so there is
+    something to re-run. That it ran ON THE PUSHING HOST, so the operator knows
+    the Job is not where to look. The TREE it judged, so a member that answered
+    about some other tree would be visible. And the member's OWN output, because
+    "no approval label on the work item" is the sentence that ends the
+    investigation.
+    """
+    repo = tmp_path / "widget"
+    repo.mkdir()
+    _a_delegating_repo(repo_root=repo, inventory=(f"{_DECLARING}  # authority: ledger",))
+    host = _CannedHost(
+        member_result=Success(
+            GateCommandResult(returncode=3, stdout="", stderr="no approval label on the work item")
+        )
+    )
+
+    refused = run_delegated_gate(
+        repo_root=repo, renderer=_RENDERER, runner=host, sleeper=_no_sleep, emit=_nothing
+    )
+
+    assert refused.state == GATE_HOST_AUTHORITY_REFUSED
+    assert refused.refuses_push is True
+    assert _DECLARING in refused.detail
+    assert "on the pushing host" in refused.detail
+    assert _TREE in refused.detail
+    assert "no approval label on the work item" in refused.detail
