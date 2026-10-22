@@ -256,7 +256,7 @@ def test_rederived_orchestrator_ceiling_removes_its_recorded_exception() -> None
     assert "## Recorded exceptions to the rule" not in derivation
     assert (
         "The Recorded exceptions to the rule table remains absent because 58 is not below 12."
-        in derivation
+        in " ".join(derivation.split())
     )
 
 
