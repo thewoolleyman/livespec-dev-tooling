@@ -41,6 +41,7 @@ from livespec_dev_tooling.gate_group_repair import (
     SG,
     GateGroupFacts,
 )
+from livespec_dev_tooling.gate_remote_client import GATE_NAMESPACE
 from livespec_dev_tooling.gate_remote_delegate import (
     GATE_MIRROR_ROOT,
     GATE_RENDERER_IN_REPO,
@@ -52,7 +53,12 @@ from livespec_dev_tooling.gate_remote_delegate import (
     run_delegated_gate,
 )
 from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
-from livespec_dev_tooling.gate_remote_verdict import GATE_NO_VERDICT, GATE_PASSED, GateVerdict
+from livespec_dev_tooling.gate_remote_verdict import (
+    GATE_FAILED,
+    GATE_NO_VERDICT,
+    GATE_PASSED,
+    GateVerdict,
+)
 
 if TYPE_CHECKING:
     import pytest
@@ -488,6 +494,11 @@ def test_every_other_repository_uses_the_copy_inside_this_package(*, tmp_path: P
 # zero inside the pod.
 _JOB_ADMITTING = json.dumps({"status": {}})
 _JOB_COMPLETE = json.dumps({"status": {"conditions": [{"type": "Complete", "status": "True"}]}})
+# A real red verdict — the Job ran and the aggregate inside the pod exited
+# non-zero — as opposed to a plumbing fault, which never reaches a condition at
+# all. The two are the delegated gate's two REFUSED paths and only this one has a
+# Job to name.
+_JOB_FAILED = json.dumps({"status": {"conditions": [{"type": "Failed", "status": "True"}]}})
 
 
 # Marker token → step name, tried IN ORDER: the first marker present in an argv
@@ -549,6 +560,13 @@ class _StubWorld:
     run has to WAIT at least once before it sees a verdict. That is the realistic
     shape — no gate is terminal on its first poll — and it is the only way the
     sleeper seam is reached at all.
+
+    `terminal` is the payload the SECOND poll answers with, so a scenario varies
+    the Job's own terminal condition and the clock readings beside it without
+    touching anything else about the run. It is the whole `kubectl get job
+    --output json` reply rather than a condition word, because the Job reports
+    when it started and when it completed in that same reply — which is the only
+    place either can be read once the Job has been collected.
     """
 
     def __init__(
@@ -558,10 +576,12 @@ class _StubWorld:
         refreshed: tuple[str, ...] = (),
         origin: str = _ORIGIN_URL,
         common_dir: str = _COMMON_DIR,
+        terminal: str = _JOB_COMPLETE,
     ) -> None:
         self.argvs: list[tuple[str, ...]] = []
         self._refuse = refuse
         self._refreshed = refreshed
+        self._terminal = terminal
         # Read from the shipped wrapper only when a scenario asks for it, so a
         # suite whose scenarios need no refresh never depends on that file.
         self._notice = _wrapper_refresh_notice() if refreshed else ""
@@ -579,9 +599,9 @@ class _StubWorld:
         }
 
     def _poll(self) -> str:
-        """Not admitted yet, then complete."""
+        """Not admitted yet, then terminal."""
         self._polls += 1
-        return _JOB_ADMITTING if self._polls == 1 else _JOB_COMPLETE
+        return _JOB_ADMITTING if self._polls == 1 else self._terminal
 
     def __call__(
         self,
@@ -1558,3 +1578,107 @@ def test_run_exits_non_zero_on_every_other_verdict(
     monkeypatch.setattr("livespec_dev_tooling.gate_remote_delegate.run_delegated_gate", _undecided)
 
     assert main() == 1
+
+
+# ---------------------------------------------------------------------------
+# The verdict line, read as a RECORD rather than as prose
+# ---------------------------------------------------------------------------
+
+
+# The four fields a reader of this line asks about the Job, named once so that
+# "present on every decided path" and "absent when nothing was submitted" are
+# two readings of ONE inventory rather than two lists that can drift apart.
+_JOB_FIELDS = ("job_name", "namespace", "job_started_at", "job_finished_at")
+
+
+def _verdict_line(
+    *,
+    repo_root: Path,
+    runner: _StubWorld,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[int, dict[str, object]]:
+    """Drive the recipe's `run` command over one canned cluster; read its verdict line.
+
+    THE REAL `run_delegated_gate` RUNS — only its seams are canned — because the
+    fields under assertion are read off the Job by the poller, carried out of the
+    run by the verdict, and rendered by `main`, so a stubbed verdict would prove
+    only the last of those three and would keep proving it after the poller
+    stopped reading anything.
+
+    The LAST JSON line on stderr is what is returned, because that is the line
+    the consumer reads: livespec-orchestrator-beads-fabro's post-merge janitor
+    decides a `cluster_job` venue's verdict from the final JSON log line this
+    client writes, so a field that reaches the operator in some earlier line
+    reaches that reader not at all.
+    """
+
+    def _gated(**kwargs: object) -> GateVerdict:
+        """The run `main` would have made, against this scenario's world."""
+        _ = kwargs
+        return run_delegated_gate(
+            repo_root=repo_root, renderer=_RENDERER, runner=runner, sleeper=_no_sleep
+        )
+
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setattr(sys, "argv", ["gate_remote_delegate", "run"])
+    monkeypatch.setattr("livespec_dev_tooling.gate_remote_delegate.run_delegated_gate", _gated)
+    status = main()
+    reported = [line for line in capsys.readouterr().err.splitlines() if line.startswith("{")]
+    assert reported, "the run must report its verdict as a JSON log line"
+    parsed: dict[str, object] = json.loads(reported[-1])
+    return status, parsed
+
+
+def test_a_verdict_line_names_the_gate_job_it_submitted_and_names_none_when_it_did_not(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Which Job produced this verdict — on every path that submitted one, and no other.
+
+    livespec-orchestrator-beads-fabro's post-merge janitor runs its check suite
+    through this client when a repository declares
+    `dispatcher.janitor.venue = cluster_job`, and reads this client's last JSON
+    log line to decide the verdict. That line carried `state` and `detail`
+    alone, so the orchestrator's dispatch journal could not name the Job a
+    verdict came from: two sessions on 2026-10-17 reconstructed it by hand out
+    of the gates namespace, matching Jobs on their tree-hash label.
+
+    THE THREE PATHS ARE ONE STATEMENT, so they are driven together. The PASSED
+    path is the one whose prose never named the Job at all. The REFUSED path's
+    `detail` does name it, which is exactly why the field is the half most
+    likely to be left off — it looks redundant until something has to parse it,
+    and a reader that scraped the name out of that sentence would read the pass
+    as a run with no Job. And the path that submitted NOTHING must name nothing:
+    assembly reached no cluster, so there is no Job, no namespace it ran in and
+    no clock reading to report, and a field invented there — a `null`, an empty
+    string, the namespace a Job WOULD have used — would tell that same journal a
+    gate ran when none did. Absence is the only honest answer, and it is
+    asserted over the whole field inventory rather than field by field.
+    """
+    repo_root = tmp_path / "widget"
+    repo_root.mkdir()
+
+    passed_status, passed = _verdict_line(
+        repo_root=repo_root, runner=_StubWorld(), monkeypatch=monkeypatch, capsys=capsys
+    )
+    refused_status, refused = _verdict_line(
+        repo_root=repo_root,
+        runner=_StubWorld(terminal=_JOB_FAILED),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+    unsubmitted_status, unsubmitted = _verdict_line(
+        repo_root=repo_root,
+        runner=_StubWorld(refuse=("render",)),
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert (passed_status, refused_status, unsubmitted_status) == (0, 1, 1)
+    assert passed.get("state") == GATE_PASSED
+    assert refused.get("state") == GATE_FAILED
+    for decided in (passed, refused):
+        assert decided.get("job_name") == _JOB
+        assert decided.get("namespace") == GATE_NAMESPACE
+    assert unsubmitted.get("state") == GATE_NO_VERDICT
+    assert [field for field in _JOB_FIELDS if field in unsubmitted] == []

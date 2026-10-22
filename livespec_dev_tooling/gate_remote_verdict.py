@@ -126,12 +126,20 @@ class GateVerdict:
     with no Job at all. It is `None` exactly when no verdict was adjudicated,
     because the name is only ever read back off a submit that happened; the
     contract requires such a value to be ABSENT from the event, never guessed.
+
+    `namespace` names where that Job ran, and it is carried for the same reason
+    and under the same rule: a Job is identified by a name AND a namespace, so a
+    name alone is not enough to find the Job a verdict came from. It is `None`
+    exactly when `job_name` is — never the namespace a Job WOULD have run in,
+    because a run that submitted nothing has no namespace to report and a
+    plausible value there says a gate ran where none did.
     """
 
     state: str
     detail: str
     token_written: bool
     job_name: str | None = None
+    namespace: str | None = None
 
     @property
     def refuses_push(self) -> bool:
@@ -174,16 +182,52 @@ def _no_verdict(*, failure: GateStepFailed) -> GateVerdict:
     )
 
 
+def _decided(
+    *,
+    outcome: GateRunOutcome,
+    request: GateRunRequest,
+    state: str,
+    detail: str,
+    token_written: bool,
+) -> GateVerdict:
+    """One verdict about a Job that WAS submitted, carrying WHICH Job it was.
+
+    Every adjudicated shape is built here — the red verdict, the three greens
+    that could not leave a token behind, and the green that did — so the Job's
+    identity cannot be attached to some of them and forgotten on the rest. That
+    omission is precisely the defect this exists to prevent: the fields are read
+    off this client's last log line by a dispatch journal, and a line that
+    carries them on four verdicts out of five reads as "this one had no Job"
+    rather than as "this one forgot to say".
+
+    The namespace comes from the REQUEST rather than from the outcome, because it
+    is what this run ASKED the API server for rather than something it read back:
+    the submit, the wait, the pod read and the log stream were all spelled with
+    it, so a verdict that exists at all is a verdict about a Job in that
+    namespace. The `GATE_NO_VERDICT` shapes do not come through here and must
+    not, which is why this takes the outcome rather than the request alone — no
+    outcome means no Job, and no Job means nothing to name.
+    """
+    return GateVerdict(
+        state=state,
+        detail=detail,
+        token_written=token_written,
+        job_name=outcome.job_name,
+        namespace=request.namespace,
+    )
+
+
 def _adjudicate(
     *, outcome: GateRunOutcome, request: GateRunRequest, runner: GateCommandRunner
 ) -> GateVerdict:
     """Read the terminal condition as the exit code it stands in for."""
     if outcome.terminal_state != _COMPLETE:
-        return GateVerdict(
+        return _decided(
+            outcome=outcome,
+            request=request,
             state=GATE_FAILED,
             detail=_failed_detail(outcome=outcome),
             token_written=False,
-            job_name=outcome.job_name,
         )
     return _write_green_token(outcome=outcome, request=request, runner=runner)
 
@@ -207,9 +251,17 @@ def _failed_detail(*, outcome: GateRunOutcome) -> str:
     return f"{ended}: {outcome.failure_message}" if outcome.failure_message else ended
 
 
-def _passed_without_token(*, detail: str, job_name: str) -> GateVerdict:
+def _passed_without_token(
+    *, outcome: GateRunOutcome, request: GateRunRequest, detail: str
+) -> GateVerdict:
     """A true green verdict the client cannot hand on — so it does not."""
-    return GateVerdict(state=GATE_PASSED, detail=detail, token_written=False, job_name=job_name)
+    return _decided(
+        outcome=outcome,
+        request=request,
+        state=GATE_PASSED,
+        detail=detail,
+        token_written=False,
+    )
 
 
 def _current_head_tree(
@@ -235,19 +287,21 @@ def _write_green_token(
     current = _current_head_tree(request=request, runner=runner)
     if isinstance(current, Failure):
         return _passed_without_token(
+            outcome=outcome,
+            request=request,
             detail=(
                 f"the gate passed on tree {outcome.tree_hash}, but HEAD's tree could not be "
                 f"re-read, so no token was written: {current.failure().detail}"
             ),
-            job_name=outcome.job_name,
         )
     if current.unwrap() != outcome.tree_hash:
         return _passed_without_token(
+            outcome=outcome,
+            request=request,
             detail=(
                 f"the gate passed on tree {outcome.tree_hash}, but HEAD now resolves to "
                 f"{current.unwrap()}; that tree was never gated, so no token was written"
             ),
-            job_name=outcome.job_name,
         )
     argv = list(_GREEN_TOKEN_WRITE_ARGV)
     written = require_success(
@@ -255,15 +309,17 @@ def _write_green_token(
     )
     if isinstance(written, Failure):
         return _passed_without_token(
+            outcome=outcome,
+            request=request,
             detail=(
                 f"the gate passed on tree {outcome.tree_hash}, but the green token could not "
                 f"be written: {written.failure().detail}"
             ),
-            job_name=outcome.job_name,
         )
-    return GateVerdict(
+    return _decided(
+        outcome=outcome,
+        request=request,
         state=GATE_PASSED,
         detail=f"the gate passed on tree {outcome.tree_hash}; its green token completes the push",
         token_written=True,
-        job_name=outcome.job_name,
     )

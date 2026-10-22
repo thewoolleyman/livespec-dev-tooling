@@ -428,6 +428,29 @@ def run_delegated_gate(
     return host_authority_decision(verdict=verdict, ran=ran)
 
 
+def _verdict_job_fields(*, verdict: GateVerdict) -> dict[str, str]:
+    """The verdict's own account of the gate Job it decided, as log-line fields.
+
+    THE LINE IS A RECORD, NOT ONLY A SENTENCE. livespec-orchestrator-beads-fabro's
+    post-merge janitor runs its check suite through this client when a repository
+    declares `dispatcher.janitor.venue = cluster_job`, and decides the verdict by
+    reading this client's LAST JSON log line; it copies these fields straight into
+    its dispatch journal. Before they were here, that journal could not name the
+    Job a verdict came from — two sessions on 2026-10-17 reconstructed it by hand
+    out of the gates namespace, matching Jobs on their tree-hash label.
+
+    ABSENT RATHER THAN NULL for everything a run never obtained, which is why the
+    inventory is FILTERED here rather than spelled out at each call site. A field
+    carrying `null`, an empty string, or the namespace a Job WOULD have run in
+    tells that journal a gate ran where none did; a field that is not there says
+    only what is true. Filtering in one place is also what holds the two lines
+    below together: the refused line and the passed line report the same fields,
+    or the difference is a defect rather than a choice.
+    """
+    named = {"job_name": verdict.job_name, "namespace": verdict.namespace}
+    return {field: value for field, value in named.items() if value is not None}
+
+
 def main() -> int:
     """The two answers a repository's `check-pre-push` recipe needs.
 
@@ -490,9 +513,15 @@ def main() -> int:
             "delegated gate refuses this push",
             state=verdict.state,
             detail=verdict.detail,
+            **_verdict_job_fields(verdict=verdict),
         )
         return 1
-    log.info("delegated gate passed", state=verdict.state, detail=verdict.detail)
+    log.info(
+        "delegated gate passed",
+        state=verdict.state,
+        detail=verdict.detail,
+        **_verdict_job_fields(verdict=verdict),
+    )
     return 0
 
 
