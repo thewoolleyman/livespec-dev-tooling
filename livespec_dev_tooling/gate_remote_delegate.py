@@ -78,7 +78,10 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from livespec_dev_tooling._gate_host_authority import run_host_authority_members
+from livespec_dev_tooling._gate_host_authority import (
+    host_authority_decision,
+    run_host_authority_members,
+)
 from livespec_dev_tooling._gate_remote_assembly import (
     assembly_refusal,
     check_suite_argv,
@@ -371,18 +374,29 @@ def run_delegated_gate(
     # "before or beside". A member that declares it reads an authorization held
     # outside the tree cannot be answered inside the Job, which is handed none,
     # so it runs here with this host's own credentials against the tree the Job
-    # is about to be handed. The records are observed and not yet joined: the
-    # delegated verdict is the conjunction of this half and the Job's, and the
-    # Job has not reported yet.
-    _ = run_host_authority_members(repo_root=repo_root, tree_hash=tree_hash, runner=runner)
+    # is about to be handed. It runs UNCONDITIONALLY rather than only on a green
+    # Job: the ratified scenario's Then is unconditional, and an operator whose
+    # tree AND whose approval are both wrong should learn both in one push.
+    ran = run_host_authority_members(repo_root=repo_root, tree_hash=tree_hash, runner=runner)
     verdict = run_gated_push(request=request, runner=runner, sleeper=sleeper)
+    # THE EVENT REPORTS THE GATE'S VERDICT, NOT THE PUSH'S FATE, so it is emitted
+    # from the Job's own verdict BEFORE the authority half is joined. A Job-green
+    # push that the pushing host then refuses therefore reports `passed`, which
+    # is what the contract's Telemetry bullet requires of every green verdict on
+    # which the push is still refused.
     emit(
         outcome=_GATE_OUTCOMES.get(verdict.state, GATE_OUTCOME_NO_VERDICT),
         repository=request.mirror_url.rsplit("/", maxsplit=1)[-1].removesuffix(".git"),
         tree_hash=tree_hash,
         job_name=verdict.job_name,
     )
-    return verdict
+    # A Job verdict that already refuses is returned AS ITSELF. The push is
+    # refused either way, and the gate's own answer — a red tree, a lost cluster
+    # — is the one an operator has to act on first; restating it as an authority
+    # refusal would name the wrong cause.
+    if verdict.refuses_push:
+        return verdict
+    return host_authority_decision(verdict=verdict, ran=ran)
 
 
 def main() -> int:

@@ -10,10 +10,13 @@ it needs fails inside a gate Job where the local fall-through would only warn.
 So the pre-push gate runs that member HERE, on the pushing host, with the
 pushing host's own credentials, against the same committed tree.
 
-THIS MODULE ONLY OBSERVES. It runs the members and reports, per member, what the
-host answered; it decides nothing about the push. The decision is the gate
-client's, beside the Job's own verdict, because the delegated verdict is the
-CONJUNCTION of the two and neither half can reach it alone.
+THE DELEGATED VERDICT IS A CONJUNCTION, and this module owns one of its two
+halves. The Job's verdict authorises nothing on its own: the members it cannot
+evaluate are exactly the ones carrying a maintainer's authorization, so a green
+Job over a tree whose approval was never read is not a gated tree.
+`run_host_authority_members` observes what the host answered and
+`host_authority_decision` ANDs that into the Job's verdict — in that direction
+only, because the Job half is already fail-closed and nothing here may widen it.
 
 THE THREE OUTCOMES ARE KEPT APART, and that is the whole shape of the record.
 A member that RAN carries its real exit code. A member that could not be RUN at
@@ -43,6 +46,7 @@ from pathlib import Path
 
 from livespec_dev_tooling.check_authority import repository_authority_members
 from livespec_dev_tooling.gate_remote_invocation import GateCommandRunner
+from livespec_dev_tooling.gate_remote_verdict import GateVerdict
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -55,9 +59,26 @@ from returns.result import Failure  # noqa: E402  — same.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — same.
 
 __all__: list[str] = [
+    "GATE_HOST_AUTHORITY_REFUSED",
     "HostAuthorityRun",
+    "host_authority_decision",
     "run_host_authority_members",
 ]
+
+# The verdict state of a push the GATE JOB cleared and the PUSHING HOST did not.
+# A fourth word beside `gate_remote_verdict`'s three rather than a reuse of
+# `GATE_FAILED`, because the two name different facts about the same push: the
+# tree the Job judged was green, and the authorization this host judged was not.
+# `GateVerdict.refuses_push` admits exactly one state, so a word it has never
+# heard of refuses by construction — which is why adding one is safe here.
+GATE_HOST_AUTHORITY_REFUSED = "HOST_AUTHORITY_REFUSED"
+
+# What such a push says. It names no member yet; naming the one that refused is
+# the next thing this file owes its reader.
+_HOST_AUTHORITY_REFUSAL = (
+    "the gate Job reported a green verdict, but an authorization-declaring member of this "
+    "repository's check set did not pass on the pushing host, so this push is refused"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -131,3 +152,34 @@ def run_host_authority_members(
             )
         )
     return tuple(ran)
+
+
+def host_authority_decision(
+    *, verdict: GateVerdict, ran: tuple[HostAuthorityRun, ...]
+) -> GateVerdict:
+    """AND the pushing host's authority half into the gate Job's verdict.
+
+    A PASS IS THE ONLY THING THAT CARRIES THE VERDICT THROUGH, which is the same
+    asymmetry `gate_remote_verdict` is built on: exactly one observation leaves
+    the verdict standing, and every other shape a host can produce — a non-zero
+    exit, a member that never ran, a declaration nothing could read — refuses.
+    An authority half written as "refuse these known faults" would pass every
+    fault nobody enumerated, and the thing it would be passing is a maintainer
+    authorization that was never read.
+
+    THE JOB'S TOKEN IS CARRIED FORWARD RATHER THAN RETRACTED, and that is sound
+    rather than lenient. The green token memoizes only the members whose verdict
+    the committed tree alone decides, and an authority-reading member is
+    world-reading by construction — it reads a label or a repository setting —
+    so the next push of this byte-identical tree runs it again on the pushing
+    host either way. Retracting the token would re-gate the tree-pure members
+    the Job did judge, for no verdict anyone would read differently.
+    """
+    if all(run.returncode == 0 for run in ran):
+        return verdict
+    return GateVerdict(
+        state=GATE_HOST_AUTHORITY_REFUSED,
+        detail=_HOST_AUTHORITY_REFUSAL,
+        token_written=verdict.token_written,
+        job_name=verdict.job_name,
+    )
