@@ -58,6 +58,25 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.126.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.125.0...v1.126.0) (2026-10-22)
+
+
+### Features
+
+* carry the gate Job's own start and finish times in the verdict line ([135de94](https://github.com/thewoolleyman/livespec-dev-tooling/commit/135de94b2215b4df4a28ad7e11b637f09e09ffc2))
+* name the gate Job and its namespace in the delegated verdict line ([40a5586](https://github.com/thewoolleyman/livespec-dev-tooling/commit/40a5586ad22b4a7b726854f4300abeee5672ba6f))
+
+
+### Bug Fixes
+
+* keep the gate Job named when the pushing host refuses a green verdict ([5f0af84](https://github.com/thewoolleyman/livespec-dev-tooling/commit/5f0af843578d9d311d67b321c7d6c961dd4517b1))
+
+
+### Refactoring
+
+* **gates:** restore the Job-status decoder rationale docstrings ([1bba06b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1bba06bbd9754cd4f71630f6ed11a0cf63f93572))
+* **gates:** split delegated Job status decoding ([9277aff](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9277aff7c3342ca639b0a2fbbabcc0a14b5d5450))
+
 ## [1.125.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.124.1...v1.125.0) (2026-10-22)
 
 
