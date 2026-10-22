@@ -49,6 +49,12 @@ _GATE_CONTEXT_GUARD = 'if [[ -n "${LIVESPEC_GATE_CONTEXT:-}" ]]; then'
 # authorization — the `approval:workflow-edit` label on a named work item.
 _WORKFLOW_EDIT_GUARD = "check-no-workflow-edits"
 
+# The SHIPPED check that reads the forge's repository administration settings,
+# and a shipped check that reads no authority at all — the two sides of the
+# module-declaration precedence rule.
+_BRANCH_PROTECTION = "check-branch-protection-alignment"
+_SHIPPED_TREE_PURE = "check-file-lloc"
+
 
 def _module() -> Any:
     """The module under test, imported here so its ABSENCE is a test failure."""
@@ -215,3 +221,113 @@ def test_this_repositorys_workflow_edit_guard_declares_the_ledger_authorization(
     because the resolution is what the delegated gate acts on.
     """
     assert _WORKFLOW_EDIT_GUARD in _members(repo_root=_REPO_ROOT)
+
+
+def test_the_shipped_branch_protection_check_declares_the_forge_admin_authorization(
+    *, tmp_path: Path
+) -> None:
+    """`check-branch-protection-alignment` reads the forge's admin settings, and now says so.
+
+    THE OTHER MEASURED VICTIM, and the one that proves the declaration has to
+    SHIP. livespec's first delegated run failed this member with HTTP 403 on the
+    gate forge credential: the member reads a repository's live branch-protection
+    settings, which needs admin scope, and the gate Job is handed a token that
+    deliberately has none.
+
+    SO THE DECLARATION IS A MODULE CONSTANT, not an inventory annotation. This
+    member is one this library SHIPS, so its declaration has to reach every
+    consuming repository with the wheel — asserted in BOTH vantages here: this
+    repository's own inventory resolves it, and so does a consumer whose
+    inventory line carries no annotation at all. An annotation would have had to
+    be written into nine repositories by hand, and the one that was missed would
+    fail closed in its pod exactly as before.
+    """
+    assert _BRANCH_PROTECTION in _members(repo_root=_REPO_ROOT)
+
+    _fixture_inventory(repo_root=tmp_path, lines=(_BRANCH_PROTECTION, "check-widget-lint"))
+
+    assert _members(repo_root=tmp_path) == (_BRANCH_PROTECTION,)
+
+
+def test_an_inventory_annotation_cannot_demote_a_shipped_checks_own_declaration(
+    *, tmp_path: Path
+) -> None:
+    """A shipped module's declaration OUTRANKS the consumer's inventory line.
+
+    The precedence is load-bearing rather than arbitrary, and it runs the same
+    way `check_purity`'s does: the module declaration is the one that reaches
+    every consuming repository, so one repository's inventory must not be able
+    to move a shipped member off the cluster — or onto it — while the library
+    says otherwise everywhere else. `check-file-lloc` ships a module and
+    declares no authority, so it runs in the Job however its line is annotated.
+    """
+    _fixture_inventory(repo_root=tmp_path, lines=(f"{_SHIPPED_TREE_PURE}  # authority: ledger",))
+
+    assert _members(repo_root=tmp_path) == ()
+
+
+def test_an_annotated_module_declaration_is_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both spellings say the same thing, so both are accepted.
+
+    A resolver that read only the bare assignment would report a correctly
+    declared module as declaring nothing — and that error runs in the unsafe
+    direction here, handing an authority-reading member back to a pod holding no
+    authority.
+    """
+    monkeypatch.setattr(_module(), "_CHECKS_PACKAGE_DIR", tmp_path, raising=False)
+    _ = (tmp_path / "widget_protection.py").write_text(
+        'CHECK_AUTHORITY: str = "forge-admin"\n', encoding="utf-8"
+    )
+    _fixture_inventory(repo_root=tmp_path, lines=("check-widget-protection",))
+
+    assert _members(repo_root=tmp_path) == ("check-widget-protection",)
+
+
+def test_a_module_declaration_that_is_not_a_string_literal_is_malformed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A computed declaration LOOKS declared and cannot be read, so it is convicted.
+
+    Reading it would mean importing the module, which a resolution on the
+    pre-push path must never do. Treating it as absent would be worse than
+    having no declaration at all, because the author believes the member has
+    one.
+    """
+    monkeypatch.setattr(_module(), "_CHECKS_PACKAGE_DIR", tmp_path, raising=False)
+    _ = (tmp_path / "widget_protection.py").write_text(
+        "CHECK_AUTHORITY = 1 + 1\n", encoding="utf-8"
+    )
+    _fixture_inventory(repo_root=tmp_path, lines=("check-widget-protection",))
+
+    resolved = _module().repository_authority_members(repo_root=tmp_path)
+
+    assert not is_successful(resolved), f"a computed declaration must refuse; got {resolved}"
+    assert unsafe_perform_io(resolved.failure()).target == "check-widget-protection"
+
+
+def test_a_module_that_cannot_be_parsed_declares_nothing_rather_than_refusing_every_gate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unparseable module has made NO claim, and the safe reading of no claim is the Job.
+
+    The direction matters and it is the opposite of the malformed-DECLARATION
+    case above. There, something was written and could not be acted on, which is
+    a registry bug. Here nothing was written at all — the file does not parse, so
+    there is no declaration to misread — and the member keeps the default every
+    undeclared member has: it runs in the gate Job, where the whole aggregate
+    runs. Refusing instead would make one syntactically broken check module
+    refuse every delegated push in the fleet.
+
+    Asserted beside a module in the SAME directory that does declare, so a
+    resolver that had simply stopped reading modules altogether fails here.
+    """
+    monkeypatch.setattr(_module(), "_CHECKS_PACKAGE_DIR", tmp_path, raising=False)
+    _ = (tmp_path / "widget_broken.py").write_text("def broken(:\n", encoding="utf-8")
+    _ = (tmp_path / "widget_protection.py").write_text(
+        'CHECK_AUTHORITY = "forge-admin"\n', encoding="utf-8"
+    )
+    _fixture_inventory(repo_root=tmp_path, lines=("check-widget-broken", "check-widget-protection"))
+
+    assert _members(repo_root=tmp_path) == ("check-widget-protection",)
