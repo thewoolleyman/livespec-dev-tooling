@@ -53,6 +53,7 @@ __all__: list[str] = []
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _KUEUE_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "kueue"
+_DERIVATION = _KUEUE_DIR / "DERIVATION.md"
 _ARC_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "arc"
 _PROFILES_DIR = _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles"
 
@@ -219,6 +220,28 @@ def test_the_fair_shares_sum_to_the_capacity_the_node_profiles_declare() -> None
         f"either without complaint; sum={sum(quotas.values())} capacity={capacity} "
         f"per_node={capacities} quotas={quotas}"
     )
+
+
+def test_measured_job_hours_derive_the_committed_fair_shares() -> None:
+    """Seven-day pool job-hours are the dated, auditable source of every quota."""
+    expected = {
+        "livespec-orchestrator-beads-fabro-cq": 29,
+        "livespec-dev-tooling-cq": 6,
+        "livespec-cq": 2,
+        "livespec-overseer-cq": 1,
+        "livespec-orchestrator-git-jsonl-cq": 1,
+        "livespec-driver-claude-cq": 1,
+        "livespec-driver-pi-cq": 1,
+        "livespec-console-beads-fabro-cq": 1,
+        "livespec-driver-codex-cq": 1,
+        "livespec-runtime-cq": 1,
+    }
+    assert _cohort_quotas() == expected
+
+    derivation = _DERIVATION.read_text(encoding="utf-8")
+    assert "## Measured job-hours re-derivation at C = 44 (2026-10-22)" in derivation
+    assert "SUM(duration_ms) / 3,600,000" in derivation
+    assert "deducts one from `livespec-orchestrator-beads-fabro` (30 → 29)" in derivation
 
 
 def test_no_committed_admission_path_reaches_or_doubles_the_physical_cap() -> None:
