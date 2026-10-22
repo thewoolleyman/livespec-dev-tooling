@@ -836,8 +836,9 @@ the earlier contradictory prose in favor of the stated apportionment rule.
 `maxRunners` is `max(2 x nominalQuota, 6)` for every row. The orchestrator's
 rule value is now 58, above its former recorded value of 12, so its
 2026-10-19 exception is deleted: retaining it would be both unnecessary and
-incorrectly below the rule. The ten ceilings total 118; at a full 44-runner
-admission, at most 74 runner objects are gated in the cluster.
+incorrectly below the rule. The Recorded exceptions to the rule table remains
+absent because 58 is not below 12. The ten ceilings total 118; at a full
+44-runner admission, at most 74 runner objects are gated in the cluster.
 
 ## Bounding maxRunners to the quota (2026-09-06)
 
