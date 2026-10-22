@@ -190,6 +190,8 @@ class GateRunRequest:
     mirror_url: str
     manifest: str
     gate_ref: str
+    private_sibling_token: str = ""
+    private_sibling_secret: str = ""
     namespace: str = GATE_NAMESPACE
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 3600.0
@@ -402,6 +404,15 @@ def _gate_a_pushed_tree(
     if isinstance(named, Failure):
         return Failure(named.failure())
     job_name = named.unwrap()
+    if request.private_sibling_token:
+        secret = _create_private_sibling_secret(
+            request=request,
+            runner=runner,
+            job_name=job_name,
+            create_payload=submitted.unwrap().stdout,
+        )
+        if isinstance(secret, Failure):
+            return Failure(secret.failure())
     terminal = _await_terminal_state(
         request=request, runner=runner, sleeper=sleeper, job_name=job_name
     )
@@ -479,6 +490,57 @@ def _created_job_name(*, argv: Sequence[str], payload: str) -> Result[str, GateS
             argv=argv,
             detail="the submit response carries no metadata.name for the created Job",
         )
+    )
+
+
+def _create_private_sibling_secret(
+    *,
+    request: GateRunRequest,
+    runner: GateCommandRunner,
+    job_name: str,
+    create_payload: str,
+) -> StepOutcome:
+    """Create the token Secret after its owning Job has an API-assigned UID."""
+    try:
+        uid = cast("_JobPayload", json.loads(create_payload)).get("metadata", {}).get("uid")
+    except json.JSONDecodeError:
+        uid = None
+    if not isinstance(uid, str) or not uid:
+        return Failure(
+            _unreadable(
+                step="create-private-sibling-token-secret",
+                argv=(),
+                detail=(
+                    "created Job carries no metadata.uid to own the private sibling token Secret"
+                ),
+            )
+        )
+    secret = json.dumps(
+        {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": request.private_sibling_secret,
+                "namespace": request.namespace,
+                "ownerReferences": [
+                    {
+                        "apiVersion": "batch/v1",
+                        "kind": "Job",
+                        "name": job_name,
+                        "uid": uid,
+                        "controller": True,
+                    }
+                ],
+            },
+            "type": "Opaque",
+            "stringData": {"token": request.private_sibling_token},
+        }
+    )
+    argv = [*_kubectl(request=request), "create", "--filename", "-"]
+    return require_success(
+        step="create-private-sibling-token-secret",
+        argv=argv,
+        outcome=runner(argv=argv, cwd=request.repo_root, stdin=secret),
     )
 
 

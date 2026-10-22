@@ -74,6 +74,7 @@ so a push is never completed on the strength of a gate that was never submitted.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -178,6 +179,13 @@ GATE_MIRROR_ROOT = "cwoolley@poweredge-xubuntu:/var/cache/ci-runner/gates-mirror
 # through the file the declaration ships.
 GATE_RENDERER_IN_REPO = Path("ci-runner/k3s/phase2/gates/render-gate-job.sh")
 GATE_RENDERER_PACKAGED = Path(__file__).resolve().parent / "gates" / "render-gate-job.sh"
+GATE_PRIVATE_SIBLING_TOKEN_HELPER = Path("/usr/local/bin/with-livespec-env.sh")
+_GATE_PRIVATE_SIBLING_TOKEN_IN_REPO = Path(
+    "ci-runner/k3s/phase2/gates/mint-private-sibling-token.sh"
+)
+_GATE_PRIVATE_SIBLING_TOKEN_PACKAGED = (
+    Path(__file__).resolve().parent / "gates" / "mint-private-sibling-token.sh"
+)
 
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
@@ -254,6 +262,65 @@ def resolve_renderer(*, repo_root: Path) -> Path:
     return GATE_RENDERER_PACKAGED
 
 
+def _private_sibling_token_program(*, repo_root: Path) -> Path:
+    """Name the helper that sees the projected App credentials on the host."""
+    in_repo = repo_root / _GATE_PRIVATE_SIBLING_TOKEN_IN_REPO
+    return in_repo if in_repo.is_file() else _GATE_PRIVATE_SIBLING_TOKEN_PACKAGED
+
+
+def _private_sibling_credential(
+    *, repo_root: Path, runner: GateCommandRunner
+) -> Result[tuple[tuple[str, ...], str], GateStepFailed]:
+    """Ask the host helper which siblings need the scoped installation token."""
+    if not (repo_root / ".livespec.jsonc").is_file():
+        return Success(((), ""))
+    program = _private_sibling_token_program(repo_root=repo_root)
+    argv = [
+        str(GATE_PRIVATE_SIBLING_TOKEN_HELPER),
+        "--",
+        str(program),
+        "--repo-root",
+        str(repo_root),
+    ]
+    minted = require_success(
+        step="mint-private-sibling-token", argv=argv, outcome=runner(argv=argv, cwd=repo_root)
+    )
+    if isinstance(minted, Failure):
+        return Failure(minted.failure())
+    try:
+        payload = json.loads(minted.unwrap().stdout)
+    except json.JSONDecodeError as unreadable:
+        return Failure(
+            GateStepFailed(
+                step="mint-private-sibling-token",
+                argv=tuple(argv),
+                returncode=None,
+                detail=f"private sibling token helper returned unreadable JSON: {unreadable}",
+            )
+        )
+    siblings = payload.get("private_siblings")
+    token = payload.get("token", "")
+    if not isinstance(siblings, list) or not all(isinstance(name, str) for name in siblings):
+        return Failure(
+            GateStepFailed(
+                step="mint-private-sibling-token",
+                argv=tuple(argv),
+                returncode=None,
+                detail="private sibling token helper returned no private_siblings list",
+            )
+        )
+    if siblings and not isinstance(token, str):
+        return Failure(
+            GateStepFailed(
+                step="mint-private-sibling-token",
+                argv=tuple(argv),
+                returncode=None,
+                detail="private sibling token helper returned no installation token",
+            )
+        )
+    return Success((tuple(siblings), token))
+
+
 def gate_remote_request(
     *, repo_root: Path, renderer: Path, runner: GateCommandRunner
 ) -> Result[GateRunRequest, GateStepFailed]:
@@ -282,7 +349,12 @@ def gate_remote_request(
     suite = declared_gate_check_suite(repo_root=repo_root)
     if isinstance(suite, Failure):
         return Failure(suite.failure())
+    credential = _private_sibling_credential(repo_root=repo_root, runner=runner)
+    if isinstance(credential, Failure):
+        return Failure(credential.failure())
+    private_siblings, private_sibling_token = credential.unwrap()
     gate_ref = per_run_gate_ref(tree_hash=tree_hash)
+    private_sibling_secret = f"gate-sibling-token-{gate_ref.rsplit('-', maxsplit=1)[-1]}"
     render_argv = [
         str(renderer),
         "--repo-root",
@@ -293,6 +365,8 @@ def gate_remote_request(
         repo,
         "--gate-ref",
         gate_ref,
+        *[flag for sibling in private_siblings for flag in ("--private-sibling", sibling)],
+        *(["--private-sibling-secret", private_sibling_secret] if private_siblings else []),
         *check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(
@@ -306,6 +380,8 @@ def gate_remote_request(
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
             gate_ref=gate_ref,
+            private_sibling_token=private_sibling_token,
+            private_sibling_secret=private_sibling_secret if private_siblings else "",
         )
     )
 
