@@ -99,7 +99,16 @@ check-fabro-image-pin-lockstep  # purity: tree-pure
 check-no-direct-github-access  # purity: tree-pure
 # Scopes itself to the `<base>...HEAD` range plus the staged, unstaged and
 # untracked working set — none of which the committed tree determines.
-check-no-workflow-edits  # purity: world-reading
+#
+# It also reads an AUTHORIZATION held outside the tree — the
+# `approval:workflow-edit` label on a named work item, through `bd` — and FAILS
+# CLOSED when it cannot. A gate pod holds neither `bd` nor the ledger
+# credential, so inside a delegated gate Job it can only ever fail closed:
+# measured 2026-10-19 on gate-livespec-dev-tooling-54f19942138d, which refused
+# an authorized tree carrying its label. So a delegated push runs this member on
+# the PUSHING HOST and ANDs its result into the verdict, per the "What the
+# delegated gate runs" bullet of SPECIFICATION/contracts.md (v082).
+check-no-workflow-edits  # purity: world-reading  # authority: ledger
 # RANGE mode judges every non-merge commit in `origin/master..HEAD`, each
 # against its OWN message: the commits around the tree, not the tree.
 check-shipped-path-release-guard  # purity: world-reading
