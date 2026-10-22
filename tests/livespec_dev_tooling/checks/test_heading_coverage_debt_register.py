@@ -58,8 +58,14 @@ from types import ModuleType
 from typing import NamedTuple
 
 import pytest
+from returns.io import IOSuccess
+from returns.unsafe import unsafe_perform_io
 
-from livespec_dev_tooling.heading_coverage_debt import configured_spec_root
+from livespec_dev_tooling.heading_coverage_debt import (
+    configured_spec_root,
+    generate_register,
+    render_register,
+)
 
 __all__: list[str] = []
 
@@ -538,21 +544,46 @@ def test_a_register_equal_to_the_live_todo_set_passes(
 def test_a_scenario_shaped_todo_registered_under_the_configured_root_passes(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """SCENARIO: a generated scenario-shaped register row is not unregistered debt."""
-    _seed_repo(
-        tmp_path=tmp_path,
-        registry=[_scenario_todo_row()],
-        register=[
-            {
-                "spec_root": _SCENARIO_SPEC_ROOT,
-                "spec_file": _SCENARIO_FILE,
-                "heading": _SCENARIO_HEADING,
-                "work_item": _OWNER,
-                "first_seen": _BASELINE_DATE,
-            }
-        ],
-    )
+    """SCENARIO: a generated scenario-shaped register row is not unregistered debt.
+
+    The register here is produced by the REAL generator rather than hand-written
+    to the bytes the generator is expected to emit, because the claim under test
+    is that the generator and this check agree on a scenario row's derived key —
+    and that is exactly what they did NOT do in console, where the generator
+    could not produce a register this check accepts. A hand-authored fixture
+    asserts the agreement by construction instead of measuring it, and
+    `tests/CLAUDE.md` names a hand-edited register the one thing the ratchet
+    exists to forbid.
+
+    The generated rows are pinned BEFORE the check runs, and that assertion is
+    load-bearing rather than decorative: if the key derivation regressed, the
+    scenario row would read as UNKEYED, the generator would emit an EMPTY
+    register, and `_keyed` would drop the row — so the check would exit zero
+    with no `unregistered_todo` finding for a repository whose debt it had
+    silently stopped tracking. Exit zero alone cannot tell that apart from the
+    behaviour this arm exists to prove.
+    """
+    _init_repo(tmp_path=tmp_path)
     _write_scenario_spec_root(tmp_path=tmp_path)
+    _write(tmp_path=tmp_path, relpath=_REGISTRY_RELPATH, entries=[_scenario_todo_row()])
+    _git(cwd=tmp_path, args=["add", _REGISTRY_RELPATH])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "registry"], committed_at=_BASELINE_AT)
+
+    generated = generate_register(cwd=tmp_path, today=_BASELINE_DATE)
+    assert isinstance(generated, IOSuccess), generated
+    rows = unsafe_perform_io(generated.unwrap())
+    assert rows == [
+        {
+            "spec_root": _SCENARIO_SPEC_ROOT,
+            "spec_file": _SCENARIO_FILE,
+            "heading": _SCENARIO_HEADING,
+            "work_item": _OWNER,
+            "first_seen": _BASELINE_DATE,
+        }
+    ], rows
+    _ = (tmp_path / _REGISTER_RELPATH).write_text(render_register(rows=rows), encoding="utf-8")
+    _git(cwd=tmp_path, args=["add", _REGISTER_RELPATH])
+    _git(cwd=tmp_path, args=["commit", "-q", "-m", "adopt register"], committed_at=_LANDING_AT)
 
     result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
 
