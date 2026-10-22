@@ -93,6 +93,8 @@ repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
 livespec_core_ref=""
 check_suite=()
+private_siblings=()
+private_sibling_secret=""
 
 # WHERE livespec CORE comes from, for the consumer whose aggregate runs
 # `check-doctor-static` (R4.S7c part ii, freeze-driver ruling R92 2026-10-17).
@@ -119,6 +121,8 @@ while [ $# -gt 0 ]; do
     --gate-ref)          gate_ref="$2"; shift 2 ;;
     --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
+    --private-sibling)   private_siblings+=("$2"); shift 2 ;;
+    --private-sibling-secret) private_sibling_secret="$2"; shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -187,6 +191,23 @@ if [ -z "${gated_repository}" ] && command -v git > /dev/null 2>&1; then
       ;;
   esac
 fi
+
+# A private sibling needs a per-run Secret mount; a public one remains an
+# anonymous clone.  The client decides which targets are private on the
+# pushing host, where the App credential exists, and this renderer only carries
+# the Secret NAME — never its token — into the Job manifest.
+if [ "${#private_siblings[@]}" -gt 0 ] && [ -z "${private_sibling_secret}" ]; then
+  echo "FATAL: --private-sibling requires --private-sibling-secret" >&2
+  exit 2
+fi
+case "${private_sibling_secret}" in
+  "" | ?*[!a-z0-9-]* | -* | *-)
+    [ -z "${private_sibling_secret}" ] || {
+      echo "FATAL: --private-sibling-secret must be a lowercase Kubernetes resource name" >&2
+      exit 2
+    }
+    ;;
+esac
 
 # --- the livespec core ref THIS consumer pins (R4.S7c part ii) ---------------
 # Derived from the gated clone's own `.livespec.jsonc` `compat.pinned`, which is
@@ -303,6 +324,8 @@ if [ -f "${repo_root}/.livespec.jsonc" ]; then
 fi
 
 gate_sibling_clone_lines=""
+private_sibling_volume_mount=""
+private_sibling_volume=""
 if [ "${#sibling_rows[@]}" -gt 0 ]; then
   # NO `mkdir -p` FOR THE ROOT: `git clone` creates its destination and every
   # parent of it, so the first clone makes the root and a pre-created one would
@@ -332,6 +355,24 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
       echo "FATAL: .livespec.jsonc cross_repo_targets.${sibling_name} declares github_url '${sibling_url}', which is not an anonymous https://github.com/<owner>/<repo> url the gate pod can clone" >&2
       exit 1 ;;
   esac
+  private=0
+  for named_private in "${private_siblings[@]}"; do
+    if [ "${named_private}" = "${sibling_name}" ]; then
+      private=1
+      break
+    fi
+  done
+  if [ "${private}" -eq 1 ]; then
+    private_sibling_volume_mount="- name: ${private_sibling_secret}
+  mountPath: /run/secrets/gate-private-siblings
+  readOnly: true"
+    private_sibling_volume="- name: ${private_sibling_secret}
+  secret:
+    secretName: ${private_sibling_secret}"
+    clone_command="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Bearer \$(cat /run/secrets/gate-private-siblings/token)\" git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'"
+  else
+    clone_command="git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'"
+  fi
   case "${sibling_url}" in
     *[!A-Za-z0-9:/._-]* | *@*)
       echo "FATAL: .livespec.jsonc cross_repo_targets.${sibling_name} declares github_url '${sibling_url}', which carries characters a gate manifest must not reproduce" >&2
@@ -348,7 +389,7 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
   # The termination-log write is best-effort for the same reason the preflight's
   # is — the message is EVIDENCE and the exit status is the verdict.
   gate_sibling_clone_lines="${gate_sibling_clone_lines}
-if ! git clone --quiet --depth 1 '${sibling_url}' '${GATE_SIBLING_CLONES_ROOT}/${sibling_name}'; then
+if ! ${clone_command}; then
   unclonable=\"FATAL: cannot clone cross-repo sibling '${sibling_name}' from ${sibling_url}. Its checks would read the absent clone as an EMPTY tree and silently drop every allowlisted citation to it, so no recipe was run; this gate is RED.\"
   echo \"\${unclonable}\" >&2
   { printf '%s\\n' \"\${unclonable}\" > /dev/termination-log; } 2> /dev/null || true
@@ -504,6 +545,8 @@ substitute_block GATE_RECIPES "${gate_recipe_lines}"
 # An EMPTY block removes the placeholder's whole line, which is exactly what a
 # repository registering no cross-repo siblings must render.
 substitute_block GATE_SIBLING_CLONES "${gate_sibling_clone_lines}"
+substitute_block GATE_PRIVATE_SIBLING_VOLUME_MOUNT "${private_sibling_volume_mount}"
+substitute_block GATE_PRIVATE_SIBLING_VOLUME "${private_sibling_volume}"
 
 # A token added to the template without a matching substitution above is caught
 # HERE, at render time, rather than by the API server or — worse — by a gate that
