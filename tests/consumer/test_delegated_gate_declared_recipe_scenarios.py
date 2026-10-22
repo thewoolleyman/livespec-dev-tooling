@@ -29,6 +29,7 @@ produces, and a canned manifest would assert it of the fixture instead.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -1259,6 +1260,118 @@ def test_a_private_sibling_uses_a_per_run_secret_without_putting_its_token_in_th
     assert f"name: {secret_name}" in manifest
     assert "secretName: " + secret_name in manifest
     assert "token-like-value" not in manifest
+
+
+def test_a_private_sibling_clones_with_basic_x_access_token_not_a_bearer_header(
+    *, tmp_path: Path
+) -> None:
+    """The private clone's header is `Basic base64(x-access-token:<token>)`.
+
+    THE DEFECT THIS CLOSES, MEASURED 2026-10-22 (stop-the-line R581). The
+    renderer sent the installation token as `Authorization: Bearer <token>`,
+    which github.com's git smart-HTTP endpoint REJECTS. Same token, same
+    repositories, git with every credential source disabled: `Bearer` exited
+    128 on `fatal: Authentication failed`, and `Basic` with the username
+    `x-access-token` exited 0. In a pod with no askPass the 401 surfaced as
+    `fatal: could not read Username for 'https://github.com'` and then
+    `FATAL: cannot clone cross-repo sibling 'dolt-server'` — a verdict naming
+    neither the scheme nor the token, on run 20261022T074937Z-3841595.
+
+    IT SHIPPED GREEN because every assertion was about the manifest's TEXT:
+    the header's presence, the mount read, the token's absence. None of them
+    ever sent the header to github.com, and a wrong scheme reads exactly like
+    a right one. So this test EXECUTES the rendered env prefix against a
+    `git` stub that echoes the header value, with a token-shaped file standing
+    in for the Secret mount, and compares the result to the encoding Python
+    computes independently. That catches the scheme, the username, the
+    `base64` of the pair, AND the newline `base64` wraps a 60-byte payload
+    with — a header value carrying one is not a header.
+
+    The two properties the text-level arms above exist for are unchanged and
+    re-asserted here against the SAME manifest: no credential material is in
+    it, and the public sibling is still cloned with no authorization at all.
+    """
+    mount = "/run/secrets/gate-private-siblings"
+    private_url = _WIDGET_SIBLINGS[0][1]
+    public_url = _WIDGET_SIBLINGS[1][1]
+    consumer = _a_consumer_repository(
+        root=tmp_path / "declaring", declaration="", siblings=_WIDGET_SIBLINGS
+    )
+    completed = subprocess.run(
+        [
+            str(_RENDERER),
+            "--repo-root",
+            str(consumer),
+            "--tree-hash",
+            _TREE,
+            "--private-sibling",
+            _WIDGET_SIBLINGS[0][0],
+            "--private-sibling-secret",
+            "gate-sibling-token-4c1pbr",
+        ],
+        cwd=str(consumer),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = completed.stdout
+    private_clone = next(
+        line for line in _sibling_clone_commands(manifest=manifest) if f"'{private_url}'" in line
+    )
+    public_clone = next(
+        line for line in _sibling_clone_commands(manifest=manifest) if f"'{public_url}'" in line
+    )
+
+    assert "Bearer" not in private_clone, (
+        "the private sibling is cloned with a Bearer header, which github.com's git "
+        f"smart-HTTP endpoint rejects: {private_clone}"
+    )
+    assert f"$(cat {mount}/token)" in private_clone, (
+        "the private clone does not read its token from the mounted Secret at clone "
+        f"time: {private_clone}"
+    )
+    assert "Authorization: Basic $(" in private_clone, (
+        "the Basic header is not computed by a deferred read inside the pod, so the "
+        f"manifest's own text may carry the encoded credential: {private_clone}"
+    )
+    assert "ghs_" not in manifest and "github_pat_" not in manifest, (
+        "credential-shaped text is in the rendered manifest, which the API server "
+        f"stores and any `kubectl get job -o yaml` hands back: {manifest}"
+    )
+    assert "Authorization" not in public_clone, (
+        "a PUBLIC sibling was given an authorization header; it is cloned anonymously: "
+        f"{public_clone}"
+    )
+
+    token = "ghs_" + "4c1pbr" * 6
+    mounted = tmp_path / "mount"
+    mounted.mkdir()
+    _ = (mounted / "token").write_text(token, encoding="utf-8")
+    stub = tmp_path / "stub"
+    stub.mkdir()
+    _ = (stub / "git").write_text(
+        '#!/bin/sh\nprintf "%s" "${GIT_CONFIG_VALUE_0}"\n', encoding="utf-8"
+    )
+    (stub / "git").chmod(0o755)
+    # The clone is the subject of an `if ! … ; then`, so the extracted line is
+    # completed into a whole statement rather than having its wrapper stripped:
+    # the shape the renderer emits is then what runs.
+    sent = subprocess.run(
+        ["bash", "-c", f"{private_clone.replace(mount, str(mounted))}\n  :\nfi\n"],
+        env={**os.environ, "PATH": f"{stub}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert sent.returncode == 0, sent.stdout + sent.stderr
+    expected = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    assert sent.stdout == f"Authorization: Basic {expected}", (
+        "the header the pod sends github.com is not Basic with the username "
+        f"x-access-token and the token as the password: {sent.stdout!r}"
+    )
 
 
 def test_a_red_members_verdict_names_the_member_not_a_fatal_from_its_own_output(

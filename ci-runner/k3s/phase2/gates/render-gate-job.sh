@@ -403,7 +403,26 @@ for row in ${sibling_rows[@]+"${sibling_rows[@]}"}; do
     private_sibling_volume="- name: ${private_sibling_secret}
   secret:
     secretName: ${private_sibling_secret}"
-    clone_command="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Bearer \$(cat ${GATE_PRIVATE_SIBLING_MOUNT}/token)\" ${clone_command}"
+    # BASIC, NOT BEARER, and the scheme is the whole defect of R581: GitHub's
+    # git smart-HTTP endpoint REJECTS an installation token presented as
+    # `Authorization: Bearer`, and in a pod with no askPass that 401 surfaces as
+    # `fatal: could not read Username for 'https://github.com'` — a message
+    # naming neither the scheme nor the token. Measured 2026-10-22 with one
+    # freshly minted token, the same two private repositories, and git with
+    # every credential source disabled: `Bearer <token>` exited 128 on
+    # `fatal: Authentication failed`, `Basic base64(x-access-token:<token>)`
+    # exited 0. The username is the literal `x-access-token` and the token is
+    # the password, which is the form GitHub documents for an installation
+    # token over https.
+    #
+    # EVERY PART OF IT IS STILL DEFERRED INTO THE POD. The `$(...)` is written
+    # into the manifest unevaluated, so the API server stores the encoding STEP
+    # and never the encoded credential, exactly as it stored the `cat` before.
+    # The inner command substitution strips the trailing newline a Secret file
+    # may carry, and `base64` WRAPS at 76 columns — which a 60-odd byte payload
+    # exceeds — so its output is joined back into one line: a header value
+    # carrying a newline is not a header.
+    clone_command="GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.extraHeader' GIT_CONFIG_VALUE_0=\"Authorization: Basic \$(printf 'x-access-token:%s' \"\$(cat ${GATE_PRIVATE_SIBLING_MOUNT}/token)\" | base64 | tr -d '\\n')\" ${clone_command}"
   fi
   # SHALLOW, like the core fetch and like the consumer's own CI step: nothing
   # reads a sibling's history — a reader wants its current headings and its
