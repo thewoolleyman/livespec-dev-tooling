@@ -11,10 +11,27 @@
 #   C. an unknown argument is still refused, so adding --server did not turn the
 #      parser permissive;
 #   D. gates-rbac.yaml's Role grants NOTHING outside create/get/list/watch on
-#      jobs and pods plus get on pods/log: no `delete`, no `secrets`, no
-#      wildcard, and nothing cluster-scoped anywhere in the manifest;
+#      jobs and pods, get on pods/log, and CREATE ALONE on secrets: no `delete`,
+#      no read verb on secrets, no wildcard, and nothing cluster-scoped anywhere
+#      in the manifest;
 #   E. the manifest does NOT declare the gates Namespace, which is owned by
-#      ../kueue/cluster-queue-gates.yaml — one live object, one committed source.
+#      ../kueue/cluster-queue-gates.yaml — one live object, one committed source;
+#   F. the manifest declares exactly ONE Secret — the ServiceAccount token it has
+#      always carried — so the private-sibling installation token the gate client
+#      creates per run exists in no committed source and nothing standing holds it.
+#
+# WHY D NOW ALLOWS ONE SECRETS VERB (work-item livespec-dev-tooling-7kvh2d). It
+# used to assert NO verb on secrets at all. A delegated push whose consumer names
+# a PRIVATE cross-repo sibling needs a read-only GitHub App installation token
+# inside its gate Job, and the token must not be in the rendered manifest — the
+# API server stores that text and hands it back to any reader. The client
+# therefore creates a per-run Secret owner-referenced to the Job, and `create` is
+# the whole grant: garbage collection removes it, so no `delete`; the client only
+# ever writes, so no `get`/`list`/`watch` — and a read verb here would let any
+# gate run read every other run's token. The arms below assert that narrowing
+# POSITIVELY, by enumerating the exact verb set per resource, rather than by the
+# blanket "no secrets anywhere" grep they replace: a blanket refusal cannot tell
+# `create` from `*`, so it would have had to be deleted rather than tightened.
 #
 # HOW IT STAYS OFF THE HOST AND OFF THE CLUSTER. `kubectl` is a FAKE on this
 # suite's own PATH that answers the two jsonpath reads the renderer makes with
@@ -112,19 +129,34 @@ role_doc="$(awk '/^kind: Role$/{f=1} f{print} f&&/^---$/{exit}' "${MANIFEST}")"
 if [ -z "${role_doc}" ]; then
   fail "no Role document found in ${MANIFEST}"
 else
+  # The verb lines and the resource lines are compared as ORDERED sequences
+  # against the whole expected set, so a rule that drifts, is reordered, or is
+  # ADDED fails here. `secrets` is last because it was added last, and its one
+  # verb is the narrowest line in the file.
   got_verbs="$(printf '%s\n' "${role_doc}" | grep -E '^\s+verbs:' | sed 's/^[[:space:]]*//' | tr -d ' ')"
-  want_verbs=$'verbs:["create","get","list","watch"]\nverbs:["create","get","list","watch"]\nverbs:["get"]'
+  want_verbs=$'verbs:["create","get","list","watch"]\nverbs:["create","get","list","watch"]\nverbs:["get"]\nverbs:["create"]'
   if [ "${got_verbs}" = "${want_verbs}" ]; then
-    pass "Role verb set is exactly create/get/list/watch, create/get/list/watch, get"
+    pass "Role verb set is exactly create/get/list/watch, create/get/list/watch, get, create"
   else
     fail "Role verb set drifted; got:"$'\n'"${got_verbs}"
   fi
   got_res="$(printf '%s\n' "${role_doc}" | grep -E '^\s+resources:' | sed 's/^[[:space:]]*//' | tr -d ' ')"
-  want_res=$'resources:["jobs"]\nresources:["pods"]\nresources:["pods/log"]'
+  want_res=$'resources:["jobs"]\nresources:["pods"]\nresources:["pods/log"]\nresources:["secrets"]'
   if [ "${got_res}" = "${want_res}" ]; then
-    pass "Role resources are exactly jobs, pods, pods/log"
+    pass "Role resources are exactly jobs, pods, pods/log, secrets"
   else
     fail "Role resources drifted; got:"$'\n'"${got_res}"
+  fi
+  # The two sequences above agree only if the SECRETS rule is the one carrying
+  # the bare `create`. Pairing them explicitly closes the gap: two orderings
+  # could each match their own expectation while naming the wrong pairs.
+  secrets_rule="$(printf '%s\n' "${role_doc}" \
+    | grep -A2 -F 'resources: ["secrets"]' | grep -E '^\s+verbs:' \
+    | sed 's/^[[:space:]]*//' | tr -d ' ')"
+  if [ "${secrets_rule}" = 'verbs:["create"]' ]; then
+    pass "the secrets rule grants create and nothing else — no read verb, no delete"
+  else
+    fail "the secrets rule is not create-only; got: ${secrets_rule:-NONE}"
   fi
   forbidden_found=0
   for forbidden in delete deletecollection patch update escalate bind impersonate; do
@@ -141,10 +173,13 @@ else
     pass "Role carries no wildcard"
   fi
 fi
-if grep -qE '"secrets"|resources:.*secrets' "${MANIFEST}"; then
-  fail "manifest grants access to secrets"
+# The CONTROL for the three arms above: the one secrets grant lives in the Role
+# and nowhere else in the file. A second rule, or one smuggled into a document
+# this suite's Role extraction does not read, is caught here.
+if [ "$(grep -cF 'resources: ["secrets"]' "${MANIFEST}")" = "1" ]; then
+  pass "the manifest carries exactly one secrets grant, in the Role"
 else
-  pass "manifest grants nothing on secrets"
+  fail "the manifest carries $(grep -cF 'resources: ["secrets"]' "${MANIFEST}") secrets grants"
 fi
 if grep -qE '^kind: Cluster(Role|RoleBinding)$' "${MANIFEST}"; then
   fail "manifest declares a cluster-scoped RBAC object"
@@ -157,6 +192,32 @@ if grep -qE '^kind: Namespace$' "${MANIFEST}"; then
   fail "manifest re-declares the gates Namespace (owned by ../kueue/cluster-queue-gates.yaml)"
 else
   pass "Namespace is left to its single owning manifest"
+fi
+
+echo "== F. the manifest declares no Secret beyond the ServiceAccount token =="
+# The `create` grant above exists so a per-run token Secret can be made AT
+# SUBMIT TIME and garbage-collected with its Job. A Secret for it declared HERE
+# would be the standing credential the contract forbids: converge re-applies
+# this file on every boot, so anything in it persists for as long as the node
+# does. The ServiceAccount token is the one Secret this manifest has always
+# carried, and it holds no GitHub credential.
+#
+# The credential grep runs on the DECLARED YAML only, with comment lines
+# stripped: this file's own header explains the App token at length, and a
+# prose mention is the opposite of a credential in source.
+declared_yaml="$(grep -vE '^[[:space:]]*#' "${MANIFEST}")"
+secret_kinds="$(printf '%s\n' "${declared_yaml}" | grep -cE '^kind: Secret$')"
+sa_token_type="$(printf '%s\n' "${declared_yaml}" \
+  | grep -cF 'type: kubernetes.io/service-account-token')"
+if [ "${secret_kinds}" != "1" ]; then
+  fail "the manifest declares ${secret_kinds} Secret documents; exactly one is expected"
+elif [ "${sa_token_type}" != "1" ]; then
+  fail "the one declared Secret is not a ServiceAccount token — a standing credential?"
+elif printf '%s\n' "${declared_yaml}" \
+     | grep -qiE 'github|ghs_|github_pat_|^[[:space:]]*(data|stringData):'; then
+  fail "the declared YAML carries credential material: $(printf '%s\n' "${declared_yaml}" | grep -niE 'github|ghs_|^[[:space:]]*(data|stringData):')"
+else
+  pass "the only Secret is the ServiceAccount token; no GitHub credential is in source"
 fi
 
 echo
