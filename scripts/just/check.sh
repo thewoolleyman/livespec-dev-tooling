@@ -114,6 +114,46 @@ if [[ -n "${red_staged:-}" ]]; then
     effective_skip="${effective_skip} ${red_skip}"
 fi
 
+# MEMBERS THIS RUN DOES NOT RUN BECAUSE IT *IS* A DELEGATED GATE JOB, per the
+# "What the delegated gate runs" bullet of SPECIFICATION/contracts.md in its
+# delegated pre-push gate section (v082). A member declaring it reads an
+# AUTHORIZATION held outside the tree — the work-items ledger, the forge's
+# repository administration settings — cannot answer inside a gate pod, which is
+# handed no ledger credential and no admin-scoped token BY DESIGN. The pre-push
+# gate runs such a member on the pushing host instead, against the same
+# committed tree, and ANDs its result into the delegated verdict; nothing here
+# weakens the gate, it relocates one member to the only host that can evaluate
+# it.
+#
+# Keyed on LIVESPEC_GATE_CONTEXT, which the gate Job template sets in exactly
+# one place and nothing else sets. Guessing the context from the environment is
+# what would make this skip fire on a contributor's machine, where the member
+# CAN read its authorization and must therefore run here.
+#
+# WITHOUT IT A CORRECT TREE WAS REFUSED. Measured 2026-10-19 in Job
+# gate-livespec-dev-tooling-54f19942138d: an authorized workflow change carrying
+# its `approval:workflow-edit` label failed `check-no-workflow-edits` with "the
+# ledger-held authorization could not be evaluated -- FAILING CLOSED", because
+# the pod holds no `bd`. The verdict was right about the pod and wrong about the
+# tree.
+#
+# FAIL-CLOSED on a resolver that cannot answer, exactly as the world-reading
+# resolution below is. An empty answer would read as "no member needs the
+# pushing host" and put every authority-reading member back inside this pod, so
+# an unreadable declaration refuses the whole gate rather than narrowing it.
+if [[ -n "${LIVESPEC_GATE_CONTEXT:-}" ]]; then
+    if ! authority_members=$(uv run python -m livespec_dev_tooling.check_authority members); then
+        echo "ERROR: could not resolve which members read an authorization held outside the tree; refusing to gate on a Job that may judge one of them with no credential for it" >&2
+        exit 1
+    fi
+    while IFS= read -r authority_member; do
+        [[ -n "${authority_member}" ]] || continue
+        printf ':: delegated gate Job: skipping %s - it reads an authorization held outside the tree and runs on the pushing host\n' \
+            "${authority_member}"
+        effective_skip="${effective_skip} ${authority_member}"
+    done <<<"${authority_members}"
+fi
+
 # THE MEMOIZED RUN. `token_match` is set by check-pre-push.sh, and by nothing
 # else, when the green token names this worktree's HEAD tree and the worktree is
 # clean. The token memoizes only the members whose verdict the committed tree
