@@ -136,6 +136,18 @@ __all__: list[str] = []
 
 CHECK_PURITY = "world-reading"  # live branch-protection settings read from the GitHub API
 
+# The settings this check reads are the forge's REPOSITORY ADMINISTRATION
+# settings, which need admin scope. A delegated gate Job is handed a token that
+# deliberately has none, so inside the Job this member can only fail: livespec's
+# first delegated run failed it with HTTP 403 on the gate forge credential. The
+# declaration takes it out of the Job's run set and onto the pushing host, which
+# already holds the authority — per the delegated pre-push gate contract of
+# livespec-dev-tooling's own SPECIFICATION/contracts.md, in its bullet on what
+# the delegated gate runs. It is deliberately absent from `__all__`: nothing
+# imports it, and `livespec_dev_tooling.check_authority` reads it statically
+# with `ast`.
+CHECK_AUTHORITY = "forge-admin"
+
 
 _CI_YML_PATH = Path(".github/workflows/ci.yml")
 
