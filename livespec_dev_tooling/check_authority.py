@@ -58,6 +58,7 @@ to stdout, which is why this file is declared in this repository's
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 from dataclasses import dataclass
@@ -83,15 +84,28 @@ __all__: list[str] = []
 LEDGER = "ledger"
 FORGE_ADMIN = "forge-admin"
 
+# A SHIPPED check's own declaration: a module-level constant in its
+# `livespec_dev_tooling/checks/<slug>.py`, deliberately absent from that
+# module's `__all__` because nothing imports it — declaring it an export would
+# claim a consumption that does not exist.
+DECLARATION_NAME = "CHECK_AUTHORITY"
+
 _AUTHORITIES = frozenset({LEDGER, FORGE_ADMIN})
 
 _INVENTORY_NAME = "check-targets.txt"
 _SLUG_PREFIX = "check-"
 _MEMBERS = "members"
+_CHECKS_PACKAGE_DIR = Path(__file__).resolve().parent / "checks"
 
 # A repo-private member's declaration: a trailing `# authority: <value>` comment
 # on its inventory line, beside the `# purity:` annotation that is already there.
 _INVENTORY_DECLARATION = re.compile(r"#\s*authority:\s*(?P<value>\S+)")
+
+# What a `CHECK_AUTHORITY` that is not a static string literal resolves to. It
+# names no authority, so it reaches the malformed track — a computed declaration
+# cannot be read without importing the module, and a declaration nothing can
+# read is worse than none at all, because it LOOKS declared.
+_NOT_A_STRING_LITERAL = "<not-a-string-literal>"
 
 _MALFORMED_REASON = (
     f"an authority declaration must be the string {LEDGER!r} or {FORGE_ADMIN!r}; a value "
@@ -139,12 +153,93 @@ def _inventory_member(*, line: str) -> str:
     return line.split("#", 1)[0].strip()
 
 
-def _declared_authority(*, line: str) -> str | None:
-    """The authority this inventory line declares, or None when it declares none."""
+def _inventory_annotation(*, line: str) -> str | None:
+    """The authority this inventory line annotates, or None when it annotates none."""
     matched = _INVENTORY_DECLARATION.search(line)
     if matched is None:
         return None
     return matched.group("value")
+
+
+def _module_path_for(*, target: str) -> Path | None:
+    """The shipped check module backing `target`, when this library ships one.
+
+    `check-kebab-case` maps to `checks/snake_case.py` — the same mapping
+    `canonical_checks` walks in the other direction. A target whose module this
+    installed library does not ship has no module to ask and falls through to
+    the consumer's own inventory. Every caller resolves a `check-` slug, so the
+    prefix is stripped rather than re-tested here.
+    """
+    module = target[len(_SLUG_PREFIX) :].replace("-", "_")
+    path = _CHECKS_PACKAGE_DIR / f"{module}.py"
+    if not path.is_file():
+        return None
+    return path
+
+
+def _declared_constant(*, node: ast.stmt) -> str | None:
+    """The `CHECK_AUTHORITY` value this module-level statement declares, if any.
+
+    Both spellings are accepted — the bare `CHECK_AUTHORITY = "..."` assignment
+    and the annotated `CHECK_AUTHORITY: str = "..."` — because the two say the
+    same thing and a resolver reading only one would report a correctly
+    declared module as declaring nothing, which runs in the unsafe direction
+    here: the member goes back into a pod that cannot answer for it. A statement
+    assigning the name something other than a string literal returns
+    `_NOT_A_STRING_LITERAL`, which no vocabulary value matches, so it is
+    convicted rather than passed over.
+    """
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, ast.AnnAssign):
+        targets = [node.target]
+    else:
+        return None
+    if not any(isinstance(item, ast.Name) and item.id == DECLARATION_NAME for item in targets):
+        return None
+    assigned = node.value
+    if isinstance(assigned, ast.Constant) and isinstance(assigned.value, str):
+        return assigned.value
+    return _NOT_A_STRING_LITERAL
+
+
+def _declaration_in_module(*, path: Path) -> str | None:
+    """The module's own `CHECK_AUTHORITY` declaration, read statically.
+
+    A module that cannot be read or parsed has made NO claim, and the safe
+    reading of no claim is the runs-in-the-Job default — so this returns None
+    rather than refusing. The direction is the opposite of a MALFORMED
+    declaration's and deliberately so: there something was written and cannot be
+    acted on, which is a registry bug; here nothing was written at all, and
+    refusing would make one syntactically broken check module refuse every
+    delegated push in the fleet. It never imports the module: a resolution runs
+    on the pre-push path, where importing every check module to read one
+    constant would pay that whole import cost for a classification.
+    """
+    try:
+        parsed = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+        return None
+    for node in parsed.body:
+        declared = _declared_constant(node=node)
+        if declared is not None:
+            return declared
+    return None
+
+
+def _declared_authority(*, target: str, line: str) -> str | None:
+    """The authority `target` declares, preferring its own shipped module.
+
+    A shipped check's own module OUTRANKS the consumer's inventory, and the
+    precedence is load-bearing rather than arbitrary: the module declaration is
+    the one that reaches every consuming repository, so one repository's
+    inventory line must not be able to move a shipped member off the cluster —
+    or back onto it — while the library says otherwise everywhere else.
+    """
+    module_path = _module_path_for(target=target)
+    if module_path is not None:
+        return _declaration_in_module(path=module_path)
+    return _inventory_annotation(line=line)
 
 
 def repository_authority_members(
@@ -160,10 +255,10 @@ def repository_authority_members(
     """
     declaring: list[str] = []
     for line in _inventory_lines(repo_root=repo_root):
-        declared = _declared_authority(line=line)
+        member = _inventory_member(line=line)
+        declared = _declared_authority(target=member, line=line)
         if declared is None:
             continue
-        member = _inventory_member(line=line)
         if declared not in _AUTHORITIES:
             return IOFailure(
                 AuthorityDeclarationMalformed(
