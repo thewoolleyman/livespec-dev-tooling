@@ -983,3 +983,19 @@ Then the terminal gate run's directory MUST be removed
 And the live gate run's directory MUST remain in place
 
 And the run's log MUST name the removed directory and the root filesystem's free space before and after
+
+## Scenario: an opted-in push whose consumer names a private cross-repository sibling clones it with a read-only installation token
+
+Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`
+
+And whose `.livespec.jsonc` `cross_repo_targets` names a private sibling repository
+
+And a pushing host where the pushing user can read the gates kubeconfig and the fleet GitHub App's credentials
+
+When a git push of a tree that has no green token runs the pre-push gate
+
+Then the gate Job MUST clone that sibling with an installation token scoped to that sibling and to read-only repository contents
+
+And the rendered gate manifest MUST NOT contain that token
+
+And the gate Job MUST run the consumer's recipe with that sibling's clone present
