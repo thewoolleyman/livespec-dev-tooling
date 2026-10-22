@@ -354,6 +354,146 @@ worktree_land() {
 }
 
 # --------------------------------------------------------------------------
+# reap SAFETY — the two things `reap` must never select, whatever --force says.
+#
+# WHY THIS LAYER EXISTS. `reap`'s only gate used to be clean-and-merged, and
+# a Fabro factory source checkout defeats it by construction: the factory
+# creates `fabro-source-<id>` AT master, so the merged-ness test always reads
+# it as merged and `--force` was never even needed. Measured 2026-10-21 during
+# a dev-host disk sweep, one dry run across the four repositories carrying
+# this pack listed NINE such worktrees as REMOVE, and three of them were the
+# working directory of a live `fabro run` at that moment. An `--execute` would
+# have deleted a running run's source tree from under it
+# (livespec-dev-tooling-7i2z5j; the contract is
+# `SPECIFICATION/contracts.md` §"CLI surface" in livespec-dev-tooling).
+#
+# TWO INDEPENDENT TESTS, because neither one subsumes the other:
+#
+#   - LIVENESS answers "is someone using this right now", and it fails SAFE:
+#     a reaper that cannot tell is a command that deletes work, so it skips.
+#   - FACTORY OWNERSHIP is decided by NAME, not by asking the factory. A
+#     run-board lookup would need an authenticated factory client a consuming
+#     host may not hold, and a run that is PAUSED or BLOCKED with its tree
+#     preserved holds no process at all — so liveness alone would not protect
+#     it. The factory owns its source checkouts' lifecycle; this reaper's job
+#     is to leave them alone.
+# --------------------------------------------------------------------------
+
+# worktree_reap_is_factory_owned: exit 0 iff <path> is a Fabro factory source
+# checkout, i.e. its basename is `fabro-source-<id>` with a non-empty id.
+worktree_reap_is_factory_owned() {
+    case "${1##*/}" in
+        fabro-source-?*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# The process table the two probes below read. Overridable so the scan can be
+# driven against a fixture tree, exactly as WORKTREE_ROOT and the two hooks
+# above are overridable; a path that is not a directory is how "this host has
+# no /proc" is spelled.
+worktree_reap_proc_root() {
+    printf '%s\n' "${WORKTREE_PROC_ROOT:-/proc}"
+}
+
+# worktree_reap_holder_pid <path>: print the pid of a live process that holds
+# <path> — its working directory, or an open file descriptor, at or under that
+# path. Exit 0 with the pid on stdout when one is found; exit 1 when none is.
+#
+# ONE `find` over the whole process table rather than a `readlink` per
+# descriptor: the per-fd loop shape forked 6,223 times on a 1,000-process host
+# in this pack's own `gate-run.sh`, which is why that file switched to
+# `find -lname` and why this follows it. `-lname` matches the LINK TARGET as a
+# glob and resolves it in-process. A target that reads `<path>/x (deleted)`
+# still matches `<path>/*`, which is correct: a process reading a file it has
+# already unlinked is still using this tree.
+#
+# ⛔ `|| true` AND NOT `|| hits=""`, and the difference is a live holder missed.
+# The shell expands the glob and `find` traverses afterwards, so any process
+# that EXITS in between leaves a starting point that no longer exists; `find`
+# reports that one and exits NON-ZERO having already printed every hit it did
+# find. Discarding stdout on a non-zero status therefore throws a real holder
+# away because some unrelated process happened to die during the scan —
+# measured as two intermittent failures under this repository's parallel test
+# dispatcher, where process churn is constant and the window is always open.
+# Here the status is not the answer; the output is.
+worktree_reap_holder_pid() {
+    wt="$1"
+    proc_root="$(worktree_reap_proc_root)"
+    [ -d "$proc_root" ] || return 1
+
+    hits="$(find "$proc_root"/[0-9]*/cwd "$proc_root"/[0-9]*/fd \
+        -maxdepth 1 \( -lname "$wt" -o -lname "$wt/*" \) -print 2>/dev/null || true)"
+    [ -n "$hits" ] || return 1
+
+    while IFS= read -r hit; do
+        [ -n "$hit" ] || continue
+        pid="${hit#"$proc_root"/}"
+        pid="${pid%%/*}"
+        printf '%s\n' "$pid"
+        return 0
+    done <<EOF
+$hits
+EOF
+    return 1
+}
+
+# worktree_reap_scan_gap: print why the holder probe above cannot be trusted
+# to have seen the whole process table, or print NOTHING when it can. Always
+# exits 0 — the answer is the string, and an empty one is a real answer.
+#
+# ⛔ A GAP IS NOT "NO HOLDER", and conflating the two is the whole hazard.
+# `readlink` on another user's /proc/<pid>/cwd or /proc/<pid>/fd/* needs ptrace
+# permission and fails with EACCES, so an UNPRIVILEGED scan sees only the
+# processes it is allowed to look at. Reading that as an idle tree would be a
+# reaper certifying absence from evidence it was denied — which is exactly the
+# shape the ratified clause forbids: "When `reap` cannot establish whether a
+# live process holds a worktree, it MUST report that worktree as SKIP, never
+# as REMOVE."
+#
+# The probe is deliberately FORK-FREE: `test -r` on the two /proc entries is a
+# shell builtin and answers the same EACCES question `readlink` would, so the
+# gap can be measured once per run over every pid at no process cost. A pid
+# whose directory has VANISHED between the glob and the test is not a gap —
+# that process is no longer live, which is an answer.
+#
+# CONSEQUENCE, stated plainly because it is a behaviour change and not a
+# footnote: on a host where the invoking user cannot inspect every process
+# — a shared Linux box with root daemons, or any host with no /proc at all —
+# EVERY candidate now reports SKIP. That is the fail-safe direction the clause
+# chooses, and the reason line names the gap so an operator can see why rather
+# than wondering why nothing was reaped.
+worktree_reap_scan_gap() {
+    proc_root="$(worktree_reap_proc_root)"
+    if [ ! -d "$proc_root" ]; then
+        printf 'no process table at %s — liveness is unobservable on this host\n' "$proc_root"
+        return 0
+    fi
+
+    scanned=0
+    gaps=0
+    for pid_dir in "$proc_root"/[0-9]*; do
+        [ -d "$pid_dir" ] || continue
+        scanned=$((scanned + 1))
+        if [ -r "$pid_dir/cwd" ] && [ -r "$pid_dir/fd" ]; then
+            continue
+        fi
+        # Re-test existence: a pid that exited mid-walk is not a gap.
+        [ -d "$pid_dir" ] && gaps=$((gaps + 1))
+    done
+
+    if [ "$scanned" -eq 0 ]; then
+        printf '%s holds no process entries — not a usable process table\n' "$proc_root"
+        return 0
+    fi
+    if [ "$gaps" -gt 0 ]; then
+        printf '%s of %s processes have an unreadable cwd/fd (EACCES — run as a user that can inspect them)\n' \
+            "$gaps" "$scanned"
+    fi
+    return 0
+}
+
+# --------------------------------------------------------------------------
 # reap — remove stale / orphaned worktrees safely. Dry-run by default.
 # Generalized from the openbrain reaper (originally TypeScript) into portable
 # shell with no ecosystem assumptions.
@@ -399,6 +539,10 @@ worktree_reap() {
     skipped=0
     need_prune=0
 
+    # Measured ONCE: the readability of the process table is a property of the
+    # host and the invoking user, not of any one worktree.
+    reap_scan_gap="$(worktree_reap_scan_gap)"
+
     # Walk `git worktree list --porcelain`. Each record is a blank-line-
     # separated block: a `worktree <path>` line, optional `HEAD <sha>`,
     # `branch <ref>` / `detached`, and `prunable <reason>`.
@@ -431,6 +575,25 @@ worktree_reap() {
             echo "  PRUNE  $label — prunable ($wt_prunable_reason)"
             need_prune=1
             pruned=$((pruned + 1))
+            return 0
+        fi
+
+        # SAFETY GATES, ahead of the clean-and-merged decision ON PURPOSE.
+        # `--force` overrides only that decision; it must not reach any of
+        # these three, so none of them may sit downstream of it.
+        if worktree_reap_is_factory_owned "$wt_path"; then
+            echo "  SKIP   $label — factory-owned: a Fabro run's source checkout (fabro-source-<id>); the factory owns its lifecycle"
+            skipped=$((skipped + 1))
+            return 0
+        fi
+        if holder_pid="$(worktree_reap_holder_pid "$wt_path")"; then
+            echo "  SKIP   $label — held by live process pid $holder_pid (its cwd or an open file is under this worktree)"
+            skipped=$((skipped + 1))
+            return 0
+        fi
+        if [ -n "$reap_scan_gap" ]; then
+            echo "  SKIP   $label — cannot establish that no live process holds it: $reap_scan_gap"
+            skipped=$((skipped + 1))
             return 0
         fi
 
@@ -571,6 +734,19 @@ SAFETY:
   another agent is actively working in a worktree — --force discards
   uncommitted changes. Reap only at session start, after a landed branch is
   confirmed merged and its agent exited, or at loop end.
+
+LIVE AND FACTORY-OWNED WORKTREES — SKIPS --force CANNOT OVERRIDE:
+  A worktree that is the working directory of a live process, or in which a
+  live process holds an open file, is SKIPped with that process's pid. When
+  the process table cannot be read completely — no /proc, or an unprivileged
+  scan denied another user's cwd/fd links — liveness is UNESTABLISHED and the
+  worktree is SKIPped too, with the gap named: a reaper that cannot tell is a
+  command that deletes work. On such a host NOTHING is reaped, by design.
+  A `fabro-source-<id>` worktree is a Fabro run's source checkout and is
+  SKIPped by NAME, never by asking the factory: a run-board lookup needs an
+  authenticated factory client a consuming host may not hold, and a paused or
+  blocked run holds its tree with no process at all. --force overrides ONLY
+  the clean-and-merged test and reaches none of these.
 
 MERGED-NESS:
   Judged by ANCESTRY first (`git merge-base --is-ancestor`) and then by

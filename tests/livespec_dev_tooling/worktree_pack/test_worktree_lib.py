@@ -2,7 +2,9 @@
 
 Two verbs are covered, each because it carried a defect that made it fail in
 the direction that looks like nothing being wrong: `create` (the
-pack-provisioning leg) and `reap` (the merged-ness discriminator).
+pack-provisioning leg) and `reap` — twice over, once for the merged-ness
+discriminator and once for the safety gates that decide what `reap` must
+leave alone whatever that discriminator says.
 
 `reap` — the merged-ness discriminator (livespec-dev-tooling-jtrt.2)
 -------------------------------------------------------------------
@@ -22,6 +24,27 @@ nothing, and `_assert_land_was_rebased` makes that degradation loud rather
 than silent. `test_reap_still_skips_a_genuinely_unmerged_worktree` is the
 negative control — a reaper that removes everything is the same defect
 inverted, and this one deletes work.
+
+`reap` — the liveness and factory-ownership gates (livespec-dev-tooling-7i2z5j)
+-------------------------------------------------------------------------------
+The discriminator above decides whether a worktree is FINISHED. It says
+nothing about whether anyone is still USING it, and `reap` had no test that
+did. A Fabro factory source checkout defeats the merged-ness gate by
+construction — the factory creates `fabro-source-<id>` AT master, so ancestry
+always reads it as merged and `--force` is never even needed. Measured
+2026-10-21 during a dev-host disk sweep, one dry run across the four
+repositories carrying this pack listed NINE such worktrees as REMOVE, and
+three were the working directory of a live `fabro run` at that moment; an
+`--execute` would have deleted a running run's source tree from under it.
+
+The gates are two, and the cases below assert them separately because neither
+subsumes the other. LIVENESS fails safe: a holder is named by pid, and a scan
+that cannot see the whole process table reports `cannot establish` and SKIPs
+rather than guessing idle. FACTORY OWNERSHIP is decided by NAME, because a
+run-board lookup needs an authenticated factory client a consuming host may
+not hold and a paused run holds its tree with no process at all. Every case
+runs `--force`, or asserts that `--execute --force` left the directory on
+disk, since `--force` overriding one of these skips is the defect restated.
 
 `create` — pack provisioning
 ----------------------------
@@ -54,16 +77,22 @@ network, the fleet ledger, or the developer's own repositories. `HOME`, the
 git env family and `COVERAGE_PROCESS_START` / `COV_CORE_*` are scrubbed so
 the children are hermetic and never self-instrument under `pytest --cov`.
 
-The `reap` cases run in DRY-RUN, which is the default: the verdict is the
-whole assertion, and a test that actually removed worktrees would be asking
-a destructive command to prove a read-only claim.
+The merged-ness `reap` cases run in DRY-RUN, which is the default: the
+verdict is the whole assertion, and a test that actually removed worktrees
+would be asking a destructive command to prove a read-only claim. The two
+safety cases that assert a worktree SURVIVES are the exception and have to
+be: "`--execute` would not have deleted it" is a claim only `--execute`
+itself can settle, which is why they run it, in a throwaway tree, against a
+directory whose continued existence IS the assertion.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -107,6 +136,7 @@ _LIB_ENV_VARS: tuple[str, ...] = (
     "WORKTREE_ROOT",
     "WORKTREE_HYDRATE_HOOK",
     "WORKTREE_PACK_INSTALL_HOOK",
+    "WORKTREE_PROC_ROOT",
 )
 
 
@@ -258,6 +288,12 @@ def test_canonical_body_no_longer_refuses_on_a_partial_primary() -> None:
 
 _LANDED_BRANCH = "feature/landed"
 _UNMERGED_BRANCH = "feature/pending"
+# A Fabro factory source checkout. The DIRECTORY name is what `reap` keys on,
+# so it is spelled out rather than derived from the branch like the two above.
+_FACTORY_BRANCH = "fabro/run/dcb603b8"
+_FACTORY_DIR = "fabro-source-dcb603b8"
+# The script's own seam for the process table its liveness probe reads.
+_PROC_ROOT_ENV = "WORKTREE_PROC_ROOT"
 
 
 def _git_succeeds(*, args: list[str], cwd: Path, env: dict[str, str]) -> bool:
@@ -308,10 +344,17 @@ def _assert_land_was_rebased(*, primary: Path, env: dict[str, str], branch: str)
 
 @pytest.fixture
 def reap_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
-    """A primary with two clean feature worktrees: one rebase-landed, one unmerged.
+    """A primary with three clean secondary worktrees, one per `reap` verdict.
 
-    Both are ahead of `origin/master` by ancestry, so the pre-fix reaper
-    skipped both. Only the patch-id leg can tell them apart.
+    Two feature worktrees, one rebase-landed and one unmerged: both are ahead
+    of `origin/master` by ancestry, so the pre-fix reaper skipped both, and
+    only the patch-id leg can tell them apart.
+
+    The third is a `fabro-source-<id>` factory source checkout, branched at
+    master AFTER the land so its head IS `origin/master`. That is the real
+    shape of the defect this fixture exists to pin: the merged-ness gate reads
+    it as merged by plain ancestry, so nothing but the factory-ownership gate
+    stands between it and removal.
     """
     env = _child_env(home=tmp_path / "home")
     primary = tmp_path / "primary"
@@ -347,20 +390,116 @@ def reap_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     _run_git(args=["push", "--quiet", "origin", "master"], cwd=primary, env=env)
     _land_by_rebase(primary=primary, env=env, branch=_LANDED_BRANCH)
     _assert_land_was_rebased(primary=primary, env=env, branch=_LANDED_BRANCH)
+
+    _run_git(
+        args=[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            _FACTORY_BRANCH,
+            str(worktrees / _FACTORY_DIR),
+            "master",
+        ],
+        cwd=primary,
+        env=env,
+    )
     return primary, env
 
 
-def _run_reap(*, primary: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """Run `worktree-lib.sh reap` in its DRY-RUN default, as `just worktree-reap` does."""
+def _worktree_dir(*, primary: Path, name: str) -> Path:
+    """The on-disk path of a `reap_repo` secondary worktree."""
+    return primary.parent / "worktrees" / name
+
+
+def _landed_dir(*, primary: Path) -> Path:
+    return _worktree_dir(primary=primary, name=_LANDED_BRANCH.replace("/", "_"))
+
+
+def _complete_proc_root(*, primary: Path) -> str:
+    """A process table the liveness probe can read WHOLE, holding no worktree.
+
+    Real `/proc` answers the completeness question differently depending on
+    whether the invoking user may inspect every process on the host: a scan
+    denied one `cwd`/`fd` link reports `cannot establish` and SKIPs, by
+    design. Pinning the merged-ness and factory-ownership cases to this
+    fixture keeps their verdicts about the gate under test instead of about
+    who is running the suite. One entry for this very pytest process — a
+    readable `cwd` link pointing at the tmp root, which contains the
+    worktrees but is not under any of them, and a readable empty `fd`
+    directory — is a COMPLETE table with no holders.
+
+    The live-holder cases below deliberately do NOT use it: a holder that is
+    FOUND short-circuits completeness, so real `/proc` answers those
+    deterministically and proves the probe against the real thing.
+    """
+    entry = primary.parent / "proc-complete" / str(os.getpid())
+    (entry / "fd").mkdir(parents=True)
+    (entry / "cwd").symlink_to(primary.parent)
+    return str(entry.parent)
+
+
+def _run_reap(
+    *,
+    primary: Path,
+    env: dict[str, str],
+    proc_root: str | None,
+    args: tuple[str, ...] = (),
+) -> subprocess.CompletedProcess[str]:
+    """Run `worktree-lib.sh reap` as `just worktree-reap` does; DRY-RUN by default.
+
+    `proc_root` is the process table the liveness probe reads. `None` leaves
+    the script on the host's real `/proc`.
+    """
     _write_pack(root=primary)
+    child_env = dict(env)
+    if proc_root is None:
+        _ = child_env.pop(_PROC_ROOT_ENV, None)
+    else:
+        child_env[_PROC_ROOT_ENV] = proc_root
     return subprocess.run(
-        ["bash", str(Path("dev-tooling") / _SCRIPT), "reap"],
+        ["bash", str(Path("dev-tooling") / _SCRIPT), "reap", *args],
         cwd=str(primary),
-        env=env,
+        env=child_env,
         check=False,
         capture_output=True,
         text=True,
     )
+
+
+@contextlib.contextmanager
+def _live_process(*, cwd: Path, open_file: Path | None = None) -> Iterator[int]:
+    """Spawn a real long-lived process, yield its pid, and kill it on the way out.
+
+    Both shapes of hold the contract names, from one helper. `cwd` becomes the
+    child's working directory, which is what `/proc/<pid>/cwd` reports and
+    what `subprocess` has already applied by the time `Popen` returns (the
+    parent reads the exec error pipe to EOF, so a returned handle means chdir
+    and exec both happened).
+
+    `open_file`, when given, is opened HERE and inherited as the child's
+    stdin, then closed in this process — so the yielded pid is the ONLY holder
+    of that descriptor and there is nothing to poll for. A `tail -f` would
+    have opened the file asynchronously, after exec, which is a race the
+    assertion would then have blamed on the probe.
+    """
+    handle = open_file.open("rb") if open_file is not None else None
+    try:
+        process = subprocess.Popen(
+            ["sleep", "300"],
+            cwd=str(cwd),
+            stdin=handle,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    finally:
+        if handle is not None:
+            handle.close()
+    try:
+        yield process.pid
+    finally:
+        process.kill()
+        _ = process.wait()
 
 
 def _verdict_line(*, output: str, branch: str) -> str:
@@ -380,7 +519,7 @@ def test_reap_removes_a_worktree_whose_branch_landed_by_rebase(
     """
     primary, env = reap_repo
 
-    completed = _run_reap(primary=primary, env=env)
+    completed = _run_reap(primary=primary, env=env, proc_root=_complete_proc_root(primary=primary))
 
     assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
     verdict = _verdict_line(output=completed.stdout, branch=_LANDED_BRANCH)
@@ -401,7 +540,7 @@ def test_reap_still_skips_a_genuinely_unmerged_worktree(
     """
     primary, env = reap_repo
 
-    completed = _run_reap(primary=primary, env=env)
+    completed = _run_reap(primary=primary, env=env, proc_root=_complete_proc_root(primary=primary))
 
     assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
     verdict = _verdict_line(output=completed.stdout, branch=_UNMERGED_BRANCH)
@@ -417,3 +556,177 @@ def test_canonical_body_judges_merged_ness_by_more_than_ancestry() -> None:
     HERE would be reverted in every consumer.
     """
     assert "git cherry" in CANONICAL_WORKTREE_LIB_BODY
+
+
+# ---------------------------------------------------------------------------
+# `reap` safety — liveness and factory ownership (livespec-dev-tooling-7i2z5j).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_reap_skips_a_merged_worktree_that_is_the_cwd_of_a_live_process(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """A holder's PID is the verdict, on the same worktree that is otherwise REMOVE.
+
+    `test_reap_removes_a_worktree_whose_branch_landed_by_rebase` asserts
+    REMOVE for this very worktree with nothing holding it, so the only
+    difference between the two verdicts is the live process — which is what
+    makes this a test of the liveness gate rather than of the merged-ness one.
+    """
+    primary, env = reap_repo
+    landed = _landed_dir(primary=primary)
+
+    with _live_process(cwd=landed) as pid:
+        completed = _run_reap(primary=primary, env=env, proc_root=None, args=("--force",))
+
+        assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+        verdict = _verdict_line(output=completed.stdout, branch=_LANDED_BRANCH)
+        assert verdict.strip().startswith("SKIP"), verdict
+        assert str(pid) in verdict, verdict
+
+
+@pytest.mark.integration
+def test_reap_execute_force_leaves_a_worktree_a_live_process_is_running_in(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """`--execute --force` and a live holder: the directory survives.
+
+    The dry-run verdict above is only a claim about what `--execute` would do.
+    This is the claim itself, and it is asserted with `--force` because
+    `--force` overriding the liveness skip is the original defect restated:
+    the sweep that found this listed nine factory worktrees as REMOVE, three
+    of them the cwd of a live `fabro run`.
+    """
+    primary, env = reap_repo
+    landed = _landed_dir(primary=primary)
+
+    with _live_process(cwd=landed) as _pid:
+        completed = _run_reap(
+            primary=primary, env=env, proc_root=None, args=("--execute", "--force")
+        )
+
+        assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+        assert landed.is_dir(), completed.stdout
+        assert (landed / ".git").exists(), completed.stdout
+
+
+@pytest.mark.integration
+def test_reap_skips_a_merged_worktree_holding_an_open_file_of_a_live_process(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """An open DESCRIPTOR counts as a hold, not only a working directory.
+
+    The holder here runs OUTSIDE the worktree, so a cwd-only probe would read
+    the tree as idle while a live process is reading a file out of it. That is
+    the case a `git worktree remove --force` would pull out from under a
+    build, a test run, or a factory run writing its own source tree.
+    """
+    primary, env = reap_repo
+    landed = _landed_dir(primary=primary)
+    held_file = landed / f"{_LANDED_BRANCH.replace('/', '_')}.txt"
+    assert held_file.is_file(), "fixture: the landed worktree's committed file is missing"
+
+    with _live_process(cwd=primary.parent, open_file=held_file) as pid:
+        completed = _run_reap(primary=primary, env=env, proc_root=None, args=("--force",))
+
+        assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+        verdict = _verdict_line(output=completed.stdout, branch=_LANDED_BRANCH)
+        assert verdict.strip().startswith("SKIP"), verdict
+        assert str(pid) in verdict, verdict
+
+
+@pytest.mark.integration
+def test_reap_skips_a_merged_worktree_whose_liveness_it_cannot_establish(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """No readable process table means SKIP — the fail-safe direction.
+
+    An unobservable process table is the common case, not an exotic one: a
+    host with no `/proc`, or an unprivileged scan denied another user's
+    `cwd`/`fd` links. Reading either as "no holder" would be a reaper
+    certifying absence from evidence it was refused, so the clause requires
+    SKIP, never REMOVE. `--force` is passed to prove it does not reach here.
+    """
+    primary, env = reap_repo
+
+    completed = _run_reap(
+        primary=primary,
+        env=env,
+        proc_root=str(primary.parent / "no-process-table"),
+        args=("--force",),
+    )
+
+    assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+    verdict = _verdict_line(output=completed.stdout, branch=_LANDED_BRANCH)
+    assert verdict.strip().startswith("SKIP"), verdict
+    assert "cannot establish" in verdict, verdict
+
+
+@pytest.mark.integration
+def test_reap_skips_an_unheld_merged_factory_source_worktree(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """`fabro-source-<id>` is skipped by NAME, with no live process anywhere.
+
+    The process table here is complete and holder-free, which is the whole
+    point: a paused or blocked factory run keeps its source tree with nothing
+    running in it, so a liveness test alone would hand it to the reaper. The
+    worktree is branched at master, so the merged-ness gate passes it by plain
+    ancestry and the name is the only thing left standing in the way.
+    """
+    primary, env = reap_repo
+
+    completed = _run_reap(
+        primary=primary,
+        env=env,
+        proc_root=_complete_proc_root(primary=primary),
+        args=("--force",),
+    )
+
+    assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+    verdict = _verdict_line(output=completed.stdout, branch=_FACTORY_BRANCH)
+    assert verdict.strip().startswith("SKIP"), verdict
+    assert "factory-owned" in verdict, verdict
+
+
+@pytest.mark.integration
+def test_reap_execute_force_leaves_an_unheld_factory_source_worktree(
+    *, reap_repo: tuple[Path, dict[str, str]]
+) -> None:
+    """`--execute --force` on a holder-free factory worktree: it stays on disk.
+
+    The negative control rides along in the same run: the unmerged feature
+    worktree IS removed under `--force`, so the surviving factory tree is the
+    name gate holding rather than the whole command declining to act.
+    """
+    primary, env = reap_repo
+    factory = _worktree_dir(primary=primary, name=_FACTORY_DIR)
+    unmerged = _worktree_dir(primary=primary, name=_UNMERGED_BRANCH.replace("/", "_"))
+
+    completed = _run_reap(
+        primary=primary,
+        env=env,
+        proc_root=_complete_proc_root(primary=primary),
+        args=("--execute", "--force"),
+    )
+
+    assert completed.returncode == 0, f"stdout={completed.stdout!r} stderr={completed.stderr!r}"
+    assert factory.is_dir(), completed.stdout
+    assert (factory / ".git").exists(), completed.stdout
+    assert not unmerged.exists(), (
+        f"control failed: --force removed nothing at all, so the factory tree's "
+        f"survival proves nothing. stdout={completed.stdout!r}"
+    )
+
+
+def test_canonical_body_carries_the_liveness_and_factory_ownership_gates() -> None:
+    """Both gates are in the canonical source, not only in an installed copy.
+
+    `dev-tooling/worktree-lib.sh` is gitignored in every consumer and
+    byte-verified against this package constant, so a fix that did not land
+    HERE is reverted the next time `install-worktree-pack` runs.
+    """
+    assert "fabro-source-?*" in CANONICAL_WORKTREE_LIB_BODY
+    assert "worktree_reap_holder_pid" in CANONICAL_WORKTREE_LIB_BODY
+    assert "worktree_reap_scan_gap" in CANONICAL_WORKTREE_LIB_BODY
