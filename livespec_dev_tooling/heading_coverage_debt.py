@@ -131,6 +131,7 @@ _VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+import jsoncomment  # noqa: E402  — vendor-path-aware import after sys.path insert.
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
 from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
@@ -141,6 +142,7 @@ __all__: list[str] = [
     "HeadCopyIncomparable",
     "RowsUnreadable",
     "as_calendar_date",
+    "configured_spec_root",
     "first_seen_dates",
     "generate_register",
     "head_rows",
@@ -157,6 +159,7 @@ __all__: list[str] = [
 
 COVERAGE_PATH = Path("tests") / "heading-coverage.json"
 REGISTER_PATH = Path("tests") / "heading-coverage-debt.json"
+_LIVESPEC_CONFIG_PATH = Path(".livespec.jsonc")
 
 _KEY_FIELDS = (
     "spec_root",
@@ -267,19 +270,56 @@ def load_rows(*, path: Path) -> IOResult[list[dict[str, object]], RowsUnreadable
     return IOSuccess(rows)
 
 
-def register_key(*, row: dict[str, object]) -> tuple[str, str, str] | None:
-    """The `(spec_root, spec_file, heading)` key of `row`; `None` when unkeyed.
+def configured_spec_root(*, cwd: Path) -> str | None:
+    """The consuming repository's configured `spec_root`, when it is readable.
+
+    Scenario-shaped registry rows deliberately carry no `spec_root`: their
+    coverage key belongs under the consuming repository's configured root.
+    Existing triple-shaped rows do not depend on this read, so an unavailable
+    or malformed livespec configuration leaves only those scenario rows
+    unkeyed for the ratchet to ignore alongside other unkeyed entries.
+    """
+    try:
+        source = (cwd / _LIVESPEC_CONFIG_PATH).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        parsed = jsoncomment.loads(source)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    spec_root = parsed.get("spec_root")
+    return spec_root if isinstance(spec_root, str) else None
+
+
+def register_key(
+    *, row: dict[str, object], spec_root: str | None = None
+) -> tuple[str, str, str] | None:
+    """The ratchet triple for an explicit or scenario-shaped registry row.
 
     A row missing any of the three, or carrying a non-string in one of them, has
     no identity the ratchet can track on either side of the comparison, so it is
-    reported as unkeyed rather than silently keyed on a coerced value.
+    reported as unkeyed rather than silently keyed on a coerced value. A
+    scenario-shaped `TODO` instead derives that same triple from its
+    `scenario_file`, its `scenario` prefixed by `## `, and the consuming
+    repository's configured `spec_root`.
     """
-    spec_root = row.get("spec_root")
+    row_spec_root = row.get("spec_root")
     spec_file = row.get("spec_file")
     heading = row.get("heading")
-    if not (isinstance(spec_root, str) and isinstance(spec_file, str) and isinstance(heading, str)):
+    if isinstance(row_spec_root, str) and isinstance(spec_file, str) and isinstance(heading, str):
+        return (row_spec_root, spec_file, heading)
+    configured_root = spec_root if spec_root is not None else configured_spec_root(cwd=Path.cwd())
+    scenario = row.get("scenario")
+    scenario_file = row.get("scenario_file")
+    if not (
+        isinstance(configured_root, str)
+        and isinstance(scenario, str)
+        and isinstance(scenario_file, str)
+    ):
         return None
-    return (spec_root, spec_file, heading)
+    return (configured_root, scenario_file, f"## {scenario}")
 
 
 def register_row_is_complete(*, row: dict[str, object]) -> bool:
@@ -449,7 +489,7 @@ def _utc_calendar_date(*, committed_at: str) -> str:
     return datetime.fromisoformat(instant).astimezone(timezone.utc).date().isoformat()
 
 
-def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
+def first_seen_dates(*, cwd: Path, spec_root: str | None = None) -> dict[tuple[str, str, str], str]:
     """Key → UTC calendar date of the earliest commit whose registry carried it as `TODO`.
 
     Walks `git log --reverse` over the live registry path only — the file has a
@@ -462,6 +502,7 @@ def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
     taken as `%cs`, so the date this returns survives a rebase-merge — see
     `_utc_calendar_date` for the defect that bought the distinction.
     """
+    configured_root = spec_root if spec_root is not None else configured_spec_root(cwd=cwd)
     log = _git_stdout(
         cwd=cwd,
         args=["log", "--reverse", "--format=%H %cI", "--", COVERAGE_PATH.as_posix()],
@@ -472,7 +513,7 @@ def first_seen_dates(*, cwd: Path) -> dict[tuple[str, str, str], str]:
         committed_on = _utc_calendar_date(committed_at=committed_at)
         blob = _git_stdout(cwd=cwd, args=["show", f"{revision}:{COVERAGE_PATH.as_posix()}"])
         for row in todo_rows(rows=_rows_from_text(text=blob) or []):
-            key = register_key(row=row)
+            key = register_key(row=row, spec_root=configured_root)
             if key is not None and key not in dates:
                 dates[key] = committed_on
     return dates
@@ -533,10 +574,11 @@ def generate_register(
         return previous
     recorded = _recorded_first_seen(rows=unsafe_perform_io(previous.unwrap()))
     rows = todo_rows(rows=unsafe_perform_io(loaded.unwrap()))
-    dates = first_seen_dates(cwd=cwd)
+    spec_root = configured_spec_root(cwd=cwd)
+    dates = first_seen_dates(cwd=cwd, spec_root=spec_root)
     generated: list[tuple[tuple[str, str, str], dict[str, object]]] = []
     for row in rows:
-        key = register_key(row=row)
+        key = register_key(row=row, spec_root=spec_root)
         if key is None:
             continue
         work_item = row.get("work_item")

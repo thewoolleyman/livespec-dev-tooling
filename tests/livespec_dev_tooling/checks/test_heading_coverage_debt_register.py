@@ -59,6 +59,8 @@ from typing import NamedTuple
 
 import pytest
 
+from livespec_dev_tooling.heading_coverage_debt import configured_spec_root
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -191,6 +193,17 @@ def _governed_todo_row(
         "heading": heading,
         "test": "TODO",
         "reason": reason,
+        "work_item": work_item,
+    }
+
+
+def _scenario_todo_row(*, work_item: str = _OWNER) -> dict[str, object]:
+    """A console-shaped registry row, keyed by scenario rather than a triple."""
+    return {
+        "scenario": "Contributor Scenario A -- Functional / non-functional placement boundary",
+        "scenario_file": "non-functional-requirements.md",
+        "test": "TODO",
+        "reason": "owed integration-tier test",
         "work_item": work_item,
     }
 
@@ -500,6 +513,66 @@ def test_a_register_equal_to_the_live_todo_set_passes(
         f"a register equal to the live TODO set must pass; "
         f"got returncode={result.returncode} output={result.combined!r}"
     )
+
+
+def test_a_scenario_shaped_todo_registered_under_the_configured_root_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a generated scenario-shaped register row is not unregistered debt."""
+    heading = "## Contributor Scenario A -- Functional / non-functional placement boundary"
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_scenario_todo_row()],
+        register=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "non-functional-requirements.md",
+                "heading": heading,
+                "work_item": _OWNER,
+                "first_seen": _BASELINE_DATE,
+            }
+        ],
+    )
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"spec_root": "SPECIFICATION"}\n', encoding="utf-8"
+    )
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, result.combined
+    assert "unregistered_todo" not in result.combined
+
+
+def test_an_unregistered_scenario_shaped_todo_names_its_derived_key(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: absent scenario-shaped debt is reported by its derived triple."""
+    _seed_repo(tmp_path=tmp_path, registry=[_scenario_todo_row()], register=[])
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"spec_root": "SPECIFICATION"}\n', encoding="utf-8"
+    )
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, result.combined
+    assert "unregistered_todo" in result.combined
+    assert '"spec_root": "SPECIFICATION"' in result.combined
+    assert '"spec_file": "non-functional-requirements.md"' in result.combined
+    assert (
+        '"heading": "## Contributor Scenario A -- Functional / non-functional placement boundary"'
+        in result.combined
+    )
+
+
+def test_a_missing_or_malformed_livespec_config_cannot_invent_a_scenario_root(
+    *, tmp_path: Path
+) -> None:
+    """A scenario row is unkeyed until its consuming repository declares a root."""
+    assert configured_spec_root(cwd=tmp_path) is None
+    _ = (tmp_path / ".livespec.jsonc").write_text("not jsonc", encoding="utf-8")
+    assert configured_spec_root(cwd=tmp_path) is None
+    _ = (tmp_path / ".livespec.jsonc").write_text("[]", encoding="utf-8")
+    assert configured_spec_root(cwd=tmp_path) is None
 
 
 def test_a_todo_row_absent_from_the_register_fails(
