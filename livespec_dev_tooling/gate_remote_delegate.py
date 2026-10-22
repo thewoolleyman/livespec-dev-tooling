@@ -78,6 +78,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from livespec_dev_tooling._gate_host_authority import run_host_authority_members
 from livespec_dev_tooling._gate_remote_assembly import (
     assembly_refusal,
     check_suite_argv,
@@ -365,11 +366,20 @@ def run_delegated_gate(
             token_written=False,
         )
     request = built.unwrap()
+    tree_hash = gate_ref_tree_hash(gate_ref=request.gate_ref)
+    # The authority half, BEFORE the Job is submitted — the contract's own
+    # "before or beside". A member that declares it reads an authorization held
+    # outside the tree cannot be answered inside the Job, which is handed none,
+    # so it runs here with this host's own credentials against the tree the Job
+    # is about to be handed. The records are observed and not yet joined: the
+    # delegated verdict is the conjunction of this half and the Job's, and the
+    # Job has not reported yet.
+    _ = run_host_authority_members(repo_root=repo_root, tree_hash=tree_hash, runner=runner)
     verdict = run_gated_push(request=request, runner=runner, sleeper=sleeper)
     emit(
         outcome=_GATE_OUTCOMES.get(verdict.state, GATE_OUTCOME_NO_VERDICT),
         repository=request.mirror_url.rsplit("/", maxsplit=1)[-1].removesuffix(".git"),
-        tree_hash=gate_ref_tree_hash(gate_ref=request.gate_ref),
+        tree_hash=tree_hash,
         job_name=verdict.job_name,
     )
     return verdict
