@@ -59,6 +59,8 @@ from typing import NamedTuple
 
 import pytest
 
+from livespec_dev_tooling.heading_coverage_debt import configured_spec_root
+
 __all__: list[str] = []
 
 pytestmark = pytest.mark.integration
@@ -193,6 +195,37 @@ def _governed_todo_row(
         "reason": reason,
         "work_item": work_item,
     }
+
+
+# DELIBERATELY NOT `"SPECIFICATION"`. The derived root comes from the FIXTURE's
+# `.livespec.jsonc`, and this repository's own committed config happens to carry
+# `"spec_root": "SPECIFICATION"` too — so a fixture spelled the same way would be
+# satisfied by an ambient read of the real repository just as well as by the
+# fixture's, and these arms would pass whether or not the resolution honours the
+# consuming repository at all. A root no other file in the fleet carries makes
+# the two indistinguishable readings distinguishable.
+_SCENARIO_SPEC_ROOT = "FIXTURE-SPEC"
+_SCENARIO = "Contributor Scenario A -- Functional / non-functional placement boundary"
+_SCENARIO_FILE = "non-functional-requirements.md"
+_SCENARIO_HEADING = f"## {_SCENARIO}"
+
+
+def _scenario_todo_row(*, work_item: str = _OWNER) -> dict[str, object]:
+    """A console-shaped registry row, keyed by scenario rather than a triple."""
+    return {
+        "scenario": _SCENARIO,
+        "scenario_file": _SCENARIO_FILE,
+        "test": "TODO",
+        "reason": "owed integration-tier test",
+        "work_item": work_item,
+    }
+
+
+def _write_scenario_spec_root(*, tmp_path: Path) -> None:
+    """Declare the fixture repository's configured specification root."""
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps({"spec_root": _SCENARIO_SPEC_ROOT}) + "\n", encoding="utf-8"
+    )
 
 
 def _governed_entry(
@@ -500,6 +533,58 @@ def test_a_register_equal_to_the_live_todo_set_passes(
         f"a register equal to the live TODO set must pass; "
         f"got returncode={result.returncode} output={result.combined!r}"
     )
+
+
+def test_a_scenario_shaped_todo_registered_under_the_configured_root_passes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a generated scenario-shaped register row is not unregistered debt."""
+    _seed_repo(
+        tmp_path=tmp_path,
+        registry=[_scenario_todo_row()],
+        register=[
+            {
+                "spec_root": _SCENARIO_SPEC_ROOT,
+                "spec_file": _SCENARIO_FILE,
+                "heading": _SCENARIO_HEADING,
+                "work_item": _OWNER,
+                "first_seen": _BASELINE_DATE,
+            }
+        ],
+    )
+    _write_scenario_spec_root(tmp_path=tmp_path)
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode == 0, result.combined
+    assert "unregistered_todo" not in result.combined
+
+
+def test_an_unregistered_scenario_shaped_todo_names_its_derived_key(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: absent scenario-shaped debt is reported by its derived triple."""
+    _seed_repo(tmp_path=tmp_path, registry=[_scenario_todo_row()], register=[])
+    _write_scenario_spec_root(tmp_path=tmp_path)
+
+    result = _run_check(cwd=tmp_path, scope=None, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, result.combined
+    assert "unregistered_todo" in result.combined
+    assert f'"spec_root": "{_SCENARIO_SPEC_ROOT}"' in result.combined
+    assert f'"spec_file": "{_SCENARIO_FILE}"' in result.combined
+    assert f'"heading": "{_SCENARIO_HEADING}"' in result.combined
+
+
+def test_a_missing_or_malformed_livespec_config_cannot_invent_a_scenario_root(
+    *, tmp_path: Path
+) -> None:
+    """A scenario row is unkeyed until its consuming repository declares a root."""
+    assert configured_spec_root(cwd=tmp_path) is None
+    _ = (tmp_path / ".livespec.jsonc").write_text("not jsonc", encoding="utf-8")
+    assert configured_spec_root(cwd=tmp_path) is None
+    _ = (tmp_path / ".livespec.jsonc").write_text("[]", encoding="utf-8")
+    assert configured_spec_root(cwd=tmp_path) is None
 
 
 def test_a_todo_row_absent_from_the_register_fails(
