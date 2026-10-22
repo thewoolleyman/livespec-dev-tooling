@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.124.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.123.0...v1.124.0) (2026-10-22)
+
+
+### Features
+
+* **gates:** cover host private sibling token mint ([3c7ac3f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3c7ac3f8eb9e5e6aa3089e539667b631efdf17bd))
+* **gates:** cover private sibling secret delivery ([f672819](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f672819ccc69592022a97070296ecfb53c4a144e))
+
 ## [1.123.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.122.0...v1.123.0) (2026-10-22)
 
 
