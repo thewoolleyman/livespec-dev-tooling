@@ -79,12 +79,9 @@ namespace growth weeks later.
 
 from __future__ import annotations
 
-import json
 import sys
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeAlias, cast
 
 from livespec_dev_tooling.gate_credential import with_gates_kubeconfig
 from livespec_dev_tooling.gate_private_sibling_token import (
@@ -99,6 +96,14 @@ from livespec_dev_tooling.gate_remote_invocation import (
     default_sleeper,
     require_invocation,
     require_success,
+)
+from livespec_dev_tooling.gate_remote_job_status import (
+    COMPLETE_CONDITION,
+    Terminal,
+    created_job_name,
+    reported_time,
+    terminal_condition,
+    unreadable,
 )
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
@@ -152,10 +157,6 @@ _DELETE_STEP = "delete-gate-ref"
 # The two Job conditions that mean the gate is OVER. Kubernetes reports every
 # condition it has ever set, negative ones included, so the type alone does not
 # say the gate finished — the condition must also be asserted `"True"`.
-_COMPLETE_CONDITION = "Complete"
-_TERMINAL_CONDITION_TYPES = frozenset({_COMPLETE_CONDITION, "Failed"})
-_CONDITION_ASSERTED = "True"
-
 # The Job's own two clock readings, which sit beside its conditions in the same
 # status object. Kubernetes marshals a `metav1.Time` as RFC3339 IN UTC, so these
 # strings are ISO-8601 UTC as they stand and are CARRIED rather than reparsed and
@@ -170,9 +171,6 @@ _COMPLETION_TIME = "completionTime"
 # themselves in the log. The Job object does not carry this — only its pod does
 # — so it is a separate read, taken only when there is a failure to explain.
 _TERMINATION_MESSAGE_JSONPATH = "{.items[*].status.containerStatuses[*].state.terminated.message}"
-
-_JobPayload: TypeAlias = Mapping[str, Mapping[str, object]]
-_Conditions: TypeAlias = Sequence[Mapping[str, str]]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -253,23 +251,6 @@ class GateRunOutcome:
     failure_message: str = ""
     started_at: str = ""
     finished_at: str = ""
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Terminal:
-    """A Job status that reported a terminal condition, and WHICH one did.
-
-    The status is carried WHOLE rather than reduced to the condition's type,
-    because the Job's clock readings live beside its conditions in that same
-    object: a Job that has just told the poll it finished said, in the SAME
-    reply, when it started and when it completed. Keeping that reply one step
-    longer is what lets both be read without a second `get` — and a second `get`
-    is the wrong way to ask, because the template keeps a finished Job only for
-    `ttlSecondsAfterFinished` and a collected Job answers nothing at all.
-    """
-
-    condition: str
-    status: Mapping[str, object]
 
 
 def run_gate(
@@ -447,7 +428,7 @@ def _gate_a_pushed_tree(
     )
     if isinstance(submitted, Failure):
         return Failure(submitted.failure())
-    named = _created_job_name(argv=submit_argv, payload=submitted.unwrap().stdout)
+    named = created_job_name(argv=submit_argv, payload=submitted.unwrap().stdout, step=_SUBMIT_STEP)
     if isinstance(named, Failure):
         return Failure(named.failure())
     job_name = named.unwrap()
@@ -477,7 +458,7 @@ def _gate_a_pushed_tree(
     # verbatim either way and this slice still forms no opinion about it.
     message = (
         ""
-        if ended.condition == _COMPLETE_CONDITION
+        if ended.condition == COMPLETE_CONDITION
         else _failure_message(request=request, runner=runner, job_name=job_name)
     )
     logs_argv = [
@@ -502,48 +483,8 @@ def _gate_a_pushed_tree(
             terminal_state=ended.condition,
             logs_returncode=ran.returncode,
             failure_message=message,
-            started_at=_reported_time(status=ended.status, key=_START_TIME),
-            finished_at=_reported_time(status=ended.status, key=_COMPLETION_TIME),
-        )
-    )
-
-
-def _unreadable(*, step: str, argv: Sequence[str], detail: str) -> GateStepFailed:
-    """One shape for a step whose COMMAND ran and whose ANSWER was unusable.
-
-    `returncode=None` is the distinction this exists to keep, and it is why the
-    four sites below share it rather than each spelling a refusal: the command
-    did not fail, so there is no exit code to report — what failed is the read.
-    Both reach `GATE_NO_VERDICT` and refuse the push, and both must, but only one
-    of them is a cluster saying no.
-    """
-    return GateStepFailed(step=step, argv=tuple(argv), returncode=None, detail=detail)
-
-
-def _created_job_name(*, argv: Sequence[str], payload: str) -> Result[str, GateStepFailed]:
-    """The name the API server ASSIGNED this Job, read off the submit's answer.
-
-    A FAILURE, never a fallback. The manifest carries `generateName` rather than
-    `name`, so there is no name to fall back TO: the renderer's old derived name
-    is exactly the value that made a re-gate impossible, and reinstating it here
-    as a guess would put this run back to waiting on another run's Job — or on
-    nothing at all. A submit whose answer cannot be read is therefore a step that
-    did not complete, which reaches `GATE_NO_VERDICT` and refuses the push, and
-    that is sound: the Job may well be running, but nothing left can find it.
-    """
-    try:
-        parsed = cast("_JobPayload", json.loads(payload))
-    except json.JSONDecodeError as unreadable:
-        detail = f"unreadable submit response: {unreadable}"
-        return Failure(_unreadable(step=_SUBMIT_STEP, argv=argv, detail=detail))
-    assigned = parsed.get("metadata", {}).get("name")
-    if isinstance(assigned, str) and assigned:
-        return Success(assigned)
-    return Failure(
-        _unreadable(
-            step=_SUBMIT_STEP,
-            argv=argv,
-            detail="the submit response carries no metadata.name for the created Job",
+            started_at=reported_time(status=ended.status, key=_START_TIME),
+            finished_at=reported_time(status=ended.status, key=_COMPLETION_TIME),
         )
     )
 
@@ -572,20 +513,6 @@ def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_
     return read.map(lambda ran: ran.stdout.strip()).value_or("")
 
 
-def _reported_time(*, status: Mapping[str, object], key: str) -> str:
-    """One of the Job's clock readings, or the empty string where it reported none.
-
-    AN ABSENCE, NEVER A FAILURE, for the same reason `_failure_message` answers
-    the empty string: by the time this is read the Job has already reported a
-    terminal condition, so the verdict exists. A reading the cluster omitted, or
-    one it spelled as something other than a string, must not be able to turn
-    that verdict into a no-verdict and refuse a push — a gate that cannot say
-    WHEN it ran is still a gate that ran.
-    """
-    reading = status.get(key)
-    return reading if isinstance(reading, str) else ""
-
-
 def _poll_budget(*, request: GateRunRequest) -> int:
     """How many polls the timeout buys at this interval.
 
@@ -600,7 +527,7 @@ def _poll_budget(*, request: GateRunRequest) -> int:
 
 def _await_terminal_state(
     *, request: GateRunRequest, runner: GateCommandRunner, sleeper: Sleeper, job_name: str
-) -> Result[_Terminal, GateStepFailed]:
+) -> Result[Terminal, GateStepFailed]:
     """Poll the Job until it reports a terminal condition, or give up.
 
     A read that could not be MADE is not a gate that has not finished YET, so a
@@ -621,7 +548,7 @@ def _await_terminal_state(
         )
         if isinstance(lifted, Failure):
             return Failure(lifted.failure())
-        condition = _terminal_condition(argv=argv, payload=lifted.unwrap().stdout)
+        condition = terminal_condition(argv=argv, payload=lifted.unwrap().stdout, step=_AWAIT_STEP)
         if isinstance(condition, Failure):
             return Failure(condition.failure())
         ended = condition.unwrap()
@@ -629,29 +556,4 @@ def _await_terminal_state(
             return Success(ended)
         sleeper(seconds=request.poll_interval_seconds)
     gave_up = f"{job_name} reached no terminal condition within {request.poll_timeout_seconds:g}s"
-    return Failure(_unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
-
-
-def _terminal_condition(
-    *, argv: Sequence[str], payload: str
-) -> Result[_Terminal | None, GateStepFailed]:
-    """The terminal status and its condition, or `None` for a gate still running.
-
-    `None` is an ABSENCE every caller acts on as ordinary control flow — "not
-    finished yet, poll again" — and is the majority answer. A payload that
-    cannot be READ is the failure track instead: neither "finished" nor "still
-    running" may be inferred from nonsense, and guessing either way is how a
-    delegated gate reports a verdict it never obtained.
-    """
-    try:
-        parsed = cast("_JobPayload", json.loads(payload))
-    except json.JSONDecodeError as unreadable:
-        detail = f"unreadable job status: {unreadable}"
-        return Failure(_unreadable(step=_AWAIT_STEP, argv=argv, detail=detail))
-    status = parsed.get("status", {})
-    conditions = cast("_Conditions", status.get("conditions", ()))
-    for condition in conditions:
-        asserted = condition.get("status") == _CONDITION_ASSERTED
-        if asserted and condition.get("type") in _TERMINAL_CONDITION_TYPES:
-            return Success(_Terminal(condition=condition["type"], status=status))
-    return Success(None)
+    return Failure(unreadable(step=_AWAIT_STEP, argv=argv, detail=gave_up))
