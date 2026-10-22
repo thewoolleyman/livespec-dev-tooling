@@ -76,6 +76,13 @@ _RESOLVED: dict[str, object] = {
     "heading": "## Heading C",
     "test": "tests.consumer.test_thing.test_it",
 }
+_SCENARIO_TODO: dict[str, object] = {
+    "scenario": "Contributor Scenario A -- Functional / non-functional placement boundary",
+    "scenario_file": "non-functional-requirements.md",
+    "test": "TODO",
+    "reason": "owed integration-tier test",
+    "work_item": "livespec-dev-tooling-scenario",
+}
 
 # A committer timestamp whose LOCAL calendar date (2026-05-06) is the day BEFORE
 # its UTC one — the shape every rebase-merge repository of the fleet produces
@@ -168,6 +175,13 @@ def _write_register(*, tmp_path: Path, entries: object) -> None:
     )
 
 
+def _write_livespec_config(*, tmp_path: Path, spec_root: str) -> None:
+    """Write the consuming repository's configured specification root."""
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        json.dumps({"spec_root": spec_root}) + "\n", encoding="utf-8"
+    )
+
+
 def _commit_registry(*, tmp_path: Path, entries: object, committed_at: str) -> None:
     """Overwrite the registry with `entries` and commit it at `committed_at`."""
     _write_registry(tmp_path=tmp_path, entries=entries)
@@ -216,6 +230,15 @@ def test_register_key_is_the_ratified_triple() -> None:
 def test_register_key_refuses_a_row_missing_a_key_field() -> None:
     """An unkeyed row has no identity the ratchet can track on either side."""
     assert _MODULE.register_key(row=_UNKEYED_TODO) is None
+
+
+def test_scenario_shaped_todo_uses_the_configured_spec_root_for_its_register_key() -> None:
+    """Scenario-shaped debt derives the ratchet's stable triple key."""
+    assert _MODULE.register_key(row=_SCENARIO_TODO, spec_root="SPECIFICATION") == (
+        "SPECIFICATION",
+        "non-functional-requirements.md",
+        "## Contributor Scenario A -- Functional / non-functional placement boundary",
+    )
 
 
 def test_register_row_is_complete_requires_owner_and_first_seen() -> None:
@@ -522,6 +545,39 @@ def test_generate_register_carries_key_owner_and_git_derived_first_seen(*, tmp_p
             "spec_file": "spec.md",
             "heading": "## Heading B",
             "work_item": "livespec-dev-tooling-bbb",
+            "first_seen": "2026-03-04",
+        },
+    ]
+
+
+def test_generate_register_derives_scenario_shaped_todo_entries_from_configured_spec_root(
+    *, tmp_path: Path
+) -> None:
+    """A scenario registry preserves the register's ratified triple schema."""
+    _init_repo(tmp_path=tmp_path)
+    _write_livespec_config(tmp_path=tmp_path, spec_root="SPECIFICATION")
+    _commit_registry(
+        tmp_path=tmp_path,
+        entries=[_SCENARIO_TODO, _TODO_A],
+        committed_at="2026-03-04T00:00:00+00:00",
+    )
+
+    generated = _MODULE.generate_register(cwd=tmp_path, today="2026-09-09")
+
+    assert isinstance(generated, IOSuccess)
+    assert unsafe_perform_io(generated.unwrap()) == [
+        {
+            "spec_root": "SPECIFICATION",
+            "spec_file": "non-functional-requirements.md",
+            "heading": "## Contributor Scenario A -- Functional / non-functional placement boundary",
+            "work_item": "livespec-dev-tooling-scenario",
+            "first_seen": "2026-03-04",
+        },
+        {
+            "spec_root": "SPECIFICATION",
+            "spec_file": "spec.md",
+            "heading": "## Heading A",
+            "work_item": "livespec-dev-tooling-aaa",
             "first_seen": "2026-03-04",
         },
     ]
