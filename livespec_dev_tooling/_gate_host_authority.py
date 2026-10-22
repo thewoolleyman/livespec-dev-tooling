@@ -41,7 +41,7 @@ cohesion split (`_gate_remote_assembly.py` and its siblings): the names in
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_dev_tooling.check_authority import repository_authority_members
@@ -214,13 +214,24 @@ def host_authority_decision(
     so the next push of this byte-identical tree runs it again on the pushing
     host either way. Retracting the token would re-gate the tree-pure members
     the Job did judge, for no verdict anyone would read differently.
+
+    IT REPLACES THE TWO FIELDS IT DECIDES AND NOTHING ELSE, rather than
+    rebuilding the verdict from an enumeration of what to keep. The two are not
+    the same thing over time: this verdict is the gate Job's, and the gate Job's
+    verdict grows fields — the Job's name, the namespace it ran in, when it
+    started and when it completed — each of which an enumeration here would drop
+    SILENTLY, since a `GateVerdict` field left unnamed defaults rather than
+    errors. That already happened once: the namespace and both clock readings
+    were lost exactly here while `job_name` survived, on the one refused path
+    where an operator needs the Job most — the gate they were watching PASSED,
+    so the refusal reads as coming from nowhere and the Job is the first thing
+    they go looking for.
     """
     refused = tuple(run for run in ran if run.returncode != 0)
     if not refused:
         return verdict
-    return GateVerdict(
+    return replace(
+        verdict,
         state=GATE_HOST_AUTHORITY_REFUSED,
         detail="; ".join(_refusal(run=run) for run in refused),
-        token_written=verdict.token_written,
-        job_name=verdict.job_name,
     )
