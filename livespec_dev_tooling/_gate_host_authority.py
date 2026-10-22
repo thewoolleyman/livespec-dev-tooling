@@ -88,6 +88,21 @@ _HOST_AUTHORITY_REFUSAL = (
     "tree and the Job is handed none; the Job's own verdict was green. {detail}"
 )
 
+# WHAT A NON-ANSWER SAYS, and why it is a different sentence rather than the same
+# one. The line above is right about a member that RAN and was refused and wrong
+# about one that never started: an operator told its authorization check failed
+# goes to the work item, when the fault is that `just` is not on this host's
+# PATH. Both arms refuse — the contract's "never treats an unevaluated
+# authorization as granted" admits no third option — so only the words carry the
+# difference, and the words are the whole repair.
+_HOST_AUTHORITY_UNEVALUATED = (
+    "{member} could not be evaluated on the pushing host, which is the only host holding the "
+    "authorization it reads, so this push is refused as that member's own failure: an "
+    "authorization nobody could read is never treated as granted. Nothing judged the committed "
+    "tree {tree_hash} for that member — the gate Job does not run it either, and the Job's own "
+    "verdict was green. {detail}"
+)
+
 
 @dataclass(frozen=True, kw_only=True)
 class HostAuthorityRun:
@@ -169,10 +184,14 @@ def _refusal(*, run: HostAuthorityRun) -> str:
     only the first. The members here are a repository's authorizations, and an
     operator who fixes one approval only to be refused by the second has paid
     two full delegated gates to learn what one message could have said.
+
+    THE ARM IS CHOSEN BY THE ABSENT EXIT CODE, which is the same discrimination
+    the record keeps and every other step of a delegated gate keeps: `None`
+    means nothing ran, so there is no verdict of the member's own to report and
+    the sentence has to say that rather than invent a failure.
     """
-    return _HOST_AUTHORITY_REFUSAL.format(
-        member=run.member, tree_hash=run.tree_hash, detail=run.detail
-    )
+    template = _HOST_AUTHORITY_UNEVALUATED if run.returncode is None else _HOST_AUTHORITY_REFUSAL
+    return template.format(member=run.member, tree_hash=run.tree_hash, detail=run.detail)
 
 
 def host_authority_decision(
