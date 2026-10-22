@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.122.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.121.3...v1.122.0) (2026-10-22)
+
+
+### Features
+
+* **ci:** rederive Kueue demand weights ([753bc19](https://github.com/thewoolleyman/livespec-dev-tooling/commit/753bc19997a0f76d2d1dd41cbe6b0b859fba759a))
+
 ## [1.121.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.121.2...v1.121.3) (2026-10-22)
 
 
