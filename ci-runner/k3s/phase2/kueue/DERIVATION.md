@@ -228,26 +228,19 @@ Largest-remainder (Hamilton) apportionment, spelled out:
 Step 5 can push the sum above `C`. If it does, deduct the excess one
 unit at a time from the repositories with the LARGEST quotas (ties
 broken by smaller `w_i`, then name descending), never taking any
-repository below 1. This did not trigger at `C = 16` or at `C = 8`; it
-begins to matter as `C` approaches the repository count, and is written
-down here so the case is decided rather than improvised.
+repository below 1. This is part of the rule, not an optional
+post-processing choice: the committed quotas must still sum to `C`.
 
 **The invariant to check after any recomputation:** the quotas sum to
 exactly `C`, the registered node capacity. Nothing enforces this
 mechanically — see "Is a generator worth building?" below.
 
-**The invariant has ONE known exception, and it is forced by step 5.**
-The `max(1, ...)` floor can lift a repository whose apportionment rounds
-to zero, which adds a unit the apportionment did not allocate. That
-cannot happen while every repository's exact share exceeds 1, so it did
-not arise at eight repositories, and it DOES arise at nine — see
-"Recomputation on the ninth repository (2026-08-20)" below. When it
-fires, the raw apportionment still sums to exactly `C` and the committed
-quotas sum to `C + k`, where `k` is the number of floored-up
-repositories. Do not restore the sum by re-quoting some other repository
-below its apportioned share; that trades a harmless one-unit
-over-reservation for a real, silent under-allocation of a repo that
-earned its slots.
+**The invariant has no exception.** The `max(1, ...)` floor can lift a
+repository whose apportionment rounds to zero, which adds a unit the
+apportionment did not allocate. The excess-deduction step immediately above
+then restores the sum to `C`. Earlier historical prose described retaining a
+`C + k` total; it conflicted with the explicit rule and is not a permissible
+result for a new derivation.
 
 ## The derivation at C = 16
 
@@ -344,38 +337,18 @@ go to `livespec-console-beads-fabro` (0.5172) and `livespec` (0.4242).
 closest call in this table by an order of magnitude — and so is
 apportioned **zero**.
 
-**This is where the sum invariant breaks, and the break is the rule's,
-not a maintainer's.** Step 5's `max(1, ...)` floor lifts
-`livespec-driver-pi` from 0 to 1, so the raw apportionment sums to
-exactly `C = 16` while the COMMITTED quotas sum to **17**. Kueue then
-holds one slot of nominal quota against capacity the node does not have.
-That is harmless in operation — the scheduler is the final gate, and the
-excess is one slot out of sixteen — but it makes the invariant as
-originally written false, which is why it is documented here rather than
-silently absorbed.
+**Historical record; superseded rule.** The 2026-08-20 configuration retained
+the floor lift, so its committed quotas summed to 17 against `C = 16`. That
+was the contradictory `C + k` reading later found in this document. The rule
+now resolves it mechanically: after the floor lift, deduct the excess from
+the largest quota under the tie-break described above. A fresh C = 16
+derivation must therefore sum to 16; it must not recreate this historical
+over-reservation or raise capacity merely to accommodate it.
 
-**The open decision, which this section does not make.** Two clean
-resolutions exist, and both are fleet-level calls rather than something
-to settle while provisioning one repo:
-
-1. Raise `C` to 17 and recompute, so the registered capacity matches the
-   committed quotas. This needs the same iowait-headroom justification
-   any capacity change needs; `C` is a measured ceiling, not a free
-   parameter. See "The permanent C is still an open question" below.
-2. Keep `C = 16` and record a standing exception: the committed sum is
-   `C + k` where `k` counts floored-up repositories. This costs nothing
-   operationally and keeps the capacity number honest.
-
-Until one is chosen, the committed state is option 2 by default, with
-`k = 1`. What must NOT happen is a maintainer noticing the 17 and
-"fixing" it by cutting some other repository to restore 16 — that would
-convert a harmless over-reservation into a real under-allocation.
-
-**Note for the next repository.** A tenth repo makes this worse rather
-than better: at `C = 16` the mid-band repos are already at their floor
-of 2, so each new small repo arrives with a sub-1 share, is floored up
-to 1, and adds another unit to the excess. The `max(1, ...)` collision
-is therefore a growth property of the rule at low `C`, not a one-off.
+**Note for the next repository.** A tenth repo can still produce another
+sub-one exact share at a low `C`, but that is no longer a sum-invariant
+exception: the floor-and-deduction steps preserve both its one-slot floor and
+the exact cohort total.
 
 ## The derivation at C = 64 (2026-08-30)
 
@@ -820,6 +793,51 @@ profile change alone does not remove it from the live node. (The docs that say t
 taint is "removed" mean removed from the profile — the live removal is this
 explicit converge step.)
 
+## Measured job-hours re-derivation at C = 44 (2026-10-22)
+
+This is the dated derivation for the committed manifests. It supersedes the
+podman-era weights in the historical tables above; those tables remain as a
+record of earlier capacity decisions, not as inputs to the current manifests.
+The measured input is the operator-host capture in
+`plan/gitops-fleet-capacity-monitoring/research/003-ci-pool-job-hours-7d-2026-10-22.md`:
+one `cache.job-summary` Honeycomb span per k3s-pool CI job, grouped by `repo`,
+from 2026-10-15T01:14:57Z to 2026-10-22T01:14:57Z. Job-hours are
+`SUM(duration_ms) / 3,600,000`.
+
+Hamilton uses the unrounded duration totals as weights: `W =
+1,006,298,751.78 ms` over the ten queue-routed repositories. The displayed
+job-hours and shares are rounded only for readability. With `C = 44`, the
+floor allocations total 38, leaving six Hamilton units for the six largest
+remainders: dev-tooling, driver-claude, driver-pi, console-beads-fabro,
+driver-codex, and livespec.
+
+| Repository | Job-hours | Exact share | Floor | Hamilton quota | Final `nominalQuota` | `maxRunners` |
+|---|---:|---:|---:|---:|---:|---:|
+| `livespec-orchestrator-beads-fabro` | 193.56 | 30.4674 | 30 | 30 | **29** | **58** |
+| `livespec-dev-tooling` | 37.83 | 5.9545 | 5 | 6 | **6** | **12** |
+| `livespec` | 10.45 | 1.6450 | 1 | 2 | **2** | **6** |
+| `livespec-overseer` | 10.02 | 1.5776 | 1 | 1 | **1** | **6** |
+| `livespec-orchestrator-git-jsonl` | 6.93 | 1.0914 | 1 | 1 | **1** | **6** |
+| `livespec-driver-claude` | 5.58 | 0.8778 | 0 | 1 | **1** | **6** |
+| `livespec-driver-pi` | 5.34 | 0.8398 | 0 | 1 | **1** | **6** |
+| `livespec-console-beads-fabro` | 4.30 | 0.6765 | 0 | 1 | **1** | **6** |
+| `livespec-driver-codex` | 4.27 | 0.6723 | 0 | 1 | **1** | **6** |
+| `livespec-runtime` | 1.26 | 0.1977 | 0 | 0 | **1** | **6** |
+| **sum** | **279.53** | **44.0000** | **38** | **44** | **44** | **118** |
+
+The `max(1, ...)` step raises runtime from Hamilton's zero to one, temporarily
+making the quotas total 45. The existing rule's excess-deduction substep then
+deducts one from `livespec-orchestrator-beads-fabro` (30 → 29), the largest
+quota, rather than preserve an over-reserved `C + 1` cohort. This keeps the
+guaranteed floors exactly equal to the 44 registered churn slots and resolves
+the earlier contradictory prose in favor of the stated apportionment rule.
+
+`maxRunners` is `max(2 x nominalQuota, 6)` for every row. The orchestrator's
+rule value is now 58, above its former recorded value of 12, so its
+2026-10-19 exception is deleted: retaining it would be both unnecessary and
+incorrectly below the rule. The ten ceilings total 118; at a full 44-runner
+admission, at most 74 runner objects are gated in the cluster.
+
 ## Bounding maxRunners to the quota (2026-09-06)
 
 Maintainer decision 2026-09-06 (livespec plan `poweredge-raid-array-maintenance`,
@@ -889,43 +907,6 @@ The specification clause this bounds — livespec-dev-tooling
 `SPECIFICATION/non-functional-requirements.md`'s "doubled repository logical
 ceiling" — is amended by the proposed change
 `scale-set-ceiling-bounded-to-fair-share` filed the same day.
-
-### Recorded exceptions to the rule
-
-A scale set MAY carry a `maxRunners` above `max(2 x nominalQuota, 6)` only as a
-recorded exception: a row in the table below that gives the measurement
-justifying it and the acceptance check that will confirm or revert it. The
-exception is a per-repository fact, not a new multiple; the rule above still
-derives every other scale set, and `tests/spec/test_jit_admission_budget.py`
-holds each ceiling to the rule or to its row here, never to anything else.
-
-| Repository | `nominalQuota` | Rule value | `maxRunners` | Recorded |
-|---|---|---|---|---|
-| `livespec-orchestrator-beads-fabro` | 2 | 6 | **12** | 2026-10-19 |
-
-**`livespec-orchestrator-beads-fabro`, 6 to 12 (2026-10-19).** The fleet
-capacity coordinator's 24-hour reading (livespec-dev-tooling epic
-`livespec-dev-tooling-dfixhe`, entries R229 and R243) found this scale set at
-its cap of 6 for 10.3 percent of the day and at 5 or more for 26.5 percent. Its
-queue wait was 52 s at the median while it was below the cap, against 293 s at
-the median and 995 s at the 90th percentile while it was at the cap. Over the
-same day poweredge was 91.8 percent idle and no other scale set spent any time
-at its cap. So the cap, not the host, was setting this repository's queue wait,
-and the cohort had idle quota to lend.
-
-The cost the rule guards against grows by six objects: the ten ceilings sum to
-104 instead of 98, so a fleet-wide backlog at C = 44 can hold at most 60 gated
-runner objects instead of 54. The relation `nominalQuota <= maxRunners` still
-holds (2 <= 12).
-
-Acceptance is measured 24 hours after the apply. It passes if this scale set's
-90th-percentile queue wait, while 6 or more of its runners are busy, is under
-500 s, and kine's `Slow SQL` rate has not risen. If either check fails, revert
-to the rule value. The demand weights behind every `nominalQuota` are separately
-due for re-derivation from seven days of measured CI job-hours (this
-repository's weight of 21 is a podman-era figure); if that re-derivation raises
-this repository's quota to 6 or more, the rule itself yields 12 and this row is
-deleted.
 
 ## The gates quota on gmktec-xubuntu (2026-09-08)
 

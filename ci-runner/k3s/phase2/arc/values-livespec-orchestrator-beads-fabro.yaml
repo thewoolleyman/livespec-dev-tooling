@@ -197,27 +197,10 @@ template:
 # MEASUREMENT like livespec-driver-pi's 13, not a podman-era proxy like the
 # 63-67 band; re-measure from a real run before changing it.
 #
-# BOUNDED 2026-09-06 (maintainer decision, livespec plan
-# poweredge-raid-array-maintenance / epic livespec-g52yrb): maxRunners is now
-# max(2 x this repo's Kueue nominalQuota, 6) = 6 (nominalQuota 2 at C = 44),
-# no longer the doubled matrix width or the podman-era weight described above.
-# Every runner ARC creates past the quota is a GATED pod that does no work but
-# costs control-plane writes every reconcile: at the 2026-09-06 07:38Z backlog
-# the ten ceilings summed to 574, 122 gated runner objects sat in the cluster
-# while 25-30 ran, and kine logged 11 Slow SQL in ten minutes at C = 32.
-# Bounded, the ten ceilings sum to 98, so a fleet-wide backlog holds at most
-# 54 gated objects and the rest of the queue waits on GitHub's side at no cost.
-# The 2x keeps cohort borrowing reachable; the floor of 6 lets a small-quota
-# repo drain a lone matrix in a few waves instead of one job at a time.
-# Recompute whenever C or this repo's quota changes. See ../kueue/DERIVATION.md
-# "Bounding maxRunners to the quota (2026-09-06)".
-#
-# RAISED 2026-10-19 to 12 as a RECORDED EXCEPTION to that rule (the rule gives
-# 6). Over 24 hours this set sat at its cap of 6 for 10.3 percent of the day,
-# with a 995 s 90th-percentile queue wait at the cap against a 52 s median below
-# it, while poweredge was 91.8 percent idle and no other set ever reached its
-# cap. The ten ceilings now sum to 104. The data and the 24-hour acceptance check
-# are in ../kueue/DERIVATION.md "Recorded exceptions to the rule"; revert to 6 if
-# the acceptance check fails.
+# RE-DERIVED 2026-10-22 from seven days of measured k3s-pool job-hours:
+# max(2 x nominalQuota, 6) = max(2 x 29, 6) = 58. The former 12-runner
+# exception is deleted because the rule itself now exceeds it. See
+# ../kueue/DERIVATION.md "Measured job-hours re-derivation at C = 44
+# (2026-10-22)".
 minRunners: 0
 maxRunners: 58
