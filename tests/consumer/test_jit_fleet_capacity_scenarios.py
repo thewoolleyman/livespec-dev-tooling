@@ -85,6 +85,8 @@ _EPHEMERAL_RUNNER_UNIT = _CI_RUNNER / "gate-runner" / "gate-runner@.service"
 _COHORT = "fleet-ci-runner-pool"
 _CHURN_SLOT = "ci-runner.io/churn-slot"
 _PHYSICAL_CAP = 482
+_CEILING_MULTIPLE = 2
+_CEILING_FLOOR = 6
 
 _DOC_SEPARATOR = re.compile(r"^---$", re.MULTILINE)
 _KIND = re.compile(r"^kind:\s*(?P<kind>\S+)$", re.MULTILINE)
@@ -214,15 +216,26 @@ def _ceilings_without_borrow_headroom(
     targets: dict[str, str],
     members: dict[str, tuple[int, str | None]],
 ) -> list[str]:
-    """Each routed scale set whose ceiling cannot borrow, or reaches past what the cohort holds."""
-    borrowable = sum(quota for quota, _ in members.values())
+    """Each routed scale set whose bounded logical ceiling cannot permit borrowing.
+
+    `maxRunners` bounds runner objects, not admitted runners: the cohort's
+    `nominalQuota` total and the finite churn-slot resource bound admission.
+    Consequently an individual logical ceiling may exceed the cohort total
+    (for example, a dominant repository's doubled fair share) while remaining
+    a bounded multiple that prevents an unbounded pending-object backlog.
+    """
     wrong: list[str] = []
     for name, (local_queue, ceiling, _) in sorted(routed.items()):
         member = members.get(targets.get(local_queue, local_queue))
         floor = None if member is None else member[0]
-        if floor is not None and floor < ceiling <= borrowable:
+        assert floor is not None, (
+            f"{name} must route to a cohort member before its logical ceiling can be bounded; "
+            f"local_queue={local_queue} targets={targets}"
+        )
+        expected = max(_CEILING_MULTIPLE * floor, _CEILING_FLOOR)
+        if ceiling == expected:
             continue
-        wrong.append(f"{name}: maxRunners={ceiling} floor={floor} borrowable={borrowable}")
+        wrong.append(f"{name}: maxRunners={ceiling} floor={floor} expected={expected}")
     return wrong
 
 
@@ -312,10 +325,11 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
     removes borrowing outright, pinning every repository at its guaranteed floor
     while the pool sits idle. On the ARC side, a repository can only USE borrowed
     capacity below its own `maxRunners`, so a ceiling at or under its fair share
-    makes the clause unreachable no matter what the cohort permits; a ceiling
-    above what the whole cohort holds is the opposite error, authorizing runners
-    no borrowing can ever admit, which is exactly the backlog the Given says must
-    wait at the forge rather than exist as pending objects on the host.
+    makes the clause unreachable no matter what the cohort permits. The ceiling
+    is instead the recorded bounded multiple `max(2 x nominalQuota, 6)`: it can
+    exceed the cohort total for one dominant repository, but the fair-share and
+    finite-slot terms still bound admission while this rule bounds pending
+    runner objects.
 
     WITHOUT EXCEEDING 482: the bound on all that borrowing is the cohort's summed
     nominal quota, and the thing that ENFORCES it is not Kueue — measured live,
@@ -345,11 +359,12 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
         routed=routed, targets=_local_queue_targets(documents=documents), members=members
     )
     assert not unborrowable, (
-        f"each routed scale set's ceiling must sit strictly ABOVE its own fair share and no "
-        f"higher than the cohort's total borrowable capacity. At or under the share, the "
-        f"repository can never spend capacity a peer lends it; above the cohort total, the "
-        f"surplus is a backlog materialized as pending admission objects the host must keep "
-        f"reconciling, which the Given says must wait at the forge; wrong={unborrowable}"
+        f"each routed scale set's ceiling must follow the recorded bounded-multiple rule "
+        f"`max(2 x nominalQuota, 6)`. At or under the share, the repository can never "
+        f"spend capacity a peer lends it; an unbounded ceiling materializes the pending "
+        f"object backlog that the Given says must wait at the forge. The cohort quota and "
+        f"finite slot, rather than this logical ceiling, bound actual admission; "
+        f"wrong={unborrowable}"
     )
 
     outside = _scale_sets_outside_the_finite_slot(values=values)
@@ -367,12 +382,12 @@ def test_fleet_capacity_borrows_fairly_and_the_finite_slot_holds_the_physical_ca
         "control-cq: borrowingLimit=0"
     ], "the borrowing reader must still convict a stated limit"
     assert _ceilings_without_borrow_headroom(
-        routed={"control.yaml": ("control-lq", 1, _CONTROL_VALUES)},
+        routed={"control.yaml": ("control-lq", 7, _CONTROL_VALUES)},
         targets={"control-lq": "control-cq"},
         members=control_members,
     ) == [
-        "control.yaml: maxRunners=1 floor=1 borrowable=1"
-    ], "the headroom reader must still convict a ceiling collapsed onto its own fair share"
+        "control.yaml: maxRunners=7 floor=1 expected=6"
+    ], "the bounded-ceiling reader must still convict a ceiling above the recorded rule"
     assert _scale_sets_outside_the_finite_slot(values={"control.yaml": _CONTROL_VALUES}) == [
         "control.yaml: requests=None limits=None"
     ], "the finite-slot reader must still convict a scale set that requests no slot"
