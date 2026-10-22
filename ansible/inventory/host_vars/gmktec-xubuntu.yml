@@ -93,6 +93,16 @@ disk_guard_threshold_gb: 40
 # on. ansible/fabro-hosts.yml skips the role on this word alone.
 sandbox_storage_enabled: false
 
+# --- sandbox_image_warm ---
+# gmktec's catalog also declares livespec-ci-rust, so the warm pulls the
+# python-rust-agent layer as well as python-agent. While gmktec is docker-backed,
+# a tag the host lacks must be pulled before the first run needs it, or two runs
+# race each other's first pull (livespec-dev-tooling-dq3km7). Coordinator rulings
+# R668 and R671 (2026-10-22).
+sandbox_image_warm_tag_prefixes:
+  - python-agent
+  - python-rust-agent
+
 # --- sccache_redis ---
 # Half of hp's figures. The redis container runs under Docker's cgroup-parent,
 # inside the sandbox slice (40G since maintainer directive R259), so every byte it
