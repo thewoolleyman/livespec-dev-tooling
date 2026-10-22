@@ -447,7 +447,12 @@ def _verdict_job_fields(*, verdict: GateVerdict) -> dict[str, str]:
     below together: the refused line and the passed line report the same fields,
     or the difference is a defect rather than a choice.
     """
-    named = {"job_name": verdict.job_name, "namespace": verdict.namespace}
+    named = {
+        "job_name": verdict.job_name,
+        "namespace": verdict.namespace,
+        "job_started_at": verdict.job_started_at,
+        "job_finished_at": verdict.job_finished_at,
+    }
     return {field: value for field, value in named.items() if value is not None}
 
 

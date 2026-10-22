@@ -133,6 +133,14 @@ class GateVerdict:
     exactly when `job_name` is — never the namespace a Job WOULD have run in,
     because a run that submitted nothing has no namespace to report and a
     plausible value there says a gate ran where none did.
+
+    `job_started_at` and `job_finished_at` say WHEN that Job ran, in ISO-8601
+    UTC, and each is `None` wherever the Job itself reported no such reading —
+    which is routine rather than exceptional, since Kubernetes sets
+    `completionTime` only when a Job succeeds. They are `str | None` rather than
+    instants because they are carried VERBATIM from the Job's status: parsing
+    and re-rendering them here would hand a reader a second spelling of an
+    instant it can already compare to the cluster's own output.
     """
 
     state: str
@@ -140,6 +148,8 @@ class GateVerdict:
     token_written: bool
     job_name: str | None = None
     namespace: str | None = None
+    job_started_at: str | None = None
+    job_finished_at: str | None = None
 
     @property
     def refuses_push(self) -> bool:
@@ -207,6 +217,12 @@ def _decided(
     namespace. The `GATE_NO_VERDICT` shapes do not come through here and must
     not, which is why this takes the outcome rather than the request alone — no
     outcome means no Job, and no Job means nothing to name.
+
+    THE EMPTY STRING BECOMES `None` HERE, because the two surfaces spell absence
+    differently and both spellings are right where they are. A dataclass reading
+    a Job's status has to hold SOME value for a reading the cluster omitted, and
+    the empty string is the honest one; a field a reader will parse as an instant
+    must be ABSENT rather than present and blank.
     """
     return GateVerdict(
         state=state,
@@ -214,6 +230,8 @@ def _decided(
         token_written=token_written,
         job_name=outcome.job_name,
         namespace=request.namespace,
+        job_started_at=outcome.started_at or None,
+        job_finished_at=outcome.finished_at or None,
     )
 
 
