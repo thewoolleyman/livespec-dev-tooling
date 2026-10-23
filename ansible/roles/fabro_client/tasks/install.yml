@@ -1,0 +1,161 @@
+---
+# The writes, every one of them reached only after `validate.yml` has refused
+# nothing.
+#
+# THE ONE DECISION, stated once and read by three tasks: does the host already
+# hold THIS build at THIS path. `validate.yml` took the sha256 of the file at
+# each declared name without following links, so the answer is a comparison of
+# that digest against the entry's, folded case because the clause compares a
+# declared digest case-insensitively. An absent file has no digest at all, which
+# `| default('')` turns into "not this build" — the first-install case, and the
+# only one in which an entry writes anything on a host nobody has converged.
+#
+# WHY STAGE-VERIFY-RENAME AND NOT A DIRECT COPY. A declared path is a file a
+# Dispatcher may be exec'ing at the moment this role runs, and a partial write
+# there is a dispatch that dies with a truncated binary. `rename(2)` within one
+# directory is atomic and does not touch the inode a running process already
+# holds, so the old build keeps serving whatever it is carrying and the new one
+# becomes live for the next exec. The mode and owner are set on the staging file
+# rather than afterwards, because the rename carries them across unchanged — a
+# mechanism that chowned after the rename would leave a window in which the live
+# build is root's.
+#
+# WHAT THIS ROLE NEVER REMOVES. Only a declared entry's own `<path>.incoming`.
+# A build at a path the inventory no longer declares STAYS, because a Dispatcher
+# in another fleet repository may still name it in a committed `bin`; this role
+# keeps no record of earlier inventories and does not report such a file. The
+# outgoing build is not retained either — a rollback is a change to the entry's
+# `source` and `sha256`, which is the whole reason the digest is declared.
+
+- name: Create every missing ancestor directory a declared Fabro client build needs
+  # Only the MISSING ones. An existing parent is left as found, because a
+  # declared path legitimately sits inside a tree the operator or another role
+  # owns, and this role has no claim on its mode or its owner. Every missing
+  # ancestor is in this list rather than relying on `mkdir -p` semantics for the
+  # intermediates: a directory Ansible creates on the way to a deeper one takes
+  # the umask, not this mode.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ fabro_client_owner }}"
+    group: "{{ fabro_client_group }}"
+    mode: "0755"
+  become: true
+  loop: "{{ fabro_client_ancestors | difference(fabro_client_present_ancestors) }}"
+  vars:
+    fabro_client_present_ancestors: >-
+      {{ fabro_client_ancestor_stats.results | default([])
+         | selectattr('stat.exists') | map(attribute='item') | list }}
+
+- name: Remove a leftover staging file that is not a regular file
+  # An interrupted converge may leave `<path>.incoming` behind, and the clause
+  # lets this one overwrite or remove it. `copy` would refuse to overwrite a
+  # directory or a dangling link there, so the non-regular case is removed first
+  # and the regular case is simply overwritten.
+  ansible.builtin.file:
+    path: "{{ item.path }}.incoming"
+    state: absent
+  become: true
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path }}.incoming"
+  when:
+    - fabro_client_lstat[item.path ~ '.incoming'].exists
+    - not (fabro_client_lstat[item.path ~ '.incoming'].isreg | default(false))
+
+- name: Stage each build the host does not already hold beside the file it replaces
+  ansible.builtin.copy:
+    src: "{{ item.source }}"
+    dest: "{{ item.path }}.incoming"
+    owner: "{{ fabro_client_owner }}"
+    group: "{{ fabro_client_group }}"
+    mode: "0755"
+  become: true
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: fabro_client_lstat[item.path].checksum | default('') != item.sha256 | lower
+
+- name: Read the digest of each staged build before it becomes live
+  # The clause requires the staged file to be verified against `sha256` BEFORE
+  # the rename, which is a different question from the control-node check in
+  # `validate.yml`: that one proved the SOURCE is the declared build, this one
+  # proves the copy onto this host arrived whole.
+  #
+  # Not attempted in check mode. The staging copy did not happen there, so a
+  # reading taken now would be a reading of the file's absence, and refusing on
+  # it would make `just ansible-drift` fail on every host this role has work to
+  # do on.
+  ansible.builtin.stat:
+    path: "{{ item.path }}.incoming"
+    checksum_algorithm: sha256
+  become: true
+  register: fabro_client_staged_stats
+  check_mode: false
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path }}.incoming"
+  when:
+    - fabro_client_lstat[item.path].checksum | default('') != item.sha256 | lower
+    - not ansible_check_mode
+
+- name: Refuse a staged build that does not hash to its declared digest
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == item.item.sha256 | lower
+    fail_msg: >-
+      {{ item.item.path }}.incoming on {{ inventory_hostname }} hashes to
+      '{{ item.stat.checksum | default('(absent)') }}' rather than the
+      '{{ item.item.sha256 | lower }}' its entry declares, so it is NOT renamed
+      into place and {{ item.item.path }} still holds whatever it held before.
+      The staged copy is left for inspection; the next converge overwrites it.
+    success_msg: this staged build hashes to its declared digest
+  loop: "{{ fabro_client_staged_stats.results | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.path }}.incoming"
+
+- name: Rename each staged build onto its declared path
+  # The one step that changes which build a Dispatcher will exec. A `command`
+  # rather than a module because `rename(2)` within one directory is exactly the
+  # semantics wanted and no module spells it; `changed_when: true` because
+  # reaching this task at all means the staged build is not the one the host
+  # held. Ansible skips a `command` in check mode, which is what keeps a drift
+  # report from performing the one irreversible step in this file.
+  ansible.builtin.command:
+    argv:
+      - mv
+      - -f
+      - "{{ item.path }}.incoming"
+      - "{{ item.path }}"
+  become: true
+  changed_when: true
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: fabro_client_lstat[item.path].checksum | default('') != item.sha256 | lower
+
+- name: Ensure the mode and owner of every declared Fabro client build
+  # Runs for EVERY entry, including the ones the host already held, because the
+  # clause requires an undrifted build's contents to be left untouched and its
+  # mode and owner to be ensured anyway. That is what lets this role ADOPT a build
+  # it did not place — the hand-staged petri carrier, reported at mode 0775 when
+  # its entry was filed — by tightening its mode without rewriting it, and it is
+  # also why a second converge with unchanged inventory reports no change: the
+  # mode and owner are already what this names.
+  #
+  # Skipped in check mode for a path the host does not hold yet — `state: file`
+  # refuses an absent file, and the rename that would have created it was itself
+  # skipped. On a real converge the rename has already carried the staging file's
+  # mode and owner across, so this task is the confirmation rather than the act.
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: file
+    owner: "{{ fabro_client_owner }}"
+    group: "{{ fabro_client_group }}"
+    mode: "0755"
+  become: true
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: fabro_client_lstat[item.path].exists or not ansible_check_mode

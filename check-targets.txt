@@ -84,6 +84,10 @@ check-wrapper-shape
 # member that exists ONLY here is declared here.
 check-ansible-lint  # purity: tree-pure
 check-ansible-hostname-free  # purity: tree-pure
+# Reads this repository's own `.livespec.jsonc` against its own
+# `ansible/inventory/group_vars/dev_hosts.yml` and nothing else, so the same
+# tree always yields the same verdict.
+check-dev-host-fabro-client-bins-declared  # purity: tree-pure
 check-lint  # purity: tree-pure
 check-format  # purity: tree-pure
 check-types  # purity: tree-pure

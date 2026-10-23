@@ -58,5 +58,12 @@
       tags: [honeycomb_trigger_recipients_check]
     - role: otel_collector
       tags: [otel_collector]
+    # The pinned Fabro CLIENT builds a Dispatcher running natively here execs
+    # through a committed `dispatcher.factories.<name>.bin`, staged from a
+    # digest-verified control-node source and never by hand. See
+    # SPECIFICATION/non-functional-requirements.md §"Dev host Fabro client
+    # builds" and the role's HOST_VARS.md.
+    - role: fabro_client
+      tags: [fabro_client]
     - role: dev_host_retention
       tags: [dev_host_retention]

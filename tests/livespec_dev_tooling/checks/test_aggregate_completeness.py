@@ -162,13 +162,22 @@ def _normalized_real_target_inventory() -> tuple[str, ...]:
 
 
 def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
-    """CORE's v1.17.1 reader sees the exact authoritative 81-target inventory."""
+    """CORE's v1.17.1 reader sees the exact authoritative 82-target inventory."""
     justfile_text = (_REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
     wired = _legacy_core_v1_17_1_extract_check_slugs(justfile_text=justfile_text)
 
     assert wired == _normalized_real_target_inventory()
-    # 81 since livespec-dev-tooling-vxkmab wired the repo-private
+    # 82 since livespec-dev-tooling-lirki2 wired the repo-private
+    # `check-dev-host-fabro-client-bins-declared` (every
+    # `dispatcher.factories.<name>.bin` this repository commits names the `path` of
+    # one `fabro_client_builds` entry, so the Fabro client a Dispatcher EXECS is one
+    # the dev-host play stages from a digest-verified control-node source). It is
+    # repo-private rather than canonical because it reads THIS repository's own
+    # `.livespec.jsonc` against THIS repository's own inventory — the ratified clause
+    # says so in as many words — and a canonical slug would oblige nine siblings to
+    # wire a check about a file they do not have.
+    # The 81st was livespec-dev-tooling-vxkmab's repo-private
     # `check-tests-host-path-free` (no test under `tests/` reads, stats or writes
     # a real host path, nor builds an Ansible task whose destination is one — a
     # test that does grades the machine pytest runs on rather than the committed
@@ -197,7 +206,7 @@ def test_real_check_recipe_is_legacy_readable_exact_inventory_mirror() -> None:
     # stays EXACT rather than becoming a `>=`: its job is to make any change to
     # the inventory a deliberate edit here, and a lower bound would let a silent
     # drop through.
-    assert wired is not None and len(wired) == 81
+    assert wired is not None and len(wired) == 82
     canonical = unsafe_perform_io(canonical_check_slugs().unwrap())
     assert not set(canonical).difference(wired)
     assert _legacy_core_v1_17_1_extract_check_slugs(justfile_text="default:\n    true\n") is None
