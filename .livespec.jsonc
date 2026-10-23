@@ -492,6 +492,17 @@
       // `legacy` stays declared, so an item already dispatched keeps its
       // recorded pin and in-flight work finishes on hp; rollback is reverting
       // this change.
+      //
+      // `environment` moved from `livespec-ci` to `livespec-ci-k8s` under
+      // coordinator ruling R670's Option C (2026-10-23, recorded on
+      // livespec-dev-tooling-dfixhe): the Kubernetes sandbox backend cutover for
+      // THIS repository's dispatches only (plan kubernetes-sandbox-backend,
+      // bd-ib-nmuyjc.1 in the orchestrator tenant). `livespec-ci-k8s` is
+      // livespec-ci's twin on gmktec's server, built by the kubernetes
+      // sandbox-driver plugin as a pod on the maintainer-owned cluster (cpu 4,
+      // 7629Mi; ansible host_vars, PR #2779). The one-step rollback to Docker is
+      // setting it back to `livespec-ci`. The other fleet repositories keep
+      // `livespec-ci` until a separate fleet step.
       "default_factory": "petri",
       "factories": {
         "legacy": {
@@ -501,7 +512,7 @@
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
           "secret_channel": "native_secrets",
-          "environment": "livespec-ci"
+          "environment": "livespec-ci-k8s"
         }
       }
     }
