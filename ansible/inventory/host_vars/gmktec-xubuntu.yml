@@ -228,11 +228,12 @@ fabro_server_instances:
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
         cpu: 4
         memory: 8GB
-      # The Kubernetes twin of livespec-ci: the same image and envelope, run
-      # by the kubernetes provider below. Fabro's 8GB is decimal, so the pod
-      # carries 7629Mi.
+      # The Kubernetes twin of livespec-ci: the same envelope, run by the
+      # kubernetes provider below. It declares NO image: a registered provider's
+      # sandboxes are built from the provider's process_spec, which carries
+      # livespec-ci's image, and Petri refuses a run whose environment names
+      # one. Fabro's 8GB is decimal, so the pod carries 7629Mi.
       - id: livespec-ci-k8s
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
         cpu: 4
         memory: 8GB
         provider: kubernetes

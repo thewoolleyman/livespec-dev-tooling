@@ -179,6 +179,33 @@ def test_a_declared_provider_reaches_the_catalog_body_and_the_match_decision() -
     ), "the base-entry refusal MUST accept a base already on the declared provider"
 
 
+def test_a_registered_provider_environment_declares_and_writes_no_image() -> None:
+    """Petri refuses a registered-provider run whose environment names an image.
+
+    Measured on gmktec's canary instance 2026-10-23: `livespec-ci-k8s`, written with
+    a docker image, refused run creation with "is a registered provider; `image`
+    applies to `docker` and `daytona` only". The provider's process_spec carries the
+    image instead, so the declaration must omit it and the write must null it.
+    """
+    refusal = _named(
+        name="Refuse an environment declaration that does not spell every field", source=_TASKS
+    )
+    assert (
+        "else (item.image is not defined)" in refusal
+    ), "a registered-provider environment MUST be refused when it declares an image"
+    assert (
+        "reject('equalto', 'image')" in refusal and "['docker', 'daytona']" in refusal
+    ), "image MUST be required only for the docker and daytona providers"
+    text = _ENVIRONMENT_TASKS.read_text(encoding="utf-8")
+    assert (
+        "'docker': fabro_server_environment.image | default(none)" in text
+    ), "the written settings MUST carry a null docker image for an entry declaring none"
+    assert (
+        "(fabro_server_environment_current.image.docker | default('', true)) == "
+        "(fabro_server_environment.image | default(''))" in text
+    ), "the match decision MUST read a null catalog image as matching an undeclared one"
+
+
 def test_the_role_document_names_the_axis_and_its_plugin_environment() -> None:
     doc = _ROLE_DOC.read_text(encoding="utf-8")
     assert f"`{_AXIS}`" in doc and "`{}`" in doc

@@ -218,9 +218,14 @@
   # Declare the size the way Fabro renders it.
   ansible.builtin.assert:
     that:
-      - _fabro_server_environment_fields | difference(item.keys() | list) | length == 0
+      - (_fabro_server_environment_fields
+        if (item.provider | default('docker')) in ['docker', 'daytona']
+        else (_fabro_server_environment_fields | reject('equalto', 'image') | list))
+        | difference(item.keys() | list) | length == 0
       - item.id | default('') | length > 0
-      - item.image | default('') | length > 0
+      - (item.image | default('') | length > 0)
+        if (item.provider | default('docker')) in ['docker', 'daytona']
+        else (item.image is not defined)
       - (item.cpu | default(0) | int) > 0
       - item.memory | default('') is match('^[0-9]+(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)$')
     fail_msg: >-
@@ -229,6 +234,11 @@
       must be spelled out: a non-empty id to write it in the catalog under, a
       non-empty docker image, a cpu count above zero, and a memory size that is
       an integer followed by one of B, KB, MB, GB, TB, KiB, MiB, GiB or TiB.
+      An entry whose provider is a registered plugin kind (anything but docker or
+      daytona) must declare NO image: Petri builds that provider's sandboxes from
+      the provider's own process_spec and refuses a run whose environment names
+      an image ("is a registered provider; `image` applies to `docker` and
+      `daytona` only").
       This entry declares {{ item | dict2items | map(attribute='key') | sort | join(', ') }}.
       See roles/fabro_server/HOST_VARS.md.
     success_msg: this environment declaration is complete
