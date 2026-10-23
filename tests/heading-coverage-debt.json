@@ -9,6 +9,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Dev host Fabro client builds",
+    "work_item": "livespec-dev-tooling-lirki2",
+    "first_seen": "2026-10-23"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Docker engine install guard",
     "work_item": "livespec-dev-tooling-ubpufs",
     "first_seen": "2026-10-15"
@@ -159,5 +166,12 @@
     "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev-host play stages each pinned Fabro client build and refuses an unsafe entry",
+    "work_item": "livespec-dev-tooling-lirki2",
+    "first_seen": "2026-10-23"
   }
 ]
