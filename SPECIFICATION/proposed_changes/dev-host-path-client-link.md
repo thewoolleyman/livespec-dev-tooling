@@ -27,7 +27,23 @@ In SPECIFICATION/non-functional-requirements.md, section "Dev host Fabro client 
 
 2. After the **Documented beside the values.** paragraph, add a new paragraph:
 
-**The PATH client.** The inventory MAY declare `fabro_client_path_client`, and when it does it MUST declare it only in `ansible/inventory/group_vars/dev_hosts.yml`, beside `fabro_client_builds`: an object carrying `link`, the absolute path on the dev host of the Fabro client the host PATH resolves, and `target`, which MUST equal the `path` of one `fabro_client_builds` entry. When the key is absent the role MUST NOT create, change or remove anything at any PATH client location. When it is present, the role MUST refuse its converge on that host before writing anything on the host, naming the reason, when `link` or `target` is missing or not absolute; when `target` equals no entry's `path`; when something exists at `link` on the host that is neither a symbolic link nor absent; or when `link`, compared as a path string with no symbolic link resolved, equals any entry's `path` or the `binary_path`, explicit or defaulted, of any `fabro_server_instances` mapping declared for that host. Otherwise the role MUST make `link` a symbolic link whose target is `target`, owned by the role's owner user and that user's primary group, creating every missing ancestor directory of `link` as it does for a declared `path`. When `link` is already a symbolic link whose target is `target`, the role MUST change nothing. When `link` is absent or a symbolic link to anything else, the role MUST replace it atomically, by creating the new symbolic link at `<link>.incoming` and renaming it onto `link`. The role MUST NOT write through an existing symbolic link at `link`, so the file the old link pointed at, which on vps is a live server's binary, is left exactly as found. The role's `HOST_VARS.md` MUST document the key, both of its fields and the refusals, and MUST state that moving the PATH client between client families is a change to `target` followed by the play.
+**The PATH client.** The inventory MAY declare `fabro_client_path_client`, and when it does it MUST declare it only in `ansible/inventory/group_vars/dev_hosts.yml`, beside `fabro_client_builds`. It is an object carrying `link`, the absolute path on the dev host of the Fabro client the host PATH resolves, and `target`, which MUST equal the `path` of one `fabro_client_builds` entry. When the key is absent the role MUST NOT create, change or remove anything at any PATH client location.
+
+When the key is present, the role MUST refuse its converge on that host before writing anything on the host for any entry or for `link`, naming the reason, when any of these holds:
+
+- `link` or `target` is missing or not absolute;
+- `target` equals no entry's `path`;
+- what the host holds AT `link`, read without following a symbolic link, is neither a symbolic link nor absent (so a dangling symbolic link counts as a symbolic link);
+- `link` is a symbolic link whose target, after every symbolic link is resolved, is a directory;
+- an ancestor of `link` exists on the host and, after symbolic links are resolved, is not a directory;
+- `link`, with every symbolic link in its ancestors resolved and its final component left unresolved, equals any entry's `path` or the `binary_path`, explicit or defaulted, of any `fabro_server_instances` mapping declared for that host, each compared after the same resolution;
+- anything that is not a symbolic link exists at `<link>.incoming`, read without following; or `<link>.incoming`, resolved the same way, equals any entry's `path`, any entry's `<path>.incoming`, or any such `binary_path`.
+
+A symbolic link that an earlier interrupted converge left at `<link>.incoming` MAY be replaced.
+
+Otherwise the role MUST make `link` a symbolic link whose literal target, as `readlink` prints it, is `target`. It MUST do so only after every declared build is in place, so the PATH client never names a build the converge has not yet installed. The link MUST be owned by the role's owner user and that user's primary group, and every missing ancestor directory of `link` MUST be created as it is for a declared `path`. When `link` is already a symbolic link whose literal target is `target`, the role MUST leave it in place and MUST still ensure its owner and group, so a converge with unchanged inventory on an undrifted host changes nothing. When `link` is absent, or a symbolic link whose literal target is anything else, the role MUST replace it atomically. It does so by creating the new symbolic link at `<link>.incoming` and renaming it onto `link`, so that the symbolic link at `link` itself is replaced; the rename MUST NOT descend into a directory that an existing link at `link` names. The role MUST NOT write through an existing symbolic link at `link`, so the file the old link pointed at is left exactly as found; on vps that file is a live server's binary.
+
+The role's `HOST_VARS.md` MUST document the key, both of its fields and these refusals, and MUST state that moving the PATH client between client families is a change to `target` followed by the play. Its paragraph that today declares the PATH client out of scope, and routes moving it through the `fabro_server` role, MUST be replaced accordingly.
 
 In SPECIFICATION/scenarios.md, add after "## Scenario: the dev-host play stages each pinned Fabro client build and refuses an unsafe entry":
 
@@ -39,16 +55,22 @@ And whose `link` is today a symbolic link to a `fabro_server_instances` mapping'
 
 When the dev-host play converges the host
 
-Then `link` MUST be a symbolic link whose target is the second entry's `path`
+Then `link` MUST be a symbolic link whose literal target is the second entry's `path`, owned by the role's owner user and that user's primary group
 
 And the file at that `binary_path` MUST hash to what it hashed to before the converge
 
 And a second converge with unchanged inventory MUST change nothing on the host
 
-Given the same host, and an inventory whose `fabro_client_path_client` names a `target` that equals no entry's `path`, or a `link` at which a regular file exists, or a `link` equal to that `binary_path`
+Given the same host after that converge, with the link at `link` re-owned by another account
+
+When the dev-host play converges the host
+
+Then the converge MUST change only the owner and group of the link at `link`
+
+Given the same host, and an inventory whose `fabro_client_path_client` names a `target` that equals no entry's `path`, or a `link` at which a regular file exists, or a `link` that is a symbolic link to a directory, or a `link` equal to that `binary_path`
 
 When the dev-host play converges the host
 
 Then the role's converge on that host MUST refuse, naming the reason, before writing anything on the host
 
-The revise that accepts this proposal MUST, in the same change, add a `tests/heading-coverage.json` entry for the new scenario heading (its `test` MAY be "TODO" with a non-empty `reason`, owned by the implementing work-item filed in the livespec-dev-tooling tenant). It MUST also add any row the repository's heading-coverage debt register requires for that TODO entry.
+The revise that accepts this proposal MUST, in the same change, add a `tests/heading-coverage.json` entry for the new scenario heading. Its `test` MAY be "TODO", with a non-empty `reason` acknowledging that a real integration-tier test is owed, owned by the implementing work-item filed in the livespec-dev-tooling tenant. The same revise MUST regenerate `tests/heading-coverage-debt.json` mechanically so that it carries the row for that TODO entry.
