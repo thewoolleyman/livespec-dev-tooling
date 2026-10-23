@@ -36,7 +36,7 @@ When the key is present, the role MUST refuse its converge on that host before w
 - what the host holds AT `link`, read without following a symbolic link, is neither a symbolic link nor absent (so a dangling symbolic link counts as a symbolic link);
 - `link` is a symbolic link whose target, after every symbolic link is resolved, is a directory;
 - an ancestor of `link` exists on the host and, after symbolic links are resolved, is not a directory;
-- `link`, with every symbolic link in its ancestors resolved and its final component left unresolved, equals any entry's `path` or the `binary_path`, explicit or defaulted, of any `fabro_server_instances` mapping declared for that host, each compared after the same resolution;
+- `link`, with every symbolic link in its ancestors resolved and its final component left unresolved, equals any entry's `path`, any entry's `<path>.incoming`, or the `binary_path`, explicit or defaulted, of any `fabro_server_instances` mapping declared for that host, each compared after the same resolution;
 - anything that is not a symbolic link exists at `<link>.incoming`, read without following; or `<link>.incoming`, resolved the same way, equals any entry's `path`, any entry's `<path>.incoming`, or any such `binary_path`.
 
 A symbolic link that an earlier interrupted converge left at `<link>.incoming` MAY be replaced.
@@ -67,7 +67,7 @@ When the dev-host play converges the host
 
 Then the converge MUST change only the owner and group of the link at `link`
 
-Given the same host, and an inventory whose `fabro_client_path_client` names a `target` that equals no entry's `path`, or a `link` at which a regular file exists, or a `link` that is a symbolic link to a directory, or a `link` equal to that `binary_path`
+Given the same host, and an inventory whose `fabro_client_path_client` names a `target` that equals no entry's `path`, or a `link` at which a regular file exists, or a `link` that is a symbolic link to a directory, or a `link` whose leaf is absent and whose parent is a symbolic link to that `binary_path`'s directory, so that it names that `binary_path` once its ancestors are resolved
 
 When the dev-host play converges the host
 
