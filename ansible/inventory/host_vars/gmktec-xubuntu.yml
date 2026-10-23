@@ -221,8 +221,12 @@ fabro_server_instances:
     # carries, and Petri built from thewoolleyman/petri
     # fabro-integration-registered-20261023 (Petri main with #122 and the
     # registered-provider resources change). Provenance is in BUILD_INFO.
-    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-9b8ee43d8/fabro
-    binary_sha256: 03ecd21735f270f60f4e78f49e5f2e02670e2405c12433ea1f18e17cd2fb55a0
+    # 9f6c38fab (Petri e92b191) also sizes a DOCKER sandbox from its
+    # environment's resources: the first canary build, 9b8ee43d8, ran Docker
+    # sandboxes with no CPU or memory limit (measured 2026-10-23, run
+    # 01M5K59S7H8W), where the fleet instance's carrier enforces 4 CPU / 8GB.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro
+    binary_sha256: e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6
     environments:
       - id: livespec-ci
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
