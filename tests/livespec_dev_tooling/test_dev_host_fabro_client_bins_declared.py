@@ -22,8 +22,8 @@ later pull request. The honest answer there is a refusal naming the absent file,
 an empty declared set that would make every bin read as undeclared with no cause
 given, and NOT a pass earned by the declaration being unreadable.
 
-THE COMMITTED TREE IS AN ARM. The repository commits one `bin` today — the petri
-carrier client — so the committed arm is the one assertion a synthetic fixture
+THE COMMITTED TREE IS AN ARM. The repository commits two `bin`s today — the legacy
+and petri carrier clients — so the committed arm is the one assertion a synthetic fixture
 cannot make: that THIS tree's own `.livespec.jsonc` and its own
 `ansible/inventory/group_vars/dev_hosts.yml` agree. A fixture-only suite would stay
 green through exactly the drift this check exists to catch.
@@ -163,7 +163,7 @@ def test_this_repositorys_own_committed_bin_names_a_declared_path(
     """The committed arm: THIS tree's `.livespec.jsonc` and inventory agree.
 
     The one assertion no fixture can make. The repository commits a `bin` for the
-    petri factory, so this arm is not vacuous either — and it asserts that too,
+    legacy and petri factories, so this arm is not vacuous either — and it asserts that too,
     because a run that stopped finding the committed bin would otherwise pass here
     for the wrong reason.
     """
@@ -387,3 +387,33 @@ def test_a_dispatcher_block_of_an_unexpected_shape_yields_no_bin_rather_than_an_
     assert run.returncode == 0, run.events
     assert _kinds(run=run) == []
     assert _verdicts(run=run) == ["vacuous"]
+
+
+def test_a_factory_that_declares_no_bin_contributes_none_beside_one_that_does(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A factory mapping without a `bin` is skipped, and its sibling's `bin` still counts.
+
+    `bin` is optional on a factory entry, so a registry-backed entry that names none
+    is the ordinary shape, not a malformed one. It must contribute no finding, while
+    the sibling's undeclared `bin` is still refused. A reader that stopped at the
+    first entry carrying no `bin` would pass this tree for the wrong reason.
+    """
+    root = tmp_path
+    _write(
+        root=root,
+        relative=_CONFIG_RELATIVE,
+        text=(
+            "{\n"
+            '  "livespec-orchestrator-beads-fabro": { "dispatcher": { "factories": {\n'
+            '    "legacy": { "registry": true },\n'
+            f'    "petri": {{ "registry": true, "bin": "{_PETRI_BIN}" }}\n'
+            "  } } }\n"
+            "}\n"
+        ),
+    )
+    _write(root=root, relative=_GROUP_VARS_RELATIVE, text=_group_vars(declared=[_LEGACY_BIN]))
+    run = _run_check(cwd=root, monkeypatch=monkeypatch, capsys=capsys)
+    assert run.returncode == 1
+    assert _kinds(run=run) == ["bin-names-no-declared-path"]
+    assert run.events[0]["factory"] == "petri"
