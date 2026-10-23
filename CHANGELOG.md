@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.127.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.126.1...v1.127.0) (2026-10-23)
+
+
+### Features
+
+* stage pinned Fabro client builds on dev hosts via the dev-host play ([a4fe04a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a4fe04a230b0f0d74c5a8ac9d66a8601c9587ca6))
+
 ## [1.126.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.126.0...v1.126.1) (2026-10-23)
 
 
