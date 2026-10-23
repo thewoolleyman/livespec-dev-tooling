@@ -997,5 +997,21 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-epcoja owns it.",
     "work_item": "livespec-dev-tooling-epcoja"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Dev host Fabro client builds",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this heading; livespec-dev-tooling-lirki2 owns it.",
+    "work_item": "livespec-dev-tooling-lirki2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev-host play stages each pinned Fabro client build and refuses an unsafe entry",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this heading; livespec-dev-tooling-lirki2 owns it.",
+    "work_item": "livespec-dev-tooling-lirki2"
   }
 ]

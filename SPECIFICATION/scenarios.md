@@ -592,6 +592,30 @@ And the instance that sets both MUST render a unit whose `ExecStart` runs that b
 
 And the role's uniqueness preflight MUST accept the list while no `unit_name`, `home_dir` or `port` repeats, and MUST refuse it when one does
 
+## Scenario: the dev-host play stages each pinned Fabro client build and refuses an unsafe entry
+
+Given a dev host whose inventory declares two `fabro_client_builds` entries, each with a `path`, a staged control-node `source` and its `sha256`
+
+When the dev-host play converges the host
+
+Then each build MUST be present at its `path`, mode 0755, owned by the user the role's owner variable names and that user's primary group, and MUST hash to its declared `sha256`
+
+And a second converge with unchanged inventory MUST change nothing on the host
+
+Given the same host after that converge, and an inventory in which one entry's `source` now hashes to a digest other than its `sha256`
+
+When the dev-host play converges the host
+
+Then the role's converge on that host MUST refuse, naming that entry
+
+And the file at each entry's `path` MUST still be the build the earlier converge installed
+
+Given the same host, which is also the control node, and an inventory in which two entries' paths denote the same file on the host, or an entry's `path` is a symbolic link on the host, or an entry's `path` denotes the same file as a `fabro_server_instances` mapping's `binary_path` on that host, or an entry's `source` resolves to its own `path`
+
+When the dev-host play converges the host
+
+Then the role's converge on that host MUST refuse, naming the entry and the reason, before writing anything on the host
+
 ## Scenario: converging the Fabro sandbox envelope never restarts dockerd outside a drained window
 
 Given a factory host whose `/etc/docker/daemon.json` already holds keys the sandbox-envelope role does not own
