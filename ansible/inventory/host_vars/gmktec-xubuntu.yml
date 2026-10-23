@@ -188,6 +188,37 @@ fabro_server_instances:
         image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.126.0
         cpu: 4
         memory: 8GB
+      # The Kubernetes twin of livespec-ci (plan kubernetes-sandbox-backend,
+      # bd-ib-nmuyjc in the livespec-orchestrator-beads-fabro tenant), the same
+      # declaration the candidate instance below proved on the 9f6c38f carrier.
+      # It declares NO image: a registered provider's sandboxes are built from
+      # the provider's process_spec, which carries livespec-ci's image, and
+      # Petri refuses a run whose environment names one. Fabro's 8GB is
+      # decimal, so the pod carries 7629Mi. A dispatch reaches it only through a
+      # factory entry that names it; the cutover is pointing the petri entry at
+      # it, and the rollback is pointing it back.
+      - id: livespec-ci-k8s
+        cpu: 4
+        memory: 8GB
+        provider: kubernetes
+    # The plugin the sandbox_driver_kubernetes role installs, at that role's
+    # pinned digest. The protocol clears a plugin's environment, so HOME and
+    # PATH are passed through; this instance's HOME is /home/cwoolley, which
+    # sandbox_driver_kubernetes_config_homes below lists. The process_spec is
+    # the sandbox every kubernetes sandbox is built from (Petri #122's
+    # registered provider); a run's environment resources replace its size, so
+    # it equals livespec-ci-k8s. Keep it in step with the candidate's.
+    sandbox_providers:
+      kubernetes:
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        sha256: 3778db8eb8cd9ca6339d85cf325bc38b7198c79325b04353d6966dec401e789c
+        inherit_env:
+          - HOME
+          - PATH
+        process_spec:
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+          cpu_cores: 4
+          memory_mb: 7629
     # Created in the instance's vault only when it lacks the name, never
     # overwritten (roles/fabro_server/tasks/vault.yml). The App key comes from
     # the control node's credential wrapper. OPENAI_API_KEY is NOT a key: an
