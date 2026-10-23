@@ -211,7 +211,7 @@ fabro_server_instances:
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: 3778db8eb8cd9ca6339d85cf325bc38b7198c79325b04353d6966dec401e789c
+        sha256: 52f30f8b235da167c8f63c2c53dbabb947fc41946fdcb3c8a3b133af2f4ace84
         inherit_env:
           - HOME
           - PATH
@@ -292,7 +292,7 @@ fabro_server_instances:
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
-        sha256: 3778db8eb8cd9ca6339d85cf325bc38b7198c79325b04353d6966dec401e789c
+        sha256: 52f30f8b235da167c8f63c2c53dbabb947fc41946fdcb3c8a3b133af2f4ace84
         inherit_env:
           - HOME
           - PATH
