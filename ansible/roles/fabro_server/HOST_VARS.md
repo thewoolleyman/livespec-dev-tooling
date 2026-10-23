@@ -768,9 +768,14 @@ are needed before a run can use the plugin:
    `sandbox_driver_kubernetes` role must render its plugin config into that
    directory too (`sandbox_driver_kubernetes_config_homes`).
 2. A catalog environment whose `provider` names the kind. The derivation still
-   starts from a docker base entry. The declared provider replaces the base's,
-   and the image becomes the plugin's job image. An environment naming a kind the
-   instance does not declare is refused before the host is read.
+   starts from a docker base entry, and the declared provider replaces the
+   base's. Such an entry declares NO `image`, and the role writes it with a null
+   docker image: Petri builds a registered provider's sandboxes from the
+   provider's `process_spec`, and refuses a run whose environment names an image
+   ("is a registered provider; `image` applies to `docker` and `daytona` only",
+   measured on the gmktec canary 2026-10-23). An environment naming a kind the
+   instance does not declare, and a registered-provider entry that does declare
+   an image, are both refused before the host is read.
 
 Declaring a provider requires a Fabro build that registers an unbundled kind as a
 Petri registered provider (plan `kubernetes-sandbox-backend`; Petri PRs #122 and

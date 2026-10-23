@@ -208,7 +208,7 @@
       The catalog entry {{ fabro_server_environment.id }} would be derived from
       has provider '{{ fabro_server_environment_base.provider | default('none') }}',
       not docker, while this declaration names the docker image
-      {{ fabro_server_environment.image }}. A non-docker environment ignores an
+      {{ fabro_server_environment.image | default("no image (registered provider)") }}. A non-docker environment ignores an
       image, so writing this would produce an environment that reads as declared
       and runs something else. Nothing has been written.
     success_msg: this environment's base entry runs docker images
@@ -224,7 +224,7 @@
   ansible.builtin.set_fact:
     fabro_server_environment_image: >-
       {{ fabro_server_environment_base.image | default({})
-      | combine({'docker': fabro_server_environment.image, 'dockerfile': none}) }}
+      | combine({'docker': fabro_server_environment.image | default(none), 'dockerfile': none}) }}
     fabro_server_environment_resources: >-
       {{ fabro_server_environment_base.resources | default({})
       | combine({'cpu': fabro_server_environment.cpu | int,
@@ -273,7 +273,7 @@
   ansible.builtin.set_fact:
     fabro_server_environment_matches: >-
       {{ (fabro_server_environment_present | bool)
-      and (fabro_server_environment_current.image.docker | default('')) == fabro_server_environment.image
+      and (fabro_server_environment_current.image.docker | default('', true)) == (fabro_server_environment.image | default(''))
       and (fabro_server_environment_current.resources.cpu | default(0) | int) == (fabro_server_environment.cpu | int)
       and (fabro_server_environment_current.resources.memory | default('')) == fabro_server_environment.memory
       and (fabro_server_environment_current.provider | default(''))
@@ -295,7 +295,7 @@
          else ('is absent from the catalog and will be created'
          if not (fabro_server_environment_present | bool)
          else 'is in the catalog with other settings and will be replaced') }}.
-      Declared image {{ fabro_server_environment.image }}, cpu
+      Declared image {{ fabro_server_environment.image | default('none (registered provider)') }}, cpu
       {{ fabro_server_environment.cpu }}, memory
       {{ fabro_server_environment.memory }}.
 
