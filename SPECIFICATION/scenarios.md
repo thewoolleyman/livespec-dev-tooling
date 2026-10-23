@@ -616,6 +616,32 @@ When the dev-host play converges the host
 
 Then the role's converge on that host MUST refuse, naming the entry and the reason, before writing anything on the host
 
+## Scenario: the dev-host play points the PATH client at a declared build and leaves the server binary it used to name untouched
+
+Given a dev host whose inventory declares two `fabro_client_builds` entries and a `fabro_client_path_client` whose `target` is the second entry's `path`
+
+And whose `link` is today a symbolic link to a `fabro_server_instances` mapping's `binary_path`
+
+When the dev-host play converges the host
+
+Then `link` MUST be a symbolic link whose literal target is the second entry's `path`, owned by the role's owner user and that user's primary group
+
+And the file at that `binary_path` MUST hash to what it hashed to before the converge
+
+And a second converge with unchanged inventory MUST change nothing on the host
+
+Given the same host after that converge, with the link at `link` re-owned by another account
+
+When the dev-host play converges the host
+
+Then the converge MUST change only the owner and group of the link at `link`
+
+Given the same host, and an inventory whose `fabro_client_path_client` names a `target` that equals no entry's `path`, or a `link` at which a regular file exists, or a `link` that is a symbolic link to a directory, or a `link` whose leaf is absent and whose parent is a symbolic link to that `binary_path`'s directory, so that it names that `binary_path` once its ancestors are resolved
+
+When the dev-host play converges the host
+
+Then the role's converge on that host MUST refuse, naming the reason, before writing anything on the host
+
 ## Scenario: converging the Fabro sandbox envelope never restarts dockerd outside a drained window
 
 Given a factory host whose `/etc/docker/daemon.json` already holds keys the sandbox-envelope role does not own

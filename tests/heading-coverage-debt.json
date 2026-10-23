@@ -159,5 +159,12 @@
     "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev-host play points the PATH client at a declared build and leaves the server binary it used to name untouched",
+    "work_item": "livespec-dev-tooling-rpw6",
+    "first_seen": "2026-10-23"
   }
 ]

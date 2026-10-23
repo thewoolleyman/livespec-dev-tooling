@@ -1013,5 +1013,13 @@
     "test": "tests.livespec_dev_tooling.test_fabro_client_role.test_a_converge_installs_each_declared_build_and_a_second_one_changes_nothing",
     "reason": "Integration-tier (module-level `pytest.mark.integration`). The mapped arm drives the scenario's first Given and its first two Thens end to end over TWO real converges of the committed `fabro_client` role under the pinned `ansible-core`: two declared builds arrive at their paths, each mode 0755, owned by the role's owner user and that user's primary group, each hashing to its declared sha256 and leaving no `.incoming` behind — then a second converge with unchanged inventory reports `changed=0`. A real converge rather than `--check`, because every Then is about FILE STATE that `--check` applies none of; every path is derived from the run's own `tmp_path` and the owner is the account pytest runs as, so the verdict cannot move with the host. The scenario's second Given is the sibling drift arm, which rewrites the control-node SOURCE (the drift that actually happens, since the source sits in a mutable state tree) and asserts the refusal names that entry while BOTH paths still hold the earlier converge's builds. Its third Given is nine parametrized arms — paths denoting one file through a symlinked parent, a symlinked path, a path denoting a `fabro_server` instance's `binary_path`, a staging file denoting another entry's path, a source resolving to its own path, a non-directory ancestor, and the three shape rules — each of which also asserts a VALID entry beside the unsafe one was NOT installed, which is what makes them the ordering claim \"before writing anything\" rather than merely \"it refused\".",
     "work_item": "livespec-dev-tooling-lirki2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev-host play points the PATH client at a declared build and leaves the server binary it used to name untouched",
+    "test": "TODO",
+    "reason": "Spec-first: a real integration-tier test is owed, driving converges of the committed fabro_client role under the pinned ansible-core against tmp_path-derived links, builds and a stand-in server binary, as the sibling scenario's test does.",
+    "work_item": "livespec-dev-tooling-rpw6"
   }
 ]
