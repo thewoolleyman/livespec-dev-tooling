@@ -62,6 +62,21 @@ fabro_server_instances:
     # run output. Setting `present` turns export on; `absent` decides against
     # it. Do not leave it undecided indefinitely; do not decide it by default.
     otel_dropin: unmanaged
+    # PINNED, so the host PATH client can stop sharing this file (bd-ib-zb2hso
+    # step 2, coordinator gitops-fleet-capacity-monitoring ruling 2026-10-23
+    # 22:3xZ, option B). Measured 2026-10-23: both instances on this host are
+    # active and their units start this path, which ~/.local/bin/fabro also
+    # links to, so moving the PATH client by replacing this file would have put
+    # both servers on the Petri engine at their next restart. The build is
+    # fabro 0.254.0 at 8869e88, the SAME commit these units already run (the
+    # 2026-10-01 build), rebuilt 2026-10-16 with NODE_ENV=production; it is
+    # byte-identical to the engine hp-xubuntu's fabro-server declares. STAGED,
+    # NOT RESTARTED: with fabro_server_restart_allowed false the apply swaps
+    # the file atomically under the running servers. A later engine change on
+    # either instance is its own recorded step, not part of zb2hso.
+    binary_path: /home/ubuntu/.fabro/bin/fabro
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
+    binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/ubuntu/.fabro-mi-homelab
     port: 32277
@@ -73,6 +88,11 @@ fabro_server_instances:
     github_app_id: "4688510"
     # Live on the host since 2026-08-23.
     otel_dropin: present
+    # The same pin as fabro-server above, and for the same reason: this unit
+    # starts the same file, so the two declarations must agree.
+    binary_path: /home/ubuntu/.fabro/bin/fabro
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
+    binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
 
 # --- gha_runner ---
 gha_runner_user: ubuntu
