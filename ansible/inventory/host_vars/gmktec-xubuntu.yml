@@ -195,9 +195,89 @@ fabro_server_instances:
         value: placeholder-not-a-real-key
     service_state: running
 
+  # The registered-provider carrier CANARY (plan kubernetes-sandbox-backend,
+  # bd-ib-n7zj4a and bd-ib-nmuyjc.1 in the livespec-orchestrator-beads-fabro
+  # tenant; coordinator rulings R668, R670, R673). It runs the next carrier
+  # beside the fleet instance above, which this entry never touches: its own
+  # unit, port, state root and build. Its runs prove the build before the
+  # fleet instance's binary_source moves to it: an ordinary livespec-ci run
+  # in Docker, a livespec-ci-k8s run in a pod, and both driven by the fleet's
+  # pinned v0.382 client, which is the client/server compatibility check.
+  # Two runs at most, because they share this host with the fleet's eight.
+  # Retire it (service_state: stopped) once the fleet instance carries this
+  # build.
+  - unit_name: fabro-server-candidate
+    home_dir: /home/cwoolley/.fabro-candidate
+    port: 32278
+    canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32278
+    cli_target_url: http://127.0.0.1:32278
+    max_concurrent_runs: 2
+    github_app_id: "3668528"
+    otel_dropin: present
+    binary_path: /home/cwoolley/.fabro-candidate/bin/fabro
+    home_env: /home/cwoolley/.fabro-candidate
+    # thewoolleyman/fabro carrier-candidate-registered-20261023: upstream main
+    # 9d9cbe9f4, Fabro's registered-provider wiring, the bd-ib-6vhgqg telemetry
+    # carries, and Petri built from thewoolleyman/petri
+    # fabro-integration-registered-20261023 (Petri main with #122 and the
+    # registered-provider resources change). Provenance is in BUILD_INFO.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-9b8ee43d8/fabro
+    binary_sha256: 03ecd21735f270f60f4e78f49e5f2e02670e2405c12433ea1f18e17cd2fb55a0
+    environments:
+      - id: livespec-ci
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+        cpu: 4
+        memory: 8GB
+      # The Kubernetes twin of livespec-ci: the same image and envelope, run
+      # by the kubernetes provider below. Fabro's 8GB is decimal, so the pod
+      # carries 7629Mi.
+      - id: livespec-ci-k8s
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+        cpu: 4
+        memory: 8GB
+        provider: kubernetes
+    # The plugin the sandbox_driver_kubernetes role installs, at that role's
+    # pinned digest. The protocol clears a plugin's environment, so HOME and
+    # PATH are passed through; this instance's HOME is its own root, which is
+    # why sandbox_driver_kubernetes_config_homes below lists it. The
+    # process_spec is the sandbox every kubernetes sandbox is built from
+    # (Petri #122's registered provider); a run's environment resources replace
+    # its size, so it equals livespec-ci-k8s.
+    sandbox_providers:
+      kubernetes:
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        sha256: acd90b1560e4950ef81ab17a618230412fb026b2dbb2cc412e73e9b17b2f0714
+        inherit_env:
+          - HOME
+          - PATH
+        process_spec:
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+          cpu_cores: 4
+          memory_mb: 7629
+    vault_secrets:
+      - name: GITHUB_APP_PRIVATE_KEY
+        type: file
+        description: GitHub App 3668528 private key
+        from_controller_env: GITHUB_PRIVATE_KEY
+      - name: OPENAI_API_KEY
+        type: token
+        description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
+        value: placeholder-not-a-real-key
+    service_state: running
+
+# The kubernetes plugin reads $HOME/.config/sandbox-driver-kubernetes/config.toml,
+# so every HOME that launches it needs a copy: the account home (operators and
+# the fleet instance) and the canary instance's own root.
+sandbox_driver_kubernetes_config_homes:
+  - /home/cwoolley
+  - /home/cwoolley/.fabro-candidate
+
 # tailscale_serve: publish the fabro-server instance's loopback port on the
 # tailnet, so the Dispatcher reaches https://gmktec-xubuntu.perch-rudd.ts.net:32276.
 # hp-xubuntu and vps made theirs by hand and declare nothing (roles/tailscale_serve/HOST_VARS.md).
 tailscale_serve_mappings:
   - https_port: 32276
     backend: http://127.0.0.1:32276
+  # The registered-provider canary instance above.
+  - https_port: 32278
+    backend: http://127.0.0.1:32278
