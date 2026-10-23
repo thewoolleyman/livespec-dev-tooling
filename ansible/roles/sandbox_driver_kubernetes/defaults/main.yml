@@ -20,9 +20,13 @@
 # come from fabro_server's own host_vars, which already state them for every
 # sandbox host.
 
-# The plugin release, and the digest of its x86_64 Linux asset.
-sandbox_driver_kubernetes_version: v0.3.0
-sandbox_driver_kubernetes_sha256: acd90b1560e4950ef81ab17a618230412fb026b2dbb2cc412e73e9b17b2f0714
+# The plugin release, and the digest of its x86_64 Linux asset. v0.4.0 reports
+# the API server and namespace as its resource identity, which a host on the
+# Petri #122 stack requires before it creates or recovers a sandbox (measured
+# 2026-10-23 on gmktec: v0.3.0 failed every acquire with "the kubernetes
+# provider reports no verified resource identity").
+sandbox_driver_kubernetes_version: v0.4.0
+sandbox_driver_kubernetes_sha256: 3778db8eb8cd9ca6339d85cf325bc38b7198c79325b04353d6966dec401e789c
 # The upstream CLI (`lithos-sandbox`, crate sandbox-driver-cli), built by the
 # plugin's release workflow at the sandbox-driver revision the plugin pins, so
 # the CLI and the plugin speak the same protocol revision.
@@ -31,7 +35,7 @@ sandbox_driver_kubernetes_cli_sha256: 5c17f37394b858e48cc2a8a4e9ae5744d1a4dbb455
 # The lifecycle proof driver, released beside the plugin: it holds one plugin
 # process across a control-plane reboot or a node going NotReady, which a
 # per-command CLI cannot (bd-ib-ad6dby).
-sandbox_driver_kubernetes_proof_sha256: 7b9f32b39a4644f0c1cff6cc6e6d3fb223ad35a81c9f6fb65907e815adc8231d
+sandbox_driver_kubernetes_proof_sha256: b1e90eb77dee1ebc51f307f12fc1c0076ba4e92a13d00855cede2b4c4a85db50
 sandbox_driver_kubernetes_release_url: >-
   https://github.com/thewoolleyman/sandbox-driver-kubernetes/releases/download/{{ sandbox_driver_kubernetes_version }}
 sandbox_driver_kubernetes_bin_dir: /usr/local/bin
