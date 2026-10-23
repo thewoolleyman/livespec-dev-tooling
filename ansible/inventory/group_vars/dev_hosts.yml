@@ -50,3 +50,67 @@ fabro_factory_registry:
   mi-homelab:
     host: hp-xubuntu
     unit_name: fabro-server-mi-homelab
+
+# --- fabro_client ---
+#
+# The pinned Fabro CLIENT builds this group's hosts stage for a Dispatcher
+# running natively on them. `ansible/dev-host.yml` places each one at its `path`
+# from the control-node `source`, verified against `sha256`; see
+# `ansible/roles/fabro_client/HOST_VARS.md` for every key and the operator
+# procedure, and SPECIFICATION/non-functional-requirements.md §"Dev host Fabro
+# client builds" for the obligation.
+#
+# WHY TWO FAMILIES AND NOT ONE (work-item `livespec-dev-tooling-lirki2`,
+# requested by plan `fabro-currency` at the fleet coordinator's direction,
+# gitops-fleet-capacity-monitoring ruling, 2026-10-23). A Dispatcher here reaches
+# two factories whose engines need incompatible client families. `legacy` is the
+# 0.254 fork engine on hp-xubuntu; `petri` is the Petri-era engine on
+# gmktec-xubuntu, and since the Kubernetes canary of 2026-10-23 that one holds a
+# run with a `kubernetes` sandbox the 0.254 client cannot decode at all — so a
+# 0.254 reader of it is blind rather than merely old. Neither client can serve
+# both, and the R668 rollback to `legacy` stays usable through the bd-ib-iud52v
+# soak, so BOTH are declared and each factory names its own.
+#
+# BOTH SOURCES ARE ALREADY STAGED ON THE CONTROL NODE, and that is not a
+# coincidence: they are the same two builds `ansible/inventory/host_vars/hp-
+# xubuntu.yml` carries as that host's `fabro_server` `binary_source` values —
+# fabro 0.254.0 at 8869e88 and the v0.382 carrier at adeefec4c, both rebuilt
+# 2026-10-16 with `NODE_ENV=production`. One staged tree, one digest per build,
+# read by the server role for hp's units and by this role for this host's
+# clients. A second copy of either build under a second name would be a second
+# thing to keep current.
+#
+# THE PETRI PATH IS NOT A FREE CHOICE. It is byte-for-byte the `bin` this
+# repository's own root `.livespec.jsonc` commits for the `petri` factory, which
+# `check-dev-host-fabro-client-bins-declared` asserts: the file was staged BY
+# HAND before this role existed, and declaring the path it already has is what
+# brings it under GitOps without moving the file every repository's committed
+# `bin` names. Its mode was reported as 0775 when the entry was filed, so the
+# first converge tightens it to 0755. WHETHER THAT CONVERGE ALSO REWRITES THE
+# FILE IS NOT KNOWN FROM HERE, and both answers are correct: the hand-staged
+# copy either already hashes to the digest below, in which case its bytes are
+# left untouched, or it does not, in which case the role stages the declared
+# build and renames it into place atomically. Read the drift report before the
+# first apply — it says which.
+#
+# THE LEGACY PATH IS A SIBLING OF IT, deliberately: `fabro-currency` is the tree
+# the pinned client carriers already live in, so an operator listing one
+# directory sees every build this host stages and which engine each is for. It
+# is NOT under `~/.fabro/bin`, where the `fabro_server` role stages and RETAINS
+# its own builds — the role refuses a declared path that denotes any server
+# instance's `binary_path`, and on this host the PATH client is a symbolic link
+# to exactly that file.
+#
+# No repository commits a `bin` for `legacy` yet; bd-ib-zb2hso step 1 is each
+# repository committing one that names this path. Declaring the build before any
+# `bin` names it is the right order — a committed `bin` naming a path nothing
+# stages is the state this whole section exists to forbid.
+fabro_client_builds:
+  # fabro 0.254.0 (8869e88) — the legacy fork-engine client family.
+  - path: /home/ubuntu/.local/state/fabro-currency/carrier-legacy-v0.254-8869e88/fabro
+    source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
+    sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
+  # fabro 0.382.0-nightly.0 (adeefec4c) — the Petri-era carrier client family.
+  - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
+    source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
+    sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1

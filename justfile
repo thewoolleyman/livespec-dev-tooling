@@ -299,6 +299,7 @@ check:
         check-wrapper-shape
         check-ansible-lint
         check-ansible-hostname-free
+        check-dev-host-fabro-client-bins-declared
         check-lint
         check-format
         check-types
@@ -350,6 +351,14 @@ check-ansible-lint:
 # role value equals an inventory host name or carries its tailnet name.
 check-ansible-hostname-free:
     uv run python -m livespec_dev_tooling.ansible_hostname_free
+
+# Every `dispatcher.factories.<name>.bin` this repository commits names the
+# `path` of one `fabro_client_builds` entry, so the Fabro client a Dispatcher
+# EXECS is one `ansible/dev-host.yml` stages from a digest-verified control-node
+# source rather than one someone put there by hand
+# (livespec-dev-tooling-lirki2; the clause names this slug).
+check-dev-host-fabro-client-bins-declared:
+    uv run python -m livespec_dev_tooling.dev_host_fabro_client_bins_declared
 
 # `ansible-drift` — the drift report. This is what replaced the bespoke
 # verify-installed-tree.sh: it reports what the host would change and changes

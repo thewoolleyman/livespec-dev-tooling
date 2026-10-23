@@ -1,0 +1,52 @@
+---
+# fabro_client — the pinned Fabro CLIENT builds a Dispatcher running natively on
+# a dev host invokes through a committed `dispatcher.factories.<name>.bin`.
+#
+# Authority: SPECIFICATION/non-functional-requirements.md §"Dev host Fabro
+# client builds". This role is the "Staged by the dev-host play, never by hand"
+# half; `check-dev-host-fabro-client-bins-declared` is the committed-bin half.
+#
+# See HOST_VARS.md for every key of an entry, which committed `bin` values in
+# the fleet point at each declared path, why rollback here is a change to the
+# inventory rather than a retained copy, and why a declared path is never a
+# server instance's binary_path.
+
+# EMPTY is the right default and the only safe one. This role places EXECUTABLES
+# that the fleet's dispatch routing then depends on, so a default that named a
+# build would install one on a dev host whose inventory asked for none — and the
+# whole point of the section is that what a dev host execs is declared, not
+# inherited. A host with no entry converges this role as a no-op.
+fabro_client_builds: []
+
+# WHO OWNS A STAGED BUILD, and why it is not root. The Dispatcher that execs
+# these files runs as the dev host's own login, under whose home the declared
+# paths sit; a root-owned build there is one that account cannot replace through
+# any normal path, and the first symptom would be a converge that looks clean
+# while an operator's hand repair is refused. A dev host whose login differs
+# sets this in its host variables — HOST_VARS.md carries that instruction and
+# this default.
+fabro_client_owner: ubuntu
+
+# THE BINARY PATH A fabro_server INSTANCE THAT NAMES NONE RUNS, resolved per
+# host from that host's OWN fabro_server_host_home rather than restated as a
+# literal. The section's refusal list names this value — a declared `path` may
+# not denote the same file as any instance's `binary_path`, "explicit or
+# defaulted (the default being the one the `fabro_server` role applies for that
+# host, resolved per host rather than restated)" — because on `vps` the PATH
+# client IS a symbolic link to it, and the two roles writing one file is the
+# collision this exclusion exists to prevent.
+#
+# THE EXPRESSION IS NOT A SECOND SOURCE OF TRUTH. `fabro_server`'s own
+# `tasks/main.yml` resolves the same default in its `fabro_server_binary_path`
+# set_fact, and `tests/livespec_dev_tooling/test_fabro_client_role.py` reads
+# THAT expression out of THAT file and asserts this value carries it. So the two
+# cannot drift silently: a change to the server role's default reddens this
+# repository's aggregate rather than quietly narrowing this exclusion.
+#
+# The empty answer for a host that declares no `fabro_server_host_home` is
+# deliberate and is filtered out rather than compared: a bare
+# `/.fabro/bin/fabro` would be an absolute path this role would then test real
+# declarations against, which is a comparison against a host value nobody set.
+fabro_client_server_binary_path_default: >-
+  {{ (fabro_server_host_home ~ '/.fabro/bin/fabro')
+     if fabro_server_host_home is defined else '' }}

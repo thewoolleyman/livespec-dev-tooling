@@ -1,0 +1,25 @@
+---
+# The pinned Fabro client builds this host's inventory declares.
+#
+# THE SPLIT IS THE OBLIGATION, not a tidiness choice. The section requires that
+# the role "MUST first validate every `fabro_client_builds` entry, and before it
+# writes anything on the host for any entry it MUST refuse". A per-entry
+# validate-then-write loop would satisfy neither half: entry two's refusal would
+# arrive after entry one's build was already live, and the host would be left in
+# a state no inventory describes. So every refusal lives in `validate.yml` and
+# every write in `install.yml`, and the order between the two files IS the
+# clause.
+#
+# A host whose inventory declares nothing converges this role as a no-op, which
+# is why the guard is on the include rather than on each task: a dev host that
+# reaches every factory through the PATH client has no client build to stage, and
+# this role must read nothing and write nothing there.
+
+- name: Stage the pinned Fabro client builds this host declares
+  when: fabro_client_builds | length > 0
+  block:
+    - name: Validate every declared Fabro client build before anything is written
+      ansible.builtin.include_tasks: validate.yml
+
+    - name: Install every declared Fabro client build
+      ansible.builtin.include_tasks: install.yml

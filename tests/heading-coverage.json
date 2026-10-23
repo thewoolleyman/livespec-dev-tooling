@@ -1002,16 +1002,16 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Dev host Fabro client builds",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this heading; livespec-dev-tooling-lirki2 owns it.",
+    "test": "tests.livespec_dev_tooling.test_dev_host_fabro_client_builds_section.test_every_committed_bin_names_a_declared_path_and_the_check_is_wired",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`; direction 4's AST marker route beside the `tests.consumer` prefix allowlist). The mapped arm holds the section's \"Committed bins name a declared path\" clause over the COMMITTED tree — every `dispatcher.factories.<name>.bin` in this repository's own `.livespec.jsonc` against the `fabro_client_builds` paths its own inventory declares — plus the clause's second half, that `check-dev-host-fabro-client-bins-declared` is wired into the aggregate and into the tracked check-targets inventory. That is the one assertion no synthetic fixture can make: a fixture proves the CHECK refuses an undeclared bin, and only the committed files prove this repository has not committed one. The section's other paragraphs are held by this module's siblings — the declaration's shape over the committed entries, and the exclusion measured against the `binary_path` default read out of the `fabro_server` role's own `set_fact` so the two roles cannot drift into writing one file — and by eleven parametrized arms over the \"Documented beside the values\" obligation. The \"Staged by the dev-host play, never by hand\" and \"Refused before writing\" clauses are converged rather than read, in `test_fabro_client_role`.",
     "work_item": "livespec-dev-tooling-lirki2"
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: the dev-host play stages each pinned Fabro client build and refuses an unsafe entry",
-    "test": "TODO",
-    "reason": "A real test at the integration tier is owed for this heading; livespec-dev-tooling-lirki2 owns it.",
+    "test": "tests.livespec_dev_tooling.test_fabro_client_role.test_a_converge_installs_each_declared_build_and_a_second_one_changes_nothing",
+    "reason": "Integration-tier (module-level `pytest.mark.integration`). The mapped arm drives the scenario's first Given and its first two Thens end to end over TWO real converges of the committed `fabro_client` role under the pinned `ansible-core`: two declared builds arrive at their paths, each mode 0755, owned by the role's owner user and that user's primary group, each hashing to its declared sha256 and leaving no `.incoming` behind — then a second converge with unchanged inventory reports `changed=0`. A real converge rather than `--check`, because every Then is about FILE STATE that `--check` applies none of; every path is derived from the run's own `tmp_path` and the owner is the account pytest runs as, so the verdict cannot move with the host. The scenario's second Given is the sibling drift arm, which rewrites the control-node SOURCE (the drift that actually happens, since the source sits in a mutable state tree) and asserts the refusal names that entry while BOTH paths still hold the earlier converge's builds. Its third Given is nine parametrized arms — paths denoting one file through a symlinked parent, a symlinked path, a path denoting a `fabro_server` instance's `binary_path`, a staging file denoting another entry's path, a source resolving to its own path, a non-directory ancestor, and the three shape rules — each of which also asserts a VALID entry beside the unsafe one was NOT installed, which is what makes them the ordering claim \"before writing anything\" rather than merely \"it refused\".",
     "work_item": "livespec-dev-tooling-lirki2"
   }
 ]

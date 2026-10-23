@@ -1,0 +1,421 @@
+---
+# Every refusal this role makes, all of them decided BEFORE `install.yml` writes
+# anything on the host, per the section's "Refused before writing" clause.
+#
+# WHY EVERY REFUSAL IS A LOOPED `assert` AND NOT A SET-WISE ONE. The clause
+# requires the refusal to name "each refused entry and the reason". A looped
+# assert runs EVERY item and reports each failing one before the task fails, so
+# an inventory with three bad entries names three — measured on ansible-core
+# 2.21.4. A single set-wise assert could only ever print a list, and an operator
+# reading it would have to work out which rule each member broke.
+#
+# WHY THE HOST IS ASKED TO RESOLVE NAMES RATHER THAN THIS FILE COMPARING THEM.
+# The clause defines DENOTES THE SAME FILE as equality "after every symbolic link
+# in both, final component included, is resolved, or when both exist and are on
+# the same device with the same inode". Neither half is a string comparison. On
+# `vps` the PATH client is a symbolic link INTO a server instance's binary
+# directory, so a textual comparison of the two names passes while both names
+# reach one file — which is the exact collision the exclusion exists to prevent,
+# and the one an earlier draft of this clause was refused for missing. So the
+# host resolves every compared name with `readlink -m` (which canonicalizes a
+# path whose leaf does not exist yet, as a declared path on a fresh host does
+# not), the host stats every compared name for its device and inode, and the two
+# answers are merged into ONE key per name below.
+#
+# WHY THE SHAPE RULES COME FIRST AND SEPARATELY. The reads below index `path`,
+# `source` and `sha256` and join paths into `readlink` argv. An entry missing a
+# key, or carrying a relative path, would make those reads either a Jinja
+# undefined error or a resolution against the connection's working directory —
+# an answer about the wrong file. Refusing the shape first means every read
+# afterwards is a read of something the inventory actually declared.
+
+# --- the shape of the declaration, decided without reading the host -----------
+
+- name: Refuse a declared Fabro client build that omits path, source or sha256
+  ansible.builtin.assert:
+    that:
+      - item.path is defined
+      - item.source is defined
+      - item.sha256 is defined
+    fail_msg: >-
+      A fabro_client_builds entry declares {{ item }}, which does not carry all
+      three of path, source and sha256. Nothing on {{ inventory_hostname }} has
+      been read or changed. An entry says WHERE the build goes, WHICH staged
+      control-node file it comes from, and WHAT that file must hash to; without
+      all three there is no build this role can place.
+    success_msg: this entry carries path, source and sha256
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path | default(item) }}"
+
+- name: Refuse a declared Fabro client build whose path or source is not absolute
+  ansible.builtin.assert:
+    that:
+      - item.path is match('^/')
+      - item.source is match('^/')
+    fail_msg: >-
+      The fabro_client_builds entry for {{ item.path }} declares a path or a
+      source that is not absolute (path '{{ item.path }}', source
+      '{{ item.source }}'). Nothing on {{ inventory_hostname }} has been read or
+      changed. A relative name would resolve against whatever working directory
+      the connection happened to have, which is not a place either this role or
+      a committed `bin` can name.
+    success_msg: this entry's path and source are both absolute
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Refuse a declared Fabro client build whose sha256 is not 64 hexadecimal digits
+  ansible.builtin.assert:
+    that:
+      - item.sha256 is match('(?i)^[0-9a-f]{64}$')
+    fail_msg: >-
+      The fabro_client_builds entry for {{ item.path }} declares the digest
+      '{{ item.sha256 }}', which is not 64 hexadecimal digits. Nothing on
+      {{ inventory_hostname }} has been read or changed. The digest is the only
+      thing standing between "this host runs the build version control names" and
+      "this host runs whatever is at that source path today", and the source is
+      inside a mutable state tree under a home directory.
+    success_msg: this entry's digest is 64 hexadecimal digits
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+# --- the names this role compares, and what the host says about each ----------
+
+- name: Note the declared names and the server binaries this role must not collide with
+  ansible.builtin.set_fact:
+    fabro_client_paths: "{{ fabro_client_builds | map(attribute='path') | list }}"
+    fabro_client_sources: "{{ fabro_client_builds | map(attribute='source') | list }}"
+    # Resolved PER HOST from that host's own fabro_server_instances, which is
+    # what makes this exclusion correct on a host whose instances name their own
+    # builds as well as on one whose instances share the default. See
+    # defaults/main.yml for why the default expression is not a second source of
+    # truth.
+    fabro_client_server_binaries: >-
+      {{ fabro_server_instances | default([])
+         | map(attribute='binary_path',
+               default=fabro_client_server_binary_path_default)
+         | reject('equalto', '') | unique | list }}
+    # THE INVENTORY'S OWN STATEMENT of whether this dev host is the control node:
+    # `ansible/inventory/legacy.yml` gives the one host that is `ansible_connection:
+    # local`, because the control node manages itself over a local connection. Two
+    # refusals below are conditioned on it — a `source` can only be compared against
+    # a `path` when both name files on the same machine.
+    fabro_client_is_control_node: "{{ ansible_connection | default('') == 'local' }}"
+  check_mode: false
+
+- name: Note every staging name and the whole set the host must resolve
+  ansible.builtin.set_fact:
+    # `<path>.incoming` is a compared name in its own right: the section refuses a
+    # path whose staging file would denote an entry's path or a server binary,
+    # because that staging write would land ON a live build before any rename.
+    fabro_client_incoming: >-
+      {{ fabro_client_paths | map('regex_replace', '^(.+)$', '\1.incoming') | list }}
+    fabro_client_names: >-
+      {{ (fabro_client_paths
+          + fabro_client_server_binaries
+          + (fabro_client_paths
+             | map('regex_replace', '^(.+)$', '\1.incoming') | list)
+          + (fabro_client_sources if fabro_client_is_control_node | bool else []))
+         | unique | list }}
+  check_mode: false
+
+- name: Note every ancestor directory the declared paths need
+  ansible.builtin.set_fact:
+    fabro_client_ancestors: >-
+      {{ fabro_client_ancestor_names | from_json
+         | reject('equalto', '/') | unique | list }}
+  vars:
+    # ONE Jinja loop, because an ancestor list is an ACCUMULATION and Jinja has
+    # no comprehension: `/a/b/fabro` needs `/a` and `/a/b`, and the depth is not
+    # bounded, so a fixed chain of `dirname` filters would silently stop looking
+    # at whatever depth it was written for — a refusal that fails OPEN below its
+    # own horizon. The loop renders JSON and `from_json` turns it back into a
+    # real list rather than a string Ansible has to guess the type of. The
+    # trailing `"/"` is what lets every element carry a comma: the filesystem
+    # root is always a directory, and it is rejected again above.
+    fabro_client_ancestor_names: >-
+      [{% for name in fabro_client_paths %}{% set parts = name.split('/') %}
+      {% for depth in range(1, parts | length - 1) %}
+      {{ ('/' ~ parts[1:depth + 1] | join('/')) | to_json }},
+      {% endfor %}{% endfor %}"/"]
+  check_mode: false
+
+- name: Resolve every compared name on the host, symbolic links and final component included
+  # `readlink -m` rather than `realpath`: it canonicalizes a name whose leaf — or
+  # whose whole parent chain — does not exist yet, which is the state a declared
+  # path is in on a host this role has never converged. A resolver that required
+  # existence would answer nothing for exactly those names and the duplicate-path
+  # refusal would pass for want of an answer.
+  #
+  # `check_mode: false` because this is a READ. Without it a `--check` drift
+  # report would skip its own preconditions and report on a host it never
+  # inspected.
+  ansible.builtin.command:
+    argv: "{{ ['readlink', '-m'] + fabro_client_names }}"
+  become: true
+  register: fabro_client_readlink
+  changed_when: false
+  check_mode: false
+
+- name: Refuse a host resolution that did not answer for every compared name
+  # Fail CLOSED on a short answer. `zip` truncates silently, so a resolver that
+  # printed fewer lines than it was asked about would leave the trailing names
+  # out of the key map below and every refusal that reads them would pass by
+  # never looking.
+  ansible.builtin.assert:
+    that:
+      - fabro_client_readlink.stdout_lines | length == fabro_client_names | length
+    fail_msg: >-
+      Resolving the declared names on {{ inventory_hostname }} answered
+      {{ fabro_client_readlink.stdout_lines | length }} times for
+      {{ fabro_client_names | length }} names, so the comparisons below would be
+      taken against a partial answer. Nothing has been written.
+    success_msg: every compared name resolved on this host
+
+- name: Read the file each compared name reaches on the host
+  # `follow: true`, so the device and inode are the FILE's and not a symbolic
+  # link's own. This is the second half of the clause's definition and the half
+  # that catches a HARD link, which no amount of name resolution can see.
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+  become: true
+  register: fabro_client_followed
+  check_mode: false
+  loop: "{{ fabro_client_names }}"
+
+- name: Read what the host holds AT each compared name, without following a link
+  # `follow: false`, so a symbolic link reports as itself: the clause refuses a
+  # path at which "something already exists ... that is not a regular file, a
+  # symbolic link included", and a following stat would report a link to a build
+  # as the build. The sha256 is taken here too, because `install.yml`'s one
+  # decision — is the host already holding this build — is about the file at the
+  # name, and a digest read through a link would answer for the wrong file.
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+    checksum_algorithm: sha256
+  become: true
+  register: fabro_client_lstats
+  check_mode: false
+  loop: "{{ fabro_client_names }}"
+
+- name: Read what the host holds at every ancestor directory these paths need
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+  become: true
+  register: fabro_client_ancestor_stats
+  check_mode: false
+  loop: "{{ fabro_client_ancestors }}"
+
+- name: Note the one key that tells apart the files these names denote
+  ansible.builtin.set_fact:
+    # THE WHOLE "DENOTES THE SAME FILE" TEST, as one key per name, so every
+    # refusal below is a comparison of two keys rather than a restatement of the
+    # rule. `combine` is what merges the clause's two halves in the right
+    # priority: the resolved NAME is the key for a name that does not exist, and
+    # the device-and-inode of the file it REACHES overrides it for one that does.
+    #
+    # The two cannot disagree. Two names with equal resolved names are one path,
+    # so either both exist or neither does; two existing names with the same
+    # device and inode are one file however they are spelled. What the override
+    # adds is the hard-link case, where the names differ and the file is one.
+    fabro_client_key: "{{ fabro_client_resolved | combine(fabro_client_reached) }}"
+    fabro_client_lstat: >-
+      {{ dict(fabro_client_names
+              | zip(fabro_client_lstats.results | map(attribute='stat') | list)) }}
+    fabro_client_ancestor_stat: >-
+      {{ dict(fabro_client_ancestors
+              | zip(fabro_client_ancestor_stats.results | default([])
+                    | map(attribute='stat') | list)) }}
+  vars:
+    fabro_client_resolved: >-
+      {{ dict(fabro_client_names | zip(fabro_client_readlink.stdout_lines)) }}
+    fabro_client_existing: >-
+      {{ fabro_client_followed.results | selectattr('stat.exists') | list }}
+    fabro_client_reached: >-
+      {{ dict(fabro_client_existing | map(attribute='item') | list
+              | zip(fabro_client_existing | map(attribute='stat.dev') | list
+                    | zip(fabro_client_existing
+                          | map(attribute='stat.inode') | list)
+                    | map('join', ':') | list)) }}
+  check_mode: false
+
+# --- what the host already holds, decided before anything is written ----------
+
+- name: Refuse two declared Fabro client builds whose paths denote the same file
+  ansible.builtin.assert:
+    that:
+      - fabro_client_path_keys | select('equalto', fabro_client_key[item]) | length == 1
+    fail_msg: >-
+      The fabro_client_builds entry for {{ item }} denotes the same file on
+      {{ inventory_hostname }} as another entry's path. Resolved on this host,
+      the declared paths are
+      {{ dict(fabro_client_paths | zip(fabro_client_path_keys)) }}. Nothing has
+      been written. Two entries writing one file means the build that ends up
+      there is decided by the order this role happens to run them in, and the
+      inventory would describe a host state that is not reachable.
+    success_msg: this entry's path denotes a file no other entry's path denotes
+  vars:
+    fabro_client_path_keys: "{{ fabro_client_paths | map('extract', fabro_client_key) | list }}"
+  loop: "{{ fabro_client_paths }}"
+
+- name: Refuse a declared path at which the host already holds something else
+  ansible.builtin.assert:
+    that:
+      - not fabro_client_lstat[item].exists or (fabro_client_lstat[item].isreg | default(false))
+    fail_msg: >-
+      {{ item }} on {{ inventory_hostname }} already holds something that is not
+      a regular file (a symbolic link counts), so this role will not write over
+      it. Nothing has been written. A declared path is a file this role owns
+      outright; a link there would make the build live at a name this inventory
+      does not describe, and a directory or a socket there is a sign the path
+      names something else entirely.
+    success_msg: this declared path holds a regular file or nothing at all
+  loop: "{{ fabro_client_paths }}"
+
+- name: Refuse a declared path whose ancestor on the host is not a directory
+  ansible.builtin.assert:
+    that:
+      - not fabro_client_ancestor_stat[item].exists
+        or (fabro_client_ancestor_stat[item].isdir | default(false))
+    fail_msg: >-
+      {{ item }} on {{ inventory_hostname }} exists and, after symbolic links are
+      resolved, is not a directory, so no declared path beneath it can be
+      created. Nothing has been written. Left to the directory creation this
+      would fail PART WAY THROUGH the install, after an earlier entry's build was
+      already live.
+    success_msg: this ancestor is a directory or does not exist yet
+  loop: "{{ fabro_client_ancestors }}"
+
+- name: Refuse a declared path that denotes a Fabro server instance's binary
+  ansible.builtin.assert:
+    that:
+      - fabro_client_key[item] not in fabro_client_server_keys
+    fail_msg: >-
+      The fabro_client_builds entry for {{ item }} denotes the same file on
+      {{ inventory_hostname }} as the binary_path of a fabro_server instance
+      declared for this host ({{ fabro_client_server_binaries }}). Nothing has
+      been written. That file belongs to the fabro_server role, which stages and
+      RETAINS its own builds there and restarts a unit around them; two roles
+      writing one binary is a server whose build changes underneath it for
+      reasons its own inventory does not record.
+    success_msg: this declared path denotes no server instance's binary
+  vars:
+    fabro_client_server_keys: >-
+      {{ fabro_client_server_binaries | map('extract', fabro_client_key) | list }}
+  loop: "{{ fabro_client_paths }}"
+
+- name: Refuse a declared path whose staging file denotes a build or a server binary
+  ansible.builtin.assert:
+    that:
+      - fabro_client_key[item ~ '.incoming'] not in fabro_client_occupied_keys
+    fail_msg: >-
+      {{ item }}.incoming denotes the same file on {{ inventory_hostname }} as a
+      declared path or a fabro_server instance's binary_path. Nothing has been
+      written. The staging write is what makes the install atomic, and a staging
+      name that lands on a live build destroys the very property the rename
+      exists to give: a Dispatcher mid-exec would read a half-written file.
+    success_msg: this entry's staging file denotes no build and no server binary
+  vars:
+    fabro_client_occupied_keys: >-
+      {{ (fabro_client_paths + fabro_client_server_binaries)
+         | map('extract', fabro_client_key) | list }}
+  loop: "{{ fabro_client_paths }}"
+
+- name: Refuse a control-node source that resolves to a declared path on this host
+  # Conditioned on the dev host BEING the control node, because that is the only
+  # case in which a source and a path can name one file: on any other dev host
+  # the source is a name on a different machine and the comparison has no
+  # meaning. On `vps` they are one machine, and a source that resolves to a
+  # declared path is a copy whose own destination is its input.
+  ansible.builtin.assert:
+    that:
+      - fabro_client_key[item.source] not in fabro_client_path_keys
+    fail_msg: >-
+      The fabro_client_builds entry for {{ item.path }} declares the source
+      {{ item.source }}, which denotes the same file on {{ inventory_hostname }}
+      as a declared path — and this dev host is the control node, so the two are
+      one machine. Nothing has been written. Staging a build from itself leaves
+      nothing to roll back to and nothing to verify against: the digest would be
+      checked against the file the check is supposed to be guarding.
+    success_msg: this entry's source denotes no declared path
+  vars:
+    fabro_client_path_keys: "{{ fabro_client_paths | map('extract', fabro_client_key) | list }}"
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.source }}"
+  when: fabro_client_is_control_node | bool
+
+# --- the control node's own copy of each build --------------------------------
+
+- name: Read the control node's copy of every declared Fabro client build
+  # On the CONTROL NODE, which is the whole point of the axis: a build is staged
+  # there once and nobody copies binaries to dev hosts by hand. `delegate_to`
+  # keeps this one read local even on a dev host that is reached over ssh, and
+  # `become: false` because the staged build belongs to the operator's own
+  # account rather than to root.
+  ansible.builtin.stat:
+    path: "{{ item.source }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: fabro_client_source_stats
+  check_mode: false
+  loop: "{{ fabro_client_builds }}"
+  loop_control:
+    label: "{{ item.source }}"
+
+- name: Refuse a control-node build that is absent or does not hash to its declared digest
+  # Before the host is written, which is what makes a mid-soak digest change a
+  # refusal rather than a replacement: the earlier converge's build stays live at
+  # every declared path, because this role has not reached a write.
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.checksum == item.item.sha256 | lower
+    fail_msg: >-
+      {{ item.item.source }} on the control node is missing, or its sha256 is
+      '{{ item.stat.checksum | default('(absent)') }}' rather than the
+      '{{ item.item.sha256 | lower }}' the entry for {{ item.item.path }}
+      declares. Nothing on {{ inventory_hostname }} has been written, so every
+      declared path still holds the build the previous converge installed. Stage
+      the build again, or declare the digest it really has — never the other way
+      round.
+    success_msg: the control node's copy of this build matches its declared digest
+  loop: "{{ fabro_client_source_stats.results }}"
+  loop_control:
+    label: "{{ item.item.source }}"
+
+# --- the account a staged build is owned by -----------------------------------
+
+- name: Read the account that owns a staged Fabro client build
+  # A READ, and it is here rather than in `install.yml` for the same reason every
+  # refusal is: an owner variable naming an account the host does not have would
+  # otherwise fail at the first `copy`, which is after a write. `getent` fails on
+  # an absent key by default, which is the loud answer wanted.
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ fabro_client_owner }}"
+  become: true
+  check_mode: false
+
+- name: Read the name of that account's primary group
+  # The clause says the build is owned by "that user's primary group", so the
+  # group is DERIVED from the account rather than declared beside it: a second
+  # variable could name a group the account is not in, and the file would then be
+  # owned by a group whose membership nobody checked. Field 2 of the passwd entry
+  # is the gid.
+  ansible.builtin.getent:
+    database: group
+    key: "{{ ansible_facts.getent_passwd[fabro_client_owner][2] }}"
+  become: true
+  check_mode: false
+
+- name: Note the group a staged Fabro client build is owned by
+  ansible.builtin.set_fact:
+    fabro_client_group: "{{ ansible_facts.getent_group | first }}"
+  check_mode: false
