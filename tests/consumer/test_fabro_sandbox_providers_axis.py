@@ -105,10 +105,33 @@ def test_an_empty_mapping_renders_settings_exactly_as_before_the_axis() -> None:
         'sha256 = "{{ provider.sha256 }}"',
     ):
         assert line in loop, f"each declared provider MUST render {line!r}"
-    for optional in ("args", "inherit_env", "host_address"):
+    for optional in ("args", "inherit_env", "process_spec"):
         assert (
             f"{{% if provider.{optional} | default(" in loop
         ), f"{optional} is optional and MUST render only when declared"
+    assert "host_address" not in loop, (
+        "host_address MUST NOT render: a registered provider's sandboxes have no route "
+        "back to the host, and Fabro's provider table rejects the key as unknown"
+    )
+
+
+def test_a_process_spec_renders_as_a_sandbox_spec_inline_table() -> None:
+    loop = _SETTINGS.read_text(encoding="utf-8").split(_LOOP_OPEN)[1]
+    lines = [line for line in loop.splitlines() if line.startswith("process_spec = ")]
+    assert len(lines) == 1, "the provider block MUST render process_spec on exactly one line"
+    rendered = (
+        lines[0]
+        .replace("{{ provider.process_spec.image }}", "ghcr.io/acme/runner:1")
+        .replace("{{ provider.process_spec.cpu_cores | int }}", "4")
+        .replace("{{ provider.process_spec.memory_mb | int }}", "7629")
+    )
+    assert rendered == (
+        'process_spec = { source = { image = { reference = "ghcr.io/acme/runner:1" } }, '
+        "resources = { cpu_cores = 4, memory_mb = 7629 } }"
+    ), (
+        "process_spec MUST render sandbox-driver's SandboxSpec shape as one TOML inline "
+        f"table, source.image.reference plus resources, from exactly three keys: {rendered}"
+    )
 
 
 def test_malformed_provider_declarations_are_refused_before_the_first_write() -> None:
@@ -117,6 +140,8 @@ def test_malformed_provider_declarations_are_refused_before_the_first_write() ->
         "item.key not in ['local', 'docker', 'daytona']",
         "item.value.path | default('') is match('^/')",
         "item.value.sha256 | default('') is match('^[0-9a-f]{64}$')",
+        "item.value.host_address is not defined",
+        "item.value.process_spec.image | default('') | length > 0",
     ):
         assert condition in refusal, f"the provider refusal MUST hold {condition!r}"
     assert (
