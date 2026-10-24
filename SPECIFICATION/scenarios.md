@@ -1355,3 +1355,29 @@ And an agent session, working in that repository, whose `PreToolUse` hooks inclu
 When the session issues a `Bash` tool call running `git commit -m "<message>"` in the foreground
 
 Then the guard MUST NOT refuse the tool call
+
+## Scenario: a staged type error refuses the commit before the full pre-commit aggregate
+
+Given a governed repository whose pre-commit hook runs `just check-pre-commit`
+
+And ten staged Python files that the repository's type-checker configuration covers, one of which carries a type-checker error
+
+When a git commit is made
+
+Then the commit MUST be refused within 60 seconds of the commit starting
+
+And the refusal MUST name the file, line and rule of the type-checker error
+
+And the full pre-commit aggregate MUST NOT have started any member
+
+## Scenario: a staged lint error refuses the commit before the full pre-commit aggregate
+
+Given a governed repository whose pre-commit hook runs `just check-pre-commit`
+
+And a staged Python file carrying a lint error that the lint autofix step does not fix
+
+When a git commit is made
+
+Then the commit MUST be refused naming the file, line and rule of the lint error
+
+And the full pre-commit aggregate MUST NOT have started any member
