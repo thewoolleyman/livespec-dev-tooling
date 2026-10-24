@@ -748,19 +748,81 @@ by hand. Never put it in host_vars.
 
 ## `host_vars/gmktec-xubuntu.yml`
 
-The current Fabro server's host (plan `petri-factory-on-gmktec`). One instance,
-`fabro-server` on port 32276 under `/home/cwoolley/.fabro`, running the v0.382
-carrier `adeefec` (production web UI) staged on the control node.
+The Petri-era factory's home (plan `petri-factory-on-gmktec`). **Two
+instances**, not one: `fabro-server` on port 32276 under
+`/home/cwoolley/.fabro`, the fleet instance this host's dispatches reach, and
+`fabro-server-candidate` on port 32278 under `/home/cwoolley/.fabro-candidate`,
+the carrier canary that proves a build before the fleet instance moves onto it
+(plan `kubernetes-sandbox-backend`; coordinator rulings R668, R670, R673). The
+canary names its own `binary_path` and `home_env`, so the two share the host and
+its checkout and nothing else.
+
+**Both instances are pinned to the same build: `0.393.0-nightly.1` at commit
+`9f6c38f`** — `thewoolleyman/fabro` `carrier-candidate-registered-20261023`,
+Petri `e92b191` — staged on the control node at
+`/home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro` and carried
+from there, with its provenance in `BUILD_INFO` beside the binary. It is the
+first build this host has run that registers an unbundled sandbox kind as a
+Petri registered provider, which is what makes the provider declarations below
+expressible at all. The fleet instance moved onto it only after the canary's
+runs proved it on 2026-10-23 (`livespec-dev-tooling-dfixhe`): a Kubernetes run
+and a Docker run read the same `cpu.max` and `memory.max` as the carrier the
+instance was already running, both driven by the fleet's pinned 0.382 client,
+which is the client/server compatibility half. Rollback for the fleet instance
+is the 0.389 carrier `bf5a2dc`, kept staged on the control node and named with
+its digest in that instance's entry; the canary is retired
+(`service_state: stopped`) rather than rolled back, once the fleet instance
+carries the build it was proving.
+
 `fabro_server_host_checkout_remote` is declared because the host had no
-checkout, `fabro_server_manage_settings` is true because a fresh instance has
-no settings.toml to preserve, and `max_concurrent_runs` is 2 because two 8GB
-`livespec-ci` sandboxes fit the 18G sandbox slice. Coordinator ruling R196, as
-amended, raised both one step from 1 run and 14G (ruling R138) once gmktec became
-the Petri-era factory's home, sized against the CI-churn peak (kubepods.slice
-27.4 GB) rather than a quiet reading; one run peaked at 10.3 GB in the slice. A
-third run is pre-approved after a day at two with the slice's memory.peak under
-20 GB, `/proc/pressure/memory` full avg300 at 0, and system plus kubepods peak
-plus the new slice under 62 GiB with swap untouched. `vault_secrets` declares the App key, from the wrapper's
+checkout, and `fabro_server_manage_settings` is true because a fresh instance
+has no settings.toml to preserve.
+
+**`max_concurrent_runs` is 8** on the fleet instance, and 2 on the canary.
+Eight is maintainer directive R259 (2026-10-19), superseding ruling R196's two,
+and it moves with the `docker_sandbox_slice` limits that directive raised in the
+same breath (36G high / 40G max, CPU quota 2800%). The basis is measured rather
+than budgeted: the petri capacity sampler found every run's sandbox peaked at
+2.61–2.64 GB *anon* on 2026-10-19 — the earlier 10.3 GB reading was mostly page
+cache, which `memory.high` reclaims under pressure — so eight runs are about 21G
+anon. `memory.high`, not `memory.max`, is therefore the working limit, because
+the 40G max can still oversubscribe the host if `system.slice`, the kubepods CI
+peak and a full slice all coincide. Change the count only together with the
+slice, and read any sandbox OOM on this host as an INFRASTRUCTURE ending (R235).
+The canary's 2 is deliberately small against the same arithmetic: its rehearsal
+runs share this host with the fleet instance's eight.
+
+The fleet instance declares **three catalog environments**. `livespec-ci` is the
+docker environment the orchestrator's own dispatches are prepared in, and its
+tag follows `livespec-orchestrator-beads-fabro`'s workflow pin.
+`livespec-ci-rust` serves the repositories whose workflow pins the
+python-rust-agent layer — `livespec-console-beads-fabro`, which builds Rust —
+so its tag follows THAT repository's pin and not the orchestrator's
+(coordinator rulings R622, R668); bump each with the repository it follows.
+`livespec-ci-k8s` is the Kubernetes twin of `livespec-ci`: the same 4 CPU / 8GB
+envelope, `provider: kubernetes`, and NO `image`, because a registered
+provider's sandboxes are built from the provider's `process_spec`. A dispatch
+reaches it only through a factory entry that names it, so the cutover is
+pointing an entry at it and the rollback is pointing that entry back. The canary
+declares `livespec-ci` and `livespec-ci-k8s` and not `livespec-ci-rust`, because
+no rust dispatch is routed to it.
+
+The fleet instance also **declares the `kubernetes` sandbox provider at the
+plugin digest the `sandbox_driver_kubernetes` role pins** — that role's
+`sandbox_driver_kubernetes_sha256`, against the plugin it installs at
+`/usr/local/bin/sandbox-driver-kubernetes`. The two MUST agree: the instance's
+`settings.toml` carries the digest its workers verify the plugin against at
+every launch, so a role that installs one build beside a host variable naming
+another is a provider that refuses to start, reported as a failing sandbox
+rather than as the drift it is. `inherit_env` passes `HOME` and `PATH` through
+the protocol's cleared environment, and this instance's `HOME` is
+`/home/cwoolley`, which `sandbox_driver_kubernetes_config_homes` lists so the
+plugin finds its own config there. Its `process_spec` is the sandbox every
+kubernetes sandbox is built from and equals `livespec-ci-k8s`'s envelope in the
+units Fabro lowers them to (`memory_mb: 7629` for `8GB`). The canary declares
+the same provider at the same digest, with its own state root as `HOME`.
+
+`vault_secrets` on both instances declares the App key, from the wrapper's
 `GITHUB_PRIVATE_KEY`, and the `OPENAI_API_KEY` placeholder an ACP-only graph
 needs to pass `fabro.model.no_ready_provider` admission. Its Docker comes from
 `ansible/docker-engine.yml`, which must be confirmed before this play installs
@@ -793,8 +855,10 @@ are needed before a run can use the plugin:
 
 Declaring a provider requires a Fabro build that registers an unbundled kind as a
 Petri registered provider (plan `kubernetes-sandbox-backend`; Petri PRs #122 and
-#131, Fabro draft PR #1048). Such a build requires a `process_spec`, the
-sandbox-driver `SandboxSpec` every sandbox of that kind is built from, and
+#131). The deployed carrier is `0.393.0-nightly.1` at commit `9f6c38f`, the
+build both `gmktec-xubuntu` instances are pinned to — see
+"`host_vars/gmktec-xubuntu.yml`" above. Such a build requires a `process_spec`,
+the sandbox-driver `SandboxSpec` every sandbox of that kind is built from, and
 refuses the provider without one. The role renders it from three keys: `image`
 (the OCI reference), `cpu_cores` and `memory_mb`. Petri lays each run's own
 environment resources over the template, so these are the fallback size; keep
