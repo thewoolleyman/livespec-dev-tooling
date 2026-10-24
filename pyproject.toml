@@ -101,6 +101,7 @@ dev = [
     "hypothesis-jsonschema==0.23.1",
     "mutmut==3.2.3",
     "import-linter==2.1",
+    "jinja2==3.1.6",
 ]
 
 # ---------------------------------------------------------------------------
@@ -852,8 +853,23 @@ ban-relative-imports = "all"
 # /tmp paths, token-suffixed variable names, long descriptive
 # docstrings, many-arg pytest fixtures. Mirrors livespec-core's
 # tests/ per-file-ignore set.
+#
+# S701 IS THE ONE ADDITION THIS REPOSITORY MADE, and it is a rule that
+# cannot be satisfied rather than one that is inconvenient. A test that
+# establishes what an Ansible `template` task WRITES has to render the
+# role's `.j2` through Jinja2 itself — Jinja2 is the engine Ansible
+# templates with, so the render in the test is the render on the host, and
+# a hand-rolled substituter would be free to disagree about exactly the
+# conditionals under examination. S701 asks for `autoescape=True`, which
+# HTML-escapes the output: the rendered systemd unit would then differ
+# from the one the apply writes, which is the quiet disagreement the
+# render exists to rule out. There is no HTML sink anywhere near it. Same
+# disposition as S603/S607 above — a security rule aimed at a sink this
+# file class does not have — and it is recorded HERE, visibly, rather
+# than as a per-line suppression inside the test.
 "tests/**.py" = [
     "S101", "PLR2004", "S603", "S607", "PT018", "S108", "S105", "TRY003", "E501", "PLR0913",
+    "S701",
 ]
 # Once G.4 migrates the enforcement-suite scripts, each check module
 # will shell out to git, ruff, python via subprocess.run with fixed

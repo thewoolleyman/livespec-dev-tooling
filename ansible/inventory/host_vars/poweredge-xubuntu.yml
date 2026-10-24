@@ -19,3 +19,32 @@ lan_ssh_fallback_address: 192.168.1.200
 lan_ssh_fallback_must_stay_running:
   - tailscaled.service
   - k3s.service
+
+# --- otel_collector ---
+# The CLUSTER-READING collector: the one node whose configuration discovers every
+# kubelet from the API server and scrapes it. Transcribed from the hand-run
+# `scripts/install-ci-runner-host.sh` and
+# `systemd/otel-collector.ci-runner-host.service` in thewoolleyman/otel-collector,
+# which the fleet host guard now refuses to let anyone run.
+otel_collector_config_file: config.ci-runner-host.yaml
+otel_collector_user: otel-collector
+otel_collector_group: otel-collector
+otel_collector_manage_install: true
+otel_collector_hardened: true
+otel_collector_unit_description: >-
+  otel-collector -- host OTel Collector on the CI-runner host (livespec env)
+# The node name and the ingest endpoint, rendered on the host by that installer:
+# facts about this node, not values this tree picks. An asserted precondition.
+otel_collector_extra_environment_files:
+  - /etc/otel-collector/host.env
+# Re-rendered at every boot by otel-collector-identity.service, because the k3s
+# datastore is a tmpfs and the ServiceAccount behind it is wiped each time. Also
+# that installer's, and also an asserted precondition.
+otel_collector_kubeconfig_path: /etc/otel-collector/kubeconfig
+# k3s first, then the identity unit that renders the kubeconfig above: a collector
+# started before either cannot authenticate to a single kubelet. This host's
+# configuration reads no Docker socket, so docker.service is deliberately absent.
+otel_collector_unit_after: network-online.target k3s.service otel-collector-identity.service
+otel_collector_unit_wants: network-online.target otel-collector-identity.service
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC

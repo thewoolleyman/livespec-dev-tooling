@@ -280,6 +280,34 @@
     - role: ci_observability
       tags: [ci_observability]
       when: cluster_role == 'server'
+    # 11b — and right after it: this node's own OTel Collector, the thing those
+    # emitters export to and the only converged carrier of the node's host and
+    # kubelet metrics (livespec-dev-tooling-ool6ws). UNGATED, and that is the
+    # whole point: §"Runner-pool node telemetry" governs "every node of the
+    # self-hosted CI runner pool's k3s cluster — the server, every CI agent, and
+    # every factory-only agent — whatever its `cluster_role` or factory posture",
+    # so this is the one role here that reads neither axis. A gate would leave
+    # exactly the node it excluded indistinguishable from a node that had gone
+    # silent, which is the failure its dead-man trigger exists to catch.
+    #
+    # Each node's SHAPE is its own host_vars' — the configuration file it runs
+    # out of the collector repository, the unit's start order, whether its
+    # collector holds a scoped cluster identity. The role's defaults are the DEV
+    # HOST's, so a host declaring nothing resolves to that host's posture rather
+    # than to an error.
+    #
+    # THE REASON THIS CANNOT STAY A HAND-RUN INSTALLER. The three collectors were
+    # placed by `scripts/install-ci-runner-host.sh` and
+    # `scripts/install-hp-factory-host.sh` in thewoolleyman/otel-collector, and
+    # the fleet host guard refuses any by-hand host change — so those installers
+    # can no longer be run at all, and a node rebuilt from empty storage had no
+    # path to a collector. This role is now that path, which is what the same
+    # section's "A hand-run installer MUST NOT be the deployment path" requires.
+    #
+    # The apply needs the control node's projected ingest key, so it runs under
+    # the credential wrapper; see ../ansible/README.md for the two commands.
+    - role: otel_collector
+      tags: [otel_collector]
     # 12 — and LAST, because arming its timer prunes this node's containerd on
     # the spot on any host up longer than OnBootSec. Server-only as a hard
     # refusal, not a skip: the prune's central gate is a cluster-wide PodSpec
