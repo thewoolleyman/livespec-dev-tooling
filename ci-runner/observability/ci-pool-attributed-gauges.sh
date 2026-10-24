@@ -341,13 +341,9 @@
 # sweeps would double-count at a shorter interval. This script makes four
 # bounded kubectl list calls and two POSTs, so a minute is cheap.
 #
-# CREDENTIAL. Root with the k3s admin kubeconfig, the same
-# `Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml` the lifecycle sweep's
-# unit carries, because it reads the same cluster-scoped ClusterQueues plus
-# an all-namespace EphemeralRunner listing — and, for the start phases, an
-# all-namespace pod listing and the cluster-scoped PersistentVolumes, both of
-# which that kubeconfig already covers, so no RBAC changes with this work. It
-# is a strictly read-only use of it; nothing here writes to the cluster.
+# CREDENTIAL. Root reads the collector ServiceAccount's read-only kubeconfig.
+# Its grants cover the listed resources; this emitter never falls back to the
+# k3s administrator kubeconfig and never writes to the cluster.
 set -uo pipefail
 
 OTLP_ENDPOINT="${CI_RUNNER_HEARTBEAT_OTLP:-http://127.0.0.1:4319/v1/metrics}"
@@ -358,6 +354,7 @@ OTLP_ENDPOINT="${CI_RUNNER_HEARTBEAT_OTLP:-http://127.0.0.1:4319/v1/metrics}"
 # somewhere else without silently dragging the other along.
 OTLP_LOGS_ENDPOINT="${CI_POOL_OTLP_LOGS:-http://127.0.0.1:4319/v1/logs}"
 KUBECTL_BIN="${CI_POOL_KUBECTL:-kubectl}"
+KUBECONFIG_PATH="${CI_POOL_KUBECONFIG:-${KUBECONFIG:-/etc/otel-collector/kubeconfig}}"
 KUBECTL_REQUEST_TIMEOUT="${CI_POOL_KUBECTL_REQUEST_TIMEOUT:-15s}"
 # The two START listings read on a SHORTER deadline than the two above, and
 # the reason is in THE TICK'S BUDGET in the header: the start signal samples
@@ -433,15 +430,10 @@ failed=0
 #   <metric-key>\t<value>\t<attr>=<value>[\t<attr>=<value>...]
 put() { printf '%s\n' "$*" >> "${readings}"; }
 
-kc() { "${KUBECTL_BIN}" --request-timeout="${KUBECTL_REQUEST_TIMEOUT}" "$@"; }
-kc_start() { "${KUBECTL_BIN}" --request-timeout="${START_KUBECTL_REQUEST_TIMEOUT}" "$@"; }
+kc() { "${KUBECTL_BIN}" --kubeconfig="${KUBECONFIG_PATH}" --request-timeout="${KUBECTL_REQUEST_TIMEOUT}" "$@"; }
+kc_start() { "${KUBECTL_BIN}" --kubeconfig="${KUBECONFIG_PATH}" --request-timeout="${START_KUBECTL_REQUEST_TIMEOUT}" "$@"; }
 
 # ---- ClusterQueues -----------------------------------------------------------
-# The sweep's jsonpath verbatim: every resource of every flavor of every
-# resource group, as `name=quota` tokens, so the churn-slot test below reads
-# the same tokens the sweep tests.
-CQ_JSONPATH='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota} {end}{end}{end}|{.status.pendingWorkloads}|{.status.admittedWorkloads}{"\n"}{end}'
-
 queue_repository() {  # queue_repository NAME -> repository, or empty
   local name="$1" tok
   for tok in ${NON_REPO_QUEUES}; do
@@ -458,30 +450,57 @@ if [ "${single_start}" -eq 1 ]; then
   # is not a shortcut: it emits no gauges, so a ClusterQueue reading would be
   # 15 s of deadline spent on a number nothing would print.
   log "--single-start: skipping the ClusterQueue listing (it feeds gauges this mode does not emit)"
-elif cq_rows="$(kc get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; then
+elif cq_json="$(kc get clusterqueues -o json 2>&1)"; then
+  if ! cq_rows="$(python3 - "${cq_json}" <<'PY'
+import json, re, sys
+
+def quantity(value):
+    match = re.fullmatch(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(m|Ki|Mi|Gi|Ti|Pi|Ei|k|K|M|G|T|P|E)?", str(value))
+    if match is None:
+        return ""
+    factor = {None: 1, "m": .001, "k": 1000, "K": 1000, "M": 1000**2, "G": 1000**3, "T": 1000**4, "P": 1000**5, "E": 1000**6, "Ki": 1024, "Mi": 1024**2, "Gi": 1024**3, "Ti": 1024**4, "Pi": 1024**5, "Ei": 1024**6}[match.group(2)]
+    return format(float(match.group(1)) * factor, ".15g")
+
+for queue in json.loads(sys.argv[1]).get("items", []):
+    name = queue.get("metadata", {}).get("name", "")
+    quotas, usages = {}, {}
+    for group in queue.get("spec", {}).get("resourceGroups", []):
+        for flavor in group.get("flavors", []):
+            for resource in flavor.get("resources", []):
+                if flavor.get("name") and resource.get("name"):
+                    quotas[(flavor["name"], resource["name"])] = quantity(resource.get("nominalQuota", ""))
+    for flavor in queue.get("status", {}).get("flavorsUsage", []):
+        for resource in flavor.get("resources", []):
+            if flavor.get("name") and resource.get("name"):
+                usages[(flavor["name"], resource["name"])] = quantity(resource.get("total", ""))
+    churn = next((value for (_, resource), value in quotas.items() if resource == "ci-runner.io/churn-slot"), "")
+    print("summary", name, queue.get("status", {}).get("pendingWorkloads", ""), queue.get("status", {}).get("admittedWorkloads", ""), churn, sep="\t")
+    for flavor, resource in sorted(set(quotas) | set(usages)):
+        print("resource", name, flavor, resource, quotas.get((flavor, resource), ""), usages.get((flavor, resource), ""), sep="\t")
+PY
+)"; then
+    log "could not parse ClusterQueues JSON; omitting every livespec.ci_pool.queue_* gauge rather than sending false zeros" >&2
+    failed=1
+  else
   queues_emitted=0
-  while IFS='|' read -r cq_name cq_quotas cq_pending cq_admitted; do
-    [ -n "${cq_name}" ] || continue
-    cq_quota=""
-    for tok in ${cq_quotas}; do
-      case "${tok}" in "${CHURN_SLOT_RESOURCE}="*) cq_quota="${tok#*=}" ;; esac
-    done
-    # Not one of this pool's queues (phase1-proof-cq is cpu/memory only).
-    # This is the filter that makes these rows reconcile with the sweep's
-    # livespec.ci_churn_slot.quota_sum.
-    [ -n "${cq_quota}" ] || continue
-    cq_repo="$(queue_repository "${cq_name}")"
-    if [ -z "${cq_repo}" ]; then
-      log "ClusterQueue ${cq_name} yields no repository (not <repository>-cq, or listed in CI_POOL_NON_REPO_QUEUES); emitting it with ci.queue alone rather than a made-up ci.repository" >&2
+  while IFS=$'\t' read -r kind name one two three four; do
+    [ -n "${kind}" ] || continue
+    attrs="ci.queue=${name}"
+    repo="$(queue_repository "${name}")"
+    [ -n "${repo}" ] && attrs="${attrs}"$'\t'"ci.repository=${repo}"
+    if [ "${kind}" = summary ]; then
+      [[ "${three}" =~ ^[0-9]+$ ]] && put "queue_quota"$'\t'"${three}"$'\t'"${attrs}"
+      [[ "${one}" =~ ^[0-9]+$ ]] && put "queue_pending"$'\t'"${one}"$'\t'"${attrs}"
+      [[ "${two}" =~ ^[0-9]+$ ]] && put "queue_admitted"$'\t'"${two}"$'\t'"${attrs}"
+      [ -n "${three}" ] && queues_emitted=$((queues_emitted + 1))
+    elif [ "${kind}" = resource ]; then
+      attrs="${attrs}"$'\t'"ci.flavor=${one}"$'\t'"ci.resource=${two}"
+      [[ "${three}" =~ ^[0-9]+(\.[0-9]+)?$ ]] && put "queue_resource_nominal_quota"$'\t'"${three}"$'\t'"${attrs}"
+      [[ "${four}" =~ ^[0-9]+(\.[0-9]+)?$ ]] && put "queue_resource_usage"$'\t'"${four}"$'\t'"${attrs}"
     fi
-    cq_attrs="ci.queue=${cq_name}"
-    [ -n "${cq_repo}" ] && cq_attrs="${cq_attrs}"$'\t'"ci.repository=${cq_repo}"
-    [[ "${cq_quota}" =~ ^[0-9]+$ ]] && put "queue_quota"$'\t'"${cq_quota}"$'\t'"${cq_attrs}"
-    [[ "${cq_pending}" =~ ^[0-9]+$ ]] && put "queue_pending"$'\t'"${cq_pending}"$'\t'"${cq_attrs}"
-    [[ "${cq_admitted}" =~ ^[0-9]+$ ]] && put "queue_admitted"$'\t'"${cq_admitted}"$'\t'"${cq_attrs}"
-    queues_emitted=$((queues_emitted + 1))
   done <<< "${cq_rows}"
   log "read ${queues_emitted} ClusterQueue(s) covering ${CHURN_SLOT_RESOURCE}"
+  fi
 else
   log "could not read ClusterQueues ($(printf '%s' "${cq_rows}" | head -1)); omitting every livespec.ci_pool.queue_* gauge rather than sending false zeros" >&2
   failed=1
@@ -922,6 +941,14 @@ SPEC = {
         "livespec.ci_pool.queue_quota", "{slots}",
         "nominalQuota for ci-runner.io/churn-slot on ONE ClusterQueue (the "
         "per-queue breakdown of livespec.ci_churn_slot.quota_sum)", "int",
+    ),
+    "queue_resource_nominal_quota": (
+        "livespec.ci_pool.queue_resource_nominal_quota", "{quantity}",
+        "Kueue ClusterQueue nominal quota for one resource and flavor", "double",
+    ),
+    "queue_resource_usage": (
+        "livespec.ci_pool.queue_resource_usage", "{quantity}",
+        "Kueue ClusterQueue used quota for one resource and flavor", "double",
     ),
     "runners": (
         "livespec.ci_pool.runners", "{runners}",

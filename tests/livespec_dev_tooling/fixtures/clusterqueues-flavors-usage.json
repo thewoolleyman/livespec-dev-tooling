@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "metadata": {"name": "example-cq"},
+      "spec": {
+        "resourceGroups": [
+          {
+            "flavors": [
+              {
+                "name": "default",
+                "resources": [
+                  {"name": "ci-runner.io/churn-slot", "nominalQuota": "12"},
+                  {"name": "cpu", "nominalQuota": "4"}
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "status": {
+        "pendingWorkloads": 2,
+        "admittedWorkloads": 3,
+        "flavorsUsage": [
+          {
+            "name": "default",
+            "resources": [
+              {"name": "ci-runner.io/churn-slot", "total": "7"},
+              {"name": "cpu", "total": "1500m"}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
