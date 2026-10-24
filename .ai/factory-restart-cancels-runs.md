@@ -57,5 +57,34 @@ export (livespec-orchestrator-beads-fabro `AGENTS.md`, "Export, then reap").
 4. Confirm `fabro ps --server <instance>` shows none active.
 5. Do the step — the restart, the upgrade, the chain step — through its normal
    path, with the role's restart flag where it applies.
-6. Re-dispatch every cancelled item at once, or route it to another factory.
+6. On a Kubernetes-backed instance, reap the cancelled runs' sandbox pods
+   BEFORE you re-dispatch anything. Run the next step after every
+   cancel-to-idle restart on gmktec, of either instance.
+7. Re-dispatch every cancelled item at once, or route it to another factory.
    Read each item's ledger state before re-dispatching it.
+
+## Reap the abandoned sandbox pods before re-dispatching
+
+A restart abandons the cancelled runs' in-flight sandboxes. On the Kubernetes
+provider each one is a pod that keeps its slot of the namespace's
+`ResourceQuota`, so the re-dispatched runs meet a quota the dead pods already
+hold. The engine defect behind this is being filed under `bd-ib-nmuyjc` by the
+`kubernetes-sandbox-backend` session. Coordinator standing rule, 2026-10-24:
+
+1. On the factory host, as the instance's own account (the plugin reads its
+   provider profile from that account's HOME), list the provider's sandboxes and
+   delete every one whose run is not live in `fabro ps --server <instance>`:
+
+   ```text
+   lithos-sandbox --provider kubernetes sandbox delete <sandbox-id>
+   ```
+
+   `lithos-sandbox` is installed in `/usr/local/bin` by the
+   `sandbox_driver_kubernetes` role. Use the driver's own command and do not
+   delete pods with `kubectl`, which would leave the provider's records behind.
+2. Read the namespace quota's `used` figure back and confirm it equals the live
+   run count × 4 cpu.
+
+What it cost: the `#2803` restart left two such pods (the `rpw6` and `wt7fv4`
+runs). They held the fleet namespace's quota, and the next dispatch,
+`livespec-dev-tooling-c62xtb`, was refused with a 403 until they were reaped.
