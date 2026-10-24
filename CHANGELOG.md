@@ -58,6 +58,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.130.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.129.2...v1.130.0) (2026-10-24)
+
+
+### Features
+
+* **local-gate:** bound concurrent local gate pytest sessions per host ([63868e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/63868e9ed88c28dce21dbcdf5ed1823d852c3a4c))
+* **local-gate:** give a pytest session one entry point that queues without a verdict ([ae196f1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ae196f1204207c3446dcf764d2ec2904ab4209fe))
+* **local-gate:** let a session nested under a slot holder run without a second slot ([d2588c3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d2588c38a180499a63587a55c963575e9fc41990))
+* **local-gate:** queue a session behind a full host and say so each half minute ([6e66274](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6e66274ea6a96e9cb87f543920ef952f5d1138f6))
+* **local-gate:** ship the limit as a pytest plugin every fleet gate loads ([08e3c7e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/08e3c7ed48ffdc9eacc2fad9ff7db4c6e2c74d0d))
+
 ## [1.129.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.129.1...v1.129.2) (2026-10-24)
 
 
