@@ -360,8 +360,8 @@ fabro_server_instances:
   # R669(1)). homelab keeps its isolation off the shared fleet instance: its own
   # unit, port, state root, vault and the org-owned App mi-homelab-factory-bot
   # (4688510). It replaces hp's fabro-server-mi-homelab, which has been stopped
-  # since 2026-09-12, and is published under the registry name
-  # mi-homelab-petri (group_vars/dev_hosts.yml).
+  # since 2026-09-12, and is published under the registry name mi-homelab
+  # (group_vars/dev_hosts.yml).
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/cwoolley/.fabro-mi-homelab
     port: 32277

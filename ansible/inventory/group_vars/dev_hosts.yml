@@ -20,7 +20,7 @@
 # A factory name names the INSTANCE, never its role, and stays the same for that
 # instance's whole life: `legacy` is the 0.254 engine, which only retires,
 # `petri` is the current Fabro server, and `mi-homelab` is the second Fabro
-# server on `hp-xubuntu` — the one the `mi-homelab` organisation's GitHub App
+# server on `gmktec-xubuntu` — the one the `mi-homelab` organisation's GitHub App
 # publishes as. Which one a repository dispatches to by default is carried by its
 # own `dispatcher.default_factory`, so the fleet cutover between `legacy` and
 # `petri` renames nothing and leaves no item's recorded factory orphaned. The
@@ -33,9 +33,8 @@
 # address that routes the organisation's dispatches onto the fleet factory.
 # Declared here so the repository it serves can resolve its factory by name and
 # stop committing the machine address (work-item `livespec-dev-tooling-r6kagr`;
-# coordinator ruling R318, 2026-10-20). The instance is parked
-# (`service_state: stopped` in that host's host_vars) and that is irrelevant to
-# the registry, which publishes where a factory IS, never whether it is running.
+# coordinator ruling R318, 2026-10-20). The registry publishes where a factory
+# IS, never whether it is running.
 #
 # No entry declares a `docker_host`: no repository's committed factory table
 # declares one today, and publishing one would newly turn on the Dispatcher's
@@ -47,14 +46,13 @@ fabro_factory_registry:
   petri:
     host: gmktec-xubuntu
     unit_name: fabro-server
+  # Re-pointed from hp-xubuntu to gmktec-xubuntu (work-item bd-ib-tavof6;
+  # coordinator ruling R669(1)). This is the one exception to the
+  # name-for-life rule above, and it is safe because no repository's committed
+  # table named mi-homelab before the move, so no item can have recorded it as
+  # its factory. homelab's own ratified Factory routing clause requires its
+  # default to name mi-homelab.
   mi-homelab:
-    host: hp-xubuntu
-    unit_name: fabro-server-mi-homelab
-  # The mi-homelab organisation's instance on the current Fabro server's host
-  # (work-item bd-ib-tavof6). A NEW name rather than a re-pointed mi-homelab,
-  # because a name stays with its instance for life: an item whose recorded
-  # factory is mi-homelab must keep resolving to the hp instance it ran on.
-  mi-homelab-petri:
     host: gmktec-xubuntu
     unit_name: fabro-server-mi-homelab
 
