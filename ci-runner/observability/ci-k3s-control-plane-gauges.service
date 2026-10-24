@@ -1,0 +1,22 @@
+# ci-k3s-control-plane-gauges.service — one bounded control-plane telemetry
+# sample. The sibling timer fires it once a minute.
+#
+# The API calls run through the collector ServiceAccount kubeconfig, never the
+# k3s administrator identity. Its grants are rendered by the collector role;
+# this unit only consumes the already-rendered, read-only file.
+[Unit]
+Description=k3s API readiness and kine datastore gauges (OTLP to local collector)
+Wants=network-online.target
+After=network-online.target
+After=k3s.service otel-collector-identity.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/otel-collector/kubeconfig
+TimeoutStartSec=55
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ExecStart=/usr/local/lib/ci-runner/ci-k3s-control-plane-gauges.sh

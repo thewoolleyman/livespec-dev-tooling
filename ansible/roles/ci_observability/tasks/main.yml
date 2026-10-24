@@ -1,7 +1,8 @@
 ---
-# ci_observability — the four node-local OTLP emitters of the server node's
+# ci_observability — the five node-local OTLP emitters of the server node's
 # profile: the host-silence heartbeat, the Kueue admission-webhook endpoint
-# probe, the build-cache gauges and the per-repository pool gauges.
+# probe, the build-cache gauges, the per-repository pool gauges, and the k3s
+# control-plane readiness and kine datastore gauges.
 #
 # Replaces ci-runner/observability/install-observability.sh, which was deleted
 # with this role. That installer is recoverable at c13617d0, the last commit
@@ -16,7 +17,7 @@
 # from a host that is merely quiet. The dead-man trigger would eventually fire,
 # which is the one mercy here; nothing else would.
 #
-# SERVER-ONLY, AND THE GATE IS IN THE PLAY. Three of the four units need a
+# SERVER-ONLY, AND THE GATE IS IN THE PLAY. Four of the five units need a
 # cluster credential only the server holds or renders — the pool gauges and
 # (through its ExecStart) the webhook probe — and the server's own tick already
 # covers the whole pool, so an agent gains nothing from a second copy. The
@@ -36,9 +37,9 @@
 #     kueue-webhook-probe-rbac.yaml once and render the kubeconfig from the
 #     populated token Secret; the probe fails-closed without it rather than
 #     reporting a false zero.
-#   * the k3s admin kubeconfig the pool gauges read. The unit carries
-#     Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml, so a server already has
-#     it.
+#   * the scoped read-only kubeconfig the pool and control-plane gauges read at
+#     /etc/otel-collector/kubeconfig. The sibling collector work item renders
+#     that identity and its grants; these emitters fail closed without it.
 #
 # THE INSTALLED SCRIPTS ARE COPIES, so merging is not deploying: re-running this
 # role is the only sanctioned way to update a live copy, and hand-editing one

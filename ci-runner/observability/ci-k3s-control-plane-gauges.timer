@@ -1,0 +1,13 @@
+# ci-k3s-control-plane-gauges.timer — keep API availability and datastore
+# telemetry current without coupling it to any administrator-owned service.
+[Unit]
+Description=Run k3s control-plane telemetry every minute
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

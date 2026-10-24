@@ -10,7 +10,7 @@
 set -uo pipefail
 
 OTLP_ENDPOINT="${CI_CONTROL_PLANE_OTLP:-http://127.0.0.1:4319/v1/metrics}"
-KUBECONFIG_PATH="${CI_CONTROL_PLANE_KUBECONFIG:-/etc/otel-collector/kubeconfig}"
+KUBECONFIG_PATH="${CI_CONTROL_PLANE_KUBECONFIG:-${KUBECONFIG:-/etc/otel-collector/kubeconfig}}"
 KUBECTL_BIN="${CI_CONTROL_PLANE_KUBECTL:-kubectl}"
 CURL_BIN="${CI_CONTROL_PLANE_CURL:-curl}"
 DF_BIN="${CI_CONTROL_PLANE_DF:-df}"
