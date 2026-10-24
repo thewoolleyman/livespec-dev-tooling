@@ -95,6 +95,8 @@ livespec_core_ref=""
 check_suite=()
 private_siblings=()
 private_sibling_secret=""
+authority_skip_env=""
+authority_skip_members=()
 
 # WHERE livespec CORE comes from, for the consumer whose aggregate runs
 # `check-doctor-static` (R4.S7c part ii, freeze-driver ruling R92 2026-10-17).
@@ -123,6 +125,8 @@ while [ $# -gt 0 ]; do
     --check-suite)       check_suite+=("$2"); shift 2 ;;
     --private-sibling)   private_siblings+=("$2"); shift 2 ;;
     --private-sibling-secret) private_sibling_secret="$2"; shift 2 ;;
+    --authority-skip-env)     authority_skip_env="$2"; shift 2 ;;
+    --authority-skip-member)  authority_skip_members+=("$2"); shift 2 ;;
     *) echo "FATAL: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -536,6 +540,69 @@ for entry in "${check_suite[@]}"; do
 }just ${entry}"
 done
 
+# --- the members this Job must NOT run (livespec-dev-tooling-mex6ga) ---------
+# The one exception in the "What the delegated gate runs" bullet of
+# livespec-dev-tooling's SPECIFICATION/contracts.md: a member that declares it
+# reads an AUTHORIZATION held outside the tree does not run in the gate Job,
+# because the Job is handed no ledger credential and no admin-scoped token BY
+# DESIGN. The pre-push gate runs it on the pushing host instead, against the same
+# committed tree, and ANDs its result into the delegated verdict.
+#
+# WHICH MEMBERS, AND UNDER WHICH VARIABLE, IS DECIDED ON THE PUSHING HOST and
+# this renderer is TOLD — the same posture the private siblings above take. The
+# host already resolves the declaring members for its own half, so resolving them
+# a second time in the pod would be a second answer that can disagree with the
+# first, and a pod that skipped a member the host never ran is an unread
+# authorization treated as granted.
+#
+# THE VARIABLE'S NAME IS THE CONSUMER'S OWN. livespec's `check` recipe reads its
+# skip list from `SKIP_TARGETS` and livespec-overseer's from
+# `LIVESPEC_CHECK_SKIP`, so a name baked in here would be right in one repository
+# and silently inert in the other — and inert means the member runs, fails on the
+# absent credential, and a correct tree reads as RED. Measured 2026-10-24 on gate
+# Jobs gate-livespec-p87qc and gate-livespec-overseer-tpfd2, both of which
+# refused a tree their own master CI called green.
+#
+# BOTH FLAGS OR NEITHER. A variable with no members would export an empty list,
+# CLOBBERING any skip the consumer's own gate suite set; members with no variable
+# name nowhere to put them. Either half alone is a caller defect, so it is refused
+# before render rather than rendered into a Job that reads as told and was not.
+authority_skip_block=""
+if [ -n "${authority_skip_env}" ] || [ "${#authority_skip_members[@]}" -gt 0 ]; then
+  if [ -z "${authority_skip_env}" ] || [ "${#authority_skip_members[@]}" -eq 0 ]; then
+    echo "FATAL: --authority-skip-env and --authority-skip-member must be given together;" \
+         "a variable with no members would clobber the consumer's own skip and members" \
+         "with no variable name nowhere to go" >&2
+    exit 2
+  fi
+  # Reproduced verbatim into the pod's shell script, so the character set is
+  # bounded HERE rather than trusted: a shell variable name is an identifier and
+  # anything else is a way to write shell into a manifest.
+  case "${authority_skip_env}" in
+    *[!A-Za-z0-9_]* | [0-9]*)
+      echo "FATAL: --authority-skip-env '${authority_skip_env}' is not a plain shell" \
+           "variable name" >&2
+      exit 2 ;;
+  esac
+  for authority_member in ${authority_skip_members[@]+"${authority_skip_members[@]}"}; do
+    case "${authority_member}" in
+      "" | *[!A-Za-z0-9_.-]*)
+        echo "FATAL: --authority-skip-member '${authority_member}' is not a plain just" \
+             "recipe name" >&2
+        exit 2 ;;
+    esac
+  done
+  # `${array[*]}` joins on the first character of IFS, which is a space — the
+  # separator every one of these recipes splits its skip list on.
+  authority_skip_list="${authority_skip_members[*]}"
+  # THE ECHO IS NOT DECORATION. The client STREAMS this pod's log as the verdict
+  # an operator reads, so without it "was that member skipped, or did it pass?"
+  # cannot be answered from a gate's own output — the same reason the livespec
+  # core resolution above says itself out loud.
+  authority_skip_block="export ${authority_skip_env}=\"${authority_skip_list}\"
+echo \":: gate: NOT running ${authority_skip_list} here - each reads an authorization held outside the tree and this Job is handed none; the pushing host runs it against this same tree (skipped through this repository's own ${authority_skip_env})\""
+fi
+
 # --- substitution ------------------------------------------------------------
 # `&`, `|` and `\` are the characters sed would reinterpret in a replacement with
 # `|` as the delimiter. URLs and image references carry `/` and `:` freely, which
@@ -591,6 +658,10 @@ substitute_block GATE_RECIPES "${gate_recipe_lines}"
 # An EMPTY block removes the placeholder's whole line, which is exactly what a
 # repository registering no cross-repo siblings must render.
 substitute_block GATE_SIBLING_CLONES "${gate_sibling_clone_lines}"
+# EMPTY for a repository whose authority members this run could not establish,
+# which removes the placeholder's whole line: such a Job runs the members it runs
+# today, where an unreadable authorization FAILS rather than passing.
+substitute_block GATE_AUTHORITY_SKIP "${authority_skip_block}"
 substitute_block GATE_PRIVATE_SIBLING_VOLUME_MOUNT "${private_sibling_volume_mount}"
 substitute_block GATE_PRIVATE_SIBLING_VOLUME "${private_sibling_volume}"
 

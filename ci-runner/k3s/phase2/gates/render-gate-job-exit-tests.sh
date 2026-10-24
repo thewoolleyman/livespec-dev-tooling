@@ -49,7 +49,24 @@
 #      recipe runs — a repository registering none renders the command it has
 #      today (compared against the template with the step's line deleted), a
 #      url no pod could anonymously fetch is refused naming the sibling, and a
-#      clone that FAILS is the verdict.
+#      clone that FAILS is the verdict;
+#   R. the AUTHORITY-DECLARING members the pushing host resolved are exported
+#      under the GATED REPOSITORY'S OWN skip variable, before any recipe can
+#      read it and said out loud in the verdict stream — a run told nothing
+#      exports nothing and keeps today's command, and every half-told or
+#      shell-carrying form is refused at render time.
+#
+# WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
+# authorization held outside the tree must not run in the gate Job, but the Job
+# half of that exception lived only in livespec-dev-tooling's own
+# `scripts/just/check.sh` — a file no consuming repository carries — so every
+# consumer's Job ran its forge-admin member and that member correctly refused to
+# report a pass it could not verify. Measured 2026-10-24 on gate Jobs
+# gate-livespec-p87qc (HTTP 403 from `check-branch-protection-alignment` on a
+# tree whose master CI was green) and gate-livespec-overseer-tpfd2 (green on
+# every other member). The name of the variable is the consumer's own because
+# the fleet does not agree on it: `SKIP_TARGETS` in livespec,
+# `LIVESPEC_CHECK_SKIP` in livespec-overseer.
 #
 # WHY P EXISTS (livespec-dev-tooling-s35dcb). livespec core's cross-repo readers
 # resolve a cited sibling at `$LIVESPEC_SIBLING_CLONES_ROOT/<sibling>` when that
@@ -822,6 +839,107 @@ elif grep -qE 'gh[sprou]_|github_pat_' "${SCRATCH}/gate.err"; then
   fail "the refusal message leaked credential-shaped text: $(cat "${SCRATCH}/gate.err")"
 else
   pass "a private sibling that will not clone is red, names it, and leaks no credential"
+fi
+
+echo "== R. the authority-declaring members are exported as the consumer's own skip =="
+# The one exception in the "What the delegated gate runs" bullet of
+# SPECIFICATION/contracts.md: a member that declares it reads an AUTHORIZATION
+# held outside the tree does not run in the gate Job, because the Job holds no
+# ledger credential and no admin-scoped token by design. The pushing host decides
+# WHICH members and under WHICH variable; the renderer is told, and these arms
+# assert it carries the telling into the pod before any recipe can read it.
+#
+# THE VARIABLE IS THE CONSUMER'S OWN, which is why two renders of ONE fixture
+# under two different names are compared: livespec's `check` recipe reads
+# `SKIP_TARGETS` and livespec-overseer's reads `LIVESPEC_CHECK_SKIP`, so a
+# renderer that knew either name would be right in one repository and silently
+# inert in the other — and inert means the member runs, fails on the absent
+# credential, and a correct tree reads as RED (measured 2026-10-24 on gate Jobs
+# gate-livespec-p87qc and gate-livespec-overseer-tpfd2).
+authority_member="check-branch-protection-alignment"
+for authority_variable in SKIP_TARGETS LIVESPEC_CHECK_SKIP; do
+  authority_out="${SCRATCH}/authority-${authority_variable}.yaml"
+  if ! "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+       --check-suite verify --authority-skip-env "${authority_variable}" \
+       --authority-skip-member "${authority_member}" \
+       > "${authority_out}" 2>"${SCRATCH}/authority.err"; then
+    fail "renderer errored on an authority skip: $(cat "${SCRATCH}/authority.err")"
+    continue
+  fi
+  exported="$(gate_script "${authority_out}" | grep -c "^export ${authority_variable}=\"${authority_member}\"$")"
+  # The recipe line is indented — it sits inside the capture block the pod wraps
+  # its suite in — so the anchor allows that indent rather than demanding none.
+  recipe_at="$(gate_script "${authority_out}" | grep -n '^ *just verify$' | cut -d: -f1)"
+  export_at="$(gate_script "${authority_out}" | grep -n "^export ${authority_variable}=" | cut -d: -f1)"
+  if [ "${exported}" != "1" ]; then
+    fail "the Job does not export ${authority_variable} naming the member exactly once"
+  elif [ -z "${recipe_at}" ] || [ -z "${export_at}" ] || [ "${export_at}" -ge "${recipe_at}" ]; then
+    fail "the ${authority_variable} export does not precede the recipe that reads it"
+  elif ! gate_script "${authority_out}" | grep -qF "NOT running ${authority_member}"; then
+    fail "the verdict stream never says the member was left to the pushing host"
+  else
+    pass "the member is exported as ${authority_variable} before any recipe runs, and said out loud"
+  fi
+done
+
+# THE CONTROL. A run told nothing exports nothing — compared against the SAME
+# fixture and suite, so what differs is the telling and not the repository. This
+# is the state a consumer whose skip variable cannot be established stays in: its
+# Job runs the members it runs today, where an unreadable authorization FAILS.
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --check-suite verify > "${SCRATCH}/authority-none.yaml" 2>"${SCRATCH}/authority-none.err"; then
+  if gate_script "${SCRATCH}/authority-none.yaml" | grep -qE '^export [A-Za-z_]+=' ; then
+    fail "a run told no authority member exported one anyway: $(gate_script "${SCRATCH}/authority-none.yaml" | grep -E '^export ')"
+  else
+    pass "a run told no authority member exports nothing and keeps today's command"
+  fi
+else
+  fail "renderer errored with no authority skip at all: $(cat "${SCRATCH}/authority-none.err")"
+fi
+
+# THREE REFUSALS, each of which would otherwise render a Job that READS AS TOLD
+# and was not. A variable with no members exports an empty list, clobbering any
+# skip the consumer's own gate suite set; members with no variable name nowhere to
+# go; and either value is reproduced verbatim into the pod's shell script, so a
+# name outside the identifier/recipe character set is shell written into a
+# manifest.
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --authority-skip-env SKIP_TARGETS > /dev/null 2>"${SCRATCH}/authority-half.err"; then
+  fail "an authority skip variable with no member was rendered, clobbering the consumer's own skip"
+elif grep -qF 'must be given together' "${SCRATCH}/authority-half.err"; then
+  pass "--authority-skip-env without --authority-skip-member is refused at render time"
+else
+  fail "refused without naming the cause: $(cat "${SCRATCH}/authority-half.err")"
+fi
+
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --authority-skip-member "${authority_member}" \
+     > /dev/null 2>"${SCRATCH}/authority-nameless.err"; then
+  fail "authority members were rendered with no variable to carry them"
+elif grep -qF 'must be given together' "${SCRATCH}/authority-nameless.err"; then
+  pass "--authority-skip-member without --authority-skip-env is refused at render time"
+else
+  fail "refused without naming the cause: $(cat "${SCRATCH}/authority-nameless.err")"
+fi
+
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --authority-skip-env 'SKIP; rm -rf /' --authority-skip-member "${authority_member}" \
+     > /dev/null 2>"${SCRATCH}/authority-shell.err"; then
+  fail "a variable name carrying shell was reproduced into a manifest"
+elif grep -qF 'is not a plain shell' "${SCRATCH}/authority-shell.err"; then
+  pass "an authority skip variable name carrying shell is refused at render time"
+else
+  fail "refused without naming the cause: $(cat "${SCRATCH}/authority-shell.err")"
+fi
+
+if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
+     --authority-skip-env SKIP_TARGETS --authority-skip-member 'check-x; rm -rf /' \
+     > /dev/null 2>"${SCRATCH}/authority-member-shell.err"; then
+  fail "an authority member name carrying shell was reproduced into a manifest"
+elif grep -qF 'is not a plain just' "${SCRATCH}/authority-member-shell.err"; then
+  pass "an authority skip member name carrying shell is refused at render time"
+else
+  fail "refused without naming the cause: $(cat "${SCRATCH}/authority-member-shell.err")"
 fi
 
 echo
