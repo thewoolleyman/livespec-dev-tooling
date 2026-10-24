@@ -267,6 +267,7 @@
       - item.value.sha256 | default('') is match('^[0-9a-f]{64}$')
       - item.value.args | default([]) is sequence and item.value.args | default([]) is not string
       - item.value.inherit_env | default([]) is sequence and item.value.inherit_env | default([]) is not string
+      - item.value.env | default({}) is mapping
       - item.value.host_address is not defined
       - item.value.process_spec is not defined or item.value.process_spec.image | default('') | length > 0
       - item.value.process_spec is not defined or item.value.process_spec.cpu_cores | default(0) | int > 0
@@ -276,7 +277,7 @@
       {{ fabro_server_unit_name }} is malformed. A provider kind is a lower-case
       name that is not one of Fabro's bundled kinds (local, docker, daytona); its
       plugin needs an absolute `path` and the 64-hex-digit `sha256` Fabro
-      verifies it against; `args` and `inherit_env`, when present, are lists;
+      verifies it against; `args` and `inherit_env`, when present, are lists; `env`, when present, is a mapping;
       `host_address` is no longer accepted (a registered provider's sandboxes
       have no route back to the host, and Fabro rejects the key); and a
       `process_spec`, when present, names an `image` and a positive

@@ -105,7 +105,7 @@ def test_an_empty_mapping_renders_settings_exactly_as_before_the_axis() -> None:
         'sha256 = "{{ provider.sha256 }}"',
     ):
         assert line in loop, f"each declared provider MUST render {line!r}"
-    for optional in ("args", "inherit_env", "process_spec"):
+    for optional in ("args", "inherit_env", "env", "process_spec"):
         assert (
             f"{{% if provider.{optional} | default(" in loop
         ), f"{optional} is optional and MUST render only when declared"
@@ -134,6 +134,26 @@ def test_a_process_spec_renders_as_a_sandbox_spec_inline_table() -> None:
     )
 
 
+def test_a_plugin_env_mapping_renders_as_one_inline_table_of_strings() -> None:
+    loop = _SETTINGS.read_text(encoding="utf-8").split(_LOOP_OPEN)[1]
+    lines = [line for line in loop.splitlines() if line.startswith("env = ")]
+    assert len(lines) == 1, "the provider block MUST render env on exactly one line"
+    line = lines[0]
+    assert line.startswith("env = { ") and line.endswith(" }"), (
+        "env MUST render as one TOML inline table: Fabro's SandboxPluginSettings.env is a "
+        f"string map, and a second provider kind gets its own record store through it: {line}"
+    )
+    for fragment in (
+        "provider.env | dictsort",
+        "map('map', 'string') | map('map', 'to_json')",
+        "map('join', ' = ') | join(', ')",
+    ):
+        assert fragment in line, (
+            f"env MUST render {fragment!r}: sorted for a stable render, each name and value "
+            "quoted as a TOML string, with no nested loop inside the provider loop"
+        )
+
+
 def test_malformed_provider_declarations_are_refused_before_the_first_write() -> None:
     refusal = _named(name=_PROVIDER_REFUSAL, source=_TASKS)
     for condition in (
@@ -142,6 +162,7 @@ def test_malformed_provider_declarations_are_refused_before_the_first_write() ->
         "item.value.sha256 | default('') is match('^[0-9a-f]{64}$')",
         "item.value.host_address is not defined",
         "item.value.process_spec.image | default('') | length > 0",
+        "item.value.env | default({}) is mapping",
     ):
         assert condition in refusal, f"the provider refusal MUST hold {condition!r}"
     assert (

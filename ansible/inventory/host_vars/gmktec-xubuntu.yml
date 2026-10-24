@@ -201,6 +201,17 @@ fabro_server_instances:
         cpu: 4
         memory: 8GB
         provider: kubernetes
+      # The Kubernetes twin of livespec-ci-rust, for livespec-console-beads-fabro
+      # (coordinator ruling on livespec-dev-tooling-dfixhe, 2026-10-24). A
+      # registered provider's environment cannot name an image, and the
+      # `kubernetes` provider's process_spec carries the python-agent image, so
+      # this environment selects the `kubernetes-rust` provider below, whose
+      # process_spec carries the python-rust-agent image. A dispatch reaches it
+      # only through a factory entry that names it.
+      - id: livespec-ci-rust-k8s
+        cpu: 4
+        memory: 8GB
+        provider: kubernetes-rust
     # The plugin the sandbox_driver_kubernetes role installs, at that role's
     # pinned digest. The protocol clears a plugin's environment, so HOME and
     # PATH are passed through; this instance's HOME is /home/cwoolley, which
@@ -208,6 +219,14 @@ fabro_server_instances:
     # the sandbox every kubernetes sandbox is built from (Petri #122's
     # registered provider); a run's environment resources replace its size, so
     # it equals livespec-ci-k8s. Keep it in step with the candidate's.
+    #
+    # `kubernetes-rust` is the SAME plugin binary and cluster configuration
+    # launched as a second provider kind, differing only in its process_spec
+    # image (python-rust-agent, following livespec-ci-rust's tag) and in its
+    # record store. The plugin lists sandboxes from the records in its state
+    # directory, so two kinds sharing one directory would each report the
+    # other's sandboxes as their own; SANDBOX_DRIVER_KUBERNETES_STATE_DIR gives
+    # this kind its own. Bump its sha256 together with `kubernetes`.
     sandbox_providers:
       kubernetes:
         path: /usr/local/bin/sandbox-driver-kubernetes
@@ -217,6 +236,18 @@ fabro_server_instances:
           - PATH
         process_spec:
           image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+          cpu_cores: 4
+          memory_mb: 7629
+      kubernetes-rust:
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        sha256: 52f30f8b235da167c8f63c2c53dbabb947fc41946fdcb3c8a3b133af2f4ace84
+        inherit_env:
+          - HOME
+          - PATH
+        env:
+          SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.local/state/sandbox-driver-kubernetes-rust
+        process_spec:
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.126.0
           cpu_cores: 4
           memory_mb: 7629
     # Created in the instance's vault only when it lacks the name, never

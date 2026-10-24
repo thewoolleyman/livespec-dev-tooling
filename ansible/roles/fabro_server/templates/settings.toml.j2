@@ -62,6 +62,9 @@ args = {{ provider.args | to_json }}
 {% if provider.inherit_env | default([]) | length > 0 %}
 inherit_env = {{ provider.inherit_env | to_json }}
 {% endif %}
+{% if provider.env | default({}) | length > 0 %}
+env = { {{ provider.env | dictsort | map('map', 'string') | map('map', 'to_json') | map('join', ' = ') | join(', ') }} }
+{% endif %}
 {% if provider.process_spec | default({}) | length > 0 %}
 process_spec = { source = { image = { reference = "{{ provider.process_spec.image }}" } }, resources = { cpu_cores = {{ provider.process_spec.cpu_cores | int }}, memory_mb = {{ provider.process_spec.memory_mb | int }} } }
 {% endif %}
