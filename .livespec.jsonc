@@ -456,7 +456,7 @@
 
       "wip_cap": 10,
       // ONE registry-backed entry, naming no machine. The Dispatcher resolves
-      // `legacy` by name from `/etc/livespec/fabro-factories.json`, which this
+      // `petri` by name from `/etc/livespec/fabro-factories.json`, which this
       // repository's own `fabro_factory_registry` role renders on every
       // dispatching host from `ansible/inventory/group_vars/dev_hosts.yml` —
       // THE ONE PLACE A FACTORY IS BOUND TO A MACHINE, per
@@ -467,7 +467,8 @@
       // unread, with routing working either way — which is why this entry
       // carries no address at all.
       //
-      // Routing is UNCHANGED by the switch: the registry maps `legacy` to
+      // When the table first went registry-backed, routing was unchanged: the
+      // registry mapped `legacy` to
       // hp-xubuntu's `fabro-server` instance, whose `canonical_host` is
       // `hp-xubuntu.perch-rudd.ts.net:32276` — byte-identical to the address
       // the retired `hp` entry carried. `legacy` names that INSTANCE and not
@@ -489,9 +490,9 @@
       // server-managed environment that supplies the sandbox image on petri.
       // `default_factory` moved from `legacy` to `petri` under coordinator
       // ruling R668 (2026-10-22), the maintainer-directed Fabro cutover.
-      // `legacy` stays declared, so an item already dispatched keeps its
-      // recorded pin and in-flight work finishes on hp; rollback is reverting
-      // this change.
+      // `legacy` was then retired and removed on 2026-10-24 (plan
+      // fabro-currency); a recorded pin naming it falls back to
+      // `default_factory`, like one naming `hp` or `vps`.
       //
       // `environment` moved from `livespec-ci` to `livespec-ci-k8s` under
       // coordinator ruling R670's Option C (2026-10-23, recorded on
@@ -501,8 +502,10 @@
       // livespec-ci's twin on gmktec's server, built by the kubernetes
       // sandbox-driver plugin as a pod on the maintainer-owned cluster (cpu 4,
       // 7629Mi; ansible host_vars, PR #2779). The one-step rollback to Docker is
-      // setting it back to `livespec-ci`. The other fleet repositories keep
-      // `livespec-ci` until a separate fleet step.
+      // setting it back to `livespec-ci`. The fleet followed on 2026-10-24, and
+      // the id became `factory-python` under livespec-dev-tooling's
+      // "Factory sandbox environment naming" (v092); its provider, not its id,
+      // says where the sandbox runs.
       //
       // Re-applied after the first canary (run 01M5MH0JBKGJ) ended
       // INFRASTRUCTURE-class on an empty sandbox environment: the dispatcher
@@ -518,12 +521,6 @@
       // and loaded by the production fabro-server before this flip merges.
       "default_factory": "petri",
       "factories": {
-        // legacy submits through the pinned 0.254 8869e88 client whose bytes match hp's
-        // declared engine, staged by the livespec-dev-tooling dev-host play (bd-ib-zb2hso).
-        "legacy": {
-          "registry": true,
-          "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-legacy-v0.254-8869e88/fabro"
-        },
         "petri": {
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
