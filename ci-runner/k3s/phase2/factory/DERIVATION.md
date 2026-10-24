@@ -152,6 +152,30 @@ all on one node is about 10 G per workspace at the binding node; see
 `ansible/roles/factory_workspace_root/CAPACITY.md`. The per-run disk
 high-water mark is still unmeasured, so that stays a soak item.
 
+## The quota, split for mi-homelab (2026-10-24)
+
+**Why.** The mi-homelab organisation's Fabro instance (gmktec :32277) moved onto
+Kubernetes with the fleet, and rulings R668 / R669(1) keep homelab's work out of
+reach of the shared fleet instance. A `factory` pod is exec-able by that
+namespace's `sandbox-launcher` credential, so homelab runs in its own namespace,
+`factory-mi-homelab` (../factory-mi-homelab/factory-mi-homelab.yaml), with its own launcher. The
+pool has no room for an ADDITIONAL quota (CI nominal 61 + the fleet's 32 = 93 of
+~104 cpu, measured in the section above), so the eight runs are SPLIT, not
+added: coordinator ruling on livespec-dev-tooling-dfixhe, 2026-10-24.
+
+| quota | runs | requests.cpu | limits.cpu | requests.memory | limits.memory | pods |
+|---|---|---|---|---|---|---|
+| `factory-runs` (fleet) | 6 | 6 x 4 = **24** | **24** | 6 x 8 Gi = **48Gi** | 48Gi + one run = **56Gi** | 6 x 2 = **12** |
+| `factory-mi-homelab-runs` | 2 | 2 x 4 = **8** | **8** | 2 x 8 Gi = **16Gi** | 16Gi + one run = **24Gi** | 2 x 2 = **4** |
+| total | 8 | **32** | **32** | 64Gi | 80Gi | 16 |
+
+Two runs is the mi-homelab instance's own `max_concurrent_runs: 2`
+(`ansible/inventory/host_vars/gmktec-xubuntu.yml`), so its quota never refuses a
+run the instance would admit. The cpu total is unchanged at 32, so the pool check
+above (93 of ~104) still holds. Each quota keeps one run of memory headroom, so
+cpu still binds first in both. A fleet cap above 6 is unsupported by
+`factory-runs` from this change on.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows

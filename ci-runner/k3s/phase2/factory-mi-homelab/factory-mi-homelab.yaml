@@ -1,0 +1,184 @@
+# The mi-homelab organisation's OWN factory namespace (plan
+# kubernetes-sandbox-backend, epic bd-ib-nmuyjc in the
+# livespec-orchestrator-beads-fabro tenant; coordinator ruling on
+# livespec-dev-tooling-dfixhe, 2026-10-24).
+#
+# WHY A SECOND NAMESPACE AND NOT THE `factory` ONE. Rulings R668 and R669(1) gave
+# homelab its own Fabro instance (gmktec :32277), its own GitHub App
+# (mi-homelab-factory-bot, 4688510) and its own vault, so that nothing of the
+# shared fleet instance can reach homelab's work. A pod in the `factory`
+# namespace runs under that namespace's `sandbox-launcher` Role, which grants
+# `pods/exec` on EVERY pod in it — so homelab pods there could be exec'd into by
+# the fleet instance's credential, and their environment carries homelab's
+# injected secrets. This namespace repeats the `factory` objects one for one
+# (../factory/factory-namespace.yaml, ../factory/factory-rbac.yaml) with its own ServiceAccount,
+# Role, RoleBinding, token Secret, NetworkPolicy and quota, so the two
+# credentials can each reach only their own pods.
+#
+# THE QUOTA IS A SPLIT OF THE FLEET'S, NOT AN ADDITION: the pool has no room for
+# more (../factory/DERIVATION.md "The quota, split for mi-homelab"). Two runs at the same
+# 4 cpu / 8 GB envelope, matching the instance's `max_concurrent_runs: 2`.
+#
+# A DIRECTORY OF ITS OWN, applied by the boot converge right after ../factory/
+# (step 10e), which also renders this namespace's kubeconfig
+# (FACTORY_MI_HOMELAB_KUBECONFIG); the `ci_converge_unit` role ships it into the
+# installed tree. Kept apart from ../factory/ so each directory declares exactly
+# one namespace's objects, as that directory's tests assert of it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: factory-mi-homelab
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: factory-mi-homelab-runs
+  namespace: factory-mi-homelab
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "8"
+    limits.memory: 24Gi
+    pods: "4"
+---
+# The same egress classes as ../factory/factory-namespace.yaml's `factory-egress`,
+# for the same reasons (../factory/DERIVATION.md "The egress targets"): cluster DNS, the tailnet,
+# and TCP 443 off-site. Default-deny ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: factory-egress
+  namespace: factory-mi-homelab
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 100.64.0.0/10
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sandbox-launcher
+  namespace: factory-mi-homelab
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+---
+# The same verbs as ../factory/factory-rbac.yaml's `sandbox-launcher` Role, scoped to
+# THIS namespace only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sandbox-launcher
+  namespace: factory-mi-homelab
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sandbox-launcher
+  namespace: factory-mi-homelab
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sandbox-launcher
+subjects:
+  - kind: ServiceAccount
+    name: sandbox-launcher
+    namespace: factory-mi-homelab
+---
+# The plugin's read-only node lookup (../factory/DERIVATION.md "The widening"),
+# granted to this namespace's launcher through the SAME ClusterRole
+# ../factory/factory-rbac.yaml
+# defines, by a binding of its own.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: factory-mi-homelab-sandbox-launcher-node-reader
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: factory-sandbox-launcher-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: sandbox-launcher
+    namespace: factory-mi-homelab
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sandbox-launcher-token
+  namespace: factory-mi-homelab
+  annotations:
+    kubernetes.io/service-account.name: sandbox-launcher
+  labels:
+    app.kubernetes.io/managed-by: livespec-ci-runner-factory
+    livespec.workitem: nmuyjc
+type: kubernetes.io/service-account-token
