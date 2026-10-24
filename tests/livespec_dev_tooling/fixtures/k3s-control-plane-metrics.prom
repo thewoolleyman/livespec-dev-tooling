@@ -1,0 +1,10 @@
+# HELP apiserver_storage_size_bytes The size of the storage object.
+# TYPE apiserver_storage_size_bytes gauge
+apiserver_storage_size_bytes 2048
+# HELP etcd_request_duration_seconds Etcd request latency served by the API server.
+# TYPE etcd_request_duration_seconds histogram
+etcd_request_duration_seconds_bucket{operation="range",type="read",le="0.01"} 2
+etcd_request_duration_seconds_bucket{operation="range",type="read",le="0.1"} 5
+etcd_request_duration_seconds_bucket{operation="range",type="read",le="+Inf"} 5
+etcd_request_duration_seconds_sum{operation="range",type="read"} 0.12
+etcd_request_duration_seconds_count{operation="range",type="read"} 5
