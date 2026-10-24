@@ -198,6 +198,22 @@ and queued demand remains pending while the circuit is open.
 
 **Archive evidence.** A plan that ships a cache tier MUST record, before it archives, the matrix wall-clock acceptance from run spans, two consecutive weeks of the canary gap holding, the hit-floor trigger not having fired outside a toolchain bump, the negative tests green, a second routed repository's hit spans, and the factory attribute verification.
 
+## Runner-pool node telemetry
+
+**Scope.** This section governs the load and utilization telemetry of every node of the self-hosted CI runner pool's k3s cluster — the server, every CI agent, and every factory-only agent — whatever its `cluster_role` or factory posture. It is the node-level companion of §"Runner-pool cache telemetry", and it emits to the same fleet observability surface.
+
+**Kubelet usage for every node.** Every node the cluster's API server lists MUST have its kubelet's node-level CPU usage, memory working set and available memory, filesystem usage and capacity, and network traffic emitted to the fleet observability surface, attributed by `k8s.node.name`. Every node MUST also report its Ready, MemoryPressure, DiskPressure and PIDPressure condition gauges and its allocatable CPU and memory. The set of nodes scraped MUST be discovered from the API server, so a node that joins the cluster is reported with no per-node configuration edit; a configuration that names one node's kubelet MUST NOT be the mechanism.
+
+**Pod attribution.** Every pod's CPU and memory usage MUST carry the node it runs on and its namespace, the factory namespace included, and every container's CPU and memory requests and limits MUST carry the node it is scheduled on, so that requests and limits are readable against that node's allocatable. On a row describing a node, a pod or a container, `host.name` MUST name the node the row is about, never the host of the collector that read it.
+
+**Host metrics on every node.** Every pool node MUST run a host collector that emits CPU utilization by state, load average, memory usage, per-mount filesystem usage, and disk and network I/O, stamped with `host.name` equal to the node's name. CPU saturation MUST be read from the idle share of CPU utilization, never from load average alone.
+
+**Converged, never hand-installed.** Every pool node's collector — its configuration (read from the merged branch of `thewoolleyman/otel-collector`), its unit, its pinned binary and its ingest-key environment entry — MUST be converged by `ansible/ci-pool.yml`, so the node-provisioning stage of §"Runner-pool node rebuild recipe" returns a rebuilt node reporting, and the drift report `just ansible-drift ansible/ci-pool.yml` MUST report a node whose collector differs from the merged configuration. A hand-run installer MUST NOT be the deployment path.
+
+**Board and triggers.** The fleet MUST carry, as code under `ci-runner/observability/boards/` and `ci-runner/observability/triggers/` converged by their `apply-*.sh`, one board showing per node the CPU, memory, filesystem and network usage, the four condition gauges, requests and limits against allocatable, and pod usage by node and namespace; and value triggers for a node whose CPU idle share stays at or below 10% for 15 minutes, a node reporting MemoryPressure, and a node whose memory working set exceeds 90% of its capacity. Each node MUST also carry a dead-man trigger, ungrouped and filtered to that one node, that fires when its kubelet usage stops arriving, because a grouped query cannot fire on a silent subject. Every trigger description MUST name the emitter path, the receiver path, the owning work item and a runbook, as the pool's existing triggers do.
+
+**Failure contract.** No node-telemetry emitter MAY run inside a CI job pod or hand a credential to one. The collector reading every kubelet MUST hold only a read-only cluster identity, never the admin kubeconfig.
+
 ## Runner-pool node rebuild recipe
 
 **Scope.** This section states this repository's obligation, as the repository that provisions the fleet's self-hosted CI runner pool, under livespec `SPECIFICATION/non-functional-requirements.md` §"Self-hosted CI runner host requirements" clause "A host carrying fleet CI MUST be rebuildable from bare metal by a committed procedure". The property is that specification's; the recipe, its profiles, and its rehearsal obligation are this repository's.

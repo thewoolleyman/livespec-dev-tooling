@@ -22,6 +22,13 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Runner-pool node telemetry",
+    "work_item": "livespec-dev-tooling-uftb4o",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
@@ -152,6 +159,13 @@
     "heading": "## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
+    "work_item": "livespec-dev-tooling-uftb4o",
+    "first_seen": "2026-10-24"
   },
   {
     "spec_root": "SPECIFICATION",
