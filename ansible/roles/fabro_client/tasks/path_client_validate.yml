@@ -1,0 +1,250 @@
+---
+# The PATH-client declaration is validated in full before either this file or
+# `install.yml` writes.  Its final component is deliberately NOT resolved when
+# comparing it with a build or a server binary: an old PATH link is allowed to
+# point at a server binary, but replacing that link must never write through it.
+
+- name: Refuse a Fabro PATH client declaration without link and target fields
+  ansible.builtin.assert:
+    that:
+      - fabro_client_path_client is mapping
+      - fabro_client_path_client.link is defined
+      - fabro_client_path_client.target is defined
+    fail_msg: >-
+      fabro_client_path_client must be an object carrying link and target.
+      Nothing on {{ inventory_hostname }} has been written.
+
+- name: Refuse a Fabro PATH client declaration with a non-absolute name
+  ansible.builtin.assert:
+    that:
+      - fabro_client_path_client.link is string
+      - fabro_client_path_client.target is string
+      - fabro_client_path_client.link is match('^/')
+      - fabro_client_path_client.target is match('^/')
+    fail_msg: >-
+      fabro_client_path_client declares link '{{ fabro_client_path_client.link }}'
+      or target '{{ fabro_client_path_client.target }}' that is not an absolute
+      path. Nothing on {{ inventory_hostname }} has been written.
+
+- name: Note the PATH client names and the declared client build paths
+  ansible.builtin.set_fact:
+    fabro_client_path_client_link: "{{ fabro_client_path_client.link }}"
+    fabro_client_path_client_target: "{{ fabro_client_path_client.target }}"
+    fabro_client_path_client_paths: "{{ fabro_client_builds | map(attribute='path') | list }}"
+    fabro_client_path_client_server_binaries: >-
+      {{ fabro_server_instances | default([])
+         | map(attribute='binary_path',
+               default=fabro_client_server_binary_path_default)
+         | reject('equalto', '') | unique | list }}
+  check_mode: false
+
+- name: Refuse a Fabro PATH client target that is not a declared client build
+  ansible.builtin.assert:
+    that:
+      - fabro_client_path_client_target in fabro_client_path_client_paths
+    fail_msg: >-
+      fabro_client_path_client target {{ fabro_client_path_client_target }} is
+      not the path of a declared fabro_client_builds entry. Nothing on
+      {{ inventory_hostname }} has been written.
+
+- name: Note the PATH client staging name and every ancestor it needs
+  ansible.builtin.set_fact:
+    fabro_client_path_client_incoming: "{{ fabro_client_path_client_link }}.incoming"
+    fabro_client_path_client_ancestors: >-
+      {{ fabro_client_path_client_ancestor_names | from_json
+         | reject('equalto', '/') | unique | list }}
+  vars:
+    fabro_client_path_client_ancestor_names: >-
+      [{% set parts = fabro_client_path_client_link.split('/') %}
+      {% for depth in range(1, parts | length - 1) %}
+      {{ ('/' ~ parts[1:depth + 1] | join('/')) | to_json }},
+      {% endfor %}"/"]
+  check_mode: false
+
+- name: Resolve the PATH client parent without resolving the link itself
+  ansible.builtin.command:
+    argv:
+      - readlink
+      - -m
+      - "{{ fabro_client_path_client_link | dirname }}"
+  become: true
+  register: fabro_client_path_client_parent
+  changed_when: false
+  check_mode: false
+
+- name: Resolve the declared build, staging and server names on the host
+  ansible.builtin.command:
+    argv: "{{ ['readlink', '-m'] + fabro_client_path_client_compared_names }}"
+  become: true
+  register: fabro_client_path_client_readlink
+  changed_when: false
+  check_mode: false
+  vars:
+    fabro_client_path_client_compared_names: >-
+      {{ (fabro_client_path_client_paths
+          + (fabro_client_path_client_paths
+             | map('regex_replace', '^(.+)$', '\\1.incoming') | list)
+          + fabro_client_path_client_server_binaries) | unique | list }}
+
+- name: Refuse a short PATH client name-resolution response
+  ansible.builtin.assert:
+    that:
+      - fabro_client_path_client_readlink.stdout_lines | length
+        == fabro_client_path_client_compared_names | length
+    fail_msg: >-
+      Resolving the build, staging and server names for fabro_client_path_client
+      answered fewer names than it was asked about. Nothing on
+      {{ inventory_hostname }} has been written.
+  vars:
+    fabro_client_path_client_compared_names: >-
+      {{ (fabro_client_path_client_paths
+          + (fabro_client_path_client_paths
+             | map('regex_replace', '^(.+)$', '\\1.incoming') | list)
+          + fabro_client_path_client_server_binaries) | unique | list }}
+
+- name: Read the PATH client and its staging name without following links
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  become: true
+  register: fabro_client_path_client_lstats
+  check_mode: false
+  loop:
+    - "{{ fabro_client_path_client_link }}"
+    - "{{ fabro_client_path_client_incoming }}"
+
+- name: Read what a current PATH client link reaches
+  ansible.builtin.stat:
+    path: "{{ fabro_client_path_client_link }}"
+    follow: true
+  become: true
+  register: fabro_client_path_client_followed
+  check_mode: false
+
+- name: Read every PATH client ancestor directory
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+  become: true
+  register: fabro_client_path_client_ancestor_stats
+  check_mode: false
+  loop: "{{ fabro_client_path_client_ancestors }}"
+
+- name: Note the PATH client comparison keys and host state
+  ansible.builtin.set_fact:
+    fabro_client_path_client_key: >-
+      {{ dict(fabro_client_path_client_compared_names
+              | zip(fabro_client_path_client_readlink.stdout_lines)) }}
+    fabro_client_path_client_link_key: >-
+      {{ fabro_client_path_client_parent.stdout
+         ~ ('' if fabro_client_path_client_parent.stdout == '/' else '/')
+         ~ (fabro_client_path_client_link | basename) }}
+    fabro_client_path_client_incoming_key: >-
+      {{ fabro_client_path_client_parent.stdout
+         ~ ('' if fabro_client_path_client_parent.stdout == '/' else '/')
+         ~ (fabro_client_path_client_incoming | basename) }}
+    fabro_client_path_client_lstat: >-
+      {{ dict([fabro_client_path_client_link,
+               fabro_client_path_client_incoming]
+              | zip(fabro_client_path_client_lstats.results
+                    | map(attribute='stat') | list)) }}
+    fabro_client_path_client_ancestor_stat: >-
+      {{ dict(fabro_client_path_client_ancestors
+              | zip(fabro_client_path_client_ancestor_stats.results | default([])
+                    | map(attribute='stat') | list)) }}
+  vars:
+    fabro_client_path_client_compared_names: >-
+      {{ (fabro_client_path_client_paths
+          + (fabro_client_path_client_paths
+             | map('regex_replace', '^(.+)$', '\\1.incoming') | list)
+          + fabro_client_path_client_server_binaries) | unique | list }}
+  check_mode: false
+
+- name: Refuse a PATH client location that is not a symbolic link or absent
+  ansible.builtin.assert:
+    that:
+      - not fabro_client_path_client_lstat[fabro_client_path_client_link].exists
+        or (fabro_client_path_client_lstat[fabro_client_path_client_link].islnk
+            | default(false))
+    fail_msg: >-
+      fabro_client_path_client link {{ fabro_client_path_client_link }} exists
+      and is not a symbolic link. Nothing on {{ inventory_hostname }} has been
+      written.
+
+- name: Refuse a PATH client link that resolves to a directory
+  ansible.builtin.assert:
+    that:
+      - not (fabro_client_path_client_lstat[fabro_client_path_client_link].islnk
+             | default(false))
+        or not (fabro_client_path_client_followed.stat.isdir | default(false))
+    fail_msg: >-
+      fabro_client_path_client link {{ fabro_client_path_client_link }} resolves
+      to a directory. Nothing on {{ inventory_hostname }} has been written.
+
+- name: Refuse a non-symbolic PATH client staging name
+  ansible.builtin.assert:
+    that:
+      - not fabro_client_path_client_lstat[fabro_client_path_client_incoming].exists
+        or (fabro_client_path_client_lstat[fabro_client_path_client_incoming].islnk
+            | default(false))
+    fail_msg: >-
+      fabro_client_path_client staging name
+      {{ fabro_client_path_client_incoming }} exists and is not a symbolic link.
+      Nothing on {{ inventory_hostname }} has been written.
+
+- name: Refuse a PATH client ancestor that is not a directory
+  ansible.builtin.assert:
+    that:
+      - not fabro_client_path_client_ancestor_stat[item].exists
+        or (fabro_client_path_client_ancestor_stat[item].isdir | default(false))
+    fail_msg: >-
+      PATH client ancestor {{ item }} exists and is not a directory. Nothing on
+      {{ inventory_hostname }} has been written.
+  loop: "{{ fabro_client_path_client_ancestors }}"
+
+- name: Refuse a PATH client link or staging name that collides with a protected name
+  ansible.builtin.assert:
+    that:
+      - item.key not in fabro_client_path_client_key.values()
+    fail_msg: >-
+      fabro_client_path_client {{ item.name }} denotes a declared build, a build
+      staging name or a Fabro server binary after its ancestors are resolved.
+      Nothing on {{ inventory_hostname }} has been written.
+  loop:
+    - name: link
+      key: "{{ fabro_client_path_client_link_key }}"
+    - name: staging name
+      key: "{{ fabro_client_path_client_incoming_key }}"
+
+- name: Read the literal target of a current PATH client link
+  ansible.builtin.command:
+    argv:
+      - readlink
+      - "{{ fabro_client_path_client_link }}"
+  become: true
+  register: fabro_client_path_client_literal_target
+  changed_when: false
+  check_mode: false
+  when: fabro_client_path_client_lstat[fabro_client_path_client_link].islnk | default(false)
+
+- name: Read the account that owns the Fabro PATH client
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ fabro_client_owner }}"
+  become: true
+  check_mode: false
+  when: fabro_client_group is not defined
+
+- name: Read the primary group of the Fabro PATH client owner
+  ansible.builtin.getent:
+    database: group
+    key: "{{ ansible_facts.getent_passwd[fabro_client_owner][2] }}"
+  become: true
+  check_mode: false
+  when: fabro_client_group is not defined
+
+- name: Note the primary group of the Fabro PATH client owner
+  ansible.builtin.set_fact:
+    fabro_client_group: "{{ ansible_facts.getent_group | first }}"
+  check_mode: false
+  when: fabro_client_group is not defined

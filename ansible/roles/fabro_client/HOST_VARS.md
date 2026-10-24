@@ -33,6 +33,7 @@ only. The two never write one file, and the refusal below is what guarantees it.
 | variable | default | what it is |
 | --- | --- | --- |
 | `fabro_client_builds` | `[]` | **THE DECLARATION.** A list of entries, each with the three keys below. Declared ONLY in `ansible/inventory/group_vars/dev_hosts.yml` |
+| `fabro_client_path_client` | absent | Optional PATH-client declaration beside `fabro_client_builds`; its `link` and `target` fields are described below |
 | `fabro_client_owner` | `ubuntu` | the login that owns every staged build and every ancestor directory this role creates; the build's group is that account's PRIMARY group, derived from the account and never declared |
 | `fabro_client_server_binary_path_default` | derived | the `binary_path` a `fabro_server` instance that names none runs, resolved from this host's own `fabro_server_host_home`. Read by the exclusion below; not a value an operator sets |
 
@@ -156,10 +157,38 @@ server build. The declared paths therefore live under
 `~/.local/state/fabro-currency/`, which is where the pinned client carriers
 already were.
 
-**The PATH client is out of scope.** `~/.local/bin/fabro` enters this section
-only when a repository commits a `bin` that names a declared `path`; moving it to
-another client family is `bd-ib-zb2hso` step 2 and goes through the
-`fabro_server` role, which owns the file it links to.
+## The PATH client
+
+`fabro_client_path_client` is optional and is declared only beside
+`fabro_client_builds` in `ansible/inventory/group_vars/dev_hosts.yml`:
+
+```yaml
+fabro_client_path_client:
+  link: /home/ubuntu/.local/bin/fabro
+  target: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
+```
+
+`link` is the absolute pathname the host PATH resolves. `target` is the absolute
+pathname of one declared `fabro_client_builds` entry. After every declared build
+is in place, the role makes `link` a symbolic link whose literal `readlink`
+output is exactly `target`, with the role owner and that user's primary group.
+Missing ancestors are created like build ancestors. A matching undrifted link is
+left in place, so a second converge reports no change; a changed or absent link
+is replaced by an atomic rename of `<link>.incoming`.
+
+The declaration refuses before writing when either field is missing or
+non-absolute, `target` names no declared build, `link` exists as anything other
+than a symbolic link, its resolved target is a directory, an ancestor is not a
+directory, either `link` or `<link>.incoming` collides with a declared build,
+build staging name or server binary, or `<link>.incoming` exists as a regular
+file. The final component of `link` is not resolved for that collision check:
+an old PATH link may legitimately point at a server binary, and this role must
+replace that link without writing through it.
+
+Moving the PATH client between client families is a change to `target` followed
+by the dev-host play. It is not a `fabro_server` change: the server role owns its
+binary, while this role replaces only the PATH symbolic link that may previously
+have named it.
 
 ## Rollback is a change to the inventory, not a retained copy
 
