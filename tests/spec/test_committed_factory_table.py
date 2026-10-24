@@ -16,7 +16,7 @@ So the two properties asserted here are properties of the committed
 `.livespec.jsonc` text, read the way the Dispatcher reads it:
 
 - **Registry-backed entries, each named for the instance it addresses.** The
-  table declares exactly `legacy` and `petri`, and each declares
+  table declares exactly `petri`, which declares
   `"registry": true` and carries NO `server`. `"registry": true` with an address beside it is the shape
   that fails silently in the direction of the defect: the Dispatcher has an
   address to use, so routing works, the registry is never read, and the machine
@@ -29,7 +29,7 @@ So the two properties asserted here are properties of the committed
   item pin naming a retired factory lands on, which is why the table may not keep
   an address-carrying entry around for those pins to resolve against.
 
-`legacy` and `petri` name INSTANCES and not roles, per the same section's "A factory
+`petri` names an INSTANCE and not a role, per the same section's "A factory
 name SHOULD name the Fabro server instance it addresses and SHOULD stay the same
 for that instance's whole life", so this repository's default survives a move of
 its instance between machines with no edit here.
@@ -52,7 +52,7 @@ _IMPL_PLUGIN = "livespec-orchestrator-beads-fabro"
 
 # The factory names this repository declares, each resolved by name from the
 # control node's rendered registry rather than from an address committed here.
-_REGISTRY_FACTORIES = ["legacy", "petri"]
+_REGISTRY_FACTORIES = ["petri"]
 
 # The factory a dispatch naming none takes.
 _DEFAULT_FACTORY = "petri"
@@ -68,7 +68,7 @@ def _dispatcher_block() -> dict[str, object]:
 
 
 def test_every_committed_factory_entry_is_registry_backed_with_no_address() -> None:
-    """`dispatcher.factories` is exactly `legacy` and `petri`, each registry-backed, with no address."""
+    """`dispatcher.factories` is exactly `petri`, registry-backed, with no address."""
     factories = cast("dict[str, dict[str, object]]", _dispatcher_block()["factories"])
     assert sorted(factories) == _REGISTRY_FACTORIES, (
         f"`dispatcher.factories` MUST declare exactly {_REGISTRY_FACTORIES}; "

@@ -22,8 +22,8 @@ later pull request. The honest answer there is a refusal naming the absent file,
 an empty declared set that would make every bin read as undeclared with no cause
 given, and NOT a pass earned by the declaration being unreadable.
 
-THE COMMITTED TREE IS AN ARM. The repository commits two `bin`s today — the legacy
-and petri carrier clients — so the committed arm is the one assertion a synthetic fixture
+THE COMMITTED TREE IS AN ARM. The repository commits one `bin` today — the petri
+carrier client — so the committed arm is the one assertion a synthetic fixture
 cannot make: that THIS tree's own `.livespec.jsonc` and its own
 `ansible/inventory/group_vars/dev_hosts.yml` agree. A fixture-only suite would stay
 green through exactly the drift this check exists to catch.
@@ -163,7 +163,7 @@ def test_this_repositorys_own_committed_bin_names_a_declared_path(
     """The committed arm: THIS tree's `.livespec.jsonc` and inventory agree.
 
     The one assertion no fixture can make. The repository commits a `bin` for the
-    legacy and petri factories, so this arm is not vacuous either — and it asserts that too,
+    petri factory, so this arm is not vacuous either — and it asserts that too,
     because a run that stopped finding the committed bin would otherwise pass here
     for the wrong reason.
     """
