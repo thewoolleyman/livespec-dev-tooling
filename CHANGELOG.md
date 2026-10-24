@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.132.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.131.1...v1.132.0) (2026-10-24)
+
+
+### Features
+
+* refuse a commit's staged lint and type errors in seconds (livespec-dev-tooling-nil6v7) ([ca42bcb](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ca42bcb90eda93e22be3d87447eca60171604e6d))
+
 ## [1.131.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.131.0...v1.131.1) (2026-10-24)
 
 
