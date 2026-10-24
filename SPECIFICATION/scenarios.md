@@ -410,6 +410,18 @@ When the host's liveness path emits the generation-age gauge
 
 Then the stale-generation value trigger MUST fire with a runbook naming the populator
 
+## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man
+
+Given the k3s cluster lists three nodes and each node's collector was converged by `ansible/ci-pool.yml`
+
+When a pod in the factory namespace runs on one of them and another node's kubelet stops answering
+
+Then the fleet observability surface MUST show every node's kubelet CPU and memory usage attributed by `k8s.node.name`
+
+And the factory pod's usage rows MUST carry the node the API server scheduled it on and its namespace
+
+And the silent node's dead-man trigger MUST fire while the other nodes' dead-man triggers stay quiet
+
 ## Scenario: a fabro sandbox hits the shared compilation cache
 
 Given the factory sandbox image sets the compiler wrapper and the host compilation-cache endpoint over the docker bridge
