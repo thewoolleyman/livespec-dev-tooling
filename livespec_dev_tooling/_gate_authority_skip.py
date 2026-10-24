@@ -111,6 +111,15 @@ def check_skip_variable(*, repo_root: Path) -> str | None:
     Read STATICALLY, out of the committed `justfile`, so resolving it costs one
     file read on the pre-push path and so the answer is a fact about the tree
     under test rather than about whatever the pushing shell happens to hold.
+
+    TWO DIFFERENT NAMES RESOLVE TO NEITHER, which is the one place a first-match
+    reader would have been plausible and wrong. A guessed-wrong name fails twice
+    in one move and announces neither: the member that must leave the Job is not
+    in the list the recipe actually skips on, so it runs and fails on the absent
+    credential exactly as before, and whatever the variable that WAS written
+    holds is clobbered, so members that should run may not. The same name twice
+    is still one answer — both reads fill the same list, so there is nothing to
+    be ambiguous about.
     """
     try:
         justfile_text = (repo_root / _JUSTFILE_NAME).read_text(encoding="utf-8")
@@ -119,12 +128,14 @@ def check_skip_variable(*, repo_root: Path) -> str | None:
     recipe_body = extract_check_recipe_body(justfile_text=justfile_text)
     if not is_successful(recipe_body):
         return None
-    matched = _SKIP_LIST_READ.search(recipe_body.unwrap())
-    if matched is None:
+    named = {
+        matched.group("variable")
+        for matched in _SKIP_LIST_READ.finditer(recipe_body.unwrap())
+        if _SKIP_ARRAY_WORD in matched.group("array").casefold()
+    }
+    if len(named) != 1:
         return None
-    if _SKIP_ARRAY_WORD not in matched.group("array").casefold():
-        return None
-    return matched.group("variable")
+    return named.pop()
 
 
 def authority_skip_argv(*, repo_root: Path) -> list[str]:
