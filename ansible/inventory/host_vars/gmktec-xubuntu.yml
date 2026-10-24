@@ -212,6 +212,17 @@ fabro_server_instances:
         cpu: 4
         memory: 8GB
         provider: kubernetes
+      # Rename step 1 (livespec-dev-tooling-s6go5s; spec v090 section "Factory
+      # sandbox environment naming"): factory-python is the python-agent
+      # toolchain, declared beside BOTH old ids with the same resources and
+      # provider, because livespec-ci and livespec-ci-k8s are already identical
+      # and merge into this one id. The old ids are deleted only after every
+      # fleet repository's petri environment names factory-python and no
+      # non-terminal run on this instance runs in either of them.
+      - id: factory-python
+        cpu: 4
+        memory: 8GB
+        provider: kubernetes
       # The Kubernetes twin of livespec-ci-rust, for livespec-console-beads-fabro
       # (coordinator ruling on livespec-dev-tooling-dfixhe, 2026-10-24). A
       # registered provider's environment cannot name an image, and the
