@@ -31,6 +31,19 @@
 
 # --- the shape of the declaration, decided without reading the host -----------
 
+- name: Refuse a PATH Fabro client declaration without an absolute link and target
+  ansible.builtin.assert:
+    that:
+      - fabro_client_path_client is mapping
+      - fabro_client_path_client.link is defined
+      - fabro_client_path_client.target is defined
+      - fabro_client_path_client.link is match('^/')
+      - fabro_client_path_client.target is match('^/')
+    fail_msg: >-
+      fabro_client_path_client must declare absolute link and target paths. Nothing
+      on {{ inventory_hostname }} has been read or changed.
+  when: fabro_client_path_client is defined
+
 - name: Refuse a declared Fabro client build that omits path, source or sha256
   ansible.builtin.assert:
     that:
@@ -280,6 +293,36 @@
     fabro_client_path_client_current_target: >-
       {{ fabro_client_path_client_readlink.stdout | default('') }}
   check_mode: false
+  when: fabro_client_path_client_present | bool
+
+- name: Refuse a PATH Fabro client target that is not a declared build path
+  ansible.builtin.assert:
+    that:
+      - fabro_client_path_client_target in fabro_client_paths
+    fail_msg: >-
+      fabro_client_path_client target {{ fabro_client_path_client_target }} is not
+      a declared fabro_client_builds path. Nothing has been written.
+  when: fabro_client_path_client_present | bool
+
+- name: Refuse a regular file or other non-link at the PATH Fabro client link
+  ansible.builtin.assert:
+    that:
+      - not fabro_client_lstat[fabro_client_path_client_link].exists
+        or (fabro_client_lstat[fabro_client_path_client_link].islnk | default(false))
+    fail_msg: >-
+      fabro_client_path_client link {{ fabro_client_path_client_link }} already
+      holds a regular file or other non-link, so it will not be replaced. Nothing
+      has been written.
+  when: fabro_client_path_client_present | bool
+
+- name: Refuse a regular file or other non-link at the PATH Fabro client staging path
+  ansible.builtin.assert:
+    that:
+      - not fabro_client_lstat[fabro_client_path_client_incoming].exists
+        or (fabro_client_lstat[fabro_client_path_client_incoming].islnk | default(false))
+    fail_msg: >-
+      fabro_client_path_client staging path {{ fabro_client_path_client_incoming }}
+      already holds a regular file or other non-link. Nothing has been written.
   when: fabro_client_path_client_present | bool
 
 # --- what the host already holds, decided before anything is written ----------

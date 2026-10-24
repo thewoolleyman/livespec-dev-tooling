@@ -370,6 +370,34 @@ def test_a_converge_repoints_the_path_client_without_touching_its_old_server_bin
     assert _changed(run=second) == 0, second.stdout
 
 
+@pytest.mark.parametrize("unsafe", ["undeclared-target", "regular-link"])
+def test_an_invalid_path_client_declaration_refuses_before_it_writes(
+    *, tmp_path: Path, unsafe: str
+) -> None:
+    """A PATH link may name only a declared build and may never replace a file."""
+    root = tmp_path / unsafe
+    build = _staged(root=root, name="petri", body="petri-client-0.382\n")
+    path_client = root / "home" / ".local" / "bin" / "fabro"
+    path_client.parent.mkdir(parents=True, exist_ok=True)
+    target = build["path"]
+    if unsafe == "undeclared-target":
+        target = str(root / "host" / "undeclared" / "fabro")
+    else:
+        _ = path_client.write_text("a regular file is not a PATH link\n", encoding="utf-8")
+
+    run = _converge(
+        tmp_path=tmp_path,
+        name=unsafe,
+        builds=[build],
+        host_vars={"fabro_client_path_client": {"link": str(path_client), "target": target}},
+    )
+
+    assert run.returncode != 0, run.stdout + run.stderr
+    assert not Path(build["path"]).exists(), run.stdout
+    if unsafe == "regular-link":
+        assert path_client.read_text(encoding="utf-8") == "a regular file is not a PATH link\n"
+
+
 @pytest.mark.parametrize(
     ("arm", "reason"),
     [
