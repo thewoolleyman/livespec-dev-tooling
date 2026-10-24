@@ -29,6 +29,33 @@ The annotation sits beside that line's purity annotation and is invisible to the
 inventory's other reader: `scripts/just/check.sh` strips every `#`-comment from
 the file before mirroring it against the justfile's literal array.
 
+WHICH MEMBERS ARE EXAMINED, and why that is not simply "the inventory's". The
+resolution must cover the members the repository's aggregate ACTUALLY SELECTS,
+and a `check-targets.txt` is only one of the two shapes this fleet declares an
+aggregate in. A repository carrying no inventory declares its check set in the
+`targets=(...)` array of its bare `check:` recipe — the surface
+`canonical_recipe_fidelity` and the fleet's aggregate-wiring rows already read —
+so that array is what this module falls back to in the inventory's absence. The
+inventory keeps PRECEDENCE where it exists, because it is the only surface a
+REPO-PRIVATE member's declaration can ride: the array's lines are read for their
+slugs alone, so in a no-inventory repository only a SHIPPED check's own module
+constant can declare an authority, and a repo-private member that needs one is
+declared by adding the inventory file.
+
+WITHOUT THAT FALLBACK THE WHOLE EXCEPTION WAS INERT IN SIX OF EIGHT FLEET
+MEMBERS. Measured on v1.127.0: `check_authority members` printed two names in
+this repository, which carries the inventory, and NOTHING in livespec-overseer
+or livespec-orchestrator-beads-fabro, which do not — so the client handed their
+forge-admin member straight to a Job that by design holds no admin token.
+Measured again end to end on 2026-10-24 01:41-01:45Z: cluster gate Job
+`gate-livespec-overseer-tpfd2` ran overseer's master e4a81525 green on every
+member except `check-branch-protection-alignment`, which got `gh: Resource not
+accessible by personal access token (HTTP 403)` and then refused to report a
+pass it had not verified. An empty answer is the one answer that puts every
+authority-reading member back inside a pod holding no authority, which is why
+reaching it through a missing FILE is no better than reaching it through a bad
+DECLARATION.
+
 ABSENCE MEANS "RUNS IN THE JOB", which is the OPPOSITE default from purity's and
 deliberately so. There, absence of evidence must never be read as evidence of
 purity, because that error memoizes an impure verdict. Here the default keeps the
@@ -45,9 +72,10 @@ cannot answer for it, which is the state this module exists to end.
 
 CLI:
     python -m livespec_dev_tooling.check_authority members
-        Print, one per line, the members of THIS repository's own check
-        inventory that declare they read an authorization held outside the
-        tree — the set a delegated gate Job must not run, in inventory order.
+        Print, one per line, the members of THIS repository's own check set
+        that declare they read an authorization held outside the tree — the
+        set a delegated gate Job must not run, in the order its aggregate
+        lists them.
         Exit 1, having printed nothing, when a declaration cannot be read.
 
 Output discipline: the `members` subcommand writes its one-name-per-line report
@@ -75,6 +103,11 @@ from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — same.
 from returns.pipeline import is_successful  # noqa: E402  — same.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — same.
 
+from livespec_dev_tooling.checks._tool_backed_surfaces import (  # noqa: E402  — same.
+    extract_check_recipe_body,
+    extract_targets_array_tokens,
+)
+
 __all__: list[str] = []
 
 # The two authorities the ratified bullet names: the work-items ledger (for
@@ -93,6 +126,7 @@ DECLARATION_NAME = "CHECK_AUTHORITY"
 _AUTHORITIES = frozenset({LEDGER, FORGE_ADMIN})
 
 _INVENTORY_NAME = "check-targets.txt"
+_JUSTFILE_NAME = "justfile"
 _SLUG_PREFIX = "check-"
 _MEMBERS = "members"
 _CHECKS_PACKAGE_DIR = Path(__file__).resolve().parent / "checks"
@@ -132,20 +166,74 @@ class AuthorityDeclarationMalformed:
     reason: str
 
 
-def _inventory_lines(*, repo_root: Path) -> list[str]:
-    """Every member line of the consumer's own check inventory, trimmed.
+def _inventory_lines(*, repo_root: Path) -> list[str] | None:
+    """Every member line of the consumer's own check inventory, trimmed, or None.
 
-    An absent or unreadable inventory yields NO lines rather than a failure: a
-    repository that declares no inventory has no member that could carry an
-    annotation, and returning a failure here would refuse the delegated gate of
-    every consumer whose aggregate is declared somewhere else entirely.
+    TRI-STATE, and the third state is the whole point: `None` means this
+    repository declares NO inventory, which is different from declaring an
+    inventory that lists no member. The caller falls back to the justfile
+    aggregate on the first and must not on the second — a repository that
+    carries the file has said where its declarations live, and reading its
+    justfile instead would silently drop every repo-private annotation while
+    still answering plausibly.
+
+    An UNREADABLE inventory joins the absent case rather than refusing, for the
+    reason the module docstring gives for every no-claim reading here: the
+    fallback still covers the members the aggregate selects, and refusing would
+    refuse the delegated gate of a whole repository over one unreadable file.
     """
     try:
         raw = (repo_root / _INVENTORY_NAME).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return []
+        return None
     trimmed = [line.strip() for line in raw.splitlines()]
     return [line for line in trimmed if line.startswith(_SLUG_PREFIX)]
+
+
+def _aggregate_targets(*, repo_root: Path) -> list[str]:
+    """Every `check-` slug the consumer's own `just check` aggregate selects.
+
+    Read through the SHARED justfile readers rather than a fourth private copy
+    of them, so this module and the checks that already enforce that array's
+    membership — `aggregate_completeness`, `canonical_recipe_fidelity`, the
+    fleet's aggregate-wiring row — cannot come to disagree about which members a
+    repository's aggregate selects. A disagreement here is invisible: both
+    answers are a plausible list of slugs.
+
+    A SHAPE THIS READER CANNOT ENUMERATE DECLARES NOTHING, which is the same
+    direction an absent inventory takes. A repository with no bare `check:`
+    recipe, or whose recipe carries no literal `targets=(...)` array, has no
+    selected member that could carry a declaration, so there is nothing to
+    misread — and refusing instead would refuse the delegated gate of every
+    consumer whose aggregate is shaped some other way.
+    """
+    try:
+        justfile_text = (repo_root / _JUSTFILE_NAME).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    recipe_body = extract_check_recipe_body(justfile_text=justfile_text)
+    if not is_successful(recipe_body):
+        return []
+    targets = extract_targets_array_tokens(recipe_body=recipe_body.unwrap())
+    if not is_successful(targets):
+        return []
+    return targets.unwrap()
+
+
+def _declaring_lines(*, repo_root: Path) -> list[str]:
+    """The lines whose declarations decide this repository's gate-Job member list.
+
+    The inventory's when it carries one — annotations and all —, else the bare
+    slugs its `just check` aggregate selects. Returned as LINES rather than as
+    slugs because the two surfaces differ in exactly one way: an inventory line
+    can carry the `# authority:` annotation a repo-private member needs, and a
+    justfile-derived slug cannot, so a slug reaches the annotation reader and is
+    correctly read as annotating nothing.
+    """
+    inventory = _inventory_lines(repo_root=repo_root)
+    if inventory is not None:
+        return inventory
+    return _aggregate_targets(repo_root=repo_root)
 
 
 def _inventory_member(*, line: str) -> str:
@@ -167,7 +255,7 @@ def _module_path_for(*, target: str) -> Path | None:
     `check-kebab-case` maps to `checks/snake_case.py` — the same mapping
     `canonical_checks` walks in the other direction. A target whose module this
     installed library does not ship has no module to ask and falls through to
-    the consumer's own inventory. Every caller resolves a `check-` slug, so the
+    the consumer's own declaration. Every caller resolves a `check-` slug, so the
     prefix is stripped rather than re-tested here.
     """
     module = target[len(_SLUG_PREFIX) :].replace("-", "_")
@@ -247,14 +335,16 @@ def repository_authority_members(
 ) -> IOResult[tuple[str, ...], AuthorityDeclarationMalformed]:
     """Name the members of `repo_root`'s check set that a gate Job must not run.
 
-    In INVENTORY ORDER, so a caller reports the members it moved onto the
-    pushing host in the same order the aggregate lists them. The FIRST malformed
+    IN AGGREGATE ORDER, so a caller reports the members it moved onto the
+    pushing host in the same order the aggregate lists them — the inventory's
+    order where the repository carries one, and its `check:` recipe's
+    `targets=(...)` order where it does not. The FIRST malformed
     declaration fails the whole resolution: a caller is deciding what NOT to run
     on a cluster and what to run against a credential instead, and a partial
     classification whose remainder was never examined is not a classification.
     """
     declaring: list[str] = []
-    for line in _inventory_lines(repo_root=repo_root):
+    for line in _declaring_lines(repo_root=repo_root):
         member = _inventory_member(line=line)
         declared = _declared_authority(target=member, line=line)
         if declared is None:
