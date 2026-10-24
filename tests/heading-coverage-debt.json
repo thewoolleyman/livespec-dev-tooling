@@ -16,6 +16,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Factory sandbox environment naming",
+    "work_item": "livespec-dev-tooling-s6go5s",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Host provisioning tree",
     "work_item": "livespec-dev-tooling-k5q54n",
     "first_seen": "2026-10-19"
@@ -214,6 +221,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
     "work_item": "livespec-dev-tooling-uftb4o",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: factory sandbox environments are named for their toolchain, and a rename never strands a dispatch",
+    "work_item": "livespec-dev-tooling-s6go5s",
     "first_seen": "2026-10-24"
   },
   {
