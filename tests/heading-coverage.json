@@ -1032,11 +1032,51 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Runner-pool workload and control-plane telemetry",
+    "test": "TODO",
+    "reason": "Spec-first (v094): a real unit-tier test is owed, reading the committed collector configuration (container termination and waiting reasons, the Warning event watch, PersistentVolumeClaim phase), the readiness-probe and datastore emitters, the Kueue gauge's flavorsUsage read on the read-only identity, the ci-pool.yml wiring of each, and the trigger set's thresholds and dead-man coverage. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
+    "work_item": "livespec-dev-tooling-dfdiil"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
     "test": "TODO",
     "reason": "Spec-first (v090): a real integration-tier test is owed, driving a converge of the committed otel_collector role from ansible/ci-pool.yml under the pinned ansible-core for three inventory nodes and asserting the rendered collector configuration scrapes every Node through receiver_creator over k8s_observer, and that the committed trigger set carries one dead-man per ci_pool node filtered to that node. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil): children a2aiza, b7wwgy, ool6ws and uftb4o; its host-run Proof of Done exercises the scenario live in Honeycomb.",
     "work_item": "livespec-dev-tooling-uftb4o"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
+    "test": "TODO",
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
+    "work_item": "livespec-dev-tooling-dfdiil"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires",
+    "test": "TODO",
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
+    "work_item": "livespec-dev-tooling-dfdiil"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unready API server or a failing datastore fires its trigger",
+    "test": "TODO",
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
+    "work_item": "livespec-dev-tooling-dfdiil"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a silent cluster-state emitter fires its dead-man",
+    "test": "TODO",
+    "reason": "Spec-first (v094): a real integration-tier test is owed exercising this scenario against the committed emitters and trigger definitions; its host-run Proof of Done exercises it live in Honeycomb. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil); its children are filed after this revision.",
+    "work_item": "livespec-dev-tooling-dfdiil"
   },
   {
     "spec_root": "SPECIFICATION",

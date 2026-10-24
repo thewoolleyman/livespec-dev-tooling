@@ -422,6 +422,48 @@ And the factory pod's usage rows MUST carry the node the API server scheduled it
 
 And the silent node's dead-man trigger MUST fire while the other nodes' dead-man triggers stay quiet
 
+## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger
+
+Given the k3s cluster's emitters were converged by `ansible/ci-pool.yml`
+
+When a container in the `factory` namespace is terminated with reason `OOMKilled` and another factory pod stays Pending because the scheduler cannot place it
+
+Then the fleet observability surface MUST show the terminated container's reason `OOMKilled` attributed by `k8s.namespace.name`, `k8s.pod.name` and `k8s.node.name`
+
+And the Pending pod MUST be readable together with its `FailedScheduling` event and the scheduler's stated reason, joined on the pod's namespace and name
+
+And the factory OOM-or-crash-loop trigger MUST fire, and the factory pending-pod trigger MUST fire once the pod has been Pending for more than 10 minutes
+
+## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires
+
+Given the `factory-runs` ResourceQuota and every Kueue ClusterQueue are reported by an emitter converged by `ansible/ci-pool.yml`
+
+When the `factory` namespace's pod count stays at or above 90 percent of `factory-runs`' hard value for 15 minutes and a gate ClusterQueue has pending workloads with its CPU usage equal to its nominal quota
+
+Then the fleet observability surface MUST show `factory-runs` used against hard per resource attributed by `k8s.namespace.name`
+
+And that queue's pending count, admitted count and per-flavor CPU usage against nominal quota MUST be readable by queue name
+
+And the factory ResourceQuota trigger MUST fire
+
+## Scenario: an unready API server or a failing datastore fires its trigger
+
+Given the API server readiness probe and the datastore gauges were converged by `ansible/ci-pool.yml`
+
+When the API server's `etcd` readiness check fails for 3 consecutive minutes
+
+Then the fleet observability surface MUST show the failing check by name with the probe's latency
+
+And the API-server-unready trigger and the datastore trigger MUST both fire
+
+## Scenario: a silent cluster-state emitter fires its dead-man
+
+Given the cluster-state emitter has been reporting pod phase rows
+
+When it reports none for 20 minutes
+
+Then its dead-man trigger MUST fire while the pool nodes' dead-man triggers stay quiet
+
 ## Scenario: a fabro sandbox hits the shared compilation cache
 
 Given the factory sandbox image sets the compiler wrapper and the host compilation-cache endpoint over the docker bridge

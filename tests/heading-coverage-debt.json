@@ -36,6 +36,13 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Runner-pool workload and control-plane telemetry",
+    "work_item": "livespec-dev-tooling-dfdiil",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
@@ -68,6 +75,13 @@
     "heading": "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a factory namespace near its quota and a saturated ClusterQueue are each readable and the quota trigger fires",
+    "work_item": "livespec-dev-tooling-dfdiil",
+    "first_seen": "2026-10-24"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -142,6 +156,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a silent cluster-state emitter fires its dead-man",
+    "work_item": "livespec-dev-tooling-dfdiil",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -163,9 +184,23 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
+    "work_item": "livespec-dev-tooling-dfdiil",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unclaimed revert is released as soon as its own CI is green",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unready API server or a failing datastore fires its trigger",
+    "work_item": "livespec-dev-tooling-dfdiil",
+    "first_seen": "2026-10-24"
   },
   {
     "spec_root": "SPECIFICATION",
