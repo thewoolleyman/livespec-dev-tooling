@@ -161,10 +161,16 @@ _INVALID_REGISTRIES: dict[str, dict[str, dict[str, str]]] = {
 _HOMELAB_FACTORY = "mi-homelab"
 _HOMELAB_HOST = "hp-xubuntu"
 _HOMELAB_UNIT = "fabro-server-mi-homelab"
+# The organisation's replacement instance on the current Fabro server's host takes
+# a NEW name rather than re-pointing `mi-homelab`, for the same reason: an item
+# whose recorded factory is `mi-homelab` must keep resolving to the instance it ran
+# on (work-item `bd-ib-tavof6` in the livespec-orchestrator-beads-fabro tenant).
+_HOMELAB_PETRI_FACTORY = "mi-homelab-petri"
 _COMMITTED_FACTORIES: Mapping[str, Mapping[str, str]] = {
     "legacy": {"host": "hp-xubuntu", "unit_name": "fabro-server"},
     "petri": {"host": "gmktec-xubuntu", "unit_name": "fabro-server"},
     _HOMELAB_FACTORY: {"host": _HOMELAB_HOST, "unit_name": _HOMELAB_UNIT},
+    _HOMELAB_PETRI_FACTORY: {"host": "gmktec-xubuntu", "unit_name": _HOMELAB_UNIT},
 }
 
 

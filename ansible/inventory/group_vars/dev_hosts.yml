@@ -50,6 +50,13 @@ fabro_factory_registry:
   mi-homelab:
     host: hp-xubuntu
     unit_name: fabro-server-mi-homelab
+  # The mi-homelab organisation's instance on the current Fabro server's host
+  # (work-item bd-ib-tavof6). A NEW name rather than a re-pointed mi-homelab,
+  # because a name stays with its instance for life: an item whose recorded
+  # factory is mi-homelab must keep resolving to the hp instance it ran on.
+  mi-homelab-petri:
+    host: gmktec-xubuntu
+    unit_name: fabro-server-mi-homelab
 
 # --- fabro_client ---
 #
