@@ -60,6 +60,7 @@ __all__: list[str] = [
     "SLOT_DIR",
     "await_slot",
     "configured_limit",
+    "pytest_configure",
     "take_session_slot",
     "take_slot",
 ]
@@ -196,6 +197,33 @@ def await_slot(
             _announce_wait(limit=limit, slot_dir=slot_dir)
         rounds += 1
         sleep(POLL_SECONDS)
+
+
+def pytest_configure() -> None:
+    """Take this host's local-gate slot before this session collects a test.
+
+    THE PLUGIN HOOK, reached through a `pytest11` entry point, which is what
+    makes the limit apply to every pytest session a fleet gate runs without a
+    line of per-repository wiring: the pre-commit check aggregate, the commit-msg
+    replay gate, a local pre-push `just check` and a hand-run `just check` all
+    run pytest, and a `pytest11` plugin loads in every pytest session.
+
+    IT DECLARES NO ARGUMENTS ON PURPOSE. `pluggy` passes a hook only the
+    arguments it names, so a hook naming none stays callable whatever a
+    consumer's pytest version adds to or removes from the hookspec — and this
+    one needs nothing from the session it is about to throttle.
+
+    The slot it takes is DISCARDED, which is the hold rather than a leak: a
+    session holds its slot for exactly as long as the process exists, and the
+    kernel hands it back. See `take_slot` for why the descriptor must be an
+    `int` nothing can close.
+
+    `configure` rather than `sessionstart` because this is the earliest hook
+    that runs after a consumer's own options and plugins are in place and
+    before any test is collected, so the queue is paid before the work rather
+    than between collection and the first test.
+    """
+    _ = take_session_slot(limit_file=LIMIT_FILE, slot_dir=SLOT_DIR)
 
 
 def take_session_slot(
