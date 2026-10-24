@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.130.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.130.0...v1.130.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **gate:** leave a delegated gate Job's authority members to the pushing host ([c05d379](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c05d3798f201ea1e6b0cbddf30331b51e95ec16f))
+* **gate:** refuse to guess which skip variable a gate Job's members leave through ([fa3b980](https://github.com/thewoolleyman/livespec-dev-tooling/commit/fa3b98056b00d89b1faa93a3922ef44790941b1f))
+
 ## [1.130.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.129.2...v1.130.0) (2026-10-24)
 
 
