@@ -434,6 +434,8 @@ kc() { "${KUBECTL_BIN}" --kubeconfig="${KUBECONFIG_PATH}" --request-timeout="${K
 kc_start() { "${KUBECTL_BIN}" --kubeconfig="${KUBECONFIG_PATH}" --request-timeout="${START_KUBECTL_REQUEST_TIMEOUT}" "$@"; }
 
 # ---- ClusterQueues -----------------------------------------------------------
+cq_json=""
+cq_rows=""
 queue_repository() {  # queue_repository NAME -> repository, or empty
   local name="$1" tok
   for tok in ${NON_REPO_QUEUES}; do
@@ -495,8 +497,11 @@ PY
       [ -n "${three}" ] && queues_emitted=$((queues_emitted + 1))
     elif [ "${kind}" = resource ]; then
       attrs="${attrs}"$'\t'"ci.flavor=${one}"$'\t'"ci.resource=${two}"
-      [[ "${three}" =~ ^[0-9]+(\.[0-9]+)?$ ]] && put "queue_resource_nominal_quota"$'\t'"${three}"$'\t'"${attrs}"
-      [[ "${four}" =~ ^[0-9]+(\.[0-9]+)?$ ]] && put "queue_resource_usage"$'\t'"${four}"$'\t'"${attrs}"
+      # `quantity` above accepts Kubernetes quantities and is the sole source
+      # of these fields. Its normalized output may use scientific notation,
+      # so non-empty is the validation boundary here.
+      [ -n "${three}" ] && put "queue_resource_nominal_quota"$'\t'"${three}"$'\t'"${attrs}"
+      [ -n "${four}" ] && put "queue_resource_usage"$'\t'"${four}"$'\t'"${attrs}"
     fi
   done <<< "${cq_rows}"
   log "read ${queues_emitted} ClusterQueue(s) covering ${CHURN_SLOT_RESOURCE}"
