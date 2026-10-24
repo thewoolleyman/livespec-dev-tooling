@@ -528,7 +528,7 @@
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
           "secret_channel": "native_secrets",
-          "environment": "livespec-ci-k8s"
+          "environment": "factory-python"
         }
       }
     }
