@@ -300,6 +300,14 @@ def _member_verdict_payload(
             "member": verdict.member,
             "conformant": not verdict.failing_rows,
             "failing_rows": list(verdict.failing_rows),
+            # The subset of `failing_rows` the release fan-out's per-member
+            # filter must NOT exclude the member over — today, a finding of
+            # either ratified pin-currency staleness class (contracts.md
+            # section "Pin-currency severity policy"). `conformant` is
+            # deliberately unaffected: the member IS non-conformant, which is
+            # what keeps the preflight's exit-4 guard on its per-member path
+            # and the finding loud in every other lane.
+            "non_excluding_rows": list(verdict.non_excluding_rows),
         }
         for verdict in member_verdicts
     ]

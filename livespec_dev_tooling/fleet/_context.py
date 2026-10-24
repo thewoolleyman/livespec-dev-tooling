@@ -8,6 +8,12 @@ directly, so the obligation table stays hermetically testable with a
 canned-response runner. The default runner shells out to the `gh`
 CLI (the fleet precedent for GitHub reads — see
 `checks/branch_protection_alignment.py`).
+
+`RowFinding` itself lives in the private sibling `_row_finding`, together with
+the EXCLUSION-DISPOSITION vocabulary it carries, and is imported back here so
+every `from ..._context import RowFinding` keeps resolving. That module's
+docstring carries the reason the disposition rides on the finding rather than on
+the row id or the severity; this module stays the seam.
 """
 
 from __future__ import annotations
@@ -58,6 +64,7 @@ from livespec_dev_tooling.fleet._read_failure import (  # noqa: E402
     classify_gh_failure,
     sanitize_detail,
 )
+from livespec_dev_tooling.fleet._row_finding import RowFinding  # noqa: E402
 from livespec_dev_tooling.fleet._snapshot import (  # noqa: E402
     GhDownloader,
     SnapshotResult,
@@ -114,14 +121,6 @@ class RowPass:
     """The member satisfies the obligation row."""
 
     note: str = ""
-
-
-@dataclass(frozen=True, kw_only=True)
-class RowFinding:
-    """The member definitively violates the obligation row."""
-
-    message: str
-    severity: str = "error"
 
 
 @dataclass(frozen=True, kw_only=True)
