@@ -1109,5 +1109,21 @@
     "test": "TODO",
     "reason": "Spec-first: a real integration-tier test is owed; exercised by the implementing item livespec-dev-tooling-s6go5s.",
     "work_item": "livespec-dev-tooling-s6go5s"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a member whose only error findings are stale pins still receives the release dispatch",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",
+    "work_item": "livespec-dev-tooling-epcoja"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",
+    "work_item": "livespec-dev-tooling-epcoja"
   }
 ]
