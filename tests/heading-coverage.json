@@ -1160,5 +1160,37 @@
     "test": "TODO",
     "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",
     "work_item": "livespec-dev-tooling-epcoja"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Agent-session gate-command guard",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
+    "work_item": "livespec-dev-tooling-zlhnib"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's foreground commit in a hooked repository is refused and names the detached form",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
+    "work_item": "livespec-dev-tooling-zlhnib"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's commit dispatched through the detached gate runner is not refused",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
+    "work_item": "livespec-dev-tooling-zlhnib"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an agent session's commit in a repository with no installed commit hook is not refused",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
+    "work_item": "livespec-dev-tooling-zlhnib"
   }
 ]

@@ -1323,3 +1323,35 @@ Given a fleet member with an error-severity can't-parse pin finding, or an error
 When the release fan-out filters its dispatch matrix
 
 Then the member MUST be excluded from the dispatch with an annotation naming it and the failing rows
+
+## Scenario: an agent session's foreground commit in a hooked repository is refused and names the detached form
+
+Given a repository whose `.git/hooks/pre-commit` is installed
+
+And an agent session, working in that repository, whose `PreToolUse` hooks include the gate-command guard
+
+When the session issues a `Bash` tool call running `mise exec -- git commit -m "<message>"` in the foreground
+
+Then the guard MUST refuse the tool call with its foreground-gate `check_id`
+
+And the refusal MUST name `run_id=$(mise exec -- just gate-start -- mise exec -- git commit -m "<message>") && mise exec -- just gate-wait "$run_id"`
+
+## Scenario: an agent session's commit dispatched through the detached gate runner is not refused
+
+Given a repository whose `.git/hooks/pre-commit` is installed
+
+And an agent session whose `PreToolUse` hooks include the gate-command guard
+
+When the session issues a `Bash` tool call running `mise exec -- just gate-start -- mise exec -- git commit -m "<message>"`
+
+Then the guard MUST NOT refuse the tool call
+
+## Scenario: an agent session's commit in a repository with no installed commit hook is not refused
+
+Given a repository with no `.git/hooks/pre-commit` and no `.git/hooks/commit-msg` installed
+
+And an agent session, working in that repository, whose `PreToolUse` hooks include the gate-command guard
+
+When the session issues a `Bash` tool call running `git commit -m "<message>"` in the foreground
+
+Then the guard MUST NOT refuse the tool call
