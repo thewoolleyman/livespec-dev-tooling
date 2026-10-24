@@ -1109,9 +1109,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a member whose only error findings are stale pins still receives the release dispatch",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "test": "tests.consumer.test_release_dispatch_staleness_keeps_member.test_a_staleness_only_member_stays_in_the_dispatch_matrix",
+    "reason": "Consumer-tier: the shipped dispatch-matrix filter is driven over a per-member verdict artifact whose only error rows carry the ratified pin-currency staleness class, and the member is asserted to survive into the dispatch matrix. Two companion tests in the same file cover the remaining clauses: that the run's exclusion summary still names each of those findings for that member, and that the central sweep MARKS exactly the staleness rows on the verdict the filter reads — which is what makes a stale pin distinguishable from an unparseable one on the same row (livespec-dev-tooling-epcoja)."
   },
   {
     "spec_root": "SPECIFICATION",

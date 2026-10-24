@@ -34,6 +34,7 @@ from livespec_dev_tooling.fleet._bump_pr_list import (  # noqa: E402
     persisting_bump_pr_number,
 )
 from livespec_dev_tooling.fleet._context import (  # noqa: E402
+    PIN_STALENESS_FINDING_CLASS,
     FleetContext,
     FleetMember,
     RowFinding,
@@ -298,6 +299,11 @@ def _staleness_class_outcome(
             # this repo's unrelated and repair PRs. Message identical either
             # way — the scoping lowers severity, never the diagnostic.
             severity="error" if ctx.filter_consuming_preflight else "warning",
+            # FIRED-AND-COULD-NOT-LAND is one of the two ratified staleness
+            # classes, so the fan-out names it and still dispatches: the
+            # dispatch opens a bump PR that SUPERSEDES the stuck one, which is
+            # exactly the cure excluding the member would withhold.
+            finding_class=PIN_STALENESS_FINDING_CLASS,
         )
     return _never_fired_outcome(ctx=ctx, member=member, spec=spec, stale=stale)
 
@@ -330,6 +336,9 @@ def _never_fired_outcome(
     return RowFinding(
         message=f"{member.repo}: {spec.pin_format} pin stale: {findings}",
         severity="error" if escalates and ctx.filter_consuming_preflight else "warning",
+        # The OTHER ratified staleness class, carrying the same consequence:
+        # named in the fan-out's summary, never excluded from its matrix.
+        finding_class=PIN_STALENESS_FINDING_CLASS,
     )
 
 

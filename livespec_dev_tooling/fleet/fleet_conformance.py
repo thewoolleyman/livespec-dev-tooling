@@ -151,6 +151,7 @@ from livespec_dev_tooling.fleet._credential_preflight import preflight_credentia
 from livespec_dev_tooling.fleet._lanes import (
     MemberVerdict,
     configure_lane_logging,
+    member_verdict_payload,
     run_member_rows,
 )
 from livespec_dev_tooling.fleet._local_vantage import local_vantage
@@ -291,24 +292,14 @@ def fetch_manifest(
     return Success(parsed.unwrap())
 
 
-def _member_verdict_payload(
-    *, member_verdicts: tuple[MemberVerdict, ...]
-) -> list[dict[str, object]]:
-    """JSON-ready per-member verdict payload for workflow consumers."""
-    return [
-        {
-            "member": verdict.member,
-            "conformant": not verdict.failing_rows,
-            "failing_rows": list(verdict.failing_rows),
-        }
-        for verdict in member_verdicts
-    ]
-
-
 def _write_member_verdicts(*, path: Path, member_verdicts: tuple[MemberVerdict, ...]) -> None:
-    """Emit the per-member verdict artifact requested by the CLI caller."""
+    """Emit the per-member verdict artifact requested by the CLI caller.
+
+    The projection itself lives beside `MemberVerdict` in `_lanes`, so the
+    writer and the verdict cannot drift about what the artifact carries.
+    """
     _ = path.write_text(
-        json.dumps(_member_verdict_payload(member_verdicts=member_verdicts), indent=2) + "\n",
+        json.dumps(member_verdict_payload(member_verdicts=member_verdicts), indent=2) + "\n",
         encoding="utf-8",
     )
 

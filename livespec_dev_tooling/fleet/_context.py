@@ -58,6 +58,15 @@ from livespec_dev_tooling.fleet._read_failure import (  # noqa: E402
     classify_gh_failure,
     sanitize_detail,
 )
+from livespec_dev_tooling.fleet._row_outcome import (  # noqa: E402
+    EXCLUDED_NOTE_PREFIX,
+    PIN_STALENESS_FINDING_CLASS,
+    RowFinding,
+    RowOutcome,
+    RowPass,
+    RowSkip,
+    row_excluded,
+)
 from livespec_dev_tooling.fleet._snapshot import (  # noqa: E402
     GhDownloader,
     SnapshotResult,
@@ -67,6 +76,7 @@ from livespec_dev_tooling.fleet._tree_state import TreeState, parse_tree_payload
 
 __all__: list[str] = [
     "EXCLUDED_NOTE_PREFIX",
+    "PIN_STALENESS_FINDING_CLASS",
     "Adopter",
     "FleetContext",
     "FleetMember",
@@ -107,52 +117,6 @@ class Adopter:
     repo: str
     profile: tuple[str, ...]
     posture: str
-
-
-@dataclass(frozen=True, kw_only=True)
-class RowPass:
-    """The member satisfies the obligation row."""
-
-    note: str = ""
-
-
-@dataclass(frozen=True, kw_only=True)
-class RowFinding:
-    """The member definitively violates the obligation row."""
-
-    message: str
-    severity: str = "error"
-
-
-@dataclass(frozen=True, kw_only=True)
-class RowSkip:
-    """The row could not be definitively evaluated (can't-read is not absent)."""
-
-    reason: str
-
-
-RowOutcome = RowPass | RowFinding | RowSkip
-
-# The note prefix that marks a RowPass as INAPPLICABLE rather than satisfied.
-# It lives here, beside the union, rather than privately in `_lanes.py`: a row
-# module cannot import `_lanes` (that is an import cycle through
-# `_contract_rows`), and both engines must render the same value the same way.
-EXCLUDED_NOTE_PREFIX = "excluded-with-reason: "
-
-
-def row_excluded(*, reason: str) -> RowPass:
-    """The row does not APPLY to this member — a definitive non-obligation.
-
-    ⛔ NOT `RowSkip`. `RowSkip` means the row could not be EVALUATED, and the
-    central lane feeds every one of them into `blind_rows`, which fails the run
-    with no lever and no opt-out. Spelling inapplicability as a skip therefore
-    reds master fleet-wide the moment the applicable population reaches zero —
-    for a condition that is not a failure at all.
-
-    A constructor rather than a bare prefix so the correct spelling is a NAME
-    both engines share, not a string concatenation each call site re-derives.
-    """
-    return RowPass(note=f"{EXCLUDED_NOTE_PREFIX}{reason}")
 
 
 @dataclass(frozen=True, kw_only=True)

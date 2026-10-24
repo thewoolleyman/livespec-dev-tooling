@@ -46,7 +46,44 @@ def test_non_string_failing_row_is_a_structural_error() -> None:
     assert isinstance(result, Failure), result
     failure = result.failure()
     assert isinstance(failure, FilterError)
-    assert "non-string failing row" in failure.reason
+    assert "non-string row in failing_rows" in failure.reason
+
+
+def test_non_list_staleness_rows_is_a_structural_error() -> None:
+    """The staleness classification is read fail-closed, exactly like the rows it marks."""
+    result = filter_siblings(
+        siblings=[{"name": "alpha"}],
+        verdicts=[
+            {
+                "member": "alpha",
+                "conformant": False,
+                "failing_rows": ["compat-pin-currency"],
+                "staleness_rows": "nope",
+            }
+        ],
+    )
+    assert isinstance(result, Failure), result
+    failure = result.failure()
+    assert isinstance(failure, FilterError)
+    assert "malformed staleness_rows" in failure.reason
+
+
+def test_non_string_staleness_row_is_a_structural_error() -> None:
+    result = filter_siblings(
+        siblings=[{"name": "alpha"}],
+        verdicts=[
+            {
+                "member": "alpha",
+                "conformant": False,
+                "failing_rows": ["compat-pin-currency"],
+                "staleness_rows": [3],
+            }
+        ],
+    )
+    assert isinstance(result, Failure), result
+    failure = result.failure()
+    assert isinstance(failure, FilterError)
+    assert "non-string row in staleness_rows" in failure.reason
 
 
 def test_malformed_sibling_entry_is_a_structural_error() -> None:

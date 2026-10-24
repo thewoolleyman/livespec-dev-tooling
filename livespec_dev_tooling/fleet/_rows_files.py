@@ -22,6 +22,7 @@ from livespec_dev_tooling.fleet._bump_pr_list import (
     persisting_bump_pr_number,
 )
 from livespec_dev_tooling.fleet._context import (
+    PIN_STALENESS_FINDING_CLASS,
     FleetContext,
     FleetMember,
     RowFinding,
@@ -236,6 +237,11 @@ def _stale_dev_tooling_pin_outcome(
             # per-PR CI. Both persisting-gap sites must move together or
             # the promotion is half-armed.
             severity="error" if ctx.filter_consuming_preflight else "warning",
+            # And both must carry the staleness CLASS together too, for the
+            # same reason: the fan-out's filter reads the class, so a site
+            # that moved severity without it would exclude the member the
+            # other site keeps.
+            finding_class=PIN_STALENESS_FINDING_CLASS,
         )
     # The NEVER-FIRED class, under the SAME lane scoping. The predicate
     # itself lives in `_settle_window` so this site and the pin-currency
@@ -246,6 +252,7 @@ def _stale_dev_tooling_pin_outcome(
         severity=(
             "error" if never_fired.escalates and ctx.filter_consuming_preflight else "warning"
         ),
+        finding_class=PIN_STALENESS_FINDING_CLASS,
     )
 
 

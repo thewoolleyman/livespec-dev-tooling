@@ -121,13 +121,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a member whose only error findings are stale pins still receives the release dispatch",
-    "work_item": "livespec-dev-tooling-epcoja",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-24"

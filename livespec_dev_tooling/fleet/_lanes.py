@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 from livespec_dev_tooling.config import assert_never
 from livespec_dev_tooling.fleet._context import (
     EXCLUDED_NOTE_PREFIX,
+    PIN_STALENESS_FINDING_CLASS,
     RowFinding,
     RowPass,
     RowSkip,
@@ -71,6 +72,7 @@ __all__: list[str] = [
     "MemberRowsResult",
     "MemberVerdict",
     "configure_lane_logging",
+    "member_verdict_payload",
     "run_member_rows",
 ]
 
@@ -104,6 +106,38 @@ class MemberVerdict:
 
     member: str
     failing_rows: tuple[str, ...]
+    # Which of `failing_rows` carry one of the two ratified pin-currency
+    # STALENESS classes. A SUBSET rather than a separate list, because the mark
+    # says what KIND of error finding a failing row is, not that an extra row
+    # failed — and the fan-out's filter needs exactly that distinction: a
+    # staleness row is named and still dispatched to, every other failing row
+    # excludes. Defaults to empty so a construction site that does not classify
+    # keeps the exclusion behavior every row had before the class existed.
+    staleness_rows: tuple[str, ...] = ()
+
+
+def member_verdict_payload(
+    *, member_verdicts: tuple[MemberVerdict, ...]
+) -> list[dict[str, object]]:
+    """JSON-ready per-member verdict payload for workflow consumers.
+
+    The ONE projection of a verdict into the artifact
+    `fleet_conformance --emit-member-verdicts` writes and
+    `dispatch_matrix_filter` reads. It lives beside `MemberVerdict` rather
+    than in the CLI that writes it so the two ends of that contract cannot
+    drift: a field added to the verdict and forgotten here would reach the
+    filter as an absent key, which the filter reads — correctly, and
+    uselessly — as "no row carries that class".
+    """
+    return [
+        {
+            "member": verdict.member,
+            "conformant": not verdict.failing_rows,
+            "failing_rows": list(verdict.failing_rows),
+            "staleness_rows": list(verdict.staleness_rows),
+        }
+        for verdict in member_verdicts
+    ]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -169,8 +203,10 @@ def run_member_rows(
     skips: dict[str, list[str]] = {}
     out_of_vantage: dict[tuple[str, str], int] = {}
     failing_rows_by_member: dict[str, list[str]] = {}
+    staleness_rows_by_member: dict[str, list[str]] = {}
     for member in manifest.members:
         failing_rows_by_member[member.repo] = []
+        staleness_rows_by_member[member.repo] = []
         for row in rows_for(repo_class=member.repo_class):
             if row.vantage not in vantages:
                 key = (row.row_id, row.vantage)
@@ -184,6 +220,7 @@ def run_member_rows(
                     evaluated=evaluated,
                     skips=skips,
                     failing_rows=failing_rows_by_member[member.repo],
+                    staleness_rows=staleness_rows_by_member[member.repo],
                     read_failures=ctx.read_failures,
                 ),
                 log=log,
@@ -195,7 +232,11 @@ def run_member_rows(
         ),
         out_of_vantage_rows=_report_out_of_vantage_rows(counts=out_of_vantage, log=log),
         member_verdicts=tuple(
-            MemberVerdict(member=member, failing_rows=tuple(failing_rows))
+            MemberVerdict(
+                member=member,
+                failing_rows=tuple(failing_rows),
+                staleness_rows=tuple(staleness_rows_by_member[member]),
+            )
             for member, failing_rows in failing_rows_by_member.items()
         ),
     )
@@ -218,6 +259,7 @@ class _LaneTallies:
     evaluated: dict[str, int]
     skips: dict[str, list[str]]
     failing_rows: list[str]
+    staleness_rows: list[str]
     read_failures: list[ReadFailure]
 
 
@@ -286,6 +328,8 @@ def _fold_member_outcome(
                 )
                 return 0
             tallies.failing_rows.append(row.row_id)
+            if outcome.finding_class == PIN_STALENESS_FINDING_CLASS:
+                tallies.staleness_rows.append(row.row_id)
             log.error(
                 "fleet obligation violated",
                 row=row.row_id,

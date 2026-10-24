@@ -12,11 +12,25 @@ preflight stays BLOCKING for the members it covers — exclusion IS the
 per-member blocking — and structural failures stay job-red with no
 lever, no warn-only mode, no bypass (criterion 5).
 
+STALENESS DOES NOT EXCLUDE (`SPECIFICATION/contracts.md` section
+"Pin-currency severity policy", v093). A finding of either ratified
+pin-currency staleness class stays error severity and is NAMED in the
+run's summary, but MUST NOT take its member out of the matrix: the
+`sibling-released` dispatch is the REMEDY for a stale pin, because the
+bump pull request it opens supersedes any stuck one, so excluding the
+member withholds the cure for the very condition it was excluded for.
+Measured 2026-10-22 — livespec-console-beads-fabro received no dispatch
+from any source for a week over one such row. The distinction cannot be
+made from the row ID: a stale pin and an UNPARSEABLE pin file are both
+error findings on the same `compat-pin-currency` row and have opposite
+consequences, so the verdict artifact carries the staleness CLASS and
+this filter reads it.
+
 Inputs are the two artifacts `reusable-release-dispatch.yml` already
 has in hand: the per-member verdict artifact
 `fleet_conformance --emit-member-verdicts` writes
-(`[{member, conformant, failing_rows}]`) and the discovered sibling
-matrix (`[{name}]`). Fail-closed rules: an unreadable or unparseable
+(`[{member, conformant, failing_rows, staleness_rows}]`) and the
+discovered sibling matrix (`[{name}]`). Fail-closed rules: an unreadable or unparseable
 input, a malformed entry, or a sibling with NO verdict entry
 (manifest/verdict drift) exits 1 so the preflight job stays red — the
 filter path engages only on a well-formed artifact. A verdict for a
@@ -24,10 +38,10 @@ member outside the sibling set (the publishing repo, excluded from the
 fan-out) is surplus and ignored.
 
 Output discipline matches sibling checks: structlog JSON to stderr.
-The one deliberate stdout emission is the `::warning::` GitHub
-annotation line per excluded member — the Actions runner parses
-workflow commands from stdout, and the caller captures nothing from
-stdout (both result payloads go to explicit `--*-out` files).
+The one deliberate stdout emission is the GitHub annotation line per
+NAMED member — the Actions runner parses workflow commands from stdout,
+and the caller captures nothing from stdout (both result payloads go to
+explicit `--*-out` files).
 """
 
 from __future__ import annotations
@@ -50,6 +64,7 @@ __all__: list[str] = [
     "Exclusion",
     "FilterError",
     "FilterOutcome",
+    "NamedFindings",
     "filter_siblings",
     "main",
 ]
@@ -64,11 +79,28 @@ class Exclusion:
 
 
 @dataclass(frozen=True, kw_only=True)
+class NamedFindings:
+    """One sibling KEPT in the matrix whose error findings are still named.
+
+    ⛔ NOT an `Exclusion`. The member IS dispatched to; what it earns is a
+    line in the run's summary naming the staleness findings that did not
+    exclude it. Spelling it as an exclusion would make the two
+    indistinguishable in the artifact, which is the `livespec-bmxs`
+    silent-omission hazard wearing the opposite face: a reader could no
+    longer tell a named keep from a withheld dispatch.
+    """
+
+    member: str
+    failing_rows: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
 class FilterOutcome:
-    """The filtered matrix plus the loud exclusion list."""
+    """The filtered matrix, the loud exclusion list, and the loud keep list."""
 
     filtered: tuple[dict[str, str], ...]
     excluded: tuple[Exclusion, ...]
+    named: tuple[NamedFindings, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -76,6 +108,21 @@ class FilterError:
     """A structural failure that must keep the preflight job red."""
 
     reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Verdict:
+    """One parsed verdict entry's two row sets.
+
+    The artifact's `conformant` boolean is VALIDATED (a non-boolean is a
+    malformed entry) but not carried: it is `not failing_rows` by
+    construction, and deciding the matrix from the rows themselves means a
+    verdict claiming conformance while listing failing rows is read the
+    fail-closed way round.
+    """
+
+    failing_rows: tuple[str, ...]
+    staleness_rows: tuple[str, ...]
 
 
 def filter_siblings(
@@ -104,23 +151,20 @@ def filter_siblings(
     entries and manifest/verdict drift. Collapsing the two would turn a
     routine exclusion into a red job and re-create the gate this filter
     exists to replace.
+
+    And note what is no longer an exclusion at all: a member whose every
+    error-severity row carries a ratified pin-currency STALENESS class. It
+    stays in the matrix and is reported on the success track inside
+    `FilterOutcome.named`, because the dispatch it would have been denied
+    is the remedy for the staleness it was denied over.
     """
-    verdict_by_member: dict[str, tuple[bool, tuple[str, ...]]] = {}
-    for verdict in verdicts:
-        member = verdict.get("member")
-        conformant = verdict.get("conformant")
-        failing = verdict.get("failing_rows")
-        if not isinstance(member, str) or not isinstance(conformant, bool):
-            return Failure(FilterError(reason=f"malformed verdict entry: {verdict!r}"))
-        if not isinstance(failing, list):
-            return Failure(FilterError(reason=f"malformed failing_rows for member {member}"))
-        failing_items = cast("list[object]", failing)
-        rows = tuple(row for row in failing_items if isinstance(row, str))
-        if len(rows) != len(failing_items):
-            return Failure(FilterError(reason=f"non-string failing row in verdict for {member}"))
-        verdict_by_member[member] = (conformant, rows)
+    parsed = _verdicts_by_member(verdicts=verdicts)
+    if isinstance(parsed, Failure):
+        return Failure(parsed.failure())
+    verdict_by_member = parsed.unwrap()
     filtered: list[dict[str, str]] = []
     excluded: list[Exclusion] = []
+    named: list[NamedFindings] = []
     for sibling in siblings:
         name = sibling.get("name")
         if not isinstance(name, str) or not name:
@@ -129,12 +173,55 @@ def filter_siblings(
             return Failure(
                 FilterError(reason=f"sibling {name} has no verdict entry (manifest/verdict drift)")
             )
-        conformant, rows = verdict_by_member[name]
-        if conformant:
-            filtered.append({"name": name})
-        else:
-            excluded.append(Exclusion(member=name, failing_rows=rows))
-    return Success(FilterOutcome(filtered=tuple(filtered), excluded=tuple(excluded)))
+        verdict = verdict_by_member[name]
+        excluding = tuple(row for row in verdict.failing_rows if row not in verdict.staleness_rows)
+        if excluding:
+            excluded.append(Exclusion(member=name, failing_rows=verdict.failing_rows))
+            continue
+        filtered.append({"name": name})
+        if verdict.failing_rows:
+            named.append(NamedFindings(member=name, failing_rows=verdict.failing_rows))
+    return Success(
+        FilterOutcome(filtered=tuple(filtered), excluded=tuple(excluded), named=tuple(named))
+    )
+
+
+def _verdicts_by_member(
+    *, verdicts: list[dict[str, object]]
+) -> Result[dict[str, _Verdict], FilterError]:
+    """Index the verdict artifact by member, failing closed on a malformed entry."""
+    indexed: dict[str, _Verdict] = {}
+    for verdict in verdicts:
+        member = verdict.get("member")
+        conformant = verdict.get("conformant")
+        if not isinstance(member, str) or not isinstance(conformant, bool):
+            return Failure(FilterError(reason=f"malformed verdict entry: {verdict!r}"))
+        failing = _row_set(value=verdict.get("failing_rows"), member=member, key="failing_rows")
+        if isinstance(failing, Failure):
+            return Failure(failing.failure())
+        # An ABSENT `staleness_rows` key reads as "no row carries that class",
+        # which is the pre-class behavior: every failing row excludes. That is
+        # the fail-closed direction, so an older verdict artifact meeting a
+        # newer filter withholds a dispatch rather than granting one on
+        # evidence nobody wrote.
+        staleness = _row_set(
+            value=verdict.get("staleness_rows", []), member=member, key="staleness_rows"
+        )
+        if isinstance(staleness, Failure):
+            return Failure(staleness.failure())
+        indexed[member] = _Verdict(failing_rows=failing.unwrap(), staleness_rows=staleness.unwrap())
+    return Success(indexed)
+
+
+def _row_set(*, value: object, member: str, key: str) -> Result[tuple[str, ...], FilterError]:
+    """One verdict field read as a tuple of row ids, or the structural failure it is."""
+    if not isinstance(value, list):
+        return Failure(FilterError(reason=f"malformed {key} for member {member}"))
+    items = cast("list[object]", value)
+    rows = tuple(row for row in items if isinstance(row, str))
+    if len(rows) != len(items):
+        return Failure(FilterError(reason=f"non-string row in {key} for {member}"))
+    return Success(rows)
 
 
 def _read_json_list(*, path: Path) -> list[object] | None:
@@ -176,6 +263,69 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _announce(*, outcome: FilterOutcome, log: structlog.stdlib.BoundLogger) -> None:
+    """Make every error finding visible on the run, excluded or not.
+
+    Both halves are loud on purpose. Excluding a member silently is the
+    `livespec-bmxs` omission hazard; KEEPING one silently is the same hazard
+    inverted — a release that dispatched to a member with error-severity
+    findings and said nothing reads as a release with no findings at all.
+    """
+    for exclusion in outcome.excluded:
+        rows = ", ".join(exclusion.failing_rows) or "(rows unavailable)"
+        # stdout on purpose: the Actions runner parses workflow commands
+        # from stdout, making the exclusion a visible run annotation
+        # (criterion 3); the caller captures nothing from stdout.
+        print(  # noqa: T201
+            f"::warning::EXCLUDED from release dispatch: {exclusion.member} — "
+            f"failing conformance rows: {rows}"
+        )
+        log.warning(
+            "member excluded from dispatch matrix",
+            member=exclusion.member,
+            failing_rows=list(exclusion.failing_rows),
+        )
+    for keep in outcome.named:
+        rows = ", ".join(keep.failing_rows) or "(rows unavailable)"
+        print(  # noqa: T201
+            f"::warning::DISPATCHED DESPITE findings: {keep.member} — "
+            f"pin-currency staleness rows: {rows} — the sibling-released dispatch is "
+            f"the remedy for a stale pin, so it is not withheld over one"
+        )
+        log.warning(
+            "member kept in dispatch matrix despite staleness findings",
+            member=keep.member,
+            failing_rows=list(keep.failing_rows),
+        )
+
+
+def _summary_payload(*, outcome: FilterOutcome) -> list[dict[str, object]]:
+    """The run's exclusion summary: every named member, and whether it was excluded.
+
+    One array rather than two, because the step summary renders one section
+    and a reader comparing two files is a reader who can mistake a keep for
+    an exclusion. `excluded` is the discriminator.
+    """
+    entries: list[dict[str, object]] = []
+    for exclusion in outcome.excluded:
+        entries.append(
+            {
+                "member": exclusion.member,
+                "failing_rows": list(exclusion.failing_rows),
+                "excluded": True,
+            }
+        )
+    for keep in outcome.named:
+        entries.append(
+            {
+                "member": keep.member,
+                "failing_rows": list(keep.failing_rows),
+                "excluded": False,
+            }
+        )
+    return entries
+
+
 def main(*, argv: list[str] | None = None) -> int:
     log = structlog.get_logger("dispatch_matrix_filter")
     args = _build_parser().parse_args(argv)
@@ -201,34 +351,12 @@ def main(*, argv: list[str] | None = None) -> int:
         log.error("dispatch-matrix filter failed closed", reason=filtered_result.failure().reason)
         return 1
     outcome = filtered_result.unwrap()
-    for exclusion in outcome.excluded:
-        rows = ", ".join(exclusion.failing_rows) or "(rows unavailable)"
-        # stdout on purpose: the Actions runner parses workflow commands
-        # from stdout, making the exclusion a visible run annotation
-        # (criterion 3); the caller captures nothing from stdout.
-        print(  # noqa: T201
-            f"::warning::EXCLUDED from release dispatch: {exclusion.member} — "
-            f"failing conformance rows: {rows}"
-        )
-        log.warning(
-            "member excluded from dispatch matrix",
-            member=exclusion.member,
-            failing_rows=list(exclusion.failing_rows),
-        )
+    _announce(outcome=outcome, log=log)
     _ = cast("Path", args.filtered_out).write_text(
         json.dumps(list(outcome.filtered)) + "\n", encoding="utf-8"
     )
     _ = cast("Path", args.exclusions_out).write_text(
-        json.dumps(
-            [
-                {
-                    "member": exclusion.member,
-                    "failing_rows": list(exclusion.failing_rows),
-                }
-                for exclusion in outcome.excluded
-            ]
-        )
-        + "\n",
+        json.dumps(_summary_payload(outcome=outcome)) + "\n",
         encoding="utf-8",
     )
     log.info(

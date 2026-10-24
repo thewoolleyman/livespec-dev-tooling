@@ -146,7 +146,9 @@ def test_main_writes_filtered_and_exclusions_and_exits_zero(tmp_path: Path) -> N
     assert exit_code == 0
     assert json.loads(filtered_path.read_text(encoding="utf-8")) == [{"name": "alpha"}]
     exclusions = json.loads(exclusions_path.read_text(encoding="utf-8"))
-    assert exclusions == [{"member": "beta", "failing_rows": ["app-installation"]}]
+    assert exclusions == [
+        {"member": "beta", "failing_rows": ["app-installation"], "excluded": True}
+    ]
 
 
 def test_main_fails_closed_on_missing_verdicts_artifact(tmp_path: Path) -> None:

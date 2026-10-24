@@ -997,6 +997,11 @@ def test_main_emits_member_verdicts(*, monkeypatch: pytest.MonkeyPatch, tmp_path
             "member": "widget",
             "conformant": False,
             "failing_rows": ["topic-livespec-sibling"],
+            # The artifact ALWAYS carries the staleness classification, empty
+            # or not: the fan-out's filter reads an absent key as "no row is a
+            # staleness row", so emitting it only when non-empty would make a
+            # release's behavior depend on which members happened to be stale.
+            "staleness_rows": [],
         }
     ]
 

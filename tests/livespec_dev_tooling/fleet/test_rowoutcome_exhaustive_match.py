@@ -66,7 +66,9 @@ def _tallies() -> _LaneTallies:
     # `read_failures` is REQUIRED rather than defaulted: an empty list means "no
     # read failed", and a construction site that forgot it would report every
     # skipped row as unexplained instead of throttled or refused.
-    return _LaneTallies(evaluated={}, skips={}, failing_rows=[], read_failures=[])
+    return _LaneTallies(
+        evaluated={}, skips={}, failing_rows=[], staleness_rows=[], read_failures=[]
+    )
 
 
 class _CapturingLog:
