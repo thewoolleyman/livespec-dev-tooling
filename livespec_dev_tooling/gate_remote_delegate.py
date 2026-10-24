@@ -78,6 +78,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from livespec_dev_tooling._gate_authority_skip import authority_skip_argv
 from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
     run_host_authority_members,
@@ -324,6 +325,12 @@ def gate_remote_request(
         gate_ref,
         *[flag for sibling in private_siblings for flag in ("--private-sibling", sibling)],
         *(["--private-sibling-secret", private_sibling_secret] if private_siblings else []),
+        # The members the Job must NOT run, which the host half below runs here
+        # instead. Resolved from the SAME registry that half reads, so the two
+        # cannot come to disagree about which member belongs to which host — a
+        # pod that skipped a member nobody ran would be an unread authorization
+        # treated as granted (`_gate_authority_skip`).
+        *authority_skip_argv(repo_root=repo_root),
         *check_suite_argv(suite=suite.unwrap()),
     ]
     rendered = require_success(

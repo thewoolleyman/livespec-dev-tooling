@@ -350,6 +350,35 @@ spec:
               # Secret mount substituted below. The token itself never enters
               # this manifest, its logs or its termination message.
               @@GATE_SIBLING_CLONES@@
+              # THE MEMBERS THIS JOB MUST NOT RUN, carried under the GATED
+              # REPOSITORY'S OWN skip variable (livespec-dev-tooling-mex6ga).
+              # Substituted by render-gate-job.sh from the authority-declaring
+              # members the PUSHING HOST resolved, and EMPTY — this line removed
+              # — for a repository whose skip variable could not be established.
+              #
+              # The one exception in the "What the delegated gate runs" bullet of
+              # SPECIFICATION/contracts.md: a member declaring it reads an
+              # AUTHORIZATION held outside the tree does not run here, because
+              # this pod holds no ledger credential and no admin-scoped token by
+              # design. The pre-push gate runs it on the pushing host against
+              # this same committed tree and ANDs its result into the verdict, so
+              # the verification is RELOCATED rather than narrowed.
+              #
+              # WITHOUT IT A CORRECT TREE READ AS RED, in every consuming
+              # repository rather than only in an edge case. The skip existed
+              # solely inside livespec-dev-tooling's own scripts/just/check.sh,
+              # which no consumer carries, so every consumer's Job ran its
+              # forge-admin member and that member correctly refused to report a
+              # pass it could not verify. Measured 2026-10-24 on gate Jobs
+              # gate-livespec-p87qc (HTTP 403 from
+              # check-branch-protection-alignment on a green tree) and
+              # gate-livespec-overseer-tpfd2 (green on every other member).
+              #
+              # BEFORE THE PREFLIGHT, deliberately, and for the reason every
+              # provisioning step above is: what the recipes are told is set up
+              # before any recipe can read it, and an export written after the
+              # suite started would reach nothing it ran.
+              @@GATE_AUTHORITY_SKIP@@
               for recipe in @@GATE_RECIPE_NAMES@@; do
                 if just --show "${recipe}" > /dev/null 2>&1; then
                   continue
