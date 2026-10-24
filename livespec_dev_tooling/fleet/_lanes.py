@@ -50,6 +50,7 @@ from livespec_dev_tooling.fleet._contract_rows import (
     rows_for,
 )
 from livespec_dev_tooling.fleet._read_cause import cause_fields
+from livespec_dev_tooling.fleet._row_finding import PIN_STALENESS_FINDING_CLASS
 
 if TYPE_CHECKING:
     import structlog.stdlib
@@ -100,10 +101,19 @@ class MemberVerdict:
     A verdict covers only the rows the RUNNING lane evaluated: a member
     `conformant` in the central lane may still fail an admin-vantage row
     in the admin lane, and vice versa — each lane reports its own vantage.
+
+    `non_excluding_rows` is a SUBSET of `failing_rows`, not a fourth outcome:
+    those rows failed at error severity and are reported as failures, and the
+    subset says only that the release fan-out's per-member filter must not
+    EXCLUDE the member over them (`_row_finding`, contracts.md section
+    "Pin-currency severity policy"). It defaults to empty so a verdict built
+    anywhere else keeps the fail-closed reading — every failing row excludes
+    until something says otherwise.
     """
 
     member: str
     failing_rows: tuple[str, ...]
+    non_excluding_rows: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -169,8 +179,10 @@ def run_member_rows(
     skips: dict[str, list[str]] = {}
     out_of_vantage: dict[tuple[str, str], int] = {}
     failing_rows_by_member: dict[str, list[str]] = {}
+    non_excluding_by_member: dict[str, list[str]] = {}
     for member in manifest.members:
         failing_rows_by_member[member.repo] = []
+        non_excluding_by_member[member.repo] = []
         for row in rows_for(repo_class=member.repo_class):
             if row.vantage not in vantages:
                 key = (row.row_id, row.vantage)
@@ -184,6 +196,7 @@ def run_member_rows(
                     evaluated=evaluated,
                     skips=skips,
                     failing_rows=failing_rows_by_member[member.repo],
+                    non_excluding_rows=non_excluding_by_member[member.repo],
                     read_failures=ctx.read_failures,
                 ),
                 log=log,
@@ -195,7 +208,11 @@ def run_member_rows(
         ),
         out_of_vantage_rows=_report_out_of_vantage_rows(counts=out_of_vantage, log=log),
         member_verdicts=tuple(
-            MemberVerdict(member=member, failing_rows=tuple(failing_rows))
+            MemberVerdict(
+                member=member,
+                failing_rows=tuple(failing_rows),
+                non_excluding_rows=tuple(non_excluding_by_member[member]),
+            )
             for member, failing_rows in failing_rows_by_member.items()
         ),
     )
@@ -218,6 +235,7 @@ class _LaneTallies:
     evaluated: dict[str, int]
     skips: dict[str, list[str]]
     failing_rows: list[str]
+    non_excluding_rows: list[str]
     read_failures: list[ReadFailure]
 
 
@@ -286,6 +304,13 @@ def _fold_member_outcome(
                 )
                 return 0
             tallies.failing_rows.append(row.row_id)
+            if outcome.finding_class == PIN_STALENESS_FINDING_CLASS:
+                # STILL a failing row, and still logged as an error below: the
+                # subset says only that the release fan-out must not exclude
+                # this member over it. Recorded here rather than re-derived by
+                # the filter from the row id, which cannot tell a staleness
+                # finding from the can't-parse finding the SAME row emits.
+                tallies.non_excluding_rows.append(row.row_id)
             log.error(
                 "fleet obligation violated",
                 row=row.row_id,

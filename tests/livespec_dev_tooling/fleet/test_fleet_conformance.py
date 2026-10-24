@@ -997,6 +997,7 @@ def test_main_emits_member_verdicts(*, monkeypatch: pytest.MonkeyPatch, tmp_path
             "member": "widget",
             "conformant": False,
             "failing_rows": ["topic-livespec-sibling"],
+            "non_excluding_rows": [],
         }
     ]
 

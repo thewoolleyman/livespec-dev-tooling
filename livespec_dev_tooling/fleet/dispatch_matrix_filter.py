@@ -12,22 +12,44 @@ preflight stays BLOCKING for the members it covers — exclusion IS the
 per-member blocking — and structural failures stay job-red with no
 lever, no warn-only mode, no bypass (criterion 5).
 
+`SPECIFICATION/contracts.md` section "Pin-currency severity policy" (v093)
+then carved ONE exception out of criterion 2: a member whose only
+error-severity findings are pin-currency STALENESS findings is RETAINED in
+the matrix and still named, because the `sibling-released` dispatch is the
+remedy for a stale pin and excluding the member removes its cure. A
+can't-PARSE pin finding still excludes, and so does an error finding on any
+other row. The disposition rides on the FINDING rather than on the row id
+(`_row_finding`), so the two ways one `compat-pin-currency` row can fail part
+ways here.
+
 Inputs are the two artifacts `reusable-release-dispatch.yml` already
 has in hand: the per-member verdict artifact
 `fleet_conformance --emit-member-verdicts` writes
-(`[{member, conformant, failing_rows}]`) and the discovered sibling
-matrix (`[{name}]`). Fail-closed rules: an unreadable or unparseable
-input, a malformed entry, or a sibling with NO verdict entry
+(`[{member, conformant, failing_rows, non_excluding_rows}]`) and the
+discovered sibling matrix (`[{name}]`). Fail-closed rules: an unreadable or
+unparseable input, a malformed entry, or a sibling with NO verdict entry
 (manifest/verdict drift) exits 1 so the preflight job stays red — the
 filter path engages only on a well-formed artifact. A verdict for a
 member outside the sibling set (the publishing repo, excluded from the
 fan-out) is surplus and ignored.
 
+`--retained-out` is OPTIONAL, deliberately, and that is a compatibility
+decision rather than a taste one: the fan-out workflow invoking this filter
+is pinned at a RELEASE of this package, so a required new flag would make
+every unbumped caller exit 2 and red the whole fan-out — the exact
+no-circular-gating violation the filter exists to avoid. A caller that
+requests no retained artifact still gets the retained member in the dispatch
+matrix and still sees it named in the run's annotations.
+
+The partition itself lives in the private sibling
+`_dispatch_matrix_partition`; this module is the process entry point and owns
+the reads, the writes and the workflow commands.
+
 Output discipline matches sibling checks: structlog JSON to stderr.
 The one deliberate stdout emission is the `::warning::` GitHub
-annotation line per excluded member — the Actions runner parses
+annotation line per excluded or retained member — the Actions runner parses
 workflow commands from stdout, and the caller captures nothing from
-stdout (both result payloads go to explicit `--*-out` files).
+stdout (every result payload goes to an explicit `--*-out` file).
 """
 
 from __future__ import annotations
@@ -35,7 +57,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -44,97 +65,24 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 import structlog  # noqa: E402  — vendor-path-aware import after sys.path insert.
-from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure  # noqa: E402  — vendor-path-aware import.
+
+from livespec_dev_tooling.fleet._dispatch_matrix_partition import (  # noqa: E402
+    Exclusion,
+    FilterError,
+    FilterOutcome,
+    RetainedFinding,
+    filter_siblings,
+)
 
 __all__: list[str] = [
     "Exclusion",
     "FilterError",
     "FilterOutcome",
+    "RetainedFinding",
     "filter_siblings",
     "main",
 ]
-
-
-@dataclass(frozen=True, kw_only=True)
-class Exclusion:
-    """One sibling excluded from the dispatch matrix, with its failing rows."""
-
-    member: str
-    failing_rows: tuple[str, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class FilterOutcome:
-    """The filtered matrix plus the loud exclusion list."""
-
-    filtered: tuple[dict[str, str], ...]
-    excluded: tuple[Exclusion, ...]
-
-
-@dataclass(frozen=True, kw_only=True)
-class FilterError:
-    """A structural failure that must keep the preflight job red."""
-
-    reason: str
-
-
-def filter_siblings(
-    *,
-    siblings: list[dict[str, str]],
-    verdicts: list[dict[str, object]],
-) -> Result[FilterOutcome, FilterError]:
-    """Partition the sibling set by conformance verdict, preserving order.
-
-    Every sibling MUST have a verdict entry (the artifact covers every
-    manifest member and the sibling set is a subset); a missing entry is
-    manifest/verdict drift and fails with `FilterError` rather than
-    guessing (fail-closed, criterion 5).
-
-    The two outcomes were previously a hand-rolled `FilterOutcome |
-    FilterError` union — an Either encoded by hand, with `FilterError`
-    already serving as the failure payload. Only the ENCODING moved onto
-    the railway; the partition semantics, the fail-closed rules and every
-    reason string are unchanged.
-
-    Note what is NOT a failure: an EXCLUDED member. A non-conformant
-    sibling is an ordinary result carried on the success track inside
-    `FilterOutcome.excluded`, because excluding it is the filter working
-    as designed (criterion 2). The failure track is reserved for
-    STRUCTURAL problems that must keep the preflight job red — malformed
-    entries and manifest/verdict drift. Collapsing the two would turn a
-    routine exclusion into a red job and re-create the gate this filter
-    exists to replace.
-    """
-    verdict_by_member: dict[str, tuple[bool, tuple[str, ...]]] = {}
-    for verdict in verdicts:
-        member = verdict.get("member")
-        conformant = verdict.get("conformant")
-        failing = verdict.get("failing_rows")
-        if not isinstance(member, str) or not isinstance(conformant, bool):
-            return Failure(FilterError(reason=f"malformed verdict entry: {verdict!r}"))
-        if not isinstance(failing, list):
-            return Failure(FilterError(reason=f"malformed failing_rows for member {member}"))
-        failing_items = cast("list[object]", failing)
-        rows = tuple(row for row in failing_items if isinstance(row, str))
-        if len(rows) != len(failing_items):
-            return Failure(FilterError(reason=f"non-string failing row in verdict for {member}"))
-        verdict_by_member[member] = (conformant, rows)
-    filtered: list[dict[str, str]] = []
-    excluded: list[Exclusion] = []
-    for sibling in siblings:
-        name = sibling.get("name")
-        if not isinstance(name, str) or not name:
-            return Failure(FilterError(reason=f"malformed sibling entry: {sibling!r}"))
-        if name not in verdict_by_member:
-            return Failure(
-                FilterError(reason=f"sibling {name} has no verdict entry (manifest/verdict drift)")
-            )
-        conformant, rows = verdict_by_member[name]
-        if conformant:
-            filtered.append({"name": name})
-        else:
-            excluded.append(Exclusion(member=name, failing_rows=rows))
-    return Success(FilterOutcome(filtered=tuple(filtered), excluded=tuple(excluded)))
 
 
 def _read_json_list(*, path: Path) -> list[object] | None:
@@ -173,7 +121,58 @@ def _build_parser() -> argparse.ArgumentParser:
     _ = parser.add_argument("--siblings", type=Path, required=True)
     _ = parser.add_argument("--filtered-out", type=Path, required=True)
     _ = parser.add_argument("--exclusions-out", type=Path, required=True)
+    _ = parser.add_argument("--retained-out", type=Path, default=None)
     return parser
+
+
+def _write_findings(
+    *, path: Path, findings: tuple[Exclusion, ...] | tuple[RetainedFinding, ...]
+) -> None:
+    """One disposition's per-member findings, as the JSON array the caller renders."""
+    _ = path.write_text(
+        json.dumps(
+            [
+                {"member": finding.member, "failing_rows": list(finding.failing_rows)}
+                for finding in findings
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _announce(*, outcome: FilterOutcome, log: structlog.stdlib.BoundLogger) -> None:
+    """Name every member on BOTH dispositions, loudly, before anything is written.
+
+    stdout on purpose: the Actions runner parses workflow commands from stdout,
+    making each line a visible run annotation; the caller captures nothing from
+    stdout. The retained line says NOT EXCLUDED in so many words — the
+    silent-omission hazard cuts both ways, and a member kept despite
+    error-severity findings must say which findings it was kept despite.
+    """
+    for exclusion in outcome.excluded:
+        rows = ", ".join(exclusion.failing_rows) or "(rows unavailable)"
+        print(  # noqa: T201
+            f"::warning::EXCLUDED from release dispatch: {exclusion.member} — "
+            f"failing conformance rows: {rows}"
+        )
+        log.warning(
+            "member excluded from dispatch matrix",
+            member=exclusion.member,
+            failing_rows=list(exclusion.failing_rows),
+        )
+    for retained in outcome.retained:
+        rows = ", ".join(retained.failing_rows) or "(rows unavailable)"
+        print(  # noqa: T201
+            f"::warning::NOT EXCLUDED from release dispatch (pin-currency staleness only, "
+            f"and the dispatch is the remedy): {retained.member} — "
+            f"error-severity conformance rows: {rows}"
+        )
+        log.warning(
+            "member retained in dispatch matrix despite error findings",
+            member=retained.member,
+            failing_rows=list(retained.failing_rows),
+        )
 
 
 def main(*, argv: list[str] | None = None) -> int:
@@ -201,40 +200,19 @@ def main(*, argv: list[str] | None = None) -> int:
         log.error("dispatch-matrix filter failed closed", reason=filtered_result.failure().reason)
         return 1
     outcome = filtered_result.unwrap()
-    for exclusion in outcome.excluded:
-        rows = ", ".join(exclusion.failing_rows) or "(rows unavailable)"
-        # stdout on purpose: the Actions runner parses workflow commands
-        # from stdout, making the exclusion a visible run annotation
-        # (criterion 3); the caller captures nothing from stdout.
-        print(  # noqa: T201
-            f"::warning::EXCLUDED from release dispatch: {exclusion.member} — "
-            f"failing conformance rows: {rows}"
-        )
-        log.warning(
-            "member excluded from dispatch matrix",
-            member=exclusion.member,
-            failing_rows=list(exclusion.failing_rows),
-        )
+    _announce(outcome=outcome, log=log)
     _ = cast("Path", args.filtered_out).write_text(
         json.dumps(list(outcome.filtered)) + "\n", encoding="utf-8"
     )
-    _ = cast("Path", args.exclusions_out).write_text(
-        json.dumps(
-            [
-                {
-                    "member": exclusion.member,
-                    "failing_rows": list(exclusion.failing_rows),
-                }
-                for exclusion in outcome.excluded
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    _write_findings(path=cast("Path", args.exclusions_out), findings=outcome.excluded)
+    retained_out = cast("Path | None", args.retained_out)
+    if retained_out is not None:
+        _write_findings(path=retained_out, findings=outcome.retained)
     log.info(
         "dispatch matrix filtered",
         kept=len(outcome.filtered),
         excluded=len(outcome.excluded),
+        retained=len(outcome.retained),
     )
     return 0
 

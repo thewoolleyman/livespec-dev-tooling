@@ -36,6 +36,7 @@ from test_rows_files import _MEMBER, make_context, tree_table
 from livespec_dev_tooling.fleet._context import GhResult, RowFinding, RowPass, RowSkip
 from livespec_dev_tooling.fleet._contract_model import ObligationRow
 from livespec_dev_tooling.fleet._lanes import _fold_member_outcome, _LaneTallies
+from livespec_dev_tooling.fleet._row_finding import pin_staleness_finding
 from livespec_dev_tooling.fleet._rows_claude_plugin import (
     CLAUDE_SETTINGS,
     assert_claude_plugin_currency,
@@ -66,7 +67,9 @@ def _tallies() -> _LaneTallies:
     # `read_failures` is REQUIRED rather than defaulted: an empty list means "no
     # read failed", and a construction site that forgot it would report every
     # skipped row as unexplained instead of throttled or refused.
-    return _LaneTallies(evaluated={}, skips={}, failing_rows=[], read_failures=[])
+    return _LaneTallies(
+        evaluated={}, skips={}, failing_rows=[], non_excluding_rows=[], read_failures=[]
+    )
 
 
 class _CapturingLog:
@@ -137,6 +140,49 @@ def test_fold_counts_an_error_finding_as_evaluated_and_failing() -> None:
     assert tallies.evaluated == {"demo-row": 1}
     assert tallies.failing_rows == ["demo-row"]
     assert ("error", "fleet obligation violated") in log.events
+
+
+def test_fold_records_a_staleness_class_finding_as_non_excluding_too() -> None:
+    # The fold's FOURTH tally, and the one whose arm is invisible from the
+    # others: a pin-currency staleness finding is a failing row like any
+    # error finding AND is recorded as non-excluding, so the release fan-out's
+    # per-member filter keeps the member in the dispatch matrix while the run
+    # still reports the finding (contracts.md section "Pin-currency severity
+    # policy"). A fold that credited only `failing_rows` would leave the
+    # member excluded from the dispatch that is the remedy for its stale pin.
+    tallies = _tallies()
+    log = _CapturingLog()
+
+    delta = _fold_member_outcome(
+        outcome=pin_staleness_finding(message="widget: pin stale", severity="error"),
+        row=_row(),
+        member_repo="widget",
+        tallies=tallies,
+        log=log,  # pyright: ignore[reportArgumentType]
+    )
+
+    assert delta == 1, "a staleness finding stays error-severity where it escalates"
+    assert tallies.failing_rows == ["demo-row"]
+    assert tallies.non_excluding_rows == ["demo-row"]
+    assert ("error", "fleet obligation violated") in log.events
+
+
+def test_fold_leaves_an_ordinary_error_finding_out_of_the_non_excluding_tally() -> None:
+    # The DEFAULT, asserted beside its exception so the two cannot be read as
+    # one: an unclassified finding excludes, which is the fail-closed reading.
+    tallies = _tallies()
+    log = _CapturingLog()
+
+    _ = _fold_member_outcome(
+        outcome=RowFinding(message="widget: app not installed"),
+        row=_row(),
+        member_repo="widget",
+        tallies=tallies,
+        log=log,  # pyright: ignore[reportArgumentType]
+    )
+
+    assert tallies.failing_rows == ["demo-row"]
+    assert tallies.non_excluding_rows == []
 
 
 def test_fold_counts_a_warning_finding_as_evaluated_but_not_failing() -> None:
