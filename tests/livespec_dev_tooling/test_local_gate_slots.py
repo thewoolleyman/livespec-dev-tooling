@@ -20,8 +20,10 @@ they assert IS process death and environment inheritance.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -39,6 +41,19 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MODULE_PATH = _REPO_ROOT / "livespec_dev_tooling" / "local_gate_slots.py"
 _SYNTHETIC_NAME = "local_gate_slots_under_test"
+_PYPROJECT = _REPO_ROOT / "pyproject.toml"
+
+# The `pytest11` table and its entries, read as TEXT rather than parsed: stdlib
+# `tomllib` lands in 3.11 and this repo's floor is 3.10.16, which is the same
+# reason every other pyproject assertion in this suite reads text.
+_PYTEST11_TABLE = re.compile(
+    r"^\[project\.entry-points\.pytest11\][ \t]*$(?P<body>.*?)(?=^\[|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+_ENTRY_POINT = re.compile(
+    r'^[ \t]*(?P<name>[A-Za-z0-9_.-]+)[ \t]*=[ \t]*"(?P<target>[^"]+)"[ \t]*$',
+    re.MULTILINE,
+)
 
 # How long the no-busy-loop probe watches a waiting session, and the CPU it is
 # allowed to have burned over that window. The ceiling discriminates by an order
@@ -611,3 +626,69 @@ def test_a_session_nested_under_a_slot_holder_takes_no_second_slot(*, tmp_path: 
         "had taken a second one would have found this free"
     )
     os.close(parent_slot)
+
+
+@pytest.mark.integration
+def test_the_plugin_hook_leaves_an_unprovisioned_host_completely_untouched(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a host with no local-gate slot limit runs pytest sessions unchanged.
+
+    Asserted at the HOOK, which is the only thing a host without this feature
+    would not be running. "Unchanged" is read as four separate absences — no
+    slot store, no marker, no output, no delay — because any one of them
+    appearing on a factory sandbox or a delegated gate pod would be this
+    module's footprint on a host the clause says it must not touch.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert hasattr(module, "pytest_configure"), (
+        "the module must implement the pytest_configure hook: it is what makes "
+        "the limit apply to every pytest session a fleet gate runs, with no "
+        "per-repository wiring to forget"
+    )
+    assert not inspect.signature(module.pytest_configure).parameters, (
+        "the hook must declare no arguments: pluggy passes a hook only what it "
+        "names, so declaring none keeps it callable across pytest versions"
+    )
+    store = tmp_path / "slots"
+    monkeypatch.setattr(module, "LIMIT_FILE", tmp_path / "absent")
+    monkeypatch.setattr(module, "SLOT_DIR", store)
+
+    assert module.pytest_configure() is None
+
+    assert not store.exists(), "no slot store may be created on an unlimited host"
+    assert _MARKER_ENV_VAR not in os.environ, "and no marker may be left behind"
+    assert capsys.readouterr().err == "", "and nothing may be said about it"
+
+
+@pytest.mark.integration
+def test_one_declared_entry_point_governs_every_fleet_gate_surface() -> None:
+    """Every pytest session a fleet gate runs is governed, with no per-repo wiring.
+
+    The ratified clause names four surfaces — the pre-commit check aggregate,
+    the commit-msg replay gate, a local pre-push `just check` and a hand-run
+    `just check` — and this is the one declaration that covers all four. Each of
+    them runs pytest, and a `pytest11` entry point is loaded by EVERY pytest
+    session in any environment where this package is installed, so there is no
+    fourth place to remember and no repository that can forget.
+
+    The declared target is held against this module's own path rather than
+    restated, because the failure it guards is silent in the worst way: an entry
+    point naming a module that moved loads nothing, every session starts
+    unthrottled, and the only symptom is a host that quietly contends again.
+    """
+    table = _PYTEST11_TABLE.search(_PYPROJECT.read_text(encoding="utf-8"))
+    assert table is not None, (
+        "pyproject.toml must declare a [project.entry-points.pytest11] table: "
+        "it is how the limit reaches every fleet gate's pytest session"
+    )
+    targets = [found.group("target") for found in _ENTRY_POINT.finditer(table.group("body"))]
+    assert targets, "the pytest11 table must declare at least one plugin module"
+
+    expected = str(_MODULE_PATH.relative_to(_REPO_ROOT).with_suffix("")).replace("/", ".")
+    assert expected in targets, (
+        f"the pytest11 table must name {expected}, got {targets}: an entry "
+        f"point naming a module that moved loads nothing and leaves every "
+        f"session unthrottled with no symptom but a contending host"
+    )
