@@ -151,6 +151,13 @@
       "github_url": "https://github.com/thewoolleyman/livespec",
       "local_clone": "/data/projects/livespec",
       "default_branch": "master"
+    },
+    // Resolves the `bd-ib` carrier prefix for plan carrier-map reads: plan
+    // delegated-gate-fleet-rollout's carrier bd-ib-idp5g7 lives in this ledger.
+    "livespec-orchestrator-beads-fabro": {
+      "github_url": "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro",
+      "local_clone": "/data/projects/livespec-orchestrator-beads-fabro",
+      "default_branch": "master"
     }
   },
   "livespec-dev-tooling": {
