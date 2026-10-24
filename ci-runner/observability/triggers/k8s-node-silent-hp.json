@@ -1,0 +1,53 @@
+{
+  "name": "k8s node dead-man — hp-xubuntu kubelet usage silent 20 min",
+  "description": "Fires when ZERO k8s.node.cpu.usage datapoints for k8s.node.name=hp-xubuntu arrive in the trailing 20 min (evaluated every 10 min). The poweredge-xubuntu collector scrapes every node's kubelet every 30 s, so silence means the node, its kubelet, the API-server proxy, the k8s_observer/receiver_creator pair, or the poweredge collector is down — the cluster is being flown blind for that node. UNGROUPED BUT FILTERED to one node, as every dead-man here: a grouped query cannot fire on a silent subject. Emitter: thewoolleyman/otel-collector config.ci-runner-host.yaml on poweredge-xubuntu. Runbook: open the 'Kubernetes node load' board; ssh <node>; mpstat 5 3; free -g; kubectl describe node <node>; kubectl get pods -A -o wide --field-selector spec.nodeName=<node>. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-uftb4o.",
+  "query": {
+    "calculations": [
+      {
+        "op": "COUNT_DATAPOINTS",
+        "column": "k8s.node.cpu.usage"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.node.name",
+        "op": "=",
+        "value": "hp-xubuntu"
+      }
+    ],
+    "time_range": 1200
+  },
+  "threshold": {
+    "op": "<",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 600,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-nodes"
+    },
+    {
+      "key": "component",
+      "value": "node-load"
+    },
+    {
+      "key": "kind",
+      "value": "dead-man"
+    },
+    {
+      "key": "host",
+      "value": "hp-xubuntu"
+    }
+  ]
+}
