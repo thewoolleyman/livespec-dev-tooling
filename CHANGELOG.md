@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.131.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.130.1...v1.131.0) (2026-10-24)
+
+
+### Features
+
+* **ansible:** converge every ci_pool node's collector from ci-pool.yml ([a36f732](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a36f732d1b6ed97fde9ed0d2799d84d569770a9a))
+
 ## [1.130.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.130.0...v1.130.1) (2026-10-24)
 
 
