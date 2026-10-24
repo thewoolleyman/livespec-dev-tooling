@@ -404,6 +404,15 @@ fabro_server_instances:
         cpu: 4
         memory: 8GB
         provider: kubernetes
+      # The v092 id for the python-agent layer (livespec-dev-tooling-s6go5s),
+      # identical to livespec-ci above. homelab's committed `mi-homelab` factory
+      # entry names it; livespec-ci is retired later through the
+      # retired_environments axis, once nothing names it (coordinator ruling on
+      # livespec-dev-tooling-dfixhe, 2026-10-24; work-item bd-ib-yetegc).
+      - id: factory-python
+        cpu: 4
+        memory: 8GB
+        provider: kubernetes
     # The same pinned plugin as the fleet instance, pointed at homelab's OWN
     # namespace. Rulings R668 / R669(1) keep homelab out of reach of the shared
     # fleet instance, so its pods run in `factory-mi-homelab`
