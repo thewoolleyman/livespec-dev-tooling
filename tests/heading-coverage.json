@@ -1192,5 +1192,21 @@
     "test": "TODO",
     "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
     "work_item": "livespec-dev-tooling-zlhnib"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a staged type error refuses the commit before the full pre-commit aggregate",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the staged-file pre-check is owed; exercised by the implementing item livespec-dev-tooling-nil6v7.",
+    "work_item": "livespec-dev-tooling-nil6v7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a staged lint error refuses the commit before the full pre-commit aggregate",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test of the staged-file pre-check is owed; exercised by the implementing item livespec-dev-tooling-nil6v7.",
+    "work_item": "livespec-dev-tooling-nil6v7"
   }
 ]
