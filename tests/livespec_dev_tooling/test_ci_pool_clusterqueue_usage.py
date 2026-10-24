@@ -95,3 +95,45 @@ def test_pool_emitter_reports_each_clusterqueue_flavor_usage_and_quota(*, tmp_pa
         point["asDouble"] == 12 and expected_attributes.items() <= _attributes(point=point).items()
         for point in quota
     )
+
+
+def test_pool_emitter_reports_clusterqueue_read_failure_without_unbound_variable(
+    *, tmp_path: Path
+) -> None:
+    """A failed ClusterQueue listing records the omission rather than crashing."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_executable(
+        path=fake_bin / "kubectl",
+        body="""#!/bin/sh
+case "$*" in
+  *'get clusterqueues'*) echo 'clusterqueues unavailable' >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+""",
+    )
+    _write_executable(
+        path=fake_bin / "curl",
+        body="""#!/bin/sh
+exit 0
+""",
+    )
+
+    completed = subprocess.run(
+        ["bash", str(_EMITTER)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "CI_POOL_KUBECTL": str(fake_bin / "kubectl"),
+            "CI_RUNNER_HEARTBEAT_OTLP": "http://127.0.0.1:4319/v1/metrics",
+            "CI_POOL_OTLP_LOGS": "http://127.0.0.1:4319/v1/logs",
+        },
+    )
+
+    assert completed.returncode == 1, completed.stderr
+    assert "could not read ClusterQueues (clusterqueues unavailable)" in completed.stderr
+    assert "unbound variable" not in completed.stderr
