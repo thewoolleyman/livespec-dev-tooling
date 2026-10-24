@@ -1,0 +1,61 @@
+{
+  "name": "k8s node CPU saturation — a cluster node under 10% idle for 15 min",
+  "description": "Fires, per host.name, when AVG(system.cpu.utilization) for state=idle across the node's CPUs over the trailing 15 min is below 0.10 — the node has been at least 90% busy for 15 minutes. Busy is read as 1 - idle from hostmetrics, not from load average (.ai/ci-node-capacity-reads.md). Grouped by host.name over the three k3s nodes. Emitter: the per-node host collector (thewoolleyman/otel-collector), converged by ansible/ci-pool.yml. Runbook: open the 'Kubernetes node load' board; ssh <node>; mpstat 5 3; free -g; kubectl describe node <node>; kubectl get pods -A -o wide --field-selector spec.nodeName=<node>. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-uftb4o.",
+  "query": {
+    "calculations": [
+      {
+        "op": "AVG",
+        "column": "system.cpu.utilization"
+      }
+    ],
+    "filters": [
+      {
+        "column": "host.name",
+        "op": "in",
+        "value": [
+          "poweredge-xubuntu",
+          "gmktec-xubuntu",
+          "hp-xubuntu"
+        ]
+      },
+      {
+        "column": "state",
+        "op": "=",
+        "value": "idle"
+      }
+    ],
+    "breakdowns": [
+      "host.name"
+    ],
+    "time_range": 900
+  },
+  "threshold": {
+    "op": "<",
+    "value": 0.1,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-nodes"
+    },
+    {
+      "key": "component",
+      "value": "node-load"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

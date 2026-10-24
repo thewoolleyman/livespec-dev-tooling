@@ -1,0 +1,57 @@
+{
+  "name": "k8s node memory — a cluster node's working set above 90% of capacity",
+  "description": "Fires, per k8s.node.name, when MAX(working_set / (working_set + memory.available)) from the kubelet over the trailing 10 min exceeds 0.90 — kubelet's own eviction signal, ahead of the MemoryPressure condition. Emitter: one kubeletstats per node on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml). Runbook: open the 'Kubernetes node load' board; ssh <node>; mpstat 5 3; free -g; kubectl describe node <node>; kubectl get pods -A -o wide --field-selector spec.nodeName=<node>. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-uftb4o.",
+  "query": {
+    "calculated_fields": [
+      {
+        "name": "node_memory_working_set_ratio",
+        "expression": "DIV($k8s.node.memory.working_set, SUM($k8s.node.memory.working_set, $k8s.node.memory.available))"
+      }
+    ],
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "node_memory_working_set_ratio"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.node.name",
+        "op": "exists"
+      }
+    ],
+    "breakdowns": [
+      "k8s.node.name"
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">",
+    "value": 0.9,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-nodes"
+    },
+    {
+      "key": "component",
+      "value": "node-load"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
