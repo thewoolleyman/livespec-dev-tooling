@@ -43,6 +43,7 @@ from livespec_dev_tooling.fleet._context import (  # noqa: E402
 from livespec_dev_tooling.fleet._pin_walk_failure import (  # noqa: E402
     walk_failure_outcome,
 )
+from livespec_dev_tooling.fleet._row_finding import pin_staleness_finding  # noqa: E402
 from livespec_dev_tooling.fleet._settle_window import (  # noqa: E402
     LatestRelease,
     LatestReleaseUnreadable,
@@ -287,16 +288,21 @@ def _staleness_class_outcome(
         findings = "; ".join(
             f"{_stale_pin_summary(pin=pin)} (open bump PR #{number})" for pin, number in persisting
         )
-        return RowFinding(
+        return pin_staleness_finding(
             message=(
                 f"{member.repo}: {spec.pin_format} pin persisting gap "
                 f"(stale AND its bump PR is already open, unable to land): {findings}"
             ),
             # Context-scoped: an error only where the livespec-f73t filter
-            # consumes it as a per-member exclusion (the fan-out preflight);
-            # a warning in per-PR CI, where one member's stall must not red
-            # this repo's unrelated and repair PRs. Message identical either
-            # way — the scoping lowers severity, never the diagnostic.
+            # consumes it as a per-member exclusion summary (the fan-out
+            # preflight); a warning in per-PR CI, where one member's stall must
+            # not red this repo's unrelated and repair PRs. Message identical
+            # either way — the scoping lowers severity, never the diagnostic.
+            #
+            # And the STALENESS CLASS, which is what stops the error severity
+            # from excluding the member: that dispatch is the remedy for this
+            # very finding, and the bump PR it opens supersedes the stuck one
+            # named above (`_row_finding`).
             severity="error" if ctx.filter_consuming_preflight else "warning",
         )
     return _never_fired_outcome(ctx=ctx, member=member, spec=spec, stale=stale)
@@ -327,7 +333,7 @@ def _never_fired_outcome(
         for pin, verdict in zip(stale, verdicts, strict=True)
     )
     escalates = any(verdict.escalates for verdict in verdicts)
-    return RowFinding(
+    return pin_staleness_finding(
         message=f"{member.repo}: {spec.pin_format} pin stale: {findings}",
         severity="error" if escalates and ctx.filter_consuming_preflight else "warning",
     )
