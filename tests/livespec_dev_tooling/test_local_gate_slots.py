@@ -20,8 +20,11 @@ they assert IS process death and environment inheritance.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -33,6 +36,21 @@ __all__: list[str] = []
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MODULE_PATH = _REPO_ROOT / "livespec_dev_tooling" / "local_gate_slots.py"
 _SYNTHETIC_NAME = "local_gate_slots_under_test"
+
+# How long the no-busy-loop probe watches a waiting session, and the CPU it is
+# allowed to have burned over that window. The ceiling discriminates by an order
+# of magnitude rather than by a hair: a spin loop would consume a whole core for
+# the probe's full duration, so a reading anywhere near the elapsed wall time
+# convicts and a genuinely sleeping waiter lands three orders of magnitude below
+# the ceiling. It is deliberately NOT tight — a tight one would convict a loaded
+# host instead of a busy loop.
+_CPU_PROBE_SECONDS = 1.5
+_CPU_CEILING_SECONDS = 0.2
+
+# How long the probe is willing to wait for a freed slot to be picked up before
+# calling the waiter wedged. Generous because a loaded host may schedule the
+# waiter late, and a false "wedged" here would read as a broken queue.
+_HANDOFF_TIMEOUT_SECONDS = 30.0
 
 
 def _load_module() -> ModuleType:
@@ -56,6 +74,26 @@ def _limit_file(*, root: Path, text: str) -> Path:
     path = root / "local-gate-slots"
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def _slot_store(*, root: Path) -> Path:
+    """An empty slot store, as the host's converge provisions it."""
+    store = root / "slots"
+    store.mkdir()
+    return store
+
+
+def _emitted_lines(*, captured: str) -> list[dict[str, object]]:
+    """Every structured line a queued session emitted, parsed.
+
+    Parsed rather than substring-matched, because the ratified clause asks for a
+    line that NAMES THE LIMIT: a bare "waiting" string would satisfy a substring
+    match and tell an operator nothing about how many slots the host has. The
+    parse is TOTAL — every line a queued session writes is one of these
+    announcements, so a line that is not one fails here rather than being
+    filtered away where no assertion would ever see it.
+    """
+    return [json.loads(line) for line in captured.splitlines() if line.strip()]
 
 
 @pytest.mark.integration
@@ -148,3 +186,102 @@ def test_a_slot_file_that_cannot_be_opened_is_not_handed_out(*, tmp_path: Path) 
     (slot_dir / "slot-1").mkdir()
 
     assert module.take_slot(slot_dir=slot_dir, limit=1) is None
+
+
+@pytest.mark.integration
+def test_a_waiting_session_names_the_limit_and_repeats_itself_each_half_minute(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SCENARIO: a host at its local-gate slot limit queues the next pytest session.
+
+    The ANNOUNCEMENT half of that scenario: a queued session says so, names the
+    limit it is queued behind, and keeps saying so at least once a minute. A
+    queue nobody can see is indistinguishable from a wedged gate, which is the
+    whole reason the clause requires the repeat rather than one line at the
+    start.
+
+    The sleeping is stubbed so the cadence can be read in simulated seconds
+    rather than waited out; that the wait SLEEPS at all is asserted separately
+    by the no-busy-loop probe, against the real clock.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert hasattr(module, "await_slot"), (
+        "the module must expose await_slot: a session that finds every slot "
+        "held has to queue for one, and queueing is what the ratified clause "
+        "requires instead of starting a further test run"
+    )
+    slot_dir = _slot_store(root=tmp_path)
+    holder = module.take_slot(slot_dir=slot_dir, limit=1)
+    assert holder is not None
+
+    rounds_per_heartbeat = round(module.HEARTBEAT_SECONDS / module.POLL_SECONDS)
+    naps: list[float] = []
+
+    def _nap(seconds: float) -> None:
+        naps.append(seconds)
+        if len(naps) == rounds_per_heartbeat + 1:
+            os.close(holder)
+
+    waited = module.await_slot(slot_dir=slot_dir, limit=1, sleep=_nap)
+    assert waited is not None
+    os.close(waited)
+
+    assert module.HEARTBEAT_SECONDS <= 60.0, (
+        "the clause requires a waiting session to repeat its line at least once "
+        "a minute, so the heartbeat interval cannot exceed sixty seconds"
+    )
+    assert naps == [module.POLL_SECONDS] * (
+        rounds_per_heartbeat + 1
+    ), "every round of the wait must sleep, and sleep the same poll interval"
+
+    announced = _emitted_lines(captured=capsys.readouterr().err)
+    assert len(announced) == 2, (
+        f"a wait of {len(naps) * module.POLL_SECONDS} simulated seconds must "
+        f"announce itself once at the start and again one heartbeat later, "
+        f"got {len(announced)} lines"
+    )
+    for record in announced:
+        assert record["limit"] == 1, "the announcement must name the host's limit"
+        assert "waiting" in str(record["event"]), (
+            "the announcement must say the session is waiting, so a queue is "
+            "never mistaken for a wedged gate"
+        )
+
+
+@pytest.mark.integration
+def test_a_wait_of_several_poll_rounds_adds_no_measurable_cpu_load(*, tmp_path: Path) -> None:
+    """The wait is not a busy loop, measured against the real clock.
+
+    Read as process CPU time over a real wall-clock window while a real waiter
+    is queued on a real lock. A spin loop would burn a core for the whole
+    window; a sleeping one burns the handful of syscalls its polls cost.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert hasattr(module, "await_slot")
+    slot_dir = _slot_store(root=tmp_path)
+    holder = module.take_slot(slot_dir=slot_dir, limit=1)
+    assert holder is not None
+
+    acquired: list[int] = []
+
+    def _queue_for_the_slot() -> None:
+        acquired.append(module.await_slot(slot_dir=slot_dir, limit=1))
+
+    waiter = threading.Thread(target=_queue_for_the_slot, daemon=True)
+    waiter.start()
+    before = time.process_time()
+    time.sleep(_CPU_PROBE_SECONDS)
+    burned = time.process_time() - before
+
+    os.close(holder)
+    waiter.join(timeout=_HANDOFF_TIMEOUT_SECONDS)
+    assert not waiter.is_alive(), "the waiter must take the slot once it frees"
+    assert len(acquired) == 1
+    os.close(acquired[0])
+
+    assert burned < _CPU_CEILING_SECONDS, (
+        f"a {_CPU_PROBE_SECONDS}s wait burned {burned:.3f}s of CPU, which is a "
+        f"busy loop rather than a poll that sleeps"
+    )
