@@ -22,6 +22,20 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Local gate concurrency limit",
+    "work_item": "livespec-dev-tooling-c62xtb",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Sandbox image gate toolchain",
+    "work_item": "livespec-dev-tooling-jxepvj",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
@@ -40,6 +54,13 @@
     "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated",
     "work_item": "livespec-dev-tooling-mrr7ye",
     "first_seen": "2026-10-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's delegated gate finds the mise-pinned tools its gate members invoke",
+    "work_item": "livespec-dev-tooling-jxepvj",
+    "first_seen": "2026-10-24"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -93,6 +114,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host at its local-gate slot limit queues the next pytest session",
+    "work_item": "livespec-dev-tooling-c62xtb",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host with no local-gate slot limit runs pytest sessions unchanged",
+    "work_item": "livespec-dev-tooling-c62xtb",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -107,9 +142,23 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pytest session nested under a slot holder takes no second slot",
+    "work_item": "livespec-dev-tooling-c62xtb",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a red master whose re-run passes is classified a flake and never merges a revert",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a slot holder that is killed frees its slot without cleanup",
+    "work_item": "livespec-dev-tooling-c62xtb",
+    "first_seen": "2026-10-24"
   },
   {
     "spec_root": "SPECIFICATION",

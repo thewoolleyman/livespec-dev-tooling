@@ -85,6 +85,14 @@ Every `match` statement over a closed sum type MUST terminate with `case _: asse
 
 Non-Python binaries (uv, just, lefthook) pin via `.mise.toml`; Python and Python packages pin via `pyproject.toml`'s `[project.requires-python]` and `[dependency-groups].dev`. Pinned versions MUST match livespec's `.mise.toml` and `pyproject.toml` exactly; drift surfaces as a propose-change-worthy event.
 
+## Sandbox image gate toolchain
+
+The `python-rust` Fabro sandbox image this repository builds, and every image layer built atop it (`python-rust-agent`, `python-rust-fuzz`), MUST carry `jq` on `PATH`.
+
+More generally, a non-Python tool that a fleet consumer's gate member invokes, and that the consumer pins in its `.mise.toml`, MUST be present on `PATH` in the sandbox image that consumer's CI container pins. A delegated gate Job runs in exactly that image and deliberately runs no `mise install`: `ci-runner/k3s/phase2/gates/render-gate-job.sh` resolves the Job's image from the consumer's own `.github/workflows/ci.yml`. A tool the image does not carry is therefore absent from the gate.
+
+A tool missing from that image MUST be provisioned in the image. It MUST NOT be worked around by narrowing the gate on the delegated path, consistent with livespec's ratified *The set* clause (livespec v229, `non-functional-requirements.md` §"Enforcement-suite invocation", **Delegated gate execution**), under which a tool on a host's path is a host-supplied condition that never leaves a check unarmed.
+
 ## Enforcement-suite invocation
 
 The enforcement-suite invocation surface is `just <target>`. Lefthook hooks and CI workflows MUST delegate to `just <target>`; direct tool invocations (`ruff check ...`, `pytest ...`, `python3 ...`) inside `run:` blocks are forbidden. Once `no_direct_tool_invocation` migrates from livespec-core, the gate enforces this mechanically.
@@ -94,6 +102,24 @@ The enforcement-suite invocation surface is `just <target>`. Lefthook hooks and 
 The lefthook configuration MUST mirror livespec's pre-commit ordering (`00-install-worktree-pack`, `01-lint-autofix-staged`, `02-commit-pairs-source-and-test`, `03-check-pre-commit`), commit-msg gates (`00-no-commit-on-master`, `01-red-green-replay`), and pre-push ordering (`00-install-worktree-pack` then `01-check-pre-push`), per livespec `contracts.md` section "Pre-commit step ordering". The `00-install-worktree-pack` command delegates to `just install-worktree-pack`, which materializes the canonical worktree-discipline pack this repository ships into the checkout's gitignored `dev-tooling/` from the package the checkout resolves, so every later gate member that reads the pack finds it present and current whether the worktree was created by `just worktree-create`, by a raw `git worktree add`, or before a pin bump; the installer MUST be idempotent, MUST write only files the repository ignores, and MUST NOT relax the byte-identity verifier, which still asserts the installed bytes after the install. No hook command that reads the pack MAY precede it.
 
 Codex support for this repository is REQUIRED at the contributor-workflow layer. `AGENTS.md` is the Codex-facing source of truth for repository mutation discipline, and the repository hooks remain the mechanical enforcement surface. This repo does not currently need project-local `.agents/skills/` livespec adapters because it owns shared enforcement-suite code rather than a user-facing `/livespec:*` Driver surface. If a future Codex adapter is added here, it MUST stay thin over governed core prose/wrappers or this library's stable `python -m livespec_dev_tooling.checks.<slug>` CLIs, MUST NOT copy Claude-specific skill bodies, and MUST be manually verified under Codex before it is claimed as supported. Agent-loop observability work, including `livespec-dev-tooling-e60`, MUST treat Codex as a distinct runtime with tokens-primary evidence instead of inferring Codex behavior or cost from Claude Code spans.
+
+## Local gate concurrency limit
+
+A host MAY set a local-gate slot limit N. The limit bounds the test runs that fleet gates execute on that host, so that concurrent sessions queue for the host instead of contending for it.
+
+When a host's limit is set to N, at most N pytest sessions started from a fleet repository's checkout or worktree MUST run at once across all repositories and worktrees on that host, and every further such session MUST wait for a slot instead of starting. The limit MUST govern the pytest sessions run by the pre-commit check aggregate, the commit-msg replay gate, a local pre-push `just check`, and a hand-run `just check` alike.
+
+A pytest session waiting for a slot MUST print a line naming the limit and that it is waiting, and MUST repeat that line at least once a minute while it waits. The wait MUST NOT be a busy loop: a wait of several minutes MUST add no measurable CPU load.
+
+Waiting MUST NOT produce a verdict: a session that waited MUST run its tests once a slot frees and report their own result. A session killed while waiting MUST hold no slot. A session that holds a slot and dies, by any cause including SIGKILL, MUST free that slot without any cleanup step.
+
+A pytest session started by another pytest session that already holds a slot MUST run without taking a second slot, so that a test suite which spawns pytest in a child process cannot deadlock against its own parent.
+
+On a host with no slot limit set — a factory sandbox, a delegated gate pod, or any host never provisioned with one — pytest sessions MUST start exactly as they would without this section.
+
+A host's limit MUST be provisioned through a committed converge, never set by hand, and removing that one committed setting MUST return the host to no limit.
+
+The limit is a STOPGAP for gates that still run on a shared host. Once the fleet's heavy gates run delegated, the limit SHOULD be removed.
 
 ## Commit and merge discipline
 
