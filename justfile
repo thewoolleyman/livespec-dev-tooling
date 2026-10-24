@@ -561,6 +561,19 @@ check-fleet-conformance *args:
 filter-dispatch-matrix *args:
     uv run python -m livespec_dev_tooling.fleet.dispatch_matrix_filter "$@"
 
+# Sandbox-image readiness gate for the release fan-out (contracts.md
+# section "Cross-repo coordination automation surface", v087): a
+# livespec-dev-tooling release fans out only once ghcr.io serves a
+# manifest for every layered livespec-fabro-sandbox semver tag a bump to
+# that release writes, polling for at most 90 minutes and then failing
+# the run with an annotation naming each missing tag. A release of any
+# other source repo returns at once. Invoked by
+# reusable-release-dispatch.yml BEFORE any dispatch; not part of the
+# `check:` aggregate (it is a workflow helper, not a repo gate).
+[positional-arguments]
+await-sandbox-image *args:
+    uv run python -m livespec_dev_tooling.fleet.sandbox_image_readiness "$@"
+
 # ADMIN-vantage (world-gate) lane of the same fleet-membership contract.
 # Two obligation rows — `secret-names` and `branch-protection` — need
 # GitHub ADMIN scope on each member. Every AUTOMATED context that runs

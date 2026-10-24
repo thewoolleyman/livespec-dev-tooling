@@ -53,6 +53,7 @@ from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
 
 __all__: list[str] = [
+    "FABRO_SANDBOX_IMAGE",
     "PinFileUnparseable",
     "PinFileUnreadable",
     "PinWalkFailure",
@@ -135,7 +136,14 @@ _PIN_FORMAT_CODEX_ACP = "codex_acp_docker_arg"
 # The fabro-sandbox image is BUILT + RELEASED by livespec-dev-tooling and its
 # tag tracks the dev-tooling release version, so this pin's source repo is
 # HARDCODED (unlike pyproject, whose source repo derives from the git URL).
-_FABRO_SANDBOX_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
+#
+# PUBLIC, and re-exported through `pin_autodiscovery`, because a SECOND reader
+# needs the same reference: `fleet.sandbox_image_readiness` asks ghcr.io whether
+# the release's layered tags are served before the fan-out dispatches bumps that
+# rewrite this very pin. Two spellings of one image reference is the drift that
+# would make the readiness probe wait on an image nobody publishes while the
+# rewrite happily edits another.
+FABRO_SANDBOX_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
 _FABRO_SANDBOX_SOURCE_REPO = "livespec-dev-tooling"
 # Fleet consumers carry the Fabro workflow config at one of two roots: the
 # orchestrator under `.claude-plugin/.fabro/workflows/`, the console under the
@@ -322,7 +330,7 @@ def walk_github_workflow_uses(
 
 
 _FABRO_DOCKER_RE = re.compile(
-    r'^\s*docker\s*=\s*"' + re.escape(_FABRO_SANDBOX_IMAGE) + r':(?P<tag>[^"]+)"',
+    r'^\s*docker\s*=\s*"' + re.escape(FABRO_SANDBOX_IMAGE) + r':(?P<tag>[^"]+)"',
     re.MULTILINE,
 )
 
@@ -355,7 +363,7 @@ def walk_fabro_workflow_docker(
                     record(
                         pin_format=_PIN_FORMAT_FABRO_DOCKER,
                         file_path=rel_path,
-                        pin_key=_FABRO_SANDBOX_IMAGE,
+                        pin_key=FABRO_SANDBOX_IMAGE,
                         current_value=match.group("tag"),
                         source_repo=source_repo,
                     )
@@ -377,7 +385,7 @@ _WORKFLOW_CONTAINER_IMAGE_RE = re.compile(
     ^\s*(?:image|container):\s+
     ["']?
     """
-    + re.escape(_FABRO_SANDBOX_IMAGE)
+    + re.escape(FABRO_SANDBOX_IMAGE)
     + r""":
     (?P<tag>[^\s"'#]+)
     """,
@@ -414,7 +422,7 @@ def walk_github_workflow_container_image(
                 record(
                     pin_format=_PIN_FORMAT_FABRO_DOCKER,
                     file_path=rel_path,
-                    pin_key=_FABRO_SANDBOX_IMAGE,
+                    pin_key=FABRO_SANDBOX_IMAGE,
                     current_value=match.group("tag"),
                     source_repo=source_repo,
                 )

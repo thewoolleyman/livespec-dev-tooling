@@ -100,6 +100,7 @@ from livespec_dev_tooling.cross_repo._pin_claude_settings_format import (  # noq
     walk_claude_settings_extra_known_marketplaces,
 )
 from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noqa: E402
+    FABRO_SANDBOX_IMAGE,
     PinFileUnparseable,
     PinFileUnreadable,
     PinWalkFailure,
@@ -140,7 +141,18 @@ _WALKS = (
 # The re-export keeps `from ...pin_autodiscovery import PinFileUnreadable`
 # resolving for existing consumers — `fleet/_rows_pin_currency.py` imports it
 # from here.
-__all__ += ["PinFileUnparseable", "PinFileUnreadable", "PinWalkFailure"]
+# `FABRO_SANDBOX_IMAGE` rides the same re-export for the same reason, and has a
+# second reader: `fleet.sandbox_image_readiness` probes ghcr.io for that image's
+# layered release tags before the fan-out dispatches bumps that rewrite the pin
+# this inventory walks. The inventory is the source of truth for the format
+# DEFINITIONS (contracts.md section "Pin-currency severity policy"), so the
+# image reference belongs to it rather than being spelled a second time.
+__all__ += [
+    "FABRO_SANDBOX_IMAGE",
+    "PinFileUnparseable",
+    "PinFileUnreadable",
+    "PinWalkFailure",
+]
 
 
 def _build_parser() -> argparse.ArgumentParser:
