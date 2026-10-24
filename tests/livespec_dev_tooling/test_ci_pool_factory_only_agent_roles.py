@@ -90,6 +90,13 @@ _HP_MUST_RUN = frozenset(
         # names, because it is the node the backend plan's lifecycle proofs run
         # against.
         "factory_workspace_root",
+        # And the collector that makes "closed" VISIBLE rather than merely true
+        # (livespec-dev-tooling-ool6ws). A factory-only node executes no CI job
+        # and still carries load, and the runner-pool node telemetry rules in
+        # `SPECIFICATION/non-functional-requirements.md` govern every node of
+        # the pool's cluster whatever its posture — so this role is ungated, and
+        # hp is the node that proves the gate is absent.
+        "otel_collector",
     }
 )
 
@@ -137,6 +144,17 @@ _POWEREDGE_ROLES = (
     # resolves which role installs which timer, and that each is reached on the
     # server alone.
     "ci_observability",
+    # The node's own OTel Collector, right after the emitters that export to it
+    # (livespec-dev-tooling-ool6ws). UNGATED — the one role in this play that
+    # reads neither `cluster_role` nor a profile posture, because the runner-pool
+    # node telemetry rules in `SPECIFICATION/non-functional-requirements.md`
+    # govern every node of the pool's cluster whatever its `cluster_role` or
+    # factory posture, and a gate would leave the excluded node
+    # indistinguishable from one that had gone silent. So it appears in all
+    # THREE lists here, hp's
+    # included, and `test_otel_collector_ci_pool_converge.py` resolves each
+    # node's shape and renders the unit it gets.
+    "otel_collector",
     "sandbox_image_prune",
 )
 _GMKTEC_ROLES = (
@@ -159,6 +177,10 @@ _GMKTEC_ROLES = (
     "cache_telemetry",
     "container_hook",
     "storage_sweep",
+    # Ungated, so an AGENT reaches it too — see the note in the server's list.
+    # This is the one pool node whose collector no hand-run installer ever
+    # placed: its configuration was merged for this converge.
+    "otel_collector",
 )
 
 # The label both carriers must spell identically: the install command at join

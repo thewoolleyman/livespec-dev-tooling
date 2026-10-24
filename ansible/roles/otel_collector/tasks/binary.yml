@@ -1,0 +1,150 @@
+---
+# binary.yml -- the collector's service account and its pinned binary, for a host
+# whose profile says this role owns them.
+#
+# WHY THIS IS A FILE OF ITS OWN rather than more tasks in `main.yml`. It is one
+# concern with one gate: read the installed version, download the pinned release
+# tarball, verify it, extract, install, clean up — and `main.yml` includes it only
+# when `otel_collector_manage_install` is true, so a dev host runs no task of it
+# and `main.yml` stays the converge a reader can follow end to end. The gate on
+# the include IS the statement that the dev host installs no binary and creates
+# no account.
+#
+# WHAT IT MIRRORS, AND WHY IT HAD TO MOVE HERE AT ALL. Step 1 and step 2 of
+# `scripts/install-ci-runner-host.sh` and `scripts/install-hp-factory-host.sh` in
+# `thewoolleyman/otel-collector`. Those installers can no longer be run: the
+# fleet host guard refuses any by-hand host change, so a pool node rebuilt from
+# empty storage has no path to a collector binary except this one.
+#
+# IT IS A DOWNLOAD, AND IT IS STILL IDEMPOTENT. Every step that fetches,
+# extracts or installs is gated on `otel_collector_binary_install_needed`, a fact
+# decided from the version the host itself REPORTS. A node already carrying the
+# pinned release runs none of them and the converge reports no change, which is
+# the property that makes an apply safe to run as often as a drift report. The
+# configuration, by contrast, is never fetched on the target — `main.yml` reads it
+# on the control node precisely so a `--check --diff` compares the same bytes the
+# apply would write.
+
+- name: Refuse a managed install on a host the pinned tarball is not built for
+  # A checksum is a statement about ONE file. Were the arch merely substituted
+  # into the asset name, another architecture's host would download its own
+  # tarball, fail the sha256, and report a checksum mismatch as though the
+  # release had been tampered with; were the asset name fixed, it would install a
+  # binary that cannot execute while every surface read as verified. So the pin,
+  # the asset's architecture and the machine it is FOR are declared together and
+  # a host that disagrees is refused before anything is written.
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture == otel_collector_binary_host_architecture
+    fail_msg: >-
+      this host reports architecture {{ ansible_architecture }}, and
+      otel_collector_binary_sha256 is the checksum of the
+      {{ otel_collector_binary_arch }} tarball built for
+      {{ otel_collector_binary_host_architecture }}. Override
+      otel_collector_binary_arch, otel_collector_binary_host_architecture and
+      otel_collector_binary_sha256 together for this host, from the upstream
+      release's own checksums file. Nothing has been written.
+    success_msg: the pinned release tarball is the one built for this host
+
+- name: Create the system account the collector runs as
+  # `--system`, no home and a nologin shell, as both installers create it. Its
+  # own group comes with it, which is what the unit's `Group=` names. `append`
+  # keeps a membership another role granted: on a factory host the account has to
+  # be in `docker` for the configuration's `docker_stats` receiver to reach the
+  # engine socket, and a replace would silently take that away.
+  ansible.builtin.user:
+    name: "{{ otel_collector_user }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    groups: "{{ otel_collector_user_groups }}"
+    append: true
+  become: true
+
+- name: Read the version of any collector binary already installed
+  # The measurement the install is gated on. A READ: `changed_when: false` so it
+  # can never report a change of its own, `failed_when: false` so a binary that
+  # will not execute is treated as a binary to replace rather than as a failed
+  # converge, and `check_mode: false` so a drift report reaches the same verdict
+  # the apply would.
+  ansible.builtin.command:
+    argv:
+      - "{{ otel_collector_binary }}"
+      - --version
+  become: true
+  register: otel_collector_binary_version_read
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: otel_collector_binary_stat.stat.exists
+
+- name: Decide whether the pinned binary has to be installed
+  # Absent, unreadable, or at another version. The version is matched at the END
+  # of a reported line, as both installers match it, so `0.147.0` cannot be
+  # satisfied by a `10.147.0` that happens to contain it; the version is escaped
+  # first, so its dots match dots.
+  ansible.builtin.set_fact:
+    otel_collector_binary_install_needed: >-
+      {{ not otel_collector_binary_stat.stat.exists
+         or (otel_collector_binary_version_read.rc | default(1)) != 0
+         or (otel_collector_binary_version_read.stdout | default('')
+             | regex_findall('(?m)^.*[ ]' ~ (otel_collector_binary_version | regex_escape) ~ '$')
+             | length) == 0 }}
+
+- name: Create the directory the verified release tarball is unpacked in
+  ansible.builtin.file:
+    path: "{{ otel_collector_binary_download_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+  when: otel_collector_binary_install_needed | bool
+
+- name: Download the pinned collector release tarball
+  # Verified AS IT ARRIVES: `get_url` compares the sha256 and refuses the file
+  # rather than leaving a substituted archive on disk for the next step to
+  # extract.
+  ansible.builtin.get_url:
+    url: "{{ otel_collector_binary_tarball_url }}"
+    dest: "{{ otel_collector_binary_download_dir }}/{{ otel_collector_binary_tarball }}"
+    checksum: "sha256:{{ otel_collector_binary_sha256 }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  when: otel_collector_binary_install_needed | bool
+
+- name: Extract the collector binary from the verified tarball
+  ansible.builtin.unarchive:
+    src: "{{ otel_collector_binary_download_dir }}/{{ otel_collector_binary_tarball }}"
+    dest: "{{ otel_collector_binary_download_dir }}"
+    remote_src: true
+    include:
+      - otelcol-contrib
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+  when: otel_collector_binary_install_needed | bool
+
+- name: Install the extracted collector binary
+  ansible.builtin.copy:
+    src: "{{ otel_collector_binary_download_dir }}/otelcol-contrib"
+    dest: "{{ otel_collector_binary }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: otel_collector_binary_install_needed | bool
+
+- name: Remove the release tarball and the extracted copy
+  # The installed binary is the output; nothing on the host needs the archive it
+  # came out of, and leaving a verified tarball beside an unverified extraction
+  # invites a later hand step to install from it.
+  ansible.builtin.file:
+    path: "{{ otel_collector_binary_download_dir }}"
+    state: absent
+  become: true
+  when: otel_collector_binary_install_needed | bool

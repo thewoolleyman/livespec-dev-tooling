@@ -1,10 +1,20 @@
 ---
-# otel_collector -- install the dev host's collector configuration from the
-# collector repository's merged branch and put the service on it.
+# otel_collector -- install a host's collector configuration from the collector
+# repository's merged branch and put the service on it.
 #
-# Applied from the control node by the committed drift and apply commands
-# (see ../../README.md). There is deliberately no checkout on the target for
-# the running service to read.
+# Applied from the control node by the committed drift and apply commands (see
+# ../../README.md). There is deliberately no checkout on the target for the
+# running service to read.
+#
+# THE ORDER OF THIS FILE IS PART OF THE CONTRACT. Every precondition is refused
+# ahead of every write, so a host that cannot be converged is left exactly as it
+# was found rather than half converged — a state a re-run cannot distinguish from
+# a fresh host, and the one an operator reading a failed apply has least to go on
+# about. A missing ingest key discovered after the service account exists, or a
+# missing cluster identity discovered after the binary is installed, has already
+# changed the host.
+
+# --- the preconditions, all of them, before anything is written -------------
 
 - name: Look for the collector binary the unit runs
   ansible.builtin.stat:
@@ -20,10 +30,87 @@
       - otel_collector_binary_stat.stat.exists
       - otel_collector_binary_stat.stat.executable | default(false)
     fail_msg: >-
-      {{ otel_collector_binary }} is not an executable file. The pinned
-      download belongs to the collector repository's own installers; install
-      it there, then re-run this converge.
+      {{ otel_collector_binary }} is not an executable file. On this host the
+      pinned download belongs to the collector repository's own installers;
+      install it there, then re-run this converge. A host this role installs the
+      binary on instead declares otel_collector_manage_install.
     success_msg: the collector binary is present
+  # Withheld where the role installs the binary itself: on a pool node rebuilt
+  # from empty storage the binary is legitimately absent at the first apply, and
+  # the fleet host guard refuses the hand-run installer that would have placed
+  # it — so a refusal here would be a refusal with no remedy.
+  when: not (otel_collector_manage_install | bool)
+
+- name: Refuse to render an ingest key from an unset control-node variable
+  # The append below reads each named key from the CONTROL NODE's environment,
+  # where the credential wrapper projects it. Without this refusal that append
+  # writes `KEY=` — and a collector started on an empty ingest key runs, exports
+  # nothing, and is a SILENT node, which is the one failure a dead-man trigger
+  # cannot tell from a node that is merely quiet.
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.env', item) | length > 0
+    fail_msg: >-
+      otel_collector_env_from_controller names {{ item }}, which the control
+      node's environment does not set. Run the apply under the credential
+      wrapper (/usr/local/bin/with-livespec-env.sh -- just ansible-apply ...).
+      Nothing has been written.
+    success_msg: "{{ item }} is available on the control node"
+  loop: "{{ otel_collector_env_from_controller }}"
+
+- name: Look for the scoped cluster identity the collector authenticates with
+  ansible.builtin.stat:
+    path: "{{ otel_collector_kubeconfig_path }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_kubeconfig_stat
+  check_mode: false
+  when: otel_collector_kubeconfig_path | length > 0
+
+- name: Refuse a host whose scoped cluster identity is missing
+  ansible.builtin.assert:
+    that:
+      - otel_collector_kubeconfig_stat.stat.exists
+      - otel_collector_kubeconfig_stat.stat.isreg
+    fail_msg: >-
+      {{ otel_collector_kubeconfig_path }} is not a regular file. It carries the
+      read-only ServiceAccount identity this collector reads every kubelet with,
+      and otel-collector-identity.service in the collector repository renders it
+      at every boot because the k3s datastore is a tmpfs. Absent it the unit
+      starts, fails to authenticate, and reports nothing about any node. Nothing
+      has been written and the running service is untouched.
+    success_msg: the scoped cluster identity is present
+  when: otel_collector_kubeconfig_path | length > 0
+
+- name: Look for each further environment file the unit reads
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    get_checksum: false
+  become: true
+  loop: "{{ otel_collector_extra_environment_files }}"
+  register: otel_collector_extra_environment_stat
+  check_mode: false
+
+- name: Refuse a host missing a further environment file the unit reads
+  ansible.builtin.assert:
+    that:
+      - otel_collector_extra_environment_stat.results
+        | rejectattr('stat.exists') | list | length == 0
+    fail_msg: >-
+      {{ otel_collector_extra_environment_stat.results | rejectattr('stat.exists')
+         | map(attribute='item') | join(', ') }} is named in this host's unit and
+      is not there. Such a file carries facts about the NODE — its name, its
+      ingest endpoint — and the collector repository's own installer owns it.
+      Nothing has been written and the running service is untouched.
+    success_msg: every further environment file the unit reads is present
+
+# --- what a host that owns its own binary installs --------------------------
+
+- name: Create the service account and install the pinned collector binary
+  ansible.builtin.include_tasks: binary.yml
+  when: otel_collector_manage_install | bool
+
+# --- the managed files ------------------------------------------------------
 
 - name: Create the directory the managed collector files live in
   ansible.builtin.file:
@@ -34,10 +121,55 @@
     mode: "0755"
   become: true
 
+- name: Name the ingest keys this host's environment file already sets
+  # A read, never a write: `grep --quiet` prints nothing, so no value can reach
+  # the run's output. It runs under `--check` too, because the append below has
+  # to reach the same decision on a drift report that it would on an apply.
+  ansible.builtin.command:
+    argv:
+      - grep
+      - --quiet
+      - --regexp
+      - "^{{ item }}="
+      - "{{ otel_collector_environment_path }}"
+  become: true
+  loop: "{{ otel_collector_env_from_controller }}"
+  register: otel_collector_controller_keys_read
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Append each ingest key this host's environment file does not already set
+  # APPENDS, rather than creating the file only when it is absent. The factory
+  # host's file already carries the agent-activity keys, so a create-only render
+  # would leave the livespec ingest key off the one host that HAS a file — and
+  # that host's collector would start, export to one dataset, and report nothing
+  # to the other, which reads downstream as a node nobody instrumented.
+  #
+  # It never REWRITES a key the file already sets. The loop is exactly the set of
+  # keys the read above could not find, and no `regexp:` is given — so
+  # `lineinfile` has no matching line to replace and appends. A key an operator
+  # placed by hand therefore stays as placed, whatever the control node currently
+  # carries. `create: true` places the file 0600 root:root on a host with none.
+  ansible.builtin.lineinfile:
+    path: "{{ otel_collector_environment_path }}"
+    line: "{{ item.item }}={{ lookup('ansible.builtin.env', item.item) }}"
+    insertafter: EOF
+    create: true
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true
+  loop: >-
+    {{ otel_collector_controller_keys_read.results | default([])
+       | rejectattr('rc', 'equalto', 0) | list }}
+  register: otel_collector_environment_appended
+
 - name: Look for the collector's ingest-key environment file
   # Only its existence is read here. The values reach the process through the
-  # unit's EnvironmentFile and nowhere else; this role never writes, reads back
-  # or prints one.
+  # unit's EnvironmentFile and nowhere else; the role writes it only through the
+  # append above, and never reads one back.
   ansible.builtin.stat:
     path: "{{ otel_collector_environment_path }}"
     get_checksum: false
@@ -52,10 +184,14 @@
       - otel_collector_environment_stat.stat.isreg
     fail_msg: >-
       {{ otel_collector_environment_path }} is not a regular file. It carries
-      the Honeycomb ingest keys the collector configuration reads, and placing
-      a secret is the operator's step, not this converge's. See
-      ansible/README.md for the one-time root-only placement, then re-run.
+      the Honeycomb ingest keys the collector configuration reads, and placing a
+      secret is the operator's step, not this converge's. See ansible/README.md
+      for the one-time root-only placement, or name the key in
+      otel_collector_env_from_controller so the role appends it.
     success_msg: the collector's environment file is present
+  # Skipped for one run only: a dry run of a host whose file the append above
+  # would have created, which under `--check` wrote nothing.
+  when: not (ansible_check_mode and (otel_collector_environment_appended.changed | default(false)))
 
 - name: Read the merged collector configuration on the control node
   # A control-node lookup rather than a download on the target, so the apply
@@ -82,11 +218,21 @@
   # Derived from the configuration itself rather than listed here, so the
   # preflight below cannot go stale when the collector repository adds or drops
   # one. `[$][{]` and `[}]` are character classes to keep the pattern free of
-  # backslash escapes.
+  # backslash escapes. A `${env:KEY:-fallback}` is deliberately NOT matched: the
+  # configuration carries its own default for that one, so the host owes no entry.
   ansible.builtin.set_fact:
     otel_collector_required_environment_keys: >-
       {{ otel_collector_merged_config
          | regex_findall('[$][{]env:([A-Za-z_][A-Za-z0-9_]*)[}]') | unique | sort }}
+
+- name: Name the environment files the unit reads
+  # ALL of them, because systemd merges them: a key set in a further file is a
+  # key the collector process has, so a preflight reading only the last one would
+  # refuse a host whose configuration is perfectly satisfiable — and the remedy
+  # it named would be to duplicate a value that is already there.
+  ansible.builtin.set_fact:
+    otel_collector_environment_files: >-
+      {{ otel_collector_extra_environment_files + [otel_collector_environment_path] }}
 
 - name: Look for each environment key the merged configuration reads
   # A read, never a write: `grep --quiet` prints nothing, so no value can reach
@@ -97,27 +243,36 @@
       - grep
       - --quiet
       - --regexp
-      - "^{{ item }}="
-      - "{{ otel_collector_environment_path }}"
+      - "^{{ item.0 }}="
+      - "{{ item.1 }}"
   become: true
-  loop: "{{ otel_collector_required_environment_keys }}"
+  loop: >-
+    {{ otel_collector_required_environment_keys
+       | product(otel_collector_environment_files) | list }}
   register: otel_collector_environment_keys_read
   changed_when: false
   failed_when: false
   check_mode: false
 
-- name: Refuse an environment file missing a key the merged configuration reads
+- name: Name the environment keys no file the unit reads sets
+  ansible.builtin.set_fact:
+    otel_collector_missing_environment_keys: >-
+      {{ otel_collector_required_environment_keys
+         | difference(otel_collector_environment_keys_read.results
+                      | selectattr('rc', 'equalto', 0)
+                      | map(attribute='item') | map('first') | list) }}
+
+- name: Refuse an environment file set missing a key the merged configuration reads
   ansible.builtin.assert:
     that:
-      - otel_collector_environment_keys_read.results | rejectattr('rc', 'equalto', 0) | length == 0
+      - otel_collector_missing_environment_keys | length == 0
     fail_msg: >-
-      {{ otel_collector_environment_path }} does not set
-      {{ otel_collector_environment_keys_read.results | rejectattr('rc', 'equalto', 0)
-         | map(attribute='item') | join(', ') }}. The merged collector
-      configuration reads those as ${env:...} and the collector refuses to
-      start without them, so nothing has been written and the running service
-      is untouched.
-    success_msg: the environment file sets every key the merged configuration reads
+      none of {{ otel_collector_environment_files | join(', ') }} sets
+      {{ otel_collector_missing_environment_keys | join(', ') }}. The merged
+      collector configuration reads those as ${env:...} with no fallback and the
+      collector refuses to start without them, so nothing further has been
+      written and the running service is untouched.
+    success_msg: the environment files set every key the merged configuration reads
 
 - name: Install the merged collector configuration
   ansible.builtin.copy:

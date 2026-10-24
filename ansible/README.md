@@ -251,17 +251,53 @@ merged change needed a hand restart to take effect: the host's state lived in
 a tree a `git pull` could change underneath the service, so no drift report
 could see it and no committed command could converge it.
 
-Two preconditions this role asserts and never provisions. The collector
-BINARY — the pinned download belongs to the collector repository's own
+Two preconditions this role asserts and never provisions ON THE DEV HOST. The
+collector BINARY — the pinned download belongs to the collector repository's own
 installers. And `/etc/otel-collector/.env`, the Honeycomb ingest keys the
 configuration reads as `${env:…}`: placing a secret is the operator's step,
-and the role refuses an apply whose environment file is missing or does not
+and the role refuses an apply whose environment files are missing or do not
 set a key the merged configuration names (it derives that key list from the
-configuration, so it cannot go stale, and it reads the file with `grep
---quiet`, never printing a value). Place it once, as root, from the key the
-host's collector already uses, mode 0600 `root:root` — the same shape
-`scripts/install-ci-runner-host.sh` and `scripts/install-hp-factory-host.sh`
-require in that repository.
+configuration, so it cannot go stale; it looks in every file the unit reads,
+because systemd merges them; and it reads each with `grep --quiet`, never
+printing a value). Place it once, as root, from the key the host's collector
+already uses, mode 0600 `root:root`.
+
+`ci-pool.yml` applies THE SAME ROLE to every node of the k3s CI pool, and there
+neither of those two is a precondition any more
+(`livespec-dev-tooling-ool6ws`). Those three collectors were installed by
+`scripts/install-ci-runner-host.sh` and `scripts/install-hp-factory-host.sh` in
+the collector repository, and the fleet host guard refuses any by-hand host
+change — so those installers can no longer be run at all, and a node rebuilt
+from empty storage had no path to a collector. On a pool node the role therefore
+creates the `otel-collector` system account and installs the pinned
+`otelcol-contrib` itself, from the upstream release tarball verified against a
+committed sha256, leaving an already-installed copy of that version untouched.
+Each node's shape — which configuration file it runs, its unit's start order,
+whether its collector holds a scoped cluster identity, which groups its account
+is in — is declared in that node's `inventory/host_vars/<host>.yml`, and
+`roles/otel_collector/HOST_VARS.md` is the table.
+
+The apply reads the ingest key from the CONTROL NODE's environment, so it runs
+under the credential wrapper. A bare `just ansible-apply` refuses at the
+preflight, naming a variable an operator has no reason to think is missing:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/ci-pool.yml --tags otel_collector
+/usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/ci-pool.yml --tags otel_collector
+```
+
+The role APPENDS a key the node's environment file lacks and never rewrites one
+it already sets, which is what keeps the factory host's hand-placed
+agent-activity key exactly as placed. Three things on the CI-runner host stay
+asserted preconditions owned by that repository's installer, because each is a
+fact about the node rather than anything this tree decides:
+`/etc/otel-collector/host.env`, `/etc/otel-collector/kubeconfig`, and the
+`otel-collector-identity.service` that re-renders that kubeconfig at every boot.
+Moving the identity render into Ansible is its own item. If a preflight refuses
+one of these naming a key such as `HONEYCOMB_API_ENDPOINT`, the remedy is to add
+that line to the file the message names, not to widen
+`otel_collector_env_from_controller`: the control node carries ingest keys, not
+a node's endpoint choice.
 
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that

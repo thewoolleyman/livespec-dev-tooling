@@ -173,6 +173,32 @@ lan_ssh_fallback_must_stay_running:
   - docker.service
   - fabro-server.service
 
+# --- otel_collector ---
+# The FACTORY host's collector: host metrics plus the Docker engine's container
+# stats, which is what the service account's `docker` membership is for.
+# Transcribed from the hand-run `scripts/install-hp-factory-host.sh` and
+# `systemd/otel-collector.hp-factory-host.service` in
+# thewoolleyman/otel-collector, which the fleet host guard now refuses to let
+# anyone run. Its start order and its Wants are the role's defaults already.
+otel_collector_config_file: config.hp-factory.yaml
+otel_collector_user: otel-collector
+otel_collector_group: otel-collector
+otel_collector_manage_install: true
+otel_collector_hardened: true
+otel_collector_unit_description: >-
+  otel-collector -- host OTel Collector on a Fabro factory host (agent-activity
+  env, livespec-host-metrics dataset)
+# The engine socket the configuration's docker_stats receiver reads. ProtectSystem
+# restricts WRITES to the filesystem hierarchy, not socket I/O a process's group
+# already grants it, so the membership and the sandbox coexist.
+otel_collector_user_groups:
+  - docker
+# APPENDED, never rewritten: this host's `/etc/otel-collector/.env` already holds
+# the agent-activity key its configuration also reads, placed by hand before the
+# converge existed, and that one stays exactly as placed.
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC
+
 # --- otel_receiver ---
 # The account and environment file of the hand-installed unit this role
 # replaced (measured 2026-10-17). The env file holds the ingest key and is

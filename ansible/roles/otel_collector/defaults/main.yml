@@ -1,40 +1,124 @@
 ---
-# The dev host's own OpenTelemetry Collector, `otel-collector.service`
-# (livespec-dev-tooling-x36is7).
+# Every node's own OpenTelemetry Collector, `otel-collector.service`
+# (livespec-dev-tooling-x36is7 for the dev host, livespec-dev-tooling-ool6ws for
+# the k3s CI pool).
 #
 # The CONFIGURATION is owned by `thewoolleyman/otel-collector` and is read at
 # apply time from that repository's merged branch, so a change merged there
-# reaches this host by running this converge and by nothing else. Set
-# `otel_collector_config_ref` to a commit sha to hold the host at a known
+# reaches a host by running this converge and by nothing else. Set
+# `otel_collector_config_ref` to a commit sha to hold a host at a known
 # configuration, or to roll one back.
+#
+# FOUR SHAPES, ONE ROLE. That repository carries one configuration file per host
+# posture — `config.yaml` for the dev host, `config.ci-runner-host.yaml` for the
+# cluster-reading CI-runner host, `config.k3s-agent-host.yaml` for a plain agent,
+# `config.hp-factory.yaml` for a Fabro factory host — and each host names its own
+# through `otel_collector_config_file`. Every default below is the DEV HOST's, so
+# a host that overrides nothing resolves to the posture it already runs.
 otel_collector_config_ref: main
+otel_collector_config_file: config.yaml
 otel_collector_config_url: >-
-  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/config.yaml
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/{{ otel_collector_config_file }}
 
 # Everything the service reads lives under this directory, put there by this
-# role. Until 2026-10-21 the collector ran out of the maintainer's development
-# checkout: a service whose configuration a `git pull` can change underneath it
-# is drift no committed command can see, and the only way a merged change
-# reached it was a hand restart.
+# role. Until 2026-10-21 the dev host's collector ran out of the maintainer's
+# development checkout: a service whose configuration a `git pull` can change
+# underneath it is drift no committed command can see, and the only way a merged
+# change reached it was a hand step.
 otel_collector_etc_dir: /etc/otel-collector
 otel_collector_config_path: "{{ otel_collector_etc_dir }}/config.yaml"
 
 # The Honeycomb ingest keys the configuration reads as `${env:...}`, which the
-# unit names in `EnvironmentFile=`. A PRECONDITION: the converge asserts the
-# file and the keys the merged configuration needs from it, and never writes,
-# reads back or prints a value. See ../../README.md for the one-time placement.
+# unit names in `EnvironmentFile=`. A PRECONDITION by default: the converge
+# asserts the file and the keys the merged configuration needs from it, and never
+# reads back or prints a value. A host that names
+# `otel_collector_env_from_controller` additionally has each named key APPENDED
+# when the file lacks it. See ../../README.md for the one-time placement.
 otel_collector_environment_path: "{{ otel_collector_etc_dir }}/.env"
+
+# Further environment files the unit reads, listed BEFORE the one above so a
+# value in it wins — the ordering the CI-runner host's sibling unit states. Each
+# is an ASSERTED precondition, owned by the collector repository's own installer:
+# the CI-runner host's `host.env` carries the node name and the ingest endpoint,
+# which are facts about the node rather than anything this tree decides. Per-host.
+otel_collector_extra_environment_files: []
+
+# The scoped, read-only ServiceAccount kubeconfig the cluster-reading collector
+# authenticates to every kubelet with. Empty means this host reads no kubelet and
+# the unit names no KUBECONFIG. A PRECONDITION: the file is rendered at every boot
+# by `otel-collector-identity.service`, which the collector repository's installer
+# owns, because the k3s datastore is a tmpfs and the ServiceAccount behind it is
+# wiped at each boot. The admin kubeconfig is never used. Per-host.
+otel_collector_kubeconfig_path: ""
 
 otel_collector_unit_name: otel-collector.service
 otel_collector_unit_path: "/etc/systemd/system/{{ otel_collector_unit_name }}"
 
-# ASSERTED, NEVER INSTALLED. The pinned binary download belongs to the
-# collector repository's own installers, which choose its version; no shape of
-# it is this tree's to pick. A host without it fails this role's preflight
-# naming where to install it.
-otel_collector_binary: /usr/local/bin/otelcol-contrib
+# The unit's own identity and ordering. The dev host's collector reads the Docker
+# engine socket through the configuration's `docker_stats` receiver, so it both
+# wants and follows `docker.service`; the cluster-reading host follows `k3s.service`
+# and the identity unit instead, and a plain agent scraping only `hostmetrics`
+# follows neither. A host whose unit ordered itself after a service it does not run
+# would hold its own start behind a dependency that never arrives. Per-host.
+otel_collector_unit_description: otel-collector -- host OTel Collector on the dev host
+otel_collector_unit_after: network-online.target docker.service
+otel_collector_unit_wants: network-online.target docker.service
 
-# The account the collector runs as. It must already be in the `docker` group:
-# the configuration's `docker_stats` receiver reads the engine socket.
+# ASSERTED, NEVER INSTALLED — unless a host says otherwise.
+#
+# On the dev host the pinned binary download belongs to the collector
+# repository's own installers, and a host without it fails this role's preflight
+# naming where to install it. On a k3s pool node it CANNOT: the fleet host guard
+# refuses any by-hand host change, so `scripts/install-ci-runner-host.sh` and
+# `scripts/install-hp-factory-host.sh` can no longer be run at all and this role
+# is the only thing left that can place the binary. Such a host sets
+# `otel_collector_manage_install`, and `tasks/binary.yml` then mirrors step 1 of
+# those installers: download the pinned release tarball, verify it against the
+# sha256 below, extract `otelcol-contrib` and install it 0755 root:root.
+otel_collector_binary: /usr/local/bin/otelcol-contrib
+otel_collector_manage_install: false
+
+# The pin, and the ONE tarball the sha256 belongs to. `_host_architecture` is the
+# machine that asset is the asset FOR, and the install refuses a host reporting
+# anything else — a checksum is a statement about one file, so an arch mismatch
+# that merely downloaded the other tarball would install a binary that cannot
+# execute while every surface read as verified. The three pool nodes are x86_64;
+# a host of another architecture overrides all three together.
+otel_collector_binary_version: "0.147.0"
+otel_collector_binary_arch: amd64
+otel_collector_binary_host_architecture: x86_64
+otel_collector_binary_sha256: 17cc9a8f2e44e80ceff0e0647aec18b28a6b1b17823040e362ddc4a9fd017ccc
+otel_collector_binary_tarball: >-
+  otelcol-contrib_{{ otel_collector_binary_version }}_linux_{{ otel_collector_binary_arch }}.tar.gz
+otel_collector_binary_tarball_url: >-
+  https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v{{ otel_collector_binary_version }}/{{ otel_collector_binary_tarball }}
+# Where the verified tarball is unpacked. A committed path rather than a
+# `tempfile`, which supports no check mode: a drift report over a node whose
+# binary is absent would otherwise resolve an undefined path and fail on a fault
+# the dry run itself invented. Removed again as the last step of the install.
+otel_collector_binary_download_dir: /var/cache/otel-collector
+
+# The account the collector runs as. On the dev host it is the login account, in
+# the `docker` group already, because its `docker_stats` receiver reads the engine
+# socket; a pool node runs a dedicated system account this role creates, and names
+# `docker` in `_user_groups` only where that node's configuration reads the socket
+# too. Per-host.
 otel_collector_user: ubuntu
 otel_collector_group: ubuntu
+otel_collector_user_groups: []
+
+# The sandbox the two sibling units in the collector repository carry. OFF for
+# the dev host deliberately: its collector has always run as the login account
+# with `hostmetrics` scraping the whole machine, so confining it is a behaviour
+# change rather than the transcription this converge is, and belongs to its own
+# decision. ON for a pool node, whose dedicated system account never had
+# anything else. Per-host.
+otel_collector_hardened: false
+
+# Control-node environment variables to APPEND to the environment file, one
+# `KEY=value` line each, for a key the file does not already set. Empty means the
+# file is provisioned entirely outside the role, as the dev host's is. The apply
+# must then run under the credential wrapper, which is what projects the value;
+# the role refuses a named variable the control node does not set rather than
+# writing an empty one. Per-host.
+otel_collector_env_from_controller: []
