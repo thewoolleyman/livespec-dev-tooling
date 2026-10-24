@@ -370,6 +370,50 @@ def test_a_converge_repoints_the_path_client_without_touching_its_old_server_bin
     assert _changed(run=second) == 0, second.stdout
 
 
+@pytest.mark.skipif(os.geteuid() != 0, reason="repairing synthetic symlink ownership needs root")
+def test_a_converge_repairs_ownership_of_an_already_correct_path_client_link(
+    *, tmp_path: Path
+) -> None:
+    """A correct literal link target does not exempt its ownership from convergence."""
+    root = tmp_path / "path-client-owner-drift"
+    build = _staged(root=root, name="petri", body="petri-client-0.382\n")
+    path_client = root / "home" / ".local" / "bin" / "fabro"
+    path_client_declaration = {"link": str(path_client), "target": build["path"]}
+
+    installed = _converge(
+        tmp_path=tmp_path,
+        name="path-client-owner-drift",
+        builds=[build],
+        host_vars={"fabro_client_path_client": path_client_declaration},
+    )
+    assert installed.returncode == 0, installed.stdout + installed.stderr
+    assert path_client.readlink() == Path(build["path"])
+
+    os.lchown(path_client, 1, 1)
+    assert (path_client.lstat().st_uid, path_client.lstat().st_gid) == (1, 1)
+
+    repaired = _converge(
+        tmp_path=tmp_path,
+        name="path-client-owner-drift",
+        builds=[build],
+        host_vars={"fabro_client_path_client": path_client_declaration},
+    )
+    assert repaired.returncode == 0, repaired.stdout + repaired.stderr
+    assert _changed(run=repaired) == 1, repaired.stdout
+    assert path_client.readlink() == Path(build["path"])
+    assert pwd.getpwuid(path_client.lstat().st_uid).pw_name == _owner()
+    assert grp.getgrgid(path_client.lstat().st_gid).gr_name == _primary_group()
+
+    settled = _converge(
+        tmp_path=tmp_path,
+        name="path-client-owner-drift",
+        builds=[build],
+        host_vars={"fabro_client_path_client": path_client_declaration},
+    )
+    assert settled.returncode == 0, settled.stdout + settled.stderr
+    assert _changed(run=settled) == 0, settled.stdout
+
+
 @pytest.mark.parametrize("unsafe", ["undeclared-target", "regular-link"])
 def test_an_invalid_path_client_declaration_refuses_before_it_writes(
     *, tmp_path: Path, unsafe: str
