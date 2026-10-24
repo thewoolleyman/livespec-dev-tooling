@@ -29,6 +29,7 @@ from livespec_dev_tooling.fleet._context import (
     RowPass,
     RowSkip,
 )
+from livespec_dev_tooling.fleet._row_finding import pin_staleness_finding
 from livespec_dev_tooling.fleet._settle_window import (
     LatestRelease,
     latest_release_unread_clause,
@@ -226,7 +227,7 @@ def _stale_dev_tooling_pin_outcome(
         latest=latest,
     )
     if number is not None:
-        return RowFinding(
+        return pin_staleness_finding(
             message=(
                 f"{member.repo}: dev-tooling pin {tag} persisting gap (stale, latest "
                 f"release {latest}, open bump PR #{number} unable to land)"
@@ -234,14 +235,16 @@ def _stale_dev_tooling_pin_outcome(
             # Context-scoped exactly as the pin-currency rows are: error
             # only in the filter-consuming fan-out preflight, warning in
             # per-PR CI. Both persisting-gap sites must move together or
-            # the promotion is half-armed.
+            # the promotion is half-armed — and that now holds of the
+            # STALENESS CLASS too, which is what keeps this member in the
+            # dispatch matrix that is the remedy for its stale pin.
             severity="error" if ctx.filter_consuming_preflight else "warning",
         )
     # The NEVER-FIRED class, under the SAME lane scoping. The predicate
     # itself lives in `_settle_window` so this site and the pin-currency
     # rows cannot drift on what "past the window" means.
     never_fired = never_fired_class(published_at=release.published_at, now=utc_now())
-    return RowFinding(
+    return pin_staleness_finding(
         message=f"{stale_summary} — {never_fired.clause}",
         severity=(
             "error" if never_fired.escalates and ctx.filter_consuming_preflight else "warning"
