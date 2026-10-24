@@ -175,10 +175,21 @@ fabro_server_instances:
     # python-agent-v1.114.1). On this engine the catalog, not the workflow
     # table, decides the image, so the two must be bumped together.
     environments:
+      # gmktec's DEFAULT environment runs on the kubernetes provider (plan
+      # kubernetes-sandbox-backend, bd-ib-nmuyjc DoD 5; coordinator ruling on
+      # livespec-dev-tooling-dfixhe, 2026-10-24, after the third canary run
+      # 01M5NQK36G7K passed its pod bar on sandbox-driver-kubernetes v0.4.1). Like
+      # livespec-ci-k8s it declares NO image: its sandboxes are built from the
+      # kubernetes provider's process_spec below, which carries the
+      # python-agent-v1.114.1 image this entry named while it ran Docker. The
+      # catalog is server-managed, so this converges by a PUT with no restart and
+      # a live Docker run keeps its container. ROLLBACK to Docker: drop
+      # `provider` and restore
+      # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1`.
       - id: livespec-ci
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
         cpu: 4
         memory: 8GB
+        provider: kubernetes
       # Serves repositories whose workflow pins the python-rust-agent layer:
       # livespec-console-beads-fabro, which builds Rust (R622). Its tag FOLLOWS
       # THAT repository's pin (.fabro/workflows/implement-work-item/workflow.toml,
