@@ -39,11 +39,25 @@ from __future__ import annotations
 
 import fcntl
 import os
+import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
 
+# `structlog` is VENDORED, not installed; a bare import here would resolve only
+# when some earlier import in the process happened to run first.
+_VENDOR_DIR = Path(__file__).resolve().parent / "_vendor"
+if str(_VENDOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_VENDOR_DIR))
+
+import structlog  # noqa: E402  — vendor-path-aware import.
+
 __all__: list[str] = [
+    "HEARTBEAT_SECONDS",
     "LIMIT_FILE",
+    "POLL_SECONDS",
     "SLOT_DIR",
+    "await_slot",
     "configured_limit",
     "take_slot",
 ]
@@ -69,6 +83,28 @@ SLOT_DIR = Path("/run/livespec/local-gate-slots")
 # reads "cannot open" as "taken" would queue behind a slot nobody holds.
 _SLOT_OPEN_FLAGS = os.O_CREAT | os.O_RDONLY
 _SLOT_CREATE_MODE = 0o666
+
+# How often a queued session looks again for a free slot.
+#
+# WHY A POLL RATHER THAN A BLOCKING `flock`. A blocking lock waits on ONE named
+# file, and this host has N of them: a session blocking on slot 1 would sleep
+# through slot 2 falling free, so the queue would hand slots out in the order
+# holders happened to finish rather than to whoever was waiting. Polling every
+# slot each round costs N `flock` attempts a second — syscalls, measured in
+# microseconds — which is why the poll interval can be short enough that a
+# freed slot is picked up promptly without the wait costing anything.
+POLL_SECONDS = 1.0
+
+# How often a queued session says so. The ratified clause asks for at least
+# once a minute; half a minute is chosen so a line is still owed well before
+# that bound even if a round is scheduled late on a loaded host.
+HEARTBEAT_SECONDS = 30.0
+
+# The heartbeat expressed in poll rounds, which is what the wait counts. Rounds
+# rather than a clock reading because the two intervals are then impossible to
+# drift apart: a session announces on the round it is due, and every round is
+# one `POLL_SECONDS` sleep by construction.
+_HEARTBEAT_ROUNDS = max(1, round(HEARTBEAT_SECONDS / POLL_SECONDS))
 
 
 def configured_limit(*, limit_file: Path) -> int | None:
@@ -112,6 +148,67 @@ def take_slot(*, slot_dir: Path, limit: int) -> int | None:
         if fd is not None:
             return fd
     return None
+
+
+def await_slot(
+    *,
+    slot_dir: Path,
+    limit: int,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Queue until one of this host's `limit` slots is free, then hold it.
+
+    Returns the held descriptor, under the no-closing contract `take_slot`
+    records. The wait produces NO VERDICT of its own and cannot: it either
+    returns a slot or keeps waiting, so a session that queued runs its own tests
+    and reports their own result. That is why the queue is here rather than in
+    the gate aggregate — a throttle that could fail a gate would turn a busy
+    host into a red tree.
+
+    A session killed while queued holds nothing, because it has taken nothing:
+    the only state a waiting session has is its own place in no queue at all.
+    There is no ticket to reclaim and no registry to prune, which is what makes
+    being killed here free of consequence.
+    """
+    rounds = 0
+    while True:
+        fd = take_slot(slot_dir=slot_dir, limit=limit)
+        if fd is not None:
+            return fd
+        if rounds % _HEARTBEAT_ROUNDS == 0:
+            _announce_wait(limit=limit, slot_dir=slot_dir)
+        rounds += 1
+        sleep(POLL_SECONDS)
+
+
+def _announce_wait(*, limit: int, slot_dir: Path) -> None:
+    """Say that this session is queued, and name the limit it is queued behind.
+
+    The limit is carried as a FIELD rather than only in the message, because a
+    reader's first question on seeing the line is how many slots the host has:
+    a bare "waiting" line is indistinguishable from a wedged gate, which is the
+    state this announcement exists to rule out.
+
+    Configured on every announcement rather than once at import, and that is
+    deliberate. `structlog`'s print factory snapshots the stream at configure
+    time, and a pytest session replaces `sys.stderr` as it starts and as it runs
+    — so a configuration taken at import would write the heartbeat to a stream
+    that had since been replaced, i.e. to nowhere an operator is looking.
+    """
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.JSONRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
+    structlog.get_logger("local_gate_slots").info(
+        "waiting for one of this host's local gate slots",
+        limit=limit,
+        slots=str(slot_dir),
+        poll_seconds=POLL_SECONDS,
+    )
 
 
 def _slot_paths(*, slot_dir: Path, limit: int) -> list[Path]:
