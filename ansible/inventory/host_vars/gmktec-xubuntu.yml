@@ -218,8 +218,10 @@ fabro_server_instances:
       # `kubernetes` provider's process_spec carries the python-agent image, so
       # this environment selects the `kubernetes-rust` provider below, whose
       # process_spec carries the python-rust-agent image. A dispatch reaches it
-      # only through a factory entry that names it.
-      - id: livespec-ci-rust-k8s
+      # only through a factory entry that names it. Named under the fleet's
+      # environment rename (livespec-dev-tooling-s6go5s): `factory-python-rust`
+      # is the python-rust-agent toolchain, with no placement in the id.
+      - id: factory-python-rust
         cpu: 4
         memory: 8GB
         provider: kubernetes-rust
