@@ -212,6 +212,17 @@ fabro_server_instances:
         cpu: 4
         memory: 8GB
         provider: kubernetes
+      # Rename step 1 (livespec-dev-tooling-s6go5s; spec v090 section "Factory
+      # sandbox environment naming"): factory-python is the python-agent
+      # toolchain, declared beside BOTH old ids with the same resources and
+      # provider, because livespec-ci and livespec-ci-k8s are already identical
+      # and merge into this one id. The old ids are deleted only after every
+      # fleet repository's petri environment names factory-python and no
+      # non-terminal run on this instance runs in either of them.
+      - id: factory-python
+        cpu: 4
+        memory: 8GB
+        provider: kubernetes
       # The Kubernetes twin of livespec-ci-rust, for livespec-console-beads-fabro
       # (coordinator ruling on livespec-dev-tooling-dfixhe, 2026-10-24). A
       # registered provider's environment cannot name an image, and the
@@ -355,6 +366,54 @@ fabro_server_instances:
         value: placeholder-not-a-real-key
     service_state: running
 
+  # The mi-homelab organisation's own Fabro server (work-item bd-ib-tavof6 in
+  # the livespec-orchestrator-beads-fabro tenant; coordinator rulings R668 and
+  # R669(1)). homelab keeps its isolation off the shared fleet instance: its own
+  # unit, port, state root, vault and the org-owned App mi-homelab-factory-bot
+  # (4688510). It replaces hp's fabro-server-mi-homelab, which has been stopped
+  # since 2026-09-12, and is published under the registry name mi-homelab
+  # (group_vars/dev_hosts.yml).
+  - unit_name: fabro-server-mi-homelab
+    home_dir: /home/cwoolley/.fabro-mi-homelab
+    port: 32277
+    canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32277
+    cli_target_url: http://127.0.0.1:32277
+    # A chosen value, not an observation: the org factory serves one
+    # repository and shares this host's sandbox slice with the fleet's eight.
+    max_concurrent_runs: 2
+    github_app_id: "4688510"
+    otel_dropin: present
+    # Its own copy of the fleet instance's build, so a binary move on the
+    # fleet instance never restarts the org factory underneath it, and the
+    # reverse. Keep the pair equal to the fleet instance's unless a change is
+    # meant for one of them alone.
+    binary_path: /home/cwoolley/.fabro-mi-homelab/bin/fabro
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0393-9f6c38fab/fabro
+    binary_sha256: e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6
+    # The tag FOLLOWS homelab's own workflow pin
+    # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
+    # python-agent-v1.126.0), not the orchestrator's; bump the two together.
+    environments:
+      - id: livespec-ci
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.126.0
+        cpu: 4
+        memory: 8GB
+    # The org App key comes from its OWN controller variable, never from
+    # GITHUB_PRIVATE_KEY: that one carries the fleet App's key, and a vault
+    # filled from it would publish homelab's pull requests as the fleet App.
+    # Bind it from homelab's parameter store for the apply:
+    #   hl param run --bind MI_HOMELAB_GITHUB_PRIVATE_KEY=/homelab/v1/providers/github/mi-homelab-factory-bot/private-key
+    vault_secrets:
+      - name: GITHUB_APP_PRIVATE_KEY
+        type: file
+        description: GitHub App 4688510 (mi-homelab-factory-bot) private key
+        from_controller_env: MI_HOMELAB_GITHUB_PRIVATE_KEY
+      - name: OPENAI_API_KEY
+        type: token
+        description: placeholder so ACP-only graphs pass fabro.model.no_ready_provider admission; not a real key
+        value: placeholder-not-a-real-key
+    service_state: running
+
 # The kubernetes plugin reads $HOME/.config/sandbox-driver-kubernetes/config.toml,
 # so every HOME that launches it needs a copy: the account home (operators and
 # the fleet instance) and the canary instance's own root.
@@ -371,3 +430,6 @@ tailscale_serve_mappings:
   # The registered-provider canary instance above.
   - https_port: 32278
     backend: http://127.0.0.1:32278
+  # The mi-homelab organisation's instance above.
+  - https_port: 32277
+    backend: http://127.0.0.1:32277

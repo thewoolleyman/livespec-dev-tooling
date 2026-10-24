@@ -152,14 +152,17 @@ _INVALID_REGISTRIES: dict[str, dict[str, dict[str, str]]] = {
 # membership test, so that the arms below assert both the entry a change adds and
 # the entries it must leave alone. The third name is the one the `mi-homelab`
 # organisation's instance answers to: its unit is the SECOND Fabro server on
-# `hp-xubuntu`, so a registry that named `fabro-server` for it would resolve to
+# its host, so a registry that named `fabro-server` for it would resolve to
 # the fleet instance's address and route the organisation's dispatches onto the
 # fleet factory — which is why the `unit_name` is asserted here and the resolved
 # address is asserted against that instance's own `canonical_host` below. A
 # factory name names the INSTANCE, so this name stays with that instance for its
 # whole life (work-item `livespec-dev-tooling-r6kagr`).
 _HOMELAB_FACTORY = "mi-homelab"
-_HOMELAB_HOST = "hp-xubuntu"
+# Re-pointed to `gmktec-xubuntu` with the instance's move (work-item `bd-ib-tavof6`
+# in the livespec-orchestrator-beads-fabro tenant): no repository table named the
+# name before the move, so no recorded factory could be orphaned.
+_HOMELAB_HOST = "gmktec-xubuntu"
 _HOMELAB_UNIT = "fabro-server-mi-homelab"
 _COMMITTED_FACTORIES: Mapping[str, Mapping[str, str]] = {
     "legacy": {"host": "hp-xubuntu", "unit_name": "fabro-server"},

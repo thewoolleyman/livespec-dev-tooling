@@ -1195,3 +1195,57 @@ When the release fan-out reaches that bound
 Then the run MUST fail with an annotation naming each missing tag
 
 And it MUST send no sibling-released dispatch
+
+## Scenario: a host at its local-gate slot limit queues the next pytest session
+
+Given a host whose local-gate slot limit is set to 2
+
+And two pytest sessions from fleet worktrees each holding a slot
+
+When a third pytest session starts from another fleet worktree
+
+Then the third session MUST wait instead of running its tests
+
+And it MUST print a line naming the limit and that it is waiting, repeated at least once a minute
+
+And when one of the first two sessions ends, the third session MUST run its tests and report their own result
+
+## Scenario: a slot holder that is killed frees its slot without cleanup
+
+Given a host whose local-gate slot limit is set to 1
+
+And one pytest session holding the only slot while another session waits
+
+When the holding session is killed with SIGKILL
+
+Then the waiting session MUST obtain the slot and run its tests without any cleanup step having run
+
+## Scenario: a pytest session nested under a slot holder takes no second slot
+
+Given a host whose local-gate slot limit is set to 1
+
+And a pytest session holding the only slot
+
+When a test in that session starts pytest in a child process
+
+Then the child session MUST run without waiting for a slot
+
+## Scenario: a host with no local-gate slot limit runs pytest sessions unchanged
+
+Given a host with no local-gate slot limit set
+
+When any number of pytest sessions start from fleet worktrees
+
+Then every session MUST start immediately without waiting for a slot
+
+## Scenario: a consumer's delegated gate finds the mise-pinned tools its gate members invoke
+
+Given a fleet consumer that pins `jq` in its `.mise.toml` and has a gate member that invokes `jq`
+
+And a CI container that pins a `python-rust` sandbox image released by this repository
+
+When a delegated gate Job runs that consumer's gate in that image without running `mise install`
+
+Then `jq` MUST be found on `PATH` in the Job
+
+And the gate member MUST run its verification rather than fail for the tool's absence

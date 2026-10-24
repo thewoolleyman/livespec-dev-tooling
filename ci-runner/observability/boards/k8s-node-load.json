@@ -234,7 +234,7 @@
     },
     {
       "type": "query",
-      "key": "node-network",
+      "key": "pod-network-by-node",
       "dataset": "metrics",
       "query_style": "combo",
       "position": {
@@ -244,14 +244,14 @@
         "width": 6
       },
       "annotation": {
-        "name": "Kubelet node network traffic by node and direction",
-        "description": "SUM of k8s.node.network.io (bytes, cumulative counter; Honeycomb applies the increase per bucket) per k8s.node.name and direction. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+        "name": "Pod network traffic by node and direction",
+        "description": "SUM of k8s.pod.network.io (bytes, cumulative counter; Honeycomb applies the increase per bucket) per k8s.node.name and direction. The kubelet on these nodes emits no node-level network series (its stats summary reports per-interface counters only), so node-level traffic is the host network panel below. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
       },
       "query": {
         "calculations": [
           {
             "op": "SUM",
-            "column": "k8s.node.network.io"
+            "column": "k8s.pod.network.io"
           }
         ],
         "filters": [
@@ -505,6 +505,46 @@
           "mountpoint"
         ],
         "limit": 100,
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "host-network",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 33,
+        "height": 6,
+        "width": 12
+      },
+      "annotation": {
+        "name": "Host network I/O by node and direction",
+        "description": "SUM of system.network.io (bytes, hostmetrics, cumulative counter) per host.name and direction across the node's interfaces — the node-level network traffic the kubelet does not report. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "system.network.io"
+          }
+        ],
+        "filters": [
+          {
+            "column": "host.name",
+            "op": "in",
+            "value": [
+              "poweredge-xubuntu",
+              "gmktec-xubuntu",
+              "hp-xubuntu"
+            ]
+          }
+        ],
+        "breakdowns": [
+          "host.name",
+          "direction"
+        ],
         "time_range": 21600
       }
     }

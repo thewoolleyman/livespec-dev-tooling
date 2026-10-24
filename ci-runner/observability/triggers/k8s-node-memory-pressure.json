@@ -1,0 +1,51 @@
+{
+  "name": "k8s node MemoryPressure — a cluster node reports the MemoryPressure condition",
+  "description": "Fires, per k8s.node.name, when MAX(k8s.node.condition_memory_pressure) over the trailing 10 min is above 0: the kubelet has declared MemoryPressure and is evicting or about to evict pods. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml). Runbook: open the 'Kubernetes node load' board; ssh <node>; mpstat 5 3; free -g; kubectl describe node <node>; kubectl get pods -A -o wide --field-selector spec.nodeName=<node>. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-uftb4o.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "k8s.node.condition_memory_pressure"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.node.name",
+        "op": "exists"
+      }
+    ],
+    "breakdowns": [
+      "k8s.node.name"
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">",
+    "value": 0,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-nodes"
+    },
+    {
+      "key": "component",
+      "value": "node-load"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
