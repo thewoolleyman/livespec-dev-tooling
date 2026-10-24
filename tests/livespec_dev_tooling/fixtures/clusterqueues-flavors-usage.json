@@ -10,7 +10,8 @@
                 "name": "default",
                 "resources": [
                   {"name": "ci-runner.io/churn-slot", "nominalQuota": "12"},
-                  {"name": "cpu", "nominalQuota": "4"}
+                  {"name": "cpu", "nominalQuota": "4"},
+                  {"name": "memory", "nominalQuota": "1Pi"}
                 ]
               }
             ]
@@ -25,7 +26,8 @@
             "name": "default",
             "resources": [
               {"name": "ci-runner.io/churn-slot", "total": "7"},
-              {"name": "cpu", "total": "1500m"}
+              {"name": "cpu", "total": "1500m"},
+              {"name": "memory", "total": "1Pi"}
             ]
           }
         ]

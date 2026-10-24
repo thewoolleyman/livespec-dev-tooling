@@ -97,6 +97,28 @@ def test_pool_emitter_reports_each_clusterqueue_flavor_usage_and_quota(*, tmp_pa
     )
 
 
+def test_pool_emitter_reports_scientific_notation_clusterqueue_quantities(
+    *, tmp_path: Path
+) -> None:
+    """A valid binary Kubernetes quantity is not lost after normalization."""
+    metrics = _metrics(tmp_path=tmp_path)
+    expected_attributes = {
+        "ci.queue": "example-cq",
+        "ci.flavor": "default",
+        "ci.resource": "memory",
+    }
+    for metric_name in (
+        "livespec.ci_pool.queue_resource_usage",
+        "livespec.ci_pool.queue_resource_nominal_quota",
+    ):
+        points = metrics[metric_name]["gauge"]["dataPoints"]
+        assert any(
+            point["asDouble"] > 1e15
+            and expected_attributes.items() <= _attributes(point=point).items()
+            for point in points
+        )
+
+
 def test_pool_emitter_reports_clusterqueue_read_failure_without_unbound_variable(
     *, tmp_path: Path
 ) -> None:
