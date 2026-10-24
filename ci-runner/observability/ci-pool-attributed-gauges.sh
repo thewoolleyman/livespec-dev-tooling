@@ -502,7 +502,7 @@ PY
   log "read ${queues_emitted} ClusterQueue(s) covering ${CHURN_SLOT_RESOURCE}"
   fi
 else
-  log "could not read ClusterQueues ($(printf '%s' "${cq_rows}" | head -1)); omitting every livespec.ci_pool.queue_* gauge rather than sending false zeros" >&2
+  log "could not read ClusterQueues ($(printf '%s' "${cq_json}" | head -1)); omitting every livespec.ci_pool.queue_* gauge rather than sending false zeros" >&2
   failed=1
 fi
 
