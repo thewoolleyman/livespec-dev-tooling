@@ -44,7 +44,7 @@ Value and dead-man triggers, one `*.json` per trigger, converged by name:
 
 Each definition may name a `dataset`; absent, it defaults to `metrics`.
 
-## `boards/` — the pool board
+## `boards/` — the pool board and the node-load board
 
 One board, `ci-runner-pool.json`, named **"CI runner pool — PowerEdge: queued,
 admitted and running by repository"**. It is the named READER of the
@@ -68,6 +68,16 @@ and reuses the stored query ids, so a re-run prints `updated` with the same id
 rather than minting a second board. A run that prints `created` for a board
 that should already exist means the name was changed or the board was deleted,
 and the URL above is then stale; recheck before assuming the applier churned.
+
+A second board, `k8s-node-load.json`, named **"Kubernetes node load — every
+k3s node's CPU, memory, disk, network and requests"**, is the reader of every
+cluster node's kubelet rows (`k8s.node.*`, `k8s.pod.*`, `k8s.container.*`) and
+host rows (`system.*`): CPU busy read from idle share, memory working set
+against capacity, the four node conditions, filesystem, network, requests and
+limits against allocatable, and pod usage by node and namespace. The same
+`apply-boards.sh` converges it. It realizes `SPECIFICATION/non-functional-requirements.md`
+§"Runner-pool node telemetry" (plan `kubernetes-node-observability`,
+livespec-dev-tooling-uftb4o).
 
 A panel whose columns do not exist yet is SKIPPED and reported, and the script
 still exits non-zero at the end so the incompleteness is visible. That is the

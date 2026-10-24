@@ -1,0 +1,512 @@
+{
+  "name": "Kubernetes node load — every k3s node's CPU, memory, disk, network and requests",
+  "description": "Per-node load and utilization of the k3s cluster (poweredge-xubuntu, gmktec-xubuntu, hp-xubuntu): CPU busy and cores, memory against capacity, pressure conditions, filesystem, network, requests and limits against allocatable, and pod usage by node and namespace. Defined as code in livespec-dev-tooling ci-runner/observability/boards/k8s-node-load.json and converged by apply-boards.sh; edit the definition, never this board in the UI. Plan kubernetes-node-observability, livespec-dev-tooling-dfdiil.",
+  "type": "flexible",
+  "layout_generation": "manual",
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-nodes"
+    },
+    {
+      "key": "component",
+      "value": "node-load"
+    },
+    {
+      "key": "kind",
+      "value": "board"
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 0,
+        "height": 3,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "# Kubernetes node load\n\nEvery k3s node's load and utilization in one page: **poweredge-xubuntu** (server), **gmktec-xubuntu** (agent), **hp-xubuntu** (factory-only agent). Kubelet rows (`k8s.node.*`, `k8s.pod.*`) are scraped for EVERY node by the poweredge collector through the API server and carry `k8s.node.name`; `host.name` on them names the node the row is about. Host rows (`system.*`) come from a collector on each node, by `host.name`.\n\n**CPU busy is read as `1 - idle`, not from load average** (see `.ai/ci-node-capacity-reads.md`: load counts runnable and D-state tasks, not busy cores). Memory headroom is kubelet's own eviction signal: working set over working set + `memory.available`.\n\n**This board is code**: `ci-runner/observability/boards/k8s-node-load.json` in `thewoolleyman/livespec-dev-tooling`, converged by `apply-boards.sh`. Triggers beside it in `../triggers/k8s-node-*.json`. Plan `kubernetes-node-observability` (livespec-dev-tooling-dfdiil)."
+      }
+    },
+    {
+      "type": "query",
+      "key": "node-cpu-idle",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 3,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Node CPU idle fraction (1 - busy) by node",
+        "description": "AVG of system.cpu.utilization where state=idle, per host.name: the mean idle fraction across the node's CPUs. 0.10 is 90% busy, the saturation trigger's threshold. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "AVG",
+            "column": "system.cpu.utilization"
+          }
+        ],
+        "filters": [
+          {
+            "column": "host.name",
+            "op": "in",
+            "value": [
+              "poweredge-xubuntu",
+              "gmktec-xubuntu",
+              "hp-xubuntu"
+            ]
+          },
+          {
+            "column": "state",
+            "op": "=",
+            "value": "idle"
+          }
+        ],
+        "breakdowns": [
+          "host.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "node-cpu-cores",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 3,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Kubelet node CPU usage (cores) by node",
+        "description": "MAX of k8s.node.cpu.usage (cores in use, from the kubelet stats summary) per k8s.node.name. Compare with the node's CPU count: poweredge 72, gmktec 32, hp 16. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "k8s.node.cpu.usage"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "node-memory-ratio",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 9,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Node memory working set / capacity by node",
+        "description": "MAX of working_set / (working_set + memory.available) per k8s.node.name — kubelet's memory.available IS capacity minus working set, so this is the eviction signal as a fraction. 0.90 is the memory trigger's threshold. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculated_fields": [
+          {
+            "name": "node_memory_working_set_ratio",
+            "expression": "DIV($k8s.node.memory.working_set, SUM($k8s.node.memory.working_set, $k8s.node.memory.available))"
+          }
+        ],
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "node_memory_working_set_ratio"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "node-conditions",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 9,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Node pressure conditions and Ready by node",
+        "description": "MAX of k8s.node.condition_ready, _memory_pressure, _disk_pressure, _pid_pressure per k8s.node.name (1 = condition true). Ready should read 1 and every pressure 0. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "k8s.node.condition_ready"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.node.condition_memory_pressure"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.node.condition_disk_pressure"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.node.condition_pid_pressure"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "node-filesystem",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 15,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Kubelet node filesystem usage and capacity by node",
+        "description": "MAX of k8s.node.filesystem.usage and k8s.node.filesystem.capacity (bytes, the kubelet's root/imagefs view) per k8s.node.name. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "k8s.node.filesystem.usage"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.node.filesystem.capacity"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "node-network",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 15,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Kubelet node network traffic by node and direction",
+        "description": "SUM of k8s.node.network.io (bytes, cumulative counter; Honeycomb applies the increase per bucket) per k8s.node.name and direction. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.node.network.io"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name",
+          "direction"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "requests-vs-allocatable-cpu",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 21,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "CPU requests and limits against allocatable by node",
+        "description": "SUM of k8s.container.cpu_request and k8s.container.cpu_limit across containers, beside MAX of k8s.node.allocatable_cpu, per k8s.node.name (cores). Requests over allocatable means the scheduler is full; usage far under requests means reservations are idle. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.container.cpu_request"
+          },
+          {
+            "op": "SUM",
+            "column": "k8s.container.cpu_limit"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.node.allocatable_cpu"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "requests-vs-allocatable-memory",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 21,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Memory requests and limits against allocatable by node",
+        "description": "SUM of k8s.container.memory_request and k8s.container.memory_limit across containers, beside MAX of k8s.node.allocatable_memory, per k8s.node.name (bytes). Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.container.memory_request"
+          },
+          {
+            "op": "SUM",
+            "column": "k8s.container.memory_limit"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.node.allocatable_memory"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "pod-cpu-by-node-namespace",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 27,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Pod CPU usage by node and namespace",
+        "description": "SUM of k8s.pod.cpu.usage (cores) per k8s.node.name and k8s.namespace.name — which namespace (factory, arc-runners, gates, ...) is loading which node. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.pod.cpu.usage"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name",
+          "k8s.namespace.name"
+        ],
+        "limit": 100,
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "pod-memory-by-node-namespace",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 27,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Pod memory working set by node and namespace",
+        "description": "SUM of k8s.pod.memory.working_set (bytes) per k8s.node.name and k8s.namespace.name. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.pod.memory.working_set"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.node.name",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.node.name",
+          "k8s.namespace.name"
+        ],
+        "limit": 100,
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "host-load",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 33,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Host load average (1m) by node",
+        "description": "MAX of system.cpu.load_average.1m per host.name. Read beside the idle panel, never alone: load counts D-state and runnable tasks, so a large load at high idle is not saturation. Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "system.cpu.load_average.1m"
+          }
+        ],
+        "filters": [
+          {
+            "column": "host.name",
+            "op": "in",
+            "value": [
+              "poweredge-xubuntu",
+              "gmktec-xubuntu",
+              "hp-xubuntu"
+            ]
+          }
+        ],
+        "breakdowns": [
+          "host.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "host-filesystem",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 33,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Host filesystem used bytes by node and mount",
+        "description": "MAX of system.filesystem.usage where state=used per host.name and mountpoint (hostmetrics, df-style). Emitters: thewoolleyman/otel-collector config.ci-runner-host.yaml (k8s_cluster + one kubeletstats per node through the API server, on poweredge-xubuntu) and the per-node host collectors (config.ci-runner-host.yaml, config.k3s-agent-host.yaml, config.hp-factory.yaml), converged by livespec-dev-tooling ansible/ci-pool.yml."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "system.filesystem.usage"
+          }
+        ],
+        "filters": [
+          {
+            "column": "host.name",
+            "op": "in",
+            "value": [
+              "poweredge-xubuntu",
+              "gmktec-xubuntu",
+              "hp-xubuntu"
+            ]
+          },
+          {
+            "column": "state",
+            "op": "=",
+            "value": "used"
+          }
+        ],
+        "breakdowns": [
+          "host.name",
+          "mountpoint"
+        ],
+        "limit": 100,
+        "time_range": 21600
+      }
+    }
+  ]
+}
