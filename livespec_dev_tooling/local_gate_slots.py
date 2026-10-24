@@ -55,6 +55,7 @@ import structlog  # noqa: E402  — vendor-path-aware import.
 __all__: list[str] = [
     "HEARTBEAT_SECONDS",
     "LIMIT_FILE",
+    "MARKER_ENV_VAR",
     "POLL_SECONDS",
     "SLOT_DIR",
     "await_slot",
@@ -76,6 +77,21 @@ LIMIT_FILE = Path("/etc/livespec/local-gate-slots")
 # limit provisions this directory through `systemd-tmpfiles`, so the store and
 # the setting that needs it arrive together.
 SLOT_DIR = Path("/run/livespec/local-gate-slots")
+
+# What a slot holder leaves in its environment so its own children can see it.
+#
+# THE DEADLOCK THIS PREVENTS is the reason the marker exists, and it is not a
+# hypothetical: a suite that starts pytest in a child process, on a host whose
+# limit is one, would have that child queue behind its own parent — and the
+# parent cannot finish, because it is waiting for the child. The child must
+# therefore run at once holding nothing, which is sound rather than a loophole:
+# the parent's slot already accounts for the work the child is part of.
+#
+# Carried in the ENVIRONMENT rather than in a file, because the environment is
+# the one thing a child inherits by construction, whether it arrives by fork or
+# by exec, and because it disappears with the process that set it — so there is
+# nothing to clean up and nothing that can go stale.
+MARKER_ENV_VAR = "LIVESPEC_LOCAL_GATE_SLOT_HELD"
 
 # Slot files are opened O_RDONLY, which is NOT an oversight: `flock` may be
 # taken on a descriptor opened in any mode, so a read-only open makes a slot
@@ -203,14 +219,24 @@ def take_session_slot(
     The return is the held descriptor under `take_slot`'s no-closing contract.
     The caller discards it ON PURPOSE: a session holds its slot for exactly as
     long as it exists, and the kernel is what hands it back.
+
+    A session nested under one that already holds a slot returns `None` too, and
+    does so BEFORE reading anything: see `MARKER_ENV_VAR` for the deadlock that
+    would otherwise be reachable on any host whose limit is one.
     """
+    if os.environ.get(MARKER_ENV_VAR):
+        return None
     limit = configured_limit(limit_file=limit_file)
     if limit is None:
         return None
     store = _usable_slot_dir(slot_dir=slot_dir)
     if store is None:
         return None
-    return await_slot(slot_dir=store, limit=limit, sleep=sleep)
+    held = await_slot(slot_dir=store, limit=limit, sleep=sleep)
+    # Written only AFTER the slot is in hand, so a session killed while queued
+    # leaves no marker claiming a hold it never got.
+    os.environ[MARKER_ENV_VAR] = str(limit)
+    return held
 
 
 def _usable_slot_dir(*, slot_dir: Path) -> Path | None:

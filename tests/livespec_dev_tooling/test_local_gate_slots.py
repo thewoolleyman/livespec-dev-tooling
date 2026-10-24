@@ -23,6 +23,7 @@ import importlib.util
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -53,6 +54,33 @@ _CPU_CEILING_SECONDS = 0.2
 # calling the waiter wedged. Generous because a loaded host may schedule the
 # waiter late, and a false "wedged" here would read as a broken queue.
 _HANDOFF_TIMEOUT_SECONDS = 30.0
+
+# The environment marker a slot holder leaves for its children, spelled HERE and
+# asserted against the module's own constant rather than read from it. A test
+# that read the name from the subject could not notice it being renamed, and the
+# name is the whole interface: a nested session recognises its parent's hold by
+# this variable and by nothing else.
+_MARKER_ENV_VAR = "LIVESPEC_LOCAL_GATE_SLOT_HELD"
+
+# Fixed-width answers a forked child writes back, so one blocking read is
+# unambiguous about which of the three things happened.
+_CHILD_TOOK_A_SLOT = b"took-1"
+_CHILD_TOOK_NOTHING = b"none--"
+_CHILD_QUEUED = b"queued"
+
+
+@pytest.fixture(autouse=True)
+def _forget_any_inherited_slot_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every assertion here as a session that holds no slot, and leave none.
+
+    Autouse in BOTH directions and both matter. A suite run on a converged host
+    may itself hold a slot, which would make every nested-session assertion here
+    vacuously true; and a test that acquires one marks this process, which would
+    silently switch off throttling for every test that followed it on this
+    worker. `monkeypatch` records the variable's state on the way in and
+    restores it on the way out, so neither can happen.
+    """
+    monkeypatch.delenv(_MARKER_ENV_VAR, raising=False)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -513,3 +541,73 @@ def test_a_session_on_a_host_with_no_limit_takes_no_slot_and_touches_no_store(
         "a host that sets no limit must not even have a slot store created "
         "under it: nothing about an unprovisioned host may change"
     )
+
+
+@pytest.mark.integration
+def test_a_session_nested_under_a_slot_holder_takes_no_second_slot(*, tmp_path: Path) -> None:
+    """SCENARIO: a pytest session nested under a slot holder takes no second slot.
+
+    The DEADLOCK case, and the reason the marker exists at all: a suite that
+    starts pytest in a child process on a host whose limit is one would
+    otherwise have its child queue behind its own parent, which never finishes
+    because it is waiting for the child. The child must therefore run
+    IMMEDIATELY rather than queue, which is what the pipe answer distinguishes.
+
+    The marker reaches the child through the real process environment, asserted
+    in both halves: that an exec'd child sees the variable at all, and that a
+    session which sees it takes nothing.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert hasattr(module, "MARKER_ENV_VAR"), (
+        "the module must name the environment marker a slot holder leaves for "
+        "its children: without it a nested pytest session queues behind its own "
+        "parent, which is a deadlock rather than a throttle"
+    )
+    assert module.MARKER_ENV_VAR == _MARKER_ENV_VAR
+    slot_dir = _slot_store(root=tmp_path)
+    limit_file = _limit_file(root=tmp_path, text="1\n")
+
+    parent_slot = module.take_session_slot(limit_file=limit_file, slot_dir=slot_dir)
+    assert parent_slot is not None, "the first session must take the host's one slot"
+    assert os.environ[_MARKER_ENV_VAR], "a slot holder must mark its environment"
+    assert module.take_session_slot(limit_file=limit_file, slot_dir=slot_dir) is None, (
+        "a further session in THIS process, which now carries the marker, must "
+        "take nothing — and must answer before it looks at the store, which is "
+        "what keeps a nested session off a queue its own parent is at the head of"
+    )
+
+    exported = subprocess.run(["env"], capture_output=True, text=True, check=True)
+    assert _MARKER_ENV_VAR in exported.stdout, (
+        "the marker must reach the REAL process environment, because the nested "
+        "session this protects is an exec'd child rather than a fork"
+    )
+
+    answer_read, answer_write = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover — the forked child, which reports to nobody
+
+        def _refuse_to_queue(_seconds: float) -> None:
+            _ = os.write(answer_write, _CHILD_QUEUED)
+            os._exit(2)
+
+        nested = module.take_session_slot(
+            limit_file=limit_file, slot_dir=slot_dir, sleep=_refuse_to_queue
+        )
+        _ = os.write(
+            answer_write,
+            _CHILD_TOOK_A_SLOT if nested is not None else _CHILD_TOOK_NOTHING,
+        )
+        os._exit(0)
+    answer = os.read(answer_read, 6)
+    _, status = os.waitpid(pid, 0)
+
+    assert answer == _CHILD_TOOK_NOTHING, (
+        f"a session nested under a slot holder must run at once holding " f"nothing, got {answer!r}"
+    )
+    assert os.waitstatus_to_exitcode(status) == 0
+    assert module.take_slot(slot_dir=slot_dir, limit=1) is None, (
+        "the host's one slot must still be the parent's: a nested session that "
+        "had taken a second one would have found this free"
+    )
+    os.close(parent_slot)
