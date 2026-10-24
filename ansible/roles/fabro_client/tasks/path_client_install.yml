@@ -1,0 +1,64 @@
+---
+# Reached only after both validation files have accepted the complete host
+# declaration and after every build has been installed.  In particular, the
+# rename below replaces the link itself and never opens the file it used to name.
+
+- name: Create every missing ancestor directory the Fabro PATH client needs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ fabro_client_owner }}"
+    group: "{{ fabro_client_group }}"
+    mode: "0755"
+  become: true
+  loop: >-
+    {{ fabro_client_path_client_ancestors
+       | difference(fabro_client_path_client_present_ancestors) }}
+  vars:
+    fabro_client_path_client_present_ancestors: >-
+      {{ fabro_client_path_client_ancestor_stats.results | default([])
+         | selectattr('stat.exists') | map(attribute='item') | list }}
+
+- name: Stage a replacement Fabro PATH client link beside the live link
+  ansible.builtin.file:
+    path: "{{ fabro_client_path_client_incoming }}"
+    src: "{{ fabro_client_path_client_target }}"
+    state: link
+    owner: "{{ fabro_client_owner }}"
+    group: "{{ fabro_client_group }}"
+    force: true
+    follow: false
+  become: true
+  when: >-
+    not fabro_client_path_client_lstat[fabro_client_path_client_link].exists
+    or not (fabro_client_path_client_lstat[fabro_client_path_client_link].islnk
+            | default(false))
+    or fabro_client_path_client_literal_target.stdout | default('')
+       != fabro_client_path_client_target
+
+- name: Atomically replace the host Fabro PATH client link
+  ansible.builtin.command:
+    argv:
+      - mv
+      - -f
+      - "{{ fabro_client_path_client_incoming }}"
+      - "{{ fabro_client_path_client_link }}"
+  become: true
+  changed_when: true
+  when: >-
+    not fabro_client_path_client_lstat[fabro_client_path_client_link].exists
+    or not (fabro_client_path_client_lstat[fabro_client_path_client_link].islnk
+            | default(false))
+    or fabro_client_path_client_literal_target.stdout | default('')
+       != fabro_client_path_client_target
+
+- name: Ensure the Fabro PATH client link owner and group
+  ansible.builtin.file:
+    path: "{{ fabro_client_path_client_link }}"
+    src: "{{ fabro_client_path_client_target }}"
+    state: link
+    owner: "{{ fabro_client_owner }}"
+    group: "{{ fabro_client_group }}"
+    force: true
+    follow: false
+  become: true

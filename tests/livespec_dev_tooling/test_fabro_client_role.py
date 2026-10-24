@@ -328,6 +328,48 @@ def test_a_source_that_no_longer_hashes_to_its_digest_refuses_and_keeps_both_bui
         )
 
 
+def test_a_converge_points_the_path_client_at_a_declared_build_without_touching_the_server_binary(
+    *, tmp_path: Path
+) -> None:
+    """The PATH-client scenario preserves the server binary an old link named."""
+    root = tmp_path / "path-client"
+    builds = [
+        _staged(root=root, name="legacy", body="legacy-client-0.254\n"),
+        _staged(root=root, name="petri", body="petri-client-0.382\n"),
+    ]
+    server_binary = root / "server-home" / ".fabro" / "bin" / "fabro"
+    server_binary.parent.mkdir(parents=True, exist_ok=True)
+    _ = server_binary.write_text("server-client-0.254\n", encoding="utf-8")
+    link = root / "host" / ".local" / "bin" / "fabro"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(server_binary)
+    server_digest = _digest(text=server_binary.read_text(encoding="utf-8"))
+    path_client = {"link": str(link), "target": builds[1]["path"]}
+
+    first = _converge(
+        tmp_path=tmp_path,
+        name="path-client",
+        builds=builds,
+        host_vars={"fabro_client_path_client": path_client},
+    )
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert link.is_symlink()
+    assert str(link.readlink()) == builds[1]["path"]
+    assert pwd.getpwuid(link.lstat().st_uid).pw_name == _owner()
+    assert grp.getgrgid(link.lstat().st_gid).gr_name == _primary_group()
+    assert _digest(text=server_binary.read_text(encoding="utf-8")) == server_digest
+
+    second = _converge(
+        tmp_path=tmp_path,
+        name="path-client",
+        builds=builds,
+        host_vars={"fabro_client_path_client": path_client},
+    )
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert _changed(run=second) == 0
+
+
 @pytest.mark.parametrize(
     ("arm", "reason"),
     [

@@ -10,16 +10,25 @@
 # every write in `install.yml`, and the order between the two files IS the
 # clause.
 #
-# A host whose inventory declares nothing converges this role as a no-op, which
-# is why the guard is on the include rather than on each task: a dev host that
-# reaches every factory through the PATH client has no client build to stage, and
-# this role must read nothing and write nothing there.
+# A host whose inventory declares neither builds nor a PATH client converges this
+# role as a no-op.  A PATH-client declaration beside an empty build list is NOT
+# a no-op: it has to be refused because its target cannot name a declared build.
 
-- name: Stage the pinned Fabro client builds this host declares
-  when: fabro_client_builds | length > 0
+- name: Stage declared Fabro client builds and point the host PATH client at one
+  when: fabro_client_builds | length > 0 or fabro_client_path_client is defined
   block:
     - name: Validate every declared Fabro client build before anything is written
       ansible.builtin.include_tasks: validate.yml
+      when: fabro_client_builds | length > 0
+
+    - name: Validate the declared Fabro PATH client before anything is written
+      ansible.builtin.include_tasks: path_client_validate.yml
+      when: fabro_client_path_client is defined
 
     - name: Install every declared Fabro client build
       ansible.builtin.include_tasks: install.yml
+      when: fabro_client_builds | length > 0
+
+    - name: Point the host PATH client at its declared Fabro client build
+      ansible.builtin.include_tasks: path_client_install.yml
+      when: fabro_client_path_client is defined
