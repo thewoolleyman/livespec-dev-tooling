@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.128.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.127.0...v1.128.0) (2026-10-24)
+
+
+### Features
+
+* **ansible:** give gmktec a Rust-capable Kubernetes environment ([8944b2e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8944b2e52b6ad4c7fd745cb62e0ddfdca90b27e3))
+
 ## [1.127.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.126.1...v1.127.0) (2026-10-23)
 
 
