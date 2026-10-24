@@ -120,6 +120,20 @@ hand. That re-run works because the refusing run RECORDED the deferral on the
 host — see "The deferred restart" below for what it wrote and what the re-run
 does with it.
 
+**Quiesce means cancel the runs, then re-dispatch them — never wait for them to
+end.** A factory run is restartable, so the carrying-runs refusal means "cancel to
+idle", not "wait for idle". List the instance's active runs with
+`fabro ps --server <instance>`, cancel each through the server's own
+`POST /api/v1/runs/{id}/cancel` (it cancels a pending, runnable or running run
+and answers 409 for one already finished; neither the 0.254 nor the 0.382 client
+has a `cancel` verb, and `fabro rm --force` is NOT a cancel — it deletes the run's
+record), confirm `fabro ps` shows none active, then re-run the play with the flag
+true. As soon as the instance is back, re-dispatch every cancelled item, or route
+it to another factory. The guard itself is honoured, never bypassed: the play
+still refuses while any run is active. Holding the fleet cap at 0 until runs end
+naturally cost about 1 h 50 min of factory time on 2026-10-23/24 (22:5xZ to
+00:4xZ) on an under-used account.
+
 On a host with several instances, that re-run probes EVERY instance it visits,
 so a busy sibling refuses it even when the instance you want is idle. Narrow it
 with the playbook's `fabro_server_target_units`, passed as JSON:
