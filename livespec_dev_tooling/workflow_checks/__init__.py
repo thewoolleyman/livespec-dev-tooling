@@ -8,8 +8,8 @@ canonical-set derivation (`canonical_checks` walks `checks/*.py`)
 auto-excludes them, and they are NOT subject to the wiring-completeness
 invariant and NOT members of the canonical aggregate.
 
-Two kinds are defined, and the list is open to further kinds admitted by
-amendment:
+Three kinds are defined, and the list is open to further kinds admitted
+by amendment:
 
 - Revise-workflow checks, invoked by the `/livespec:revise` pre-step.
   `no_stale_revise_branches` is the member; that pre-step is mandatory
@@ -17,6 +17,9 @@ amendment:
 - Release-workflow checks, invoked by a consumer's release-gating step.
   `release_bump_classification` is the member; it has NO mandated
   caller, because adopting any workflow check is per-consumer opt-in.
+- Commit-hook checks, invoked by a consumer's `check-pre-commit` recipe
+  ahead of its pre-commit aggregate. `staged_precheck` is the member: it
+  refuses staged lint and type errors in seconds, before the aggregate.
 
 The invocation form `python -m livespec_dev_tooling.workflow_checks.<slug>`
 is an enumerated element of the semver-stable surface per

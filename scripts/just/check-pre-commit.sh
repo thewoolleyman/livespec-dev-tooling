@@ -22,6 +22,13 @@ if [[ -z "$py_staged" ]]; then
     exit $?
 fi
 
+# The seconds-scale head of the aggregate (work-item livespec-dev-tooling-nil6v7;
+# the "Hooks and CI" section of non-functional-requirements.md): lint the staged Python files
+# and type-check those pyright covers, refusing with file, line and rule BEFORE
+# any aggregate member starts. A pass falls through to the aggregate unchanged.
+echo ":: staged-file pre-check: ruff + pyright on the staged Python files"
+uv run python -m livespec_dev_tooling.workflow_checks.staged_precheck
+
 if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
     echo ":: Red-mode shape detected: $test_staged"
     echo ":: scoping the Red gate by staged-path class (red_leg_scope): coverage gates skip"
