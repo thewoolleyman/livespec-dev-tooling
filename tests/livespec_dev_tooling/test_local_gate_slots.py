@@ -22,9 +22,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import signal
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
@@ -51,6 +53,26 @@ _CPU_CEILING_SECONDS = 0.2
 # calling the waiter wedged. Generous because a loaded host may schedule the
 # waiter late, and a false "wedged" here would read as a broken queue.
 _HANDOFF_TIMEOUT_SECONDS = 30.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Holder:
+    """A forked process holding one slot, and the pipe that lets it go."""
+
+    pid: int
+    release: int
+
+    def kill(self) -> int:
+        """SIGKILL this holder and reap it, returning its wait status.
+
+        SIGKILL rather than a release byte, because the ratified clause names
+        that signal: it runs no handler, no `finally`, no `atexit` and no
+        interpreter shutdown, so nothing the holder could have been written to
+        do on the way out can be what frees the slot.
+        """
+        os.kill(self.pid, signal.SIGKILL)
+        _, status = os.waitpid(self.pid, 0)
+        return status
 
 
 def _load_module() -> ModuleType:
@@ -94,6 +116,53 @@ def _emitted_lines(*, captured: str) -> list[dict[str, object]]:
     filtered away where no assertion would ever see it.
     """
     return [json.loads(line) for line in captured.splitlines() if line.strip()]
+
+
+def _fork_slot_holder(*, module: ModuleType, slot_dir: Path, limit: int) -> _Holder:
+    """Fork a process that takes one slot through the module and holds it.
+
+    A SECOND PROCESS is the only thing that can prove the death properties: the
+    question is what the KERNEL does with a lock when its holder stops existing,
+    and no in-process construction can stop a process from existing. It is
+    FORKED rather than spawned because the holder must take its slot through
+    this module's own `take_slot` — a lock taken by some command-line tool would
+    prove a fact about that tool — and it leaves through `os._exit`, so no
+    pytest teardown and no coverage write ever runs inside it.
+    """
+    holding_read, holding_write = os.pipe()
+    release_read, release_write = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover — the forked child, which reports to nobody
+        held = module.take_slot(slot_dir=slot_dir, limit=limit)
+        _ = os.write(holding_write, b"held" if held is not None else b"none")
+        _ = os.read(release_read, 2)
+        os._exit(0)
+    assert os.read(holding_read, 4) == b"held"
+    return _Holder(pid=pid, release=release_write)
+
+
+def _fork_queued_session(*, module: ModuleType, slot_dir: Path, limit: int) -> int:
+    """Fork a process that queues for a slot and is left standing in the queue.
+
+    The child reports from INSIDE its own inter-round sleep, which is what makes
+    the kill deterministic rather than timed: when the parent reads the byte the
+    child has provably attempted every slot, taken none, and not yet come back
+    round. A parent that instead slept "long enough" would be asserting about a
+    child whose state it had guessed.
+    """
+    queued_read, queued_write = os.pipe()
+    hang_read, _hang_write = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover — the forked child, which reports to nobody
+
+        def _report_from_inside_the_wait(_seconds: float) -> None:
+            _ = os.write(queued_write, b"queued")
+            _ = os.read(hang_read, 1)
+
+        _ = module.await_slot(slot_dir=slot_dir, limit=limit, sleep=_report_from_inside_the_wait)
+        os._exit(0)
+    assert os.read(queued_read, 6) == b"queued"
+    return pid
 
 
 @pytest.mark.integration
@@ -284,4 +353,163 @@ def test_a_wait_of_several_poll_rounds_adds_no_measurable_cpu_load(*, tmp_path: 
     assert burned < _CPU_CEILING_SECONDS, (
         f"a {_CPU_PROBE_SECONDS}s wait burned {burned:.3f}s of CPU, which is a "
         f"busy loop rather than a poll that sleeps"
+    )
+
+
+@pytest.mark.integration
+def test_a_session_that_queued_runs_once_a_slot_frees_and_reaches_no_verdict(
+    *, tmp_path: Path
+) -> None:
+    """Waiting produces no verdict: the queued session proceeds and reports its own.
+
+    The session-level entry point either hands back a slot or keeps waiting. It
+    has no third answer, and that is the property: a throttle able to report a
+    FAILURE would turn a busy host into a red tree, so queueing can only ever
+    delay a session's own tests, never stand in for their result.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert hasattr(module, "take_session_slot"), (
+        "the module must expose take_session_slot: it is what a pytest session "
+        "calls at start, and what has to resolve the host's limit, queue when "
+        "the host is full, and then let the session run its own tests"
+    )
+    slot_dir = _slot_store(root=tmp_path)
+    limit_file = _limit_file(root=tmp_path, text="1\n")
+    occupying = module.take_slot(slot_dir=slot_dir, limit=1)
+    assert occupying is not None
+
+    outcome: list[int | None] = []
+
+    def _queue_as_a_session() -> None:
+        outcome.append(module.take_session_slot(limit_file=limit_file, slot_dir=slot_dir))
+
+    session = threading.Thread(target=_queue_as_a_session, daemon=True)
+    session.start()
+    os.close(occupying)
+    session.join(timeout=_HANDOFF_TIMEOUT_SECONDS)
+
+    assert not session.is_alive(), "the queued session must proceed once a slot frees"
+    assert len(outcome) == 1, (
+        "the queued session must return rather than raise: a wait that could "
+        "raise would be a verdict about a tree it never looked at"
+    )
+    held = outcome[0]
+    assert held is not None
+    os.close(held)
+
+
+@pytest.mark.integration
+def test_a_slot_holder_killed_with_sigkill_frees_its_slot_without_cleanup(
+    *, tmp_path: Path
+) -> None:
+    """SCENARIO: a slot holder that is killed frees its slot without cleanup.
+
+    The kernel releases a `flock` when the last descriptor of its open file
+    description closes, and a dying process's descriptors close whatever killed
+    it. So there is no cleanup step to run, none runs, and the evidence that
+    none ran is that the slot FILE is still sitting there afterwards: a sweep
+    would have removed or rewritten it.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    slot_dir = _slot_store(root=tmp_path)
+    holder = _fork_slot_holder(module=module, slot_dir=slot_dir, limit=1)
+    slot_file = slot_dir / "slot-1"
+
+    assert (
+        module.take_slot(slot_dir=slot_dir, limit=1) is None
+    ), "the forked holder must hold the only slot before it is killed"
+
+    status = holder.kill()
+    assert os.WIFSIGNALED(status), "the holder must have died of the signal"
+    assert os.WTERMSIG(status) == signal.SIGKILL
+
+    assert slot_file.is_file(), (
+        "the slot file must still be there: nothing swept it, which is what "
+        "makes this a release with no cleanup step rather than one with a sweep"
+    )
+    regained = module.take_slot(slot_dir=slot_dir, limit=1)
+    assert regained is not None, "the killed holder's slot must be takeable again"
+    os.close(regained)
+
+
+@pytest.mark.integration
+def test_a_session_killed_while_queued_holds_no_slot(*, tmp_path: Path) -> None:
+    """A session killed while waiting holds nothing, because it took nothing.
+
+    Asserted by COUNTING the store afterwards rather than by inspecting the dead
+    process: with the limit at one, the surviving session must be able to take
+    one slot and then find none, which is only true if the killed waiter left no
+    hold behind it.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    slot_dir = _slot_store(root=tmp_path)
+    occupying = module.take_slot(slot_dir=slot_dir, limit=1)
+    assert occupying is not None
+
+    queued = _fork_queued_session(module=module, slot_dir=slot_dir, limit=1)
+    os.kill(queued, signal.SIGKILL)
+    _, status = os.waitpid(queued, 0)
+    assert os.WTERMSIG(status) == signal.SIGKILL
+
+    os.close(occupying)
+    freed = module.take_slot(slot_dir=slot_dir, limit=1)
+    assert freed is not None, "the host's one slot must be free again"
+    assert module.take_slot(slot_dir=slot_dir, limit=1) is None, (
+        "and there must be exactly one: a second free slot would mean the "
+        "killed waiter had been holding something after all"
+    )
+    os.close(freed)
+
+
+@pytest.mark.integration
+def test_a_session_on_a_host_with_no_usable_slot_store_is_not_throttled(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A store that cannot be created leaves the session unthrottled, and says so.
+
+    Fail-OPEN, for the reason the module records: a gate decides whether a tree
+    is sound, and a concurrency stopgap that cannot reach its own slot store
+    must not be what refuses one. It is ANNOUNCED because a silent fail-open is
+    indistinguishable from a host that was never provisioned.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert hasattr(module, "take_session_slot")
+    blocking_file = tmp_path / "not-a-directory"
+    blocking_file.write_text("", encoding="utf-8")
+
+    held = module.take_session_slot(
+        limit_file=_limit_file(root=tmp_path, text="2\n"),
+        slot_dir=blocking_file / "slots",
+    )
+
+    assert held is None
+    announced = _emitted_lines(captured=capsys.readouterr().err)
+    assert len(announced) == 1
+    assert str(announced[0]["slots"]).endswith("slots")
+
+
+@pytest.mark.integration
+def test_a_session_on_a_host_with_no_limit_takes_no_slot_and_touches_no_store(
+    *, tmp_path: Path
+) -> None:
+    """SCENARIO: a host with no local-gate slot limit runs pytest sessions unchanged.
+
+    The session-level half of that scenario. The store is not merely left empty
+    but never CREATED, which is the stronger statement and the one that matters
+    for a factory sandbox: an unprovisioned host is not a host with a limit of
+    infinity, it is a host this module does not touch.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert hasattr(module, "take_session_slot")
+    store = tmp_path / "slots"
+
+    assert module.take_session_slot(limit_file=tmp_path / "absent", slot_dir=store) is None
+    assert not store.exists(), (
+        "a host that sets no limit must not even have a slot store created "
+        "under it: nothing about an unprovisioned host may change"
     )
