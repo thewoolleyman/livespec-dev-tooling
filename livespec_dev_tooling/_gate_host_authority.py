@@ -127,7 +127,7 @@ def run_host_authority_members(
 ) -> tuple[HostAuthorityRun, ...]:
     """Run `repo_root`'s authority-declaring members here, and report what each answered.
 
-    In INVENTORY ORDER, invoked exactly as the aggregate invokes them
+    IN AGGREGATE ORDER, invoked exactly as the aggregate invokes them
     (`just <member>`) and in the PUSHING WORKTREE, so a member reads the same
     committed tree the Job was handed and reaches the same credentials a local
     `just check` would have given it.

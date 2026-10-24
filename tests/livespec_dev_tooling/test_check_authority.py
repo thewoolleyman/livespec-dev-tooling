@@ -17,6 +17,19 @@ declaration and an unreadable registry both have an obvious wrong spelling —
 report nothing, exit zero — and that spelling reads to the aggregate as "no
 member needs the pushing host", which is exactly how a ledger-reading member
 gets handed back to a pod holding no ledger.
+
+AND AN EMPTY ANSWER IS EXACTLY WHAT A REPOSITORY DECLARING NO INVENTORY GOT.
+The resolver read `check-targets.txt` and nothing else, so six of this fleet's
+eight members — every one that declares its aggregate only in its justfile —
+answered that no member reads an authorization held outside the tree. That is
+the same wrong answer the refusals above are shaped to avoid, arriving through a
+missing file instead of a bad declaration, and it is measured: on 2026-10-24
+cluster gate Job `gate-livespec-overseer-tpfd2` ran livespec-overseer's master
+green on every member but `check-branch-protection-alignment`, which got HTTP
+403 on the gate forge credential. So the resolver falls back to the members the
+repository's own `just check` aggregate SELECTS, and the tests below assert both
+that fallback and the precedence that keeps an inventory-carrying repository
+answering exactly as it did.
 """
 
 from __future__ import annotations
@@ -27,7 +40,11 @@ from typing import Any
 
 import pytest
 from returns.pipeline import is_successful
+from returns.result import Success
 from returns.unsafe import unsafe_perform_io
+
+from livespec_dev_tooling._gate_host_authority import run_host_authority_members
+from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
 
 __all__: list[str] = []
 
@@ -55,6 +72,36 @@ _WORKFLOW_EDIT_GUARD = "check-no-workflow-edits"
 _BRANCH_PROTECTION = "check-branch-protection-alignment"
 _SHIPPED_TREE_PURE = "check-file-lloc"
 
+# The empty tree's hash — a real git object name, standing for the committed
+# tree a delegated push hands both halves of its verdict.
+_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+class _CannedHost:
+    """Every `just <member>` a delegated push issues here, answered with no host.
+
+    Records the argv AND the working directory, because the contract's claim is
+    that the member ran on the pushing host IN THE PUSHING WORKTREE — a member
+    invoked somewhere else would read another tree and answer about it.
+    """
+
+    def __init__(self) -> None:
+        self.argvs: list[tuple[str, ...]] = []
+        self.cwds: list[Path] = []
+
+    def __call__(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        stdin: str | None = None,
+        stream: bool = False,
+    ) -> GateCommandOutcome:
+        _ = (stdin, stream)
+        self.argvs.append(tuple(argv))
+        self.cwds.append(cwd)
+        return Success(GateCommandResult(returncode=0, stdout="", stderr=""))
+
 
 def _module() -> Any:
     """The module under test, imported here so its ABSENCE is a test failure."""
@@ -67,6 +114,25 @@ def _fixture_inventory(*, repo_root: Path, lines: tuple[str, ...]) -> None:
         "# Canonical check inventory for `just check`.\n" + "".join(f"{line}\n" for line in lines),
         encoding="utf-8",
     )
+
+
+def _fixture_justfile_aggregate(*, repo_root: Path, slugs: tuple[str, ...]) -> None:
+    """Write a consumer's own `just check` aggregate selecting exactly `slugs`.
+
+    The shape every no-inventory member of this fleet carries: a bare `check:`
+    recipe holding a one-slug-per-line `targets=(...)` array. Written rather
+    than copied from a sibling clone so the fixture states what it depends on.
+    """
+    lines = [
+        "check:",
+        "    #!/usr/bin/env bash",
+        "    set -uo pipefail",
+        "    targets=(",
+        *(f"        {slug}" for slug in slugs),
+        "    )",
+        '    for target in "${targets[@]}"; do just "${target}"; done',
+    ]
+    _ = (repo_root / "justfile").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _members(*, repo_root: Path) -> tuple[str, ...]:
@@ -331,3 +397,142 @@ def test_a_module_that_cannot_be_parsed_declares_nothing_rather_than_refusing_ev
     _fixture_inventory(repo_root=tmp_path, lines=("check-widget-broken", "check-widget-protection"))
 
     assert _members(repo_root=tmp_path) == ("check-widget-protection",)
+
+
+def test_a_consumer_with_no_inventory_resolves_the_members_its_aggregate_selects(
+    *, tmp_path: Path
+) -> None:
+    """A repository declaring no inventory still names its authority-reading members.
+
+    THE MEASURED DEFECT. The resolver read the consumer's `check-targets.txt`
+    and nothing else, so a repository that declares its aggregate only in the
+    justfile answered that NO member reads an authorization held outside the
+    tree — the one answer that puts every such member back inside a pod holding
+    none. On v1.127.0 `check_authority members` printed nothing in
+    livespec-overseer and in livespec-orchestrator-beads-fabro, neither of which
+    carries that file, while printing two names in this repository, which does.
+    Measured 2026-10-24 01:41-01:45Z: cluster gate Job
+    `gate-livespec-overseer-tpfd2` ran master e4a81525 green on every member
+    except `check-branch-protection-alignment`, which got
+    `gh: Resource not accessible by personal access token (HTTP 403)` and then
+    refused to report a pass it had not verified. The verdict was right about
+    the pod and wrong about the tree, and the fix may not hand the Job an
+    admin-scoped forge credential — the authority stays with the host that holds
+    it.
+
+    SO THE AGGREGATE ITSELF IS THE FALLBACK, read from the one place such a
+    repository does declare its check set: the literal `targets=(...)` array of
+    its bare `check:` recipe, which is the same surface
+    `canonical_recipe_fidelity` and the fleet's aggregate-wiring rows already
+    read. `check-file-lloc` sits beside the declaring member here so a resolver
+    that simply named every selected member fails this assertion rather than
+    passing it by accident.
+    """
+    _fixture_justfile_aggregate(repo_root=tmp_path, slugs=(_SHIPPED_TREE_PURE, _BRANCH_PROTECTION))
+
+    assert not (
+        tmp_path / "check-targets.txt"
+    ).exists(), "the whole point of this consumer is that it declares no inventory"
+    assert _members(repo_root=tmp_path) == (_BRANCH_PROTECTION,)
+
+
+def test_a_delegated_gate_of_an_inventory_free_consumer_runs_that_member_on_the_pushing_host(
+    *, tmp_path: Path
+) -> None:
+    """Both halves of such a repository's delegated verdict, each asserted where it happens.
+
+    The gate Job MUST NOT run the member. Asserted at the place the Job's member
+    list is decided — `scripts/just/check.sh`, which resolves the declaring
+    members and adds them to the run's skip, and does so only under the gate
+    pod's own `LIVESPEC_GATE_CONTEXT` signal. A test cannot start a pod and does
+    not have to: the skip is computed by shipped code from the committed
+    declarations, so what the pod will not run is decidable here from the same
+    files the pod reads.
+
+    The pushing host MUST run it. Asserted as an INVOCATION through the gate
+    client's own command seam — `just check-branch-protection-alignment`, in the
+    pushing worktree — because "it ran on the pushing host with the host's own
+    credentials" is a fact about a command, not about a message. The member that
+    declares nothing is NOT invoked here: it stays in the Job, which is the
+    direction a careless fallback drains, moving members onto the pushing host
+    one at a time until the cluster gates nothing.
+    """
+    _fixture_justfile_aggregate(repo_root=tmp_path, slugs=(_SHIPPED_TREE_PURE, _BRANCH_PROTECTION))
+    host = _CannedHost()
+
+    ran = run_host_authority_members(repo_root=tmp_path, tree_hash=_TREE, runner=host)
+
+    assert tuple(one.member for one in ran) == (_BRANCH_PROTECTION,)
+    assert tuple(one.returncode for one in ran) == (0,)
+    assert host.argvs == [("just", _BRANCH_PROTECTION)]
+    assert host.cwds == [tmp_path]
+
+    guarded = _gate_context_block(script=_CHECK_SH.read_text(encoding="utf-8"))
+
+    assert "livespec_dev_tooling.check_authority members" in guarded
+    assert "effective_skip" in guarded
+
+
+def test_a_consumer_carrying_an_inventory_is_resolved_from_it_and_not_from_its_justfile(
+    *, tmp_path: Path
+) -> None:
+    """The inventory keeps PRECEDENCE, so a repository that has one answers as it did.
+
+    The fallback is reached only in the inventory's ABSENCE. A repository that
+    carries `check-targets.txt` is the one surface that can declare a
+    repo-private member's authority at all — this repository's own
+    `check-no-workflow-edits` is declared on its inventory line, because no
+    shipped `checks/<slug>.py` exists to carry a module constant — so a resolver
+    that preferred the justfile would silently drop every such declaration while
+    still answering plausibly.
+
+    Asserted with the two surfaces DISAGREEING, which is the only arrangement
+    that can tell them apart: the inventory declares a repo-private member and
+    the justfile aggregate selects a shipped forge-admin one instead.
+    """
+    _fixture_inventory(
+        repo_root=tmp_path,
+        lines=("check-widget-approval  # purity: world-reading  # authority: ledger",),
+    )
+    _fixture_justfile_aggregate(repo_root=tmp_path, slugs=(_BRANCH_PROTECTION,))
+
+    assert _members(repo_root=tmp_path) == ("check-widget-approval",)
+
+
+def test_an_undeclared_member_the_aggregate_selects_still_runs_in_the_gate_job(
+    *, tmp_path: Path
+) -> None:
+    """Absence of a declaration still means the Job, read through the fallback too.
+
+    THE DEFAULT RUNS THE OPPOSITE WAY FROM PURITY'S and the fallback must not
+    quietly invert it. `check-file-lloc` ships a module that declares no
+    authority; `check-widget-lint` ships none at all and carries no annotation,
+    because a justfile-declared aggregate has no annotation surface. Both keep
+    the default every undeclared member has — they run in the gate Job, where
+    the whole aggregate runs — so the resolver's answer here is EMPTY.
+    """
+    _fixture_justfile_aggregate(repo_root=tmp_path, slugs=(_SHIPPED_TREE_PURE, "check-widget-lint"))
+
+    assert _members(repo_root=tmp_path) == ()
+
+
+def test_an_aggregate_this_reader_cannot_enumerate_declares_no_authority_member(
+    *, tmp_path: Path
+) -> None:
+    """A justfile whose aggregate shape this reader does not understand declares nothing.
+
+    The same direction `_inventory_lines` takes on an absent file, and for the
+    same reason: a repository whose aggregate this reader cannot enumerate has
+    no selected member that could carry a declaration, so there is nothing to
+    misread. Refusing instead would refuse the delegated gate of every consumer
+    whose aggregate is shaped some other way — a repository with no bare
+    `check:` recipe at all, and one whose recipe carries no literal
+    `targets=(...)` array.
+    """
+    _ = (tmp_path / "justfile").write_text("lint:\n    uv run ruff check\n", encoding="utf-8")
+
+    assert _members(repo_root=tmp_path) == ()
+
+    _ = (tmp_path / "justfile").write_text("check:\n    uv run just lint\n", encoding="utf-8")
+
+    assert _members(repo_root=tmp_path) == ()
