@@ -1037,5 +1037,61 @@
     "test": "TODO",
     "reason": "Spec-first (v090): a real integration-tier test is owed, driving a converge of the committed otel_collector role from ansible/ci-pool.yml under the pinned ansible-core for three inventory nodes and asserting the rendered collector configuration scrapes every Node through receiver_creator over k8s_observer, and that the committed trigger set carries one dead-man per ci_pool node filtered to that node. Realized by plan kubernetes-node-observability (epic livespec-dev-tooling-dfdiil): children a2aiza, b7wwgy, ool6ws and uftb4o; its host-run Proof of Done exercises the scenario live in Honeycomb.",
     "work_item": "livespec-dev-tooling-uftb4o"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Local gate concurrency limit",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
+    "work_item": "livespec-dev-tooling-c62xtb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host at its local-gate slot limit queues the next pytest session",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
+    "work_item": "livespec-dev-tooling-c62xtb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a slot holder that is killed frees its slot without cleanup",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
+    "work_item": "livespec-dev-tooling-c62xtb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pytest session nested under a slot holder takes no second slot",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
+    "work_item": "livespec-dev-tooling-c62xtb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host with no local-gate slot limit runs pytest sessions unchanged",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
+    "work_item": "livespec-dev-tooling-c62xtb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Sandbox image gate toolchain",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading (the sandbox image gate toolchain); livespec-dev-tooling-jxepvj owns it.",
+    "work_item": "livespec-dev-tooling-jxepvj"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a consumer's delegated gate finds the mise-pinned tools its gate members invoke",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading (the sandbox image gate toolchain); livespec-dev-tooling-jxepvj owns it.",
+    "work_item": "livespec-dev-tooling-jxepvj"
   }
 ]
