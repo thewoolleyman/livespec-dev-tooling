@@ -5,7 +5,7 @@ Workflow checks, each invocable as
 non-zero on a violation. Per `SPECIFICATION/contracts.md` §"Shared check
 inventory" → "Workflow checks", these are shared, project-agnostic checks
 invoked by a specific workflow step rather than by the per-commit
-`just check` aggregate. Two kinds are defined:
+`just check` aggregate. Three kinds are defined:
 
 - **Revise-workflow checks**, invoked by the `/livespec:revise` pre-step.
   `no_stale_revise_branches` is the member; that pre-step is mandatory
@@ -15,6 +15,10 @@ invoked by a specific workflow step rather than by the per-commit
   a version number becomes final. `release_bump_classification` is the
   member; it has NO mandated caller, since adoption is per-consumer
   opt-in.
+- **Commit-hook checks**, invoked by a consumer's `check-pre-commit`
+  recipe ahead of its pre-commit aggregate. `staged_precheck` is the
+  member: it lints the staged Python files and type-checks those pyright
+  covers, refusing in seconds before any aggregate member starts.
 
 Living here (NOT under `checks/`) keeps them out of the canonical-set
 derivation (`canonical_checks` walks `checks/*.py`) and out of the

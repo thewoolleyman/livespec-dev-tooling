@@ -170,20 +170,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a staged lint error refuses the commit before the full pre-commit aggregate",
-    "work_item": "livespec-dev-tooling-nil6v7",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a staged type error refuses the commit before the full pre-commit aggregate",
-    "work_item": "livespec-dev-tooling-nil6v7",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a stalled or contested fix-forward releases the held revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
