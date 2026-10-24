@@ -36,6 +36,8 @@ ci_converge_unit_directories:
   - observability
   - gates
   - factory
+  # The mi-homelab organisation's own factory namespace (bd-ib-yetegc).
+  - factory-mi-homelab
   - node-status-credential
   # The pool's committed phase0 profiles, read by the boot converge's step 10f
   # (livespec-dev-tooling-izlx4g). A SUBDIRECTORY and not the lib dir itself:

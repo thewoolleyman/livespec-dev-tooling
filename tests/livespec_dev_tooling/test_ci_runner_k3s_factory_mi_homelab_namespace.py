@@ -124,6 +124,10 @@ def test_the_boot_converge_applies_and_renders_the_homelab_namespace() -> None:
 
 def test_the_converge_unit_ships_the_homelab_manifest() -> None:
     defaults = _ROLE_DEFAULTS.read_text(encoding="utf-8")
+    assert re.search(r"^  - factory-mi-homelab$", defaults, flags=re.MULTILINE), (
+        "the role creates each installed subdirectory from ci_converge_unit_directories before "
+        "copying into it, so the homelab directory must be listed there or the copy fails"
+    )
     assert "src: factory-mi-homelab/factory-mi-homelab.yaml" in defaults, (
         "the boot converge runs from the installed tree with no checkout, so the role must ship "
         "the homelab manifest or the namespace never appears"
