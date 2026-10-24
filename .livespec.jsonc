@@ -492,6 +492,30 @@
       // `legacy` stays declared, so an item already dispatched keeps its
       // recorded pin and in-flight work finishes on hp; rollback is reverting
       // this change.
+      //
+      // `environment` moved from `livespec-ci` to `livespec-ci-k8s` under
+      // coordinator ruling R670's Option C (2026-10-23, recorded on
+      // livespec-dev-tooling-dfixhe): the Kubernetes sandbox backend cutover for
+      // THIS repository's dispatches only (plan kubernetes-sandbox-backend,
+      // bd-ib-nmuyjc.1 in the orchestrator tenant). `livespec-ci-k8s` is
+      // livespec-ci's twin on gmktec's server, built by the kubernetes
+      // sandbox-driver plugin as a pod on the maintainer-owned cluster (cpu 4,
+      // 7629Mi; ansible host_vars, PR #2779). The one-step rollback to Docker is
+      // setting it back to `livespec-ci`. The other fleet repositories keep
+      // `livespec-ci` until a separate fleet step.
+      //
+      // Re-applied after the first canary (run 01M5MH0JBKGJ) ended
+      // INFRASTRUCTURE-class on an empty sandbox environment: the dispatcher
+      // keyed `[environments.<id>.env]` on the workflow's committed id rather
+      // than the factory's catalog environment. Orchestrator release 0.239.3
+      // (bd-ib-kyeor4, PR #3559) keys it on the factory's environment.
+      //
+      // Re-applied a third time after the re-canary (run 01M5N2W7TNBC) failed at
+      // prepare step 28 with exit_status:-1: the sandbox-driver put each
+      // command's argv in the exec URL, which a large inline payload overflowed.
+      // sandbox-driver-kubernetes v0.4.1 (bd-ib-xwqn23) stages the command spec
+      // over exec stdin; it is deployed to gmktec (livespec-dev-tooling PR #2788)
+      // and loaded by the production fabro-server before this flip merges.
       "default_factory": "petri",
       "factories": {
         // legacy submits through the pinned 0.254 8869e88 client whose bytes match hp's
@@ -504,7 +528,7 @@
           "registry": true,
           "bin": "/home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro",
           "secret_channel": "native_secrets",
-          "environment": "livespec-ci"
+          "environment": "livespec-ci-k8s"
         }
       }
     }
