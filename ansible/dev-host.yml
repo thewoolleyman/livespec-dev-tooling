@@ -67,3 +67,10 @@
       tags: [fabro_client]
     - role: dev_host_retention
       tags: [dev_host_retention]
+    # The host-wide bound on how many fleet gate test runs execute at once
+    # here. The limit is ONE committed value (`local_gate_slots_limit`) and
+    # removing it returns the host to no limit; see the role's HOST_VARS.md and
+    # SPECIFICATION/non-functional-requirements.md section "Local gate
+    # concurrency limit".
+    - role: local_gate_slots
+      tags: [local_gate_slots]

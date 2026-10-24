@@ -1042,41 +1042,36 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
     "heading": "## Local gate concurrency limit",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
-    "work_item": "livespec-dev-tooling-c62xtb"
+    "test": "tests.spec.test_local_gate_concurrency_limit.test_the_limit_is_declared_by_a_committed_converge_the_dev_host_play_runs",
+    "reason": "Unit-tier: the clause's provisioning half is asserted here because nothing a module can observe distinguishes a host whose limit was converged from one where somebody wrote the file by hand — the plugin reads the same bytes either way — so the committed converge is the only place that distinction can be enforced. The companion `test_removing_the_one_committed_setting_returns_a_host_to_no_limit` asserts the rollback, and the reading half (the pytest11 plugin, the queue, the announcement, the death properties) is covered at the integration tier by `tests.livespec_dev_tooling.test_local_gate_slots`, whose cases the four scenario rows below name individually (work-item livespec-dev-tooling-c62xtb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a host at its local-gate slot limit queues the next pytest session",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
-    "work_item": "livespec-dev-tooling-c62xtb"
+    "test": "tests.livespec_dev_tooling.test_local_gate_slots.test_a_hosts_limit_of_n_admits_n_slot_holders_and_queues_the_next",
+    "reason": "Integration-tier: drives the shipped plugin's own slot taking against REAL `flock` holds on a real slot store, asserting that a host whose limit is two admits two holders, that the third finds nothing free, and that releasing one frees exactly one. The announcement half of the same scenario — that a queued session says so, names the limit, and repeats at least once a minute without burning CPU — is asserted by `tests.livespec_dev_tooling.test_local_gate_slots.test_a_waiting_session_names_the_limit_and_repeats_itself_each_half_minute` and `tests.livespec_dev_tooling.test_local_gate_slots.test_a_wait_of_several_poll_rounds_adds_no_measurable_cpu_load` (work-item livespec-dev-tooling-c62xtb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a slot holder that is killed frees its slot without cleanup",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
-    "work_item": "livespec-dev-tooling-c62xtb"
+    "test": "tests.livespec_dev_tooling.test_local_gate_slots.test_a_slot_holder_killed_with_sigkill_frees_its_slot_without_cleanup",
+    "reason": "Integration-tier: forks a real process that takes a slot through the shipped plugin, SIGKILLs it, and asserts the slot is takeable again with its slot file still sitting there — so nothing swept it, which is what makes the release one with no cleanup step rather than one with a sweep. The companion `tests.livespec_dev_tooling.test_local_gate_slots.test_a_session_killed_while_queued_holds_no_slot` asserts the other half of the same clause, that a session killed while waiting holds nothing (work-item livespec-dev-tooling-c62xtb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a pytest session nested under a slot holder takes no second slot",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
-    "work_item": "livespec-dev-tooling-c62xtb"
+    "test": "tests.livespec_dev_tooling.test_local_gate_slots.test_a_session_nested_under_a_slot_holder_takes_no_second_slot",
+    "reason": "Integration-tier: asserts the deadlock case against a real forked child, which runs immediately holding nothing rather than queueing behind its own parent, plus that the marker reaches the REAL process environment — read back out of an exec'd child — so the nested session it protects can be a spawned pytest and not only a fork (work-item livespec-dev-tooling-c62xtb)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a host with no local-gate slot limit runs pytest sessions unchanged",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading (the host-wide pytest slot limit); livespec-dev-tooling-c62xtb owns it.",
-    "work_item": "livespec-dev-tooling-c62xtb"
+    "test": "tests.livespec_dev_tooling.test_local_gate_slots.test_the_plugin_hook_leaves_an_unprovisioned_host_completely_untouched",
+    "reason": "Integration-tier: asserted AT THE HOOK, which is the only thing a host without this feature would not be running, and read as four separate absences — no slot store, no marker, no output, no delay — because any one of them appearing on a factory sandbox or a delegated gate pod would be this module's footprint on a host the clause says it must not touch. The session-level and limit-parsing halves are asserted by `tests.livespec_dev_tooling.test_local_gate_slots.test_a_session_on_a_host_with_no_limit_takes_no_slot_and_touches_no_store` and `tests.livespec_dev_tooling.test_local_gate_slots.test_the_limit_is_read_from_one_host_file_and_every_absence_is_unlimited` (work-item livespec-dev-tooling-c62xtb)."
   },
   {
     "spec_root": "SPECIFICATION",
