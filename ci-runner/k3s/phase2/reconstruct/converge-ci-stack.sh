@@ -132,6 +132,15 @@ if [ -d "${ARTIFACT_DIR}/factory" ]; then
 else
   FACTORY_DIR="$(cd "${ARTIFACT_DIR}/../factory" && pwd)"    # repo layout
 fi
+# The mi-homelab organisation's own factory namespace (plan
+# kubernetes-sandbox-backend, bd-ib-nmuyjc), resolved and required exactly like
+# FACTORY_DIR: a tree that applied the fleet's quota split without this
+# namespace would leave homelab's sandbox backend nowhere bounded to run.
+if [ -d "${ARTIFACT_DIR}/factory-mi-homelab" ]; then
+  FACTORY_MI_HOMELAB_DIR="${ARTIFACT_DIR}/factory-mi-homelab"
+else
+  FACTORY_MI_HOMELAB_DIR="$(cd "${ARTIFACT_DIR}/../factory-mi-homelab" && pwd)"
+fi
 # The per-node node-status RBAC template step 10d re-applies for each AGENT
 # (livespec-dev-tooling-yj25uj). Resolved like GATES_DIR, and NOT added to the
 # required-directory loop below: an older installed tree predating the
@@ -149,7 +158,7 @@ RENDER_SA_KUBECONFIG="${SCRIPT_DIR}/render-sa-kubeconfig.sh"
 # fail-closed check below: a boot that cannot reconcile one node's label must
 # still build the cluster stack, so step 10f tests it there and WARNs.
 FACTORY_LABEL_CONVERGE="${SCRIPT_DIR}/converge-factory-node-labels.sh"
-for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR" "$FACTORY_DIR"; do
+for d in "$ARC_DIR" "$KUEUE_DIR" "$PROVISIONER_DIR" "$WARM_CACHE_DIR" "$OBSERVABILITY_DIR" "$GATES_DIR" "$FACTORY_DIR" "$FACTORY_MI_HOMELAB_DIR"; do
   [ -d "$d" ] || { echo "FATAL: artifact dir not found: ${d}" >&2; exit 1; }
 done
 [ -x "$RENDER_SA_KUBECONFIG" ] || { echo "FATAL: ${RENDER_SA_KUBECONFIG} not found or not executable" >&2; exit 1; }
@@ -192,6 +201,10 @@ GATES_SERVER="${CI_GATES_SERVER:-https://poweredge-xubuntu.perch-rudd.ts.net:644
 # file to a Fabro-server host is the factory_kubeconfig Ansible role's job;
 # converge only renders it.
 FACTORY_KUBECONFIG="${CI_FACTORY_KUBECONFIG:-/etc/ci-runner/factory.kubeconfig}"
+# The mi-homelab organisation's own factory namespace credential
+# (../factory-mi-homelab/factory-mi-homelab.yaml), rendered and fetched exactly like the
+# fleet's above but for a ServiceAccount that reaches only that namespace.
+FACTORY_MI_HOMELAB_KUBECONFIG="${CI_FACTORY_MI_HOMELAB_KUBECONFIG:-/etc/ci-runner/factory-mi-homelab.kubeconfig}"
 FACTORY_SERVER="${CI_FACTORY_SERVER:-${GATES_SERVER}}"
 # Each AGENT node's scoped node-status credential (step 10d,
 # livespec-dev-tooling-yj25uj). Rendered HERE, one file per agent, and CONSUMED on
@@ -864,6 +877,9 @@ log "10e. Re-apply the factory namespace, its quota, its egress policy and its l
 # widening"). So deleting the `factory` namespace does NOT undo this step —
 # the node read survives it and is re-applied here either way.
 kubectl apply -f "${FACTORY_DIR}"
+# The mi-homelab namespace, AFTER ../factory/ because its node-reader binding
+# names the ClusterRole that directory defines.
+kubectl apply -f "${FACTORY_MI_HOMELAB_DIR}"
 # AND RE-RENDER THE CREDENTIAL THAT IDENTITY IS ONLY USEFUL AS
 # (livespec-dev-tooling-sqobqv). The apply above recreates the ServiceAccount
 # and the token Secret REQUEST; the token controller then populates that Secret
@@ -890,6 +906,15 @@ kubectl apply -f "${FACTORY_DIR}"
   --secret sandbox-launcher-token \
   --user sandbox-launcher \
   --dest "${FACTORY_KUBECONFIG}" \
+  --server "${FACTORY_SERVER}" \
+  --group root --mode 0600
+# The mi-homelab namespace's own launcher credential, rendered by the same
+# renderer for the same reasons, from that namespace's token Secret.
+"${RENDER_SA_KUBECONFIG}" \
+  --namespace factory-mi-homelab \
+  --secret sandbox-launcher-token \
+  --user sandbox-launcher \
+  --dest "${FACTORY_MI_HOMELAB_KUBECONFIG}" \
   --server "${FACTORY_SERVER}" \
   --group root --mode 0600
 

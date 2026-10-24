@@ -159,6 +159,11 @@ ci_converge_unit_files:
   - src: factory/factory-rbac.yaml
     dest: factory/factory-rbac.yaml
     mode: "0644"
+  # The mi-homelab organisation's own factory namespace, quota, NetworkPolicy and
+  # launcher RBAC (plan kubernetes-sandbox-backend, bd-ib-nmuyjc).
+  - src: factory-mi-homelab/factory-mi-homelab.yaml
+    dest: factory-mi-homelab/factory-mi-homelab.yaml
+    mode: "0644"
   # The per-node node-status RBAC template the boot converge's step 10d re-applies
   # for each AGENT node (livespec-dev-tooling-yj25uj). The converge runs from this
   # installed tree with no checkout present, so a template it reads relative to
