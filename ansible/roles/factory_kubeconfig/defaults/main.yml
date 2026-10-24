@@ -64,3 +64,10 @@ factory_kubeconfig_refresh_env: /etc/ci-runner/factory-refresh.env
 # readers. The WRITE stays root's. Must match the FACTORY_GROUP default the
 # shipped refresh-factory-kubeconfig reads.
 factory_kubeconfig_group: factory-client
+# ADDITIONAL factory-namespace credentials this host consumes, each a mapping of
+# `remote_path` (the file the boot converge renders on the control-plane node),
+# `dest` (where it is installed here, 0640 to the factory-client group) and
+# `refresh_env` (the env-file refresh-factory-kubeconfig sources for it). Empty
+# by default: a host that runs only the fleet instance consumes only the
+# `factory` credential above. gmktec declares the mi-homelab namespace's.
+factory_kubeconfig_extra_credentials: []

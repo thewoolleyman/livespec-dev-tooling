@@ -162,3 +162,12 @@
     mode: "0640"
   become: true
   no_log: true
+
+- name: Deliver each additional factory-namespace credential
+  # The mi-homelab organisation's own namespace credential, and any later one:
+  # one fetch, refusal, env-file and install per entry (extra_credential.yml).
+  ansible.builtin.include_tasks: extra_credential.yml
+  loop: "{{ factory_kubeconfig_extra_credentials }}"
+  loop_control:
+    loop_var: factory_kubeconfig_extra
+    label: "{{ factory_kubeconfig_extra.dest }}"
