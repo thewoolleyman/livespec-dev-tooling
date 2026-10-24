@@ -393,11 +393,47 @@ fabro_server_instances:
     # The tag FOLLOWS homelab's own workflow pin
     # (.fabro/workflows/implement-work-item/workflow.toml in mi-homelab/homelab,
     # python-agent-v1.126.0), not the orchestrator's; bump the two together.
+    #
+    # ON KUBERNETES since 2026-10-24 (work-item bd-ib-yetegc, plan
+    # kubernetes-sandbox-backend bd-ib-nmuyjc): livespec-ci names no image and
+    # selects the `kubernetes` provider below, whose process_spec carries that
+    # tag. ROLLBACK to Docker: drop `provider` and restore
+    # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.126.0`.
     environments:
       - id: livespec-ci
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.126.0
         cpu: 4
         memory: 8GB
+        provider: kubernetes
+    # The same pinned plugin as the fleet instance, pointed at homelab's OWN
+    # namespace. Rulings R668 / R669(1) keep homelab out of reach of the shared
+    # fleet instance, so its pods run in `factory-mi-homelab`
+    # (ci-runner/k3s/phase2/factory-mi-homelab/) under a launcher credential that
+    # reaches only that namespace, delivered by factory_kubeconfig_extra_credentials
+    # below. This instance shares HOME /home/cwoolley with the fleet instance, so
+    # it reads the same config.toml; the `env` mapping overrides what must differ:
+    # the namespace, the credential, its record store (a shared one would make
+    # each instance list the other's sandboxes), the factory label its pods carry,
+    # and the refresh tool's env-file and destination, which the plugin's 401
+    # refresh inherits so it re-fetches homelab's credential, never the fleet's.
+    # Bump its sha256 together with the fleet instance's.
+    sandbox_providers:
+      kubernetes:
+        path: /usr/local/bin/sandbox-driver-kubernetes
+        sha256: 52f30f8b235da167c8f63c2c53dbabb947fc41946fdcb3c8a3b133af2f4ace84
+        inherit_env:
+          - HOME
+          - PATH
+        env:
+          SANDBOX_DRIVER_KUBERNETES_NAMESPACE: factory-mi-homelab
+          SANDBOX_DRIVER_KUBERNETES_KUBECONFIG: /etc/ci-runner/factory-mi-homelab.kubeconfig
+          SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.local/state/sandbox-driver-kubernetes-mi-homelab
+          SANDBOX_DRIVER_KUBERNETES_FACTORY: mi-homelab
+          FACTORY_REFRESH_ENV: /etc/ci-runner/factory-mi-homelab-refresh.env
+          FACTORY_KUBECONFIG: /etc/ci-runner/factory-mi-homelab.kubeconfig
+        process_spec:
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.126.0
+          cpu_cores: 4
+          memory_mb: 7629
     # The org App key comes from its OWN controller variable, never from
     # GITHUB_PRIVATE_KEY: that one carries the fleet App's key, and a vault
     # filled from it would publish homelab's pull requests as the fleet App.
@@ -417,6 +453,14 @@ fabro_server_instances:
 # The kubernetes plugin reads $HOME/.config/sandbox-driver-kubernetes/config.toml,
 # so every HOME that launches it needs a copy: the account home (operators and
 # the fleet instance) and the canary instance's own root.
+# The mi-homelab instance's own namespace credential (work-item bd-ib-yetegc),
+# rendered by the boot converge beside the fleet's and fetched by the
+# factory_kubeconfig role; its kubernetes provider names these paths.
+factory_kubeconfig_extra_credentials:
+  - remote_path: /etc/ci-runner/factory-mi-homelab.kubeconfig
+    dest: /etc/ci-runner/factory-mi-homelab.kubeconfig
+    refresh_env: /etc/ci-runner/factory-mi-homelab-refresh.env
+
 sandbox_driver_kubernetes_config_homes:
   - /home/cwoolley
   - /home/cwoolley/.fabro-candidate
