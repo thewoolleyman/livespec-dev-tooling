@@ -106,6 +106,33 @@ def test_a_recipe_reading_the_fleets_own_skip_idiom_names_its_variable(*, tmp_pa
     ]
 
 
+def test_a_recipe_naming_two_skip_variables_is_not_guessed_between(*, tmp_path: Path) -> None:
+    """Two different skip variables in one recipe resolve to NEITHER, not to the first.
+
+    This is the half of "every member the authority declaration does not name
+    still runs" that a first-match reader loses. A recipe mid-rename, or one
+    whose aggregate reads a caller list and a lane list, names two variables; a
+    reader that took whichever came first would export the members into the
+    WRONG one, which fails twice in one move and announces neither. The member
+    that must leave the Job is not in the list the recipe actually skips on, so
+    it runs and fails on the absent credential exactly as before — and the
+    variable that WAS written is read for something else, so whatever it held is
+    clobbered and members that should run may not.
+
+    Naming the SAME variable twice is still one answer, because there is no
+    ambiguity to refuse: both reads fill the same list.
+    """
+    ambiguous = _a_check_recipe(
+        root=tmp_path / "widget",
+        body=_SKIP_READ + '    read -ra skip_targets <<< "${LIVESPEC_CHECK_SKIP:-}"\n',
+    )
+    repeated = _a_check_recipe(root=tmp_path / "gadget", body=_SKIP_READ + _SKIP_READ)
+
+    assert check_skip_variable(repo_root=ambiguous) is None
+    assert authority_skip_argv(repo_root=ambiguous) == []
+    assert check_skip_variable(repo_root=repeated) == "SKIP_TARGETS"
+
+
 def test_an_unreadable_authority_declaration_tells_the_job_nothing(*, tmp_path: Path) -> None:
     """A declaration naming no authority this contract knows carries no skip.
 
