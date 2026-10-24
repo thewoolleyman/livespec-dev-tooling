@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.131.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.131.0...v1.131.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* hold the release fan-out until its sandbox image is served ([143e9d6](https://github.com/thewoolleyman/livespec-dev-tooling/commit/143e9d68df1aa4e3a094cbd37836bc702fcda789))
+* keep a stale-pin member in the release dispatch matrix ([ab64873](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ab648739d01f9c87130e1b0ebc3cf64319d274aa))
+* mark every pin-currency staleness finding non-excluding ([159b024](https://github.com/thewoolleyman/livespec-dev-tooling/commit/159b0245761bff25a16b4dd28a4b69114ae94191))
+
 ## [1.131.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.130.1...v1.131.0) (2026-10-24)
 
 
