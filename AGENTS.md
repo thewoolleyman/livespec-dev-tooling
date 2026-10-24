@@ -134,6 +134,13 @@ The files:
   pointer when it reads the old one as satisfied, and on 2026-10-21 an
   `item_comment` wait satisfied itself through its own progress-event comment,
   so a read silently advanced epic mvalxq to a premature review step.
+- Read `.ai/factory-restart-cancels-runs.md` before any Fabro server restart,
+  engine upgrade or chain step that needs a factory with zero active runs. A
+  factory run is restartable: cancel the live runs through the server's
+  `POST /api/v1/runs/{id}/cancel` (no client has a cancel verb, and
+  `fabro rm --force` deletes the record), do the step, and re-dispatch them at
+  once. Never hold the fleet cap at 0 waiting for runs to end — on
+  2026-10-23/24 that cost about 1 h 50 min (maintainer direction 2026-10-24).
 
 ## Backlog drive — this repo has no foreman seat
 
