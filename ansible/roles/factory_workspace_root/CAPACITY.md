@@ -12,7 +12,28 @@ is re-guessed by whoever next needs it.
 Work-item `livespec-dev-tooling-due2h6`. Plan: livespec
 `factory-worker-nodes-gitops`, epic `livespec-sqvj7p`.
 
-## The ceiling is the quota, and it is six pods
+## RAISED 2026-10-24: the ceiling is now sixteen pods
+
+The `factory-runs` quota was raised from 3 to 8 concurrent runs, so `pods: "16"`
+(8 runs x sandbox + replacement); `ci-runner/k3s/phase2/factory/DERIVATION.md`
+"The quota, raised to eight runs" carries the derivation. Measured that day at
+`/srv/factory-workspaces`:
+
+| Node | Free | Workspace directories present | Per-workspace budget at sixteen pods |
+|---|---|---|---|
+| `poweredge-xubuntu` | **160 G** | 24 | **10 G** |
+| `gmktec-xubuntu` | **153 G** | 10 | **9.6 G** |
+
+`gmktec-xubuntu` now binds (its free space fell from 366 G on 2026-10-16), at
+about 9.6 G per workspace if one node took every pod. That is tighter than the
+27 G below and still above any committed run's clone, but the per-run
+high-water mark remains UNMEASURED; the soak that settles the quota should
+record it. The 24 directories on poweredge exceed the live pod count, so
+workspace cleanup on pod deletion is worth checking in the same soak.
+
+The section below is the original six-pod sizing, kept as the record.
+
+## The ceiling is the quota, and it was six pods
 
 The `factory-runs` `ResourceQuota` in
 `../../../ci-runner/k3s/phase2/factory/factory-namespace.yaml` admits
