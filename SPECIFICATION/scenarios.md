@@ -1263,3 +1263,21 @@ And `factory-python` MUST carry the same image, resources and provider as `lives
 And `livespec-ci-k8s` MUST stay in the catalog while any governed repository's committed `environment` or any non-terminal run on that instance names it
 
 And after the removal, the catalog MUST NOT list `livespec-ci-k8s`, and its only `python-agent` environment MUST be `factory-python`
+
+## Scenario: a member whose only error findings are stale pins still receives the release dispatch
+
+Given a fleet member whose only error-severity findings in the fan-out preflight are pin-currency staleness findings
+
+When the release fan-out filters its dispatch matrix
+
+Then the member MUST receive the sibling-released dispatch
+
+And the run's exclusion summary MUST name each of those findings for that member
+
+## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch
+
+Given a fleet member with an error-severity can't-parse pin finding, or an error-severity finding on a row other than a pin-currency row
+
+When the release fan-out filters its dispatch matrix
+
+Then the member MUST be excluded from the dispatch with an annotation naming it and the failing rows
