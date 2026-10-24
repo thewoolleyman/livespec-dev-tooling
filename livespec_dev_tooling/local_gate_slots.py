@@ -59,6 +59,7 @@ __all__: list[str] = [
     "SLOT_DIR",
     "await_slot",
     "configured_limit",
+    "take_session_slot",
     "take_slot",
 ]
 
@@ -181,19 +182,66 @@ def await_slot(
         sleep(POLL_SECONDS)
 
 
-def _announce_wait(*, limit: int, slot_dir: Path) -> None:
-    """Say that this session is queued, and name the limit it is queued behind.
+def take_session_slot(
+    *,
+    limit_file: Path,
+    slot_dir: Path,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int | None:
+    """The slot this pytest session holds, or `None` when it needs none.
 
-    The limit is carried as a FIELD rather than only in the message, because a
-    reader's first question on seeing the line is how many slots the host has:
-    a bare "waiting" line is indistinguishable from a wedged gate, which is the
-    state this announcement exists to rule out.
+    THE WHOLE SESSION-LEVEL DECISION, in one place, so that every surface that
+    runs pytest under a fleet gate is governed identically: the pre-commit
+    aggregate, the commit-msg replay gate, a local pre-push `just check` and a
+    hand-run `just check` all reach this through the same plugin hook.
 
-    Configured on every announcement rather than once at import, and that is
-    deliberate. `structlog`'s print factory snapshots the stream at configure
-    time, and a pytest session replaces `sys.stderr` as it starts and as it runs
-    — so a configuration taken at import would write the heartbeat to a stream
-    that had since been replaced, i.e. to nowhere an operator is looking.
+    `None` means "run now, holding nothing", and it is returned for every reason
+    a session should not be throttled: the host sets no limit, or its slot store
+    cannot be reached. Neither is an error and neither is reported as one — see
+    the module docstring on why a throttle must fail open.
+
+    The return is the held descriptor under `take_slot`'s no-closing contract.
+    The caller discards it ON PURPOSE: a session holds its slot for exactly as
+    long as it exists, and the kernel is what hands it back.
+    """
+    limit = configured_limit(limit_file=limit_file)
+    if limit is None:
+        return None
+    store = _usable_slot_dir(slot_dir=slot_dir)
+    if store is None:
+        return None
+    return await_slot(slot_dir=store, limit=limit, sleep=sleep)
+
+
+def _usable_slot_dir(*, slot_dir: Path) -> Path | None:
+    """The slot store, created if it is absent, or `None` when there can be none.
+
+    Created here as well as by the host's converge, so that a host carrying a
+    limit still queues correctly before its first `systemd-tmpfiles` run. A
+    store that cannot be created is ANNOUNCED rather than swallowed: the session
+    then runs unthrottled, and an operator reading a host that is contending
+    again needs to be able to tell that from a host nobody provisioned.
+    """
+    try:
+        slot_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as unusable:
+        _logger().warning(
+            "local gate slot store unusable; running this session unthrottled",
+            slots=str(slot_dir),
+            detail=str(unusable),
+        )
+        return None
+    return slot_dir
+
+
+def _logger() -> structlog.stdlib.BoundLogger:
+    """A logger writing JSON to the stream `sys.stderr` names RIGHT NOW.
+
+    Configured per call rather than once at import, and that is deliberate.
+    `structlog`'s print factory snapshots the stream at configure time, and a
+    pytest session replaces `sys.stderr` as it starts and again around every
+    test — so a configuration taken at import would write to a stream that had
+    since been replaced, i.e. to nowhere an operator is looking.
     """
     structlog.configure(
         processors=[
@@ -203,7 +251,18 @@ def _announce_wait(*, limit: int, slot_dir: Path) -> None:
         ],
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
     )
-    structlog.get_logger("local_gate_slots").info(
+    return structlog.get_logger("local_gate_slots")
+
+
+def _announce_wait(*, limit: int, slot_dir: Path) -> None:
+    """Say that this session is queued, and name the limit it is queued behind.
+
+    The limit is carried as a FIELD rather than only in the message, because a
+    reader's first question on seeing the line is how many slots the host has:
+    a bare "waiting" line is indistinguishable from a wedged gate, which is the
+    state this announcement exists to rule out.
+    """
+    _logger().info(
         "waiting for one of this host's local gate slots",
         limit=limit,
         slots=str(slot_dir),
