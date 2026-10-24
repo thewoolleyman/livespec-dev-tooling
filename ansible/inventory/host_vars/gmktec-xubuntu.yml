@@ -486,3 +486,18 @@ tailscale_serve_mappings:
   # The mi-homelab organisation's instance above.
   - https_port: 32277
     backend: http://127.0.0.1:32277
+
+# --- otel_collector ---
+# The k3s-agent shape (otel-collector `config.k3s-agent-host.yaml`): host
+# metrics only, which is what §"Runner-pool node telemetry" asks of every pool
+# node. No cluster identity — the kubelet scrape is the server's collector's
+# job — so no kubeconfig and no identity unit to order after. Converged by
+# ansible/ci-pool.yml; this node never had a hand-run installer at all, which
+# is why its load was invisible until this role reached it.
+otel_collector_config_file: config.k3s-agent-host.yaml
+otel_collector_user: otel-collector
+otel_collector_group: otel-collector
+otel_collector_manage_install: true
+otel_collector_hardened: true
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC

@@ -129,8 +129,31 @@ def test_a_converge_over_an_already_matching_host_restarts_nothing() -> None:
         if 'dest: "{{ otel_collector_config_path }}"' in block
     )
     assert "notify:" in config_install, config_install
-    for forbidden in ("ansible.builtin.get_url:", "ansible.builtin.shell:", "ansible.builtin.raw:"):
+    for forbidden in ("ansible.builtin.shell:", "ansible.builtin.raw:"):
         assert forbidden not in tasks, f"{forbidden} cannot report a converged host as converged"
+
+    # `get_url` was banned outright beside those two until 2026-10-24. The
+    # property this test holds is that a converge over an already-matching host
+    # reports no drift and restarts nothing, and a CHECKSUM-VERIFIED fetch does
+    # compare content at its destination -- so the ban was broader than the
+    # property, and `livespec-dev-tooling-ool6ws` had to fetch the pinned
+    # `otelcol-contrib` for a pool node whose hand-run installer the fleet host
+    # guard now refuses. Narrowed to the property, not weakened past it: a fetch
+    # must carry its digest, so it can never report a file it did not verify,
+    # and must notify NOTHING, so it cannot reach the restart fence. The fetch
+    # itself is reached only when the version read says the host is not at the
+    # pin, which the ci-pool test resolves.
+    for block in _task_blocks(body=tasks):
+        if "ansible.builtin.get_url:" not in block:
+            continue
+        assert "checksum:" in block, (
+            f"a fetch without a `checksum:` cannot report a converged host as converged:\n"
+            f"{block}"
+        )
+        assert "notify:" not in block, (
+            f"and a fetch must notify nothing, so it can never put a restart into the "
+            f"running collector:\n{block}"
+        )
 
     # A read the role performs on the target is a read: it must never be able
     # to report a change of its own on an already-matching host.
@@ -171,17 +194,34 @@ def test_the_same_converge_installs_the_services_systemd_unit() -> None:
     ), unit
     assert "EnvironmentFile={{ otel_collector_environment_path }}" in unit, unit
 
-    # The ingest keys that unit names are a precondition the converge asserts.
-    # It never writes, reads back or prints one, so no apply of this role needs
-    # a credential on the control node.
+    # The ingest keys that unit names are the converge's to ASSERT and never to
+    # read back: nothing may slurp the file, template over it, or print a value.
+    #
+    # The ban on `copy:` beside those two was narrowed on 2026-10-24. The dev
+    # host's file stays a precondition it places by hand, and this test still
+    # holds that -- but `livespec-dev-tooling-ool6ws` gave a `ci_pool` node its
+    # ingest entry through the converge, because the fleet host guard refuses a
+    # by-hand host change and that node's hand-run installer can no longer be
+    # run at all. So a write to the file is admitted in exactly two shapes, each
+    # unable to disturb a key already there: a `force: false` CREATE, which
+    # leaves an existing file as it is, and a `lineinfile` APPEND carrying no
+    # match pattern, which can only ever add a line. Anything else -- and any
+    # write at all that is not `no_log` -- fails here.
     environment_blocks = [
         block for block in _task_blocks(body=tasks) if "otel_collector_environment_path" in block
     ]
     assert environment_blocks, tasks
     for block in environment_blocks:
-        for writer in (
-            "ansible.builtin.copy:",
-            "ansible.builtin.template:",
-            "ansible.builtin.slurp:",
-        ):
-            assert writer not in block, block
+        for forbidden in ("ansible.builtin.template:", "ansible.builtin.slurp:"):
+            assert forbidden not in block, block
+        if "ansible.builtin.copy:" in block:
+            assert "force: false" in block, (
+                f"a write to the environment file must be a create-only one, so an "
+                f"existing file is left exactly as it is:\n{block}"
+            )
+        if "ansible.builtin.lineinfile:" in block:
+            assert "regexp:" not in block and "no_log: true" in block, (
+                f"an append to the environment file must carry no match pattern (one makes "
+                f"lineinfile REPLACE the line it matches) and must never display the "
+                f"value:\n{block}"
+            )

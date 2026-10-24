@@ -227,3 +227,23 @@ storage_reclaim_home: /home/cwoolley
 # failing, so the mechanism is armed and reporting if the layer ever appears.
 # storage_reclaim_checkout_roots defaults to /home/cwoolley/repos, which is
 # correct here: 3 clones, measured 2026-08-22.
+
+# --- otel_collector ---
+# The factory-host shape (otel-collector `config.hp-factory.yaml`,
+# hp-factory-host.2). This node is a factory-only agent, so its collector
+# carries no cluster identity and orders itself after the Docker engine its
+# docker_stats receiver reads. Converged by ansible/ci-pool.yml; the retired
+# path was the hand-run scripts/install-hp-factory-host.sh, which the fleet
+# host guard now refuses.
+#
+# Its /etc/otel-collector/.env already carries the agent-activity keys
+# (HONEYCOMB_API_KEY, and HONEYCOMB_API_ENDPOINT where it is set), placed when
+# that installer last ran. The converge APPENDS only the ingest key below and
+# rewrites nothing the file already sets.
+otel_collector_config_file: config.hp-factory.yaml
+otel_collector_user: otel-collector
+otel_collector_group: otel-collector
+otel_collector_manage_install: true
+otel_collector_hardened: true
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC

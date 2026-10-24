@@ -263,6 +263,41 @@ host's collector already uses, mode 0600 `root:root` — the same shape
 `scripts/install-ci-runner-host.sh` and `scripts/install-hp-factory-host.sh`
 require in that repository.
 
+`ci-pool.yml` converges the SAME role for every `ci_pool` node — the k3s
+server, the CI agent and the factory-only agent — and this is now the only path
+by which a merged collector configuration reaches one
+(`livespec-dev-tooling-ool6ws`). Those nodes' collectors used to be installed by
+the two hand-run scripts named above; the fleet host guard refuses a by-hand
+host change, so they can no longer be run at all, and gmktec never had one. The
+entry is UNGATED, on none of this play's four posture axes:
+`SPECIFICATION/non-functional-requirements.md` §"Runner-pool node telemetry"
+governs every pool node "whatever its `cluster_role` or factory posture", and a
+collector running on a subset leaves the rest of the pool's load invisible and
+their dead-man triggers unfireable.
+
+Both commands run under the credential wrapper, the drift report included,
+because the ingest key the converge appends is projected into the control
+node's environment by it and a dry run without it refuses by name:
+
+```bash
+/usr/local/bin/with-livespec-env.sh -- just ansible-drift ansible/ci-pool.yml --tags otel_collector
+/usr/local/bin/with-livespec-env.sh -- just ansible-apply ansible/ci-pool.yml --tags otel_collector
+```
+
+What varies per node is in that node's `host_vars`, and
+`roles/otel_collector/HOST_VARS.md` carries all of it: which merged
+configuration file it runs (`config.ci-runner-host.yaml`,
+`config.k3s-agent-host.yaml`, `config.hp-factory.yaml`), whether this converge
+also owns its `otel-collector` system user and the pinned
+`otelcol-contrib 0.147.0` binary, which further environment files its unit
+names, whether it holds a scoped read-only ServiceAccount kubeconfig, and what
+it orders itself after. Two more preconditions the role asserts and never
+writes on a pool node: that kubeconfig, re-rendered by
+`otel-collector-identity.service` at every boot because the k3s datastore is a
+tmpfs, and poweredge's non-secret `/etc/otel-collector/host.env`. It refuses,
+naming the path, a node that declares a kubeconfig it does not carry — never
+falling back to the admin kubeconfig, which no collector may hold.
+
 Roles live one per replaced service, named for the service with hyphens
 becoming underscores. Each carries its own `defaults/main.yml`; values that
 genuinely vary by machine live in `inventory/host_vars/<host>.yml` rather than

@@ -1,46 +1,72 @@
 # {{ ansible_managed }}
-# otel-collector.service -- the dev host's OTel Collector, installed by
+# otel-collector.service -- this host's OTel Collector, installed by
 # livespec-dev-tooling ansible/roles/otel_collector.
 #
 # TWO sources of truth, and neither is this file on the host. The COLLECTOR
-# CONFIGURATION belongs to thewoolleyman/otel-collector (config.yaml, read at
-# the ref otel_collector_config_ref names); THIS UNIT belongs to the role's
-# templates/otel-collector.service.j2. Change either at its source and re-run
-# the converge named in ansible/README.md. Never hand-edit the live copies and
-# never hand-restart the service: a hand step is a host change no drift report
-# can see, which is exactly what this unit replaced.
+# CONFIGURATION belongs to thewoolleyman/otel-collector (the file
+# otel_collector_config_file names, read at the ref otel_collector_config_ref
+# names); THIS UNIT belongs to the role's templates/otel-collector.service.j2.
+# Change either at its source and re-run the converge named in
+# ansible/README.md. Never hand-edit the live copies and never hand-restart the
+# service: a hand step is a host change no drift report can see, which is
+# exactly what this unit replaced -- and on a ci_pool node the fleet host guard
+# refuses it outright.
 #
-# Every path below is a managed one. The collector ran out of the maintainer's
-# development checkout until 2026-10-21, so a `git pull` there changed what the
-# service would read at its next start; nothing on this host records that, and
-# the running service now reads no checkout at all.
+# Every path below is a managed one or an asserted precondition. The dev host's
+# collector ran out of the maintainer's development checkout until 2026-10-21,
+# so a `git pull` there changed what the service would read at its next start;
+# nothing on that host recorded it, and the running service now reads no
+# checkout at all.
 #
-# DELIBERATELY NOT HARDENED beyond NoNewPrivileges. The sibling shapes in the
-# collector repository (the CI-runner host and the hp factory host) add
-# ProtectSystem=strict, ProtectHome and PrivateTmp because they run as a
-# dedicated system user that never had anything else. This host's collector has
-# always run as the login account, with hostmetrics scraping the whole machine;
-# adding a sandbox here is a behaviour change, not the transcription this
-# converge is, and belongs to its own decision.
+# ONE TEMPLATE, FOUR SHAPES, and every difference between them is a per-host
+# variable rather than a second file: the dev host's unprivileged-but-login
+# collector, poweredge's CI-runner shape with a scoped cluster identity,
+# gmktec's k3s-agent shape, and hp's factory shape. A second template is a
+# second place to forget a change.
 [Unit]
-Description=otel-collector -- host OTel Collector on the dev host
+Description=otel-collector -- host OTel Collector on {{ inventory_hostname }}
 Documentation=https://github.com/thewoolleyman/otel-collector
-After=network-online.target docker.service
-Wants=network-online.target docker.service
+After={{ otel_collector_unit_after }}
+Wants={{ otel_collector_unit_wants }}
 
 [Service]
 Type=simple
 User={{ otel_collector_user }}
 Group={{ otel_collector_group }}
+{% for one in otel_collector_extra_environment_files %}
+# Non-secret, host-rendered by the collector repository's installer and
+# ASSERTED by this converge: a pool node's OTEL_K8S_NODE_NAME and its
+# HONEYCOMB_API_ENDPOINT. Listed FIRST so a value in the secret file wins.
+EnvironmentFile={{ one }}
+{% endfor %}
 # The Honeycomb ingest keys the configuration reads as ${env:...}. Read by
 # systemd as root before the privilege drop; mode 0600 root:root. The converge
-# ASSERTS this file and the keys the merged configuration needs from it, and
-# never writes, reads back or prints a value.
+# asserts every key the merged configuration needs, appends the ones a host
+# names in otel_collector_env_from_controller, and never reads one back or
+# prints one.
 EnvironmentFile={{ otel_collector_environment_path }}
+{% if otel_collector_kubeconfig_path %}
+# The scoped READ-ONLY ServiceAccount kubeconfig, re-rendered by
+# otel-collector-identity.service at every boot (the k3s datastore is a tmpfs).
+# Never the admin kubeconfig: the collector reading every kubelet holds a
+# read-only cluster identity and nothing more.
+Environment=KUBECONFIG={{ otel_collector_kubeconfig_path }}
+{% endif %}
 ExecStart={{ otel_collector_binary }} --config={{ otel_collector_config_path }}
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
+{% if otel_collector_hardened %}
+# The sandbox a dedicated system user that never had anything else can be put
+# in. The dev host is DELIBERATELY not hardened beyond NoNewPrivileges: its
+# collector has always run as the login account, with hostmetrics scraping the
+# whole machine, so confining it is a behaviour change rather than this
+# converge's transcription and belongs to its own decision.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths={{ otel_collector_etc_dir }}
+{% endif %}
 
 [Install]
 WantedBy=multi-user.target

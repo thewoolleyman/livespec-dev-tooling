@@ -19,3 +19,31 @@ lan_ssh_fallback_address: 192.168.1.200
 lan_ssh_fallback_must_stay_running:
   - tailscaled.service
   - k3s.service
+
+# --- otel_collector ---
+# The CI-runner-host shape (otel-collector `config.ci-runner-host.yaml`,
+# ci-runner-host.4). This node is the k3s SERVER, so it is the collector that
+# scrapes every node's kubelet through the API server; that is what the scoped
+# read-only ServiceAccount kubeconfig below is for, and why this node orders
+# itself after k3s and after the identity unit that re-renders it at each boot.
+# Converged by ansible/ci-pool.yml; the retired path was the hand-run
+# scripts/install-ci-runner-host.sh, which the fleet host guard now refuses.
+otel_collector_config_file: config.ci-runner-host.yaml
+otel_collector_user: otel-collector
+otel_collector_group: otel-collector
+otel_collector_manage_install: true
+otel_collector_hardened: true
+# Owned by the collector repository's installer and ASSERTED here, never
+# written: OTEL_K8S_NODE_NAME and the HONEYCOMB_API_ENDPOINT this node's merged
+# configuration reads with no fallback.
+otel_collector_extra_environment_files:
+  - /etc/otel-collector/host.env
+# Rendered by otel-collector-identity.service on every boot — the k3s datastore
+# is a tmpfs, so the ServiceAccount behind it is wiped at each boot. The
+# converge refuses the apply when it is absent rather than falling back to the
+# admin kubeconfig, which no collector may hold.
+otel_collector_kubeconfig_path: /etc/otel-collector/kubeconfig
+otel_collector_unit_after: network-online.target k3s.service otel-collector-identity.service
+otel_collector_unit_wants: network-online.target otel-collector-identity.service
+otel_collector_env_from_controller:
+  - HONEYCOMB_INGEST_KEY_LIVESPEC

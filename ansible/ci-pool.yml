@@ -280,6 +280,34 @@
     - role: ci_observability
       tags: [ci_observability]
       when: cluster_role == 'server'
+    # 11b — this node's own host collector: the configuration merged in
+    # thewoolleyman/otel-collector, its unit, its pinned binary, its service
+    # account and its ingest-key environment entry
+    # (livespec-dev-tooling-ool6ws). UNGATED, and on NONE of the four axes
+    # above: §"Runner-pool node telemetry" governs "every node of the
+    # self-hosted CI runner pool's k3s cluster -- the server, every CI agent,
+    # and every factory-only agent -- whatever its `cluster_role` or factory
+    # posture", and a collector that ran on a subset would leave the rest of
+    # the pool's load invisible and their dead-man triggers unfireable. What
+    # DOES vary per node is read from that node's host_vars: which merged
+    # configuration file it runs, which further environment files its unit
+    # names, whether it holds a scoped cluster kubeconfig, and what it orders
+    # itself after.
+    #
+    # AFTER ci_observability, because that role installs the node-local OTLP
+    # emitters whose spans this collector forwards, so one apply converges the
+    # emitters and then the thing that carries them. It is NOT last: unlike
+    # the prune below it reads no cluster and removes nothing, and holding it
+    # behind a role that deletes images would delay the one step that makes a
+    # rebuilt node report at all.
+    #
+    # THIS IS THE ONLY PATH LEFT. The three nodes' collectors were installed
+    # by hand-run scripts in that repository (scripts/install-ci-runner-host.sh
+    # on poweredge, scripts/install-hp-factory-host.sh on hp); the fleet host
+    # guard refuses a by-hand host change, so those installers can no longer be
+    # run and this role is how the merged configurations reach the nodes.
+    - role: otel_collector
+      tags: [otel_collector]
     # 12 — and LAST, because arming its timer prunes this node's containerd on
     # the spot on any host up longer than OnBootSec. Server-only as a hard
     # refusal, not a skip: the prune's central gate is a cluster-wide PodSpec

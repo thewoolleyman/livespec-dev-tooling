@@ -90,6 +90,11 @@ _HP_MUST_RUN = frozenset(
         # names, because it is the node the backend plan's lifecycle proofs run
         # against.
         "factory_workspace_root",
+        # And its own host collector: a factory-only agent's load is as much
+        # part of the pool's telemetry as a CI agent's, and a node that merely
+        # stopped reporting would be indistinguishable from one that had
+        # drifted.
+        "otel_collector",
     }
 )
 
@@ -137,6 +142,13 @@ _POWEREDGE_ROLES = (
     # resolves which role installs which timer, and that each is reached on the
     # server alone.
     "ci_observability",
+    # This node's own host collector, converged by the one play
+    # (livespec-dev-tooling-ool6ws). UNGATED, so it appears in EVERY host's list
+    # below: `## Runner-pool node telemetry` governs every pool node whatever
+    # its cluster_role or factory posture, and
+    # `tests/livespec_dev_tooling/test_ci_pool_otel_collector_converge.py`
+    # resolves which shape each one runs.
+    "otel_collector",
     "sandbox_image_prune",
 )
 _GMKTEC_ROLES = (
@@ -159,6 +171,7 @@ _GMKTEC_ROLES = (
     "cache_telemetry",
     "container_hook",
     "storage_sweep",
+    "otel_collector",
 )
 
 # The label both carriers must spell identically: the install command at join
