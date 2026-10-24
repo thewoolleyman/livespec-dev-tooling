@@ -87,6 +87,11 @@
   ansible.builtin.set_fact:
     fabro_client_paths: "{{ fabro_client_builds | map(attribute='path') | list }}"
     fabro_client_sources: "{{ fabro_client_builds | map(attribute='source') | list }}"
+    fabro_client_path_client_present: "{{ fabro_client_path_client is defined }}"
+    fabro_client_path_client_link: >-
+      {{ (fabro_client_path_client | default({})).link | default('') }}
+    fabro_client_path_client_target: >-
+      {{ (fabro_client_path_client | default({})).target | default('') }}
     # Resolved PER HOST from that host's own fabro_server_instances, which is
     # what makes this exclusion correct on a host whose instances name their own
     # builds as well as on one whose instances share the default. See
@@ -112,12 +117,22 @@
     # because that staging write would land ON a live build before any rename.
     fabro_client_incoming: >-
       {{ fabro_client_paths | map('regex_replace', '^(.+)$', '\1.incoming') | list }}
+    fabro_client_path_client_incoming: >-
+      {{ fabro_client_path_client_link ~ '.incoming'
+         if fabro_client_path_client_present | bool else '' }}
+    fabro_client_managed_paths: >-
+      {{ fabro_client_paths
+         + ([fabro_client_path_client_link]
+            if fabro_client_path_client_present | bool else []) }}
     fabro_client_names: >-
       {{ (fabro_client_paths
           + fabro_client_server_binaries
           + (fabro_client_paths
              | map('regex_replace', '^(.+)$', '\1.incoming') | list)
-          + (fabro_client_sources if fabro_client_is_control_node | bool else []))
+          + (fabro_client_sources if fabro_client_is_control_node | bool else [])
+          + ([fabro_client_path_client_link,
+              fabro_client_path_client_link ~ '.incoming']
+             if fabro_client_path_client_present | bool else []))
          | unique | list }}
   check_mode: false
 
@@ -136,7 +151,7 @@
     # trailing `"/"` is what lets every element carry a comma: the filesystem
     # root is always a directory, and it is rejected again above.
     fabro_client_ancestor_names: >-
-      [{% for name in fabro_client_paths %}{% set parts = name.split('/') %}
+      [{% for name in fabro_client_managed_paths %}{% set parts = name.split('/') %}
       {% for depth in range(1, parts | length - 1) %}
       {{ ('/' ~ parts[1:depth + 1] | join('/')) | to_json }},
       {% endfor %}{% endfor %}"/"]
@@ -227,6 +242,9 @@
     fabro_client_lstat: >-
       {{ dict(fabro_client_names
               | zip(fabro_client_lstats.results | map(attribute='stat') | list)) }}
+    fabro_client_followed_stat: >-
+      {{ dict(fabro_client_names
+              | zip(fabro_client_followed.results | map(attribute='stat') | list)) }}
     fabro_client_ancestor_stat: >-
       {{ dict(fabro_client_ancestors
               | zip(fabro_client_ancestor_stats.results | default([])
@@ -243,6 +261,26 @@
                           | map(attribute='stat.inode') | list)
                     | map('join', ':') | list)) }}
   check_mode: false
+
+- name: Read the PATH client's literal target without following its link
+  ansible.builtin.command:
+    argv:
+      - readlink
+      - "{{ fabro_client_path_client_link }}"
+  become: true
+  register: fabro_client_path_client_readlink
+  changed_when: false
+  check_mode: false
+  when:
+    - fabro_client_path_client_present | bool
+    - fabro_client_lstat[fabro_client_path_client_link].islnk | default(false)
+
+- name: Note the PATH client's literal target
+  ansible.builtin.set_fact:
+    fabro_client_path_client_current_target: >-
+      {{ fabro_client_path_client_readlink.stdout | default('') }}
+  check_mode: false
+  when: fabro_client_path_client_present | bool
 
 # --- what the host already holds, decided before anything is written ----------
 

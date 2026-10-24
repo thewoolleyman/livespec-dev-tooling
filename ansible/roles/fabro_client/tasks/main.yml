@@ -15,8 +15,8 @@
 # reaches every factory through the PATH client has no client build to stage, and
 # this role must read nothing and write nothing there.
 
-- name: Stage the pinned Fabro client builds this host declares
-  when: fabro_client_builds | length > 0
+- name: Stage the pinned Fabro client builds and PATH client this host declares
+  when: fabro_client_builds | length > 0 or fabro_client_path_client is defined
   block:
     - name: Validate every declared Fabro client build before anything is written
       ansible.builtin.include_tasks: validate.yml

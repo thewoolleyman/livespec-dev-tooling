@@ -159,3 +159,35 @@
   loop_control:
     label: "{{ item.path }}"
   when: fabro_client_lstat[item.path].exists or not ansible_check_mode
+
+- name: Stage the declared PATH Fabro client link beside the link it replaces
+  # The staging name is renamed with `-T` below so an old PATH link is replaced
+  # as a link rather than followed into the server binary it used to name.
+  ansible.builtin.file:
+    src: "{{ fabro_client_path_client_target }}"
+    dest: "{{ fabro_client_path_client_incoming }}"
+    state: link
+    owner: "{{ fabro_client_owner }}"
+    group: "{{ fabro_client_group }}"
+    follow: false
+    force: true
+  become: true
+  when:
+    - fabro_client_path_client_present | bool
+    - not (fabro_client_lstat[fabro_client_path_client_link].islnk | default(false))
+      or fabro_client_path_client_current_target != fabro_client_path_client_target
+
+- name: Rename the staged PATH Fabro client link into place
+  ansible.builtin.command:
+    argv:
+      - mv
+      - -T
+      - -f
+      - "{{ fabro_client_path_client_incoming }}"
+      - "{{ fabro_client_path_client_link }}"
+  become: true
+  changed_when: true
+  when:
+    - fabro_client_path_client_present | bool
+    - not (fabro_client_lstat[fabro_client_path_client_link].islnk | default(false))
+      or fabro_client_path_client_current_target != fabro_client_path_client_target
