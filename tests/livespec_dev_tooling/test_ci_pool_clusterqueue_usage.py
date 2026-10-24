@@ -113,7 +113,7 @@ def test_pool_emitter_reports_scientific_notation_clusterqueue_quantities(
     ):
         points = metrics[metric_name]["gauge"]["dataPoints"]
         assert any(
-            point["asDouble"] > 1e15
+            point["asDouble"] == 1125899906842624
             and expected_attributes.items() <= _attributes(point=point).items()
             for point in points
         )
