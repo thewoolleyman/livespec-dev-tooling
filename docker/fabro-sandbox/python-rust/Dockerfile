@@ -32,7 +32,9 @@ FROM ${PYTHON_IMAGE}
 
 ARG RUST_VERSION=1.92.0
 
-# Minimal C toolchain re-add — THIS LAYER ONLY. The chain's base is
+# THIS LAYER'S apt PAYLOAD — two concerns, one `apt-get update`.
+#
+# (1) Minimal C toolchain re-add — THIS LAYER ONLY. The chain's base is
 # buildpack-deps:noble-scm, which ships NO compiler (that is the point:
 # it keeps 176.9 MB of dev headers off the CI-facing `python-` tag). But
 # on linux-gnu rustc invokes `cc` as its linker driver, so `cargo build`
@@ -41,10 +43,44 @@ ARG RUST_VERSION=1.92.0
 # minimal set that restores linking — deliberately NOT the full
 # buildpack-deps dev-header library set, and deliberately NOT in `base`,
 # so only the Rust consumer pays for it.
+#
+# (2) jq — the DELEGATED-GATE TOOLCHAIN, required of this layer by
+# SPECIFICATION/non-functional-requirements.md §"Sandbox image gate
+# toolchain" (v091). A consumer's delegated gate Job runs in THIS image
+# and deliberately runs no `mise install`:
+# ../../../ci-runner/k3s/phase2/gates/render-gate-job.sh resolves the
+# Job's image from the consumer's own `.github/workflows/ci.yml`, so a
+# tool the consumer pins in `.mise.toml` but this image does not carry is
+# simply ABSENT from its gate. Measured 2026-10-24 on
+# livespec-console-beads-fabro master 07a224f0 (Job
+# gate-livespec-console-beads-fabro-bc28m): the whole cluster gate ran in
+# about 5m32s and only `check-nextest` failed, with four
+# `console-ci-parity-check::ci_telemetry_runner_attributes` tests erroring
+# on "jq is required to run the CI telemetry exporter and is pinned in
+# .mise.toml". Under livespec v229 *The set* a tool on the host's path is
+# a host-supplied condition, so the conforming fix is to provision the
+# EXECUTOR — never to narrow the gate on the delegated path.
+#
+# It lands HERE rather than in `base` because the obligation is the
+# python-rust chain's: `python-rust-agent` and `python-rust-fuzz` are
+# built FROM this layer and inherit it, while the CI-facing `python-` tag
+# keeps its size. jq is 80.4 kB of archives (jq + libjq1 + libonig5) with
+# no compiler and no dev headers, so the `-scm` re-base saving above
+# stands.
+#
+# BOTH tools are PROVEN on PATH in this same step. This Dockerfile is an
+# assertion a delegated gate BELIEVES, and there is no second source to
+# catch it with — so a layer that failed to install what the spec says it
+# carries must fail the build here rather than publish an image that
+# reads correct everywhere and is missing the tool in the one Job that
+# needs it.
 RUN apt-get -o Acquire::Retries=5 update \
-    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends gcc libc6-dev \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends gcc libc6-dev jq \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && command -v cc \
+    && command -v jq \
+    && jq --version
 
 # Bake the pinned Rust toolchain (mirrors the console's
 # rust-toolchain.toml: channel + clippy + rustfmt). The minimal profile

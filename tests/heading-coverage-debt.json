@@ -43,13 +43,6 @@
   },
   {
     "spec_root": "SPECIFICATION",
-    "spec_file": "non-functional-requirements.md",
-    "heading": "## Sandbox image gate toolchain",
-    "work_item": "livespec-dev-tooling-jxepvj",
-    "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
@@ -68,13 +61,6 @@
     "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated",
     "work_item": "livespec-dev-tooling-mrr7ye",
     "first_seen": "2026-10-17"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a consumer's delegated gate finds the mise-pinned tools its gate members invoke",
-    "work_item": "livespec-dev-tooling-jxepvj",
-    "first_seen": "2026-10-24"
   },
   {
     "spec_root": "SPECIFICATION",
