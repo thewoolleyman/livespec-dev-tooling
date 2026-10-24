@@ -529,6 +529,13 @@ supervisor_entry_files = [
     # the Actions runner parses from stdout, so stdout is a protocol channel
     # here rather than a report surface.
     "livespec_dev_tooling/fleet/dispatch_matrix_filter.py",
+    # `just await-sandbox-image` + the release-dispatch workflow. THE SECOND
+    # ENTRY THAT ALSO NEEDS `no_write_direct`: its `main()` prints an
+    # `::error::` workflow command the Actions runner parses from stdout to
+    # annotate the run with every sandbox image tag ghcr.io never served, so
+    # stdout is a protocol channel here rather than a report surface — the same
+    # reading as `dispatch_matrix_filter` directly above.
+    "livespec_dev_tooling/fleet/sandbox_image_readiness.py",
     # `just ensure-plugins` / `ensure-codex-plugins`. Reconciles marketplace
     # and plugin registration; `main()` returns the reconcile exit code.
     "livespec_dev_tooling/fleet/ensure_plugins.py",
