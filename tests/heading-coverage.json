@@ -1116,8 +1116,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the dispatch-matrix filter is owed; exercised by the implementing item livespec-dev-tooling-epcoja.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "test": "tests.consumer.test_release_dispatch_excludes_non_staleness.test_a_member_with_an_unparseable_pin_file_is_excluded_from_the_dispatch",
+    "reason": "Consumer-tier: a member whose committed .livespec.jsonc cannot be PARSED is swept end-to-end over the injected GhRunner seam, projected through the shipped verdict artifact, and handed to the shipped dispatch-matrix filter, which excludes it. Three companion tests in the same file cover the remaining clauses: that the can't-parse finding reaches the verdict UNMARKED by the staleness class (the row id alone cannot tell the two apart), that one error-severity finding on a non-pin-currency row excludes even beside a marked staleness row, and that the exclusion surfaces as a workflow annotation naming the member and its failing rows (livespec-dev-tooling-epcoja)."
   }
 ]
