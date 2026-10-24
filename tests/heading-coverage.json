@@ -986,17 +986,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-epcoja owns it.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "test": "tests.consumer.test_release_dispatch_sandbox_image_readiness.test_the_gate_does_not_clear_while_any_sandbox_tag_is_absent",
+    "reason": "Consumer-tier: the shipped sandbox-image readiness gate is driven over an injected ghcr probe and an injected clock. The mapped test asserts it does NOT clear while one of the release's six layered livespec-fabro-sandbox tags is absent — the python-rust-agent layer ghcr served 27 minutes late on 2026-10-22 — and that it polls rather than reading once. Companion tests in the same file cover the other clause (it clears on its own once every tag is served, so the dispatch is delayed rather than lost), the tag set a bump writes, and that a release of any other source repo does not wait at all. The fan-out wires the gate as a required predecessor of the dispatch matrix; that workflow half is the item's host-captured assertion (livespec-dev-tooling-epcoja)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release fan-out whose sandbox image never appears fails naming the missing tags",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading; livespec-dev-tooling-epcoja owns it.",
-    "work_item": "livespec-dev-tooling-epcoja"
+    "test": "tests.consumer.test_release_dispatch_sandbox_image_readiness.test_the_run_fails_at_the_bound_with_an_annotation_naming_each_missing_tag",
+    "reason": "Consumer-tier: with a ghcr probe that never serves the late tag, the shipped gate's entrypoint is driven to the ratified 90-minute bound over an injected clock and asserted to exit non-zero with an `::error::` workflow annotation naming each missing tag. A companion test in the same file asserts the bound is the ratified 90 minutes and carries no argv lever that could shorten or lengthen it (livespec-dev-tooling-epcoja)."
   },
   {
     "spec_root": "SPECIFICATION",

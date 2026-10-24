@@ -561,6 +561,22 @@ check-fleet-conformance *args:
 filter-dispatch-matrix *args:
     uv run python -m livespec_dev_tooling.fleet.dispatch_matrix_filter "$@"
 
+# Sandbox-image readiness gate for a livespec-dev-tooling release
+# fan-out (contracts.md §"`reusable-release-dispatch.yml`", v087).
+# release-dispatch.yml and fabro-sandbox-image.yml both fire on
+# `release: published`, so the bump PRs open while ghcr is still
+# building the image their pins now name. This recipe polls ghcr for
+# every one of the release's six layered livespec-fabro-sandbox tags,
+# bounded at 90 minutes, and fails with an `::error::` naming each
+# missing tag — so a dispatch is delayed rather than sent against a tag
+# that does not exist. A release of any other source repo returns
+# immediately. Invoked by reusable-release-dispatch.yml as a required
+# predecessor of the dispatch matrix; not part of the `check:`
+# aggregate (it is a workflow helper, not a repo gate).
+[positional-arguments]
+await-sandbox-image *args:
+    uv run python -m livespec_dev_tooling.fleet.sandbox_image_readiness "$@"
+
 # ADMIN-vantage (world-gate) lane of the same fleet-membership contract.
 # Two obligation rows — `secret-names` and `branch-protection` — need
 # GitHub ADMIN scope on each member. Every AUTOMATED context that runs
