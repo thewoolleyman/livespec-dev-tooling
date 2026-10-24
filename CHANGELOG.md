@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.129.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.129.0...v1.129.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **ansible:** create the factory-mi-homelab directory in the converge tree ([13b8cf9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/13b8cf9b1ccffc6176334961f6e9ea9fe3e1dddb))
+
 ## [1.129.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.128.0...v1.129.0) (2026-10-24)
 
 
