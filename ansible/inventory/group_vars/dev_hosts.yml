@@ -120,3 +120,27 @@ fabro_client_builds:
   - path: /home/ubuntu/.local/state/fabro-currency/carrier-petri-v0.382-adeefec4c/fabro
     source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
     sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
+
+# --- local_gate_slots ---
+#
+# How many fleet gate test runs this group's hosts execute at once, across every
+# repository and worktree on them. `ansible/dev-host.yml` writes it to
+# `/etc/livespec/local-gate-slots`, which the `livespec_dev_tooling`
+# pytest plugin reads; every fleet repository loads that plugin because every
+# fleet repository depends on the package. See
+# `ansible/roles/local_gate_slots/HOST_VARS.md` and
+# SPECIFICATION/non-functional-requirements.md section "Local gate concurrency
+# limit".
+#
+# THREE, DERIVED FROM A MEASUREMENT RATHER THAN CHOSEN. The host has 18 cores.
+# At 2026-10-24 01:34Z it ran 95.8% busy (mpstat), PSI cpu some avg60 69%, load
+# 78, with four to five concurrent `pytest -n 4 --cov` gate aggregates — each
+# measured at about four cores. Three bounds local test runs at about 12 cores
+# and leaves about 6 for agent sessions, the Fabro servers and Dolt.
+#
+# IT IS A STOPGAP AND THE SPEC SAYS SO. Plan `delegated-gate-fleet-rollout`
+# (epic `livespec-dev-tooling-mvalxq`) moves the heavy gates onto the cluster;
+# once livespec, livespec-overseer and livespec-console-beads-fabro delegate
+# theirs, this line SHOULD be deleted. Deleting it is the whole rollback: the
+# role default is zero, which is no limit.
+local_gate_slots_limit: 3

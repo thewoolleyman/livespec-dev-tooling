@@ -301,6 +301,41 @@ def test_an_unreadable_configuration_fails_closed(
     assert _kinds(run=unparseable) == ["configuration-unparseable"]
 
 
+def test_a_builds_block_that_ends_the_inventory_file_is_still_read(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The block is closed by the END OF FILE as readily as by a later key.
+
+    The parser walks from the block's opener until a column-zero line closes it,
+    so a declaration that is the LAST thing in the inventory is closed by nothing
+    at all. Asserted in its own right because the property used to be held only
+    by an accident of the real `dev_hosts.yml` — the builds block happened to sit
+    at the end of it — so appending any new group variable silently took this
+    arm's only coverage away, which is how it was found (work-item
+    livespec-dev-tooling-c62xtb appended one).
+    """
+    root = tmp_path
+    _write(root=root, relative=_CONFIG_RELATIVE, text=_config(bins={"petri": _PETRI_BIN}))
+    _write(
+        root=root,
+        relative=_GROUP_VARS_RELATIVE,
+        text=(
+            "---\n"
+            "# Group variables for `dev_hosts`, with the builds block last.\n"
+            "\n"
+            "fabro_client_builds:\n"
+            f"  - path: {_PETRI_BIN}\n"
+            "    source: /control-node/staged/0/fabro\n"
+            f"    sha256: {'0' * 64}\n"
+        ),
+    )
+
+    run = _run_check(cwd=root, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert run.returncode == 0
+    assert "bin-names-no-declared-path" not in _kinds(run=run)
+
+
 def test_a_declaration_that_carries_no_builds_key_is_read_as_declaring_none(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

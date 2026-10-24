@@ -1,0 +1,89 @@
+---
+# local_gate_slots — provision this host's local-gate slot limit.
+#
+# Work-item livespec-dev-tooling-c62xtb. Governed by the "Local gate
+# concurrency limit" section of SPECIFICATION/non-functional-requirements.md,
+# whose last-but-one clause requires the limit to be provisioned through a
+# committed converge, never set by hand, and requires removing that one
+# committed setting to return the host to no limit.
+#
+# THIS CONVERGE RESTARTS NOTHING AND INTERRUPTS NOTHING. It writes one file,
+# installs one tmpfiles rule and creates one directory. A gate already running
+# holds its slot in a descriptor the kernel owns, so nothing here can take a
+# slot away from a session that has one.
+#
+# EVERY TASK HAS A REMOVING TWIN, and that is the whole shape of the rollback:
+# the limit is one value, and setting it to zero — or deleting the host's
+# declaration so the role default of zero applies — walks the host back to
+# carrying no limit at all rather than to carrying a stale one.
+
+- name: Refuse a local-gate slot limit that is not a whole number of slots
+  # Jinja catches an UNDEFINED variable by itself, but a non-numeric value
+  # substitutes silently into a file the plugin then reads as unparseable —
+  # which the plugin treats as NO LIMIT. So a typo would present as a converge
+  # that reported success over a host that went on contending, which is exactly
+  # the silent shape this control exists to remove.
+  ansible.builtin.assert:
+    that:
+      - local_gate_slots_limit | string is match('^[0-9]+$')
+    fail_msg: >-
+      local_gate_slots_limit must be a whole number of slots, where 0 means no
+      limit, got '{{ local_gate_slots_limit }}'
+    success_msg: the local-gate slot limit is a whole number of slots
+
+- name: Create the directory this host's local-gate slot limit is read from
+  ansible.builtin.file:
+    path: "{{ local_gate_slots_limit_file | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: local_gate_slots_limit | int > 0
+
+- name: Set this host's local-gate slot limit
+  ansible.builtin.copy:
+    content: "{{ local_gate_slots_limit | int }}\n"
+    dest: "{{ local_gate_slots_limit_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: local_gate_slots_limit | int > 0
+
+- name: Remove this host's local-gate slot limit
+  ansible.builtin.file:
+    path: "{{ local_gate_slots_limit_file }}"
+    state: absent
+  become: true
+  when: local_gate_slots_limit | int == 0
+
+- name: Declare the local-gate slot store so it exists after every boot
+  ansible.builtin.copy:
+    content: "d {{ local_gate_slots_store }} {{ local_gate_slots_store_mode }} root root -\n"
+    dest: "{{ local_gate_slots_tmpfiles_dir }}/{{ local_gate_slots_tmpfiles_conf }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: local_gate_slots_limit | int > 0
+
+- name: Withdraw the boot-time declaration of the local-gate slot store
+  ansible.builtin.file:
+    path: "{{ local_gate_slots_tmpfiles_dir }}/{{ local_gate_slots_tmpfiles_conf }}"
+    state: absent
+  become: true
+  when: local_gate_slots_limit | int == 0
+
+- name: Create the local-gate slot store for the sessions running now
+  # The tmpfiles rule above covers every boot AFTER this one; this covers the
+  # gates already running on the host the converge is being applied to, so the
+  # limit takes effect at the next session rather than at the next reboot.
+  ansible.builtin.file:
+    path: "{{ local_gate_slots_store }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ local_gate_slots_store_mode }}"
+  become: true
+  when: local_gate_slots_limit | int > 0

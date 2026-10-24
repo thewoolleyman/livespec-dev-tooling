@@ -1,0 +1,43 @@
+---
+# local_gate_slots — bound how many fleet gate test runs a host executes at
+# once. See HOST_VARS.md for the operator procedure, the rollback, and why the
+# slot store is world-writable.
+
+# THE LIMIT, and the only value an operator ever sets. It is the number of
+# pytest sessions a fleet gate may run at once on this host, counted across
+# every repository and worktree on it.
+#
+# ZERO MEANS NO LIMIT, and it is the default for a reason the ratified clause
+# names directly: a host that was never provisioned with a limit must start
+# pytest sessions exactly as it would without this feature. So a host that
+# declares nothing here is left alone, and REMOVING a host's declared value
+# falls back to this zero — which makes the removal the rollback, rather than
+# leaving the host pinned at the last number it was ever given.
+local_gate_slots_limit: 0
+
+# The one file the pytest plugin reads. LOCKSTEP with the plugin's own
+# `LIMIT_FILE`, which cannot see this value; the paired test holds the two
+# against each other, because a drift here is a converge that writes a limit
+# nothing reads and a host that silently goes on contending.
+local_gate_slots_limit_file: /etc/livespec/local-gate-slots
+
+# Where the slots themselves live. LOCKSTEP with the plugin's `SLOT_DIR` for the
+# same reason. Under `/run` because a lock file wants exactly the lifetime of a
+# boot: no lock survives a reboot, so a slot file that did could only ever be
+# stale.
+local_gate_slots_store: /run/livespec/local-gate-slots
+
+# Mode `1777` — world-writable with the sticky bit, as `/tmp` is.
+#
+# BOTH HALVES ARE LOAD-BEARING. World-writable because a slot is taken by
+# whichever login runs the gate, and a store it cannot create a file in would
+# make every session queue behind slots nobody holds. Sticky because that is
+# what then stops one login removing another's slot file.
+local_gate_slots_store_mode: "1777"
+
+# `/run` is a tmpfs, so the store has to be recreated at every boot. The
+# definition is installed as a `systemd-tmpfiles` rule, which is how a
+# `/run` directory is declared to exist rather than a unit someone must
+# remember to order before the first gate.
+local_gate_slots_tmpfiles_dir: /usr/lib/tmpfiles.d
+local_gate_slots_tmpfiles_conf: livespec-local-gate-slots.conf

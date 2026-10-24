@@ -42,6 +42,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MODULE_PATH = _REPO_ROOT / "livespec_dev_tooling" / "local_gate_slots.py"
 _SYNTHETIC_NAME = "local_gate_slots_under_test"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
+_ROLE_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "local_gate_slots" / "defaults" / "main.yml"
 
 # The `pytest11` table and its entries, read as TEXT rather than parsed: stdlib
 # `tomllib` lands in 3.11 and this repo's floor is 3.10.16, which is the same
@@ -692,3 +693,34 @@ def test_one_declared_entry_point_governs_every_fleet_gate_surface() -> None:
         f"point naming a module that moved loads nothing and leaves every "
         f"session unthrottled with no symptom but a contending host"
     )
+
+
+@pytest.mark.integration
+def test_the_two_host_paths_this_module_reads_are_the_ones_the_converge_writes() -> None:
+    """The plugin and the role name the same two files, held against each other.
+
+    NEITHER SIDE CAN SEE THE OTHER, and a drift between them is a syntax error
+    in neither: it is a converge that writes a limit nothing reads, on a host
+    that then goes on contending exactly as before while both the role and the
+    plugin report themselves working. So the constants are read out of the
+    role's own defaults rather than restated here.
+    """
+    assert _MODULE_PATH.is_file()
+    module = _load_module()
+    assert _ROLE_DEFAULTS.is_file(), (
+        "the committed converge must exist: the ratified clause requires a "
+        "host's limit to be provisioned rather than set by hand"
+    )
+    declared = _ROLE_DEFAULTS.read_text(encoding="utf-8")
+
+    for variable, constant in (
+        ("local_gate_slots_limit_file", module.LIMIT_FILE),
+        ("local_gate_slots_store", module.SLOT_DIR),
+    ):
+        found = re.search(rf"^{variable}:[ \t]*(?P<path>\S+)[ \t]*$", declared, re.MULTILINE)
+        assert found is not None, f"the role must declare {variable}"
+        assert found.group("path") == str(constant), (
+            f"the role writes {found.group('path')} while this module reads "
+            f"{constant}: one of the two has moved, and the host would be "
+            f"left unthrottled with nothing reporting a fault"
+        )
