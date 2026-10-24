@@ -27,6 +27,11 @@ metadata:
     app.kubernetes.io/managed-by: livespec-ci-runner-factory
     livespec.workitem: f5e6vl
 ---
+# RAISED 2026-10-24 from 3 to 8 concurrent runs: ./DERIVATION.md "The quota,
+# raised to eight runs" re-derives it against the measured node capacities after
+# gmktec's default environment moved onto the kubernetes provider (#2795) and
+# the 3-run value began refusing every 4th factory launch at 0 ms.
+#
 # ./DERIVATION.md "The quota" — 3 concurrent runs at the 4 cpu / 8GB envelope
 # hp's own `fabro_server_instances[].environments[livespec-ci]` declares, with
 # memory carrying one run's headroom so CPU binds first at exactly three runs
@@ -43,11 +48,11 @@ metadata:
     livespec.workitem: f5e6vl
 spec:
   hard:
-    requests.cpu: "12"
-    requests.memory: 24Gi
-    limits.cpu: "12"
-    limits.memory: 32Gi
-    pods: "6"
+    requests.cpu: "32"
+    requests.memory: 64Gi
+    limits.cpu: "32"
+    limits.memory: 72Gi
+    pods: "16"
 ---
 # ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
 # to cluster DNS, the tailnet (the beads Dolt tenant and the telemetry

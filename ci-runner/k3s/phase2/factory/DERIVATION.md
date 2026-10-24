@@ -103,6 +103,55 @@ the pool can absorb beside CI, and whether `cpu` remains the right binding term.
 Revise the table when it does, and record the measurement rather than replacing
 one estimate with another.
 
+## The quota, raised to eight runs (2026-10-24)
+
+**Why it moved.** The 3-run value above was a first value for a factory that
+did not yet send its runs here. On 2026-10-24 gmktec production's default
+`livespec-ci` environment moved onto the `kubernetes` provider
+(livespec-dev-tooling #2795, plan kubernetes-sandbox-backend, bd-ib-nmuyjc),
+and the per-repository flips routed the fleet's dispatches to the same pods.
+The fleet cap was 8, so every 4th launch was refused at sandbox acquire with
+`exceeded quota: factory-runs` (403), which Fabro classes `deterministic`:
+runs 01M5NV31WA2Q (bd-ib-57ss2n) and 01M5NV96ZBFY (bd-ib-pziqbf) died that way
+at 0 ms, after their whole pre-launch phase.
+
+**Measured, not estimated** (read from the cluster on 2026-10-24 with
+`kubectl get nodes` and `kubectl describe node`):
+
+| node | allocatable cpu | allocatable memory | schedulable for factory pods |
+|---|---|---|---|
+| `poweredge-xubuntu` | 72 | 377 GiB | yes (untainted) |
+| `gmktec-xubuntu` | 32 | 62 GiB | yes (untainted) |
+| `hp-xubuntu` | 0.5 | 4.7 GiB | no room (tainted `node-role/ci`, factory-only, kubelet reservation leaves 500m) |
+
+The CI ClusterQueues' nominal cpu sums to **61** (`gates-cq` 15,
+`livespec-orchestrator-beads-fabro-cq` 29, `livespec-dev-tooling-cq` 6,
+`phase1-proof-cq` 2, `livespec-cq` 2, and seven repositories at 1).
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | 8 runs x 4 cpu | **32** |
+| `requests.memory` | 8 runs x 8 Gi | **64Gi** |
+| `limits.cpu` | 8 runs x 4 cpu | **32** |
+| `limits.memory` | 64Gi + one run's headroom | **72Gi** |
+| `pods` | 8 runs x (1 sandbox + 1 in-flight replacement) | **16** |
+
+**Checked against the pool.** CI at full nominal plus eight runs is
+61 + 32 = **93 of ~104** schedulable cpu, leaving about 11 for system pods.
+Memory does not bind: 64Gi of ~439 GiB. cpu still binds first, as above.
+
+**Why not twelve.** 61 + 48 = 109 exceeds 104: with CI at nominal, the 9th
+to 12th pods would sit Pending past the plugin's 600 s start timeout and fail
+the same way. Twelve needs a node added or the CI queues shrunk, and a fleet
+cap above eight is unsupported by this quota until then.
+
+**Workspace disk at sixteen pods**, measured the same day at
+`/srv/factory-workspaces`: `poweredge-xubuntu` 160 G free (24 workspace
+directories present), `gmktec-xubuntu` 153 G free (10 present). Sixteen pods
+all on one node is about 10 G per workspace at the binding node; see
+`ansible/roles/factory_workspace_root/CAPACITY.md`. The per-run disk
+high-water mark is still unmeasured, so that stays a soak item.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows
