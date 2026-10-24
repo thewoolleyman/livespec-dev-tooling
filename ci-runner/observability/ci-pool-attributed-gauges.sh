@@ -455,13 +455,31 @@ if [ "${single_start}" -eq 1 ]; then
 elif cq_json="$(kc get clusterqueues -o json 2>&1)"; then
   if ! cq_rows="$(python3 - "${cq_json}" <<'PY'
 import json, re, sys
+from decimal import Decimal, localcontext
 
 def quantity(value):
     match = re.fullmatch(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(m|Ki|Mi|Gi|Ti|Pi|Ei|k|K|M|G|T|P|E)?", str(value))
     if match is None:
         return ""
-    factor = {None: 1, "m": .001, "k": 1000, "K": 1000, "M": 1000**2, "G": 1000**3, "T": 1000**4, "P": 1000**5, "E": 1000**6, "Ki": 1024, "Mi": 1024**2, "Gi": 1024**3, "Ti": 1024**4, "Pi": 1024**5, "Ei": 1024**6}[match.group(2)]
-    return format(float(match.group(1)) * factor, ".15g")
+    factor = {
+        None: Decimal("1"), "m": Decimal("0.001"),
+        "k": Decimal("1000"), "K": Decimal("1000"),
+        "M": Decimal("1000000"), "G": Decimal("1000000000"),
+        "T": Decimal("1000000000000"), "P": Decimal("1000000000000000"),
+        "E": Decimal("1000000000000000000"),
+        "Ki": Decimal("1024"), "Mi": Decimal("1048576"),
+        "Gi": Decimal("1073741824"), "Ti": Decimal("1099511627776"),
+        "Pi": Decimal("1125899906842624"),
+        "Ei": Decimal("1152921504606846976"),
+    }[match.group(2)]
+    # Keep the Kubernetes quantity exact until the OTLP assembler converts it
+    # to asDouble.  The default Decimal context is enough for normal values,
+    # but a quantity's exponent can require more precision than its spelling.
+    numeric = Decimal(match.group(1))
+    digits = len(numeric.as_tuple().digits)
+    with localcontext() as context:
+        context.prec = max(28, digits + abs(numeric.adjusted()) + 20)
+        return format(numeric * factor, "f")
 
 for queue in json.loads(sys.argv[1]).get("items", []):
     name = queue.get("metadata", {}).get("name", "")
