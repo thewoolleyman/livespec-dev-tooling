@@ -36,7 +36,7 @@ Insert into SPECIFICATION/non-functional-requirements.md, immediately before `##
 
 **A rename adds before it removes.** Renaming an environment's `id` MUST proceed in three steps, and a step MUST NOT start before the previous one is complete.
 
-1. The new `id` is added to the mapping's `environments` and to the instance's catalog, beside the old one, with the same image, resources and provider. When two old ids already declare the same toolchain layer, image, resources and provider, both are renamed to the one new `id`.
+1. The new `id` is added to the mapping's `environments` and to the instance's catalog, beside each old `id`, with the same image, resources and provider. When two old ids already declare the same toolchain layer, image, resources and provider, both are renamed to the one new `id`.
 2. Every consumer that names an old `id` (as defined above) is moved to the new one.
 3. Each old `id` is removed from the mapping's `environments` and deleted from the instance's catalog through `DELETE /api/v1/environments/{id}`, by the role or by a recorded operator step. Before each deletion, the role or the operator MUST confirm that no consumer names that `id`, and that no non-terminal run on that instance runs in it, by reading every non-terminal run that `fabro ps --server <instance>` lists, together with its environment. A declaration removed from the mapping while the catalog still holds that `id` MUST be reported as drift.
 
