@@ -165,7 +165,6 @@ _HOMELAB_FACTORY = "mi-homelab"
 _HOMELAB_HOST = "gmktec-xubuntu"
 _HOMELAB_UNIT = "fabro-server-mi-homelab"
 _COMMITTED_FACTORIES: Mapping[str, Mapping[str, str]] = {
-    "legacy": {"host": "hp-xubuntu", "unit_name": "fabro-server"},
     "petri": {"host": "gmktec-xubuntu", "unit_name": "fabro-server"},
     _HOMELAB_FACTORY: {"host": _HOMELAB_HOST, "unit_name": _HOMELAB_UNIT},
 }
@@ -650,14 +649,15 @@ def _committed_canonical_host(*, host: str, unit_name: str) -> str:
     return found["value"]
 
 
-def test_the_committed_registry_names_the_mi_homelab_instance_beside_legacy_and_petri() -> None:
+def test_the_committed_registry_names_the_mi_homelab_instance_beside_petri() -> None:
     """Every factory name this repository's inventory declares, and what each names.
 
     Stated as EQUALITY over the whole mapping rather than as a lookup of the name under
     test, because the obligation has two halves: the organisation's instance acquires a
-    registry name, and the two names already in service — which other repositories
-    resolve their committed `"registry": true` entries by — keep the host and unit they
-    had. A membership test would pass on a change that re-pointed `legacy`.
+    registry name, and the name already in service — which other repositories resolve
+    their committed `"registry": true` entries by — keeps the host and unit it had. A
+    membership test would pass on a change that re-pointed `petri`, and equality also
+    holds the retired `legacy` name out of the registry.
     """
     assert _committed_registry() == _COMMITTED_FACTORIES, (
         f"{_GROUP_VARS} must declare exactly these factories: without a registry name for "

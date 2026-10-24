@@ -40,9 +40,10 @@
 # declares one today, and publishing one would newly turn on the Dispatcher's
 # remote container sweep.
 fabro_factory_registry:
-  legacy:
-    host: hp-xubuntu
-    unit_name: fabro-server
+  # `legacy` (the 0.254 engine on hp-xubuntu) is RETIRED and its name deleted:
+  # its instance is stopped and no repository's committed factory table names
+  # it, so nothing can resolve it and keeping the name would leave hp-xubuntu
+  # carrying a factory role. Do not reuse the name for another instance.
   petri:
     host: gmktec-xubuntu
     unit_name: fabro-server

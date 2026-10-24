@@ -64,6 +64,13 @@ fabro_server_instances:
     # is stopped. Provenance is in BUILD_INFO beside the binary.
     binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
     binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
+    # STOPPED 2026-10-24 by the petri-factory-on-gmktec plan (epic
+    # bd-ib-fyozyd, coordinator gitops-fleet-capacity-monitoring): every
+    # repository's committed factory table had dropped `legacy` and petri on
+    # gmktec-xubuntu serves the fleet. The unit, its drop-in, the binary and the
+    # state directory under home_dir are all KEPT, so the instance comes back by
+    # flipping this one word to running and re-applying.
+    service_state: stopped
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/cwoolley/.fabro-mi-homelab
     port: 32277
