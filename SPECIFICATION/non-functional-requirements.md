@@ -238,6 +238,22 @@ and queued demand remains pending while the circuit is open.
 
 **Documented beside the values.** The owning role's `HOST_VARS.md` MUST document every per-host variable the role reads, with its default where it has one. An interim control MUST also carry its operator procedure, its rollback and the condition under which it is retired.
 
+## Factory sandbox environment naming
+
+**Scope.** This section governs the `id` of every sandbox environment declared by a `fabro_server_instances` mapping that a `fabro_factory_registry` entry names and whose `service_state` is `running`. It does not govern a canary or candidate instance that no `fabro_factory_registry` entry names, an instance whose `service_state` is `stopped`, or a server's seeded default environment. It also does not govern the images, the resources or the provider of an environment; §"Fabro factory host provisioning" governs those.
+
+**The id names the consumer and the toolchain.** Each such environment's `id` MUST be `factory-<toolchain>`. Here `<toolchain>` names the toolchain layer of the sandbox image the environment runs, written without its `-agent` suffix: `factory-python` for the `python-agent` layer, and `factory-python-rust` for the `python-rust-agent` layer. For an environment that declares no `image`, the image is that of its provider's `process_spec`. Outside a rename in progress, one such mapping MUST NOT declare two environments whose images carry the same toolchain layer. From the first step of a rename until its third step completes, the mapping MAY declare every old `id` being renamed beside the new `id`.
+
+**Placement is never in the id.** An `id` MUST NOT encode where or how the sandbox runs (for example `docker`, `k8s` or `kubernetes`), because that is the environment's `provider` field. Moving an environment to another provider, a rollback between providers included, therefore changes its `provider` and never its `id`. No governed repository's committed configuration changes with it. Because a provider carries one `process_spec`, two toolchains on one provider kind SHOULD take two providers (for example `kubernetes` and `kubernetes-rust`), never a placement suffix on the id.
+
+**What names an id.** A governed repository's committed configuration names an environment `id` through its `dispatcher.factories.<name>.environment`, and the factory registry names one through any entry that supplies an `environment`, should the registry carry one. A workflow's `[run.environment] id` and its `[environments.<id>]` tables are not consumers of a catalog environment, because the Petri engine never selects a workflow's environment tables. Renaming them is hygiene and is not a precondition of any step below.
+
+**A rename adds before it removes.** Renaming an environment's `id` MUST proceed in three steps, and a step MUST NOT start before the previous one is complete.
+
+1. The new `id` is added to the mapping's `environments` and to the instance's catalog, beside each old `id`, with the same image, resources and provider. When two old ids already declare the same toolchain layer, image, resources and provider, both are renamed to the one new `id`.
+2. Every consumer that names an old `id` (as defined above) is moved to the new one.
+3. Each old `id` is removed from the mapping's `environments` and deleted from the instance's catalog through `DELETE /api/v1/environments/{id}`, by the role or by a recorded operator step. Before each deletion, the role or the operator MUST confirm that no consumer names that `id`, and that no non-terminal run on that instance runs in it, by reading every non-terminal run that `fabro ps --server <instance>` lists, together with its environment. A declaration removed from the mapping while the catalog still holds that `id` MUST be reported as drift.
+
 ## Fabro factory registry
 
 **Scope.** This section states how this repository publishes, on each host

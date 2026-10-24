@@ -1183,3 +1183,17 @@ When the release fan-out reaches that bound
 Then the run MUST fail with an annotation naming each missing tag
 
 And it MUST send no sibling-released dispatch
+
+## Scenario: factory sandbox environments are named for their toolchain, and a rename never strands a dispatch
+
+Given a running, registry-named `fabro_server_instances` mapping declaring an environment `livespec-ci-k8s` whose image carries the `python-agent` layer, and governed repositories whose committed petri `environment` names it
+
+When the environment is renamed
+
+Then the catalog MUST list `factory-python` beside `livespec-ci-k8s` before any governed repository's committed `environment` names `factory-python`
+
+And `factory-python` MUST carry the same image, resources and provider as `livespec-ci-k8s`
+
+And `livespec-ci-k8s` MUST stay in the catalog while any governed repository's committed `environment` or any non-terminal run on that instance names it
+
+And after the removal, the catalog MUST NOT list `livespec-ci-k8s`, and its only `python-agent` environment MUST be `factory-python`

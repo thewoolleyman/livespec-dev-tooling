@@ -16,6 +16,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Factory sandbox environment naming",
+    "work_item": "livespec-dev-tooling-s6go5s",
+    "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Host provisioning tree",
     "work_item": "livespec-dev-tooling-k5q54n",
     "first_seen": "2026-10-19"
@@ -152,6 +159,13 @@
     "heading": "## Scenario: at the hard cap a revert with green CI lands regardless of fix-forward progress",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: factory sandbox environments are named for their toolchain, and a rename never strands a dispatch",
+    "work_item": "livespec-dev-tooling-s6go5s",
+    "first_seen": "2026-10-24"
   },
   {
     "spec_root": "SPECIFICATION",

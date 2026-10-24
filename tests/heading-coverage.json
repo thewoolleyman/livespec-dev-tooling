@@ -1021,5 +1021,21 @@
     "test": "TODO",
     "reason": "Spec-first: a real integration-tier test is owed, driving converges of the committed fabro_client role under the pinned ansible-core against tmp_path-derived links, builds and a stand-in server binary, as the sibling scenario's test does.",
     "work_item": "livespec-dev-tooling-rpw6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Factory sandbox environment naming",
+    "test": "TODO",
+    "reason": "Spec-first: a real integration-tier test is owed; exercised by the implementing item livespec-dev-tooling-s6go5s.",
+    "work_item": "livespec-dev-tooling-s6go5s"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: factory sandbox environments are named for their toolchain, and a rename never strands a dispatch",
+    "test": "TODO",
+    "reason": "Spec-first: a real integration-tier test is owed; exercised by the implementing item livespec-dev-tooling-s6go5s.",
+    "work_item": "livespec-dev-tooling-s6go5s"
   }
 ]
