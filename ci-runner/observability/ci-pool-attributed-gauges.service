@@ -19,10 +19,13 @@
 # trigger pairs with either — they are board inputs, not alarms.
 #
 # NOT A DynamicUser, unlike the sibling ci-runner-heartbeat.service: it runs
-# as root with the scoped read-only collector kubeconfig. It reads the
-# cluster-scoped ClusterQueues and the runner-pool listings, but never needs or
-# falls back to the k3s admin kubeconfig. It remains server-node-only because
-# that identity is rendered there and the server tick covers the whole pool.
+# as root with the k3s admin kubeconfig for its established all-namespace
+# EphemeralRunner and pod listings and its cluster-scoped PersistentVolume
+# listing. Those legacy reads need the admin identity. The ClusterQueue call is
+# deliberately different: the script passes CI_POOL_KUEUE_KUBECONFIG only to
+# that call, so queue usage is read through the scoped collector identity and
+# never through the admin kubeconfig. It remains server-node-only because both
+# kubeconfigs are rendered there and the server tick covers the whole pool.
 #
 # THE DEADLINE. The timer's interval is 60 s, so a run must finish inside
 # one. The bounded work is FOUR kubectl list calls — ClusterQueues and
@@ -65,8 +68,10 @@ After=k3s.service converge-ci-stack.service
 
 [Service]
 Type=oneshot
-# Runs as root (default): the scoped kubeconfig is root-owned and read-only.
-Environment=KUBECONFIG=/etc/otel-collector/kubeconfig
+# Runs as root (default): legacy pool reads need the admin kubeconfig.
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# Only the ClusterQueue list receives this scoped, read-only identity.
+Environment=CI_POOL_KUEUE_KUBECONFIG=/etc/otel-collector/kubeconfig
 TimeoutStartSec=55
 CapabilityBoundingSet=
 NoNewPrivileges=yes

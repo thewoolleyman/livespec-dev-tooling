@@ -380,6 +380,13 @@ NON_REPO_QUEUES="${CI_POOL_NON_REPO_QUEUES:-phase1-proof-cq}"
 # The resource whose presence marks a ClusterQueue as one of this pool's —
 # the sweep's filter, spelled once here.
 CHURN_SLOT_RESOURCE="${CI_POOL_CHURN_SLOT_RESOURCE:-ci-runner.io/churn-slot}"
+# The legacy runner, pod and PersistentVolume reads use the service's admin
+# KUBECONFIG. ClusterQueues are the one deliberately scoped exception: their
+# reader must use the collector's read-only identity even though the rest of
+# this legacy emitter cannot. Keeping this separate from kc() makes a later
+# change to the unit's default credential unable to silently broaden the queue
+# read.
+KUEUE_KUBECONFIG="${CI_POOL_KUEUE_KUBECONFIG:-/etc/otel-collector/kubeconfig}"
 
 log() { printf 'ci-pool-attributed-gauges: %s\n' "$*"; }
 
@@ -435,6 +442,10 @@ put() { printf '%s\n' "$*" >> "${readings}"; }
 
 kc() { "${KUBECTL_BIN}" --request-timeout="${KUBECTL_REQUEST_TIMEOUT}" "$@"; }
 kc_start() { "${KUBECTL_BIN}" --request-timeout="${START_KUBECTL_REQUEST_TIMEOUT}" "$@"; }
+kc_kueue() {
+  KUBECONFIG="${KUEUE_KUBECONFIG}" "${KUBECTL_BIN}" \
+    --request-timeout="${KUBECTL_REQUEST_TIMEOUT}" "$@"
+}
 
 # ---- ClusterQueues -----------------------------------------------------------
 # The sweep's jsonpath verbatim: every resource of every flavor of every
@@ -458,7 +469,7 @@ if [ "${single_start}" -eq 1 ]; then
   # is not a shortcut: it emits no gauges, so a ClusterQueue reading would be
   # 15 s of deadline spent on a number nothing would print.
   log "--single-start: skipping the ClusterQueue listing (it feeds gauges this mode does not emit)"
-elif cq_rows="$(kc get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; then
+elif cq_rows="$(kc_kueue get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; then
   queues_emitted=0
   while IFS='|' read -r cq_name cq_quotas cq_usage cq_pending cq_admitted; do
     [ -n "${cq_name}" ] || continue
