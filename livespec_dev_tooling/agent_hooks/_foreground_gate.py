@@ -61,6 +61,10 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
+from returns.io import IOFailure, IOResult, IOSuccess  # noqa: E402  — vendor-path-aware import.
+from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-aware import.
+
 from livespec_dev_tooling.agent_hooks._command_shape import (  # noqa: E402
     Invocation,
     invocations,
@@ -91,6 +95,27 @@ _HELP_FLAGS: frozenset[str] = frozenset({"-h", "--help"})
 # `git push --delete` / `-d` makes every ref it names a deletion.
 _DELETE_FLAGS: frozenset[str] = frozenset({"-d", "--delete"})
 
+# What the probe found, as the refusal reports it. The two are not
+# interchangeable: one says a gate WILL run, the other says nobody could
+# tell — and the ratified section refuses on both, which is only sound if
+# the record says which of them happened.
+_FOUND_INSTALLED = "installed"
+_NOT_ESTABLISHED = "unestablished"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _HookProbeUnreadable:
+    """Git could not be CONSULTED about a repository's hooks.
+
+    Deliberately NOT inhabited by "git answered that there is no
+    repository there": that is an ANSWER — no hook of any kind would run —
+    and it travels the success track as the empty result every caller
+    already reads as "no hook of this kind is installed".
+    """
+
+    repository: str
+    detail: str
+
 
 @dataclass(frozen=True, kw_only=True)
 class ForegroundRefusal:
@@ -98,12 +123,15 @@ class ForegroundRefusal:
 
     `hooks` carries the hook names actually found installed rather than
     the ones that were looked for, so the refusal the agent reads names
-    the gate it would really have fired.
+    the gate it would really have fired. It is EMPTY when `finding` is
+    `unestablished`: nothing was found installed there, because nothing
+    could be read.
     """
 
     gate: str
     hooks: tuple[str, ...]
     repository: str
+    finding: str
 
 
 def foreground_refusal(*, command: str, cwd: Path) -> ForegroundRefusal | None:
@@ -118,12 +146,22 @@ def foreground_refusal(*, command: str, cwd: Path) -> ForegroundRefusal | None:
         if hooks is None or _runs_no_gate(invocation=invocation):
             continue
         repository = _target_repository(cwd=cwd, options=invocation.options)
-        installed = _installed_hooks(repository=repository, hooks=hooks)
+        gate = f"git {invocation.subcommand}"
+        probed = _installed_hooks(repository=repository, hooks=hooks)
+        if not is_successful(probed):
+            # Nothing was established, and the section refuses on that:
+            # the guard's only other verdict is the fail-open allow, which
+            # would release the command whose verdict is at risk.
+            return ForegroundRefusal(
+                gate=gate, hooks=(), repository=str(repository), finding=_NOT_ESTABLISHED
+            )
+        installed = unsafe_perform_io(probed.unwrap())
         if installed:
             return ForegroundRefusal(
-                gate=f"git {invocation.subcommand}",
+                gate=gate,
                 hooks=installed,
                 repository=str(repository),
+                finding=_FOUND_INSTALLED,
             )
     return None
 
@@ -182,30 +220,56 @@ def _target_repository(*, cwd: Path, options: tuple[str, ...]) -> Path:
     return target
 
 
-def _installed_hooks(*, repository: Path, hooks: tuple[str, ...]) -> tuple[str, ...]:
-    """Which of `hooks` git would actually RUN in `repository`."""
-    directory = _hooks_directory(repository=repository)
-    if directory is None:
-        return ()
-    return tuple(name for name in hooks if _would_run(path=directory / name))
+def _installed_hooks(
+    *, repository: Path, hooks: tuple[str, ...]
+) -> IOResult[tuple[str, ...], _HookProbeUnreadable]:
+    """Which of `hooks` git would RUN in `repository`, or no answer at all.
 
-
-def _hooks_directory(*, repository: Path) -> Path | None:
-    """The directory git runs `repository`'s hooks from, or None for no repository.
-
-    Relative to `repository`, because `core.hooksPath` may be declared
-    relative and `git rev-parse` echoes it back as declared.
+    An EMPTY tuple on the SUCCESS track is the answer "none of them":
+    git read the repository, or answered that there is none to read, and
+    no hook of this kind is installed either way. The failure track is
+    the one state that is not an answer.
     """
-    probed = subprocess.run(
-        ["git", "-C", str(repository), "rev-parse", "--git-path", "hooks"],
-        capture_output=True,
-        text=True,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
+    directory = _hooks_directory(repository=repository)
+    if not is_successful(directory):
+        return IOFailure(unsafe_perform_io(directory.failure()))
+    named = unsafe_perform_io(directory.unwrap())
+    if named is None:
+        return IOSuccess(())
+    return IOSuccess(tuple(name for name in hooks if _would_run(path=named / name)))
+
+
+def _hooks_directory(*, repository: Path) -> IOResult[Path | None, _HookProbeUnreadable]:
+    """The directory git runs `repository`'s hooks from, on the railway.
+
+    `None` on the success track is git ANSWERING that `repository` is not
+    a repository it can read — a missing directory, or one holding no
+    `.git`. No hook runs there, so it is the "no installed hook"
+    exemption rather than a failure to look.
+
+    The failure track is git failing to be CONSULTED: not on `PATH`, or a
+    spawn the kernel refused. Nothing is established then, and the caller
+    must not read that as absence — which is what the raised `OSError`
+    used to buy, by escaping to the hook's fail-open ALLOW.
+
+    The path is resolved relative to `repository`, because `core.hooksPath`
+    may be declared relative and `git rev-parse` echoes it back as declared.
+    """
+    try:
+        probed = subprocess.run(
+            ["git", "-C", str(repository), "rev-parse", "--git-path", "hooks"],
+            capture_output=True,
+            text=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        return IOFailure(
+            _HookProbeUnreadable(repository=str(repository), detail=type(exc).__name__)
+        )
     if probed.returncode != 0:
-        return None
-    return repository / probed.stdout.strip()
+        return IOSuccess(None)
+    return IOSuccess(repository / probed.stdout.strip())
 
 
 def _would_run(*, path: Path) -> bool:

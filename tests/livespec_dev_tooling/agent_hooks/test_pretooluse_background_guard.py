@@ -1250,3 +1250,39 @@ def test_a_hook_file_without_its_execute_bit_is_not_an_installed_hook(
     )
 
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+
+def test_a_hook_state_that_cannot_be_established_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The one place this guard must fail CLOSED rather than open.
+
+    Every other way the probe can come up empty is an ANSWER: git says
+    where the hooks live, or git says the target is not a repository it
+    can read — and in that second case no hook of any kind would run,
+    which is the exemption the ratified section names. What is left is
+    git not being CONSULTABLE at all, which establishes nothing. A guard
+    reading "nothing established" as "no hook installed" would release
+    exactly the command whose verdict is at risk, and would do it
+    silently.
+
+    Proved by putting git out of reach AFTER the repository is built, so
+    the repository is unchanged and only the probe's ability to ask has
+    gone.
+    """
+    repo = _make_hooked_repo(repo=tmp_path / "hooked", hooks=("pre-commit",))
+    toolless = tmp_path / "no-tools"
+    toolless.mkdir()
+    monkeypatch.setenv("PATH", str(toolless))
+
+    event = _foreground_refusal_event(
+        command='git commit -m "x"', cwd=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == _FOREGROUND_CHECK_ID
+    assert event["hook_finding"] == "unestablished"
+    # The refusal is still a complete remedy, not a bare error: the agent
+    # is handed the same one-call form it would have got either way.
+    assert _one_call_detached_form(command='git commit -m "x"') in str(event.get("hint", ""))
