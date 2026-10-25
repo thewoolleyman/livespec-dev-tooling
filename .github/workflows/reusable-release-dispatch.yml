@@ -233,9 +233,45 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  # Hold the fan-out until ghcr.io serves the release's sandbox image tags
+  # (contracts.md, "reusable-release-dispatch.yml", v087;
+  # livespec-dev-tooling-3e3tlw). `fabro-sandbox-image.yml` publishes them on
+  # the same `release: published` event, so without this wait a bump PR can
+  # start CI against a tag that does not exist yet: measured on v1.131.1,
+  # where console bump PR #1284 started CI before its python-rust tags were
+  # pushed. The readiness module decides per source repository: a release of
+  # any repository other than livespec-dev-tooling returns at once, and one
+  # whose tags are still absent at the 90-minute bound fails naming each
+  # missing tag, so `dispatch` (which needs this job) fires to no sibling.
+  await-sandbox-image:
+    name: await sandbox image tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: Checkout livespec-dev-tooling master
+        uses: actions/checkout@v5
+        with:
+          # workflow_call runs in the CALLER repo's context; the readiness
+          # module ships from livespec-dev-tooling, so check out that repo
+          # explicitly at master, as fleet-preflight does.
+          repository: ${{ github.repository_owner }}/livespec-dev-tooling
+          ref: master
+
+      - name: Install pinned binaries via mise
+        uses: jdx/mise-action@v4
+
+      - name: Install Python dev deps via uv
+        run: uv sync --all-groups
+
+      - name: just await-sandbox-image
+        env:
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: just await-sandbox-image --source-repo "$SOURCE_REPO" --tag "$RELEASE_TAG"
+
   dispatch:
     name: dispatch ${{ matrix.sibling.name }}
-    needs: [discover-siblings, fleet-preflight]
+    needs: [discover-siblings, fleet-preflight, await-sandbox-image]
     if: needs.fleet-preflight.outputs.filtered_siblings != '[]' && needs.fleet-preflight.outputs.filtered_siblings != ''
     runs-on: ubuntu-latest
     strategy:

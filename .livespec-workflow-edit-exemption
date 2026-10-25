@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-uwkmew
-reason=Add a top-level concurrency group to release-please.yml so concurrent master pushes queue instead of racing on a stale release base (2026-10-25 PRs 3619/3620).
+work_item=livespec-dev-tooling-3e3tlw
+reason=Add an await-sandbox-image job to reusable-release-dispatch.yml that dispatch needs, so the release fan-out holds until ghcr.io serves the release sandbox image tags (v087); maintainer authorized the workflow edits on 2026-10-25.
