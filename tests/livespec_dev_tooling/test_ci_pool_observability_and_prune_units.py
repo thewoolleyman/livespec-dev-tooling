@@ -1,7 +1,7 @@
-"""The five node-local timers of the server node's profile, and the roles that install them.
+"""The six node-local timers of the server node's profile, and the roles that install them.
 
 THE QUESTION THIS FILE ANSWERS (work-item livespec-dev-tooling-xcscdz,
-Definition of Done). Five systemd timers — the host-silence heartbeat, the
+Definition of Done). Six systemd timers — the host-silence heartbeat, the
 Kueue-webhook endpoint probe, the per-repository pool gauges, the build-cache
 gauges and the sandbox-image prune — were installed on poweredge-xubuntu by TWO
 HAND-RUN SHELL INSTALLERS and by nothing else. `ansible/ci-pool.yml` is the
@@ -54,7 +54,7 @@ _OBSERVABILITY = _CI_RUNNER / "observability"
 _PRUNE_DIR = _CI_RUNNER / "k3s" / "phase2" / "warm-cache" / "sandbox-image-prune"
 _CI_RUNNER_README = _CI_RUNNER / "README.md"
 
-# The five timers of the Definition of Done, each with the service it activates
+# The six timers of the Definition of Done, each with the service it activates
 # and the committed script that service's ExecStart runs. Stated, because the
 # item states them; the ROLE that carries each one is derived below.
 _TIMERS: dict[str, tuple[str, Path]] = {
@@ -69,6 +69,10 @@ _TIMERS: dict[str, tuple[str, Path]] = {
     "ci-pool-attributed-gauges.timer": (
         "ci-pool-attributed-gauges.service",
         _OBSERVABILITY / "ci-pool-attributed-gauges.sh",
+    ),
+    "ci-k3s-control-plane-telemetry.timer": (
+        "ci-k3s-control-plane-telemetry.service",
+        _OBSERVABILITY / "ci-k3s-control-plane-telemetry.sh",
     ),
     "ci-cache-gauges.timer": (
         "ci-cache-gauges.service",
@@ -179,7 +183,7 @@ def _observability_row() -> str:
     return row.group()
 
 
-def test_each_of_the_five_timers_is_installed_by_a_role_the_play_reaches() -> None:
+def test_each_of_the_six_timers_is_installed_by_a_role_the_play_reaches() -> None:
     """The assertion the rebuild recipe needs: no unit is left to a hand-run installer."""
     gates = _role_gates()
     for unit in _TIMERS:

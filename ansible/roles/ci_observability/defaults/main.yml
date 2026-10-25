@@ -1,6 +1,6 @@
 ---
 ci_observability_src_dir: "{{ role_path }}/../../../ci-runner/observability"
-# The directory every one of the four units names in its ExecStart, and the
+# The directory every one of the five units names in its ExecStart, and the
 # only place the live copies may come from (the s2t recreatability rule: live
 # must equal source, so the role that writes them is the only writer).
 ci_observability_lib_dir: /usr/local/lib/ci-runner
@@ -10,11 +10,13 @@ ci_observability_scripts:
   - ci-kueue-webhook-probe.sh
   - ci-cache-gauges.sh
   - ci-pool-attributed-gauges.sh
+  - ci-k3s-control-plane-telemetry.sh
 ci_observability_services:
   - ci-runner-heartbeat.service
   - ci-kueue-webhook-probe.service
   - ci-cache-gauges.service
   - ci-pool-attributed-gauges.service
+  - ci-k3s-control-plane-telemetry.service
 # Armed, not merely written. A node whose timers are installed and disabled is
 # indistinguishable from one that was never provisioned, because both are
 # silent — and silence is precisely what the heartbeat's dead-man trigger
@@ -24,3 +26,4 @@ ci_observability_timers:
   - ci-kueue-webhook-probe.timer
   - ci-cache-gauges.timer
   - ci-pool-attributed-gauges.timer
+  - ci-k3s-control-plane-telemetry.timer

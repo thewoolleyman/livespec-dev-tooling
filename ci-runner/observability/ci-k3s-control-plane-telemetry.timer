@@ -1,0 +1,11 @@
+[Unit]
+Description=k3s API readiness and datastore telemetry (every minute)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
