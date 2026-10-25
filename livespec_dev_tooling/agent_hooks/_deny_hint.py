@@ -95,6 +95,28 @@ __all__: list[str] = [
 ]
 
 
+def detached_form(*, command: str) -> str:
+    """The ONE-CALL detached form that replaces `command`.
+
+    The form the ratified `SPECIFICATION/contracts.md` section
+    "Agent-session gate-command guard" names, and requires BOTH refusals
+    to name. ONE spelling, in one place, because two spellings of a
+    remedy is how one of them goes stale: an agent that learned the
+    older two-call shape from one refusal could not tell whether the
+    other was prescribing something different.
+
+    One call rather than two, and carrying the command rather than a
+    placeholder wherever the caller holds it: a refusal that hands back a
+    template invites the agent to re-quote the command it has just
+    written, and the re-quoting is where a heredoc commit message gets
+    mangled.
+    """
+    return (
+        f"run_id=$(mise exec -- just gate-start -- {command}) && "
+        'mise exec -- just gate-wait "$run_id"'
+    )
+
+
 # Venue probe constants. The gate recipes resolve only when the pack's
 # `worktree.just` fragment is installed AND imported by the root justfile
 # AND the `gate-run.sh` body its stanzas invoke is installed beside it —
@@ -144,13 +166,12 @@ _HINT_PREAMBLE = (
     "BASH_MAX_TIMEOUT_MS under load, and that kill produces NO verdict at all. "
 )
 
-# The BACKGROUND arm's dispatch text. It names a PLACEHOLDER, because its
-# caller already holds the command and is only being told to move it; the
-# foreground arm carries the command itself (see `detached_form`).
-_BACKGROUND_DISPATCH = (
-    "run_id=$(mise exec -- just gate-start -- <your gate command>) then background "
-    '`mise exec -- just gate-wait "$run_id"`'
-)
+# The BACKGROUND arm's dispatch text: the SAME form, rendered with the
+# section's own placeholder. A placeholder is right here and only here —
+# this arm's caller already holds the command and is being told to move
+# it, whereas the foreground arm REPLACES a command it must therefore
+# carry verbatim.
+_BACKGROUND_DISPATCH = detached_form(command="<the same command>")
 
 
 def _runner_present_clause(*, dispatch: str) -> str:
@@ -334,22 +355,6 @@ def deny_hint(*, cwd: Path) -> IOResult[str, VenueUnreadable]:
     to hand the denied agent nothing.
     """
     return _composed(cwd=cwd, preamble=_HINT_PREAMBLE, dispatch=_BACKGROUND_DISPATCH)
-
-
-def detached_form(*, command: str) -> str:
-    """The ONE-CALL detached form that replaces `command`.
-
-    The form the ratified `SPECIFICATION/contracts.md` section
-    "Agent-session gate-command guard" requires both refusals to name.
-    One call rather than two, and carrying the command rather than a
-    placeholder: a refusal that hands back a template invites the agent
-    to re-quote the command it has just written, and the re-quoting is
-    where a heredoc commit message gets mangled.
-    """
-    return (
-        f"run_id=$(mise exec -- just gate-start -- {command}) && "
-        'mise exec -- just gate-wait "$run_id"'
-    )
 
 
 def foreground_deny_hint(*, cwd: Path, command: str) -> str:

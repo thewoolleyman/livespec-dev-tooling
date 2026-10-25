@@ -1286,3 +1286,31 @@ def test_a_hook_state_that_cannot_be_established_is_refused(
     # The refusal is still a complete remedy, not a bare error: the agent
     # is handed the same one-call form it would have got either way.
     assert _one_call_detached_form(command='git commit -m "x"') in str(event.get("hint", ""))
+
+
+def test_the_background_refusal_names_the_same_one_call_detached_form(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ONE form, both arms — and the old two-call wording is GONE.
+
+    The ratified section names a single form and requires both refusals
+    to name it. Two spellings of the same remedy is how one of them goes
+    stale: an agent that learned the two-call shape from one refusal
+    cannot tell whether the other is prescribing something different.
+    So the replacement is asserted as well as the arrival.
+    """
+    payload = json.dumps(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "just check", "run_in_background": True},
+        },
+    )
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 2
+    event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+
+    assert event["check_id"] == _BACKGROUND_CHECK_ID
+    hint = str(event["hint"])
+    assert _one_call_detached_form(command="<the same command>") in hint
+    assert "then background" not in hint
