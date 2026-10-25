@@ -1165,33 +1165,29 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Agent-session gate-command guard",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
-    "work_item": "livespec-dev-tooling-zlhnib"
+    "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_a_foreground_hook_running_git_command_is_refused_under_its_own_check_id",
+    "reason": "Unit-tier, driving the shipped hook end to end over its own stdin protocol: a FOREGROUND `git commit` or `git push` into a real repository carrying the corresponding hook is refused (exit 2) under a `check_id` distinct from the background arm's, which is the section's load-bearing clause. The section's other clauses are pinned by the siblings in the same file — the one-call detached form both refusals name, every exemption it enumerates, the refusal owed when the hook state cannot be established, and the fail-open direction of a guard fault (livespec-dev-tooling-zlhnib)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's foreground commit in a hooked repository is refused and names the detached form",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
-    "work_item": "livespec-dev-tooling-zlhnib"
+    "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_the_foreground_refusal_names_the_one_call_detached_form",
+    "reason": "Unit-tier: a foreground `mise exec -- git commit -m \"<message>\"` in a repository whose `pre-commit` is installed is refused, and the refusal names `run_id=$(mise exec -- just gate-start -- <the same command>) && mise exec -- just gate-wait \"$run_id\"` carrying that command verbatim. The expected form is spelled out in the test rather than imported from the module under test, so the assertion cannot compare a constant against itself (livespec-dev-tooling-zlhnib)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's commit dispatched through the detached gate runner is not refused",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
-    "work_item": "livespec-dev-tooling-zlhnib"
+    "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_the_exempt_shapes_are_not_refused_even_in_a_fully_hooked_repository",
+    "reason": "Unit-tier: `mise exec -- just gate-start -- mise exec -- git commit -m \"x\"` is not refused, proved in a repository carrying all three hooks so the allow cannot be earned for want of a gate. Parametrized over every exemption the contracts section enumerates beside it, including the `gate-wait` / `gate-status` / `gate-list` calls (livespec-dev-tooling-zlhnib)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an agent session's commit in a repository with no installed commit hook is not refused",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test of the agent-session gate-command guard is owed; exercised by the implementing item livespec-dev-tooling-zlhnib.",
-    "work_item": "livespec-dev-tooling-zlhnib"
+    "test": "tests.livespec_dev_tooling.agent_hooks.test_pretooluse_background_guard.test_a_commit_or_push_whose_target_repository_has_no_matching_hook_is_not_refused",
+    "reason": "Unit-tier: a foreground `git commit` in a real repository with neither `pre-commit` nor `commit-msg` installed is not refused. Asserted per GATE rather than per repository — a `pre-push`-only repository allows the commit and refuses the push — so the exemption cannot be satisfied by reading \"this repository has no hooks at all\" (livespec-dev-tooling-zlhnib)."
   },
   {
     "spec_root": "SPECIFICATION",

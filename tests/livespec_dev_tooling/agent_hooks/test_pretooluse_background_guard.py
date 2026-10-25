@@ -35,9 +35,33 @@ Covered behaviors:
   second CONTROL asserts the actionability check FAILS on a bare
   relative citation, so the rule cannot pass vacuously.
 
+- per work-item livespec-dev-tooling-zlhnib, the FOREGROUND arm the
+  ratified `SPECIFICATION/contracts.md` section "Agent-session
+  gate-command guard" adds: a `git commit` or `git push` into a
+  repository carrying the corresponding hook is refused under that
+  arm's own `check_id`, the refusal names the one-call detached form
+  carrying the command verbatim, every exemption the section
+  enumerates stays allowed IN A FULLY HOOKED REPOSITORY (so no allow
+  is earned for want of a gate), a hook state that could not be
+  established refuses rather than releasing, and a fault in the guard
+  itself still fails OPEN and reports itself.
+
 Private names are imported via from-imports (the package-private
 access model, mirroring `tests/livespec_dev_tooling/fleet/`);
 monkeypatch seams use the string-target form.
+
+THREE TESTS CARRY `pytest.mark.integration`, and the marker is
+FUNCTION-level rather than module-level on purpose. They are the three
+this repository's heading-coverage registry maps `scenarios.md`
+headings to, and `heading_coverage` direction 4 resolves a scenario's
+tier either from an allowlisted node-id prefix or from that static
+marker — a `scenarios.md` heading may never rest on a unit-tier test.
+The label is accurate rather than a formality: each drives the SHIPPED
+hook's `main()` end to end over its real stdin protocol, against a
+repository built by a real `git init` / `git worktree add`. The rest of
+this file is genuinely unit-tier (`_matched_gate`, `_should_deny`, the
+venue probe's own arms), so a module-level `pytestmark` would mislabel
+it. The marker selects nothing — no recipe or workflow passes `-m`.
 
 **The guard script runs IN-PROCESS.** `test_script_denies_then_allows_
 end_to_end` used to spawn `[sys.executable, pretooluse_background_
@@ -1062,6 +1086,7 @@ def _one_call_detached_form(*, command: str) -> str:
     )
 
 
+@pytest.mark.integration
 def test_the_foreground_refusal_names_the_one_call_detached_form(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1158,6 +1183,7 @@ def test_an_unreadable_venue_still_refuses_the_foreground_command(
     assert _one_call_detached_form(command="git commit --amend") in hint
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "command",
     [
@@ -1205,6 +1231,7 @@ def test_the_exempt_shapes_are_not_refused_even_in_a_fully_hooked_repository(
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
 
 
+@pytest.mark.integration
 def test_a_commit_or_push_whose_target_repository_has_no_matching_hook_is_not_refused(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
