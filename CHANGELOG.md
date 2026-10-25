@@ -58,6 +58,22 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.133.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.132.0...v1.133.0) (2026-10-25)
+
+
+### Features
+
+* **agent-hooks:** name the one-call detached form in the foreground refusal ([83bd545](https://github.com/thewoolleyman/livespec-dev-tooling/commit/83bd545cf6d96afbadec2af33daab458e6ea645e))
+* **agent-hooks:** refuse a foreground hook-running git commit or push ([56b833c](https://github.com/thewoolleyman/livespec-dev-tooling/commit/56b833c5185645b5a8333cf27a773c52196aa13e))
+
+
+### Bug Fixes
+
+* **agent-hooks:** exempt the foreground shapes that run no gate ([7f23f41](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7f23f41b384d5fb2704170488f875b1f3cd8b643))
+* **agent-hooks:** name one detached form in both refusals ([1cea15b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1cea15b41318d82e1f003a7780039da8bbde91ba))
+* **agent-hooks:** refuse a foreground push whose pre-push hook is installed ([a1ede2e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a1ede2e99651af01b1ad0661c335a69978ff56a8))
+* **agent-hooks:** refuse when the hook state cannot be established ([4af7506](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4af75060130178e902d5ed45037f26b20c6e559b))
+
 ## [1.132.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.131.1...v1.132.0) (2026-10-24)
 
 
