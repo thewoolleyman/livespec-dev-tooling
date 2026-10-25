@@ -968,3 +968,82 @@ def test_a_foreground_push_is_allowed_where_no_pre_push_hook_would_run(
     outside.mkdir()
     monkeypatch.chdir(outside)
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+
+@pytest.mark.parametrize(
+    ("installed", "command", "gate"),
+    [
+        # The measured incident: a canary commit sat more than 21 minutes in
+        # the commit-msg `check-red-green-replay` hook on the shared VPS on
+        # 2026-10-24, and the harness moved the foreground call to the
+        # background at its ceiling, where such calls have been killed with
+        # no verdict at all.
+        (("commit-msg",), 'mise exec -- git commit -m "a message"', "git commit"),
+        # `pre-commit` governs the same gate, so EITHER hook makes a commit
+        # refusable — the section names both.
+        (("pre-commit",), "git commit --amend --no-edit", "git commit"),
+        (("pre-push",), "git push -u origin feat/x", "git push"),
+    ],
+)
+def test_a_foreground_hook_running_git_command_is_refused_under_its_own_check_id(
+    installed: tuple[str, ...],
+    command: str,
+    gate: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Both gates, both commit hooks, and a `check_id` of its own.
+
+    The DISTINCT `check_id` is not cosmetic. The two refusals ask the
+    agent for different changes — the background one for a different
+    call shape, this one for a different place to run the gate — so a
+    consumer counting or routing on one must never be counting the
+    other.
+    """
+    repo = _make_hooked_repo(repo=tmp_path / "hooked", hooks=installed)
+
+    event = _foreground_refusal_event(
+        command=command, cwd=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert event["check_id"] == _FOREGROUND_CHECK_ID
+    assert event["check_id"] != _BACKGROUND_CHECK_ID
+    assert event["gate"] == gate
+    # The refusal names the hooks it would really have fired, not the ones
+    # that were looked for.
+    assert event["hooks"] == list(installed)
+
+
+def test_a_dash_c_command_is_judged_against_the_repository_it_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`git -C <path>` targets that repository; everything else targets the cwd.
+
+    Read from the GLOBAL option region only, which is the whole reason
+    `Invocation` keeps that region apart: `-C` is also `git commit`'s
+    `--reuse-message` short form, so a scan of the full argument list
+    would read `git commit -C HEAD~1` as naming a repository `HEAD~1`
+    and probe for hooks somewhere that does not exist.
+    """
+    hooked = _make_hooked_repo(repo=tmp_path / "hooked", hooks=("pre-commit",))
+    elsewhere = _make_hooked_repo(repo=tmp_path / "elsewhere", hooks=())
+
+    event = _foreground_refusal_event(
+        command=f'git -c core.pager=cat -C {hooked} commit -m "x"',
+        cwd=elsewhere,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert event["repository"] == str(hooked)
+
+    # And the reuse-message spelling, issued where NO hook is installed,
+    # is not read as naming a repository at all.
+    monkeypatch.chdir(elsewhere)
+    reuse = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": "git commit -C HEAD~1"}},
+    )
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=reuse) == 0

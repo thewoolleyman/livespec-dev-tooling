@@ -68,11 +68,17 @@ __all__: list[str] = [
     "foreground_refusal",
 ]
 
-# The gate this module refuses so far, and the git hook whose installation
-# makes it one. `pre-push` is git's only push-time hook, so a push that
-# would run a gate is exactly a push into a repository carrying it.
-_PUSH_GATE = "git push"
-_PUSH_HOOKS: tuple[str, ...] = ("pre-push",)
+# The two git subcommands that run a gate, and the hooks whose
+# installation makes each one run it. A commit answers to EITHER of its
+# two, which is the section's own wording and not a convenience: this
+# fleet's commit-time aggregate is split across them — the staged subset
+# in `pre-commit` and the Red-Green-Replay gate in `commit-msg` — so
+# reading only one of them would miss the hook the 2026-10-24 incident
+# actually hung in.
+_GATE_HOOKS: dict[str, tuple[str, ...]] = {
+    "commit": ("pre-commit", "commit-msg"),
+    "push": ("pre-push",),
+}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -97,12 +103,38 @@ def foreground_refusal(*, command: str, cwd: Path) -> ForegroundRefusal | None:
     one: the probe's own non-answers are resolved below it.
     """
     for invocation in invocations(command=command):
-        if invocation.binary != "git" or invocation.subcommand != "push":
+        hooks = _GATE_HOOKS.get(invocation.subcommand or "") if invocation.binary == "git" else None
+        if hooks is None:
             continue
-        installed = _installed_hooks(repository=cwd, hooks=_PUSH_HOOKS)
+        repository = _target_repository(cwd=cwd, options=invocation.options)
+        installed = _installed_hooks(repository=repository, hooks=hooks)
         if installed:
-            return ForegroundRefusal(gate=_PUSH_GATE, hooks=installed, repository=str(cwd))
+            return ForegroundRefusal(
+                gate=f"git {invocation.subcommand}",
+                hooks=installed,
+                repository=str(repository),
+            )
     return None
+
+
+def _target_repository(*, cwd: Path, options: tuple[str, ...]) -> Path:
+    """The repository a git invocation targets: its `-C`, else the session's cwd.
+
+    Read from the GLOBAL option region alone, which is what makes the
+    collision with `git commit -C <commit>` (`--reuse-message`)
+    unrepresentable here rather than merely unlikely. Repeated `-C`s
+    compose, each relative to the last, exactly as git resolves them; an
+    absolute one replaces what came before, which `Path.__truediv__`
+    already does.
+    """
+    target = cwd
+    pending = False
+    for word in options:
+        if pending:
+            target, pending = target / word, False
+        elif word == "-C":
+            pending = True
+    return target
 
 
 def _installed_hooks(*, repository: Path, hooks: tuple[str, ...]) -> tuple[str, ...]:
