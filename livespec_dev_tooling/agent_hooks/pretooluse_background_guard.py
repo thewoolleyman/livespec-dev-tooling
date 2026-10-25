@@ -1,4 +1,4 @@
-"""pretooluse_background_guard — deny `run_in_background` for gate commands.
+"""pretooluse_background_guard — keep an agent session's gate commands detached.
 
 Per work-item livespec-dev-tooling-7us.2: the premature-turn-end
 failure starts when an executor backgrounds a long gate command
@@ -9,6 +9,21 @@ sub-agent. A BARE backgrounded gate leaves the tool output as the only
 record of the verdict, so nothing survives the turn. This Claude Code
 `PreToolUse` hook (matcher `Bash`) denies any Bash call that combines
 `run_in_background` with a gate command.
+
+TWO ARMS, TWO `check_id`s (livespec-dev-tooling-zlhnib). The ratified
+`SPECIFICATION/contracts.md` section "Agent-session gate-command guard"
+adds the refusal that matters more: a FOREGROUND `git commit` or
+`git push` into a repository whose corresponding hook is installed. The
+background arm reads the SHAPE of the call, so its hazard is visible in
+the call itself; the foreground one is not — it looks like the careful
+thing to do, and the hooks it fires run the whole aggregate past the
+harness's tool-call ceiling, where the kill leaves no verdict at all.
+The decision for that arm, its hook probe, and the reason it is a
+refusal rather than a rewrite live in the sibling `_foreground_gate`
+module; `_foreground_verdict` below is where this module consumes it.
+The two refusals carry DISTINCT `check_id`s, as that section requires: a
+consumer counting one must never be counting the other, because what
+the agent has to change differs between them.
 
 COMMAND-TOKEN POSITION, NOT SUBSTRING (livespec-dev-tooling-k169).
 A command is a gate only where the shell would actually run one:
@@ -99,6 +114,9 @@ from livespec_dev_tooling.agent_hooks._command_shape import (  # noqa: E402
     invocations,
 )
 from livespec_dev_tooling.agent_hooks._deny_hint import deny_hint  # noqa: E402
+from livespec_dev_tooling.agent_hooks._foreground_gate import (  # noqa: E402
+    foreground_refusal,
+)
 
 __all__: list[str] = []
 
@@ -220,14 +238,50 @@ def _guard(*, raw_input: str, log: structlog.stdlib.BoundLogger) -> int:
         return 0
     tool_input = cast("dict[str, object]", tool_input_raw)
     gate = _should_deny(tool_name=tool_name, tool_input=tool_input)
-    if gate is None:
+    if gate is not None:
+        log.error(
+            "DENIED: bare-backgrounding a gate command — dispatch it through the detached runner",
+            check_id="pretooluse-background-guard-deny",
+            gate=gate,
+            command=tool_input.get("command"),
+            hint=_hint_text(cwd=Path.cwd()),
+        )
+        return 2
+    return _foreground_verdict(tool_name=tool_name, tool_input=tool_input, log=log)
+
+
+def _foreground_verdict(
+    *,
+    tool_name: str,
+    tool_input: dict[str, object],
+    log: structlog.stdlib.BoundLogger,
+) -> int:
+    """Refuse a FOREGROUND hook-running git command, or allow the call.
+
+    Graded AFTER the background arm, which is both the pre-existing
+    behaviour and the right order: a backgrounded `git commit` is refused
+    for the hazard its SHAPE carries, and that refusal keeps the
+    `check_id` consumers already read.
+
+    The sanctioned detached runner is exempt here for the same reason it
+    is there — a command dispatched through `gate-start` is the remedy
+    this guard prescribes, and refusing the remedy would leave an agent
+    with no move but engineering around the guard.
+    """
+    command = tool_input.get("command")
+    if tool_name != "Bash" or not isinstance(command, str) or _SANCTIONED_RUNNER.search(command):
+        return 0
+    refusal = foreground_refusal(command=command, cwd=Path.cwd())
+    if refusal is None:
         return 0
     log.error(
-        "DENIED: bare-backgrounding a gate command — dispatch it through the detached runner",
-        check_id="pretooluse-background-guard-deny",
-        gate=gate,
-        command=tool_input.get("command"),
-        hint=_hint_text(cwd=Path.cwd()),
+        "DENIED: a foreground git command whose repository hooks run gates — "
+        "dispatch it through the detached runner",
+        check_id="pretooluse-foreground-gate-deny",
+        gate=refusal.gate,
+        command=command,
+        repository=refusal.repository,
+        hooks=list(refusal.hooks),
     )
     return 2
 

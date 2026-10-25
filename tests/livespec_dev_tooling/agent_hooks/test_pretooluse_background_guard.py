@@ -86,7 +86,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import pytest
 from returns.io import IOFailure
@@ -268,8 +268,19 @@ def test_main_fails_open_on_missing_tool_name(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_main_allows_foreground_gate_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The BACKGROUND arm reads `run_in_background`, not the gate alone.
+
+    `just check` rather than the `git push` this test used to carry: a
+    foreground hook-running git command is now the FOREGROUND arm's
+    business, per the ratified `SPECIFICATION/contracts.md` section
+    "Agent-session gate-command guard", and in this checkout — whose
+    `pre-push` hook IS installed — it is refused for that other reason.
+    `just check` is a gate the foreground arm never looks at, so this
+    keeps asserting the one thing it always asserted: the background arm
+    does not fire on a foreground call.
+    """
     payload = json.dumps(
-        {"tool_name": "Bash", "tool_input": {"command": "mise exec -- git push"}},
+        {"tool_name": "Bash", "tool_input": {"command": "mise exec -- just check"}},
     )
     assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
 
@@ -842,3 +853,118 @@ def test_should_deny_still_denies_every_bare_backgrounded_gate(command: str, exp
     """A bare backgrounded gate keeps its original hazard, so it stays denied."""
     tool_input: dict[str, object] = {"command": command, "run_in_background": True}
     assert _should_deny(tool_name="Bash", tool_input=tool_input) == expected
+
+
+# ---------------------------------------------------------------------------
+# Foreground hook-running git commands (livespec-dev-tooling-zlhnib)
+# ---------------------------------------------------------------------------
+
+
+# The foreground arm's own `check_id`, restated here rather than imported:
+# the ratified `SPECIFICATION/contracts.md` section "Agent-session
+# gate-command guard" requires it to be DISTINCT from the background arm's,
+# and a constant compared against itself cannot show that.
+_FOREGROUND_CHECK_ID = "pretooluse-foreground-gate-deny"
+_BACKGROUND_CHECK_ID = "pretooluse-background-guard-deny"
+
+# A hook body that does nothing: what makes a hook "installed" is that git
+# would RUN it, not what it does when run.
+_HOOK_BODY = "#!/bin/sh\nexit 0\n"
+
+
+def _make_hooked_repo(*, repo: Path, hooks: tuple[str, ...]) -> Path:
+    """A real repository with exactly `hooks` installed and executable.
+
+    A REAL `git init` rather than a hand-built `.git/` tree, for the same
+    reason the venue-awareness fixtures above use a real `git worktree
+    add`: the guard asks git itself where the hooks of a repository live,
+    so a simulated repository would prove nothing about what it finds.
+    """
+    repo.mkdir(parents=True, exist_ok=True)
+    _run_git(args=["init", "--quiet"], cwd=repo)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    for name in hooks:
+        hook = hooks_dir / name
+        _ = hook.write_text(_HOOK_BODY, encoding="utf-8")
+        hook.chmod(0o755)
+    return repo
+
+
+def _foreground_refusal_event(
+    *,
+    command: str,
+    cwd: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> dict[str, object]:
+    """Drive the hook over a FOREGROUND `command` and return the refusal event.
+
+    Asserts the refusal itself — exit 2 is the `PreToolUse` deny verdict —
+    so every caller below reads a structured event it already knows exists.
+    """
+    monkeypatch.chdir(cwd)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 2
+    event = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    return cast("dict[str, object]", event)
+
+
+def test_a_dry_run_push_against_an_installed_pre_push_hook_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--dry-run` is NOT an exemption, because git runs `pre-push` anyway.
+
+    The proposal that became this rule listed `git push --dry-run` and
+    `git push -n` among the exemptions; the ratification review REMOVED
+    them, because git runs the `pre-push` hook on a dry run and so a dry
+    run costs the full gate runtime and loses its verdict to the
+    tool-call ceiling exactly as a real push does. An exemption here
+    would therefore reopen the whole failure for the one spelling an
+    agent reaches for when it wants to be careful.
+    """
+    repo = _make_hooked_repo(repo=tmp_path / "hooked", hooks=("pre-push",))
+
+    event = _foreground_refusal_event(
+        command="git push --dry-run origin HEAD",
+        cwd=repo,
+        monkeypatch=monkeypatch,
+        capsys=capsys,
+    )
+
+    assert event["check_id"] == _FOREGROUND_CHECK_ID
+    assert event["check_id"] != _BACKGROUND_CHECK_ID
+
+
+def test_a_foreground_push_is_allowed_where_no_pre_push_hook_would_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probe's ABSENCE answer, in both of the shapes it arrives in.
+
+    A repository whose `pre-push` is not installed runs no gate on a
+    push, and a directory that is no repository at all runs none either —
+    git itself says so, which is the whole reason the directory is read
+    from `git rev-parse --git-path hooks` rather than guessed. Both are
+    the "no installed hook of the corresponding kind" exemption the
+    ratified section names, and a guard that refused them would refuse a
+    push in every unhooked clone in the fleet.
+    """
+    unhooked = _make_hooked_repo(repo=tmp_path / "unhooked", hooks=())
+    # The precondition, asserted rather than assumed: a global
+    # `init.templateDir` could ship a real hook into a fresh `git init`,
+    # and this arm would then be proving the opposite of what it says.
+    assert not (unhooked / ".git" / "hooks" / "pre-push").exists()
+    payload = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": "git push origin HEAD"}},
+    )
+
+    monkeypatch.chdir(unhooked)
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
