@@ -61,7 +61,10 @@ _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
 if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
-from livespec_dev_tooling.agent_hooks._command_shape import invocations  # noqa: E402
+from livespec_dev_tooling.agent_hooks._command_shape import (  # noqa: E402
+    Invocation,
+    invocations,
+)
 
 __all__: list[str] = [
     "ForegroundRefusal",
@@ -79,6 +82,14 @@ _GATE_HOOKS: dict[str, tuple[str, ...]] = {
     "commit": ("pre-commit", "commit-msg"),
     "push": ("pre-push",),
 }
+
+# Asking git what a subcommand does runs no hook. Matched as whole
+# TOKENS, never as substrings: `git commit -m "see --help"` carries
+# `--help` inside its message and is an ordinary commit.
+_HELP_FLAGS: frozenset[str] = frozenset({"-h", "--help"})
+
+# `git push --delete` / `-d` makes every ref it names a deletion.
+_DELETE_FLAGS: frozenset[str] = frozenset({"-d", "--delete"})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -104,7 +115,7 @@ def foreground_refusal(*, command: str, cwd: Path) -> ForegroundRefusal | None:
     """
     for invocation in invocations(command=command):
         hooks = _GATE_HOOKS.get(invocation.subcommand or "") if invocation.binary == "git" else None
-        if hooks is None:
+        if hooks is None or _runs_no_gate(invocation=invocation):
             continue
         repository = _target_repository(cwd=cwd, options=invocation.options)
         installed = _installed_hooks(repository=repository, hooks=hooks)
@@ -115,6 +126,40 @@ def foreground_refusal(*, command: str, cwd: Path) -> ForegroundRefusal | None:
                 repository=str(repository),
             )
     return None
+
+
+def _runs_no_gate(*, invocation: Invocation) -> bool:
+    """Whether this invocation names a gate subcommand and still fires no hook.
+
+    Graded BEFORE the hook probe, which keeps the probe off a path that
+    could not have been refused anyway — the cheapness this directory's
+    hook discipline asks for, got by not asking the question.
+
+    `--dry-run` is deliberately absent. The proposal that became the
+    ratified section listed it; the ratification review removed it,
+    because git runs `pre-push` on a dry run, so a dry run pays the full
+    gate runtime and loses its verdict exactly as a real push does.
+    """
+    if _HELP_FLAGS & set(invocation.options + invocation.args):
+        return True
+    return invocation.subcommand == "push" and _deletes_only(args=invocation.args)
+
+
+def _deletes_only(*, args: tuple[str, ...]) -> bool:
+    """Whether every refspec this push carries deletes a remote branch.
+
+    A deletion-only push publishes no tree, so there is nothing for a
+    gate to judge — the same reading this repository's own pre-push gate
+    takes of one. ONLY, though: a push carrying one ordinary refspec
+    beside a deletion does publish a tree, and must still be refused.
+
+    The first operand is the remote; a refspec with an empty source
+    (`:refs/heads/x`) is git's other spelling of a deletion.
+    """
+    if _DELETE_FLAGS & set(args):
+        return True
+    operands = [word for word in args if not word.startswith("-")]
+    return len(operands) > 1 and all(word.startswith(":") for word in operands[1:])
 
 
 def _target_repository(*, cwd: Path, options: tuple[str, ...]) -> Path:

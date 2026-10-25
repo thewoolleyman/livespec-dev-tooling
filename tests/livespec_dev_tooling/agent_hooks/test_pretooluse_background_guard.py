@@ -1156,3 +1156,97 @@ def test_an_unreadable_venue_still_refuses_the_foreground_command(
     assert str(fragment) in hint
     assert "could NOT be established" in hint
     assert _one_call_detached_form(command="git commit --amend") in hint
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # Already dispatched through the runner — the remedy this guard
+        # prescribes. Refusing it would leave an agent with no move left,
+        # which is what pushes one into engineering AROUND the guard.
+        'mise exec -- just gate-start -- mise exec -- git commit -m "x"',
+        "mise exec -- just gate-start -- git push -u origin feat/x",
+        # The waiter and the two read-only verdict surfaces. Cheap,
+        # restartable, and they run no gate of their own.
+        'mise exec -- just gate-wait "$(cat tmp/run-checks.id)"',
+        "mise exec -- just gate-status 20260805T051456Z-4055481",
+        "mise exec -- just gate-list",
+        # Asking git what the subcommand does runs no hook.
+        "git commit -h",
+        "git push --help",
+        "git --help commit",
+        # A push whose every refspec DELETES a remote branch publishes no
+        # tree, so there is nothing for a gate to judge — the same reading
+        # this repository's own pre-push gate already takes of a
+        # deletion-only push.
+        "git push --delete origin feat/x",
+        "git push -d origin feat/x",
+        "git push origin :refs/heads/feat/x",
+        "git push origin :refs/heads/a :refs/heads/b",
+    ],
+)
+def test_the_exempt_shapes_are_not_refused_even_in_a_fully_hooked_repository(
+    command: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every exemption the ratified section names, in the venue that would refuse.
+
+    The repository carries all three hooks, so nothing here is allowed
+    for want of a gate: each shape is allowed because it does not RUN
+    one. Proving them in an unhooked repository would pass vacuously.
+    """
+    repo = _make_hooked_repo(
+        repo=tmp_path / "hooked", hooks=("pre-commit", "commit-msg", "pre-push")
+    )
+    monkeypatch.chdir(repo)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+
+def test_a_commit_or_push_whose_target_repository_has_no_matching_hook_is_not_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exemption is per-GATE, not per-repository.
+
+    A repository carrying `pre-push` and nothing else runs a gate on a
+    push and none on a commit, so the commit is allowed there. Reading
+    "this repository has hooks" instead would refuse a commit for a gate
+    that only a push can fire.
+    """
+    push_only = _make_hooked_repo(repo=tmp_path / "push-only", hooks=("pre-push",))
+    monkeypatch.chdir(push_only)
+    commit = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": 'git commit -m "x"'}},
+    )
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=commit) == 0
+
+    commit_only = _make_hooked_repo(repo=tmp_path / "commit-only", hooks=("pre-commit",))
+    monkeypatch.chdir(commit_only)
+    push = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": "git push origin HEAD"}},
+    )
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=push) == 0
+
+
+def test_a_hook_file_without_its_execute_bit_is_not_an_installed_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git skips a hook whose execute bit is clear, so it runs no gate.
+
+    The half of "installed" that routinely differs. A present-but-inert
+    file is exactly what a half-finished install leaves behind, and
+    reading it as a gate would refuse a command that would have run in
+    seconds.
+    """
+    repo = _make_hooked_repo(repo=tmp_path / "inert", hooks=("pre-commit",))
+    (repo / ".git" / "hooks" / "pre-commit").chmod(0o644)
+    monkeypatch.chdir(repo)
+    payload = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": 'git commit -m "x"'}},
+    )
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
