@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.134.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.134.1...v1.134.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* refuse unskippable authority gate ([732ba3f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/732ba3fb9b3213818c48c5d05c0bdf11c604a837))
+
 ## [1.134.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.134.0...v1.134.1) (2026-10-25)
 
 
