@@ -243,15 +243,20 @@ def test_each_timer_arrives_with_the_service_it_activates_and_that_service_scrip
         )
 
 
-def test_control_plane_and_pool_emitters_use_only_the_scoped_kubeconfig() -> None:
-    """The telemetry identity must never regain the server's admin credential."""
-    for name in (
-        "ci-k3s-control-plane-telemetry.service",
-        "ci-pool-attributed-gauges.service",
-    ):
-        unit = (_OBSERVABILITY / name).read_text(encoding="utf-8")
-        assert "Environment=KUBECONFIG=/etc/otel-collector/kubeconfig" in unit
-        assert "/etc/rancher/k3s/k3s.yaml" not in unit
+def test_control_plane_and_pool_queue_reads_use_the_scoped_kubeconfig() -> None:
+    """Only ClusterQueue reads may use the collector identity in the legacy emitter."""
+    control_plane = (_OBSERVABILITY / "ci-k3s-control-plane-telemetry.service").read_text(
+        encoding="utf-8"
+    )
+    assert "Environment=KUBECONFIG=/etc/otel-collector/kubeconfig" in control_plane
+    assert "/etc/rancher/k3s/k3s.yaml" not in control_plane
+
+    pool_unit = (_OBSERVABILITY / "ci-pool-attributed-gauges.service").read_text(encoding="utf-8")
+    pool_script = (_OBSERVABILITY / "ci-pool-attributed-gauges.sh").read_text(encoding="utf-8")
+    assert "Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml" in pool_unit
+    assert "Environment=CI_POOL_KUEUE_KUBECONFIG=/etc/otel-collector/kubeconfig" in pool_unit
+    assert 'KUBECONFIG="${KUEUE_KUBECONFIG}"' in pool_script
+    assert "kc_kueue get clusterqueues" in pool_script
 
 
 def test_each_timer_is_armed_by_the_role_that_installs_it() -> None:
