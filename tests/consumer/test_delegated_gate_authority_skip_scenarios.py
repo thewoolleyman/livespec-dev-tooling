@@ -51,7 +51,7 @@ from pathlib import Path
 
 import pytest
 from returns.pipeline import is_successful
-from returns.result import Success
+from returns.result import Failure, Success
 from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.check_authority import repository_authority_members
@@ -103,6 +103,9 @@ class _CannedWorldRealRenderer:
     be a stub for a claim nobody makes.
     """
 
+    def __init__(self) -> None:
+        self.invoked: list[list[str]] = []
+
     def __call__(
         self,
         *,
@@ -112,6 +115,7 @@ class _CannedWorldRealRenderer:
         stream: bool = False,
     ) -> GateCommandOutcome:
         _ = (stdin, stream)
+        self.invoked.append(argv)
         if argv[0] == str(_RENDERER):
             completed = subprocess.run(
                 argv, cwd=str(cwd), capture_output=True, text=True, check=False
@@ -222,10 +226,9 @@ def _exported_skip(*, script: list[str], variable: str) -> list[str]:
     """
     prefix = f"export {variable}="
     exports = [line for line in script if line.startswith(prefix)]
-    if not exports:
-        return []
-    assert len(exports) == 1, f"{variable} must be exported once; got {exports}"
-    return exports[0][len(prefix) :].strip().strip('"').split()
+    assert len(exports) <= 1, f"{variable} must be exported at most once; got {exports}"
+    export = next(iter(exports), "")
+    return export.removeprefix(prefix).strip().strip('"').split()
 
 
 def _declared_authority_members(*, repo_root: Path) -> tuple[str, ...]:
@@ -257,18 +260,16 @@ def test_the_gate_job_omits_the_authority_members_under_the_consumers_own_skip_v
     assert _exported_skip(script=script, variable=skip_variable) == list(declared)
 
 
-def test_the_gate_job_still_runs_every_member_no_authority_declaration_names(
+def test_the_client_refuses_to_render_a_gate_job_when_it_cannot_skip_an_authority_member(
     *, tmp_path: Path
 ) -> None:
     """The second half: the Job verifies the same set, MINUS the authority members only.
 
-    Two claims, because the mechanism can fail in two opposite directions. A
-    repository that declares one authority member must have exactly that one
+    A repository that declares one authority member must have exactly that one
     omitted — the member beside it that declares nothing stays in the Job, which
-    is where the whole aggregate runs. And a repository whose `check` recipe
-    reads no skip variable at all must have NOTHING omitted: the mechanism
-    cannot establish where to put the list, and inventing a name would skip
-    nothing while reading as though it had.
+    is where the whole aggregate runs. A repository whose `check` recipe reads
+    no skip variable cannot keep its authority member out of the Job, so the
+    client must refuse before it renders a manifest that could be submitted.
     """
     declaring = _a_consumer_repository(
         root=tmp_path / "widget", skip_variable=_FLEET_SKIP_VARIABLES[0]
@@ -279,10 +280,17 @@ def test_the_gate_job_still_runs_every_member_no_authority_declaration_names(
     assert _PLAIN_MEMBER not in omitted
     assert omitted == [_AUTHORITY_MEMBER]
 
-    unestablishable = _a_consumer_repository(root=tmp_path / "gadget", skip_variable=None)
-    unestablishable_script = _gate_container_script(
-        manifest=_rendered_manifest(repo_root=unestablishable)
+    unskippable = _a_consumer_repository(root=tmp_path / "gadget", skip_variable=None)
+    runner = _CannedWorldRealRenderer()
+
+    request = gate_remote_request(
+        repo_root=unskippable,
+        renderer=_RENDERER,
+        runner=runner,
     )
 
-    for variable in _FLEET_SKIP_VARIABLES:
-        assert _exported_skip(script=unestablishable_script, variable=variable) == []
+    assert isinstance(request, Failure)
+    failure = request.failure()
+    assert _AUTHORITY_MEMBER in failure.detail
+    assert "skip variable" in failure.detail
+    assert all(argv[0] != str(_RENDERER) for argv in runner.invoked)

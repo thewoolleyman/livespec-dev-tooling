@@ -78,7 +78,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from livespec_dev_tooling._gate_authority_skip import authority_skip_argv
+from livespec_dev_tooling._gate_authority_skip import authority_skip_resolution
 from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
     run_host_authority_members,
@@ -86,12 +86,13 @@ from livespec_dev_tooling._gate_host_authority import (
 from livespec_dev_tooling._gate_remote_assembly import (
     assembly_refusal,
     check_suite_argv,
-    declared_gate_check_suite,
     gate_ref_tree_hash,
     gate_repo_name,
     per_run_gate_ref,
     renderer_refusal,
 )
+from livespec_dev_tooling._gate_remote_request_inputs import gate_request_inputs
+from livespec_dev_tooling._gate_remote_verdict_fields import verdict_job_fields
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
 from livespec_dev_tooling.gate_credential import (
     gates_kubeconfig_path,
@@ -109,7 +110,6 @@ from livespec_dev_tooling.gate_outcome_telemetry import (
     GATE_OUTCOME_PASSED,
     emit_gate_outcome,
 )
-from livespec_dev_tooling.gate_private_sibling_token import private_sibling_credential
 from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_invocation import (
     GateCommandRunner,
@@ -198,6 +198,7 @@ GATE_PRIVATE_SIBLING_TOKEN_HELPER = Path("/usr/local/bin/with-livespec-env.sh")
 
 _READ_TREE_STEP = "read-tree-hash"
 _RENDER_STEP = "render-gate-job"
+_AUTHORITY_SKIP_STEP = "resolve-authority-skip"
 
 # The gate's verdict states, as the outcome vocabulary the event reports. A
 # MAPPING with a `no-verdict` default rather than a branch per state: the
@@ -296,15 +297,24 @@ def gate_remote_request(
     if isinstance(named, Failure):
         return Failure(named.failure())
     repo = named.unwrap()
-    suite = declared_gate_check_suite(repo_root=repo_root)
-    if isinstance(suite, Failure):
-        return Failure(suite.failure())
-    credential = private_sibling_credential(
-        repo_root=repo_root, runner=runner, helper=GATE_PRIVATE_SIBLING_TOKEN_HELPER
+    inputs = gate_request_inputs(
+        repo_root=repo_root,
+        runner=runner,
+        helper=GATE_PRIVATE_SIBLING_TOKEN_HELPER,
     )
-    if isinstance(credential, Failure):
-        return Failure(credential.failure())
-    private_siblings, private_sibling_token = credential.unwrap()
+    if isinstance(inputs, Failure):
+        return Failure(inputs.failure())
+    suite, private_siblings, private_sibling_token = inputs.unwrap()
+    authority_skip = authority_skip_resolution(repo_root=repo_root)
+    if authority_skip.refusal is not None:
+        return Failure(
+            GateStepFailed(
+                step=_AUTHORITY_SKIP_STEP,
+                argv=(),
+                returncode=None,
+                detail=authority_skip.refusal,
+            )
+        )
     gate_ref = per_run_gate_ref(tree_hash=tree_hash)
     # THE SECRET'S NAME IS DERIVED FROM THE REF'S NONCE, so it is per-RUN rather
     # than per-tree: two janitors gating one master tip concurrently must not
@@ -330,8 +340,8 @@ def gate_remote_request(
         # cannot come to disagree about which member belongs to which host — a
         # pod that skipped a member nobody ran would be an unread authorization
         # treated as granted (`_gate_authority_skip`).
-        *authority_skip_argv(repo_root=repo_root),
-        *check_suite_argv(suite=suite.unwrap()),
+        *authority_skip.argv,
+        *check_suite_argv(suite=suite),
     ]
     rendered = require_success(
         step=_RENDER_STEP, argv=render_argv, outcome=runner(argv=render_argv, cwd=repo_root)
@@ -435,34 +445,6 @@ def run_delegated_gate(
     return host_authority_decision(verdict=verdict, ran=ran)
 
 
-def _verdict_job_fields(*, verdict: GateVerdict) -> dict[str, str]:
-    """The verdict's own account of the gate Job it decided, as log-line fields.
-
-    THE LINE IS A RECORD, NOT ONLY A SENTENCE. livespec-orchestrator-beads-fabro's
-    post-merge janitor runs its check suite through this client when a repository
-    declares `dispatcher.janitor.venue = cluster_job`, and decides the verdict by
-    reading this client's LAST JSON log line; it copies these fields straight into
-    its dispatch journal. Before they were here, that journal could not name the
-    Job a verdict came from — two sessions on 2026-10-17 reconstructed it by hand
-    out of the gates namespace, matching Jobs on their tree-hash label.
-
-    ABSENT RATHER THAN NULL for everything a run never obtained, which is why the
-    inventory is FILTERED here rather than spelled out at each call site. A field
-    carrying `null`, an empty string, or the namespace a Job WOULD have run in
-    tells that journal a gate ran where none did; a field that is not there says
-    only what is true. Filtering in one place is also what holds the two lines
-    below together: the refused line and the passed line report the same fields,
-    or the difference is a defect rather than a choice.
-    """
-    named = {
-        "job_name": verdict.job_name,
-        "namespace": verdict.namespace,
-        "job_started_at": verdict.job_started_at,
-        "job_finished_at": verdict.job_finished_at,
-    }
-    return {field: value for field, value in named.items() if value is not None}
-
-
 def main() -> int:
     """The two answers a repository's `check-pre-push` recipe needs.
 
@@ -525,14 +507,14 @@ def main() -> int:
             "delegated gate refuses this push",
             state=verdict.state,
             detail=verdict.detail,
-            **_verdict_job_fields(verdict=verdict),
+            **verdict_job_fields(verdict=verdict),
         )
         return 1
     log.info(
         "delegated gate passed",
         state=verdict.state,
         detail=verdict.detail,
-        **_verdict_job_fields(verdict=verdict),
+        **verdict_job_fields(verdict=verdict),
     )
     return 0
 

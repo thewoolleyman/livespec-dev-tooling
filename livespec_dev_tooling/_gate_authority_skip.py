@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_dev_tooling.check_authority import repository_authority_members
@@ -70,7 +71,9 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — same.
 __all__: list[str] = [
     "AUTHORITY_SKIP_ENV_FLAG",
     "AUTHORITY_SKIP_MEMBER_FLAG",
+    "AuthoritySkipResolution",
     "authority_skip_argv",
+    "authority_skip_resolution",
     "check_skip_variable",
 ]
 
@@ -100,6 +103,20 @@ _SKIP_LIST_READ = re.compile(
 _SKIP_ARRAY_WORD = "skip"
 
 
+@dataclass(frozen=True, kw_only=True)
+class AuthoritySkipResolution:
+    """The renderer arguments, or the local refusal that prevents its invocation.
+
+    An established authority member without a readable consumer skip surface is
+    not renderer input. The delegated client must refuse before it renders or
+    submits a Job, because an empty argument list would leave that member in the
+    Job while implying the client had dealt with it.
+    """
+
+    argv: tuple[str, ...]
+    refusal: str | None
+
+
 def check_skip_variable(*, repo_root: Path) -> str | None:
     """The environment variable `repo_root`'s own `check` recipe reads its skip list from.
 
@@ -121,16 +138,27 @@ def check_skip_variable(*, repo_root: Path) -> str | None:
     is still one answer — both reads fill the same list, so there is nothing to
     be ambiguous about.
     """
+    recipe_body = _check_recipe_body(repo_root=repo_root)
+    if recipe_body is None:
+        return None
+    return _skip_variable(recipe_body=recipe_body)
+
+
+def _check_recipe_body(*, repo_root: Path) -> str | None:
+    """The established `check` recipe body, or `None` when the recipe is absent."""
     try:
         justfile_text = (repo_root / _JUSTFILE_NAME).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
     recipe_body = extract_check_recipe_body(justfile_text=justfile_text)
-    if not is_successful(recipe_body):
-        return None
+    return recipe_body.unwrap() if is_successful(recipe_body) else None
+
+
+def _skip_variable(*, recipe_body: str) -> str | None:
+    """The one recognised skip variable a known `check` recipe reads."""
     named = {
         matched.group("variable")
-        for matched in _SKIP_LIST_READ.finditer(recipe_body.unwrap())
+        for matched in _SKIP_LIST_READ.finditer(recipe_body)
         if _SKIP_ARRAY_WORD in matched.group("array").casefold()
     }
     if len(named) != 1:
@@ -138,28 +166,50 @@ def check_skip_variable(*, repo_root: Path) -> str | None:
     return named.pop()
 
 
-def authority_skip_argv(*, repo_root: Path) -> list[str]:
-    """The renderer flags that keep `repo_root`'s authority members out of its gate Job.
+def authority_skip_resolution(*, repo_root: Path) -> AuthoritySkipResolution:
+    """Resolve renderer flags or refuse an unskippable authority member locally.
 
-    EMPTY whenever the answer cannot be established — an unreadable declaration,
-    a repository declaring no such member, a recipe naming no skip variable — and
-    all three are deliberately spelled the same way HERE, because the renderer's
-    job is to carry a list rather than to grade why there is none. A malformed
-    declaration is not lost by that: `run_host_authority_members` reads the same
-    registry on the pushing host and reports it as the member it names failing,
-    which refuses the push whatever this Job did.
+    An unreadable declaration still supplies no member to protect, and a
+    repository declaring no authority member needs no skip flags. In contrast,
+    an established member whose recipe has no recognised skip variable cannot be
+    kept out of the Job, so returning renderer flags would be unsound. The
+    resulting refusal names every affected member and the missing contract.
     """
     resolved = repository_authority_members(repo_root=repo_root)
     if not is_successful(resolved):
-        return []
+        return AuthoritySkipResolution(argv=(), refusal=None)
     members = unsafe_perform_io(resolved.unwrap())
     if not members:
-        return []
-    variable = check_skip_variable(repo_root=repo_root)
+        return AuthoritySkipResolution(argv=(), refusal=None)
+    recipe_body = _check_recipe_body(repo_root=repo_root)
+    if recipe_body is None:
+        return AuthoritySkipResolution(argv=(), refusal=None)
+    variable = _skip_variable(recipe_body=recipe_body)
     if variable is None:
-        return []
-    return [
-        AUTHORITY_SKIP_ENV_FLAG,
-        variable,
-        *[flag for member in members for flag in (AUTHORITY_SKIP_MEMBER_FLAG, member)],
-    ]
+        return AuthoritySkipResolution(
+            argv=(),
+            refusal=(
+                "cannot keep authority member(s) "
+                + ", ".join(members)
+                + " out of the delegated gate Job: the consumer's check recipe "
+                "reads no recognised skip variable"
+            ),
+        )
+    return AuthoritySkipResolution(
+        argv=(
+            AUTHORITY_SKIP_ENV_FLAG,
+            variable,
+            *(flag for member in members for flag in (AUTHORITY_SKIP_MEMBER_FLAG, member)),
+        ),
+        refusal=None,
+    )
+
+
+def authority_skip_argv(*, repo_root: Path) -> list[str]:
+    """The compatibility view of `authority_skip_resolution` for renderer callers.
+
+    The delegated gate client consumes `authority_skip_resolution` directly so it
+    can refuse an unskippable member before invoking the renderer. This legacy
+    list-only view cannot carry that reason and therefore remains empty for it.
+    """
+    return list(authority_skip_resolution(repo_root=repo_root).argv)
