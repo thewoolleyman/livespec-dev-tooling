@@ -113,7 +113,7 @@
     group: root
     mode: "0600"
   become: true
-  when: otel_collector_binary_install_needed | bool
+  when: otel_collector_binary_install_needed | bool and not ansible_check_mode
 
 - name: Extract the collector binary from the verified tarball
   ansible.builtin.unarchive:
@@ -126,7 +126,18 @@
     group: root
     mode: "0700"
   become: true
-  when: otel_collector_binary_install_needed | bool
+  when: otel_collector_binary_install_needed | bool and not ansible_check_mode
+
+- name: Report the pinned collector binary a check run would install
+  # The three tasks above consume a directory and archive a preceding check-mode
+  # task only simulates. A changed report preserves the drift signal without
+  # pretending the archive can be downloaded, extracted, or copied in a dry run.
+  ansible.builtin.debug:
+    msg: >-
+      {{ otel_collector_binary }} would be installed from the pinned
+      {{ otel_collector_binary_tarball }} release tarball
+  changed_when: true
+  when: otel_collector_binary_install_needed | bool and ansible_check_mode
 
 - name: Install the extracted collector binary
   ansible.builtin.copy:
@@ -137,7 +148,7 @@
     group: root
     mode: "0755"
   become: true
-  when: otel_collector_binary_install_needed | bool
+  when: otel_collector_binary_install_needed | bool and not ansible_check_mode
 
 - name: Remove the release tarball and the extracted copy
   # The installed binary is the output; nothing on the host needs the archive it
