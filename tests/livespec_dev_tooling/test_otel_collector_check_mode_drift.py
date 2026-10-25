@@ -1,13 +1,13 @@
 """A `--check` converge of `otel_collector` REPORTS a rebuilt node, never fails on it.
 
 WHY IT EXISTS (work-item livespec-dev-tooling-hrdj6s, plan
-kubernetes-node-observability). `SPECIFICATION/non-functional-requirements.md`
-§"Runner-pool node telemetry" requires that "the drift report `just ansible-drift
+kubernetes-node-observability). The runner-pool node telemetry heading in
+`SPECIFICATION/non-functional-requirements.md` requires that "the drift report `just ansible-drift
 ansible/ci-pool.yml` MUST report a node whose collector differs from the merged
-configuration", and §"Runner-pool node rebuild recipe" hands that drift report a
+configuration", and the runner-pool node rebuild recipe heading hands that drift report a
 node the role has NOT yet converged: its node-provisioning stage is this very
 playbook, applied to a machine that came up from empty storage. The scenario
-§"Scenario: a pool node is rebuilt from bare metal by the recipe and its profile"
+heading about a pool node rebuilt by the recipe and its profile
 closes the loop — re-running the procedure against the finished node must change
 nothing — so the same report has to read `changed=0` once the node is converged.
 
@@ -60,16 +60,9 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _BINARY_TASKS = _ROLE / "tasks" / "binary.yml"
 
 # The measurement every install step already rested on: the version the host
-# itself REPORTS. The two facts below partition it, so a node already carrying
-# the pinned release reaches neither of them.
+# itself REPORTS. A node already carrying the pinned release reaches no install
+# or report task below.
 _INSTALL_NEEDED = "otel_collector_binary_install_needed"
-# True only on the run that CARRIES the install out, and only on the run that
-# merely REPORTS it. They have to be complements of each other over
-# `_INSTALL_NEEDED`: a gap leaves a rebuilt node reporting neither the install
-# nor its absence, which is the silence this work-item exists to remove, and an
-# overlap has a dry run downloading a tarball it also claims it did not fetch.
-_INSTALL_RUNS = "otel_collector_binary_install_runs"
-_INSTALL_SIMULATED = "otel_collector_binary_install_simulated"
 
 # The two modules whose success depends on state an earlier task of the same file
 # creates — a destination directory, an archive to unpack — plus the install,
@@ -137,22 +130,6 @@ def test_a_dry_run_withholds_the_install_it_cannot_simulate_and_reports_it() -> 
     blocks = _task_blocks(body=_BINARY_TASKS.read_text(encoding="utf-8"))
     source = _BINARY_TASKS.name
 
-    decide = _only_block(blocks=blocks, carrying=f"{_INSTALL_RUNS}:", source=source)
-    assert "ansible.builtin.set_fact:" in decide, (
-        f"the two gates below have to be DECIDED once rather than spelled at each task they "
-        f"gate, so that the run that installs and the run that reports stay exact "
-        f"complements;\n{decide}"
-    )
-    assert f"({_INSTALL_NEEDED} | bool) and not ansible_check_mode" in decide, (
-        f"`{_INSTALL_RUNS}` must be `{_INSTALL_NEEDED}` AND not a dry run: a `--check` run "
-        f"wrote no download directory, so the fetch below would fail on a destination the dry "
-        f"run itself declined to create;\n{decide}"
-    )
-    assert f"({_INSTALL_NEEDED} | bool) and ansible_check_mode" in decide, (
-        f"`{_INSTALL_SIMULATED}` must be `{_INSTALL_NEEDED}` AND a dry run, so the report below "
-        f"stands exactly where the three withheld tasks would have run;\n{decide}"
-    )
-
     withheld = [
         block
         for block in blocks
@@ -165,7 +142,7 @@ def test_a_dry_run_withholds_the_install_it_cannot_simulate_and_reports_it() -> 
         f"without a gate is the defect this test exists for, so the count is stated"
     )
     for block in withheld:
-        assert f"when: {_INSTALL_RUNS} | bool" in block, (
+        assert f"when: {_INSTALL_NEEDED} | bool and not ansible_check_mode" in block, (
             f"this task consumes state an EARLIER task of {source} creates, and under `--check` "
             f"that task created nothing — so it must be withheld from a dry run rather than "
             f"left to fail on the dry run's own emptiness:\n{block}"
@@ -173,7 +150,7 @@ def test_a_dry_run_withholds_the_install_it_cannot_simulate_and_reports_it() -> 
 
     directory = _only_block(blocks=blocks, carrying="state: directory", source=source)
     assert f"when: {_INSTALL_NEEDED} | bool" in directory, directory
-    assert _INSTALL_RUNS not in directory, (
+    assert "not ansible_check_mode" not in directory, (
         f"the download directory must stay gated on `{_INSTALL_NEEDED}` alone: `file` simulates "
         f"faithfully under `--check`, so this is the task that REPORTS the directory as a "
         f"change, which the Definition of Done requires of a rebuilt node's drift report;\n"
@@ -187,11 +164,11 @@ def test_a_dry_run_withholds_the_install_it_cannot_simulate_and_reports_it() -> 
     )
 
     report = _only_block(blocks=blocks, carrying="changed_when: true", source=source)
-    assert f"when: {_INSTALL_SIMULATED} | bool" in report, (
+    assert f"when: {_INSTALL_NEEDED} | bool and ansible_check_mode" in report, (
         f"the install a dry run withheld must be REPORTED as the change it is — a node with no "
         f"collector differs from its profile's declared state, and failing said nothing about "
         f"the difference. The report stands exactly where the withheld tasks would have run, "
-        f"so it is gated on `{_INSTALL_SIMULATED}`;\n{report}"
+        f"so it is gated on `{_INSTALL_NEEDED}` and check mode;\n{report}"
     )
     assert "ansible.builtin.debug:" in report, (
         f"there is nothing for a module to simulate here — the statement IS the output — so the "
