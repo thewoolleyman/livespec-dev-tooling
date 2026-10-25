@@ -313,6 +313,17 @@ check:
         check-tests-host-path-free
         check-uv-lock-version-sync
     )
+    # `SKIP_TARGETS` is the fleet's recognised skip contract, read here in the
+    # idiom the delegated gate client recognises (`_gate_authority_skip`): the
+    # client exports the authority members into it, and since v1.134.2 it refuses
+    # to submit a Job for a recipe that reads no recognised skip variable. This
+    # repository's skip channel is the exported `skip`, which `check.sh` reads
+    # and which already withholds the green token from a run that skipped
+    # anything, so the list joins it. Unset, `skip` is untouched.
+    read -ra skip_targets <<< "${SKIP_TARGETS:-}"
+    if [[ ${#skip_targets[@]} -gt 0 ]]; then
+        export skip="${skip:-} ${skip_targets[*]}"
+    fi
     scripts/just/check.sh "${targets[@]}"
 
 # ---------------------------------------------------------------
