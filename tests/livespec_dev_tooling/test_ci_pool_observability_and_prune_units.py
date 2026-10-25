@@ -39,7 +39,10 @@ silently dropped from the set has to fail somewhere.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 __all__: list[str] = []
@@ -257,6 +260,91 @@ def test_control_plane_and_pool_queue_reads_use_the_scoped_kubeconfig() -> None:
     assert "Environment=CI_POOL_KUEUE_KUBECONFIG=/etc/otel-collector/kubeconfig" in pool_unit
     assert 'KUBECONFIG="${KUEUE_KUBECONFIG}"' in pool_script
     assert "kc_kueue get clusterqueues" in pool_script
+
+
+def test_clusterqueue_resource_points_keep_queue_attribution_for_every_flavor(
+    tmp_path: Path,
+) -> None:
+    """Quota and usage points retain queue identity beside their flavor/resource labels."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    payload = tmp_path / "metrics.json"
+    kube_log = tmp_path / "kubectl.log"
+
+    def executable(path: Path, body: str) -> None:
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+
+    executable(
+        bin_dir / "kubectl",
+        """#!/usr/bin/env bash
+printf '%s|%s\\n' "${KUBECONFIG:-}" "$*" >> "$KUBECTL_LOG"
+case "$*" in
+  *clusterqueues*)
+    printf '%s\\n' 'livespec-dev-tooling-cq|default:ci-runner.io/churn-slot=4 spot:cpu=8|default:ci-runner.io/churn-slot=3 spot:cpu=2|1|2'
+    ;;
+esac
+""",
+    )
+    executable(
+        bin_dir / "curl",
+        """#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-d" ]; then
+    printf '%s' "$2" > "$OTLP_CAPTURE"
+    exit 0
+  fi
+  shift
+done
+""",
+    )
+
+    environment = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "KUBECTL_LOG": str(kube_log),
+        "OTLP_CAPTURE": str(payload),
+        "KUBECONFIG": "/etc/rancher/k3s/k3s.yaml",
+        "CI_POOL_KUEUE_KUBECONFIG": "/etc/otel-collector/kubeconfig",
+        "CI_POOL_KUBECTL": "kubectl",
+    }
+    completed = subprocess.run(
+        ["bash", str(_OBSERVABILITY / "ci-pool-attributed-gauges.sh")],
+        capture_output=True,
+        check=False,
+        env=environment,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+    metrics = {
+        metric["name"]: metric["gauge"]["dataPoints"]
+        for metric in json.loads(payload.read_text(encoding="utf-8"))["resourceMetrics"][0][
+            "scopeMetrics"
+        ][0]["metrics"]
+    }
+    expected = {
+        ("default", "ci-runner.io/churn-slot"),
+        ("spot", "cpu"),
+    }
+    for name in (
+        "livespec.ci_pool.queue_resource_quota",
+        "livespec.ci_pool.queue_resource_usage",
+    ):
+        observed = set()
+        for point in metrics[name]:
+            attrs = {
+                attribute["key"]: attribute["value"]["stringValue"]
+                for attribute in point["attributes"]
+            }
+            assert attrs["ci.queue"] == "livespec-dev-tooling-cq"
+            assert attrs["ci.repository"] == "thewoolleyman/livespec-dev-tooling"
+            observed.add((attrs["kueue.flavor"], attrs["k8s.resource"]))
+        assert observed == expected
+
+    kube_reads = kube_log.read_text(encoding="utf-8")
+    assert "/etc/otel-collector/kubeconfig|" in kube_reads
+    assert "/etc/otel-collector/kubeconfig|--request-timeout=15s get clusterqueues" in kube_reads
 
 
 def test_each_timer_is_armed_by_the_role_that_installs_it() -> None:

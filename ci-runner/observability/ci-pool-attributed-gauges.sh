@@ -489,6 +489,10 @@ elif cq_rows="$(kc_kueue get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; 
     cq_attrs="ci.queue=${cq_name}"
     [ -n "${cq_repo}" ] && cq_attrs="${cq_attrs}"$'\t'"ci.repository=${cq_repo}"
     [[ "${cq_quota}" =~ ^[0-9]+$ ]] && put "queue_quota"$'\t'"${cq_quota}"$'\t'"${cq_attrs}"
+    # Flavor and resource refine a queue reading; they must never replace its
+    # queue/repository identity.  Keep cq_attrs at the front of BOTH loops so
+    # every per-resource quota and usage point remains attributable to its
+    # ClusterQueue even when a queue has several flavors.
     for tok in ${cq_quotas}; do
       flavor="${tok%%:*}"
       resource="${tok#*:}"
