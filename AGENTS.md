@@ -146,6 +146,11 @@ The files:
   item whose fix is already on master. A stale consumer pin fakes a missing
   fix (tlfc3w, 2026-10-24, spent a factory run proving a no-op), and neither
   `accept` nor `reconcile-merged` closes an active item with no PR of its own.
+- Read `.ai/independent-host-replay-identity.md` before launching a session to
+  replay a host-captured proof (`host_verified`). A replayer started from your
+  own shell inherits `CLAUDE_CODE_SESSION_ID`, so `post-host-record` resolves
+  it to YOUR identity and refuses its verdict as a self-replay (c62xtb,
+  2026-10-25).
 
 ## Backlog drive — this repo has no foreman seat
 
