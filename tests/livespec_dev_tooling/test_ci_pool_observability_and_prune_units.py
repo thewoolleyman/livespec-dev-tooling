@@ -243,6 +243,17 @@ def test_each_timer_arrives_with_the_service_it_activates_and_that_service_scrip
         )
 
 
+def test_control_plane_and_pool_emitters_use_only_the_scoped_kubeconfig() -> None:
+    """The telemetry identity must never regain the server's admin credential."""
+    for name in (
+        "ci-k3s-control-plane-telemetry.service",
+        "ci-pool-attributed-gauges.service",
+    ):
+        unit = (_OBSERVABILITY / name).read_text(encoding="utf-8")
+        assert "Environment=KUBECONFIG=/etc/otel-collector/kubeconfig" in unit
+        assert "/etc/rancher/k3s/k3s.yaml" not in unit
+
+
 def test_each_timer_is_armed_by_the_role_that_installs_it() -> None:
     """Installed is not enabled. The host-silence heartbeat has to be FIRING for the
     dead-man trigger to mean anything, so arming belongs to the same role."""
