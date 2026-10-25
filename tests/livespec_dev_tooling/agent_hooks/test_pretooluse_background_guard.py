@@ -1314,3 +1314,45 @@ def test_the_background_refusal_names_the_same_one_call_detached_form(
     hint = str(event["hint"])
     assert _one_call_detached_form(command="<the same command>") in hint
     assert "then background" not in hint
+
+
+def test_a_fault_in_the_foreground_decision_fails_open_and_reports_itself(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A guard fault lets the call through, and SAYS it was the guard's.
+
+    Fail-open is load-bearing for this hook and the direction is not
+    symmetric with the hook's own verdicts: the foreground arm refuses on
+    a hook state it could not establish, because that is a reading ABOUT
+    THE REPOSITORY, while a fault in the guard itself is a reading about
+    nothing at all. A guard that refused on its own bug would wedge every
+    commit in every governed repository the moment it shipped broken, and
+    the remedy — editing the guard — is itself a commit.
+
+    Both halves are asserted. Proceeding without the fault REPORTED is
+    the worse failure of the two: the call then behaves exactly as if no
+    guard were installed, which is indistinguishable from the guard
+    having judged the command and allowed it.
+    """
+
+    def exploding(*, command: str, cwd: Path) -> object:
+        _ = (command, cwd)
+        raise RuntimeError("deliberate guard fault")
+
+    monkeypatch.setattr(f"{_MODULE}.foreground_refusal", exploding)
+    repo = _make_hooked_repo(repo=tmp_path / "hooked", hooks=("pre-commit",))
+    monkeypatch.chdir(repo)
+    payload = json.dumps(
+        {"tool_name": "Bash", "tool_input": {"command": 'git commit -m "x"'}},
+    )
+
+    assert _run_main(monkeypatch=monkeypatch, stdin_text=payload) == 0
+
+    reported = capsys.readouterr().err
+    assert "RuntimeError" in reported
+    assert "deliberate guard fault" in reported
+    # And the fault is NOT dressed as a verdict of the gate the command
+    # would have run: the aggregate never ran, so nothing about it passed.
+    assert _FOREGROUND_CHECK_ID not in reported
