@@ -150,7 +150,8 @@ The files:
   replay a host-captured proof (`host_verified`). A replayer started from your
   own shell inherits `CLAUDE_CODE_SESSION_ID`, so `post-host-record` resolves
   it to YOUR identity and refuses its verdict as a self-replay (c62xtb,
-  2026-10-25).
+  2026-10-25). Name this repository's GIT release tag in the record's
+  build, never an image tag, or the replay is silently not counted (jxepvj).
 
 ## Backlog drive — this repo has no foreman seat
 

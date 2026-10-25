@@ -20,6 +20,27 @@ Measured 2026-10-25 on livespec-dev-tooling-c62xtb. A codex replay reproduced
 the assertion and was still refused, because it resolved to the identity of
 the original capture. Nothing was posted, and the assertion stayed pending.
 
+## The second trap: the release tag must be a git tag of THIS repository
+
+The acceptance pass accepts a replay only when the build it names contains the
+item's merge. It reads `release_tag` first and falls back to `commit`, and it
+asks the forge whether that ref contains the merge commit of the item's pull
+request, in the repository that owns the item. A ref the forge cannot resolve
+there is UNOBSERVABLE, and the replay is silently not counted. The pass still
+reports PASS, the item still parks, and the parking record still names the
+host leg as pending.
+
+Measured 2026-10-25 on livespec-dev-tooling-jxepvj. Both records named the
+sandbox image tag `python-rust-v1.133.0` as `release_tag`. That tag names an
+image and is not a git tag of livespec-dev-tooling. The journal's
+`proof-pointer` row showed `host_verified_record: None`. A corrected capture
+fixed it: `release_tag: v1.133.0` (the git release that publishes that image
+and contains the merge), with the image named under `installed_build`. A
+replay naming the same build then closed the item.
+
+So name the owning repository's git release tag, or its default-branch
+commit, and put an image tag or a consumer's commit under `installed_build`.
+
 ## How to launch one
 
 Strip the inherited variables so that the replayer resolves its own identity:
