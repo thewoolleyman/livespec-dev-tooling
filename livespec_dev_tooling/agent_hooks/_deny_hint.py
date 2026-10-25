@@ -90,6 +90,8 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 __all__: list[str] = [
     "VenueUnreadable",
     "deny_hint",
+    "detached_form",
+    "foreground_deny_hint",
 ]
 
 
@@ -142,24 +144,46 @@ _HINT_PREAMBLE = (
     "BASH_MAX_TIMEOUT_MS under load, and that kill produces NO verdict at all. "
 )
 
-_DISPATCH_CLAUSE = (
+# The BACKGROUND arm's dispatch text. It names a PLACEHOLDER, because its
+# caller already holds the command and is only being told to move it; the
+# foreground arm carries the command itself (see `detached_form`).
+_BACKGROUND_DISPATCH = (
     "run_id=$(mise exec -- just gate-start -- <your gate command>) then background "
-    '`mise exec -- just gate-wait "$run_id"`. '
+    '`mise exec -- just gate-wait "$run_id"`'
 )
 
-_RUNNER_PRESENT_CLAUSE = (
-    "Dispatch through the sanctioned detached runner instead, which IS allowed here: "
-    f"{_DISPATCH_CLAUSE}"
-)
+
+def _runner_present_clause(*, dispatch: str) -> str:
+    return (
+        "Dispatch through the sanctioned detached runner instead, which IS allowed here: "
+        f"{dispatch}. "
+    )
+
 
 # The install command is named BEFORE the recipes it materializes: naming
 # an unresolvable recipe first is the defect this clause exists to fix.
-_RUNNER_ABSENT_CLAUSE = (
-    "The sanctioned detached runner is NOT installed in this working tree, so its gate "
-    "recipes do not resolve here yet: the runner ships in the worktree-discipline pack, "
-    "which is gitignored-and-installed, and a fresh `git worktree add` does not "
-    f"materialize it. Install the pack HERE first, with exactly: {_INSTALL_COMMAND} — "
-    f"then dispatch through the runner, which IS allowed here: {_DISPATCH_CLAUSE}"
+def _runner_absent_clause(*, dispatch: str) -> str:
+    return (
+        "The sanctioned detached runner is NOT installed in this working tree, so its gate "
+        "recipes do not resolve here yet: the runner ships in the worktree-discipline pack, "
+        "which is gitignored-and-installed, and a fresh `git worktree add` does not "
+        f"materialize it. Install the pack HERE first, with exactly: {_INSTALL_COMMAND} — "
+        f"then dispatch through the runner, which IS allowed here: {dispatch}. "
+    )
+
+
+# The FOREGROUND arm's preamble. It must talk the agent out of a
+# DIFFERENT wrong move than the background one: there the temptation is
+# to background the gate, here it is to re-issue it and wait longer,
+# which walks straight back into the silent kill.
+_FOREGROUND_PREAMBLE = (
+    "A foreground git commit or push HERE runs this repository's installed hooks, and "
+    "those hooks run the gate aggregate. That aggregate has been measured past the "
+    "harness's tool-call ceiling (more than 21 minutes in commit-msg on 2026-10-24), at "
+    "which point the harness moves the call to the background and can kill it — leaving "
+    "no exit code, no output and no verdict, which is indistinguishable from a hook "
+    "REFUSAL. Do NOT answer this by re-issuing it and waiting longer, and do NOT pass "
+    "--no-verify: the gate still has to run, only not inside a tool call. "
 )
 
 _HINT_TAIL = (
@@ -189,7 +213,7 @@ class VenueUnreadable:
 
     @property
     def hint(self) -> str:
-        """The deny hint for a venue whose prescription could not be probed.
+        """The BACKGROUND deny hint for a venue whose prescription could not be probed.
 
         THE DENY STANDS. This is a hook whose only other verdict is the
         fail-open ALLOW, so a failure that reached the boundary would let
@@ -199,19 +223,30 @@ class VenueUnreadable:
         neither was established here, so this one names the path that could
         not be read and prescribes the step that is correct either way —
         installing the pack, which no-ops where it is already installed.
+
+        The rendering is shared with the FOREGROUND arm's own failure
+        track, which needs the same prescription with its own preamble and
+        its own dispatch text; only the arm-specific halves are passed in.
         """
-        # The path is placed at the END of its sentence deliberately: a
-        # sentence CONTINUING after it would read as part of it, and the
-        # venue paths this hint names routinely end in `.just`.
-        prescription = (
-            "Whether the sanctioned detached runner resolves in this working tree could NOT be "
-            f"established — a path the venue probe had to read is there and refused to yield "
-            f"its content ({self.detail}): {self.path}. So take the step that is correct either "
-            "way — install the worktree-discipline pack HERE, which no-ops where it is already "
-            f"installed, with exactly: {_INSTALL_COMMAND} — then dispatch through the runner, "
-            f"which IS allowed here: {_DISPATCH_CLAUSE}"
+        return _unreadable_hint(
+            unreadable=self, preamble=_HINT_PREAMBLE, dispatch=_BACKGROUND_DISPATCH
         )
-        return f"{_HINT_PREAMBLE}{prescription}{_HINT_TAIL}{_CITATION}"
+
+
+def _unreadable_hint(*, unreadable: VenueUnreadable, preamble: str, dispatch: str) -> str:
+    """The hint for a venue neither prescription arm was established in."""
+    # The path is placed at the END of its sentence deliberately: a
+    # sentence CONTINUING after it would read as part of it, and the
+    # venue paths this hint names routinely end in `.just`.
+    prescription = (
+        "Whether the sanctioned detached runner resolves in this working tree could NOT be "
+        f"established — a path the venue probe had to read is there and refused to yield "
+        f"its content ({unreadable.detail}): {unreadable.path}. So take the step that is "
+        "correct either way — install the worktree-discipline pack HERE, which no-ops where "
+        f"it is already installed, with exactly: {_INSTALL_COMMAND} — then dispatch through "
+        f"the runner, which IS allowed here: {dispatch}. "
+    )
+    return f"{preamble}{prescription}{_HINT_TAIL}{_CITATION}"
 
 
 def _read_text(*, path: Path) -> IOResult[str, VenueUnreadable]:
@@ -298,8 +333,51 @@ def deny_hint(*, cwd: Path) -> IOResult[str, VenueUnreadable]:
     renders its own hint, so consuming the failure track is not a licence
     to hand the denied agent nothing.
     """
+    return _composed(cwd=cwd, preamble=_HINT_PREAMBLE, dispatch=_BACKGROUND_DISPATCH)
+
+
+def detached_form(*, command: str) -> str:
+    """The ONE-CALL detached form that replaces `command`.
+
+    The form the ratified `SPECIFICATION/contracts.md` section
+    "Agent-session gate-command guard" requires both refusals to name.
+    One call rather than two, and carrying the command rather than a
+    placeholder: a refusal that hands back a template invites the agent
+    to re-quote the command it has just written, and the re-quoting is
+    where a heredoc commit message gets mangled.
+    """
+    return (
+        f"run_id=$(mise exec -- just gate-start -- {command}) && "
+        'mise exec -- just gate-wait "$run_id"'
+    )
+
+
+def foreground_deny_hint(*, cwd: Path, command: str) -> str:
+    """The FOREGROUND refusal's hint — a complete remedy on either track.
+
+    Returns a plain string rather than the railway `deny_hint` answers on,
+    because the sole caller is a refusal that must stand whatever the
+    probe found: the guard's only other verdict is the fail-open ALLOW,
+    which would release the very command whose verdict is at risk. So
+    both tracks are consumed HERE, and what differs between them is the
+    CLAIM the hint makes about the venue, never whether the agent is
+    handed a way forward.
+    """
+    dispatch = detached_form(command=command)
+    composed = _composed(cwd=cwd, preamble=_FOREGROUND_PREAMBLE, dispatch=dispatch)
+    if isinstance(composed, IOFailure):
+        return _unreadable_hint(
+            unreadable=unsafe_perform_io(composed.failure()),
+            preamble=_FOREGROUND_PREAMBLE,
+            dispatch=dispatch,
+        )
+    return unsafe_perform_io(composed.unwrap())
+
+
+def _composed(*, cwd: Path, preamble: str, dispatch: str) -> IOResult[str, VenueUnreadable]:
+    """One venue probe, one hint shape, two arms' worth of prose."""
+    present = _runner_present_clause(dispatch=dispatch)
+    absent = _runner_absent_clause(dispatch=dispatch)
     return _gate_recipes_resolve(root=_repo_root(start=cwd)).map(
-        lambda resolves: f"{_HINT_PREAMBLE}"
-        f"{_RUNNER_PRESENT_CLAUSE if resolves else _RUNNER_ABSENT_CLAUSE}"
-        f"{_HINT_TAIL}{_CITATION}"
+        lambda resolves: f"{preamble}{present if resolves else absent}{_HINT_TAIL}{_CITATION}"
     )

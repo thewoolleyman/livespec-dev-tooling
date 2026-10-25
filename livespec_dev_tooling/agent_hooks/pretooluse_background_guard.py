@@ -113,7 +113,10 @@ from livespec_dev_tooling.agent_hooks._command_shape import (  # noqa: E402
     Invocation,
     invocations,
 )
-from livespec_dev_tooling.agent_hooks._deny_hint import deny_hint  # noqa: E402
+from livespec_dev_tooling.agent_hooks._deny_hint import (  # noqa: E402
+    deny_hint,
+    foreground_deny_hint,
+)
 from livespec_dev_tooling.agent_hooks._foreground_gate import (  # noqa: E402
     foreground_refusal,
 )
@@ -282,6 +285,7 @@ def _foreground_verdict(
         command=command,
         repository=refusal.repository,
         hooks=list(refusal.hooks),
+        hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
     )
     return 2
 
