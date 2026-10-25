@@ -141,6 +141,11 @@ The files:
   `fabro rm --force` deletes the record), do the step, and re-dispatch them at
   once. Never hold the fleet cap at 0 waiting for runs to end — on
   2026-10-23/24 that cost about 1 h 50 min (maintainer direction 2026-10-24).
+- Read `.ai/already-satisfied-items.md` before filing a fix item from a
+  failure measured in a CONSUMING repository, or before closing an `active`
+  item whose fix is already on master. A stale consumer pin fakes a missing
+  fix (tlfc3w, 2026-10-24, spent a factory run proving a no-op), and neither
+  `accept` nor `reconcile-merged` closes an active item with no PR of its own.
 
 ## Backlog drive — this repo has no foreman seat
 
