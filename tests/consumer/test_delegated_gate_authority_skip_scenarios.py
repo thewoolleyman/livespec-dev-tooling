@@ -35,6 +35,22 @@ declarations, the bash renderer that writes the manifest, and the pod script
 that manifest carries. A unit test on any one of them passes against a drifted
 neighbour, which is how the one-repository skip above read as a fleet-wide one.
 
+AND A CONSUMER THE MECHANISM CANNOT TELL GETS NO JOB AT ALL, which is the half
+this file asserted the opposite of until 2026-10-25. Rendering a Job for such a
+repository was reasoned as safe on the grounds that the member would run and
+FAIL, so an unestablished reading could only redden a correct tree. Both halves
+of that were measured wrong on 2026-10-24. The silence is the first: three
+consumers — livespec-driver-pi, livespec-orchestrator-git-jsonl and
+livespec-orchestrator-beads-fabro — read their skip list from no variable this
+client recognises, so each one's Job ran the forge-admin member while printing
+no `NOT running` line, and nothing anywhere said a mechanism had been skipped.
+The second is worse than a red tree: the orchestrator's Job
+`gates/gate-livespec-orchestrator-beads-fabro-ssqmj` PASSED on 2026-10-24
+18:19:01Z with `check-branch-protection-alignment` executed IN-POD, so the
+branch-protection answer came from a credential the gate pod holds rather than
+from the pushing host's own — an authorization the host never read, reported as
+gated. A Job that cannot be told therefore must not be submitted.
+
 NOTHING HERE REACHES A CLUSTER, A MIRROR OR A HOST. The consumer is a fixture
 tree under `tmp_path` and the client's only door to the world is its
 `GateCommandRunner` seam, which the canned runner below answers itself. The ONE
@@ -51,12 +67,17 @@ from pathlib import Path
 
 import pytest
 from returns.pipeline import is_successful
-from returns.result import Success
+from returns.result import Result, Success
 from returns.unsafe import unsafe_perform_io
 
 from livespec_dev_tooling.check_authority import repository_authority_members
+from livespec_dev_tooling.gate_remote_client import GateRunRequest
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
-from livespec_dev_tooling.gate_remote_invocation import GateCommandOutcome, GateCommandResult
+from livespec_dev_tooling.gate_remote_invocation import (
+    GateCommandOutcome,
+    GateCommandResult,
+    GateStepFailed,
+)
 
 __all__: list[str] = []
 
@@ -177,11 +198,23 @@ def _a_consumer_repository(*, root: Path, skip_variable: str | None) -> Path:
     return root
 
 
-def _rendered_manifest(*, repo_root: Path) -> str:
-    """The manifest this client renders for `repo_root`, through the real renderer."""
-    request = gate_remote_request(
+def _assembled(*, repo_root: Path) -> Result[GateRunRequest, GateStepFailed]:
+    """What this client assembles for `repo_root` — a request, or its refusal.
+
+    The RESULT rather than the manifest, because the two claims this file makes
+    live on opposite tracks: a repository whose skip surface resolves renders a
+    Job to read, and one whose surface cannot be established renders none at
+    all, and a helper that unwrapped would turn the second claim into an error
+    before any assertion saw it.
+    """
+    return gate_remote_request(
         repo_root=repo_root, renderer=_RENDERER, runner=_CannedWorldRealRenderer()
     )
+
+
+def _rendered_manifest(*, repo_root: Path) -> str:
+    """The manifest this client renders for `repo_root`, through the real renderer."""
+    request = _assembled(repo_root=repo_root)
     assert is_successful(request), f"the request must assemble; got {request}"
     return request.unwrap().manifest
 
@@ -262,13 +295,11 @@ def test_the_gate_job_still_runs_every_member_no_authority_declaration_names(
 ) -> None:
     """The second half: the Job verifies the same set, MINUS the authority members only.
 
-    Two claims, because the mechanism can fail in two opposite directions. A
-    repository that declares one authority member must have exactly that one
-    omitted — the member beside it that declares nothing stays in the Job, which
-    is where the whole aggregate runs. And a repository whose `check` recipe
-    reads no skip variable at all must have NOTHING omitted: the mechanism
-    cannot establish where to put the list, and inventing a name would skip
-    nothing while reading as though it had.
+    The direction a careless implementation drains is moving members onto the
+    pushing host until the cluster gates nothing, so a repository that declares
+    one authority member must have exactly that one omitted — the member beside
+    it that declares nothing stays in the Job, which is where the whole
+    aggregate runs.
     """
     declaring = _a_consumer_repository(
         root=tmp_path / "widget", skip_variable=_FLEET_SKIP_VARIABLES[0]
@@ -279,10 +310,39 @@ def test_the_gate_job_still_runs_every_member_no_authority_declaration_names(
     assert _PLAIN_MEMBER not in omitted
     assert omitted == [_AUTHORITY_MEMBER]
 
+
+def test_a_consumer_whose_skip_surface_cannot_be_established_gets_no_gate_job_at_all(
+    *, tmp_path: Path
+) -> None:
+    """A Job that cannot be told to leave the member out is never assembled.
+
+    THE CLAIM IS ABOUT THE JOB, and it is made by observing that there is no
+    Job: the client assembles no request, so nothing is rendered, nothing is
+    submitted, and no pod runs the member this repository's own authority
+    declaration names. The fixture is the shape all three measured consumers
+    carry — a `check` recipe that reads its skip list from no variable this
+    client recognises — and the control beside it is the same fixture WITH such
+    a variable, which still assembles, so the refusal is a fact about the skip
+    surface rather than about fixture repositories in general.
+
+    WHY NOT RENDER IT ANYWAY, which is what this client did until 2026-10-25.
+    The old reasoning was that an un-told Job merely runs the member and fails,
+    reddening a correct tree at worst. The orchestrator's Job
+    `gates/gate-livespec-orchestrator-beads-fabro-ssqmj` disproved it by
+    PASSING: the pod ran `check-branch-protection-alignment` at 18:19:01Z on
+    2026-10-24 and answered from a forge credential the pod itself holds, so the
+    delegated verdict reported an authorization the pushing host never read as
+    granted — which the contract's own "it never treats an unevaluated
+    authorization as granted" forbids outright.
+    """
     unestablishable = _a_consumer_repository(root=tmp_path / "gadget", skip_variable=None)
-    unestablishable_script = _gate_container_script(
-        manifest=_rendered_manifest(repo_root=unestablishable)
+    declared = _declared_authority_members(repo_root=unestablishable)
+    assert declared == (_AUTHORITY_MEMBER,), f"the fixture must declare one member; got {declared}"
+    establishable = _a_consumer_repository(
+        root=tmp_path / "widget", skip_variable=_FLEET_SKIP_VARIABLES[0]
     )
 
-    for variable in _FLEET_SKIP_VARIABLES:
-        assert _exported_skip(script=unestablishable_script, variable=variable) == []
+    refused = _assembled(repo_root=unestablishable)
+
+    assert not is_successful(refused), f"no Job may be assembled; got {refused}"
+    assert is_successful(_assembled(repo_root=establishable))
