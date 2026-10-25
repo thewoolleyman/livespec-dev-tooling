@@ -63,6 +63,23 @@ def _terminal_return_name(*, rendered: str) -> str:
     return rendered.split("[", maxsplit=1)[0].rsplit(".", maxsplit=1)[-1]
 
 
+def _imported_from_deny_hint(*, source: str) -> frozenset[str]:
+    """The names `source` imports from this module, read off its AST.
+
+    Parsed rather than matched as a literal import LINE: the names are
+    the property this test is about, and the physical spelling is not —
+    a second name added beside `deny_hint` wraps the statement across
+    lines under `ruff format`, which a substring match reads as the
+    import having been removed.
+    """
+    return frozenset(
+        alias.name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom) and node.module == f"{_PACKAGE}._deny_hint"
+        for alias in node.names
+    )
+
+
 def test_deny_hint_composition_lives_in_its_own_module(tmp_path: Path) -> None:
     """The hint concern is its own module, not a section of the hook module."""
     module_path = _PACKAGE_DIR / "_deny_hint.py"
@@ -81,7 +98,7 @@ def test_deny_hint_composition_lives_in_its_own_module(tmp_path: Path) -> None:
     guard_source = (_PACKAGE_DIR / "pretooluse_background_guard.py").read_text(encoding="utf-8")
     assert "def _hint(" not in guard_source
     assert "_HINT_PREAMBLE" not in guard_source
-    assert f"from {_PACKAGE}._deny_hint import deny_hint" in guard_source
+    assert "deny_hint" in _imported_from_deny_hint(source=guard_source)
 
 
 def test_deny_hint_declares_a_railway_return_annotation() -> None:

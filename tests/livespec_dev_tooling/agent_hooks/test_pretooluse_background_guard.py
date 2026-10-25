@@ -1047,3 +1047,112 @@ def test_a_dash_c_command_is_judged_against_the_repository_it_names(
         {"tool_name": "Bash", "tool_input": {"command": "git commit -C HEAD~1"}},
     )
     assert _run_main(monkeypatch=monkeypatch, stdin_text=reuse) == 0
+
+
+def _one_call_detached_form(*, command: str) -> str:
+    """The form the ratified section requires a refusal to name, verbatim.
+
+    Spelled out here rather than imported from the module under test: an
+    imported constant would be compared against itself, which is the
+    shape of assertion that cannot fail.
+    """
+    return (
+        f"run_id=$(mise exec -- just gate-start -- {command}) && "
+        'mise exec -- just gate-wait "$run_id"'
+    )
+
+
+def test_the_foreground_refusal_names_the_one_call_detached_form(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ONE call, carrying the SAME command — not a template to fill in.
+
+    The background refusal can name a placeholder, because the caller
+    already has the command in hand and is only being told to move it.
+    This refusal replaces a command the agent has just written, often
+    with a quoted message in it, so the form it names carries that
+    command verbatim: a refusal that hands back a template invites the
+    agent to re-quote it, and the re-quoting is where a heredoc commit
+    message gets mangled.
+    """
+    repo = _make_hooked_repo(repo=tmp_path / "hooked", hooks=("pre-commit",))
+    command = 'mise exec -- git commit -m "a message"'
+
+    event = _foreground_refusal_event(
+        command=command, cwd=repo, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    assert _one_call_detached_form(command=command) in str(event.get("hint", ""))
+
+
+def test_the_foreground_hint_is_venue_aware_and_fires_in_a_fresh_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Two properties at once, both of which only a real worktree can show.
+
+    The hint must not name a recipe that does not resolve here without
+    first naming the one-line command that installs it — the rule
+    livespec-dev-tooling-h7qp established for the background hint, which
+    a second hint reaching for the same runner inherits rather than
+    escapes.
+
+    And the refusal must FIRE here at all. A linked worktree runs the
+    hooks of its COMMON git directory, not of its own `.git` file, so a
+    probe that read `<worktree>/.git/hooks` would find nothing and allow
+    the commit — in the exact venue this fleet does its committing.
+    """
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    shared_hook = repo / ".git" / "hooks" / "pre-commit"
+    _ = shared_hook.write_text(_HOOK_BODY, encoding="utf-8")
+    shared_hook.chmod(0o755)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+    assert not (worktree / "dev-tooling" / "worktree.just").exists()
+
+    event = _foreground_refusal_event(
+        command='git commit -m "x"', cwd=worktree, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    hint = str(event.get("hint", ""))
+    assert _INSTALL_COMMAND in hint
+    _assert_hint_is_actionable(hint=hint, root=worktree)
+
+
+def test_an_unreadable_venue_still_refuses_the_foreground_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The refusal STANDS when the venue probe cannot answer.
+
+    The guard's only other verdict is the fail-open ALLOW, so letting a
+    probe failure reach that boundary would let through the very command
+    whose verdict is at risk. What changes is the CLAIM the hint makes:
+    it names the path it could not read and prescribes the step that is
+    correct either way.
+    """
+    repo = tmp_path / "consumer"
+    _make_consumer_repo(repo=repo)
+    shared_hook = repo / ".git" / "hooks" / "pre-commit"
+    _ = shared_hook.write_text(_HOOK_BODY, encoding="utf-8")
+    shared_hook.chmod(0o755)
+    worktree = _add_fresh_worktree(repo=repo, path=tmp_path / "wt")
+    _install_pack(root=worktree)
+    # A pack fragment that is a DIRECTORY: present, and refusing to yield
+    # text, so neither prescription arm is established.
+    fragment = worktree / "dev-tooling" / "worktree.just"
+    fragment.unlink()
+    fragment.mkdir()
+
+    event = _foreground_refusal_event(
+        command="git commit --amend", cwd=worktree, monkeypatch=monkeypatch, capsys=capsys
+    )
+
+    hint = str(event.get("hint", ""))
+    assert str(fragment) in hint
+    assert "could NOT be established" in hint
+    assert _one_call_detached_form(command="git commit --amend") in hint
