@@ -681,7 +681,12 @@ def test_a_pool_node_creates_the_account_and_installs_the_pinned_binary() -> Non
     for block in blocks:
         if not any(module in block for module in ("get_url:", "unarchive:")):
             continue
-        assert "when: otel_collector_binary_install_needed" in block, (
+        # `_install_runs` is `_install_needed` AND not a dry run: a converged node
+        # reaches neither, so the pin still holds, and a drift report over a
+        # REBUILT node no longer fails on a download directory `--check` declined
+        # to create (livespec-dev-tooling-hrdj6s). The gate's own derivation is
+        # asserted in `test_otel_collector_check_mode_drift`.
+        assert "when: otel_collector_binary_install_runs" in block, (
             f"this task downloads or extracts on every apply, so a converged node is reported "
             f"as changed and the pin buys nothing:\n{block}"
         )

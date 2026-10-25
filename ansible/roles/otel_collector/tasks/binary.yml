@@ -91,6 +91,27 @@
              | regex_findall('(?m)^.*[ ]' ~ (otel_collector_binary_version | regex_escape) ~ '$')
              | length) == 0 }}
 
+- name: Decide whether this run carries the install out or only reports it
+  # A `--check` run WRITES NOTHING, so the directory below is only SIMULATED and
+  # the download after it fails on a destination the dry run itself declined to
+  # create -- `Destination /var/cache/otel-collector does not exist`, measured on
+  # gmktec-xubuntu 2026-10-24. That failure is a check-mode ARTEFACT, and it fell
+  # on exactly the node a drift report has most to say about: the REBUILT one the
+  # rebuild recipe's node-provisioning stage hands back, whose difference from the
+  # merged configuration §"Runner-pool node telemetry" requires drift to report.
+  # So a dry run withholds the fetch, the extraction and the install, and reports
+  # them as the one change below.
+  #
+  # Both facts rest on the version the host itself REPORTS, so a node already
+  # carrying the pinned release reaches neither: it reports no change under
+  # `--check` and installs nothing on an apply, which is the property that makes
+  # the apply safe to run as often as the drift report.
+  ansible.builtin.set_fact:
+    otel_collector_binary_install_runs: >-
+      {{ (otel_collector_binary_install_needed | bool) and not ansible_check_mode }}
+    otel_collector_binary_install_simulated: >-
+      {{ (otel_collector_binary_install_needed | bool) and ansible_check_mode }}
+
 - name: Create the directory the verified release tarball is unpacked in
   ansible.builtin.file:
     path: "{{ otel_collector_binary_download_dir }}"
@@ -105,6 +126,11 @@
   # Verified AS IT ARRIVES: `get_url` compares the sha256 and refuses the file
   # rather than leaving a substituted archive on disk for the next step to
   # extract.
+  #
+  # Withheld from a dry run, which has no directory to put it in. `get_url`
+  # FETCHES under `--check` -- the measured failure reported a `checksum_src` for
+  # a tarball it had already pulled -- so withholding it also keeps a drift report
+  # from dragging the pinned release down on every pool node it reports on.
   ansible.builtin.get_url:
     url: "{{ otel_collector_binary_tarball_url }}"
     dest: "{{ otel_collector_binary_download_dir }}/{{ otel_collector_binary_tarball }}"
@@ -113,7 +139,7 @@
     group: root
     mode: "0600"
   become: true
-  when: otel_collector_binary_install_needed | bool
+  when: otel_collector_binary_install_runs | bool
 
 - name: Extract the collector binary from the verified tarball
   ansible.builtin.unarchive:
@@ -126,7 +152,7 @@
     group: root
     mode: "0700"
   become: true
-  when: otel_collector_binary_install_needed | bool
+  when: otel_collector_binary_install_runs | bool
 
 - name: Install the extracted collector binary
   ansible.builtin.copy:
@@ -137,14 +163,36 @@
     group: root
     mode: "0755"
   become: true
-  when: otel_collector_binary_install_needed | bool
+  when: otel_collector_binary_install_runs | bool
+
+- name: Report the pinned collector binary a dry run installs nowhere
+  # The CHANGE the three withheld tasks above would have made, which is what a
+  # drift report over a rebuilt node owes its reader: a node with no collector
+  # differs from its profile's declared state, and reporting that as a failure
+  # said nothing about the difference. A `debug` rather than a module, because
+  # there is nothing to simulate -- the statement IS the output -- and
+  # `changed_when: true` is what puts it in the run's changed count.
+  ansible.builtin.debug:
+    msg: >-
+      {{ otel_collector_binary }} would be installed at
+      {{ otel_collector_binary_version }} from
+      {{ otel_collector_binary_tarball_url }}, verified against its pinned
+      sha256. A dry run writes nothing, so the download directory above exists
+      only in this report and the fetch, the extraction and the install were
+      withheld rather than failed.
+  when: otel_collector_binary_install_simulated | bool
+  changed_when: true
 
 - name: Remove the release tarball and the extracted copy
   # The installed binary is the output; nothing on the host needs the archive it
   # came out of, and leaving a verified tarball beside an unverified extraction
   # invites a later hand step to install from it.
+  #
+  # Gated on the install this run CARRIED OUT, not on the one it needed: a dry
+  # run downloaded nothing, so a removal reported against it would report a
+  # change for undoing work that was never done.
   ansible.builtin.file:
     path: "{{ otel_collector_binary_download_dir }}"
     state: absent
   become: true
-  when: otel_collector_binary_install_needed | bool
+  when: otel_collector_binary_install_runs | bool
