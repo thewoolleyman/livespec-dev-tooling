@@ -1,2 +1,2 @@
 work_item=livespec-dev-tooling-3e3tlw
-reason=Add an await-sandbox-image job to reusable-release-dispatch.yml that dispatch needs, so the release fan-out holds until ghcr.io serves the release sandbox image tags (v087); maintainer authorized the workflow edits on 2026-10-25.
+reason=Re-pin release-dispatch.yml to reusable-release-dispatch.yml@v1.134.4, the first release whose fan-out runs the await-sandbox-image job (PR #2880); maintainer authorized the workflow edits on 2026-10-25.
