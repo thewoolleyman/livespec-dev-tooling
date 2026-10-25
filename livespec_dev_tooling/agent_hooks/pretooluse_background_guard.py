@@ -285,6 +285,7 @@ def _foreground_verdict(
         command=command,
         repository=refusal.repository,
         hooks=list(refusal.hooks),
+        hook_finding=refusal.finding,
         hint=foreground_deny_hint(cwd=Path.cwd(), command=command),
     )
     return 2
