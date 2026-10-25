@@ -16,6 +16,7 @@ __all__: list[str] = []
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _BINARY_TASKS = _REPOSITORY_ROOT / "ansible" / "roles" / "otel_collector" / "tasks" / "binary.yml"
+_MAIN_TASKS = _REPOSITORY_ROOT / "ansible" / "roles" / "otel_collector" / "tasks" / "main.yml"
 _INSTALL_NEEDED = "otel_collector_binary_install_needed"
 
 
@@ -66,3 +67,27 @@ def test_check_mode_reports_a_missing_binary_without_consuming_simulated_state()
     assert "ansible.builtin.debug:" in report
     assert f"when: {_INSTALL_NEEDED} | bool and ansible_check_mode" in report
     assert "{{ otel_collector_binary }}" in report
+
+
+def test_check_mode_counts_an_ingest_key_the_simulated_append_would_add() -> None:
+    """Check mode permits a controller-supplied missing key but no other missing key."""
+    blocks = _task_blocks(body=_MAIN_TASKS.read_text(encoding="utf-8"))
+    planned_keys = _one_task(
+        blocks=blocks,
+        carrying="otel_collector_appended_environment_keys:",
+    )
+    assert "otel_collector_controller_keys_read.results" in planned_keys
+    assert "rejectattr('rc', 'equalto', 0)" in planned_keys
+
+    append = _one_task(
+        blocks=blocks,
+        carrying="Append each ingest key this host's environment file does not already set",
+    )
+    assert 'loop: "{{ otel_collector_appended_environment_keys }}"' in append
+    assert "line: \"{{ item }}={{ lookup('ansible.builtin.env', item) }}\"" in append
+
+    missing = _one_task(
+        blocks=blocks,
+        carrying="otel_collector_missing_environment_keys:",
+    )
+    assert "otel_collector_appended_environment_keys if ansible_check_mode else []" in missing

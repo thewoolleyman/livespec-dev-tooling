@@ -139,6 +139,14 @@
   failed_when: false
   check_mode: false
 
+- name: Name the ingest keys the append would add
+  # A check run leaves the environment file unchanged, but its later preflight
+  # must evaluate the same key set an apply's append would have supplied.
+  ansible.builtin.set_fact:
+    otel_collector_appended_environment_keys: >-
+      {{ otel_collector_controller_keys_read.results | default([])
+         | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
+
 - name: Append each ingest key this host's environment file does not already set
   # APPENDS, rather than creating the file only when it is absent. The factory
   # host's file already carries the agent-activity keys, so a create-only render
@@ -153,7 +161,7 @@
   # carries. `create: true` places the file 0600 root:root on a host with none.
   ansible.builtin.lineinfile:
     path: "{{ otel_collector_environment_path }}"
-    line: "{{ item.item }}={{ lookup('ansible.builtin.env', item.item) }}"
+    line: "{{ item }}={{ lookup('ansible.builtin.env', item) }}"
     insertafter: EOF
     create: true
     owner: root
@@ -161,9 +169,16 @@
     mode: "0600"
   become: true
   no_log: true
-  loop: >-
-    {{ otel_collector_controller_keys_read.results | default([])
-       | rejectattr('rc', 'equalto', 0) | list }}
+  loop: "{{ otel_collector_appended_environment_keys }}"
+  # The planned fact lets check mode account for its simulated append; retain
+  # the probe-backed guard here so a set key can never be rewritten.
+  when: >-
+    item in (
+      otel_collector_controller_keys_read.results
+      | rejectattr('rc', 'equalto', 0)
+      | map(attribute='item')
+      | list
+    )
   register: otel_collector_environment_appended
 
 - name: Look for the collector's ingest-key environment file
@@ -258,9 +273,12 @@
   ansible.builtin.set_fact:
     otel_collector_missing_environment_keys: >-
       {{ otel_collector_required_environment_keys
-         | difference(otel_collector_environment_keys_read.results
-                      | selectattr('rc', 'equalto', 0)
-                      | map(attribute='item') | map('first') | list) }}
+         | difference(
+             (otel_collector_environment_keys_read.results
+              | selectattr('rc', 'equalto', 0)
+              | map(attribute='item') | map('first') | list)
+             + (otel_collector_appended_environment_keys if ansible_check_mode else [])
+           ) }}
 
 - name: Refuse an environment file set missing a key the merged configuration reads
   ansible.builtin.assert:
