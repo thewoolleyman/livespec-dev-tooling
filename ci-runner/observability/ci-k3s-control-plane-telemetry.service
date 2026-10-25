@@ -1,0 +1,16 @@
+[Unit]
+Description=k3s API readiness and datastore telemetry (OTLP gauges to local collector)
+Wants=network-online.target
+After=network-online.target
+After=k3s.service otel-collector-identity.service
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/etc/otel-collector/kubeconfig
+TimeoutStartSec=45
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ExecStart=/usr/local/lib/ci-runner/ci-k3s-control-plane-telemetry.sh
