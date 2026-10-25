@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.134.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.134.0...v1.134.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **config:** declare claude-sonnet-5-5 in the model catalog for the Codex-first fallbacks ([9b812d3](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9b812d37f814cc8426a03f574f83564ef9766c7c))
+
 ## [1.134.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.133.0...v1.134.0) (2026-10-25)
 
 
