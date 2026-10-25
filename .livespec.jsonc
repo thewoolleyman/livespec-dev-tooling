@@ -376,6 +376,16 @@
       // short-context USD per 1M tokens (developers.openai.com/api/docs/models/,
       // verified 2026-10-19), cache writes at 1.25x input.
       "model_catalog": {
+        "anthropic/claude-sonnet-5-5": {
+          "display_name": "Claude Sonnet 5.5",
+          "pricing": {
+            "model": "claude-sonnet-5-5",
+            "input_usd_per_million": 2.0,
+            "output_usd_per_million": 10.0,
+            "cache_write_usd_per_million": 2.5,
+            "cache_read_usd_per_million": 0.2
+          }
+        },
         "openai/gpt-5.6-terra": {
           "display_name": "GPT-5.6 Terra",
           "pricing": {
