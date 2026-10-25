@@ -58,6 +58,19 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.134.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.133.0...v1.134.0) (2026-10-25)
+
+
+### Features
+
+* emit scoped kueue flavor usage ([c33cc50](https://github.com/thewoolleyman/livespec-dev-tooling/commit/c33cc50b48ede1b9a639d46d73fd8441a9ee7a56))
+
+
+### Bug Fixes
+
+* preserve Kueue resource attribution ([46393b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/46393b22c9c1de8a6f6af845eacf07cce675db6a))
+* scope Kueue queue reads ([d7ecf75](https://github.com/thewoolleyman/livespec-dev-tooling/commit/d7ecf758ae3f06ad8cffb3d23a8a6dbc8d38aaf5))
+
 ## [1.133.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.132.0...v1.133.0) (2026-10-25)
 
 
