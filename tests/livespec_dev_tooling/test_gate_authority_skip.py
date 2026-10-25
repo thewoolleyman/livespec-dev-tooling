@@ -9,18 +9,28 @@ spans the client, the bash renderer and the pod script. What is asserted HERE is
 the resolution's own edges: the readings where the answer cannot be established,
 each of which must come back as "nothing to tell the Job" rather than as a guess.
 
-EVERY ONE OF THESE RETURNS NOTHING, AND THAT IS THE SAFE DIRECTION. A run that
-tells the Job nothing leaves it running the members it runs today, where a member
-that cannot reach its authorization FAILS — so an unestablished reading degrades
-toward refusing a correct tree, never toward passing an unverified one. The
-unsafe shape is the opposite one: exporting the list under a name invented from
-somewhere other than the repository's own recipe would skip nothing while every
-surface reported a Job that had been told.
+NONE OF THEM GUESSES A NAME, which is the one thing every reading here has in
+common: exporting the list under a name invented from somewhere other than the
+repository's own recipe would skip nothing while every surface reported a Job
+that had been told.
+
+WHAT THEY DIFFER ON IS WHETHER A JOB MAY STILL BE SUBMITTED, and that split is
+the 2026-10-25 repair. A reading that establishes no skip variable for a
+repository DECLARING an authority member is a refusal: there is nowhere to put
+the list, so the member cannot be kept out of a pod the contract hands no
+authority, and the assembly fails rather than rendering a Job that runs it. A
+reading that establishes nothing because there is NOTHING TO TELL — no such
+member, or a declaration this host cannot read and the host half reports instead
+— stays on the success track carrying an empty list, because a Job that omits
+nothing is the correct Job for a repository with nothing to omit.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+
+from returns.pipeline import is_successful
+from returns.result import Success
 
 from livespec_dev_tooling._gate_authority_skip import (
     AUTHORITY_SKIP_ENV_FLAG,
@@ -98,12 +108,14 @@ def test_a_recipe_reading_the_fleets_own_skip_idiom_names_its_variable(*, tmp_pa
     repo = _a_check_recipe(root=tmp_path / "widget", body=_SKIP_READ)
 
     assert check_skip_variable(repo_root=repo) == "SKIP_TARGETS"
-    assert authority_skip_argv(repo_root=repo) == [
-        AUTHORITY_SKIP_ENV_FLAG,
-        "SKIP_TARGETS",
-        AUTHORITY_SKIP_MEMBER_FLAG,
-        _AUTHORITY_MEMBER,
-    ]
+    assert authority_skip_argv(repo_root=repo) == Success(
+        [
+            AUTHORITY_SKIP_ENV_FLAG,
+            "SKIP_TARGETS",
+            AUTHORITY_SKIP_MEMBER_FLAG,
+            _AUTHORITY_MEMBER,
+        ]
+    )
 
 
 def test_a_recipe_naming_two_skip_variables_is_not_guessed_between(*, tmp_path: Path) -> None:
@@ -121,6 +133,11 @@ def test_a_recipe_naming_two_skip_variables_is_not_guessed_between(*, tmp_path: 
 
     Naming the SAME variable twice is still one answer, because there is no
     ambiguity to refuse: both reads fill the same list.
+
+    THE AMBIGUOUS REPOSITORY IS REFUSED rather than told nothing, because it
+    declares a member this reader then cannot keep out of the Job — the same
+    disposition a recipe naming no skip variable at all gets, and for the same
+    reason: the member must not run in a pod the contract hands no authority.
     """
     ambiguous = _a_check_recipe(
         root=tmp_path / "widget",
@@ -129,7 +146,7 @@ def test_a_recipe_naming_two_skip_variables_is_not_guessed_between(*, tmp_path: 
     repeated = _a_check_recipe(root=tmp_path / "gadget", body=_SKIP_READ + _SKIP_READ)
 
     assert check_skip_variable(repo_root=ambiguous) is None
-    assert authority_skip_argv(repo_root=ambiguous) == []
+    assert not is_successful(authority_skip_argv(repo_root=ambiguous))
     assert check_skip_variable(repo_root=repeated) == "SKIP_TARGETS"
 
 
@@ -141,6 +158,11 @@ def test_an_unreadable_authority_declaration_tells_the_job_nothing(*, tmp_path: 
     push whatever this Job was told — so the malformed case is reported by the
     half that can say which member and which word, rather than twice in two
     different vocabularies.
+
+    IT STAYS ON THE SUCCESS TRACK for that reason, even though the fixture's
+    recipe DOES name a skip variable: nothing was established to carry, so there
+    is nothing this resolution could refuse over, and refusing here would report
+    a registry typo in the vocabulary of a missing skip surface.
     """
     repo = _a_check_recipe(root=tmp_path / "widget", body=_SKIP_READ)
     _ = (repo / "check-targets.txt").write_text(
@@ -149,4 +171,4 @@ def test_an_unreadable_authority_declaration_tells_the_job_nothing(*, tmp_path: 
         encoding="utf-8",
     )
 
-    assert authority_skip_argv(repo_root=repo) == []
+    assert authority_skip_argv(repo_root=repo) == Success([])

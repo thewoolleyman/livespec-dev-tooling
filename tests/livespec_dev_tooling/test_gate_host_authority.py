@@ -125,6 +125,16 @@ class _CannedHost:
         """Every command whose argv carries `needle`."""
         return [argv for argv in self.argvs if needle in argv]
 
+    def ran_here(self, *, member: str) -> list[tuple[str, ...]]:
+        """Every `just <member>` this HOST invoked, which `issued` is too wide for.
+
+        The renderer is TOLD the same member's name — `--authority-skip-member
+        <member>`, the flag that keeps it out of the Job — so a needle search
+        over every argv matches the Job's skip list beside the host's own
+        invocation, and the claim every arm here makes is about the host.
+        """
+        return [argv for argv in self.argvs if argv[:1] == ("just",) and member in argv]
+
 
 def _no_sleep(*, seconds: float) -> None:
     """The poll wait, canned — the run's only source of time."""
@@ -142,13 +152,26 @@ def _ran_on_the_host(*, repo_root: Path, runner: _CannedHost) -> Any:
 
 
 def _a_delegating_repo(*, repo_root: Path, inventory: tuple[str, ...]) -> None:
-    """A clone whose check inventory holds exactly `inventory`."""
+    """A clone whose check inventory holds exactly `inventory`.
+
+    Its `check` recipe reads a skip list, which every arm here depends on
+    without being about it: a repository declaring an authority member whose
+    recipe names no skip variable the client recognises is refused before any
+    Job exists (`_gate_authority_skip`), so a delegated run over it reaches no
+    gate verdict for this module's half to be ANDed into.
+    """
     _ = (repo_root / "pyproject.toml").write_text(
         "[tool.livespec_dev_tooling]\ndelegated_gate = true\n", encoding="utf-8"
     )
     _ = (repo_root / "check-targets.txt").write_text(
         "# Canonical check inventory for `just check`.\n"
         + "".join(f"{line}\n" for line in inventory),
+        encoding="utf-8",
+    )
+    _ = (repo_root / "justfile").write_text(
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        '    read -ra skip_targets <<< "${SKIP_TARGETS:-}"\n',
         encoding="utf-8",
     )
 
@@ -181,8 +204,8 @@ def test_a_delegated_push_runs_each_authority_declaring_member_on_the_pushing_ho
         repo_root=repo, renderer=_RENDERER, runner=host, sleeper=_no_sleep, emit=_nothing
     )
 
-    assert host.issued(needle=_DECLARING) == [("just", _DECLARING)]
-    assert host.issued(needle=_UNDECLARED) == []
+    assert host.ran_here(member=_DECLARING) == [("just", _DECLARING)]
+    assert host.ran_here(member=_UNDECLARED) == []
     member_at = host.argvs.index(("just", _DECLARING))
     assert host.cwds[member_at] == repo
     assert _TREE in host.issued(needle="--tree-hash")[0]
@@ -297,7 +320,7 @@ def test_a_delegated_push_completes_only_when_the_job_and_every_host_member_are_
     assert completed.refuses_push is False
 
     assert len(refusing.issued(needle="create")) == 1
-    assert refusing.issued(needle=_DECLARING) == [("just", _DECLARING)]
+    assert refusing.ran_here(member=_DECLARING) == [("just", _DECLARING)]
     assert refused.refuses_push is True
 
 

@@ -201,6 +201,16 @@ class _CannedCluster:
         """Every command whose argv carries `needle`."""
         return [argv for argv in self.argvs if needle in argv]
 
+    def ran_here(self, *, member: str) -> list[tuple[str, ...]]:
+        """Every `just <member>` the PUSHING HOST invoked, which `issued` is too wide for.
+
+        The renderer is TOLD the same member's name — `--authority-skip-member
+        <member>`, the flag that keeps it out of the Job — so a needle search
+        over every argv matches the Job's skip list beside the host's own
+        invocation, and the Then this narrows for is about the host.
+        """
+        return [argv for argv in self.argvs if argv[:1] == ("just",) and member in argv]
+
 
 def _no_sleep(*, seconds: float) -> None:
     """The poll wait, canned — the run's only source of time."""
@@ -226,12 +236,26 @@ def _gate_job_member_block() -> str:
 
 
 def _a_consumer_declaring_one_authority_member(*, repo_root: Path) -> None:
-    """An opted-in consumer whose check set holds one declaring member and one not."""
+    """An opted-in consumer whose check set holds one declaring member and one not.
+
+    Its `check` recipe reads a skip list, which is part of the Given rather than
+    scenery: a repository declaring an authority member whose recipe names no
+    skip variable this client recognises is refused before any Job exists
+    (`_gate_authority_skip`), because the Job could not be told to leave that
+    member out — a different path, which reaches neither a gate Job nor the
+    pushing-host half this scenario is about.
+    """
     _opt_in(repo_root=repo_root)
     _ = (repo_root / "check-targets.txt").write_text(
         "# Canonical check inventory for `just check`.\n"
         f"{_DECLARING_MEMBER}  # purity: world-reading  # authority: ledger\n"
         f"{_UNDECLARED_MEMBER}  # purity: tree-pure\n",
+        encoding="utf-8",
+    )
+    _ = (repo_root / "justfile").write_text(
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        '    read -ra skip_targets <<< "${SKIP_TARGETS:-}"\n',
         encoding="utf-8",
     )
 
@@ -617,8 +641,8 @@ def test_an_authority_reading_member_runs_on_the_pushing_host_and_joins_the_verd
         repo_root=repo, renderer=_RENDERER, runner=refusing, sleeper=_no_sleep, emit=_nothing
     )
 
-    assert completing.issued(needle=_DECLARING_MEMBER) == [("just", _DECLARING_MEMBER)]
-    assert completing.issued(needle=_UNDECLARED_MEMBER) == []
+    assert completing.ran_here(member=_DECLARING_MEMBER) == [("just", _DECLARING_MEMBER)]
+    assert completing.ran_here(member=_UNDECLARED_MEMBER) == []
     member_at = completing.argvs.index(("just", _DECLARING_MEMBER))
     assert completing.cwds[member_at] == repo
     assert _TREE in completing.issued(needle="--tree-hash")[0]

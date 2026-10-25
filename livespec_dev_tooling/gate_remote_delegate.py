@@ -271,6 +271,28 @@ def resolve_renderer(*, repo_root: Path) -> Path:
     return GATE_RENDERER_PACKAGED
 
 
+def _declared_job_commands(
+    *, repo_root: Path
+) -> Result[tuple[tuple[str, ...], list[str]], GateStepFailed]:
+    """The two readings that decide what the gate Job runs, and what it must not.
+
+    ONE helper rather than two guards inline, because the two belong together:
+    both are read from the repository's own committed declarations, neither
+    reaches the world, and each can refuse the whole assembly. The suite names
+    the recipes the pod invokes; the skip names the members it may not invoke,
+    and a repository whose skip surface cannot be established refuses here —
+    there is nowhere to carry the list, so no Job may be submitted at all
+    (`_gate_authority_skip`).
+    """
+    suite = declared_gate_check_suite(repo_root=repo_root)
+    if isinstance(suite, Failure):
+        return Failure(suite.failure())
+    authority_skip = authority_skip_argv(repo_root=repo_root)
+    if isinstance(authority_skip, Failure):
+        return Failure(authority_skip.failure())
+    return Success((suite.unwrap(), authority_skip.unwrap()))
+
+
 def gate_remote_request(
     *, repo_root: Path, renderer: Path, runner: GateCommandRunner
 ) -> Result[GateRunRequest, GateStepFailed]:
@@ -296,9 +318,14 @@ def gate_remote_request(
     if isinstance(named, Failure):
         return Failure(named.failure())
     repo = named.unwrap()
-    suite = declared_gate_check_suite(repo_root=repo_root)
-    if isinstance(suite, Failure):
-        return Failure(suite.failure())
+    # What the Job runs and what it must not, both read from this repository's
+    # own declarations BEFORE anything is rendered — because the second reading
+    # can refuse, and a Job that cannot be told to leave an authority member out
+    # is not submitted at all.
+    commands = _declared_job_commands(repo_root=repo_root)
+    if isinstance(commands, Failure):
+        return Failure(commands.failure())
+    suite, authority_skip = commands.unwrap()
     credential = private_sibling_credential(
         repo_root=repo_root, runner=runner, helper=GATE_PRIVATE_SIBLING_TOKEN_HELPER
     )
@@ -330,8 +357,8 @@ def gate_remote_request(
         # cannot come to disagree about which member belongs to which host — a
         # pod that skipped a member nobody ran would be an unread authorization
         # treated as granted (`_gate_authority_skip`).
-        *authority_skip_argv(repo_root=repo_root),
-        *check_suite_argv(suite=suite.unwrap()),
+        *authority_skip,
+        *check_suite_argv(suite=suite),
     ]
     rendered = require_success(
         step=_RENDER_STEP, argv=render_argv, outcome=runner(argv=render_argv, cwd=repo_root)

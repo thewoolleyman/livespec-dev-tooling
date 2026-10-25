@@ -34,15 +34,37 @@ and inert means the member runs, fails on the absent credential, and a correct
 tree reads as RED. The name is therefore read out of the repository's own recipe,
 which is the surface that decides it.
 
-WHY A REPOSITORY WHOSE NAME CANNOT BE ESTABLISHED IS LEFT ALONE, and why that is
-not the fail-open it looks like. Nothing is passed, so such a Job runs exactly
-the members it runs today: its authority member executes, cannot read its
-authorization, and FAILS — the gate goes red and the push is refused. The
-unestablished case therefore degrades toward refusing a correct tree, never
-toward passing an unverified one, so it is safe to leave as it stands while a
-repository adopts a skip surface. Inventing a name would be the unsafe shape: it
-would export a list nothing reads while every surface reported a Job that had
-been told.
+A REPOSITORY WHOSE NAME CANNOT BE ESTABLISHED IS REFUSED, NOT LEFT ALONE, and
+the reasoning this replaces is worth keeping because it was plausible and it was
+measured wrong. The old argument ran: pass nothing, and such a Job runs exactly
+the members it runs today — its authority member executes, cannot read its
+authorization, and FAILS — so the unestablished case degrades toward refusing a
+correct tree rather than toward passing an unverified one, and is safe to leave
+while a repository adopts a skip surface.
+
+BOTH HALVES OF THAT WERE FALSE ON 2026-10-24. The silence is the first half:
+three consumers read their skip list from no variable this reader recognises —
+livespec-driver-pi's `check` recipe reads none at all, and
+livespec-orchestrator-git-jsonl's and livespec-orchestrator-beads-fabro's read
+theirs from a `just` surface rather than the environment — so `authority_skip_argv`
+returned `[]` for each, no Job printed the `NOT running` line, and nothing on any
+surface said a mechanism had been skipped rather than satisfied. The second half
+is worse than a red tree: the orchestrator's Job
+`gates/gate-livespec-orchestrator-beads-fabro-ssqmj` PASSED, having executed
+`check-branch-protection-alignment` in-pod at 18:19:01Z, because that pod's own
+forge credential happens to be able to read branch protection. Every accepted
+orchestrator delegated verdict since its 2026-10-18 opt-in therefore took the
+branch-protection answer from a credential the gate pod holds and not from the
+pushing host's — an authorization the host never read, reported as gated, which
+is the one outcome the contract's "it never treats an unevaluated authorization
+as granted" forbids outright.
+
+SO THE RESOLUTION REFUSES, and the refusal is the mechanism rather than a
+diagnostic beside it: a Job that cannot be told to leave the member out is not
+submitted at all, which is the only disposition that satisfies "such a member
+does not run in the gate Job" for a repository this reader cannot tell. Inventing
+a name remains the other unsafe shape: it would export a list nothing reads while
+every surface reported a Job that had been told.
 
 A PRIVATE MODULE WITH A PUBLIC SURFACE, per this package's own convention for a
 cohesion split (`_gate_remote_assembly.py` and its siblings): the names in
@@ -57,6 +79,7 @@ from pathlib import Path
 
 from livespec_dev_tooling.check_authority import repository_authority_members
 from livespec_dev_tooling.checks._tool_backed_surfaces import extract_check_recipe_body
+from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -65,6 +88,7 @@ if str(_VENDOR_DIR) not in sys.path:
     sys.path.insert(0, str(_VENDOR_DIR))
 
 from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
+from returns.result import Failure, Result, Success  # noqa: E402  — same.
 from returns.unsafe import unsafe_perform_io  # noqa: E402  — same.
 
 __all__: list[str] = [
@@ -83,6 +107,12 @@ AUTHORITY_SKIP_MEMBER_FLAG = "--authority-skip-member"
 
 _JUSTFILE_NAME = "justfile"
 
+# The step a refusal is reported as. Named for the thing that could not be done
+# rather than for the reading that could not be taken, because the assembly
+# renders it into one sentence with "did not complete, so no gate was submitted"
+# — and the fact an operator needs first is that the member was not kept out.
+_AUTHORITY_SKIP_STEP = "keep-authority-members-out-of-gate-job"
+
 # The fleet's own idiom for reading a skip list, in the one shape both consuming
 # repositories write it: `read -ra skip_targets <<< "${SKIP_TARGETS:-}"`. Anchored
 # to the start of a line so a `#`-comment MENTIONING the variable — and both
@@ -98,6 +128,15 @@ _SKIP_LIST_READ = re.compile(
 # environment into other arrays, and a mechanism that exported the member list
 # into one of those would both skip nothing and clobber a value the recipe needs.
 _SKIP_ARRAY_WORD = "skip"
+
+# What a refused assembly says. The contract requires an authority-declaring
+# member not to run in the gate Job, so a Job this client cannot tell is a Job
+# it may not submit.
+_UNTELLABLE = (
+    "this repository's own `check` recipe reads its skip list from no variable this client "
+    "recognises, so the gate Job cannot be told to leave out the members that declare they "
+    "read an authorization held outside the tree."
+)
 
 
 def check_skip_variable(*, repo_root: Path) -> str | None:
@@ -138,28 +177,39 @@ def check_skip_variable(*, repo_root: Path) -> str | None:
     return named.pop()
 
 
-def authority_skip_argv(*, repo_root: Path) -> list[str]:
+def authority_skip_argv(*, repo_root: Path) -> Result[list[str], GateStepFailed]:
     """The renderer flags that keep `repo_root`'s authority members out of its gate Job.
 
-    EMPTY whenever the answer cannot be established — an unreadable declaration,
-    a repository declaring no such member, a recipe naming no skip variable — and
-    all three are deliberately spelled the same way HERE, because the renderer's
-    job is to carry a list rather than to grade why there is none. A malformed
-    declaration is not lost by that: `run_host_authority_members` reads the same
-    registry on the pushing host and reports it as the member it names failing,
-    which refuses the push whatever this Job did.
+    EMPTY ON THE SUCCESS TRACK when there is nothing to tell a Job — an
+    unreadable declaration, or a repository declaring no such member. Both are
+    spelled the same way, because the renderer's job is to carry a list rather
+    than to grade why there is none, and a malformed declaration is not lost by
+    that: `run_host_authority_members` reads the same registry on the pushing
+    host and reports it as the member it names failing, which refuses the push
+    whatever this Job did.
+
+    ON THE FAILURE TRACK when the repository DOES declare such a member and this
+    reader can establish no skip surface to carry it. There is nothing to pass
+    and nothing safe to do with a Job that would run it, so the assembly is
+    refused and no Job is submitted — see the module docstring for the two
+    measured outcomes an un-told Job actually produces, one of which is a
+    delegated verdict that read an authorization nobody held.
     """
     resolved = repository_authority_members(repo_root=repo_root)
     if not is_successful(resolved):
-        return []
+        return Success([])
     members = unsafe_perform_io(resolved.unwrap())
     if not members:
-        return []
+        return Success([])
     variable = check_skip_variable(repo_root=repo_root)
     if variable is None:
-        return []
-    return [
-        AUTHORITY_SKIP_ENV_FLAG,
-        variable,
-        *[flag for member in members for flag in (AUTHORITY_SKIP_MEMBER_FLAG, member)],
-    ]
+        return Failure(
+            GateStepFailed(step=_AUTHORITY_SKIP_STEP, argv=(), returncode=None, detail=_UNTELLABLE)
+        )
+    return Success(
+        [
+            AUTHORITY_SKIP_ENV_FLAG,
+            variable,
+            *[flag for member in members for flag in (AUTHORITY_SKIP_MEMBER_FLAG, member)],
+        ]
+    )

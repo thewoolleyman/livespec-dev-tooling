@@ -1812,6 +1812,17 @@ def test_a_push_a_green_job_cleared_and_this_host_refused_still_names_that_job(
         f"{_AUTHORITY_MEMBER}  # purity: world-reading  # authority: ledger\n",
         encoding="utf-8",
     )
+    # The SKIP SURFACE is part of the Given here, not scenery. A repository
+    # declaring an authority member whose own `check` recipe reads its skip list
+    # from no variable the client recognises is refused before any Job exists
+    # (`_gate_authority_skip`) — which is a different path, reaching neither the
+    # green gate this test needs nor the host half it is about.
+    _ = (repo_root / "justfile").write_text(
+        "check:\n"
+        "    #!/usr/bin/env bash\n"
+        '    read -ra skip_targets <<< "${SKIP_TARGETS:-}"\n',
+        encoding="utf-8",
+    )
 
     status, refused = _verdict_line(
         repo_root=repo_root,
