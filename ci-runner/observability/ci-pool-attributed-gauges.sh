@@ -440,7 +440,7 @@ kc_start() { "${KUBECTL_BIN}" --request-timeout="${START_KUBECTL_REQUEST_TIMEOUT
 # The sweep's jsonpath verbatim: every resource of every flavor of every
 # resource group, as `name=quota` tokens, so the churn-slot test below reads
 # the same tokens the sweep tests.
-CQ_JSONPATH='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{range .resources[*]}{.name}={.nominalQuota} {end}{end}{end}|{.status.pendingWorkloads}|{.status.admittedWorkloads}{"\n"}{end}'
+CQ_JSONPATH='{range .items[*]}{.metadata.name}|{range .spec.resourceGroups[*]}{range .flavors[*]}{.name}:{range .resources[*]}{.name}={.nominalQuota} {end}{end}{end}|{range .status.flavorsUsage[*]}{.name}:{range .resources[*]}{.name}={.total} {end}{end}|{.status.pendingWorkloads}|{.status.admittedWorkloads}{"\n"}{end}'
 
 queue_repository() {  # queue_repository NAME -> repository, or empty
   local name="$1" tok
@@ -460,11 +460,12 @@ if [ "${single_start}" -eq 1 ]; then
   log "--single-start: skipping the ClusterQueue listing (it feeds gauges this mode does not emit)"
 elif cq_rows="$(kc get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; then
   queues_emitted=0
-  while IFS='|' read -r cq_name cq_quotas cq_pending cq_admitted; do
+  while IFS='|' read -r cq_name cq_quotas cq_usage cq_pending cq_admitted; do
     [ -n "${cq_name}" ] || continue
     cq_quota=""
     for tok in ${cq_quotas}; do
-      case "${tok}" in "${CHURN_SLOT_RESOURCE}="*) cq_quota="${tok#*=}" ;; esac
+      resource="${tok#*:}"
+      case "${resource}" in "${CHURN_SLOT_RESOURCE}="*) cq_quota="${resource#*=}" ;; esac
     done
     # Not one of this pool's queues (phase1-proof-cq is cpu/memory only).
     # This is the filter that makes these rows reconcile with the sweep's
@@ -477,6 +478,20 @@ elif cq_rows="$(kc get clusterqueues -o jsonpath="${CQ_JSONPATH}" 2>&1)"; then
     cq_attrs="ci.queue=${cq_name}"
     [ -n "${cq_repo}" ] && cq_attrs="${cq_attrs}"$'\t'"ci.repository=${cq_repo}"
     [[ "${cq_quota}" =~ ^[0-9]+$ ]] && put "queue_quota"$'\t'"${cq_quota}"$'\t'"${cq_attrs}"
+    for tok in ${cq_quotas}; do
+      flavor="${tok%%:*}"
+      resource="${tok#*:}"
+      resource_name="${resource%%=*}"
+      quota_value="${resource#*=}"
+      put "queue_resource_quota"$'\t'"${quota_value}"$'\t'"${cq_attrs}"$'\t'"kueue.flavor=${flavor}"$'\t'"k8s.resource=${resource_name}"
+    done
+    for tok in ${cq_usage}; do
+      flavor="${tok%%:*}"
+      resource="${tok#*:}"
+      resource_name="${resource%%=*}"
+      usage_value="${resource#*=}"
+      put "queue_resource_usage"$'\t'"${usage_value}"$'\t'"${cq_attrs}"$'\t'"kueue.flavor=${flavor}"$'\t'"k8s.resource=${resource_name}"
+    done
     [[ "${cq_pending}" =~ ^[0-9]+$ ]] && put "queue_pending"$'\t'"${cq_pending}"$'\t'"${cq_attrs}"
     [[ "${cq_admitted}" =~ ^[0-9]+$ ]] && put "queue_admitted"$'\t'"${cq_admitted}"$'\t'"${cq_attrs}"
     queues_emitted=$((queues_emitted + 1))
@@ -923,6 +938,14 @@ SPEC = {
         "nominalQuota for ci-runner.io/churn-slot on ONE ClusterQueue (the "
         "per-queue breakdown of livespec.ci_churn_slot.quota_sum)", "int",
     ),
+    "queue_resource_quota": (
+        "livespec.ci_pool.queue_resource_quota", "{resources}",
+        "ClusterQueue nominal quota by Kueue flavor and resource", "quantity",
+    ),
+    "queue_resource_usage": (
+        "livespec.ci_pool.queue_resource_usage", "{resources}",
+        "ClusterQueue status.flavorsUsage by Kueue flavor and resource", "quantity",
+    ),
     "runners": (
         "livespec.ci_pool.runners", "{runners}",
         "EphemeralRunner objects owned by one repository in one phase; the "
@@ -976,6 +999,14 @@ SPEC = {
     ),
 }
 
+def quantity(value: str) -> float:
+    """The Kubernetes quantity forms ClusterQueue usage and quota expose."""
+    suffixes = {"Ki": 1024, "Mi": 1024**2, "Gi": 1024**3, "Ti": 1024**4, "m": 0.001}
+    for suffix, multiplier in suffixes.items():
+        if value.endswith(suffix):
+            return float(value[:-len(suffix)]) * multiplier
+    return float(value)
+
 points: dict[str, list[dict[str, object]]] = {}
 for line in open(readings_path):
     fields = line.rstrip("\n").split("\t")
@@ -985,6 +1016,8 @@ for line in open(readings_path):
     dp: dict[str, object] = {"timeUnixNano": now_ns}
     if SPEC[key][3] == "double":
         dp["asDouble"] = float(value)
+    elif SPEC[key][3] == "quantity":
+        dp["asDouble"] = quantity(value)
     else:
         dp["asInt"] = str(int(value))
     attrs = []
