@@ -522,13 +522,33 @@ per-project.
 ## Revise co-edit discipline — `tests/heading-coverage.json`
 
 Every revise pass that adds, changes, or removes a `## ` heading in any spec
-file MUST update `tests/heading-coverage.json` in the same change (via the
-revise `resulting_files[]` mechanism) so the heading-coverage map stays in
-lockstep with the spec. Diff the proposed `## ` heading set against the current
-spec file's H2 set; add an entry (`test` MAY be the literal `"TODO"` with a
-non-empty `reason`) for each new heading, and drop entries for removed
-headings. `check-heading-coverage` is the gate that catches a pass that
-forgot.
+file MUST update `tests/heading-coverage.json` in the same change so the
+heading-coverage map stays in lockstep with the spec. Edit it in the revise
+COMMIT, not through `resulting_files[]`: the revise CLI only accepts paths that
+exist under the spec target, and `tests/` is outside it. Diff the proposed `## `
+heading set against the current spec file's H2 set; add an entry for each new
+heading, and drop entries for removed headings. `check-heading-coverage` is the
+gate that catches a pass that forgot.
+
+A new entry may be a spec-first `"test": "TODO"` row, but pre-commit holds it to
+two more rules, and each one refuses the commit (both measured on the v097
+revise, 2026-10-26):
+
+- **The `reason` must name the tier the owed test runs at**, plus the work item
+  that owns it. For example: "A real test at the integration tier or above is
+  owed for this heading: … livespec-dev-tooling-7enfyd owns it." Without the
+  tier, the refusal reads `does-not-acknowledge-an-owed-test` with
+  `missing: tier`.
+- **Register the row in the debt register.** Run
+  `just generate-heading-coverage-debt-register` and stage
+  `tests/heading-coverage-debt.json`. The register is generated, so never edit it
+  by hand. Without it, `check-heading-coverage-debt-register` refuses with
+  `unregistered_todo`.
+
+Read the commit gate's `VERDICT` line before you push. A backgrounded
+`gate-wait … | tail` exits 0 even when the gate refused, because a pipe's exit
+code is the tail's. On v097 that sent a branch to the remote with no revise
+commit on it.
 
 ## Repository mutation protocol
 
