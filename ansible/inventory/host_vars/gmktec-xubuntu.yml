@@ -138,6 +138,12 @@ otel_collector_unit_wants: network-online.target
 otel_collector_env_from_controller:
   - HONEYCOMB_INGEST_KEY_LIVESPEC
 
+# --- factory_sandbox_reaper ---
+# Reports (does not delete) ended runs' stopped Kubernetes sandboxes older than 24 h
+# on the fleet instance (bd-ib-u5facl). Deletion stays off until `apply` is true.
+factory_sandbox_reaper_enabled: true
+factory_sandbox_reaper_apply: false
+
 # --- otel_receiver ---
 # The receiver every Fabro instance on this host exports to on the Docker bridge
 # gateway, as on hp. The ingest-key file is RENDERED from the control node's

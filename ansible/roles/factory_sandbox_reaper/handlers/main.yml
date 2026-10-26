@@ -1,0 +1,10 @@
+---
+- name: Restart the factory sandbox reaper timer
+  # Re-arms the TIMER against a changed OnCalendar; it runs no pass. The service
+  # is never restarted here, for the reason container_reclaim states.
+  ansible.builtin.systemd_service:
+    name: "{{ factory_sandbox_reaper_timer }}"
+    daemon_reload: true
+    state: restarted
+  become: true
+  when: not ansible_check_mode or factory_sandbox_reaper_timer_unit_stat.stat.exists
