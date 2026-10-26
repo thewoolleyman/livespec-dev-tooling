@@ -143,7 +143,8 @@ Memory does not bind: 64Gi of ~439 GiB. cpu still binds first, as above.
 **Why not twelve.** 61 + 48 = 109 exceeds 104: with CI at nominal, the 9th
 to 12th pods would sit Pending past the plugin's 600 s start timeout and fail
 the same way. Twelve needs a node added or the CI queues shrunk, and a fleet
-cap above eight is unsupported by this quota until then.
+cap above eight is unsupported by this quota until then. (Corrected 2026-10-26: the 61 is not all cpu; see
+"The quota, raised to twelve runs".)
 
 **Workspace disk at sixteen pods**, measured the same day at
 `/srv/factory-workspaces`: `poweredge-xubuntu` 160 G free (24 workspace
@@ -174,7 +175,67 @@ Two runs is the mi-homelab instance's own `max_concurrent_runs: 2`
 run the instance would admit. The cpu total is unchanged at 32, so the pool check
 above (93 of ~104) still holds. Each quota keeps one run of memory headroom, so
 cpu still binds first in both. A fleet cap above 6 is unsupported by
-`factory-runs` from this change on.
+`factory-runs` from this change on. (Superseded 2026-10-26: twelve, below.)
+
+## The quota, raised to twelve runs (2026-10-26)
+
+**Why it moved.** Maintainer direction, attended, about 19:0xZ on 2026-10-26,
+relayed verbatim by the coordinator `gitops-fleet-capacity-monitoring` as
+ruling R50 on livespec-dev-tooling-dfixhe: "that was the whole point of
+kubernetes, to have lots of capacity to throw at things. Lets use it, and max
+it out, and I can spin up more cloud infra if needed." The fleet pool was
+QUOTA-bound, not hardware-bound: `factory-runs` read `requests.cpu: 20/24`
+while the nodes sat mostly idle.
+
+**The eight-run section's pool check summed the wrong population.** It added
+the CI ClusterQueues' nominal quota (61) to the factory's cpu, as if all 61
+were cpu requests. Read live on 2026-10-26 with `kubectl get clusterqueue`,
+only two queues cover `cpu`: `gates-cq` (15) and `phase1-proof-cq` (2). The
+other ten (44 in all) cover `ci-runner.io/churn-slot`, an extended resource;
+their runner pods request no cpu (`.ai/ci-node-capacity-reads.md`, "Runner
+pods request no CPU"). So CI can claim at most **17** requested cpu, and the
+"Why not twelve" arithmetic above (61 + 48 = 109) does not hold.
+
+**Measured, 2026-10-26 about 19:2xZ** (`kubectl describe node`, `mpstat 5 1`
+on each node, `kubectl get resourcequota -A`):
+
+| node | allocatable cpu | cpu requested | idle (mpstat) |
+|---|---|---|---|
+| `poweredge-xubuntu` | 72 | 21.25 | 78 % |
+| `gmktec-xubuntu` | 32 | 0.5 | 92 % |
+| `hp-xubuntu` | 0.5 | 0 | not schedulable for factory pods |
+
+`factory-runs` read `pods 5/12, requests.cpu 20/24, requests.memory
+38150Mi/48Gi`; `factory-mi-homelab-runs` read all zeros.
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | 12 runs x 4 cpu | **48** |
+| `requests.memory` | 12 runs x 8 Gi | **96Gi** |
+| `limits.cpu` | 12 runs x 4 cpu | **48** |
+| `limits.memory` | 96Gi + one run's headroom | **104Gi** |
+| `pods` | 12 runs x (1 sandbox + 1 in-flight replacement) | **24** |
+
+**Checked against the pool.** Fleet 48 + mi-homelab 8 + CI's cpu-requesting
+queues at full nominal 17 = **73 of ~104** schedulable cpu, leaving about 31.
+Memory does not bind: 96Gi + 16Gi of ~439 GiB. cpu still binds first.
+
+**Workspace disk does not bind either.** Measured the same day, a petri run's
+workspace under `/srv/factory-workspaces` is 513-588 MB (five newest on
+poweredge), so 24 pods on one node need about 14 G against 113 G free on
+poweredge and 142 G on gmktec. See `ansible/roles/factory_workspace_root/CAPACITY.md`.
+
+**The Fabro server cap moves with it.** gmktec's fleet instance
+`max_concurrent_runs` goes from 8 to 12 in
+`ansible/inventory/host_vars/gmktec-xubuntu.yml`; the petri launcher's own cap
+follows only after the live quota reads back 48.
+
+**Soak, and the step-back rule (R50).** For six hours after the raise, journal
+per hour the successes, the infrastructure-failure share and kernel OOM kills,
+throughput-derived per `.ai/ci-node-capacity-reads.md`. If OOM kills or the
+infrastructure-failure share rise against the pre-raise baseline, step back to
+10 runs. If it is clean and cores are still idle, the next value is 16 (64 cpu,
+89 of ~104 with CI at nominal).
 
 ## The egress targets
 

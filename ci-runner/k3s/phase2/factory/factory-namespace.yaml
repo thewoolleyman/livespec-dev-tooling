@@ -27,6 +27,11 @@ metadata:
     app.kubernetes.io/managed-by: livespec-ci-runner-factory
     livespec.workitem: f5e6vl
 ---
+# RAISED 2026-10-26 from 6 to 12 concurrent runs: ./DERIVATION.md "The quota,
+# raised to twelve runs" re-reads the pool and finds that only the gates and
+# phase1-proof ClusterQueues request cpu (17), not the 61 the eight-run section
+# summed, so 12 fleet runs + 2 mi-homelab runs + 17 = 73 of ~104 cpu.
+#
 # SPLIT 2026-10-24 to 6 runs: 2 of the 8 below moved to the mi-homelab
 # organisation's own namespace (../factory-mi-homelab/factory-mi-homelab.yaml), whose pods must not
 # share this namespace's credential; ./DERIVATION.md "The quota, split for
@@ -53,11 +58,11 @@ metadata:
     livespec.workitem: f5e6vl
 spec:
   hard:
-    requests.cpu: "24"
-    requests.memory: 48Gi
-    limits.cpu: "24"
-    limits.memory: 56Gi
-    pods: "12"
+    requests.cpu: "48"
+    requests.memory: 96Gi
+    limits.cpu: "48"
+    limits.memory: 104Gi
+    pods: "24"
 ---
 # ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
 # to cluster DNS, the tailnet (the beads Dolt tenant and the telemetry
