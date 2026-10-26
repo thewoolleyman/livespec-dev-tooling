@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.135.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.134.4...v1.135.0) (2026-10-26)
+
+
+### Features
+
+* **ansible:** hourly reaper for ended Fabro runs' Kubernetes sandboxes (bd-ib-u5facl) ([edacf66](https://github.com/thewoolleyman/livespec-dev-tooling/commit/edacf66488e0a3db2de36215342636bf44adc340))
+
 ## [1.134.4](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.134.3...v1.134.4) (2026-10-25)
 
 
