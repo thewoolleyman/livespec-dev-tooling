@@ -152,6 +152,15 @@ The files:
   it to YOUR identity and refuses its verdict as a self-replay (c62xtb,
   2026-10-25). Name this repository's GIT release tag in the record's
   build, never an image tag, or the replay is silently not counted (jxepvj).
+- Read `.ai/claude-transcript-usage-dedupe.md` before summing tokens or cost
+  out of Claude Code transcripts (`~/.claude/projects/**/*.jsonl`). One
+  response is written as several records that repeat the same `usage`, so a
+  plain sum is 2-3x too high. A 2026-10-26 scan put a judge's median input at
+  875k tokens; deduped by `message.id` it was 438k.
+- Read `.ai/herdr-tab-placement.md` before creating a herdr tab that has to sit
+  in a particular position, or before concluding herdr cannot move a tab.
+  `tab create` appends at the end. `tab.move` exists in the socket API, not in
+  the `herdr tab` CLI (corrected by the maintainer, 2026-10-26).
 
 ## Backlog drive — this repo has no foreman seat
 
