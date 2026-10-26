@@ -171,7 +171,17 @@ fabro_server_instances:
     port: 32276
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32276
     cli_target_url: http://127.0.0.1:32276
-    # TWELVE (coordinator ruling R50 on the maintainer's attended direction of
+    # SIXTEEN, as server headroom only (coordinator ruling R71, 2026-10-26). The
+    # number takes effect at the next restart that happens anyway, an engine
+    # upgrade or a crash, or at a natural point with two or fewer live runs; no
+    # cancel-to-idle cut is taken for it. The binding bound stays the
+    # `factory-runs` quota (48 cpu = 12 runs) and petri's launcher caps (12),
+    # both raised live only after the twelve-run soak justifies sixteen. Do not
+    # raise the launcher caps above the quota's run count: a launch past the
+    # quota is refused at sandbox acquire with a 403 that Fabro classes
+    # deterministic (2026-10-24, DERIVATION.md "The quota, raised to eight runs").
+    #
+    # Was TWELVE (coordinator ruling R50 on the maintainer's attended direction of
     # 2026-10-26, "max it out"). The fleet's environments now run as Kubernetes
     # pods, which the `factory-runs` ResourceQuota bounds (48 cpu, raised in the
     # same change; ci-runner/k3s/phase2/factory/DERIVATION.md "The quota, raised
@@ -180,7 +190,7 @@ fabro_server_instances:
     # ~2.6G anon per sandbox the 36G-high / 40G-max slice holds all twelve if
     # every run chose it. Was EIGHT (R259), sized to the slice while every run
     # was Docker.
-    max_concurrent_runs: 12
+    max_concurrent_runs: 16
     github_app_id: "3668528"
     otel_dropin: present
     # The registered-provider carrier, proven on the canary instance below
