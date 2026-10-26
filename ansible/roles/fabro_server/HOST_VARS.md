@@ -771,12 +771,15 @@ here, because that is the file an operator rolling back edits.
 `fabro_server_host_checkout_remote` is declared because the host had no
 checkout, and `fabro_server_manage_settings` is true because a fresh instance
 has no settings.toml to preserve. The fleet instance's `max_concurrent_runs` is
-8: maintainer directive R259 (2026-10-19) sized eight runs on the 36G-high /
-40G-max sandbox slice, measured from the petri capacity sampler, where every
-run's sandbox anon peaked at 2.61-2.64 GB — the 10.3 GB `memory.peak` ruling
-R196 sized two runs against was mostly page cache, which `memory.high` reclaims
-under pressure. Change the number only together with the slice
-(`docker_sandbox_slice`), and read any sandbox OOM on this host as an
+12 (coordinator ruling R50, 2026-10-26, on the maintainer's direction to max
+out the Kubernetes capacity). Its environments run as Kubernetes pods, so the
+bound that moves with this number is now the `factory-runs` ResourceQuota
+(`ci-runner/k3s/phase2/factory/DERIVATION.md` "The quota, raised to twelve
+runs"), not the Docker slice. Only `livespec-ci-rust` still lands in the 36G-high
+/ 40G-max sandbox slice, where maintainer directive R259 (2026-10-19) had sized
+eight runs from the petri capacity sampler: every run's sandbox anon peaked at
+2.61-2.64 GB, so the slice holds twelve even if every run chose it. Change the
+number together with the quota, and read any sandbox OOM on this host as an
 INFRASTRUCTURE ending (ruling R235).
 
 That instance's catalog declares `livespec-ci`, `livespec-ci-rust` and
