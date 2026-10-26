@@ -1,0 +1,26 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Reap ended Fabro runs' Kubernetes sandboxes (bd-ib-u5facl)
+Documentation=https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/ansible/roles/factory_sandbox_reaper/HOST_VARS.md
+After=network-online.target k3s-agent.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ factory_sandbox_reaper_user }}
+Group={{ factory_sandbox_reaper_group }}
+# The sandbox-driver plugin reads its provider profile from $HOME, and `fabro ps`
+# reads the login stored under it.
+Environment="HOME={{ fabro_server_host_home }}"
+Environment="REAPER_FABRO_BIN={{ factory_sandbox_reaper_fabro_bin | trim }}"
+Environment="REAPER_FABRO_SERVER={{ factory_sandbox_reaper_fabro_server }}"
+Environment="REAPER_LITHOS_BIN={{ factory_sandbox_reaper_lithos_bin }}"
+Environment="REAPER_PROVIDER={{ factory_sandbox_reaper_provider }}"
+Environment="REAPER_MIN_AGE_HOURS={{ factory_sandbox_reaper_min_age_hours }}"
+Environment="REAPER_MAX_DELETIONS={{ factory_sandbox_reaper_max_deletions }}"
+{# The one line that enables deletion. Anything but "1" is a report-only pass. #}
+Environment="REAPER_APPLY={{ '1' if factory_sandbox_reaper_apply | bool else '0' }}"
+ExecStart=/usr/bin/python3 {{ factory_sandbox_reaper_bin }}
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec={{ factory_sandbox_reaper_timeout_start_sec }}

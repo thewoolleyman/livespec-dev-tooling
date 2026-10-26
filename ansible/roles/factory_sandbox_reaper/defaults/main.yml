@@ -1,0 +1,44 @@
+---
+# factory_sandbox_reaper — the periodic reaper of ended Fabro runs' Kubernetes
+# sandboxes (work-item bd-ib-u5facl, livespec-orchestrator-beads-fabro ledger).
+# See HOST_VARS.md for the retention rule, the dry-run toggle and the scope.
+
+# OFF unless a host's host_vars turns it on: the play includes the role on every
+# sandbox host, and only a host with the Kubernetes sandbox backend has records
+# to reap.
+factory_sandbox_reaper_enabled: false
+
+# DRY-RUN IS THE DEFAULT. The timer runs in report mode (the journal says what a
+# pass WOULD delete, with a reason per sandbox) until a host's host_vars sets
+# this to true. Flipping it is the whole enablement of deletion.
+factory_sandbox_reaper_apply: false
+
+# The account the reaper runs as: the Fabro instance's own account, because the
+# sandbox-driver plugin reads its provider profile from that account's HOME and
+# `fabro ps` needs that account's login.
+factory_sandbox_reaper_user: "{{ fabro_server_host_user }}"
+factory_sandbox_reaper_group: "{{ fabro_server_host_group }}"
+
+# THE FLEET INSTANCE ONLY. The mi-homelab and candidate instances on the same
+# host keep their own state directories and kubeconfigs and are NOT reaped here.
+factory_sandbox_reaper_instance_unit: fabro-server
+factory_sandbox_reaper_instance: >-
+  {{ fabro_server_instances | selectattr('unit_name', 'equalto', factory_sandbox_reaper_instance_unit) | first }}
+factory_sandbox_reaper_fabro_server: "{{ factory_sandbox_reaper_instance.cli_target_url }}"
+factory_sandbox_reaper_fabro_bin: >-
+  {{ factory_sandbox_reaper_instance.binary_path | default(fabro_server_host_home ~ '/.fabro/bin/fabro') }}
+factory_sandbox_reaper_lithos_bin: "{{ sandbox_driver_kubernetes_bin_dir }}/lithos-sandbox"
+factory_sandbox_reaper_provider: kubernetes
+
+# Retention. Age-only, because no ledger is reachable from the sandbox host.
+factory_sandbox_reaper_min_age_hours: 24
+# Safety bound on one pass, applied after every other guard.
+factory_sandbox_reaper_max_deletions: 50
+
+factory_sandbox_reaper_bin: /usr/local/sbin/livespec-factory-sandbox-reaper
+factory_sandbox_reaper_unit_dir: /etc/systemd/system
+factory_sandbox_reaper_service: livespec-factory-sandbox-reaper.service
+factory_sandbox_reaper_timer: livespec-factory-sandbox-reaper.timer
+factory_sandbox_reaper_on_calendar: hourly
+factory_sandbox_reaper_randomized_delay_sec: 5min
+factory_sandbox_reaper_timeout_start_sec: 30min

@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Periodic reap of ended Fabro runs' Kubernetes sandboxes
+
+[Timer]
+OnCalendar={{ factory_sandbox_reaper_on_calendar }}
+RandomizedDelaySec={{ factory_sandbox_reaper_randomized_delay_sec }}
+Persistent=true
+Unit={{ factory_sandbox_reaper_service }}
+
+[Install]
+WantedBy=timers.target

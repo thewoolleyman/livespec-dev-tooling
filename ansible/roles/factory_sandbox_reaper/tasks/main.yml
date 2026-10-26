@@ -1,0 +1,96 @@
+---
+# factory_sandbox_reaper — install and arm the reaper of ended Fabro runs'
+# Kubernetes sandboxes. Work-item bd-ib-u5facl (livespec-orchestrator-beads-fabro
+# ledger). Governed by the "One play, applied after a drift read" clause of the
+# `## Fabro factory host provisioning` section of
+# SPECIFICATION/non-functional-requirements.md.
+#
+# ARMING THE TIMER DELETES NOTHING UNLESS factory_sandbox_reaper_apply IS TRUE.
+# The default is a report-only pass, so a plain converge only starts writing
+# "would delete" lines to the journal.
+
+- name: Refuse an empty value in any field of the factory sandbox reaper
+  ansible.builtin.assert:
+    that:
+      - factory_sandbox_reaper_bin | string | length > 0
+      - factory_sandbox_reaper_fabro_bin | trim | length > 0
+      - factory_sandbox_reaper_fabro_server | string | length > 0
+      - factory_sandbox_reaper_lithos_bin | string | length > 0
+      - factory_sandbox_reaper_provider | string | length > 0
+      - factory_sandbox_reaper_user | string | length > 0
+      - factory_sandbox_reaper_min_age_hours | int > 0
+      - factory_sandbox_reaper_max_deletions | int > 0
+      - factory_sandbox_reaper_apply is boolean
+    fail_msg: >-
+      Every field of the factory sandbox reaper must carry a value, the age and
+      cap must be positive, and factory_sandbox_reaper_apply must be a boolean.
+    success_msg: every field of the factory sandbox reaper carries a value
+
+- name: Install the factory sandbox reaper
+  # `validate` runs Python's own parser over the staged copy, so a script that
+  # cannot be parsed is refused here and not discovered as a failed timer unit.
+  ansible.builtin.copy:
+    src: factory_sandbox_reaper.py
+    dest: "{{ factory_sandbox_reaper_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" %s
+  become: true
+
+- name: Check whether the factory sandbox reaper timer unit is already installed
+  ansible.builtin.stat:
+    path: "{{ factory_sandbox_reaper_unit_dir }}/{{ factory_sandbox_reaper_timer }}"
+  become: true
+  register: factory_sandbox_reaper_timer_unit_stat
+
+- name: Install the factory sandbox reaper service unit
+  ansible.builtin.template:
+    src: livespec-factory-sandbox-reaper.service.j2
+    dest: "{{ factory_sandbox_reaper_unit_dir }}/{{ factory_sandbox_reaper_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the factory sandbox reaper timer
+
+- name: Install the factory sandbox reaper timer unit
+  ansible.builtin.template:
+    src: livespec-factory-sandbox-reaper.timer.j2
+    dest: "{{ factory_sandbox_reaper_unit_dir }}/{{ factory_sandbox_reaper_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the factory sandbox reaper timer
+
+- name: Verify the installed reaper with a report-only pass
+  # REAPER_APPLY is forced to 0 HERE whatever the role variable says: the
+  # verification proves the installed script runs on this host (fabro login,
+  # driver profile, git reach) and must never delete. A non-zero exit fails the
+  # converge before the timer is armed. Skipped under --check because the script
+  # it would run is not yet written.
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, "{{ factory_sandbox_reaper_bin }}"]
+  become: true
+  become_user: "{{ factory_sandbox_reaper_user }}"
+  environment:
+    HOME: "{{ fabro_server_host_home }}"
+    REAPER_FABRO_BIN: "{{ factory_sandbox_reaper_fabro_bin | trim }}"
+    REAPER_FABRO_SERVER: "{{ factory_sandbox_reaper_fabro_server }}"
+    REAPER_LITHOS_BIN: "{{ factory_sandbox_reaper_lithos_bin }}"
+    REAPER_PROVIDER: "{{ factory_sandbox_reaper_provider }}"
+    REAPER_MIN_AGE_HOURS: "{{ factory_sandbox_reaper_min_age_hours }}"
+    REAPER_MAX_DELETIONS: "{{ factory_sandbox_reaper_max_deletions }}"
+    REAPER_APPLY: "0"
+  changed_when: false
+
+- name: Arm the factory sandbox reaper timer
+  # The TIMER is enabled, never the service: starting the service runs a pass.
+  ansible.builtin.systemd_service:
+    name: "{{ factory_sandbox_reaper_timer }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+  become: true
+  when: not ansible_check_mode or factory_sandbox_reaper_timer_unit_stat.stat.exists

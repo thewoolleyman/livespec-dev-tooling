@@ -95,6 +95,14 @@
     # credential the plugin is configured to read.
     - role: sandbox_driver_kubernetes
       tags: [sandbox_driver_kubernetes]
+    # The periodic reaper of ended runs' Kubernetes sandbox records and node
+    # workspaces (bd-ib-u5facl). Off unless the host declares
+    # `factory_sandbox_reaper_enabled`; report-only unless it ALSO declares
+    # `factory_sandbox_reaper_apply`. After sandbox_driver_kubernetes, whose CLI
+    # it calls. See the role's HOST_VARS.md.
+    - role: factory_sandbox_reaper
+      tags: [factory_sandbox_reaper]
+      when: factory_sandbox_reaper_enabled | default(false) | bool
     # The persistent OTel receiver every Fabro instance on the host exports to
     # (livespec-dev-tooling-jvem). Off unless the host turns it on. A converge
     # that changes it never restarts it without -e otel_receiver_restart_allowed=true;
