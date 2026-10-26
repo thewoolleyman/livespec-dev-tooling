@@ -29,9 +29,10 @@ _BOOT_CONVERGE = _PHASE2 / "reconstruct" / "converge-ci-stack.sh"
 _ROLE_DEFAULTS = _REPO_ROOT / "ansible" / "roles" / "ci_converge_unit" / "defaults" / "main.yml"
 _NAMESPACE = "factory-mi-homelab"
 _CLUSTER_SCOPED = {"Namespace", "ClusterRoleBinding"}
-# The pool check in factory/DERIVATION.md: CI nominal 61 + factory 32 = 93 of
-# ~104 schedulable cpu. The split must keep the factory total at 32.
-_FACTORY_CPU_TOTAL = 32
+# The pool check in factory/DERIVATION.md "The quota, raised to twelve runs":
+# CI's cpu-requesting queues 17 + factory 56 = 73 of ~104 schedulable cpu. The
+# fleet and homelab quotas together must stay at 56.
+_FACTORY_CPU_TOTAL = 56
 _HOMELAB_RUNS = 2
 _RUN_CPU = 4
 
@@ -103,7 +104,7 @@ def test_the_quota_is_a_split_of_the_fleet_total_not_an_addition() -> None:
     )
     assert fleet + homelab == _FACTORY_CPU_TOTAL, (
         f"fleet {fleet} + homelab {homelab} cpu must stay {_FACTORY_CPU_TOTAL}: the pool check "
-        "(CI nominal 61 + factory 32 = 93 of ~104) has no room for more"
+        "(CI cpu 17 + factory 56 = 73 of ~104) was derived for that total"
     )
 
 
