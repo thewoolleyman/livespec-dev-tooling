@@ -1393,3 +1393,63 @@ When a livespec-dev-tooling release v1.134.5 bumps the repository's pins
 Then the pin autodiscovery walk MUST yield a fabro-sandbox docker image tag record for the env-file line
 
 And the bump commit MUST rewrite both lines to `python-v1.134.5`
+
+## Scenario: a detached gate outlives the caller that launched it and reports its own exit code
+
+Given a checkout carrying the worktree-discipline pack
+
+When `gate-start` launches a gate command that exits with a code from 1 to 127 after the launching shell has returned
+
+And `gate-wait` is issued for the printed run id
+
+Then the run record MUST carry an `exit_code` equal to the gate command's exit code
+
+And `gate-wait` MUST report the state `FAILED` and exit with that same code
+
+## Scenario: a detached gate whose process dies without a verdict reports DIED_WITHOUT_VERDICT and exits 75
+
+Given a detached gate run whose record carries a `pid` and no `exit_code`
+
+And the process named by that `pid` is no longer alive
+
+When `gate-wait` or `gate-status` is issued for that run
+
+Then the reported state MUST be `DIED_WITHOUT_VERDICT`
+
+And the exit code MUST be `75`
+
+And the run MUST NOT be reported as passed
+
+## Scenario: a shared-config write during a detached gate is recorded with writer attribution and marks the run
+
+Given a detached gate run launched from a linked worktree
+
+When a process descended from the gate rewrites the primary checkout's shared `.git/config` `[core]` section while the gate is alive
+
+And that process stays alive until the write-watch has recorded the change
+
+And the changed `[core]` section persists until the gate ends
+
+And the gate completes with an exit code from 0 to 127
+
+Then the run's `config-writes.log` MUST record the write and name the writing process
+
+And the run record MUST carry a `CORE_BARE_FLIP` marker
+
+And `gate-status`, issued after the gate completes, MUST print the marker while still exiting with the gate's own exit code
+
+## Scenario: an idle detached gate run and an idle waiter spawn no per-tick process
+
+Given a detached gate run whose command is alive
+
+And neither the shared `.git/config` nor its lockfile changes
+
+And a `gate-wait` blocked on that run
+
+When the run stays in that state across an observation window
+
+Then the runner MUST spawn no child process on any observation of the config
+
+And the waiter MUST spawn no child process on any poll of the run's state
+
+And `gate-wait` MUST still return within five seconds of the run's `exit_code` appearing

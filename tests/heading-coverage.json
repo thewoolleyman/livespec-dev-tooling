@@ -1212,5 +1212,45 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the pin autodiscovery walk yielding a fabro-sandbox record for the factory-reach-image.env line, and a bump rewriting it with the workflow container pins. livespec-dev-tooling-7enfyd owns it.",
     "work_item": "livespec-dev-tooling-7enfyd"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Detached gate runner",
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_a_config_flip_during_the_gate_marks_the_run_and_names_the_writer",
+    "reason": "Unit-tier, driving the shipped `gate-run.sh` end to end through real `bash` and `git` subprocesses: a gate whose descendant rewrites the shared `.git/config` `[core]` section records its own exit code, writes the `CORE_BARE_FLIP` marker, names the writer in `config-writes.log`, and `gate-status` exits with the gate's own code. The run record, worktree-survival and status-evidence clauses are pinned by its siblings in the same file. The Idle cost bullet is spec-first and owed by livespec-dev-tooling-ycahud, which also owes the four integration-tier scenario tests below.",
+    "work_item": "livespec-dev-tooling-ycahud"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a detached gate outlives the caller that launched it and reports its own exit code",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-ycahud"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a detached gate whose process dies without a verdict reports DIED_WITHOUT_VERDICT and exits 75",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-ycahud"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a shared-config write during a detached gate is recorded with writer attribution and marks the run",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-ycahud"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an idle detached gate run and an idle waiter spawn no per-tick process",
+    "test": "TODO",
+    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-ycahud"
   }
 ]
