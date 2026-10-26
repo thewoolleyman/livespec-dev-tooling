@@ -171,11 +171,16 @@ fabro_server_instances:
     port: 32276
     canonical_host: gmktec-xubuntu.perch-rudd.ts.net:32276
     cli_target_url: http://127.0.0.1:32276
-    # EIGHT (maintainer directive R259, superseding R196's two). Each livespec-ci
-    # sandbox has an 8GB hard limit and measured anon peaks of about 2.6G, so eight
-    # fit the 36G-high / 40G-max sandbox slice above. Change it only together with
-    # the slice.
-    max_concurrent_runs: 8
+    # TWELVE (coordinator ruling R50 on the maintainer's attended direction of
+    # 2026-10-26, "max it out"). The fleet's environments now run as Kubernetes
+    # pods, which the `factory-runs` ResourceQuota bounds (48 cpu, raised in the
+    # same change; ci-runner/k3s/phase2/factory/DERIVATION.md "The quota, raised
+    # to twelve runs"), not the Docker sandbox slice above. Only the Docker
+    # environment livespec-ci-rust still lands in that slice, and at the measured
+    # ~2.6G anon per sandbox the 36G-high / 40G-max slice holds all twelve if
+    # every run chose it. Was EIGHT (R259), sized to the slice while every run
+    # was Docker.
+    max_concurrent_runs: 12
     github_app_id: "3668528"
     otel_dropin: present
     # The registered-provider carrier, proven on the canary instance below

@@ -12,6 +12,24 @@ is re-guessed by whoever next needs it.
 Work-item `livespec-dev-tooling-due2h6`. Plan: livespec
 `factory-worker-nodes-gitops`, epic `livespec-sqvj7p`.
 
+## RAISED 2026-10-26: the ceiling is now twenty-four pods
+
+The `factory-runs` quota was raised from 6 to 12 concurrent runs, so `pods: "24"`
+(12 runs x sandbox + replacement), plus `factory-mi-homelab-runs`' 4;
+`ci-runner/k3s/phase2/factory/DERIVATION.md` "The quota, raised to twelve runs"
+carries the derivation. The per-run high-water mark the section below left
+unmeasured is now read: the five newest petri workspaces on `poweredge-xubuntu`
+measured 513-588 MB each (`du -sm`, 2026-10-26).
+
+| Node | Free | Workspace directories present | Need at 28 pods x 0.6 G |
+|---|---|---|---|
+| `poweredge-xubuntu` | **113 G** | 156 | about 17 G |
+| `gmktec-xubuntu` | **142 G** | 11 | about 17 G |
+
+Neither node binds. The 156 directories on poweredge (45 G in all, against five
+live pods) confirm that workspaces outlive their pods; that is cleanup debt, not
+a quota bound, and the soak should watch poweredge's free space for it.
+
 ## RAISED 2026-10-24: the ceiling is now sixteen pods
 
 The `factory-runs` quota was raised from 3 to 8 concurrent runs, so `pods: "16"`
