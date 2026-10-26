@@ -1381,3 +1381,15 @@ When a git commit is made
 Then the commit MUST be refused naming the file, line and rule of the lint error
 
 And the full pre-commit aggregate MUST NOT have started any member
+
+## Scenario: a dev-tooling release bump rewrites the factory-reach image pin with the workflow image pins
+
+Given a repository whose `.github/workflows/ci.yml` pins `ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.110.0` under a job's `container:` block
+
+And whose `ci-runner/k3s/phase2/factory/factory-reach-image.env` carries `FACTORY_REACH_SANDBOX_IMAGE=ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.110.0`
+
+When a livespec-dev-tooling release v1.134.5 bumps the repository's pins
+
+Then the pin autodiscovery walk MUST yield a fabro-sandbox docker image tag record for the env-file line
+
+And the bump commit MUST rewrite both lines to `python-v1.134.5`

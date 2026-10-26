@@ -1204,5 +1204,13 @@
     "test": "tests.livespec_dev_tooling.workflow_checks.test_staged_precheck.test_a_staged_lint_error_is_refused_naming_file_line_and_rule",
     "reason": "Integration-tier by the static `pytest.mark.integration` marker: the test drives the shipped `staged_precheck` check end-to-end (real `main()`, a real git repository fixture with a minimal pyproject, and the real ruff and pyright from this venv), so the refusal it reads is the committer's. The pre-check's place ahead of every aggregate member is pinned separately by `test_check_pre_commit_runs_the_precheck_before_any_aggregate_run` (work-item livespec-dev-tooling-nil6v7).",
     "work_item": "livespec-dev-tooling-nil6v7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a dev-tooling release bump rewrites the factory-reach image pin with the workflow image pins",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the pin autodiscovery walk yielding a fabro-sandbox record for the factory-reach-image.env line, and a bump rewriting it with the workflow container pins. livespec-dev-tooling-7enfyd owns it.",
+    "work_item": "livespec-dev-tooling-7enfyd"
   }
 ]
