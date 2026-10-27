@@ -237,6 +237,49 @@ infrastructure-failure share rise against the pre-raise baseline, step back to
 10 runs. If it is clean and cores are still idle, the next value is 16 (64 cpu,
 89 of ~104 with CI at nominal).
 
+## The quota, raised to sixteen runs (2026-10-27)
+
+**Why it moved.** The twelve-run soak (coordinator rulings R50, R71, R84 on
+livespec-dev-tooling-dfixhe) ran three clean hours from 21:53Z on 2026-10-26.
+It recorded 0 kernel OOM kills on either node, 0 infrastructure-class failures
+among the runs that ended, and no Fabro-side stage timeouts. R84 then required
+poweredge to average at least 30 % idle over a ten-minute window at twelve live
+runs. Single 10 s `mpstat` reads were rejected as the instrument, because one
+of them caught a CI burst at 8 % idle.
+
+**Measured, 2026-10-27 00:51-01:01Z** (`mpstat 60 10` on each node, live
+factory runs 12 at the start and 9 at the end):
+
+| node | average busy (user + sys) | average idle |
+|---|---|---|
+| `poweredge-xubuntu` | 46.1 % | **53.7 %** |
+| `gmktec-xubuntu` | 32.2 % | 67.1 % |
+
+| term | arithmetic | value |
+|---|---|---|
+| `requests.cpu` | 16 runs x 4 cpu | **64** |
+| `requests.memory` | 16 runs x 8 Gi | **128Gi** |
+| `limits.cpu` | 16 runs x 4 cpu | **64** |
+| `limits.memory` | 128Gi + one run's headroom | **136Gi** |
+| `pods` | 16 runs x (1 sandbox + 1 in-flight replacement) | **32** |
+
+**Checked against the pool.** Fleet 64 + mi-homelab 8 + CI's cpu-requesting
+queues at full nominal 17 = **89 of ~104** schedulable cpu. Memory does not
+bind. Workspace disk does not bind either: 32 pods at about 0.6 G is about 19 G,
+and the factory sandbox reaper (bd-ib-u5facl) now collects ended runs'
+workspaces.
+
+**Placement caveat.** Through the twelve-run soak every factory pod landed on
+`poweredge-xubuntu` and none on `gmktec-xubuntu`. Spreading them is bd-ib-kogktm:
+the sandbox image is pre-pulled into each factory node's k3s containerd, and a
+soft spread follows if that is not enough. R84 made the spread a goal, not a
+precondition for sixteen.
+
+**Order of operations.** This quota and petri's launcher caps (raised to 16 only
+after this quota reads back 64) are live. gmktec's Fabro instance already
+declares `max_concurrent_runs: 16` but enforces 12 until its pending restart,
+taken at the first natural dip to four or fewer live runs.
+
 ## The egress targets
 
 The policy default-denies ingress (`podSelector: {}`, `ingress: []`) and allows

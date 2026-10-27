@@ -12,6 +12,16 @@ is re-guessed by whoever next needs it.
 Work-item `livespec-dev-tooling-due2h6`. Plan: livespec
 `factory-worker-nodes-gitops`, epic `livespec-sqvj7p`.
 
+## RAISED 2026-10-27: the ceiling is now thirty-two pods
+
+The `factory-runs` quota was raised from 12 to 16 concurrent runs, so `pods: "32"`;
+`ci-runner/k3s/phase2/factory/DERIVATION.md` "The quota, raised to sixteen runs"
+carries the derivation. At the measured 513-588 MB per workspace, 36 pods (with
+mi-homelab's 4) need about 21 G, against 104 G free on `poweredge-xubuntu` on
+2026-10-27. The factory sandbox reaper (bd-ib-u5facl) collects ended runs'
+workspaces after 24 h, which bounds the leftover directories the twelve-run
+section recorded.
+
 ## RAISED 2026-10-26: the ceiling is now twenty-four pods
 
 The `factory-runs` quota was raised from 6 to 12 concurrent runs, so `pods: "24"`
