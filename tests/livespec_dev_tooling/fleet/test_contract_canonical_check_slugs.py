@@ -10,6 +10,7 @@ from test_rows_files import _MEMBER, make_context, tree_table
 from livespec_dev_tooling.fleet import _lanes
 from livespec_dev_tooling.fleet._context import FleetMember, GhResult, RowFinding
 from livespec_dev_tooling.fleet._contract_classes import ALL_CLASSES
+from livespec_dev_tooling.fleet._contract_model import ObligationRow
 from livespec_dev_tooling.fleet._contract_rows import OBLIGATION_ROWS, rows_for
 from livespec_dev_tooling.fleet._lanes import run_member_rows
 from livespec_dev_tooling.fleet._rows_canonical_check_slugs import (
@@ -63,10 +64,15 @@ def _table() -> dict[tuple[str, ...], GhResult]:
     return table
 
 
-def test_canonical_slug_row_is_registered_for_fleet_members_only(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A failing aggregate is swept for `fleet`, never for manifest adopters."""
+def _canonical_row_only(*, repo_class: str) -> tuple[ObligationRow, ...]:
+    """Keep the lane test focused on the canonical-slug obligation."""
+    del repo_class
+    registered = {row.row_id: row for row in OBLIGATION_ROWS}
+    return (registered[_ROW_ID],)
+
+
+def test_canonical_slug_row_is_registered_for_every_fleet_class() -> None:
+    """The contract table binds the canonical aggregate asserter universally."""
     registered = {row.row_id: row for row in OBLIGATION_ROWS}
 
     assert _ROW_ID in registered
@@ -78,12 +84,17 @@ def test_canonical_slug_row_is_registered_for_fleet_members_only(
         for repo_class in ALL_CLASSES
     )
 
+
+def test_canonical_slug_row_is_run_for_fleet_members_only(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failing aggregate is swept for `fleet`, never for manifest adopters."""
     manifest = parse_manifest(source=_MANIFEST_WITH_ADOPTER).unwrap()
     monkeypatch.setattr(
         "livespec_dev_tooling.fleet._rows_canonical_check_slugs.canonical_check_slugs",
         lambda: IOSuccess(("check-alpha",)),
     )
-    monkeypatch.setattr(_lanes, "rows_for", lambda *, repo_class: (row,))  # noqa: ARG005
+    monkeypatch.setattr(_lanes, "rows_for", _canonical_row_only)
 
     control = assert_canonical_check_slugs_wired(
         ctx=make_context(table=_table()),
