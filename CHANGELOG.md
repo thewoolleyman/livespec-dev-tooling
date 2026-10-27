@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.136.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.136.1...v1.136.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* pin COLUMNS/LINES in the sandbox base image so a failing assertion in a 0x0-pty hook fails instead of hanging ([1a08844](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1a08844aca78b9d5b3ae7935d142bc99a9ba1693))
+
 ## [1.136.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.136.0...v1.136.1) (2026-10-27)
 
 
