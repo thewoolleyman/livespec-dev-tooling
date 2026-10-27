@@ -132,14 +132,9 @@ _REQUIRED_MISE_TOOLS = ("just", "lefthook", "shellcheck", "uv")
 _PYTHON_LOCKSTEP_ARG = "PYTHON_VERSION"
 _GH_SUPPORTED_ARG = "GH_VERSION"
 _SUPPORTED_GH_VERSION = "2.102.0"
-_GH_KEYRING_PATH = "/etc/apt/keyrings/githubcli-archive-keyring.gpg"
-_GH_KEYRING_URL = "https://cli.github.com/packages/githubcli-archive-keyring.gpg"
-_GH_APT_SOURCE = (
-    "deb [arch=$(dpkg --print-architecture) signed-by="
-    + _GH_KEYRING_PATH
-    + "] https://cli.github.com/packages stable main"
-)
-_GH_PACKAGE_PIN = "gh=${GH_VERSION}"
+_GH_SHA256_ARG = "GH_SHA256"
+_GH_RELEASE_URL = "https://github.com/cli/cli/releases/download/v${GH_VERSION}/"
+_GH_CHECKSUM_VERIFY = '"${GH_SHA256}  /tmp/gh.tgz" | sha256sum -c -'
 _GH_MISE_PIN = "gh@${GH_VERSION}"
 _CHAIN_DEFAULT_ARGS = (
     ("BASE_IMAGE", "livespec-fabro-sandbox:base-dev"),
@@ -279,7 +274,9 @@ def _lockstep_issues(
             f"{_GH_SUPPORTED_ARG}: image bakes {image_gh!r} but "
             f"the supported GitHub CLI pin is {_SUPPORTED_GH_VERSION!r}"
         )
-    issues.extend(_gh_install_issues(dockerfile_source=dockerfile_source))
+    issues.extend(
+        _gh_install_issues(dockerfile_source=dockerfile_source, dockerfile_args=dockerfile_args)
+    )
     return issues
 
 
@@ -317,19 +314,18 @@ def _factory_reach_pin_issues(*, shipped_source: str, workflow_source: str) -> l
     return []
 
 
-def _gh_install_issues(*, dockerfile_source: str) -> list[str]:
+def _gh_install_issues(*, dockerfile_source: str, dockerfile_args: dict[str, str]) -> list[str]:
     issues: list[str] = []
-    if (
-        _GH_KEYRING_URL not in dockerfile_source
-        or _GH_KEYRING_PATH not in dockerfile_source
-        or _GH_APT_SOURCE not in dockerfile_source
-    ):
+    if _GH_RELEASE_URL not in dockerfile_source:
         issues.append(
-            "GH_VERSION: gh apt source must be the signed cli.github.com repository "
-            f"{_GH_APT_SOURCE!r}"
+            "GH_VERSION: gh must be downloaded from its pinned GitHub release "
+            f"{_GH_RELEASE_URL!r} (cli.github.com's apt repo only serves the "
+            "current version, so an exact apt pin rots)"
         )
-    if _GH_PACKAGE_PIN not in dockerfile_source:
-        issues.append(f"GH_VERSION: apt install must use the exact package pin {_GH_PACKAGE_PIN!r}")
+    if not dockerfile_args.get(_GH_SHA256_ARG):
+        issues.append(f"GH_VERSION: the image must pin {_GH_SHA256_ARG} for the gh release tarball")
+    if _GH_CHECKSUM_VERIFY not in dockerfile_source:
+        issues.append(f"GH_VERSION: the gh install must verify {_GH_CHECKSUM_VERIFY!r}")
     if _GH_MISE_PIN in dockerfile_source:
         issues.append("GH_VERSION: gh must not be installed by mise")
     return issues

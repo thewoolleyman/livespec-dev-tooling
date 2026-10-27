@@ -39,3 +39,8 @@ RUN mise use -g uv@${UV_VERSION} \
     && mise reshim
 
 RUN uv python install ${PYTHON_VERSION}
+
+# Build-time proof of the base layer's COLUMNS/LINES pin: under a 0x0 pty (what
+# lefthook gives a hook inside a Fabro sandbox) the pinned CPython must still
+# report a usable terminal width, or pytest-icdiff hangs on a failing `==`.
+RUN script -qec "stty cols 0 rows 0; $(uv python find ${PYTHON_VERSION}) -c 'import shutil; c = shutil.get_terminal_size().columns; print(c); raise SystemExit(0 if c >= 80 else 1)'" /dev/null
