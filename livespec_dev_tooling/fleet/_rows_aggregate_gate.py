@@ -66,7 +66,9 @@ __all__: list[str] = [
     "AGGREGATE_GATE_SLUGS",
     "CHECK_TARGETS_INVENTORY",
     "JUSTFILE_PATH",
+    "ResolvedCheckAggregate",
     "assert_aggregate_gate_wired",
+    "resolve_check_aggregate_targets",
 ]
 
 
@@ -96,7 +98,7 @@ AGGREGATE_GATE_HINT = (
 
 
 @dataclass(frozen=True, kw_only=True)
-class _ResolvedTargets:
+class ResolvedCheckAggregate:
     """A member's committed aggregate target list and the file it was read from.
 
     The source path travels WITH the targets because the finding has to send
@@ -124,7 +126,9 @@ def _inventory_targets(*, inventory_text: str) -> tuple[str, ...]:
     return tuple(targets)
 
 
-def _justfile_targets(*, ctx: FleetContext, member: FleetMember) -> _ResolvedTargets | RowOutcome:
+def _justfile_targets(
+    *, ctx: FleetContext, member: FleetMember
+) -> ResolvedCheckAggregate | RowOutcome:
     """The `targets=(...)` slugs of the member's bare `check:` recipe.
 
     Both parsers come from the shared `_ci_matrix_parse` home so this row and
@@ -152,22 +156,24 @@ def _justfile_targets(*, ctx: FleetContext, member: FleetMember) -> _ResolvedTar
                 "targets=(...) array — aggregate targets not enumerable"
             )
         )
-    return _ResolvedTargets(source=JUSTFILE_PATH, targets=tuple(targets.unwrap()))
+    return ResolvedCheckAggregate(source=JUSTFILE_PATH, targets=tuple(targets.unwrap()))
 
 
-def _inventory_resolved(*, ctx: FleetContext, member: FleetMember) -> _ResolvedTargets | RowOutcome:
+def _inventory_resolved(
+    *, ctx: FleetContext, member: FleetMember
+) -> ResolvedCheckAggregate | RowOutcome:
     """The member's aggregate read from its committed `check-targets.txt`."""
     text = ctx.file_text(repo=member.repo, path=CHECK_TARGETS_INVENTORY)
     if text is None:
         return RowSkip(reason=f"{member.repo}: {CHECK_TARGETS_INVENTORY} unreadable")
-    return _ResolvedTargets(
+    return ResolvedCheckAggregate(
         source=CHECK_TARGETS_INVENTORY, targets=_inventory_targets(inventory_text=text)
     )
 
 
-def _resolve_targets(
+def resolve_check_aggregate_targets(
     *, ctx: FleetContext, member: FleetMember, tree: TreeState
-) -> _ResolvedTargets | RowOutcome:
+) -> ResolvedCheckAggregate | RowOutcome:
     """The member's committed aggregate, or the outcome that ends the row.
 
     Inventory FIRST, justfile second — `ci_matrix_completeness`'s order. A
@@ -213,8 +219,8 @@ def assert_aggregate_gate_wired(*, ctx: FleetContext, member: FleetMember) -> Ro
     tree = ctx.tree(repo=member.repo)
     if not tree.readable:
         return RowSkip(reason=f"{member.repo}: master tree unreadable")
-    resolved = _resolve_targets(ctx=ctx, member=member, tree=tree)
-    if not isinstance(resolved, _ResolvedTargets):
+    resolved = resolve_check_aggregate_targets(ctx=ctx, member=member, tree=tree)
+    if not isinstance(resolved, ResolvedCheckAggregate):
         return resolved
     missing = tuple(slug for slug in AGGREGATE_GATE_SLUGS if slug not in resolved.targets)
     if not missing:

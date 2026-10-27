@@ -33,8 +33,11 @@ from typing import TYPE_CHECKING
 from _gh_railway import lift_gh
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 from returns.io import IOFailure
+from returns.unsafe import unsafe_perform_io
 from test_worktree_pack_wiring import WIRED_GITIGNORE, WIRED_JUSTFILE, WIRED_LEFTHOOK
 
+from livespec_dev_tooling.canonical_checks import canonical_check_slugs
+from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
 from livespec_dev_tooling.fleet import _cli_owner, wire_fleet_member
 from livespec_dev_tooling.fleet._context import (
     FleetContext,
@@ -133,7 +136,26 @@ _RECONCILER_SHIM_ARGS: tuple[str, ...] = (
 )
 
 _CI_YML = "jobs:\n  check:\n    strategy:\n      matrix:\n        target:\n          - check-a\n"
-_PYPROJECT = '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n'
+
+
+def _all_required_role_keys_block() -> str:
+    """Render the declared-absent form of every required fixture role key."""
+    lines = ["[tool.livespec_dev_tooling]"]
+    fields = Config.__dataclass_fields__
+    for key in sorted(REQUIRED_ROLE_KEYS):
+        if key in UNION_ROLE_KEYS:
+            lines.append(f'{key} = {{ not_applicable = "fixture member has no {key}" }}')
+            continue
+        default = fields[key].default
+        value = '""' if default is None else "[]"
+        lines.append(f"{key} = {value}")
+    return "\n".join(lines) + "\n"
+
+
+_PYPROJECT = (
+    '[tool.uv.sources]\nlivespec-dev-tooling = { git = "x", tag = "v1.0.0" }\n\n'
+    + _all_required_role_keys_block()
+)
 _LIVESPEC_JSONC = (
     '{"harnesses": {"claude": {"status": "exempt", "reason": "library; no harness surface"}}, '
     '"livespec-overseer": {"foreman_valve_disposition": "consensus"}, '
@@ -154,11 +176,19 @@ _PLUGIN_SETTINGS = json.dumps(
     }
 )
 # The plugin-currency recipe plus the worktree-pack wiring, so the one green
-# fixture satisfies both justfile-reading rows.
+# fixture satisfies every justfile-reading fleet row. The canonical set is
+# dynamic in production, so this fixture derives its aggregate from the same
+# inventory rather than freezing today's list of slugs.
+_CANONICAL_TARGETS = "\n".join(
+    f"        {slug}" for slug in unsafe_perform_io(canonical_check_slugs().unwrap())
+)
 _STANDARD_JUSTFILE = (
     "ensure-plugins:\n"
     "    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins\n"
-) + WIRED_JUSTFILE
+) + WIRED_JUSTFILE.replace(
+    "        check-aggregate-completeness\n        check-ci-matrix-completeness",
+    _CANONICAL_TARGETS,
+)
 
 
 def make_runner(*, table: dict[tuple[str, ...], GhResult]) -> GhRunner:
