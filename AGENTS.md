@@ -161,6 +161,13 @@ The files:
   in a particular position, or before concluding herdr cannot move a tab.
   `tab create` appends at the end. `tab.move` exists in the socket API, not in
   the `herdr tab` CLI (corrected by the maintainer, 2026-10-26).
+- Read `.ai/janitor-failed-output.md` before diagnosing a `failed at
+  janitor-post-merge` or a red `check-per-file-coverage` in a janitor checkout,
+  or before saying a janitor discarded its output. It did not: the full pytest
+  output is in `tmp/janitor-failed-output/*.json`, and the checkout's
+  `.pytest_cache/v/cache/lastfailed` names the failing test in two seconds. A
+  2026-10-27 session searched for `*.log`, found nothing, and had to retract
+  "the janitor discards output" to the coordinator.
 
 ## Backlog drive — this repo has no foreman seat
 
