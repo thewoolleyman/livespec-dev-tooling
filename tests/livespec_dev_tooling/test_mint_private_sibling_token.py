@@ -39,10 +39,14 @@ def _run_minter(
     requests = tmp_path / "requests"
     scope = tmp_path / "scope"
     _fake(bin_dir=bin_dir, name="git", body="exit 1")
+    # The minter pipes into openssl under `pipefail`. A fake that exits without
+    # draining stdin hands its still-writing upstream SIGPIPE, and the minter
+    # exits 141 at random: 20/120 runs at load 37, 2026-10-27. Real openssl
+    # reads all its input, and so must the fake.
     _fake(
         bin_dir=bin_dir,
         name="openssl",
-        body='printf "%s" "encoded"',
+        body='cat >/dev/null\nprintf "%s" "encoded"',
     )
     _fake(
         bin_dir=bin_dir,
