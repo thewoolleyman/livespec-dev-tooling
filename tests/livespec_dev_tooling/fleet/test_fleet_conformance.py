@@ -37,8 +37,10 @@ from _gh_railway import lift_gh
 from _protection_fixtures import aligned_merge_settings_payload, aligned_protection_payload
 from returns.io import IOFailure, IOSuccess
 from returns.result import Failure
+from returns.unsafe import unsafe_perform_io
 from test_worktree_pack_wiring import WIRED_GITIGNORE, WIRED_JUSTFILE, WIRED_LEFTHOOK
 
+from livespec_dev_tooling.canonical_checks import canonical_check_slugs
 from livespec_dev_tooling.config import REQUIRED_ROLE_KEYS, UNION_ROLE_KEYS, Config
 from livespec_dev_tooling.fleet import _cli_owner, _lanes, fleet_conformance
 from livespec_dev_tooling.fleet._context import (
@@ -183,11 +185,19 @@ _PLUGIN_SETTINGS = json.dumps(
     }
 )
 # The plugin-currency recipe plus the worktree-pack wiring, so the one green
-# fixture satisfies both justfile-reading rows.
+# fixture satisfies every justfile-reading fleet row. The canonical set is
+# dynamic in production, so this fixture derives its aggregate from the same
+# inventory rather than freezing today's list of slugs.
+_CANONICAL_TARGETS = "\n".join(
+    f"        {slug}" for slug in unsafe_perform_io(canonical_check_slugs().unwrap())
+)
 _STANDARD_JUSTFILE = (
     "ensure-plugins:\n"
     "    mise exec -- uv run --no-sync python -m livespec_dev_tooling.fleet.ensure_plugins\n"
-) + WIRED_JUSTFILE
+) + WIRED_JUSTFILE.replace(
+    "        check-aggregate-completeness\n        check-ci-matrix-completeness",
+    _CANONICAL_TARGETS,
+)
 
 
 # The credential preflight (livespec-dev-tooling-z4qi) probes `rate_limit`
