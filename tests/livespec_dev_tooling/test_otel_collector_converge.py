@@ -155,7 +155,7 @@ def test_the_same_converge_installs_the_services_systemd_unit() -> None:
     )
     assert "ansible.builtin.template:" in install, install
     assert 'dest: "{{ otel_collector_unit_path }}"' in install, install
-    assert "Reload systemd for the collector unit" in install, install
+    assert "Reload systemd for the managed collector units" in install, install
     assert "Restart the collector onto its managed configuration" in install, install
 
     handlers = _HANDLERS.read_text(encoding="utf-8")

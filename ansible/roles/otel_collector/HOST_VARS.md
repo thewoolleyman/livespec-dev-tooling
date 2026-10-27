@@ -19,12 +19,12 @@ silent.
 **What the role owns, and what stays a precondition.** On a pool node it owns
 the `otel-collector` system account, the pinned `otelcol-contrib` binary, the
 merged configuration at `/etc/otel-collector/config.yaml`, the unit, and the
-ingest-key line it appends to `/etc/otel-collector/.env`. It never owns the
-CI-runner host's `host.env`, its `kubeconfig`, or the
-`otel-collector-identity.service` that re-renders that kubeconfig at every
-boot: each is a fact about the node, the collector repository's installer places
-it, and this role asserts it and names it when it is absent. Moving the identity
-render into Ansible is its own item.
+ingest-key line it appends to `/etc/otel-collector/.env`. A host declaring
+`otel_collector_cluster_identity: true` also gets the merged RBAC manifest,
+identity render script, and enabled identity unit from the configured collector
+ref; a changed one runs the identity unit before restarting the collector. The
+CI-runner host's `host.env` remains a node fact and precondition. The kubeconfig
+is a post-check because the role's identity unit renders it after every change.
 
 **The environment file.** The role APPENDS each key named in
 `otel_collector_env_from_controller` that the file does not already set, under
@@ -44,6 +44,7 @@ none.
 | `otel_collector_binary_version` | `0.147.0` | the pinned release |
 | `otel_collector_binary_arch` / `_host_architecture` / `_sha256` | `amd64` / `x86_64` / (the amd64 tarball's) | the release asset, the machine it is for, and its checksum — overridden together or not at all |
 | `otel_collector_extra_environment_files` | `[]` | further `EnvironmentFile=` entries, listed BEFORE the ingest-key one so a value there wins |
+| `otel_collector_cluster_identity` | `false` | install and run the CI-runner host's RBAC, identity renderer and identity unit from the configured collector ref |
 | `otel_collector_kubeconfig_path` | `""` | the scoped read-only cluster identity; empty means this host reads no kubelet |
 | `otel_collector_unit_description` | the dev host's | the unit's `Description=` |
 | `otel_collector_unit_after` / `_wants` | `network-online.target docker.service` | the unit's start order |
@@ -58,6 +59,7 @@ otel_collector_user: otel-collector
 otel_collector_group: otel-collector
 otel_collector_manage_install: true
 otel_collector_hardened: true
+otel_collector_cluster_identity: true
 otel_collector_extra_environment_files:
   - /etc/otel-collector/host.env
 otel_collector_kubeconfig_path: /etc/otel-collector/kubeconfig

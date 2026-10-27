@@ -81,6 +81,7 @@ _ROLE = _ANSIBLE / "roles" / "otel_collector"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _TASKS = _ROLE / "tasks" / "main.yml"
 _BINARY_TASKS = _ROLE / "tasks" / "binary.yml"
+_HANDLERS = _ROLE / "handlers" / "main.yml"
 _UNIT_TEMPLATE = _ROLE / "templates" / "otel-collector.service.j2"
 
 _ROLE_NAME = "otel_collector"
@@ -807,8 +808,8 @@ def test_the_role_refuses_an_unset_controller_variable_before_any_write() -> Non
     )
 
 
-def test_the_role_refuses_a_missing_kubeconfig_naming_it_before_any_write() -> None:
-    """Assertion 10: the scoped cluster identity is a precondition, refused by path."""
+def test_the_role_asserts_the_rendered_kubeconfig_after_converging_its_identity() -> None:
+    """The scoped cluster identity is checked after its managed render can run."""
     blocks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
     refusals = [
         index
@@ -824,12 +825,16 @@ def test_the_role_refuses_a_missing_kubeconfig_naming_it_before_any_write() -> N
     refusal = blocks[refusals[0]]
     assert "{{ otel_collector_kubeconfig_path }}" in refusal, (
         f"the refusal must NAME the path it could not find, so an operator is told which file "
-        f"the collector repository's installer owns;\n{refusal}"
+        f"the role was meant to render;\n{refusal}"
     )
-    assert refusals[0] < _first_write_index(blocks=blocks), (
-        f"the refusal stands at position {refusals[0]} and the first write at "
-        f"{_first_write_index(blocks=blocks)}; a refusal after a write leaves the host half "
-        f"converged"
+    flushes = [
+        index
+        for index, block in enumerate(blocks)
+        if "ansible.builtin.meta: flush_handlers" in block
+    ]
+    assert flushes and refusals[0] > flushes[-1], (
+        f"the kubeconfig assertion must be a post-check after the identity handlers flush: "
+        f"assertion={refusals[0]}, flushes={flushes}"
     )
     assert _resolved(host=_POWEREDGE)["otel_collector_kubeconfig_path"] == (
         "/etc/otel-collector/kubeconfig"
@@ -839,6 +844,72 @@ def test_the_role_refuses_a_missing_kubeconfig_naming_it_before_any_write() -> N
             f"{host}'s collector reads no kubelet, so it must name no kubeconfig — a path set "
             f"here would make the role refuse a file nothing needs"
         )
+
+
+def test_cluster_identity_artifacts_follow_the_configured_collector_ref() -> None:
+    """The CI runner alone fetches and converges its three identity inputs."""
+    defaults = _declared_variables()["defaults"]
+    assert defaults.get("otel_collector_cluster_identity") is False, defaults
+
+    for host, expected in {
+        _POWEREDGE: True,
+        _GMKTEC: False,
+        _HP: False,
+        _DEV_HOST: False,
+    }.items():
+        assert _resolved(host=host)["otel_collector_cluster_identity"] is expected, host
+
+    artifacts = (
+        (
+            "otel_collector_identity_rbac_url",
+            "k8s/otel-collector-rbac.yaml",
+            "/usr/local/lib/otel-collector/otel-collector-rbac.yaml",
+            'mode: "0644"',
+        ),
+        (
+            "otel_collector_identity_render_script_url",
+            "scripts/render-k8s-identity.sh",
+            "/usr/local/lib/otel-collector/render-k8s-identity.sh",
+            'mode: "0755"',
+        ),
+        (
+            "otel_collector_identity_unit_url",
+            "systemd/otel-collector-identity.ci-runner-host.service",
+            "/etc/systemd/system/otel-collector-identity.service",
+            'mode: "0644"',
+        ),
+    )
+    poweredge = _resolved(host=_POWEREDGE)
+    blocks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+    for variable, source, destination, mode in artifacts:
+        url = poweredge.get(variable)
+        assert isinstance(url, str) and url.endswith(f"/{source}"), (variable, url)
+        assert f"/{poweredge['otel_collector_config_ref']}/" in url, (variable, url)
+        fetches = [
+            block
+            for block in blocks
+            if "lookup('ansible.builtin.url'" in block and variable in block
+        ]
+        assert len(fetches) == 1, (variable, fetches)
+        installs = [block for block in blocks if destination in block]
+        assert len(installs) == 1, (destination, installs)
+        install = installs[0]
+        assert "ansible.builtin.copy:" in install and mode in install, install
+        assert "owner: root" in install and "group: root" in install, install
+        assert "otel_collector_cluster_identity | bool" in install, install
+        assert "Run the collector cluster identity" in install, install
+        assert "Restart the collector onto its managed configuration" in install, install
+
+    handlers = _task_blocks(body=_HANDLERS.read_text(encoding="utf-8"))
+    names = [block.splitlines()[0].removeprefix("- name: ") for block in handlers]
+    reload_index = names.index("Reload systemd for the managed collector units")
+    identity_index = names.index("Run the collector cluster identity")
+    restart_index = names.index("Restart the collector onto its managed configuration")
+    assert reload_index < identity_index < restart_index, names
+    identity_handler = handlers[identity_index]
+    assert 'name: "{{ otel_collector_identity_unit_name }}"' in identity_handler
+    assert "state: started" in identity_handler
+    assert "otel_collector_identity_unit_stat.stat.exists" in identity_handler
 
 
 # --- the rendered unit ------------------------------------------------------
