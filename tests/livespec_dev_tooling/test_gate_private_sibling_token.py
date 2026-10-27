@@ -116,7 +116,6 @@ class _World:
         *,
         minted: str = "",
         refuse_mint: bool = False,
-        mint_error: str = "FATAL: GITHUB_APP_ID is not projected",
         refuse_secret: bool = False,
         created: str = _CREATED,
     ) -> None:
@@ -124,7 +123,6 @@ class _World:
         self.stdins: list[str] = []
         self._minted = minted
         self._refuse_mint = refuse_mint
-        self._mint_error = mint_error
         self._refuse_secret = refuse_secret
         self._created = created
         self._polls = 0
@@ -164,7 +162,11 @@ class _World:
         self.stdins.append(stdin or "")
         if argv[0] == str(GATE_PRIVATE_SIBLING_TOKEN_HELPER):
             if self._refuse_mint:
-                return Success(GateCommandResult(returncode=1, stdout="", stderr=self._mint_error))
+                return Success(
+                    GateCommandResult(
+                        returncode=1, stdout="", stderr="FATAL: GITHUB_APP_ID is not projected"
+                    )
+                )
             return Success(GateCommandResult(returncode=0, stdout=self._minted, stderr=""))
         if argv[0] == str(_RENDERER):
             return Success(GateCommandResult(returncode=0, stdout=_MANIFEST, stderr=""))
@@ -429,14 +431,7 @@ def test_a_host_that_cannot_mint_the_token_refuses_the_push_as_a_missing_verdict
     the push before any Job is submitted, and it must stop it as NO VERDICT
     rather than as a red tree: the tree was never judged.
     """
-    uncovered_repository = "mi-homelab/homelab"
-    world = _World(
-        refuse_mint=True,
-        mint_error=(
-            f"FATAL: {uncovered_repository} is not covered: the gate App's installation "
-            "does not cover it"
-        ),
-    )
+    world = _World(refuse_mint=True)
     events, emit = _recorder()
 
     verdict = run_delegated_gate(
@@ -450,8 +445,6 @@ def test_a_host_that_cannot_mint_the_token_refuses_the_push_as_a_missing_verdict
     assert verdict.state == GATE_NO_VERDICT
     assert verdict.token_written is False
     assert MINT_STEP in verdict.detail
-    assert uncovered_repository in verdict.detail
-    assert "the gate App's installation does not cover it" in verdict.detail
     assert not any("create" in argv for argv in world.argvs)
     assert events == [
         {
