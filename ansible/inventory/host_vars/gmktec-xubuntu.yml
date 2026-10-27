@@ -236,10 +236,10 @@ fabro_server_instances:
       # Serves repositories whose workflow pins the python-rust-agent layer:
       # livespec-console-beads-fabro, which builds Rust (R622). Its tag FOLLOWS
       # THAT repository's pin (.fabro/workflows/implement-work-item/workflow.toml,
-      # python-rust-agent-v1.126.0), not the orchestrator's; bump the two
+      # python-rust-agent-v1.136.2), not the orchestrator's; bump the two
       # together. Coordinator ruling R668 (2026-10-22).
       - id: livespec-ci-rust
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.126.0
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
         cpu: 4
         memory: 8GB
       # The Kubernetes twin of livespec-ci (plan kubernetes-sandbox-backend,
@@ -314,7 +314,7 @@ fabro_server_instances:
         env:
           SANDBOX_DRIVER_KUBERNETES_STATE_DIR: /home/cwoolley/.local/state/sandbox-driver-kubernetes-rust
         process_spec:
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.126.0
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-rust-agent-v1.136.2
           cpu_cores: 4
           memory_mb: 7629
     # Created in the instance's vault only when it lacks the name, never
