@@ -100,6 +100,15 @@
 # render-gate-job.sh contacts nothing by construction.
 #
 # Exit 0 iff every test passes. Mutates nothing outside its own scratch dir.
+#
+# NEVER pipe into `grep -q` anywhere in this file. Under `pipefail` a `-q`
+# downstream exits on its first match, the still-writing upstream takes SIGPIPE,
+# and the pipeline reports 141, so a PRESENT line reads as absent. Test with
+# `grep -F ... >/dev/null`, which reads to EOF. Measured 2026-10-27 on case R's
+# rendered manifest at load 40: `gate_script | grep -qF` false-negatived in
+# 56/400 runs, and the `>/dev/null` form in 0/400. That race turned
+# livespec-dev-tooling master red on the loaded self-hosted pool while the same
+# tree passed on an idle shell.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -421,7 +430,7 @@ fi
 # repository was named".
 if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
      > "${SCRATCH}/no-origin.yaml" 2>/dev/null; then
-  if grep -A1 -F 'name: LIVESPEC_GATE_REPOSITORY' "${SCRATCH}/no-origin.yaml" | grep -qF 'value: ""'; then
+  if grep -A1 -F 'name: LIVESPEC_GATE_REPOSITORY' "${SCRATCH}/no-origin.yaml" | grep -F 'value: ""' >/dev/null; then
     pass "a repo with no github.com origin renders an empty identity, not a guess"
   else
     fail "expected an empty identity: $(grep -A1 -F 'name: LIVESPEC_GATE_REPOSITORY' "${SCRATCH}/no-origin.yaml")"
@@ -665,7 +674,7 @@ if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
     fail "the gate script carries no check-suite recipe line, so the ordering arm below is vacuous"
   elif [ "$(last_script_line "${siblings_out}" 'git clone ')" -ge "${first_recipe}" ]; then
     fail "a check-suite recipe runs before the siblings are provisioned"
-  elif grep -F 'git clone ' "${siblings_out}" | grep -qF '@'; then
+  elif grep -F 'git clone ' "${siblings_out}" | grep -F '@' >/dev/null; then
     fail "a credential rides a sibling clone: $(grep -F 'git clone ' "${siblings_out}")"
   else
     pass "each registered sibling is cloned anonymously into the exported root, before any recipe"
@@ -765,9 +774,9 @@ if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
      --private-sibling-secret "${private_secret}" > "${private_out}" 2>"${SCRATCH}/private.err"; then
   private_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-core'" | head -1)"
   public_clone="$(gate_script "${private_out}" | grep -F "'https://github.com/acme/widget-docs'" | head -1)"
-  if ! printf '%s' "${private_clone}" | grep -qF "http.extraHeader"; then
+  if ! printf '%s' "${private_clone}" | grep -F "http.extraHeader" >/dev/null; then
     fail "the private sibling's clone carries no authorization: ${private_clone}"
-  elif ! printf '%s' "${private_clone}" | grep -qF "cat ${private_mount}/token"; then
+  elif ! printf '%s' "${private_clone}" | grep -F "cat ${private_mount}/token" >/dev/null; then
     fail "the private clone does not read its token from the mount: ${private_clone}"
   # THE SCHEME IS LOAD-BEARING, and asserting only the header's PRESENCE above
   # is how R581 shipped: github.com's git smart-HTTP endpoint rejects an
@@ -777,11 +786,11 @@ if "${RENDERER}" --repo-root "${repo_siblings}" --tree-hash "${HASH_A}" \
   # running it — `tests/consumer/test_delegated_gate_declared_recipe_scenarios.py`
   # sends it to a `git` stub and compares it to an independently computed
   # base64 — so these two arms pin the scheme and the username alone.
-  elif printf '%s' "${private_clone}" | grep -qF "Bearer"; then
+  elif printf '%s' "${private_clone}" | grep -F "Bearer" >/dev/null; then
     fail "the private clone sends a Bearer header, which github.com rejects: ${private_clone}"
-  elif ! printf '%s' "${private_clone}" | grep -qF "Authorization: Basic \$(printf 'x-access-token:%s'"; then
+  elif ! printf '%s' "${private_clone}" | grep -F "Authorization: Basic \$(printf 'x-access-token:%s'" >/dev/null; then
     fail "the private clone does not send Basic x-access-token: ${private_clone}"
-  elif printf '%s' "${public_clone}" | grep -qF "http.extraHeader"; then
+  elif printf '%s' "${public_clone}" | grep -F "http.extraHeader" >/dev/null; then
     fail "a PUBLIC sibling was given a credential: ${public_clone}"
   elif ! grep -qF "mountPath: ${private_mount}" "${private_out}"; then
     fail "the token Secret is not mounted into the gate container"
@@ -875,7 +884,7 @@ for authority_variable in SKIP_TARGETS LIVESPEC_CHECK_SKIP; do
     fail "the Job does not export ${authority_variable} naming the member exactly once"
   elif [ -z "${recipe_at}" ] || [ -z "${export_at}" ] || [ "${export_at}" -ge "${recipe_at}" ]; then
     fail "the ${authority_variable} export does not precede the recipe that reads it"
-  elif ! gate_script "${authority_out}" | grep -qF "NOT running ${authority_member}"; then
+  elif ! gate_script "${authority_out}" | grep -F "NOT running ${authority_member}" >/dev/null; then
     fail "the verdict stream never says the member was left to the pushing host"
   else
     pass "the member is exported as ${authority_variable} before any recipe runs, and said out loud"
@@ -888,7 +897,7 @@ done
 # Job runs the members it runs today, where an unreadable authorization FAILS.
 if "${RENDERER}" --repo-root "${SCRATCH}/repo-a" --tree-hash "${HASH_A}" \
      --check-suite verify > "${SCRATCH}/authority-none.yaml" 2>"${SCRATCH}/authority-none.err"; then
-  if gate_script "${SCRATCH}/authority-none.yaml" | grep -qE '^export [A-Za-z_]+=' ; then
+  if gate_script "${SCRATCH}/authority-none.yaml" | grep -E '^export [A-Za-z_]+=' >/dev/null; then
     fail "a run told no authority member exported one anyway: $(gate_script "${SCRATCH}/authority-none.yaml" | grep -E '^export ')"
   else
     pass "a run told no authority member exports nothing and keeps today's command"
