@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.136.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.135.0...v1.136.0) (2026-10-27)
+
+
+### Features
+
+* converge collector cluster identity ([a06dd39](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a06dd394b7a749ffea29ce1642a55f565f4d7805))
+* make collector identity artifacts variable-driven ([4720651](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4720651f31a37c990811856b5a3add68e149cf0e))
+
 ## [1.135.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.134.4...v1.135.0) (2026-10-26)
 
 
