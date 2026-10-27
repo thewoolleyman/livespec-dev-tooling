@@ -91,3 +91,15 @@ def test_check_mode_counts_an_ingest_key_the_simulated_append_would_add() -> Non
         carrying="otel_collector_missing_environment_keys:",
     )
     assert "otel_collector_appended_environment_keys if ansible_check_mode else []" in missing
+
+
+def test_check_mode_skips_the_identity_post_check_it_cannot_render() -> None:
+    """A fresh CI-runner dry run reports the three files instead of asserting their output."""
+    blocks = _task_blocks(body=_MAIN_TASKS.read_text(encoding="utf-8"))
+    identity_assertion = _one_task(
+        blocks=blocks,
+        carrying="Refuse a host whose scoped cluster identity is missing",
+    )
+    assert "not ansible_check_mode or not (otel_collector_cluster_identity | bool)" in (
+        identity_assertion
+    ), identity_assertion

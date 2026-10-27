@@ -20,6 +20,26 @@ otel_collector_config_file: config.yaml
 otel_collector_config_url: >-
   https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/{{ otel_collector_config_file }}
 
+# The CI-runner host's k3s datastore starts empty after each reboot, so its
+# collector needs a small, read-only identity reconstructed from the collector
+# repository before it starts. The other hosts collect only host or container
+# metrics and must not install any of these cluster-specific files.
+otel_collector_cluster_identity: false
+otel_collector_identity_lib_dir: /usr/local/lib/otel-collector
+otel_collector_identity_rbac_url: >-
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/k8s/otel-collector-rbac.yaml
+otel_collector_identity_render_script_url: >-
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/scripts/render-k8s-identity.sh
+otel_collector_identity_unit_url: >-
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/systemd/otel-collector-identity.ci-runner-host.service
+otel_collector_identity_rbac_path: >-
+  {{ otel_collector_identity_lib_dir }}/otel-collector-rbac.yaml
+otel_collector_identity_render_script_path: >-
+  {{ otel_collector_identity_lib_dir }}/render-k8s-identity.sh
+otel_collector_identity_unit_name: otel-collector-identity.service
+otel_collector_identity_unit_path: >-
+  /etc/systemd/system/{{ otel_collector_identity_unit_name }}
+
 # Everything the service reads lives under this directory, put there by this
 # role. Until 2026-10-21 the dev host's collector ran out of the maintainer's
 # development checkout: a service whose configuration a `git pull` can change
@@ -45,10 +65,9 @@ otel_collector_extra_environment_files: []
 
 # The scoped, read-only ServiceAccount kubeconfig the cluster-reading collector
 # authenticates to every kubelet with. Empty means this host reads no kubelet and
-# the unit names no KUBECONFIG. A PRECONDITION: the file is rendered at every boot
-# by `otel-collector-identity.service`, which the collector repository's installer
-# owns, because the k3s datastore is a tmpfs and the ServiceAccount behind it is
-# wiped at each boot. The admin kubeconfig is never used. Per-host.
+# the unit names no KUBECONFIG. On a host with `otel_collector_cluster_identity`,
+# the role re-renders it through `otel-collector-identity.service` then asserts
+# it exists. The admin kubeconfig is never used. Per-host.
 otel_collector_kubeconfig_path: ""
 
 otel_collector_unit_name: otel-collector.service
