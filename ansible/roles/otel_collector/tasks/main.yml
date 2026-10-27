@@ -320,7 +320,7 @@
 - name: Install the collector cluster identity RBAC manifest
   ansible.builtin.copy:
     content: "{{ otel_collector_merged_identity_rbac }}"
-    dest: /usr/local/lib/otel-collector/otel-collector-rbac.yaml
+    dest: "{{ otel_collector_identity_rbac_path }}"
     owner: root
     group: root
     mode: "0644"
@@ -339,7 +339,7 @@
 - name: Install the collector cluster identity render script
   ansible.builtin.copy:
     content: "{{ otel_collector_merged_identity_render_script }}"
-    dest: /usr/local/lib/otel-collector/render-k8s-identity.sh
+    dest: "{{ otel_collector_identity_render_script_path }}"
     owner: root
     group: root
     mode: "0755"
@@ -367,7 +367,7 @@
 - name: Install the collector cluster identity unit
   ansible.builtin.copy:
     content: "{{ otel_collector_merged_identity_unit }}"
-    dest: /etc/systemd/system/otel-collector-identity.service
+    dest: "{{ otel_collector_identity_unit_path }}"
     owner: root
     group: root
     mode: "0644"
