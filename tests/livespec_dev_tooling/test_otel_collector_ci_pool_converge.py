@@ -851,31 +851,23 @@ def test_cluster_identity_artifacts_follow_the_configured_collector_ref() -> Non
     defaults = _declared_variables()["defaults"]
     assert defaults.get("otel_collector_cluster_identity") is False, defaults
 
-    for host, expected in {
-        _POWEREDGE: True,
-        _GMKTEC: False,
-        _HP: False,
-        _DEV_HOST: False,
-    }.items():
-        assert _resolved(host=host)["otel_collector_cluster_identity"] is expected, host
-
     artifacts = (
         (
             "otel_collector_identity_rbac_url",
             "k8s/otel-collector-rbac.yaml",
-            "/usr/local/lib/otel-collector/otel-collector-rbac.yaml",
+            "otel_collector_identity_rbac_path",
             'mode: "0644"',
         ),
         (
             "otel_collector_identity_render_script_url",
             "scripts/render-k8s-identity.sh",
-            "/usr/local/lib/otel-collector/render-k8s-identity.sh",
+            "otel_collector_identity_render_script_path",
             'mode: "0755"',
         ),
         (
             "otel_collector_identity_unit_url",
             "systemd/otel-collector-identity.ci-runner-host.service",
-            "/etc/systemd/system/otel-collector-identity.service",
+            "otel_collector_identity_unit_path",
             'mode: "0644"',
         ),
     )
@@ -891,7 +883,9 @@ def test_cluster_identity_artifacts_follow_the_configured_collector_ref() -> Non
             if "lookup('ansible.builtin.url'" in block and variable in block
         ]
         assert len(fetches) == 1, (variable, fetches)
-        installs = [block for block in blocks if destination in block]
+        installs = [
+            block for block in blocks if destination in block and "ansible.builtin.copy:" in block
+        ]
         assert len(installs) == 1, (destination, installs)
         install = installs[0]
         assert "ansible.builtin.copy:" in install and mode in install, install
@@ -910,6 +904,52 @@ def test_cluster_identity_artifacts_follow_the_configured_collector_ref() -> Non
     assert 'name: "{{ otel_collector_identity_unit_name }}"' in identity_handler
     assert "state: started" in identity_handler
     assert "otel_collector_identity_unit_stat.stat.exists" in identity_handler
+
+
+def test_render_script_is_fetched_from_the_configured_collector_ref() -> None:
+    """The renderer has its own ref-pinned fetch; an adjacent unit fetch is insufficient."""
+    poweredge = _resolved(host=_POWEREDGE)
+    url = poweredge["otel_collector_identity_render_script_url"]
+    assert url.endswith("/scripts/render-k8s-identity.sh"), url
+    assert f"/{poweredge['otel_collector_config_ref']}/" in url, url
+
+    fetches = [
+        block
+        for block in _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+        if "otel_collector_merged_identity_render_script" in block
+        and "lookup('ansible.builtin.url'" in block
+    ]
+    assert len(fetches) == 1, fetches
+    assert "otel_collector_identity_render_script_url" in fetches[0], fetches[0]
+    assert "otel_collector_cluster_identity | bool" in fetches[0], fetches[0]
+
+    installs = [
+        block
+        for block in _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+        if "otel_collector_merged_identity_render_script" in block
+        and "ansible.builtin.copy:" in block
+    ]
+    assert len(installs) == 1, installs
+    assert 'dest: "{{ otel_collector_identity_render_script_path }}"' in installs[0], installs[0]
+
+
+def test_hosts_without_cluster_identity_skip_every_identity_artifact_task() -> None:
+    """False host posture plus task gates means no RBAC, renderer, or unit is installed."""
+    defaults = _declared_variables()["defaults"]
+    assert defaults.get("otel_collector_cluster_identity") is False, defaults
+    for host in (_GMKTEC, _HP, _DEV_HOST):
+        assert _resolved(host=host)["otel_collector_cluster_identity"] is False, host
+
+    artifact_path_variables = (
+        "otel_collector_identity_rbac_path",
+        "otel_collector_identity_render_script_path",
+        "otel_collector_identity_unit_path",
+    )
+    blocks = _task_blocks(body=_TASKS.read_text(encoding="utf-8"))
+    for variable in artifact_path_variables:
+        installs = [block for block in blocks if f'dest: "{{{{ {variable} }}}}"' in block]
+        assert len(installs) == 1, (variable, installs)
+        assert "otel_collector_cluster_identity | bool" in installs[0], installs[0]
 
 
 # --- the rendered unit ------------------------------------------------------
