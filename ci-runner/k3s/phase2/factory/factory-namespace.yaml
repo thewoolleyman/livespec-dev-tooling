@@ -27,6 +27,10 @@ metadata:
     app.kubernetes.io/managed-by: livespec-ci-runner-factory
     livespec.workitem: f5e6vl
 ---
+# RAISED 2026-10-27 from 12 to 16 concurrent runs: ./DERIVATION.md "The quota,
+# raised to sixteen runs" (coordinator ruling R84, after a clean three-hour soak
+# at twelve and poweredge averaging 53.7 % idle over ten minutes at 12 live runs).
+#
 # RAISED 2026-10-26 from 6 to 12 concurrent runs: ./DERIVATION.md "The quota,
 # raised to twelve runs" re-reads the pool and finds that only the gates and
 # phase1-proof ClusterQueues request cpu (17), not the 61 the eight-run section
@@ -58,11 +62,11 @@ metadata:
     livespec.workitem: f5e6vl
 spec:
   hard:
-    requests.cpu: "48"
-    requests.memory: 96Gi
-    limits.cpu: "48"
-    limits.memory: 104Gi
-    pods: "24"
+    requests.cpu: "64"
+    requests.memory: 128Gi
+    limits.cpu: "64"
+    limits.memory: 136Gi
+    pods: "32"
 ---
 # ./DERIVATION.md "The egress targets" — default-deny ingress, and egress only
 # to cluster DNS, the tailnet (the beads Dolt tenant and the telemetry
