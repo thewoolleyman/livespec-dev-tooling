@@ -47,6 +47,10 @@ from livespec_dev_tooling.fleet._rows_baseline import (
     assert_baseline_harnesses,
 )
 from livespec_dev_tooling.fleet._rows_beads import assert_tenant_connection_consistency
+from livespec_dev_tooling.fleet._rows_canonical_check_slugs import (
+    CANONICAL_CHECK_SLUGS_HINT,
+    assert_canonical_check_slugs_wired,
+)
 from livespec_dev_tooling.fleet._rows_claude_plugin import assert_claude_plugin_currency
 from livespec_dev_tooling.fleet._rows_decision_authority import (
     assert_decision_authority_section,
@@ -309,6 +313,11 @@ OBLIGATION_ROWS: tuple[ObligationRow, ...] = (
         applies_to=DEV_TOOLING_PIN_CLASSES,
         assert_member=assert_aggregate_gate_wired,
         manual_hint=AGGREGATE_GATE_HINT,
+    ),
+    _manual_committed_file_row(
+        row_id="canonical-check-slugs-wired",
+        assert_member=assert_canonical_check_slugs_wired,
+        manual_hint=CANONICAL_CHECK_SLUGS_HINT,
     ),
     _manual_committed_file_row(
         row_id="acceptance-mode-declared",
