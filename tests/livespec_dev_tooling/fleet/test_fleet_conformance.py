@@ -629,7 +629,7 @@ def test_member_rows_logs_named_exclusions() -> None:
     }
 
     assert result.error_findings == 0
-    assert reported["required-role-keys-declared"]["reason"] == ("no layout-dependent checks wired")
+    assert "required-role-keys-declared" not in reported
 
 
 def test_member_rows_counts_errors_but_not_warnings_or_skips() -> None:
