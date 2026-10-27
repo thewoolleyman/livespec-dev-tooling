@@ -58,30 +58,6 @@
     success_msg: "{{ item }} is available on the control node"
   loop: "{{ otel_collector_env_from_controller }}"
 
-- name: Look for the scoped cluster identity the collector authenticates with
-  ansible.builtin.stat:
-    path: "{{ otel_collector_kubeconfig_path }}"
-    get_checksum: false
-  become: true
-  register: otel_collector_kubeconfig_stat
-  check_mode: false
-  when: otel_collector_kubeconfig_path | length > 0
-
-- name: Refuse a host whose scoped cluster identity is missing
-  ansible.builtin.assert:
-    that:
-      - otel_collector_kubeconfig_stat.stat.exists
-      - otel_collector_kubeconfig_stat.stat.isreg
-    fail_msg: >-
-      {{ otel_collector_kubeconfig_path }} is not a regular file. It carries the
-      read-only ServiceAccount identity this collector reads every kubelet with,
-      and otel-collector-identity.service in the collector repository renders it
-      at every boot because the k3s datastore is a tmpfs. Absent it the unit
-      starts, fails to authenticate, and reports nothing about any node. Nothing
-      has been written and the running service is untouched.
-    success_msg: the scoped cluster identity is present
-  when: otel_collector_kubeconfig_path | length > 0
-
 - name: Look for each further environment file the unit reads
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -322,11 +298,124 @@
     mode: "0644"
   become: true
   notify:
-    - Reload systemd for the collector unit
+    - Reload systemd for the managed collector units
+    - Restart the collector onto its managed configuration
+
+- name: Create the collector cluster identity directory
+  ansible.builtin.file:
+    path: "{{ otel_collector_identity_lib_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: otel_collector_cluster_identity | bool
+
+- name: Read the merged collector cluster identity RBAC manifest
+  ansible.builtin.set_fact:
+    otel_collector_merged_identity_rbac: >-
+      {{ lookup('ansible.builtin.url', otel_collector_identity_rbac_url, split_lines=false) }}
+  when: otel_collector_cluster_identity | bool
+
+- name: Install the collector cluster identity RBAC manifest
+  ansible.builtin.copy:
+    content: "{{ otel_collector_merged_identity_rbac }}"
+    dest: /usr/local/lib/otel-collector/otel-collector-rbac.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: otel_collector_cluster_identity | bool
+  notify:
+    - Run the collector cluster identity
+    - Restart the collector onto its managed configuration
+
+- name: Read the merged collector cluster identity render script
+  ansible.builtin.set_fact:
+    otel_collector_merged_identity_render_script: >-
+      {{ lookup('ansible.builtin.url', otel_collector_identity_render_script_url, split_lines=false) }}
+  when: otel_collector_cluster_identity | bool
+
+- name: Install the collector cluster identity render script
+  ansible.builtin.copy:
+    content: "{{ otel_collector_merged_identity_render_script }}"
+    dest: /usr/local/lib/otel-collector/render-k8s-identity.sh
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: otel_collector_cluster_identity | bool
+  notify:
+    - Run the collector cluster identity
+    - Restart the collector onto its managed configuration
+
+- name: Look for the collector cluster identity unit systemd already knows
+  ansible.builtin.stat:
+    path: "{{ otel_collector_identity_unit_path }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_identity_unit_stat
+  check_mode: false
+  when: otel_collector_cluster_identity | bool
+
+- name: Read the merged collector cluster identity unit
+  ansible.builtin.set_fact:
+    otel_collector_merged_identity_unit: >-
+      {{ lookup('ansible.builtin.url', otel_collector_identity_unit_url, split_lines=false) }}
+  when: otel_collector_cluster_identity | bool
+
+- name: Install the collector cluster identity unit
+  ansible.builtin.copy:
+    content: "{{ otel_collector_merged_identity_unit }}"
+    dest: /etc/systemd/system/otel-collector-identity.service
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: otel_collector_cluster_identity | bool
+  notify:
+    - Reload systemd for the managed collector units
+    - Run the collector cluster identity
     - Restart the collector onto its managed configuration
 
 - name: Reload and restart now, before the service is managed
   ansible.builtin.meta: flush_handlers
+
+- name: Keep the collector cluster identity enabled
+  ansible.builtin.systemd_service:
+    name: "{{ otel_collector_identity_unit_name }}"
+    enabled: true
+  become: true
+  when:
+    - otel_collector_cluster_identity | bool
+    - not ansible_check_mode or otel_collector_identity_unit_stat.stat.exists
+
+- name: Look for the scoped cluster identity the collector authenticates with
+  ansible.builtin.stat:
+    path: "{{ otel_collector_kubeconfig_path }}"
+    get_checksum: false
+  become: true
+  register: otel_collector_kubeconfig_stat
+  check_mode: false
+  when: otel_collector_kubeconfig_path | length > 0
+
+- name: Refuse a host whose scoped cluster identity is missing
+  ansible.builtin.assert:
+    that:
+      - otel_collector_kubeconfig_stat.stat.exists
+      - otel_collector_kubeconfig_stat.stat.isreg
+    fail_msg: >-
+      {{ otel_collector_kubeconfig_path }} is not a regular file after the
+      collector cluster identity converged. It carries the read-only
+      ServiceAccount identity this collector reads every kubelet with; absent it
+      the unit starts, fails to authenticate, and reports nothing about any node.
+    success_msg: the scoped cluster identity is present
+  when:
+    - otel_collector_kubeconfig_path | length > 0
+    # Under --check the three identity files are only planned, so a fresh host
+    # cannot have the rendered kubeconfig yet. Report those pending changes
+    # instead of failing on output the dry run deliberately did not create.
+    - not ansible_check_mode or not (otel_collector_cluster_identity | bool)
 
 - name: Keep the collector enabled and running
   # `started`, never `restarted`: this starts a collector that is down and
