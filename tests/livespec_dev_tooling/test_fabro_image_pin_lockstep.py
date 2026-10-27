@@ -63,16 +63,10 @@ _LOCKSTEP_BASE_DOCKERFILE = (
     "ARG SHELLCHECK_VERSION=0.11.0\n"
     "ARG NODE_VERSION=26.3.0\n"
     "ARG GH_VERSION=2.102.0\n"
-    "RUN mkdir -p -m 755 /etc/apt/keyrings \\\n"
-    "    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \\\n"
-    "        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \\\n"
-    "    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \\\n"
-    '    && echo "deb [arch=$(dpkg --print-architecture) '
-    "signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] "
-    'https://cli.github.com/packages stable main" \\\n'
-    "        > /etc/apt/sources.list.d/github-cli.list \\\n"
-    "    && apt-get update \\\n"
-    "    && apt-get install -y --no-install-recommends gh=${GH_VERSION}\n"
+    "ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386\n"
+    "RUN curl -fsSL -o /tmp/gh.tgz \\\n"
+    '        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh.tar.gz" \\\n'
+    '    && echo "${GH_SHA256}  /tmp/gh.tgz" | sha256sum -c -\n'
     "RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \\\n"
     "        shellcheck@${SHELLCHECK_VERSION} node@${NODE_VERSION}\n"
 )
@@ -478,18 +472,17 @@ def test_rejects_unsupported_gh_version(
     )
 
 
-def test_rejects_gh_without_signed_cli_apt_repository(
+def test_rejects_gh_not_downloaded_from_its_pinned_release(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The GitHub CLI must come from the official signed cli.github.com apt source."""
-    base_without_signed_repo = _LOCKSTEP_BASE_DOCKERFILE.replace(
-        "signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] "
-        "https://cli.github.com/packages stable main",
-        "https://example.invalid/packages stable main",
+    """gh must come from its pinned GitHub release, not a rotting apt pin."""
+    base_without_release = _LOCKSTEP_BASE_DOCKERFILE.replace(
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/",
+        "https://example.invalid/",
     )
     _write_fixture(
         root=tmp_path,
-        layers={**_LOCKSTEP_LAYERS, "base": base_without_signed_repo},
+        layers={**_LOCKSTEP_LAYERS, "base": base_without_release},
         mise_toml=_LOCKSTEP_MISE_TOML,
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
@@ -497,27 +490,27 @@ def test_rejects_gh_without_signed_cli_apt_repository(
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
-        f"unsigned gh apt source should fail; got returncode={result.returncode} "
+        f"non-release gh source should fail; got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
-    assert "cli.github.com" in combined and "signed-by" in combined, (
-        f"diagnostic should name the signed GitHub CLI apt source; "
+    assert "github.com/cli/cli/releases" in combined, (
+        f"diagnostic should name the pinned release source; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 
 
-def test_rejects_gh_apt_install_without_exact_package_pin(
+def test_rejects_gh_without_pinned_sha256_arg(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Installing bare `gh` from apt is drift-prone; the package pin is exact."""
-    base_without_package_pin = _LOCKSTEP_BASE_DOCKERFILE.replace(
-        "gh=${GH_VERSION}",
-        "gh",
+    """The gh tarball checksum must be a pinned ARG, not an inline or absent value."""
+    base_without_arg = _LOCKSTEP_BASE_DOCKERFILE.replace(
+        "ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386\n",
+        "",
     )
     _write_fixture(
         root=tmp_path,
-        layers={**_LOCKSTEP_LAYERS, "base": base_without_package_pin},
+        layers={**_LOCKSTEP_LAYERS, "base": base_without_arg},
         mise_toml=_LOCKSTEP_MISE_TOML,
         python_version=_LOCKSTEP_PYTHON_VERSION,
     )
@@ -525,12 +518,37 @@ def test_rejects_gh_apt_install_without_exact_package_pin(
     result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
 
     assert result.returncode != 0, (
-        f"unpinned apt gh install should fail; got returncode={result.returncode} "
+        f"missing GH_SHA256 pin should fail; got returncode={result.returncode} "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     combined = result.stdout + result.stderr
-    assert "gh=${GH_VERSION}" in combined, (
-        f"diagnostic should require the exact gh package pin; "
+    assert "must pin GH_SHA256" in combined, (
+        f"diagnostic should require the GH_SHA256 pin; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_rejects_gh_install_without_checksum_verification(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The gh tarball must be verified against the pinned GH_SHA256."""
+    base_without_verify = _LOCKSTEP_BASE_DOCKERFILE.replace("sha256sum -c -", "true")
+    _write_fixture(
+        root=tmp_path,
+        layers={**_LOCKSTEP_LAYERS, "base": base_without_verify},
+        mise_toml=_LOCKSTEP_MISE_TOML,
+        python_version=_LOCKSTEP_PYTHON_VERSION,
+    )
+
+    result = _run_check(cwd=tmp_path, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert result.returncode != 0, (
+        f"unverified gh install should fail; got returncode={result.returncode} "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "sha256sum" in combined and "GH_SHA256" in combined, (
+        f"diagnostic should require checksum verification; "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
 

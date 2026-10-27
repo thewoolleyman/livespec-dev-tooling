@@ -71,6 +71,9 @@ ARG LEFTHOOK_VERSION=1.13.6
 ARG SHELLCHECK_VERSION=0.11.0
 ARG NODE_VERSION=26.3.0
 ARG GH_VERSION=2.102.0
+# sha256 of gh_${GH_VERSION}_linux_amd64.tar.gz, from that release's
+# gh_${GH_VERSION}_checksums.txt. Bump it WITH GH_VERSION.
+ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
 
 # libatomic1 — node's binary dynamically links libatomic.so.1. Full
 # buildpack-deps shipped it as a side effect of its gcc stack; `-scm`
@@ -112,18 +115,27 @@ ARG GH_VERSION=2.102.0
 ENV MISE_HTTP_RETRIES=5
 ENV UV_HTTP_RETRIES=5
 
-RUN mkdir -p -m 755 /etc/apt/keyrings \
-    && curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
-        https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-        > /etc/apt/sources.list.d/github-cli.list \
-    && apt-get -o Acquire::Retries=5 update \
+# gh comes from its pinned GitHub release tarball, verified against GH_SHA256,
+# NOT from cli.github.com's apt repo: that repo serves only the current
+# version, so an `apt-get install gh=<pin>` stops resolving the day upstream
+# releases again ("E: Version '2.102.0' for 'gh' was not found" broke every
+# image build on 2026-10-27). A release asset never disappears. The step fails
+# fast and loudly if the download or the checksum does not match.
+RUN apt-get -o Acquire::Retries=5 update \
     && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-        libatomic1 tmux gh=${GH_VERSION} \
+        libatomic1 tmux \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && set -eux \
+    && asset="gh_${GH_VERSION}_linux_amd64" \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-connrefused \
+        -o /tmp/gh.tgz \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${asset}.tar.gz" \
+    && echo "${GH_SHA256}  /tmp/gh.tgz" | sha256sum -c - \
+    && tar -xzf /tmp/gh.tgz -C /tmp "${asset}/bin/gh" \
+    && install -m 0755 "/tmp/${asset}/bin/gh" /usr/local/bin/gh \
+    && rm -rf /tmp/gh.tgz "/tmp/${asset}" \
+    && test "$(gh --version | head -1 | cut -d' ' -f3)" = "${GH_VERSION}"
 
 # The mise.run installer reads MISE_VERSION from the environment.
 ENV MISE_VERSION=${MISE_VERSION}
@@ -149,6 +161,18 @@ RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
 # An explicit `mise trust` in a job stays a harmless no-op, so tenants can drop
 # their trust steps at their own pace (keep `mise install`).
 ENV MISE_TRUSTED_CONFIG_PATHS=/__w:/workspace
+
+# A Fabro sandbox has no real terminal, so lefthook's per-command pty is 0x0.
+# CPython 3.10 (the fleet pin) then reports `shutil.get_terminal_size()`
+# columns=0 (3.11+ falls back to 80), and pytest-icdiff, a dev dependency in
+# every fleet repo, derives its diff width from that at import time; on ANY
+# failing `==` assertion its `_split_line` then loops forever. A failing
+# assertion inside a pre-commit hook therefore HANGS instead of failing.
+# `get_terminal_size()` consults COLUMNS/LINES before it queries the fd, so
+# pinning them here makes every layer stacked on this one fail normally
+# (measured: rc=124 after a 20s timeout without them, rc=1 in 1s with them).
+# The python layer's build-time probe proves it under a real 0x0 pty.
+ENV COLUMNS=200 LINES=50
 
 # A reusable sandbox has no author fallback: each workflow must inject and
 # validate its operator identity explicitly. `user.useConfigOnly` also keeps
