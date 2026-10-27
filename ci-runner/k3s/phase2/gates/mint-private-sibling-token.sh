@@ -113,17 +113,53 @@ signature="$(printf '%s' "${header}.${claims}" \
   | openssl dgst -sha256 -sign "${key_file}" -binary | base64url)"
 jwt="${header}.${claims}.${signature}"
 
-# The installation is discovered from a PRIVATE sibling, never from the first
-# declared one: the mint below is made against the installation that can reach
-# the repositories it names, and a public sibling may sit outside it entirely.
-repository="${private_urls[0]#https://github.com/}"
-installation="$(curl -fsS \
-  -H "Authorization: Bearer ${jwt}" -H 'Accept: application/vnd.github+json' \
-  "https://api.github.com/repos/${repository}/installation" | jq -r '.id // empty')"
-[ -n "${installation}" ] || {
-  echo "FATAL: the fleet GitHub App has no installation reaching ${repository}," \
-       "so no token can be scoped to this gate's private siblings" >&2
-  exit 1; }
+# GitHub rejects a scope containing a repository this installation does not
+# cover with an otherwise unhelpful 422. Ask about EVERY private sibling first,
+# so the pushing host can name the repository an operator must add to the App
+# installation (or remove from the consumer's set). `-s` deliberately suppresses
+# curl's own HTTP-status diagnostic: the repository-specific refusal below is
+# the complete no-verdict detail the delegated gate carries to the operator.
+installation_response="$(mktemp)"
+trap 'rm -f "${key_file}" "${installation_response}"' EXIT
+
+installation_for_repository() {
+  local named_repository="$1"
+  local status
+  local named_installation
+
+  status="$(curl -s -o "${installation_response}" -w '%{http_code}' \
+    -H "Authorization: Bearer ${jwt}" -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/${named_repository}/installation")" || {
+    echo "FATAL: could not determine whether the gate App's installation covers" \
+         "${named_repository}" >&2
+    return 1
+  }
+  if [ "${status}" != 200 ]; then
+    echo "FATAL: ${named_repository} is not covered: the gate App's installation" \
+         "does not cover it" >&2
+    return 1
+  fi
+  named_installation="$(jq -r '.id // empty' < "${installation_response}")"
+  if [ -z "${named_installation}" ]; then
+    echo "FATAL: ${named_repository} is not covered: the gate App's installation" \
+         "does not cover it" >&2
+    return 1
+  fi
+  printf '%s\n' "${named_installation}"
+}
+
+installation=""
+for private_url in "${private_urls[@]}"; do
+  repository="${private_url#https://github.com/}"
+  named_installation="$(installation_for_repository "${repository}")" || exit 1
+  if [ -z "${installation}" ]; then
+    installation="${named_installation}"
+  elif [ "${named_installation}" != "${installation}" ]; then
+    echo "FATAL: ${repository} is not covered: the gate App's installation" \
+         "does not cover it" >&2
+    exit 1
+  fi
+done
 
 # `repositories` is the scope, and it is the private set EXACTLY — never the
 # whole installation and never a public sibling that needs no credential.
