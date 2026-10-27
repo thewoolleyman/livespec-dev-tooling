@@ -90,6 +90,8 @@ _HP_MUST_RUN = frozenset(
         # names, because it is the node the backend plan's lifecycle proofs run
         # against.
         "factory_workspace_root",
+        # And the sandbox images (bd-ib-kogktm), same FACTORY_NODE gate.
+        "factory_sandbox_image_prepull",
         # And the collector that makes "closed" VISIBLE rather than merely true
         # (livespec-dev-tooling-ool6ws). A factory-only node executes no CI job
         # and still carries load, and the runner-pool node telemetry rules in
@@ -114,6 +116,7 @@ _POWEREDGE_ROLES = (
     "fpart",
     "apparmor_profile",
     "factory_workspace_root",
+    "factory_sandbox_image_prepull",
     "node_status_credential",
     "node_extended_resource",
     "node_taints",
@@ -166,6 +169,7 @@ _GMKTEC_ROLES = (
     "fpart",
     "apparmor_profile",
     "factory_workspace_root",
+    "factory_sandbox_image_prepull",
     "node_status_credential",
     "node_extended_resource",
     "node_taints",

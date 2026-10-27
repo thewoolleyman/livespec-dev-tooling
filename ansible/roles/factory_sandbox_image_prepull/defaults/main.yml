@@ -1,0 +1,29 @@
+---
+# factory_sandbox_image_prepull — keep the Fabro factory sandbox images present
+# in k3s's containerd on every factory node. See HOST_VARS.md.
+
+# THE ONE SOURCE OF TRUTH IS THE FABRO SERVER'S OWN PROVIDER CATALOGUE. The
+# images are the `process_spec.image` of every entry in every
+# `fabro_server_instances[].sandbox_providers` that a `sandbox_hosts` member
+# declares in its host_vars. Nothing here spells an image: a pin bump edits the
+# provider and the pre-pull follows it on the next converge, so the two cannot
+# desync (tests/livespec_dev_tooling/test_factory_sandbox_image_prepull_role.py
+# holds the derivation to that).
+#
+# Resolved by GROUP and not by host name, because ansible/ is hostname-free
+# (`just check-ansible-hostname-free`). A sandbox host that declares no
+# instances, or an instance that declares no providers, contributes nothing.
+factory_sandbox_image_prepull_refs: >-
+  {{ groups['sandbox_hosts']
+  | map('extract', hostvars, 'fabro_server_instances') | select('defined')
+  | flatten | map(attribute='sandbox_providers') | select('defined')
+  | map('dict2items') | flatten
+  | map(attribute='value.process_spec.image') | unique | sort }}
+
+# k3s's OWN containerd (namespace k8s.io, which is what kubelet pulls into and
+# the scheduler's image locality scores), reached through the k3s binary's
+# bundled crictl. Never Docker's store: a pod never reads that one.
+factory_sandbox_image_prepull_k3s_bin: /usr/local/bin/k3s
+factory_sandbox_image_prepull_runtime_endpoint: unix:///run/k3s/containerd/containerd.sock
+# Bounds ONE pull, layer download included (the images are roughly 850 MB).
+factory_sandbox_image_prepull_pull_timeout: 30m

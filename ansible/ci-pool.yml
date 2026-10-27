@@ -190,6 +190,15 @@
     - role: factory_workspace_root
       tags: [factory_workspace_root]
       when: ci_pool_factory_node == 'true'
+    # And the sandbox images those pods run, held in k3s's containerd
+    # (bd-ib-kogktm). Same gate and same reason as the workspace root: a node
+    # that lacks the current tag loses every placement to a node that has it
+    # through the scheduler's image locality, so one factory node took all
+    # eleven measured pods. Before the opening chain below, so the node offers
+    # the image before it offers capacity.
+    - role: factory_sandbox_image_prepull
+      tags: [factory_sandbox_image_prepull]
+      when: ci_pool_factory_node == 'true'
     # Before 4/10 — mint+deliver the agent's scoped node-status credential, so
     # the reapply timer below has something to authenticate with (agent-only,
     # self-gated).

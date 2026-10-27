@@ -1,0 +1,76 @@
+---
+# factory_sandbox_image_prepull — pull each declared Fabro sandbox image into
+# k3s's containerd on a factory node (ledger item bd-ib-kogktm in the
+# livespec-orchestrator-beads-fabro tenant).
+#
+# WHY. Kubelet pulls a pod's image into k3s's containerd (namespace k8s.io), and
+# the scheduler scores a node higher for already holding the image. A node that
+# lacks the current sandbox tag therefore loses every placement to a node that
+# has it: measured, all 11 factory pods ran on one node while the other factory
+# node held python-agent-v1.93.5 but not the v1.114.1 the pods ran. Holding the
+# declared images on every factory node removes that pull-cost asymmetry.
+#
+# RE-RUNS WHEN THE PIN CHANGES because the references are derived from the
+# provider catalogue (defaults/main.yml), so a converge after a bump pulls only
+# the new ref. Each ref is inspected first and skipped when held (idempotent),
+# and a failed pull fails the play loudly. Storage tiers are untouched: this
+# only asks the existing containerd to pull (.ai/ci-node-storage-tiers.md).
+
+- name: Refuse an empty image list
+  # An empty derivation (no sandbox host declares a provider) would converge
+  # "successfully" while warming nothing, which is the silent shape to refuse.
+  ansible.builtin.assert:
+    that:
+      - factory_sandbox_image_prepull_refs | length > 0
+    fail_msg: >-
+      No fabro_server_instances[].sandbox_providers[].process_spec.image was
+      found on any sandbox_hosts member, so there is nothing to pre-pull.
+    success_msg: "{{ factory_sandbox_image_prepull_refs | length }} sandbox image(s) declared"
+
+- name: Check that k3s's containerd answers
+  # Read-only, so it runs under --check too: an unreachable runtime must fail
+  # here, not be misread below as "image absent".
+  ansible.builtin.command:
+    argv:
+      - "{{ factory_sandbox_image_prepull_k3s_bin }}"
+      - crictl
+      - --runtime-endpoint
+      - "{{ factory_sandbox_image_prepull_runtime_endpoint }}"
+      - version
+  become: true
+  changed_when: false
+  check_mode: false
+
+- name: Probe which sandbox images k3s's containerd already holds
+  ansible.builtin.command:
+    argv:
+      - "{{ factory_sandbox_image_prepull_k3s_bin }}"
+      - crictl
+      - --runtime-endpoint
+      - "{{ factory_sandbox_image_prepull_runtime_endpoint }}"
+      - inspecti
+      - "{{ item }}"
+  loop: "{{ factory_sandbox_image_prepull_refs }}"
+  become: true
+  register: factory_sandbox_image_prepull_probe
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Pull each missing sandbox image into k3s's containerd
+  ansible.builtin.command:
+    argv:
+      - "{{ factory_sandbox_image_prepull_k3s_bin }}"
+      - crictl
+      - --runtime-endpoint
+      - "{{ factory_sandbox_image_prepull_runtime_endpoint }}"
+      - --timeout
+      - "{{ factory_sandbox_image_prepull_pull_timeout }}"
+      - pull
+      - "{{ item.item }}"
+  loop: "{{ factory_sandbox_image_prepull_probe.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.rc != 0
+  become: true
+  changed_when: true
