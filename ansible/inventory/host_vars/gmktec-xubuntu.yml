@@ -368,7 +368,7 @@ fabro_server_instances:
     binary_sha256: e8ebf8ac88e5e18128ad559918b90341fc0dac93f1f5f7ff571039a1763f09d6
     environments:
       - id: livespec-ci
-        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
         cpu: 4
         memory: 8GB
       # The Kubernetes twin of livespec-ci: the same envelope, run by the
@@ -395,7 +395,7 @@ fabro_server_instances:
           - HOME
           - PATH
         process_spec:
-          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.114.1
+          image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
           cpu_cores: 4
           memory_mb: 7629
     vault_secrets:
