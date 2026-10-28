@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.137.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.137.0...v1.137.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* give the suite-green leg the lane-aware worker count when test_nprocs is not exported ([f5c5c38](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f5c5c38b11c7ef10d6459db51a1b3c0bc3e815ae))
+* parallelize the suite-green replay leg under xdist with a bounded, self-naming timeout ([bd2e9b1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bd2e9b168c92d1d0fcab56ab6a1e374d5487749a))
+
 ## [1.137.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.136.2...v1.137.0) (2026-10-27)
 
 
