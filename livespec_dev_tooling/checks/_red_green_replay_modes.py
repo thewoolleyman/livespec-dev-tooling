@@ -34,6 +34,10 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+from _red_green_replay_protocol import (  # noqa: E402  — sibling private import
+    RED_GREEN_REPLAY_PROTOCOL,
+)
+from _red_green_replay_suite import _handle_suite_green_mode  # noqa: E402  — sibling private import
 from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
     _narrate_git_failure,
     current_head_sha,
@@ -55,42 +59,6 @@ __all__: list[str] = [
     "_handle_red_mode",
     "_handle_suite_green_mode",
 ]
-
-
-# The full 2-step Red-Green-Replay protocol, emitted verbatim by EVERY
-# rejection branch (here AND in the parent `red_green_replay.py`) so a
-# developer or fresh agent recovers the correct authoring sequence from
-# the hook output alone, without spelunking the check source
-# (work-item li-rgr-docs-wi2). Each reject's mode-specific `hint` says
-# what is locally wrong; this `protocol` field says what the correct
-# full sequence is.
-RED_GREEN_REPLAY_PROTOCOL: str = (
-    "Red-Green-Replay protocol (single-commit TDD ritual). "
-    "Step 1 — Red commit: stage the test file ALONE (no impl) and commit. The hook runs pytest "
-    "on the staged tree; the new test MUST fail meaningfully (an assertion failure, NOT an "
-    "ImportError / collection error). ANY subject prefix may author a Red — fix:/feat: declares "
-    "the behavior change, and a behavior-changing chore Reds the same way. The hook records "
-    "TDD-Red-* trailers (test path, failure reason, test-file checksum, output checksum, "
-    "captured-at). "
-    "Step 2 — Green amend: stage the impl and run `git commit --amend`. The hook sees the "
-    "TDD-Red-* trailers + staged impl, re-runs the SAME test (now passing), and records "
-    "TDD-Green-* trailers. The final SINGLE commit carries both files + both trailer sets. The "
-    "test file bytes MUST be byte-identical across the Red->Green pair; to change the test, "
-    "author a new Red commit. "
-    "Behavior-PRESERVING product changes (no new failing test) instead take the green-verified "
-    "leg: the FULL pytest suite must pass against the staged tree, and TDD-Suite-Green-* "
-    "trailers are recorded as the evidence shape. "
-    "RECONCILIATION WITH livespec's `.ai/ci-gate-discipline.md`, which this protocol does NOT "
-    "override and is not overridden by: when master CI is red and local commits are themselves "
-    "blocked by that red, that directive mandates creating the revert SERVER-SIDE, through the "
-    "forge's own revert API, precisely because no local hook mediates it. This ritual is the "
-    "local hook, so it cannot stamp such a commit and must not refuse it either — the commit-RANGE "
-    "gate therefore exempts a revert that verifies against GitHub's pinned web-flow signing key "
-    "AND is byte-identical to the reverted commit's parent at every product impl .py path it "
-    "touches. That exemption is keyed on evidence an agent cannot fabricate, never on a subject "
-    "line, and it is the ONLY one: adding a flag, a skip, or a severity knob to this protocol "
-    "remains forbidden without exception (work-item livespec-dev-tooling-j2qa)."
-)
 
 
 def _handle_red_mode(
@@ -162,66 +130,6 @@ def _handle_red_mode(
             ("TDD-Red-Test-File-Checksum", test_file_checksum),
             ("TDD-Red-Output-Checksum", output_checksum),
             ("TDD-Red-Captured-At", captured_at),
-        ),
-    )
-    return 0
-
-
-def _handle_suite_green_mode(
-    *,
-    msg_path: Path,
-    log: structlog.stdlib.BoundLogger,
-    staged_paths: list[str],
-) -> int:
-    """Green-verify a product/test change that carries no new failing test.
-
-    The green-verified leg (user design correction 2026-06-11): a
-    behavior-preserving change — a refactor, a chore touching
-    product `.py`, or a passing test-only cleanup — is admitted by
-    running the FULL pytest suite against the staged tree. Exit 0
-    is the ONLY green outcome (pytest exit 5, zero tests collected,
-    proves nothing and rejects). On green, the `TDD-Suite-Green-*`
-    trailer shape (scope, output checksum, captured-at — mirroring
-    the Red-leg evidence fields) lands in the commit message so the
-    commit-range validation recognizes the commit as verified.
-    """
-    log.info(
-        "suite-green-candidate: product/test change without a Red leg; " "running the full suite",
-        check_id="red-green-replay-suite-green-candidate",
-        staged_paths=staged_paths,
-    )
-    suite_result = subprocess.run(
-        [sys.executable, "-m", "pytest", "--tb=no", "-q"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    suite_output = suite_result.stdout + suite_result.stderr
-    if suite_result.returncode != 0:
-        log.error(
-            "suite-red: the full pytest suite does not pass against the staged tree",
-            check_id="red-green-replay-suite-red",
-            pytest_returncode=suite_result.returncode,
-            failure_summary=" ".join(suite_output.split())[:400],
-            hint=(
-                "The green-verified leg requires the FULL suite to pass (exit 0; "
-                "an empty suite, pytest exit 5, also rejects): a behavior-"
-                "preserving change must keep every existing test green. If this "
-                "change is SUPPOSED to alter behavior, author it via the ritual "
-                "instead: Red commit (stage the failing test alone), then Green "
-                "amend (stage the impl)."
-            ),
-            protocol=RED_GREEN_REPLAY_PROTOCOL,
-        )
-        return 1
-    output_checksum = f"sha256:{hashlib.sha256(suite_output.encode('utf-8')).hexdigest()}"
-    captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    write_trailers(
-        msg_path=msg_path,
-        trailers=(
-            ("TDD-Suite-Green-Scope", "full-suite"),
-            ("TDD-Suite-Green-Output-Checksum", output_checksum),
-            ("TDD-Suite-Green-Captured-At", captured_at),
         ),
     )
     return 0
