@@ -30,7 +30,7 @@
     "value": 1,
     "exceeded_limit": 1
   },
-  "frequency": 60,
+  "frequency": 300,
   "alert_type": "on_change",
   "recipients": [
     {

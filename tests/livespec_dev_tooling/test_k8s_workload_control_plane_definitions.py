@@ -84,6 +84,16 @@ def test_every_trigger_fits_honeycomb_limits_and_has_a_unique_name() -> None:
         assert len(str(definition["description"])) <= 1023
 
 
+def test_every_k8s_trigger_window_is_at_most_four_times_its_frequency() -> None:
+    paths = sorted(_TRIGGERS.glob("k8s-*.json"))
+    assert paths
+    for path in paths:
+        definition = _load(path=path)
+        time_range = cast("int", _dict(value=definition["query"])["time_range"])
+        frequency = cast("int", definition["frequency"])
+        assert time_range <= 4 * frequency, path.name
+
+
 def test_factory_triggers_are_scoped_to_the_two_factory_namespaces() -> None:
     for name in (
         "k8s-factory-container-oom-crashloop",
