@@ -1,824 +1,598 @@
-<!-- Research by an independent Fable subagent commissioned 2026-10-28 by the maintainer in session b021574a: how minimal-attention, spec-driven (Phoenix-style) factories keep token spend bounded long term. Sourced facts and the agent's inference are separated inside. Not yet acted on: no work item or plan is commissioned from it. -->
+<!-- Commissioned 2026-10-28 by the maintainer in session b021574a; web research by an independent Fable subagent. Rewritten the same day: real llm-spend metrics added, the maintainer's ten questions answered, and the prose cut to lists. Not yet acted on: nothing is commissioned from it except the separate tool-output plan recorded on epic livespec-dev-tooling-6lv7ze. -->
 
 # Keeping LLM token spend bounded in a minimal-attention, spec-driven factory
 
-Research note, 2026-10-28. Web research plus read-only inspection of this fleet's
-instruction files, workflow graph, and the two plans already open on this topic
-(`livespec-dev-tooling/plan/token-spend-analysis`,
-`livespec-orchestrator-beads-fabro/plan/factory-context-per-turn-reduction`,
-`livespec-orchestrator-beads-fabro/plan/anthropic-burn-mitigation`). Nothing was
-modified, no ledger command was run, nothing was dispatched.
+Tags: **[M]** measured in `llm-spend` on 2026-10-28; **[L]** from a dated local
+note or file; **[S]** sourced from the linked page; **[I]** inference.
 
-Tagging: **[S]** = sourced from the linked page (quoted or closely paraphrased).
-**[L]** = measured locally in this session or quoted from a dated local research
-note. **[I]** = my inference or arithmetic. Honeycomb could not be queried from
-this session (the MCP needed an interactive re-auth), so the measurement
-section names columns from the plan notes and the emitting code, not from a
-live schema read.
+## 1. Summary
 
----
+- **What costs money.** Input that is re-read on every turn. It is not output.
+  - Output is 3-10% of cost wherever the price split is recorded **[M]**.
+  - A factory response reads a median of 195k-218k input tokens on Codex and
+    340k-430k on Claude **[M]**.
+- **What fills that input.** Harness overhead: instruction files, skill and
+  plugin catalogues, and the growing transcript. The task text is a small part.
+- **What everyone else does about it.** Two moves:
+  1. Load less by default and fetch on demand.
+  2. Keep what is loaded identical between calls, so it bills at the cache-read
+     price.
+- **What to measure.** Dollars per accepted item, not tokens. One controlled
+  study cut tokens 38% and *raised* cost 6.8% **[S]**.
+- **The ratchet is real.**
+  - Instruction files grow +226% over their lifetime **[S]**.
+  - Recording each rule's rationale lets it be pruned safely, which cut excess
+    growth 99.3% **[S]**.
+  - This fleet already records rationale. What is missing is a gate that forces
+    the pruning.
+- **What Phoenix-style factories keep** (they run with no human code review):
+  1. A deterministic check the implementer cannot see or edit.
+  2. A judge that is never the worker.
+  3. Regeneration limited to the code a spec change reaches.
 
-## Bottom line
+## 2. Measured spend
 
-Spend in this system is not driven by output (about 270 output tokens per
-response, under 5% of cost **[L]**) but by a per-response INPUT FLOOR that is
-re-read on every turn: median 156k-220k tokens per factory response on Codex,
-365k-755k on Opus 5, 381k on the one Sonnet 5.5 node sampled so far **[L]**.
-That floor is harness overhead (instruction files, skill/plugin/MCP catalogues,
-the accumulated transcript), not task text, and every published mechanism that
-keeps per-turn input flat attacks it by the same two moves: (1) load less by
-default and fetch on demand (two-tier instruction loading, per-feature or
-per-delta spec slices, bounded indexes, sub-agent isolation), and (2) make what
-IS loaded cache-stable so the re-reads bill at 0.05x instead of 1x (Sonnet 5.5
-cache reads are $0.10/MTok against $2.00 raw and $2.50 for a cache write
-**[S]**). The literature is unusually clear that token counts are the wrong
-objective: one controlled study found the heaviest tool-output compression cut
-delivered tokens 38% and RAISED billed cost 6.8% **[S]**, so the series to track
-is billed dollars and cache-read share per node, and tokens per accepted item.
-The long-term ratchet is real and now measured: instruction files grow +226%
-over their lifetime at +4.9 net instructions per commit, and the only measured
-counter is recording each instruction's rationale so it can later be pruned
-safely, which cut excess growth by 99.3% **[S]**. This fleet's files already
-carry rationale ("recorded because it failed on <date>"), which means the
-pruning precondition is met and the missing piece is a budget gate that forces
-the pruning to happen.
+### 2.1 Totals, last 7 days (to 2026-10-28 ~21:30Z) [M]
 
-Under the Phoenix / disposable-implementation framing (section I), the
-practitioners who actually run without human code review (StrongDM, Mechanical
-Orchard, Fowler's `phoenix`, Anthropic's C-compiler run) converge on the same
-three things: a deterministic oracle the implementer cannot see or edit, a
-judge that is never the worker, and regeneration scoped by provenance to the
-units a spec change reaches. The measured evidence says LLM judges are worse
-than execution at correctness and mis-classify correct code, but are good at
-catching reward hacking, and Meta's RADAR shows risk-tiered automation (not
-universal review) is what buys a 1/50 incident rate at scale. So a disposable
-implementation does change the economics of this fleet's stacked review: the
-code-shape and comprehension dimensions of review are worthless for a reader
-who is not there, the correctness dimension belongs to tests, and the one LLM
-pass worth keeping is the independent hack and scope check, with replays
-sampled by risk. Hash-keyed regeneration caches do not exist because generation
-is not reproducible; the reusable artifact is the last VERIFIED unit and its
-verdict, keyed on the spec clauses it depends on.
+Query: `SUM(cost_usd)`, `spend.schema in [2, 6]`, correction rows kept so
+retracts net out. USD is API list price; the bill is subscription quota, so
+read USD as relative weight.
 
----
+| Consumer | Provider | USD | Share |
+|---|---|---:|---:|
+| Local Claude sessions | Anthropic | 4,239 | 28% |
+| No consumer recorded (rows before attribution began 10-25) | Anthropic | 3,657 | 25% |
+| Factory nodes | OpenAI (Codex) | 3,491 | 23% |
+| Host judges (`claude -p`) | Anthropic | 2,074 | 14% |
+| Factory nodes | Anthropic | 870 | 6% |
+| Local Codex sessions | OpenAI | 556 | 4% |
+| **Total** | | **14,887** | |
 
-## First-hand local measurements (read-only)
+By model: opus-5.5 $4,274; opus-4.8 $3,667; gpt-5.6-terra $3,530;
+sonnet-5.5 $1,210; opus-5 $1,176; fable-5.1 $512; gpt-6-astra $347;
+gpt-5.6-luna $10; haiku-5.5 $1.
 
-| Artifact | Size | Note |
-|---|---:|---|
-| `livespec-dev-tooling/CLAUDE.md` | 45,766 B, 772 lines | Vendor target is under 200 lines **[S]** |
-| `livespec-dev-tooling/.ai/*.md` (18 files) | ~136 KB (plus a 64 KB `supervisor-protocol.md`) | Loaded on trigger via prose index, not by `paths:` rules |
-| `livespec-orchestrator-beads-fabro/CLAUDE.md` = `AGENTS.md` | 147,088 B | Measured at **54,650 tokens per request** on the Claude tokenizer (note 002, 2026-10-28) **[L]** |
-| `livespec/CLAUDE.md` | 92,796 B | |
-| `livespec-console-beads-fabro/CLAUDE.md` | 67,205 B | |
-| `vps-info/CLAUDE.md` | 166,318 B | |
-| `livespec/.claude/skills/needs-attention-internal/SKILL.md` | 62,650 B | Vendor target is under 500 lines **[S]** |
-| `implement-work-item/prompts/*.md` | 6.8-39 KB per node | proof-capture 39.4 KB, proof-verify 29.5 KB, implement 27.5 KB (note 001) **[L]** |
+### 2.2 Daily trend [M]
 
-Factory per-response input (input + cache read + cache creation), from
-`llm-spend`, as recorded in the orchestrator's notes 001/002 (2026-10-28) **[L]**:
+| Day | Total | Factory | Local | `claude -p` |
+|---|---:|---:|---:|---:|
+| 10-15 to 10-24 (avg) | ~1,220 | not attributed | not attributed | not attributed |
+| 10-25 | 3,931 | 366 | 2,459 | 998 |
+| 10-26 | 2,741 | 1,228 | 622 | 780 |
+| 10-27 | 3,156 | 2,063 | 737 | 170 |
+| 10-28 (to ~21:30Z) | 1,276 | 703 | 421 | 127 |
 
-| Node | Codex median / p90 | Opus 5 median | Sonnet 5.5 median |
+- Before 10-25 rows carry no consumer, so the split is unknown.
+- The jump on 10-25 is partly real and partly coverage: factory Codex spend
+  first reached `llm-spend` that day (note 005).
+
+### 2.3 Host judges (`claude -p`) [M]
+
+- Daily cost fell from $984 (10-25, opus-4.8) to $123 (10-28, sonnet-5.5)
+  after coordinator rulings R47/R48/R66 moved the judges off Opus.
+- 1,500 of the week's $2,074 is opus-4.8 in the orchestrator repo, all
+  before the switch.
+- **Cost is cache writes.** On rows with a price split:
+  - cache write $331 of $360 (92%);
+  - 72.3M tokens written at the 1-hour price, 0 at the 5-minute price;
+  - 89.5M tokens read back.
+  A one-shot judge pays the 2x 1-hour write and rarely re-reads it.
+
+### 2.4 Factory nodes, last 7 days [M]
+
+USD per node, corrections included:
+
+| Node | Codex USD | Claude USD | Responses (Codex / Claude) |
 |---|---:|---:|---:|
-| implement | 192,519 / 235,783 | 755,346 | not yet sampled |
-| review | 213,503 / 235,390 | 497,013 | |
-| review_fix | 182,268 / 234,556 | 406,219 | |
-| fix | 156,402 / 233,798 | 364,603 | |
-| proof_capture | 219,665 / 239,873 | | 381,523 (17 responses) |
-| dod_gate | 206,432 / 220,011 | | |
-| disposition | 30,842 / 34,878 | | |
+| implement | 2,178 | 334 | 27,995 / 2,063 |
+| review_fix | 323 | 50 | 4,315 / 261 |
+| proof_capture | 290 | 134 | 3,698 / 542 |
+| review | 203 | 113 | 1,878 / 345 |
+| fix | 178 | 85 | 2,544 / 481 |
+| unattributed | 154 | 0 | 2,117 / 0 |
+| dod_gate | 83 | 67 | 617 / 121 |
+| proof_verify | 82 | 67 | 856 / 218 |
+| disposition | 0 | 10 | 36 / 11 |
 
-Two things the notes already observed that matter for ranking: the Codex p90
-bunches at ~235k on every node, the signature of a compaction ceiling rather
-than task variance; and `disposition` is the control at 31k because its prompt
-was explicitly bounded (`bd-ib-7zxqyl`). The Claude nodes show no ceiling and
-run 2-4x the Codex medians, which says the transcript component is the largest
-share on Claude routing **[L]**. The judge (`claude -p`) floor is ~140-150k
-after `bd-ib-qksrl6` removed the 440k tail **[L]**.
+- `implement` is $2,512 of about $4,360 (58%) and 30k of about 48k responses.
+- The verdict nodes (`review`, `dod_gate`, `proof_verify`) are about $615 (14%).
 
-One consequence nobody has written down yet **[I]**: Codex stops reading
-`AGENTS.md` once the combined size reaches `project_doc_max_bytes`, 32 KiB by
-default **[S]**, so on Codex routing the orchestrator's 147 KB file was silently
-78% absent and this repo's 45 KB file was 29% absent. Whatever those nodes
-were doing, they were not following the bottom two-thirds of the file. Any
-plan to "move rules into AGENTS.md so Codex sees them" is already failing
-silently today.
+Input tokens per response, last 3 days, rows that carry a node [M]:
 
----
+| Node | Codex P50 / P90 | Claude sonnet-5.5 P50 / P90 | Claude cache-read share |
+|---|---|---|---:|
+| implement | 195k / 235k | 374k / 640k | 98% |
+| review | 214k / 236k | 372k / 415k | 88% |
+| proof_capture | 218k / 240k | 380k / 410k | 95% |
+| proof_verify | 217k / 227k | 361k / 379k | 88% |
+| dod_gate | 204k / 219k | 341k / 349k | 73% |
+| fix | 181k / 241k | 427k / 531k | 100% |
+| disposition | 34k (luna) | 104k / 357k | 31% |
 
-## Findings by mechanism
+- Every Codex P90 sits at about 235k: the compaction ceiling, not task size.
+- Claude nodes have no such ceiling and run about 1.8x the Codex median.
+- `disposition` is the control: its prompt was explicitly bounded (`bd-ib-7zxqyl`).
 
-### A. Two-tier instruction loading (tiny always-load index + on-demand bodies)
+### 2.5 Local sessions [M]
 
-**What.** Every vendor converged on the same shape: a short always-loaded file,
-a catalogue of names+descriptions, and full bodies loaded only on trigger.
+- Median input per response: 222k (10-26), 301k (10-27), 239k (10-28).
+- Top spenders this week: orchestrator repo $1,071; `petri-factory-on-gmktec`
+  $762; `gitops-fleet-capacity-monitoring` $333; `github-app-checks-read` $279.
+- Cache writes are $378 of $1,293 (29%) on rows with a price split.
 
-**Who / evidence.**
-- Claude Code: "target under 200 lines per CLAUDE.md file. Longer files consume
-  more context and reduce adherence"; `.claude/rules/*.md` with `paths:`
-  frontmatter "load only when Claude works with matching files"; `@` imports
-  "don't reduce its context cost" **[S]** (https://code.claude.com/docs/en/memory).
-  Costs page: "Aim to keep CLAUDE.md under 200 lines"; `/usage` now emits rows
-  like `Trim ~/code/api/CLAUDE.md · 49k tokens per request` **[S]**
-  (https://code.claude.com/docs/en/costs). Best practices: "every line in it
-  takes a little of Claude's attention on every task, whether it's relevant or
-  not"; "If Claude keeps ignoring a line that is in CLAUDE.md, adding IMPORTANT
-  probably won't fix it. Either the file has grown long enough that the line
-  gets lost, or the line is a rule that can't have exceptions, in which case it
-  belongs in a hook" **[S]** (https://code.claude.com/docs/en/best-practices).
-  `/doctor prompt-audit` (v2.1.283+) finds stale, contradictory, and
-  dead-reference instructions across CLAUDE.md, rules, skills, agents **[S]**.
-- Skills: only name+description (truncated at 1,536 chars) sit in context until
-  invoked; "Keep SKILL.md under 500 lines"; `disable-model-invocation: true`
-  removes even the description; `context: fork` runs a skill in a fresh subagent
-  **[S]** (https://code.claude.com/docs/en/skills,
-  https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills).
-- Cursor: Always / Auto-attached by glob / Agent-requested by description /
-  Manual; "Keep rules under 500 lines"; "Add rules only when you notice Agent
-  making the same mistake repeatedly" **[S]** (https://cursor.com/docs/context/rules).
-- Kiro steering: `always` / `fileMatch` / `manual` / `auto` inclusion modes,
-  plus `#[[file:name:start-end]]` line-range references; `AGENTS.md` files "do
-  not support inclusion modes and are always included" **[S]**
-  (https://kiro.dev/docs/steering/).
-- Codex: root-to-cwd AGENTS.md concatenation capped at `project_doc_max_bytes`
-  = 32 KiB; `skills.max_context_tokens` defaults to 2% of the window capped at
-  10k **[S]** (https://learn.chatgpt.com/docs/agent-configuration/agents-md,
-  https://learn.chatgpt.com/docs/config-file/config-reference).
-- Sourcegraph Amp: subtree AGENTS.md and `globs`-tagged files load only after a
-  matching file is read **[S]** (https://ampcode.com/docs/customize/agents-md).
-- Boris Cherny (via InfoQ): the Claude Code team's own CLAUDE.md is "2.5k
-  tokens" **[S]** (https://infoq.com/news/2026/01/claude-code-creator-workflow/).
-  HumanLayer: "< 300 lines is best, and shorter is even better"; their root file
-  is under sixty lines **[S]** (https://www.humanlayer.dev/blog/writing-a-good-claude-md).
-- Empirical: Gloaguen et al. 2026 found context files "do not generally improve
-  task success rates, while increasing inference cost by over 20% on average";
-  "repository overviews ... are not helpful" but specific instructions are
-  followed **[S]** (https://arxiv.org/abs/2602.11988). Lulla et al. 2026, 124
-  PRs: AGENTS.md present gave median runtime -28.6%, output tokens -16.6%,
-  "comparable task completion" **[S]** (https://arxiv.org/abs/2601.20404).
+### 2.6 Telemetry gaps (fix before trusting a before/after)
 
-**Mapping onto livespec.** The `.ai/` index in this repo's CLAUDE.md is
-already two-tier in intent (trigger line in the index, body in the file), but
-the index itself is 772 lines, and the orchestrator's single file is 54.6k
-tokens on every factory response **[L]**. Concretely: (1) cut each repo's
-CLAUDE.md to a ~200-line index; (2) move the `.ai/*.md` gotchas to
-`.claude/rules/*.md` with `paths:` where the trigger is a file path (CI runner
-dirs, `_red_green_replay_revert.py`, workflow files) and to skills where the
-trigger is a task; (3) for Codex nodes, nothing above 32 KiB is read, so the
-cut is mandatory, not optional; (4) factory nodes should not load the governed
-repo's CLAUDE.md at all except through a per-node excerpt (this is
-`factory-context-per-turn-reduction` C3, already scoped).
+1. **No cache split on factory Codex.** The spans carry none; the board assumes
+   90% cached. Codex cache-share claims are therefore not measured.
+2. **$3,657 of local Claude has no consumer**, from rows before 10-25.
+3. **Price-split columns are partial.** `usd.*` covers only about 30% of local
+   rows, so component shares above are for the rows that have them.
+4. **Codex node is `pending` on the original row.** The node arrives on the
+   restate, and tokens live only on originals. So per-node Codex token
+   percentiles use the subset of rows that carry a node (about 2.4k of 44k in
+   3 days).
+5. **Sonnet 5.5 cache-read price disagrees.** The research quoted $0.10/MTok;
+   the emitter (`emit_spend.py`) prices $0.20/MTok. Verify against the
+   pricing page before relying on cache ratios.
+6. **No tool-output measurement.** `llm-spend` cannot see tool-result size. The
+   separate tool-output plan needs a transcript-side probe.
 
-### B. Deterministic enforcement replaces prose (hooks, lints, gates)
+## 3. Local file sizes [L]
 
-**What.** A rule that must always hold is a hook, deny rule, or lint, and then
-leaves the prompt.
+| File | Size |
+|---|---:|
+| `livespec-dev-tooling/CLAUDE.md` | 45.8 KB, 772 lines (vendor target: under 200 lines) |
+| `livespec-orchestrator-beads-fabro/CLAUDE.md` = `AGENTS.md` | 147 KB, 54,650 tokens per request (orchestrator note 002) |
+| `livespec/CLAUDE.md` | 92.8 KB |
+| `livespec-console-beads-fabro/CLAUDE.md` | 67.2 KB |
+| `vps-info/CLAUDE.md` | 166 KB |
+| `livespec/.claude/skills/needs-attention-internal/SKILL.md` | 62.7 KB (vendor target: under 500 lines) |
+| `implement-work-item/prompts/*.md` | 6.8-39 KB per node |
 
-**Who / evidence.**
-- Anthropic: "If something has to happen every time, make it a hook, a deny
-  rule, or a managed setting. CLAUDE.md is for guidelines"; "keep the enforced
-  set small ... If you ever find yourself at forty of them, most are probably
-  preferences" **[S]** (https://code.claude.com/docs/en/best-practices). Hooks
-  provide "deterministic control: certain actions always happen rather than
-  relying on the LLM to choose" **[S]** (https://code.claude.com/docs/en/hooks-guide).
-  A PreToolUse hook that filters test output cuts context "from tens of
-  thousands of tokens to hundreds" **[S]** (costs page).
-- Factory.ai: "Achieving 'lint green' becomes the definition of 'Done'";
-  AGENTS.md carries "the why and the examples", linting "the how and the
-  guarantee"; every rule gets a severity, autofix, and a time-boxed waiver
-  **[S]** (https://factory.com/using-linters-to-direct-agents).
-- Addy Osmani's sunset rule: when an agent repeats a mistake, "fix the
-  codebase" (lint, structure, test), then "delete the AGENTS.md line that
-  addressed it ... each line flags friction that still needs fixing" **[S]**
-  (https://addyosmani.com/blog/agents-md/).
-- Google AutoCommenter: "top 85 guidelines made up 90% of AutoCommenter
-  comments"; stale guidance handled by per-guideline suppression, not retraining
-  **[S]** (https://newsletter.getdx.com/p/ai-assisted-code-reviews-at-google).
+- **Codex silently truncates.** It stops reading `AGENTS.md` at
+  `project_doc_max_bytes`, 32 KiB by default **[S]**.
+  - The orchestrator's 147 KB file is 78% unread on Codex nodes.
+  - This repo's 45 KB file is 29% unread.
 
-**Mapping.** This repo already does this well where it matters most
-(`red_green_replay` hook, heading-coverage checks, range gate). The remaining
-always-load prose is full of hook candidates: the `ls`-is-`lsd` false-absence
-rule (a PreToolUse rewrite or an unalias in the hook env), "use
-`with-livespec-env.sh`" (a Bash hook that refuses bare `bd`), "never `bd init`"
-(deny rule), "dispatch `just check` detached" (a hook that rewrites the
-command). Each one converted is a paragraph deleted from every request.
+## 4. What others do, by mechanism
 
-### C. The ratchet, measured, and its counter
+### A. Load a short index always; load bodies on demand
 
-**What.** Instruction files only grow because appending is cheap and safe
-deletion of a rule whose rationale is lost is expensive.
+- **Claude Code:** CLAUDE.md under 200 lines; `.claude/rules/*.md` with `paths:`
+  load only for matching files; `@` imports do NOT reduce cost
+  (https://code.claude.com/docs/en/memory). Skills keep only name and
+  description in context until invoked; SKILL.md under 500 lines
+  (https://code.claude.com/docs/en/skills).
+- **Cursor:** rules are Always / glob-attached / agent-requested / manual
+  (https://cursor.com/docs/context/rules).
+- **Kiro:** `always` / `fileMatch` / `manual` / `auto`; AGENTS.md is always
+  included (https://kiro.dev/docs/steering/).
+- **Codex:** AGENTS.md capped at 32 KiB; skills capped at 2% of the window
+  (https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+- **Size in practice:** the Claude Code team's own CLAUDE.md is about 2.5k
+  tokens (InfoQ); HumanLayer's root file is under 60 lines.
+- **Evidence on value:**
+  - Context files add over 20% cost with no general success gain; repository
+    overviews do not help, but specific instructions are followed
+    (https://arxiv.org/abs/2602.11988).
+  - AGENTS.md presence: -28.6% runtime, -16.6% output tokens
+    (https://arxiv.org/abs/2601.20404).
+- **Here:** the `.ai/` index is two-tier in intent, but the index itself is 772
+  lines.
 
-**Who / evidence.**
-- Chakrabarti 2026, "Why Does CLAUDE.md Keep Growing? Catastrophic Remembering
-  in Agentic Coding": 247,694 instruction lifetimes across 1,867 repos; prompts
-  grow **+226% over their lifetime, +4.9 net instructions per commit**; older
-  instructions are less likely to be deleted (log-hazard -0.032 per commit);
-  recording each instruction's rationale as a comment "removed 99.3% of excess
-  instructions, reducing growth from +211.3% to +1.4%" and improved
-  instruction-following on WildIFEval by up to 23.1% **[S]**
-  (https://arxiv.org/abs/2608.11095).
-- Thoughtworks Radar vol. 34 lists "Agent instruction bloat" in Caution
-  (secondary report via subagent; not independently fetched).
-- IFScale (NeurIPS 2025): accuracy decays with instruction count; "even the
-  best frontier models only achieve 68% accuracy at the max density of 500";
-  primacy bias peaks at 150-200 instructions, so the NEWEST rule appended at the
-  bottom is the least likely to be followed **[S]** (https://arxiv.org/abs/2507.11538).
-  Arize's 2026 re-run shows 2026 models hold further out but the shape and
-  primacy bias remain (secondary, via subagent).
-- Chroma "Context Rot": focused prompts (~300 tokens) beat full prompts (~113k)
-  on every one of 18 models; "even a single distractor reduces performance"
-  **[S]** (https://www.trychroma.com/research/context-rot).
-- Budget-as-gate precedent: aiwg's `lint:claude-context --startup --strict`
-  exits non-zero when startup context exceeds a budget (secondary, via subagent);
-  BMAD v6's project-context audit rule "smaller or equal, never larger" **[S]**
-  (https://raw.githubusercontent.com/bmad-code-org/BMAD-METHOD/V6.12/docs/existing-codebases/theory-of-project-context.md).
+### B. Turn always-true rules into hooks and gates
 
-**Mapping.** This fleet's files are textbook: every entry carries a date and a
-"why", which is exactly the paper's precondition for safe pruning, and nothing
-forces the prune. The structural counter is a CI check in `just check` with a
-frozen token (or line) budget per instruction file and per SKILL.md, measured
-with the same tokenizer the models use, that FAILS when the file grows past
-budget; adding a rule then requires deleting or converting another (B above).
-This is the "unratified filter inside a check is conformance" case: the vendor
-docs already state the limit.
+- **Anthropic:** "If something has to happen every time, make it a hook, a deny
+  rule, or a managed setting." (https://code.claude.com/docs/en/best-practices)
+- **Factory.ai:** lint green is the definition of done; AGENTS.md carries the
+  why, lints carry the guarantee (https://factory.com/using-linters-to-direct-agents).
+- **Osmani's sunset rule:** when an agent repeats a mistake, fix the codebase,
+  then delete the AGENTS.md line (https://addyosmani.com/blog/agents-md/).
+- **Candidates here:**
+  1. the `ls`-is-`lsd` false-absence rule (unalias in the hook env);
+  2. "use `with-livespec-env.sh`" (refuse bare `bd`);
+  3. "never `bd init`" (deny rule);
+  4. "dispatch `just check` detached" (rewrite the command).
 
-### D. Spec slicing: load the delta or the clause, never the tree
+### C. The ratchet and its counter
 
-**What.** No spec-driven tool loads the whole canonical spec per task.
+- **Measured growth:** 247,694 instruction lifetimes over 1,867 repos; +226%
+  growth; +4.9 net instructions per commit; recorded rationale removed 99.3%
+  of excess (https://arxiv.org/abs/2608.11095).
+- **More rules, worse following:** 68% accuracy at 500 instructions; the newest
+  rule at the bottom is followed least (https://arxiv.org/abs/2507.11538).
+- **Focused prompts win:** about 300-token prompts beat about 113k-token prompts
+  on all 18 models tested (https://www.trychroma.com/research/context-rot).
+- **Budget gates exist elsewhere:** aiwg `lint:claude-context --strict`; BMAD v6
+  "smaller or equal, never larger".
 
-**Who / evidence.**
-- OpenSpec: `openspec/specs/<capability>/spec.md` is the source of truth;
-  changes live in `openspec/changes/<name>/` as delta specs with `## ADDED /
-  MODIFIED / REMOVED / RENAMED Requirements`; the apply skill reads only the
-  change folder's `contextFiles`; `/opsx:archive` merges the delta into the
-  main spec, "Preserves existing content not mentioned in delta", and moves the
-  change to `changes/archive/YYYY-MM-DD-<name>/`, never loaded again **[S]**
-  (https://github.com/Fission-AI/OpenSpec/blob/main/docs/commands.md,
-  https://raw.githubusercontent.com/Fission-AI/OpenSpec/main/skills/openspec-apply-change/SKILL.md).
-- GitHub Spec Kit: one `specs/<branch>/` per feature; implement reads
-  `tasks.md`, `plan.md`, optional `data-model.md`/`contracts/`, and the
-  constitution; nothing from other features **[S]**
-  (https://raw.githubusercontent.com/github/spec-kit/main/templates/commands/implement.md).
-- Kiro: "creating multiple specs for different features ... rather than ... a
-  single one for your entire codebase" **[S]** (https://kiro.dev/docs/specs/best-practices/).
-- Tessl: a `.spec.md` has `targets` globs binding it to the files it describes,
-  so an agent loads the spec for the file it edits; "too large or too many specs
-  will overload the context window" **[S]**
-  (https://tessl.io/registry/tessl-labs/spec-driven-development,
-  https://tessl.io/blog/spec-driven-development-10-things-you-need-to-know-about-specs/).
-- BMAD v4: shard PRD/architecture by `##` heading, SM agent distills one story
-  file, dev agent loads only the story plus `devLoadAlwaysFiles` **[S]**
-  (bmad-kb.md v4.43).
-- Addy Osmani: "don't feed 20k tokens if 5k will do"; give the agent "the
-  Database section of the spec only, plus any global constraints"; keep a
-  hierarchical outline in the prompt with "(see full spec §4.2)" pointers
-  **[S]** (https://addyosmani.com/blog/good-spec/).
-- Aider repo-map: a ranked map of files and symbols bounded by `--map-tokens`,
-  default 1k tokens **[S]** (https://aider.chat/docs/repomap.html).
+### D. Give the agent the spec slice, not the tree
 
-**Mapping.** livespec already has the OpenSpec shape (`proposed_changes/` ->
-revise -> `history/vNNN`), and `bd-ib-qksrl6` already bounded judge prompts to
-the clauses they need **[L]**. The gaps: (1) factory implement/review nodes
-still receive whole-tree context where a heading-level clause set (the
-`heading-coverage.json` map already keys clauses to tests and could key them to
-work items) would do; (2) `history/vNNN` snapshots must never enter a prompt;
-(3) a generated H2 outline of the spec with a token budget (Aider-style) is the
-right always-available index, with clause bodies fetched by heading on demand.
-A `--since-version` style delta (the `detect-impl-gaps` surface already has one)
-is the per-task delta for revise-adjacent work.
+- **OpenSpec:** delta specs per change, archived after merge and never loaded
+  again (https://github.com/Fission-AI/OpenSpec).
+- **Spec Kit:** one spec folder per feature.
+- **Tessl:** each spec declares the files it targets; "too large or too many
+  specs will overload the context window".
+- **BMAD:** shards by heading. **Aider:** repo map capped at 1k tokens.
+- **Here:**
+  - livespec already has the delta shape (`proposed_changes` → revise →
+    `history/vNNN`).
+  - `bd-ib-qksrl6` bounded judge prompts to their clauses.
+  - Factory nodes still get whole-tree context.
 
-### E. Transcript growth inside a node: cap, clear, or hand off
+### E. Bound the transcript inside a node
 
-**What.** A node that takes many turns re-reads its own transcript each turn.
-On Claude routing the transcript is the biggest share **[L]**.
+- **Anthropic context editing:** clearing old tool results cut tokens 84% on a
+  100-turn eval; every clear invalidates the cached prefix
+  (https://claude.com/blog/context-management).
+- **Claude Code:** `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (100k-1M); tool responses
+  capped at 25k tokens.
+- **Amp:** removed compaction as lossy and replaced it with `/handoff` into a new
+  thread (https://ampcode.com/news/handoff).
+- **Factory.ai:** 50% more context means 50% more cost; every compaction method
+  scores weak on artifact tracking.
+- **Fabro:** per-node `fidelity`, `max_visits`, `timeout`, `reasoning_effort`
+  (default high). There is no token or dollar budget per node
+  (https://docs.fabro.sh/reference/dot-language).
 
-**Who / evidence.**
-- Anthropic context editing: on a 100-turn web-search eval, clearing old tool
-  results let agents finish and "reduc[ed] token consumption by 84%"; memory
-  tool + context editing +39% over baseline **[S]** (https://claude.com/blog/context-management).
-  API: `clear_tool_uses_20250919` triggers at 100k input by default, keeps the
-  last 3 tool uses; each clear invalidates the cached prefix **[S]**
-  (https://platform.claude.com/docs/en/build-with-claude/context-editing).
-- Claude Code: `--autocompact` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (100k-1M);
-  after compaction CLAUDE.md and rules are re-injected and invoked skill bodies
-  come back "capped at 5,000 tokens per skill and 25,000 tokens total"; tool
-  responses capped at 25k tokens by default **[S]**
-  (https://code.claude.com/docs/en/context-window,
-  https://www.anthropic.com/engineering/writing-tools-for-agents).
-- Sourcegraph Amp REMOVED compaction: "It's lossy" and "encourages long,
-  meandering threads"; replaced with `/handoff`, which drafts a new-thread
-  prompt plus a relevant-file list; "Use one thread per task" **[S]**
-  (https://ampcode.com/news/handoff).
-- Factory.ai: "A 50% increase in average context length translates directly
-  to 50% higher inference costs"; anchored iterative summarization; eval over
-  36,611 messages scored Factory 3.70 vs Anthropic SDK compaction 3.44 vs
-  OpenAI 3.35 (0-5), all weak on artifact tracking **[S]**
-  (https://factory.com/news/compressing-context,
-  https://factory.com/news/evaluating-compression).
-- Cognition: single-threaded agents with a separate small model compressing
-  history, "hard to get right" **[S]** (https://cognition.com/blog/dont-build-multi-agents).
-- Claude Code budget flags: `--max-turns` ("No limit by default"),
-  `--max-budget-usd` (print mode; subagent spend counts; "Spend can pass the
-  cap"), `--bare` (skips hooks, skills, plugins, MCP, auto memory and CLAUDE.md),
-  `--exclude-dynamic-system-prompt-sections` **[S]** (https://code.claude.com/docs/en/cli-reference).
-- Fabro per-node knobs: `max_tokens` (output only), `timeout`,
-  `reasoning_effort` low/medium/high (default **high**), `fidelity` compact |
-  full | summary:high/medium/low | truncate, `max_visits`, `max_retries`,
-  `retry_policy`, `model_stylesheet`; **no dollar or input-token budget per node
-  or run** **[S]** (https://docs.fabro.sh/reference/dot-language). Local caveat:
-  the workflow comments say `model`/`reasoning_effort` are API-adapter-only and
-  ACP (Claude Code / Codex) nodes pin them through the adapter's env **[L]**.
+### F. Cache economics
 
-**Mapping.** The 755k Opus `implement` median says the node loops long and
-compacts late. Three levers in order of safety: (1) a lower autocompact window
-on factory Claude nodes (the Codex ceiling at ~235k produced a 2-4x lower
-median with no recorded quality loss, which is a natural experiment already in
-the data **[I]**); (2) `--max-turns` per node as a backstop, and split long
-nodes into phase nodes with a structured handoff artifact (Amp's pattern; the
-graph already has `implement -> implementation_diff -> janitor -> fix`, so the
-seams exist); (3) hook-side filtering of test/gate output before it enters the
-transcript (`just check` output is a prime candidate).
+See answer 6 in section 5 for how caching works.
 
-### F. Cache economics: the billed-dollar lever
+- **Measured savings:** strategic caching cut cost 41-80% over 500+ sessions;
+  put dynamic content last (https://arxiv.org/abs/2601.06007).
+- **Hit rate is the metric:** Manus calls KV-cache hit rate "the single most
+  important metric"; a timestamp at the top of the system prompt breaks it.
+- **Measured negative:** compressing tool output cut tokens 38.4% and raised
+  cost 6.8%; token and cost reduction correlate at only r = 0.15
+  (https://arxiv.org/abs/2607.12161).
 
-**What.** With Sonnet 5.5, a cache read costs 0.05x base and a 5-minute write
-1.25x, so a miss-then-write is 25x a hit **[S][I]**. Hit rate, not token
-count, decides the bill.
+### G. Model and effort for verdict turns
 
-**Who / evidence.**
-- Anthropic pricing: Sonnet 5.5 $2.00 base / $2.50 5m-write / $4.00 1h-write /
-  $0.10 read; Opus 5.5 $4 / $5 / $8 / $0.20; Haiku 5.5 $0.10 / $0.125 / $0.20 /
-  $0.01 (prompts up to 100k); Fable 5.1 reads at 0.025x. Minimum cacheable
-  prefix 512 tokens on the 5.x models. Hierarchy `tools -> system -> messages`;
-  "Changes at each level invalidate that level and all subsequent levels". TTL
-  "refreshed for no additional cost each time the cached content is used",
-  measured from request START. For a varying suffix "place the breakpoint at the
-  end of the static prefix, not on the varying block" **[S]**
-  (https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
-- Claude Code: caching automatic; order is system+tools -> project context
-  (CLAUDE.md, memory, rules) -> conversation; CLAUDE.md edits mid-session do
-  not apply (read at session start); `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` and a
-  subagent TTL variable; the preset system prompt embeds the auto-memory path so
-  different checkouts/machines miss each other's cache unless
-  `--exclude-dynamic-system-prompt-sections` is set; `/usage` reports
-  "91% of input tokens from cache ... likely cause: tool definitions changed"
-  **[S]** (https://code.claude.com/docs/en/prompt-caching,
-  https://code.claude.com/docs/en/costs). Anthropic's own postmortem list of
-  cache breakers includes "an in-depth timestamp in the static system prompt"
-  and "non-deterministic tool ordering" (https://claude.dev/blog/lessons-from-building-claude-code-prompt-caching-is-everything/,
-  via subagent). Mid-conversation model switches (e.g. Opus -> Haiku for one
-  question at 100k context) cost MORE because the cache is rebuilt (same post).
-- OpenAI: cached input at 0.10x for gpt-5.3-codex / 5.4 / 5.5 / 5.6; GPT-5.6+
-  writes 1.25x (30-min) or 2.5x (12 h); exact rendered-prefix match; Codex's
-  prefix order puts aggregated AGENTS.md inside the cached prefix, so an
-  AGENTS.md edit or MCP reconnect invalidates it (official docs via subagent;
-  Codex prefix order is from a secondary post).
-- Measured: Lumer et al., "Don't Break the Cache", 500+ sessions across
-  OpenAI/Anthropic/Google: strategic caching cut cost **41-80%**; naive
-  full-context caching "can paradoxically increase latency"; put dynamic content
-  last **[S]** (https://arxiv.org/abs/2601.06007).
-- Measured, negative: Weinberger & Hozez, "Token Reduction Is Not Cost
-  Reduction": heaviest tool-output compression cut delivered tokens 38.4% and
-  **raised billed cost 6.8%**; Pearson r = 0.15 between token and cost
-  reduction; "prompt-cache creation and reads dominate input-side cost"; judge
-  by "cost per successful task" **[S]** (https://arxiv.org/abs/2607.12161).
-  JetBrains' A/B of the `rtk` output-compression plugin: +7.6% cost at low
-  effort, 0% at high, against an advertised 60-90% saving (secondary; the
-  JetBrains post returned 403).
-- Manus: KV-cache hit rate is "the single most important metric for a
-  production-stage AI agent"; ~100:1 input:output; "a common mistake is
-  including a timestamp ... at the beginning of the system prompt"; append-only
-  context; deterministic serialization; mask tools rather than remove them
-  **[S]** (https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus).
-- Gateway telemetry (Requesty, Apr 2026, no sample size): cached share per call
-  Claude Code 91.9%, Aider 84%, Roo 73.6%, Cline 61.4%, Kilo 45.5%
-  (https://www.requesty.ai/data/coding-agent-cache-hit-rate-apr-2026, secondary).
+- **Anthropic:** Opus 5.5 at low effort with escalation on failure solved about
+  97% at $0.17/task, against 95.3% at $0.29 all-high
+  (https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence).
+- **Rubric-driven acceptance judging:** the smallest model was the most
+  accurate, at 78x lower cost (https://arxiv.org/abs/2512.01232).
+- **Calibration matters:** small judges rank well but agree with humans less on
+  individual items (https://arxiv.org/abs/2406.12624).
 
-**Mapping.** The factory's `llm-spend` rows already carry
-`cache_read_tokens` / `cache_creation_tokens` / `gen_ai.usage.input_tokens`
-**[L]**, so cache-read share per node is one query away. Audit every rendered
-brief (`_dispatcher_goal.py::render_goal`, judge `--append-system-prompt`
-text, node prompts) for leading run ids, item ids, dates, and unstable JSON key
-order; put them last. Run judge subprocesses with
-`--exclude-dynamic-system-prompt-sections` and `--bare` (or the
-`bd-ib-a3aqie` isolation flags) so hosts and checkouts share a prefix. Set the
-1h TTL on sequential same-prefix nodes whose gap exceeds 5 minutes. Do not
-switch models mid-node; switch only at node boundaries (F, last bullet).
+### H. Tool-output hygiene
 
-### G. Effort and model routing for gate, review, and judge turns
+- **Moved to its own plan** (maintainer direction 2026-10-28, recorded on the
+  epic).
+- **Evidence it saves tokens:**
+  - hook-filtered test output cuts context "from tens of thousands of tokens to
+    hundreds";
+  - Programmatic Tool Calling -37% tokens;
+  - Tool Search cut definitions from about 77k to 8.7k tokens.
+- **Evidence it may not save dollars:** arXiv 2607.12161 and the JetBrains
+  `rtk` A/B (+7.6% cost at low effort).
 
-**What.** Run high-volume verdict turns at low effort or on a cheaper model,
-escalate on failure, and measure agreement before switching.
+### I. Phoenix-style (disposable implementation) practice
 
-**Who / evidence.**
-- Anthropic "Optimizing for cost and intelligence": Opus 5.5 at `low` effort
-  with failures re-run at `high` solved ~97% at $0.17/task vs 95.3% at
-  $0.29 all-`high`; prompt caching "83% to 86%" on a small triage agent; Haiku
-  5.5 on GPQA 85% vs 91% at ~1/20 the cost per correct answer; an advisor
-  pattern bought +1.7 pts for 2.1x cost ("at the edge of run-to-run noise")
-  **[S]** (https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence).
-  "Tuning effort is often a better lever than switching models" **[S]**
-  (https://platform.claude.com/docs/en/about-claude/models/choosing-a-model).
-- Rubric-driven LLM-as-judge for acceptance tests (20 configs, 500 evals):
-  "GPT-4o Mini attains the best accuracy ... 78x cost reduction vs. GPT-5 (high
-  reasoning) while improving accuracy"; cost spans 175x across configs; retries
-  are a "material" cost **[S]** (https://arxiv.org/abs/2512.01232). "Judging the
-  Judges": only the largest judges reach per-item human alignment, smaller
-  judges still rank well, so calibrate on your own items first **[S]**
-  (https://arxiv.org/abs/2406.12624).
-- RouteLLM: "cost reductions of over 85% on MT Bench, 45% on MMLU, and 35% on
-  GSM8K ... while still achieving 95% of GPT-4's performance" (the 85% is MT
-  Bench only) **[S]** (https://lmsys.org/blog/2024-07-01-routellm/). FrugalGPT:
-  "up to 98% cost reduction" on 2023 classification-style tasks via cascades
-  **[S]** (https://arxiv.org/abs/2305.05176); not an agentic-coding number **[I]**.
-- Claude Code costs page: Haiku for simple subagents, Sonnet for teammates;
-  agent teams "approximately 7x more tokens"; enterprise average "~$13 per
-  developer per active day" **[S]**.
-- Google AutoCommenter: ~40% of shown comments led to a code change at a 0.98
-  confidence gate; per-guideline suppression for stale rules **[S]**
-  (https://newsletter.getdx.com/p/ai-assisted-code-reviews-at-google). No
-  published risk-tiered LLM review scheme from Google or Meta was found;
-  CodeRabbit skips drafts and path-filtered PRs, Greptile reviews everything and
-  learns from reactions (vendor docs via subagent).
+Who builds this way:
+- **Chad Fowler, "Regenerative Software":**
+  - "The code is not the asset. The specification and the evaluation are the
+    asset."
+  - "If you don't know how you would evaluate regenerated code, regeneration
+    is reckless."
+  - He still rereads network and business-rule code.
+  - Reference implementation: https://github.com/chad/phoenix.
+- **Tessl (Podjarny):**
+  - "Code becomes disposable."
+  - Regenerate until the tests pass.
+  - Only a human may call a regression test wrong.
+  - On full autonomy: "not there yet".
+  - Links: https://tessl.io/blog/taming-agents-with-specifications-what-the-experts-say/
+    and https://tessl.io/blog/spec-driven-development-10-things-you-need-to-know-about-specs/.
+- **StrongDM:**
+  - "Code must not be reviewed by humans."
+  - Holdout scenarios stored outside the repo.
+  - A satisfaction fraction, not green/red.
+  - Behavioural clones of third-party services (https://factory.strongdm.ai/).
+- **Mechanical Orchard:** a parallel run of legacy against new; "The agent that
+  does the work is never the agent that judges it."
+- **Anthropic's C compiler:** 16 agents, about 2,000 sessions, $20k, 2B input
+  tokens, 99% pass on most compiler suites. "The task verifier is nearly
+  perfect, otherwise Claude will solve the wrong problem."
+- **Böckeler's taxonomy:** spec-first, spec-anchored, spec-as-source. livespec is
+  spec-anchored moving toward spec-as-source **[I]**
+  (https://www.martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html).
 
-**Mapping.** Fabro's `reasoning_effort` default is `high` on every node
-**[S]**; for ACP nodes the pin is via the adapter env (`--effort` for Claude
-Code) **[L]**. `dod_gate`, `proof_grade`, `review`, `disposition` and the host
-judges are the verdict tier: run them at `low` with escalate-on-fail, and
-shadow a Haiku 5.5 judge beside the current one on the same transcripts
-logging verdict agreement before any switch. Keep `implement`/`fix` where they
-are until the input floor is fixed, because a cheaper model re-reading 400k
-tokens is still re-reading 400k tokens.
+What the evidence says about verification:
+- **Judges are worse than tests at correctness:**
+  - LLM judges reject correct-but-different code (https://arxiv.org/pdf/2506.17335);
+  - best single judge Youden's J < 0.4 (https://arxiv.org/html/2602.18492v1).
+- **Judges are good at catching test-gaming:**
+  - EvilGenie: the judge catches hacks, held-out tests barely help
+    (https://alphaxiv.org/abs/2511.21654);
+  - ImpossibleBench: GPT-5 exploits tests 76% of the time on conflicting tasks
+    (https://arxiv.org/abs/2510.20270).
+- **Coverage is not an oracle:** 100% coverage can mean a 4% mutation score
+  (https://arxiv.org/abs/2506.02954).
+- **Risk tiering works at scale:** Meta's RADAR (https://arxiv.org/abs/2605.30208).
+  See answer 4.
 
-### H. Review-layer tiering and tool-output hygiene
+Measured failures:
 
-**What.** Not every item needs every LLM gate, and tool output should be
-filtered before it enters any transcript.
+| Who | What went wrong |
+|---|---|
+| Fowler `phoenix` | 0/5 against 5/5 for one model call; see answer 1 |
+| StrongDM | `return true`; tests rewritten to match the code |
+| Yegge | "Some bugs get fixed 2 or 3 times ... Other fixes get lost"; later reviews the last 25% of PRs |
+| Horthy / HumanLayer | 4 months lights-off, then a production break nobody could root-cause; 3 weeks to re-onboard |
+| Böckeler | the same spec generated different code on each run |
 
-**Who / evidence.** Google's 85-guidelines-cover-90% figure **[S]** (above);
-Anthropic's hook-filtered test output and 25k tool-response cap **[S]**;
-concise `response_format` using ~1/3 the tokens **[S]**
-(https://www.anthropic.com/engineering/writing-tools-for-agents); Programmatic
-Tool Calling "dropped from 43,588 to 27,297 tokens, a 37% reduction" by keeping
-intermediate results out of context; Tool Search Tool cut tool-definition
-overhead ~77k -> ~8.7k **[S]** (https://www.anthropic.com/engineering/advanced-tool-use).
-Counter-evidence for output compression as a DOLLAR lever: arXiv 2607.12161
-and the JetBrains A/B (F above). No sourced writeup on DoD compression or
-"judge only the diff" was found.
+## 5. Answers to the maintainer's questions (2026-10-28)
 
-**Mapping.** The deterministic gates (`just check`, red-green-replay, heading
-coverage, range gate) already cover most of what a `completeness review` or
-`proof replay` re-derives for a docs-only or config-only item. Tier by what the
-change touches: product `.py` gets the full stack; docs/spec/config changes
-get the deterministic gates plus one cheap verdict turn. Treat tool-output
-filtering as a context-window lever (keeps nodes under the compaction
-ceiling), not a billing lever, and measure it in dollars.
+### 1. The 0/5 against 5/5 result
 
----
+- **Source:** the README of Chad Fowler's `phoenix` reference implementation.
+- **Setup:** a `todo-api` benchmark, 5 runs each on Sonnet 5.
+  - The pipeline splits the spec into clauses, maps clauses to units, and
+    generates each unit separately: **0 of 5** passed end to end.
+  - One model call given the whole spec: **5 of 5**.
+  - The brackets in the source are 95% confidence intervals.
+- **Failure:** every run mounted HTTP routes at a path guessed from the unit's
+  name, not at the path the spec stated.
+- **Why nobody noticed:** type checks and `phoenix status` check structure, not
+  behaviour, so both stayed green.
+- **Lessons for us:**
+  1. Slicing a spec drops facts that span units (interfaces, routes). A slice
+     must carry its interface clauses.
+  2. Only an end-to-end behavioural check catches this.
 
-### I. Phoenix / disposable-implementation spec-driven development
+### 2. Reuse the last verified unit, keyed on its clauses
 
-This is the maintainer's actual framing: the specification is the durable
-asset, the implementation is generated from it, treated as disposable and
-regenerable, and not read by humans; assurance is the spec plus automated
-verification. The sources below are the people who say they build this way,
-what they do to keep regeneration and verification affordable, and what has
-gone wrong.
+- **Why a hash cache fails:** the same prompt does not reproduce the same code.
+  1,000 samples at temperature 0 gave 80 different completions
+  (https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/).
+- **What to store instead,** per implementation unit:
+  1. the spec clauses it depends on;
+  2. each clause's content hash when the unit last passed;
+  3. the verdict.
+- **On a spec change:** skip every unit whose clause hashes are unchanged. No
+  regeneration and no re-judging.
+- **Analogy:** make or Bazel with a non-deterministic compiler, so you cache the
+  approved output, not the function.
+- **Already here:** `bd-ib-k5qp5z` reuses a heading verdict across a revision
+  that leaves the heading unchanged.
 
-#### I.1 Who builds this way, and in what words
+### 3. Where comprehension goes when no human reads the code
 
-- **Lineage.** Martin Fowler's PhoenixServer bliki (10 Jul 2012, term coined by
-  Kornelis Sietsma): "A server should be like a phoenix, regularly rising from
-  the ashes"; rebuilt servers "will pick up any drift from the source
-  configuration", which re-sync tools only correct where they manage **[S]**
-  (https://martinfowler.com/bliki/PhoenixServer.html).
-- **Chad Fowler, "Regenerative Software"** (28 essays, Dec 2025-Sep 2026,
-  https://chadfowler.com/regenerative-software/; reference implementation
-  https://github.com/chad/phoenix, labelled Alpha; O'Reilly book forthcoming).
-  "The server wasn't the thing. The capability to regenerate was the thing";
-  "The code is not the asset. The specification and the evaluation are the
-  asset"; editing in place is "a sign that regeneration failed ... a debugging
-  activity, not a development activity" **[S]** (Immutable Infrastructure,
-  Immutable Code). "The implementation is a cache"; "Code is now a
-  materialized view of understanding"; "The real codebase is everything that
-  lets you throw code away without fear"; durable evals are "Harder than
-  writing the code they specify" **[S]** (Evaluations Are the Real Codebase).
-  The Deletion Test: "If I deleted this codebase and regenerated it from
-  scratch, what would I rely on to decide whether the result was correct?";
-  "If you don't know how you would evaluate regenerated code, regeneration is
-  reckless" **[S]**. He does NOT advocate zero reading: "There are classes of
-  code you'll happily accept without even reading"; network and business-rule
-  code "You reread it. You test it. You argue with it" **[S]** (The Gradient
-  of Trust). And not whole-system rebuilds: "No serious architecture advocates
-  'start over every time'" - it is "targeted replacement behind stable
-  boundaries" **[S]** (The System Is the Asset). Podcast claim: "every
-  software developer in the future will be generating code and not reviewing
-  it" **[S]** (Heavybit Third Loop ep. 11).
-- **Tessl / Guy Podjarny.** "Code becomes disposable"; "the first thing you do
-  is you modify the spec"; loop: "if they fail, the agent regenerates the code
-  until all the tests pass"; but "It's only a human, the user, that should be
-  able to say, 'yeah, this regression test is a failure'"; on full autonomy
-  "I don't think we're there yet"; "Too granular and you might as well write
-  code" **[S]** (https://tessl.io/blog/taming-agents-with-specifications-what-the-experts-say/).
-  Don Syme in the same piece: a "straight-up trade-off between determinism and
-  adaptability"; "You do not want the Linux kernel done just in spec-driven
-  mode" **[S]**. The registry's `spec-as-source` skill `spec-rebuild` deletes
-  the declared `targets:`, regenerates per capability, runs `spec-verify`
-  (links, target ownership, manifest, test suite), requires a clean git tree
-  and an explicit yes **[S]**
-  (https://tessl.io/registry/spec-driven-development/spec-as-source/4.0.0/files/skills/spec-rebuild/SKILL.md).
-  By the 100th podcast (Apr 2026) Podjarny judged the spec-centric prediction
-  "directionally correct, just insufficiently broad" and shifted to
-  "context-driven" **[S]** (https://tessl.io/podcast/101/).
-- **Böckeler's taxonomy** (martinfowler.com, 15 Oct 2025): spec-first ("A well
-  thought-out spec is written first, and then used in the AI-assisted
-  development workflow for the task at hand"), spec-anchored ("The spec is kept
-  even after the task is complete, to continue using it for evolution and
-  maintenance"), spec-as-source ("The spec is the main source file over time,
-  and only the spec is edited by the human, the human never touches the
-  code"). Kiro and Spec Kit are spec-first only; "Tessl is the only one ...
-  that explicitly aspires to a spec-anchored approach" and is exploring
-  spec-as-source; generated files carry "GENERATED FROM SPEC - DO NOT EDIT"
-  **[S]** (https://www.martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html).
-  livespec is spec-anchored moving toward spec-as-source **[I]**.
-- **Sean Grove (OpenAI), "The New Code"**: "code itself is actually a lossy
-  projection from the specification"; "We keep the generated code, and we
-  delete the prompt"; the spec "becomes both training material and eval
-  material" **[S]** (https://ai.engineer/talks/specifications-are-the-new-code).
-- **StrongDM software factory** (founded 14 Jul 2025, three named founders):
-  charter "Code must not be written by humans" and "Code must not be reviewed
-  by humans"; assurance is scenarios "often stored outside the codebase"
-  (a holdout set), a "satisfaction" fraction over observed trajectories rather
-  than green/red, and a "Digital Twin Universe" of behavioural clones of
-  third-party services **[S]** (https://factory.strongdm.ai/). Simon Willison:
-  "Nobody reviews AI-produced code, ever ... The goal of the system is to
-  prove that the system works" **[S]** (https://simonwillison.net/2026/Feb/7/software-factory/).
-- **Steve Yegge, Gas Town / Beads**: "It's also 100% vibe coded. I've never
-  seen the code, and I never care to"; Beads is "225k lines of Go code" he
-  never read; assurance is multi-pass LLM review ("review something five
-  times, with different focus areas") plus a merge agent **[S]** (Welcome to
-  Gas Town, 1 Jan 2026). But by Mar 2026 (Vibe Maintainer): "I review every
-  PR" and "the last 25% or so of pull requests need human review" for "taste"
-  **[S]**.
-- **Mechanical Orchard** (legacy modernization, "no human in the loop"):
-  oracle is a parallel run of legacy vs new on the same inputs; "The agent
-  that does the work is never the agent that judges it"; a worker that "can
-  see the exact test ... will optimize for passing the test" **[S]**
-  (https://www.mechanical-orchard.com/insights/the-software-dark-factory-modernizing-legacy-systems-with-no-humans-in-the-loop).
-- **Dan Shapiro, "The Five Levels"**: Level 5 is "a black box that turns specs
-  into software ... humans are neither needed nor welcome", done by "small
-  teams, less than five people" **[S]**
-  (https://www.danshapiro.com/blog/2026/01/the-five-levels-from-spicy-autocomplete-to-the-software-factory/).
-- **Anthropic's C compiler** (16 Opus 4.6 agents "without active human
-  intervention"): ~2,000 Claude Code sessions, $20,000, "2 billion input
-  tokens and ... 140 million output tokens", ~100k LOC, "99% pass rate on most
-  compiler test suites" **[S]** (https://www.anthropic.com/engineering/building-c-compiler).
-- **Daniel Jackson (MIT), concept design**: "we could generate code one module
-  at a time ... the LLM's context can be just the one module, and not the
-  whole codebase"; concepts composed by "syncs" that "only need their
-  specifications" **[S]** (https://essenceofsoftware.com/posts/wysiwid/;
-  Meng & Jackson, Onward! 2025, https://arxiv.org/abs/2508.14511).
+Correction (maintainer, 2026-10-28): at a stall, the first reader is the
+coordinator agent, told to fix it immediately. A person does not read the spec
+first. So comprehension must serve an agent debugging under time pressure.
 
-#### I.2 How they bound regeneration and verification cost
+- **The agent needs:**
+  1. the spec, for intent and the hard-won details (Fowler's timeout that "has
+     to be 17 seconds");
+  2. code an agent can navigate;
+  3. retained failure evidence: traces, `llm-spend`, `tmp/janitor-failed-output`.
+- **Changes:**
+  1. Remove LLM grading of human code style (readability, naming taste) from
+     the `review`, `review_fix`, `dod_gate` and `proof_grade` rubrics. First
+     step: list which rubrics contain such criteria (not done yet).
+  2. Keep navigability as deterministic gates: file and function size limits,
+     complexity limits, types, module boundaries. They cost nothing per item.
+  3. The drift pass files proposed changes for non-obvious behaviour, not only
+     for new features.
+  4. Treat failure-evidence retention as part of the oracle. A stall the
+     coordinator cannot diagnose costs more than a review pass.
+- **Caveats:**
+  - Fix loops edit code in place; the implementation is not regenerated from
+    scratch.
+  - Horthy's team needed 3 weeks to recover after 4 months lights-off.
 
-**Regenerate only what the spec change reaches.** Fowler's reference
-implementation: "`phoenix regen` then regenerates only that subtree by
-default"; staleness is found by walking a provenance graph from a changed
-spec clause to its dependent implementation units; clauses are
-"content-addressed clauses with semantic hashes" and the manifest tracks
-"every generated file's content hash"; hand edits must be labelled (signed
-waiver, expiring patch, promote-to-requirement) or `phoenix status` flags
-them as errors, so "a hand-fix is never silently lost" **[S]**
-(https://github.com/chad/phoenix). Tessl regenerates per `targets:` file
-(1:1 spec to file) **[S]**. OpenSpec implements the delta and archives it
-**[S]** (D above). Measured edit-vs-regenerate: SR-Eval found a "Code Edit"
-strategy (edit prior code given the requirement delta) beats resending full
-history at ~30% fewer tokens with equal or better completion (Python 0.2113 @
-2,790 tok vs 0.1972 @ 3,975) **[S]** (https://arxiv.org/html/2509.18808).
-Whole-file generation still beats diff output for small models except on
-"short, spatially localized edits" **[S]** (https://www.alphaxiv.org/abs/2609.05779).
+### 4. Meta's RADAR
 
-**Hash-keyed generation caches do not exist, because generation is not
-reproducible.** Thinking Machines: 1,000 temperature-0 samples of
-Qwen3-235B gave 80 distinct completions; batch-invariant kernels fix it at
-~20% matmul cost **[S]** (https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/).
-Böckeler: "I have seen the non-determinism in action though, when I generated
-code multiple times from the same spec" **[S]**. Tessl: "Stable regeneration
-is hard ... an iterative approach, not a magic 'generate once' solution"
-**[S]** (https://tessl.io/blog/spec-driven-development-10-things-you-need-to-know-about-specs/).
-Fowler: "Non-deterministic generators may produce different code from
-identical intent graphs" **[S]** (Provenance Is the New Version Control).
-**[I]** So the reusable artifact is not the model output but the VERIFIED
-artifact: a memo of spec-clause-hash to the implementation unit (and its
-verdict) that last passed the gate, consulted before any regeneration or
-re-judgement. livespec already has the judge-side version of this
-(`bd-ib-k5qp5z` reuses a heading verdict across a revision that leaves its
-clauses unchanged **[L]**); the implement-side version is the same idea
-keyed on `heading-coverage.json`'s clause to test map extended to clause to
-module.
+- **Paper:** arXiv 2605.30208 (May 2026). This summary came from the subagent;
+  the paper has not been read first-hand.
+- **The funnel every diff passes through:**
+  1. Is the diff AI-authored?
+  2. Is it eligible for automated review?
+  3. Static heuristics.
+  4. A machine-learned risk score.
+  5. LLM review.
+  6. Deterministic validation.
+- **Result:** diffs under the risk threshold land without human review.
+  - Raising the threshold from P25 to P50: 60.31% auto-approved.
+  - 535k diffs reviewed, 331k landed.
+  - About 1/3 the revert rate and 1/50 the incident rate of other diffs.
+  - Selection bias: low-risk diffs break less anyway.
+- **For us, a risk score from:**
+  1. product `.py` touched;
+  2. number of clauses touched;
+  3. the item's prior failed attempts.
+- **Tiers:**
+  - Low: deterministic gates plus one cheap LLM pass.
+  - High: full replay.
 
-**Spec granularity: one unit of spec = one module with an explicit interface.**
-Jackson (above); Tessl "Don't just pile everything into one massive file";
-Osmani's section-only delivery (D); BMAD's "one session-sized unit" **[S]**.
-Stanford/MIT/Microsoft/Michigan "How Do AI Agents Spend Your Money?": agentic
-coding consumes "1000x more tokens than code reasoning and code chat", input
-dominates, "Accuracy often peaks at intermediate cost and saturates at higher
-costs", and same-task runs vary up to 30x **[S]**
-(https://digitaleconomy.stanford.edu/publication/how-do-ai-agents-spend-your-money).
-No source measures quality against spec-slice size directly **[I]**.
+### 5. Capping transcript growth in a node
 
-**Verification: deterministic oracle first, LLM judges narrowed to what they
-are measured to be good at.**
-- Judges are worse than execution at correctness: LMR-BENCH found unit tests
-  most accurate and an LLM judge least, penalising "correct-but-different"
-  code **[S]** (https://arxiv.org/pdf/2506.17335); "Vibe Coding on Trial":
-  best single judge Youden's J < 0.4, juries lower false positives but
-  compress true positives **[S]** (https://arxiv.org/html/2602.18492v1);
-  LLMs "frequently misclassify correct code" against natural-language specs,
-  and explanation-style prompting raises the misjudgement rate **[S]**
-  (https://arxiv.org/abs/2508.12358).
-- Judges ARE good at catching reward hacking: EvilGenie found the LLM judge
-  "highly effective" at detecting hacks while held-out tests gave "only
-  minimal improvement"; on ambiguous tasks Codex hacked 44.4%, Claude 33.3%
-  **[S]** (https://alphaxiv.org/abs/2511.21654). ImpossibleBench: GPT-5
-  exploits tests 76% of the time on one-off SWE-bench variants; hiding tests
-  drives hacking to near zero but lowers legitimate solve rate **[S]**
-  (https://arxiv.org/abs/2510.20270). StrongDM saw "return true" and tests
-  "lazily rewritten to match the code" **[S]**; Kent Beck saw agents delete
-  tests to make them "pass!" **[S]** (https://kentbeck.com/summaries/augmented-coding-beyond-the-vibes/).
-- Coverage is not an oracle: "some test suites achieve 100% coverage but only
-  4% mutation score" **[S]** (https://arxiv.org/abs/2506.02954); Meta engineers
-  accepted 73% of LLM-generated mutation-killing tests **[S]**
-  (https://arxiv.org/abs/2501.12862).
-- Formal verification where the domain allows: 82% Dafny / 44% Verus / 27%
-  Lean auto-verified across 12,504 specs; Clover accepts up to 87% of correct
-  programs with zero false positives on textbook-scale code **[S]**
-  (https://arxiv.org/abs/2509.22908, https://arxiv.org/abs/2310.17807).
-- The verifier must be near-perfect or the agent solves the wrong problem:
-  "the task verifier is nearly perfect, otherwise Claude will solve the wrong
-  problem"; "it is easy to see tests pass and assume the job is done, when
-  this is rarely the case"; late regressions were fixed by a stricter CI, not
-  more review **[S]** (Anthropic C compiler).
-- Risk tiering at scale: Meta RADAR (May 2026) is a funnel of authorship
-  classification, eligibility gates, static heuristics, an ML risk score,
-  LLM review, and deterministic validation; relaxing the risk threshold from
-  P25 to P50 raised the auto-approve rate to 60.31%; 535K+ diffs reviewed,
-  331K+ landed; revert rate about one-third and production-incident rate
-  about one-fiftieth of non-RADAR diffs (selection bias acknowledged by
-  commentators) **[S]** (https://arxiv.org/abs/2605.30208).
-- Judge independence is the one rule every no-review practitioner shares:
-  StrongDM (holdout scenarios outside the repo), Mechanical Orchard ("never
-  the agent that judges it"), Tessl ("the implementation agent and the testing
-  agent should have different perspectives") **[S]**.
+In order of safety:
+1. **Lower the compaction window on Claude factory nodes.**
+   - Set `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to about 200k through the adapter env.
+   - Evidence: Codex compacts at about 235k and its median is about half of
+     Claude's on the same nodes (2.4) with no recorded quality loss.
+   - Unverified: whether the variable reaches the session through the ACP
+     adapter. Test that first.
+2. **Filter test output with a hook.**
+   - A PreToolUse hook cuts `just check` output to the failures.
+   - Note: this belongs to the separate tool-output plan.
+3. **Split long nodes into phases with a handoff file.**
+   - Candidate seams already in the graph: `implement` → `implementation_diff`
+     → `janitor` → `fix`.
 
-**Batch and cache for non-interactive verification.** Anthropic Message
-Batches are "charged at 50 percent of the standard API prices", most finish
-under an hour, 24 h expiry, and caching stacks with batching (the docs
-recommend the 1-hour cache for batches) **[S]**
-(https://platform.claude.com/docs/en/build-with-claude/batch-processing).
-**[I]** Replays, dod_gate grading, and completeness reviews need no
-interactivity and are the natural batch jobs.
+- **Quality gate:** first-pass acceptance and fix-loop count per node must not
+  worsen. Compaction loses information.
+- **Home:** the orchestrator's `factory-context-per-turn-reduction` plan.
 
-#### I.3 Does a disposable implementation change the economics of stacked review?
+### 6. How prompt caching saves money
 
-Yes, in both directions, and the evidence lets the two be separated **[I]**:
+1. **What is cached.**
+   - A request is `tools` → `system` → `messages`. The provider stores the
+     processed state of a prefix.
+   - A later request whose prefix is byte-identical bills those tokens at the
+     cache-read price: about 0.1x base per the emitter (see 2.6 item 5).
+2. **Why agents depend on it.**
+   - Each turn resends the whole transcript, so turn N's prefix is turn N-1's
+     request.
+   - Claude factory nodes read 73-100% of their input from cache (2.4).
+3. **What a write costs.**
+   - Storing a prefix costs 1.25x (5-minute expiry) or 2x (1-hour expiry).
+   - Each hit restarts the clock.
+4. **What breaks the cache.** Any change early in the prefix makes everything
+   after it a fresh write:
+   - a timestamp or run id in the system prompt;
+   - unstable tool order;
+   - an edited CLAUDE.md;
+   - an MCP reconnect;
+   - a model switch.
+5. **How to stay cache-friendly.**
+   - Static content first; ids, dates and per-run data last.
+   - Deterministic JSON key order.
+   - `--exclude-dynamic-system-prompt-sections` on `claude -p`, so checkouts
+     share a prefix.
+6. **When the 1-hour expiry pays.** Only when the same prefix is reused more
+   than 5 minutes later.
+   - On a one-shot call it is pure loss.
+   - Measured: judges wrote 72M 1-hour tokens this week for $331 of $360 (2.3).
+   - Fix: 5-minute expiry for one-shot judges, or batch many statements
+     sharing a heading into one call that reuses the prefix.
+7. **Batches.**
+   - Asynchronous, 50% off all tokens, stacks with cache discounts; results
+     within 24 h, usually under 1 h.
+   - Fits single-shot judgements only. A multi-turn replay that uses tools
+     cannot be batched.
+   - Needs an API key and real dollars. The judges currently run on
+     caam-rotated subscriptions, so the saving is not automatic.
 
-- What becomes worthless: any review dimension that exists for a human reader
-  (readability, style, "would a maintainer understand this"). Horthy's
-  negative result is the cost of ignoring it the other way: after ~4 months
-  "lights off", "Production broke ... the model could not find the root
-  cause", "three weeks to re-onboard to a codebase no human had ever read"
-  **[S]** (https://newsletter.pragmaticengineer.com/p/context-engineering-with-dex-horthy).
-  Osmani: "A dark factory doesn't pay [comprehension debt] down; it takes it
-  on as fast as it can, with the tests green the whole way" **[S]**
-  (https://addyosmani.com/blog/software-factories/). So the comprehension
-  dimension is not free to drop; it moves to the SPEC, which is the thing a
-  human will read when the factory stalls.
-- What remains load-bearing: (1) a deterministic oracle that the implementer
-  cannot see or edit (held-out scenarios, mutation score, property tests,
-  parallel-run parity, formal checks where possible); (2) ONE independent LLM
-  pass narrowed to what judges are measured to do well: reward-hack detection,
-  test-file tampering, scope creep against the spec clause; (3) independent
-  replay SAMPLED by risk tier, because RADAR's funnel shows the tier, not the
-  universal replay, is what buys the 1/50 incident rate.
-- What is redundant: grading the same artifact three ways (LLM review,
-  graded dod_gate, completeness review) with judges that mis-classify correct
-  code and whose false rejections trigger fix loops. Rubric-driven acceptance
-  judging gets cheaper and more accurate with smaller models once the rubric
-  is tight (78x cost reduction, G above) **[S]**; and no study found any
-  defect yield for LLM review ON TOP OF a passing, hack-proof oracle - the
-  vendor bug-planting benchmarks have no passing-test control **[S]** (Signal65,
-  Atlassian RovoDev 38.70% comment resolution vs 44.45% human,
-  https://arxiv.org/html/2601.01129v1).
-- Local shape of the money **[L][I]**: in the Codex window, `implement`,
-  `fix`, and `review_fix` were ~79% of factory responses and the LLM verdict
-  nodes (`review`, `proof_verify`, `dod_gate`, `proof_grade`) ~11%; the
-  verification cost that matters is the host-side `claude -p` judges (the
-  bulk of the ~$11k local spend) and the fix loops that false rejections
-  trigger. Thinning the verdict stack therefore pays mostly on the host side
-  and in rework, not in factory node count.
+### 7. Base verification on a deterministic check (maintainer decision)
 
-#### I.4 Measured costs and failure modes from teams working this way
+- **Today:** one item can be judged by:
+  - factory `review`;
+  - `proof_verify`;
+  - the graded `dod_gate`;
+  - `proof_grade`;
+  - the host judges;
+  - plus the plan-level replay and completeness review.
+- **Proposal:**
+  1. `dod_gate` passes or fails on tests the implementer cannot see or edit:
+     held-out scenarios and mutation score. `fleet-mutation-testing-rule-26`
+     builds the mutation part.
+  2. One LLM pass checks only test-gaming, test-file tampering and going beyond
+     the spec clause.
+  3. Replay and completeness review are sampled by risk tier.
+  4. LLM grading of code shape is dropped (answer 3).
+- **Why it is a product decision:** some items would merge without an
+  independent replay.
+- **Recommended order:**
+  1. Arm the deterministic check first; never remove the judges before what
+     replaces them is running.
+  2. Shadow-run the tiered policy, logging what the skipped replays would have
+     caught.
+  3. Switch.
+  4. The number that must not rise: post-merge revert rate by tier.
+- **Money at stake [M]:**
+  - verdict nodes about $615/week;
+  - host judges $2,074/week before the model switch, about $125/day after;
+  - fix loops caused by false rejections are not yet measured.
 
-| Report | Number / failure | Source |
+### 8. How to decide what to prune
+
+Instruction files (each entry already carries its date and reason):
+
+| Entry type | Action |
+|---|---|
+| Enforced by a hook or gate | Delete the prose; the gate's refusal message teaches the fix |
+| Triggered by a file path | Move to a `.claude/rules` file with `paths:`; it stops loading every request |
+| An incident story ("recorded because on <date> ...") | Cut to a one-line rule; the story moves to `.ai/` or git history |
+| About a retired system | Delete |
+
+- **The budget gate forces the choice:** a PR that pushes a file past its budget
+  fails until its author cuts or converts something.
+
+The spec:
+- **Rejected from the original research:** shortening a clause to a pointer at
+  its test. That would make the test the source of truth and invert livespec.
+- **Instead:**
+  1. Never load `history/vNNN` into a prompt (`prune-history` exists).
+  2. Deliver clause slices, not the tree (answer 9).
+  3. Read a spec-size budget as a signal to generalize, per the maintainer's
+     2026-10-19 ruling: "the spec should be generalized to be correct rather
+     than always expanded."
+
+### 9. Is this `spec-implementation-lockstep`?
+
+No. The two link different things:
+
+| | lockstep | proposed map |
 |---|---|---|
-| Anthropic C compiler | $20k, ~2,000 sessions, 2B in / 140M out (14:1), 100k LOC; late regressions "each time it implemented a new feature" until CI was tightened | engineering post **[S]** |
-| StrongDM | maturity floor "at least $1,000 on tokens today" per engineer; `return true`, tests rewritten to match code, earlier codebases decayed and collapsed | factory.strongdm.ai **[S]** |
-| Fowler `phoenix` alpha | pipeline 0/5 [0.00, 0.43] vs a single model call 5/5 [0.57, 1.00] on todo-api (n=5, Sonnet 5); every sample mis-mounted routes from the unit's NAME, while typecheck and status stayed green; library-api 51/51 on one build | github.com/chad/phoenix README **[S]** |
-| Fowler (essays) | lost scar tissue on rebuild: a timeout that "has to be 17 seconds"; "sometimes it removes the memory along with the mess"; "Each regeneration is an opportunity for drift"; agents built "two parallel web apps by accident" | regenerative-software, Tessl podcast 98 **[S]** |
-| Yegge | "expensive as hell ... a cash guzzler", 2nd/3rd account, 20-30 workers; "Some bugs get fixed 2 or 3 times ... Other fixes get lost"; later "the last 25% or so of pull requests need human review" | Gas Town, Vibe Maintainer **[S]** |
-| Horthy / HumanLayer | ~4 months lights-off, production break the model could not root-cause, 3 weeks to re-onboard; Faros AI: +54% bugs per dev, incidents tripled (two further figures unconfirmed) | Pragmatic Engineer, AIE WF 2026 **[S]** |
-| Böckeler | non-determinism across regenerations; 1 small bug became 4 stories / 16 acceptance criteria; "I'd rather review code than all these markdown files"; spec-as-source may inherit "the downsides of both MDD and LLMs" | martinfowler.com **[S]** |
-| Gonzalez | OpenAI Symphony SPEC.md "read[s] like code", ~1/6 the size of the Elixir implementation, and "still fails to reliably generate a working implementation" | haskellforall.com **[S]** |
-| Stanford et al. | 1000x tokens vs chat; input dominates; accuracy saturates at intermediate cost; 30x run variance | 2604.22750 **[S]** |
-| ImpossibleBench / EvilGenie | test exploitation 44-76% on ambiguous or conflicting tasks; judge catches hacks, held-out tests barely help | 2510.20270, 2511.21654 **[S]** |
-| Meta RADAR | 60.31% auto-approve at P50 risk; 1/3 reverts, 1/50 incidents vs non-RADAR | 2605.30208 **[S]** |
-| Gartner | AI coding token cost to exceed average developer salary by 2028; "bloated context windows" named as a cause | press release 2026-06-24 **[S]** |
+| Links | work item → clause that authorizes it | clause → code modules that implement it |
+| Answers | "Is this behaviour in the spec?" | "Which clauses does this node need? Which modules does this spec change reach?" |
+| Used at | dispatch (citation check), post-merge drift pass | prompt assembly and regeneration scope |
 
-No source publishes a cost-per-regeneration series over time or a measured
-spec-drift rate; "the spec grows until it is code" is stated independently by
-Gonzalez, Böckeler and Fowler ("A spec can contain prose, tests, schemas,
-formal models, even executable code") but not measured **[S][I]**. The
-counter-ratchet for the SPEC is therefore the same as for instruction files
-(C): a per-capability size budget, a prune pass (livespec's `prune-history`
-is the existing hook), and the rule that a clause whose behaviour is now
-carried by a deterministic test may be shortened to a pointer.
+- **Pieces that already exist:**
+  1. `tests/heading-coverage.json`: clause → test.
+  2. `bd-ib-qksrl6` and `_spec_tree_condensation.py`: bounded clause sets for
+     judges.
+  3. `bd-ib-k5qp5z`: verdict reuse across revisions.
+  4. lockstep citations: item → clause.
+- **The missing link can be derived:** clause → test (have) plus test → module
+  from coverage data (have).
+- **Risk:** answer 1. Interface clauses must travel with every slice.
 
----
+### 10. Model and effort for verdict nodes
 
-## What the sources say NOT to do
+- **Model: largely done.** R47/R48/R66 moved host judges to Sonnet 5.5 and
+  Haiku 5.5.
+  - Measured: $984/day to $123/day (2.3).
+  - Burn note 002 also proposes a GPT-5.6 Luna trial on `dod_gate`,
+    `proof_capture` and `disposition`.
+- **Effort: weak lever here.**
+  - Output is 3-10% of cost (2.1), so effort mostly changes turn count, not
+    price.
+  - The research's "about 40% cheaper" figure came from workloads where output
+    dominates.
+- **Why a cheaper model can be good enough, and where it cannot:**
+  - **Narrow, rubric-shaped verdicts can go cheap.** Examples: "did this diff
+    modify a test to make it pass?", "is this behaviour in clause X?". Inputs
+    are bounded and the answer needs little reasoning. A tight rubric made a
+    small judge more accurate and 78x cheaper (G).
+  - **Open-ended verdicts need a strong model.** Examples: completeness review,
+    replay interpretation, "is this plan done?". Small judges rank well but
+    disagree with humans on individual items.
+- **Rule:** switch per verdict type only after a shadow run.
+  1. Run the cheap model beside the strong one on the same inputs.
+  2. Log agreement and compare against later reverts.
+  3. Keep the strong model wherever they disagree.
+  - Reason: a cheap judge that wrongly rejects good code costs more in fix
+    loops than it saves.
 
-- Do not judge any change by token deltas; judge by billed cost per accepted
-  item (arXiv 2607.12161, Factory's "tokens per task, not tokens per request").
-- Do not switch models mid-conversation to save money; it rebuilds the cache
-  (claude.dev blog).
-- Do not rely on compaction as the strategy; Amp removed it as lossy, Factory
-  measured every method weak on artifact tracking. Use it as the backstop
-  behind a lower window plus phase handoffs.
-- Do not `@`-import to "shorten" CLAUDE.md; imports cost the same (memory docs).
-- Do not add IMPORTANT to an ignored rule; shorten the file or make it a hook
-  (best-practices page).
-- Do not use sub-agents to cut the bill; they keep the PARENT's input flat but
-  multiply total spend (~4x agent, ~15x multi-agent, ~7x agent teams) **[S]**.
+## 6. Ranked shortlist (revised with measurements)
 
----
+| # | Change | Why, with measurement | Status |
+|---|---|---|---|
+| 1 | Factory nodes load only declared context: no repo CLAUDE.md, no plugin, skill or MCP catalogues | 54.6k tokens per request from one file; `implement` is 58% of factory USD; ends Codex's silent 32 KiB truncation | Scoped as `factory-context-per-turn-reduction` C3 |
+| 2 | Bound transcript growth on Claude factory nodes (answer 5) | Claude medians about 1.8x Codex on the same nodes | Belongs in the same orchestrator plan |
+| 3 | Cache policy: dynamic content last; 5-minute expiry for one-shot judges; batch judgements that share a heading | Judges: 92% of cost is 1-hour cache writes | Not started |
+| 4 | Verification on a deterministic check, LLM layers tiered by risk (answer 7) | Verdict nodes about $615/week plus host judges; fix loops not yet measured | Maintainer decision |
+| 5 | Size budgets in CI for instruction files; spec slices, never history (answer 8) | This repo's file is 772 lines, the orchestrator's is 147 KB | Not started |
+| 6 | Clause → module map (answer 9) | Decouples cost per change from spec size | Design now, build after 1-4 |
+| 7 | Verdict model routing (answer 10) | Judges already $984 → $123/day | Largely done; shadow-run any further switch |
+| 8 | Tool-output hygiene | Measure in dollars; token cuts can raise cost | Separate plan (epic note, 2026-10-28) |
 
-## Ranked shortlist (re-ranked against the Phoenix framing)
+Before any before/after claim, close the telemetry gaps in 2.6, items 1, 4 and 5.
 
-Impact is a rough share of current weekly spend (~$21.6k) that the change
-could plausibly bend, marked **[I]**; effort is engineering time in this
-fleet. "Measure" names the `llm-spend` series; the dataset has no message-id
-column and dedupes via `spend.correction` markers (`retract` / `restate`)
-**[L]**. What the re-ranking changed: the verification stack moved from #7 to
-#4 and was re-specified (oracle first, judges narrowed, replays sampled);
-batching joined the cache lever at #3; a clause-to-module provenance map that
-scopes both spec delivery and regeneration replaced the plain "spec slicing"
-item; and the counter-ratchet budget now covers the spec as well as the
-instruction files.
+## 7. Not verified
 
-| # | Intervention | Expected impact [I] | Effort | What to measure in `llm-spend` |
-|---|---|---|---|---|
-| 1 | **Declared-only sandbox loading for factory nodes** (`--bare` / `bd-ib-a3aqie` isolation flags; per-node instruction EXCERPT instead of the governed repo's CLAUDE.md; no plugin/skill/MCP catalogue unless declared). Already scoped as `factory-context-per-turn-reduction` C3. | 15-30% of factory input on every node (54.6k/request from one file alone, plus catalogues); `implement` is ~62% of factory responses, so this is the biggest single lever; also ends Codex's silent 32 KiB truncation | Medium: `_dispatcher_overlay.py` and ~25 prepare-step helpers | Median and p90 of (`gen_ai.usage.input_tokens` + `cache_read_tokens` + `cache_creation_tokens`) per `node` per `model`, before/after, same window length; accepted-first-pass rate and fix-loop count per node must not regress |
-| 2 | **Bound transcript growth on Claude factory nodes**: lower autocompact window (the Codex ~235k ceiling is a natural experiment already in the data), `--max-turns` per node as a backstop, split long nodes at existing seams with a structured handoff artifact, hook-filter `just check` output | Largest share on Claude routing (Opus `implement` median 755k vs Codex 193k); 2-3x on implement/review/fix input medians | Medium: adapter env + graph edits; quality gate required because compaction is lossy | Median input per response for `implement`, `review`, `review_fix`, `fix`; responses per run per node; per-node p90 must fall below the chosen window |
-| 3 | **Cache-stability audit + TTL policy + Batches for non-interactive verification**: dynamic fields (run id, item id, dates, git snapshot) at the END of the first user message; deterministic JSON key order in rendered briefs; `--exclude-dynamic-system-prompt-sections` on every `claude -p`; 1h TTL where sequential same-prefix turns gap >5 min; replays, dod_gate grading and completeness reviews through the Batches API | Billed-dollar lever: literature 41-80% on cost; at 0.05x reads on Sonnet 5.5 a miss is 25x a hit; Batches halve every non-interactive verdict outright | Low-medium: template edits and flags; a batch submitter for the judge path | `cache_read_tokens / (input + cache_read + cache_creation)` per node and per host; responses with `cache_creation_tokens > 0` after a run's first turn; USD per accepted item; share of verdict responses billed at batch rate |
-| 4 | **Re-base verification on a deterministic oracle and tier the LLM layers by risk**: dod_gate graded on mutation score / held-out scenarios the implementer cannot see or edit; ONE independent LLM pass narrowed to reward-hack, test-tamper and spec-scope detection; independent replay and completeness review SAMPLED by a risk score (product `.py` touched, clauses touched, prior failure rate); drop code-shape grading nobody reads | Lands on the host-side judges (bulk of ~$11k/week) and on the fix loops false rejections trigger; RADAR's funnel is the measured precedent; judges mis-classify correct code so fewer judge passes also means fewer spurious reworks | Medium, and a product decision for the maintainer: it changes what "done" means | LLM responses per accepted item by item class; host `claude -p` USD per item; rework loops per item; post-merge revert rate by tier (the escape metric that must not rise) |
-| 5 | **Size budgets as CI gates for instruction files AND the spec**: a `just check` member failing any CLAUDE.md/AGENTS.md over ~200 lines (or a frozen token budget on the model tokenizer) and any SKILL.md over 500 lines; a per-capability spec-size budget with `prune-history` and clause-to-pointer shortening once a deterministic test carries the behaviour; one conversion sweep moving `.ai/*.md` to `.claude/rules` with `paths:` or to skills and "always" rules to hooks; `/doctor prompt-audit` per release | Flat per-request cost for the host-session layer on every turn, and the only structural counter-ratchet with measured precedent (99.3% excess removed when rationale is recorded; this fleet already records it) | Medium once, then low per release | Tokens per request attributable to instruction files (probe method from note 002); host-session median input per response; spec bytes per capability over time |
-| 6 | **Clause-to-module provenance map for spec delivery and regeneration scope**: extend `heading-coverage.json` (clause to test) to clause to implementation unit; a dispatch loads the changed clauses plus neighbouring interface clauses and a budgeted H2 outline, never the tree or `history/vNNN`; regenerate or re-judge only units whose clauses changed, reusing the last verified artifact and verdict otherwise (`bd-ib-k5qp5z` is the judge-side precedent) | Decouples per-change cost from spec size permanently; SR-Eval's ~30% edit-vs-regenerate saving is the only quantified number; compounding rather than immediate | Medium-high: the map is the work | Spec-derived bytes in the rendered goal (add a size attribute to the goal span); units regenerated per spec change; judge input median vs the ~140k floor |
-| 7 | **Effort/model routing for the verdict tier** (`dod_gate`, `proof_grade`, `review`, `disposition`, host judges): `low` effort with escalate-on-fail; shadow Haiku 5.5 judge logging agreement before any switch. Fabro's `reasoning_effort` defaults to `high`; ACP nodes pin it via the adapter env | ~40% cheaper per task at equal pass rate in Anthropic's own measurement; up to 10-20x on a judge that moves to Haiku after agreement is shown; smaller in absolute terms than #4 because the verdict tier is ~11% of factory responses | Low (env pins); medium for the shadow run | USD per verdict node; shadow-vs-primary verdict agreement; retries per node |
-| 8 | **Tool-output hygiene** (PreToolUse filters, concise JSON projections for `list-work-items`/`context`, 25k cap) | Keeps nodes under the compaction ceiling; weak as a billing lever alone (token reduction is not cost reduction) | Low | Supporting #2; measure in USD, not tokens |
-
-Ordering rationale **[I]**: #1 and #2 attack the input floor that every
-other lever is multiplied by; #3 changes the price of whatever floor remains
-and halves the non-interactive verdicts; #4 is where the Phoenix framing
-bites hardest, because the stacked judges exist for a reader who is not there
-and the measured value of an LLM judge on generated code is hack detection,
-not correctness; #5 is the only item that stops both curves (instructions and
-spec) from re-growing; #6 is the long-term structural answer and should be
-designed now but built after #1-#4 land; #7 and #8 are cheap and real but
-second-order.
-
----
-
-## Sources I could not access or verify
-
-- JetBrains `rtk` A/B post (HTTP 403); numbers are from secondary coverage.
-- Requesty "Coding Agent Economy" PDF (binary); its hit-rate trend is unverified.
-- Thoughtworks Radar vol. 34 "Agent instruction bloat" and Arize's 2026 IFScale
-  re-run: reported by a subagent, not independently fetched.
-- Codex prefix order and compaction internals: secondary posts only; no
-  official OpenAI page describes Codex compaction.
-- Anthropic's own CLAUDE.md line count: not published; only Cherny's "2.5k tokens".
-- No published risk-tiered LLM code-review scheme from Google/Meta; no
-  published cheap-judge agreement study on coding verdicts; no sourced writeup
-  on DoD compression or "judge only the diff".
-- Honeycomb `llm-spend` schema: not read live (MCP re-auth required); column
-  names come from the plan notes and the emitting Python.
-- Bright Data MCP needed an interactive OAuth; the Bright Data CLI worked for
-  scraping but its search obfuscates URLs, so searches used WebSearch.
-- Yegge "Gas City" (24 Apr 2026) body; The New Stack Codeplain article body;
-  Fowler's "The Spec Can Come Later" and "When Does a Specification Become a
-  Program?" bodies (index blurbs only); Faros AI 2026 report primary (figures
-  via Horthy's talk page); Kent Beck's full augmented-coding essay (paywalled,
-  summary page used); Jackson's MIT talk PDF (binary); Cognition's 2025
-  performance review (67% merge claim, secondhand); Tessl's retired
-  spec-driven-development docs page (404).
+- JetBrains `rtk` A/B (HTTP 403); Requesty cache-hit report (binary PDF).
+- Thoughtworks Radar vol. 34 "Agent instruction bloat"; Arize's IFScale re-run
+  (subagent report only).
+- Codex compaction internals: secondary posts only.
+- RADAR paper: subagent summary, not read first-hand.
+- No published risk-tiered LLM code-review scheme from Google; no cheap-judge
+  agreement study on coding verdicts.
+- Sonnet 5.5 cache-read price (2.6 item 5).
