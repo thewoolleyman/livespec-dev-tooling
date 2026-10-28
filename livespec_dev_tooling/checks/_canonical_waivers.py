@@ -52,7 +52,9 @@ if sys.version_info >= (3, 11):  # pragma: no cover — 3.11 path unused on the 
 else:
     import tomli as _toml
 
+from returns.io import impure_safe  # noqa: E402 — vendor-path-aware import.
 from returns.result import Failure, Result, Success  # noqa: E402 — vendor-path-aware import.
+from returns.unsafe import unsafe_perform_io  # noqa: E402 — vendor-path-aware import.
 
 __all__: list[str] = [
     "WAIVERS_KEY",
@@ -61,6 +63,7 @@ __all__: list[str] = [
     "PyprojectUnparseable",
     "WaiverProblem",
     "WaiverVerdict",
+    "consumer_waiver_verdict",
     "declared_waivers",
     "judge_waivers",
 ]
@@ -69,6 +72,7 @@ __all__: list[str] = [
 WAIVERS_KEY = "canonical_check_waivers"
 _TABLE_KEY = "livespec_dev_tooling"
 _ENTRY_KEYS = frozenset({"slug", "reason"})
+_PYPROJECT_NAME = "pyproject.toml"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,6 +94,15 @@ class WaiverProblem:
     def render(self) -> str:
         """The finding text: which waiver, and whether stale or malformed."""
         return f"{self.kind} canonical-check waiver for {self.subject}: {self.detail}"
+
+    def fields(self, *, check_id: str) -> dict[str, str]:
+        """The structured-log fields that accompany `render()` in a check's finding."""
+        return {
+            "check_id": check_id,
+            "failure_mode": f"{self.kind}_canonical_waiver",
+            "waiver": self.subject,
+            "status": "fail",
+        }
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -200,3 +213,24 @@ def judge_waivers(
         honoured=tuple(one for one in judged if isinstance(one, CanonicalWaiver)),
         problems=tuple(one for one in judged if isinstance(one, WaiverProblem)),
     )
+
+
+@impure_safe(exceptions=(OSError,))
+def _read_pyproject(*, path: Path) -> str:
+    """The `pyproject.toml` text; undecodable bytes are replaced, not raised."""
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def consumer_waiver_verdict(
+    *, root: Path, canonical: Collection[str], selected: Collection[str]
+) -> WaiverVerdict:
+    """Judge the waivers `root/pyproject.toml` declares; an unreadable file applies none.
+
+    The in-repo reading, as opposed to the fleet row's. A file that cannot be read
+    or parsed collapses to an empty declaration on purpose: the spec requires that
+    every omitted canonical slug is then still reported, which is exactly what an
+    empty declaration yields. The fleet row cannot take that shortcut and skips.
+    """
+    text = unsafe_perform_io(_read_pyproject(path=root / _PYPROJECT_NAME).value_or(""))
+    declared = declared_waivers(pyproject_text=text).map(lambda found: found.value).value_or([])
+    return judge_waivers(declared=declared, canonical=canonical, selected=selected)
