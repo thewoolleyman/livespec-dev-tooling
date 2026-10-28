@@ -615,3 +615,160 @@ def test_inline_trailing_comment_after_slug_stripped(*, tmp_path: Path) -> None:
         f"expected exit 0 when inline trailing comment is stripped from a slug line; "
         f"got {result.returncode}, stderr={result.stderr!r}"
     )
+
+
+_WAIVER_CANONICAL = ["check-alpha", "check-beta", "check-gamma"]
+
+
+def _waiver_project(
+    *, cwd: Path, wired: list[str], pyproject: str, justfile_targets: bool = True
+) -> None:
+    """A fixture consumer: canonical override, aggregate wiring and a pyproject.toml."""
+    _ = _write_canonical_json(cwd=cwd, slugs=_WAIVER_CANONICAL)
+    if justfile_targets:
+        _ = _write_justfile(cwd=cwd, body=_justfile_with_targets(targets=wired))
+    _ = (cwd / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+
+
+def _waiver_findings(*, cwd: Path) -> tuple[int, list[dict[str, object]]]:
+    result = _run_check(cwd=cwd, extra_argv=["--canonical-from", "canonical.json"])
+    return result.returncode, _parse_findings(stderr=result.stderr)
+
+
+def _waivers_toml(*, entries: str) -> str:
+    return f"[tool.livespec_dev_tooling]\ncanonical_check_waivers = {entries}\n"
+
+
+def test_a_reasoned_waiver_makes_the_omitted_slug_satisfied(*, tmp_path: Path) -> None:
+    """A waived slug's absence from the aggregate passes, ordering included."""
+    _waiver_project(
+        cwd=tmp_path,
+        wired=["check-alpha", "check-gamma", "check-private-extra"],
+        pyproject=_waivers_toml(
+            entries='[{ slug = "check-beta", reason = "Rust member owns its coverage map" }]'
+        ),
+    )
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 0, findings
+    assert findings == []
+
+
+def test_an_unwaived_omission_is_still_reported_beside_a_waived_one(*, tmp_path: Path) -> None:
+    _waiver_project(
+        cwd=tmp_path,
+        wired=["check-alpha"],
+        pyproject=_waivers_toml(entries='[{ slug = "check-beta", reason = "because" }]'),
+    )
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 4
+    assert [f["slug"] for f in findings if f.get("failure_mode") == "missing_canonical_slug"] == [
+        "check-gamma"
+    ]
+
+
+def test_a_waiver_of_a_selected_slug_fails_as_stale(*, tmp_path: Path) -> None:
+    _waiver_project(
+        cwd=tmp_path,
+        wired=list(_WAIVER_CANONICAL),
+        pyproject=_waivers_toml(entries='[{ slug = "check-beta", reason = "once needed" }]'),
+    )
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 4
+    stale = [f for f in findings if f.get("failure_mode") == "stale_canonical_waiver"]
+    assert [f["waiver"] for f in stale] == ["check-beta"]
+    assert "stale" in str(stale[0]["event"])
+
+
+def test_malformed_waivers_fail_naming_the_slug_or_the_position(*, tmp_path: Path) -> None:
+    _waiver_project(
+        cwd=tmp_path,
+        wired=["check-alpha", "check-gamma"],
+        pyproject=_waivers_toml(
+            entries=(
+                '[{ slug = "check-beta", reason = "  " }, { reason = "no slug" }, '
+                '{ slug = "check-nonesuch", reason = "x" }]'
+            )
+        ),
+    )
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 4
+    malformed = [f for f in findings if f.get("failure_mode") == "malformed_canonical_waiver"]
+    assert [f["waiver"] for f in malformed] == [
+        "check-beta",
+        "entry at position 1",
+        "check-nonesuch",
+    ]
+    assert all("malformed" in str(f["event"]) for f in malformed)
+    assert [f["slug"] for f in findings if f.get("failure_mode") == "missing_canonical_slug"] == [
+        "check-beta"
+    ]
+
+
+def test_a_non_array_waiver_value_is_malformed(*, tmp_path: Path) -> None:
+    _waiver_project(
+        cwd=tmp_path,
+        wired=list(_WAIVER_CANONICAL),
+        pyproject=_waivers_toml(entries='"check-beta"'),
+    )
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 4
+    assert [f["failure_mode"] for f in findings] == ["malformed_canonical_waiver"]
+
+
+def test_an_unparseable_pyproject_applies_no_waiver(*, tmp_path: Path) -> None:
+    _waiver_project(
+        cwd=tmp_path,
+        wired=["check-alpha", "check-gamma"],
+        pyproject='[tool.livespec_dev_tooling\ncanonical_check_waivers = [{ slug = "check-beta"',
+    )
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 4
+    assert [f["slug"] for f in findings if f.get("failure_mode") == "missing_canonical_slug"] == [
+        "check-beta"
+    ]
+    assert [f for f in findings if "waiver" in str(f.get("failure_mode"))] == []
+
+
+def test_a_waiver_declared_on_any_other_surface_is_not_read(*, tmp_path: Path) -> None:
+    _waiver_project(
+        cwd=tmp_path,
+        wired=["check-alpha", "check-gamma"],
+        pyproject='[tool.other]\ncanonical_check_waivers = [{ slug = "check-beta", reason = "x" }]\n',
+    )
+    _ = (tmp_path / ".livespec.jsonc").write_text(
+        '{"canonical_check_waivers": [{"slug": "check-beta", "reason": "x"}]}', encoding="utf-8"
+    )
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 4
+    assert [f["slug"] for f in findings if f.get("failure_mode") == "missing_canonical_slug"] == [
+        "check-beta"
+    ]
+
+
+def test_waivers_apply_to_a_check_targets_inventory_aggregate_too(*, tmp_path: Path) -> None:
+    _waiver_project(
+        cwd=tmp_path,
+        wired=[],
+        justfile_targets=False,
+        pyproject=_waivers_toml(entries='[{ slug = "check-beta", reason = "because" }]'),
+    )
+    _ = _write_justfile(cwd=tmp_path, body="default:\n    @just --list\n")
+    _ = _write_target_inventory(cwd=tmp_path, targets=["check-alpha", "check-gamma"])
+
+    code, findings = _waiver_findings(cwd=tmp_path)
+
+    assert code == 0, findings

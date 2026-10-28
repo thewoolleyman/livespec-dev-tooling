@@ -39,6 +39,16 @@ Algorithm:
      single `out_of_order_canonical_slugs` finding with both
      orderings.
 
+Waivers: a consumer may waive a canonical slug it does not wire by declaring
+`canonical_check_waivers` (an array of `{ slug, reason }` tables) under
+`[tool.livespec_dev_tooling]` in its own `pyproject.toml`, the one surface this
+check reads a waiver from. A waived slug's absence is satisfied and is dropped
+from both the missing-slug and the ordering comparison. A STALE waiver (its slug
+is wired) and a MALFORMED one each fail with their own finding, judged by
+`_canonical_waivers`, which the fleet-conformance row `canonical-check-slugs-wired`
+shares. A `pyproject.toml` that cannot be read or parsed applies no waiver, so
+every omitted canonical slug is still reported.
+
 Exit codes:
 
 - `0` — canonical subset is fully present and in canonical order.
@@ -79,6 +89,9 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 from livespec_dev_tooling.canonical_checks import (  # noqa: E402
     canonical_check_slugs,
+)
+from livespec_dev_tooling.checks._canonical_waivers import (  # noqa: E402
+    consumer_waiver_verdict,
 )
 
 __all__: list[str] = []
@@ -401,13 +414,17 @@ def main() -> int:
             )
             return _EXIT_VIOLATIONS
         wired = _filter_to_check_slugs(raw_lines=raw_targets)
-    result = _compare_canonical_subset(canonical=loaded.slugs, wired=wired)
-    if not result.missing and not result.out_of_order:
+    verdict = consumer_waiver_verdict(root=cwd, canonical=loaded.slugs, selected=wired)
+    owed = tuple(s for s in loaded.slugs if s not in {w.slug for w in verdict.honoured})
+    result = _compare_canonical_subset(canonical=owed, wired=wired)
+    if not (result.missing or result.out_of_order or verdict.problems):
         return 0
     for slug in result.missing:
         _emit_missing(log=log, slug=slug)
     if result.out_of_order:
-        _emit_out_of_order(log=log, canonical=loaded.slugs, observed=wired)
+        _emit_out_of_order(log=log, canonical=owed, observed=wired)
+    for problem in verdict.problems:
+        log.error(problem.render(), **problem.fields(check_id="aggregate_completeness"))
     return _EXIT_VIOLATIONS
 
 
