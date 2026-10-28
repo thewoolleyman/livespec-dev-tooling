@@ -109,3 +109,81 @@ def test_canonical_slug_row_is_run_for_fleet_members_only(
     assert tuple(verdict.member for verdict in result.member_verdicts) == ("widget",)
     assert result.member_verdicts[0].failing_rows == (_ROW_ID,)
     assert all(fields.get("member") != "sidecar" for _, fields in log.records)
+
+
+_WAIVER_EVENT = "fleet obligation honoured a canonical-check waiver"
+_PYPROJECT_PATH = "pyproject.toml"
+_WAIVER_REASON = "Rust member; its coverage map is owned by its own check"
+
+
+def _waiver_table(*, justfile: str) -> dict[tuple[str, ...], GhResult]:
+    """Canned master tree for `widget`: an aggregate, plus a pyproject waiving `check-alpha`."""
+    table = tree_table(paths=[_JUSTFILE_PATH, _PYPROJECT_PATH])
+    table[_contents_args(repo="widget")] = GhResult(returncode=0, stdout=justfile, stderr="")
+    table[
+        (
+            "api",
+            f"repos/acme/widget/contents/{_PYPROJECT_PATH}?ref=master",
+            "-H",
+            "Accept: application/vnd.github.raw",
+        )
+    ] = GhResult(
+        returncode=0,
+        stdout=(
+            "[tool.livespec_dev_tooling]\n"
+            f'canonical_check_waivers = [{{ slug = "check-alpha", reason = "{_WAIVER_REASON}" }}]\n'
+        ),
+        stderr="",
+    )
+    return table
+
+
+def _justfile_selecting(*, slugs: tuple[str, ...]) -> str:
+    listed = "\n".join(f"        {slug}" for slug in slugs)
+    return f"check:\n    targets=(\n{listed}\n    )\n"
+
+
+def test_lane_logs_the_honoured_waiver_with_member_slug_and_reason(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fully satisfied member still leaves a record of what it was excused from."""
+    manifest = parse_manifest(source=_MANIFEST_WITH_ADOPTER).unwrap()
+    monkeypatch.setattr(
+        "livespec_dev_tooling.fleet._rows_canonical_check_slugs.canonical_check_slugs",
+        lambda: IOSuccess(("check-alpha", "check-lint")),
+    )
+    monkeypatch.setattr(_lanes, "rows_for", _canonical_row_only)
+    log = RecordingLog()
+
+    result = run_member_rows(
+        ctx=make_context(table=_waiver_table(justfile=_justfile_selecting(slugs=("check-lint",)))),
+        manifest=manifest,
+        log=log,
+    )
+
+    assert result.error_findings == 0
+    assert log.fields_for(event=_WAIVER_EVENT) == [
+        {"row": _ROW_ID, "member": "widget", "slug": "check-alpha", "reason": _WAIVER_REASON}
+    ]
+
+
+def test_lane_logs_the_honoured_waiver_even_when_another_slug_fails_the_member(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = parse_manifest(source=_MANIFEST_WITH_ADOPTER).unwrap()
+    monkeypatch.setattr(
+        "livespec_dev_tooling.fleet._rows_canonical_check_slugs.canonical_check_slugs",
+        lambda: IOSuccess(("check-alpha", "check-beta", "check-lint")),
+    )
+    monkeypatch.setattr(_lanes, "rows_for", _canonical_row_only)
+    log = RecordingLog()
+
+    result = run_member_rows(
+        ctx=make_context(table=_waiver_table(justfile=_justfile_selecting(slugs=("check-lint",)))),
+        manifest=manifest,
+        log=log,
+    )
+
+    assert result.error_findings == 1
+    assert [fields["slug"] for fields in log.fields_for(event=_WAIVER_EVENT)] == ["check-alpha"]
+    assert len(log.error_events) == 1
