@@ -125,6 +125,14 @@ DECLARATION_NAME = "CHECK_AUTHORITY"
 
 _AUTHORITIES = frozenset({LEDGER, FORGE_ADMIN})
 
+# A worktree-pack SHELL member's declaration. The pack ships the guard as
+# `dev-tooling/check-no-workflow-edits.sh`, so it has no `checks/<slug>.py` to
+# carry a `CHECK_AUTHORITY` constant, and a repository whose aggregate lives only
+# in its justfile has no inventory line to annotate. The library declares it here
+# for every consumer, and, like a module constant, this outranks an inventory
+# line. Measured 2026-10-28: livespec-runtime gate Job `gate-livespec-runtime-k77pn`.
+_PACK_SCRIPT_AUTHORITIES = {"check-no-workflow-edits": LEDGER}
+
 _INVENTORY_NAME = "check-targets.txt"
 _JUSTFILE_NAME = "justfile"
 _SLUG_PREFIX = "check-"
@@ -327,6 +335,9 @@ def _declared_authority(*, target: str, line: str) -> str | None:
     module_path = _module_path_for(target=target)
     if module_path is not None:
         return _declaration_in_module(path=module_path)
+    pack_declared = _PACK_SCRIPT_AUTHORITIES.get(target)
+    if pack_declared is not None:
+        return pack_declared
     return _inventory_annotation(line=line)
 
 
