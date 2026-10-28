@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.137.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.137.1...v1.137.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **check-authority:** name check-no-workflow-edits as a ledger member in justfile-only repositories ([bb6821e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/bb6821ebd22068e934f5a06be75de3baf5947f3a))
+
 ## [1.137.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.137.0...v1.137.1) (2026-10-28)
 
 
