@@ -1,0 +1,57 @@
+{
+  "name": "k8s ARC — a per-repository scale-set listener has no ready container for 5 min",
+  "description": "Fires, per pod, when MAX(k8s.container.ready) over the trailing 5 min is below 1 for a pod in arc-systems whose name ends in -listener. A per-repository listener is a Pod ARC creates for each AutoscalingListener, not a Deployment, so k8s.deployment.available cannot see it; container readiness is its available-replica equivalent. A listener with no row at all is the lifecycle sweep's stale-listener class. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl -n arc-systems get pods; kubectl -n arc-systems logs <listener pod>; kubectl get autoscalinglisteners -A. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "k8s.container.ready"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.namespace.name",
+        "op": "=",
+        "value": "arc-systems"
+      },
+      {
+        "column": "k8s.pod.name",
+        "op": "ends-with",
+        "value": "-listener"
+      }
+    ],
+    "breakdowns": [
+      "k8s.pod.name"
+    ],
+    "time_range": 300
+  },
+  "threshold": {
+    "op": "<",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 60,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-workloads"
+    },
+    {
+      "key": "component",
+      "value": "controllers"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

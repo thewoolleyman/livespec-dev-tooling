@@ -1,0 +1,61 @@
+{
+  "name": "k8s factory — a pod stays Pending for more than 10 min in factory or factory-mi-homelab",
+  "description": "Fires, per pod, when more than 20 k8s.pod.phase datapoints with phase 1 (Pending) arrive for a pod in factory or factory-mi-homelab within the trailing 15 min. k8s_cluster scrapes every 30 s and a pod never returns to Pending, so 21 samples is more than 10 min of continuous Pending. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl get pods -n <namespace> -o wide; kubectl describe pod -n <namespace> <pod>; kubectl get events -n <namespace> --sort-by=.lastTimestamp. Read the pod's FailedScheduling event in dataset k8s-events (join on k8s.namespace.name and k8s.pod.name). Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "COUNT_DATAPOINTS",
+        "column": "k8s.pod.phase"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.namespace.name",
+        "op": "in",
+        "value": [
+          "factory",
+          "factory-mi-homelab"
+        ]
+      },
+      {
+        "column": "k8s.pod.phase",
+        "op": "=",
+        "value": 1
+      }
+    ],
+    "breakdowns": [
+      "k8s.namespace.name",
+      "k8s.pod.name"
+    ],
+    "time_range": 900
+  },
+  "threshold": {
+    "op": ">",
+    "value": 20,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-workloads"
+    },
+    {
+      "key": "component",
+      "value": "factory-pods"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

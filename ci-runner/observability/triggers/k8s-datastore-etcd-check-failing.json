@@ -1,0 +1,52 @@
+{
+  "name": "k8s datastore — the API server's etcd or etcd-readiness check reports failure",
+  "description": "Fires when MIN(livespec.ci_k3s.readiness_check) for the check named etcd or etcd-readiness over the trailing 2 min is below 1. Under kine over SQLite on the datastore-tmpfs mount these names are the API server's etcd client reaching kine, not an etcd process. Single-probe on purpose, as the spec states (aligning it to 3 consecutive minutes is a spec follow-up). Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (1-min timer, livespec-dev-tooling-vdleg7). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; ssh poweredge-xubuntu; kubectl get --raw='/readyz?verbose'; journalctl -u k3s --since -30min; df -h /var/lib/rancher/k3s/server/db. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MIN",
+        "column": "livespec.ci_k3s.readiness_check"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.readiness_check",
+        "op": "in",
+        "value": [
+          "etcd",
+          "etcd-readiness"
+        ]
+      }
+    ],
+    "time_range": 120
+  },
+  "threshold": {
+    "op": "<",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 60,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-control-plane"
+    },
+    {
+      "key": "component",
+      "value": "datastore"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

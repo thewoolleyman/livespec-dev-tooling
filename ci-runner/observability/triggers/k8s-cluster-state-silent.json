@@ -1,0 +1,42 @@
+{
+  "name": "k8s cluster-state dead-man — no pod phase rows for 20 min",
+  "description": "Fires when ZERO k8s.pod.phase datapoints arrive in the trailing 20 min (evaluated every 10 min). The k8s_cluster receiver emits one per pod every 30 s, so silence means the poweredge-xubuntu collector, its scoped kubeconfig, or the API server it reads is down, and every workload trigger beside this one is blind. UNGROUPED and unfiltered, because a grouped query cannot fire on a silent subject. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: ssh poweredge-xubuntu; systemctl status otel-collector; journalctl -u otel-collector --since -30min; kubectl --kubeconfig /etc/otel-collector/kubeconfig get pods -A. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "COUNT_DATAPOINTS",
+        "column": "k8s.pod.phase"
+      }
+    ],
+    "time_range": 1200
+  },
+  "threshold": {
+    "op": "<",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 600,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-workloads"
+    },
+    {
+      "key": "component",
+      "value": "cluster-state"
+    },
+    {
+      "key": "kind",
+      "value": "dead-man"
+    }
+  ]
+}
