@@ -58,6 +58,16 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.138.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.137.2...v1.138.0) (2026-10-28)
+
+
+### Features
+
+* **checks:** aggregate-completeness honours reasoned canonical-check waivers ([8182fc1](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8182fc1af3cc1de3906fdc8941eb98b3c4591707))
+* **checks:** read and judge canonical-check waivers from pyproject.toml ([9e3d69f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9e3d69fb390b2ec6061ae3fd1d46ba5563953b6a))
+* **fleet:** canonical-check-slugs-wired honours reasoned canonical-check waivers ([2bc48e9](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2bc48e92d75d6621de584bf6018ffeec409e5a09))
+* **fleet:** the lane logs each honoured canonical-check waiver ([9a2c41b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9a2c41b72dd96067ec14cb300708c762ae42b276))
+
 ## [1.137.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.137.1...v1.137.2) (2026-10-28)
 
 
