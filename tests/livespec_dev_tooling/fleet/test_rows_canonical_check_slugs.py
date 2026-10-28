@@ -134,3 +134,156 @@ def test_row_establishes_its_vendor_path_when_imported_first(
 
         assert callable(reloaded.assert_canonical_check_slugs_wired)
         assert vendor_path in sys.path
+
+
+_PYPROJECT_PATH = "pyproject.toml"
+_CANONICAL = ("check-alpha", "check-beta")
+
+
+def _waiver_context(
+    *,
+    targets: tuple[str, ...],
+    pyproject: str | None,
+    in_tree: bool = True,
+    truncated: bool = False,
+) -> FleetContext:
+    """A member master tree: its aggregate, plus an optionally-listed pyproject.toml."""
+    paths = [_JUSTFILE_PATH, *([_PYPROJECT_PATH] if in_tree else [])]
+    table = tree_table(paths=paths, truncated=truncated)
+    table[_contents_args(path=_JUSTFILE_PATH)] = GhResult(
+        returncode=0, stdout=_justfile(targets=targets), stderr=""
+    )
+    if pyproject is not None:
+        table[_contents_args(path=_PYPROJECT_PATH)] = GhResult(
+            returncode=0, stdout=pyproject, stderr=""
+        )
+    return make_context(table=table)
+
+
+def _waivers_toml(*, entries: str) -> str:
+    return f"[tool.livespec_dev_tooling]\ncanonical_check_waivers = {entries}\n"
+
+
+def _evaluate(*, monkeypatch: pytest.MonkeyPatch, ctx: FleetContext):
+    rows = _rows_module()
+    monkeypatch.setattr(rows, "canonical_check_slugs", lambda: IOSuccess(_CANONICAL))
+    return rows.assert_canonical_check_slugs_wired(ctx=ctx, member=_MEMBER)
+
+
+def test_a_reasoned_waiver_satisfies_the_omitted_slug_and_is_carried_for_logging(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outcome = _evaluate(
+        monkeypatch=monkeypatch,
+        ctx=_waiver_context(
+            targets=("check-alpha",),
+            pyproject=_waivers_toml(
+                entries='[{ slug = "check-beta", reason = "Rust member owns its map" }]'
+            ),
+        ),
+    )
+
+    assert outcome == RowPass(waivers=(("check-beta", "Rust member owns its map"),))
+
+
+def test_an_unwaived_omission_is_still_an_error_and_keeps_the_honoured_waiver(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = _rows_module()
+    monkeypatch.setattr(
+        rows, "canonical_check_slugs", lambda: IOSuccess(("check-alpha", "check-beta", "check-c"))
+    )
+    ctx = _waiver_context(
+        targets=("check-alpha",),
+        pyproject=_waivers_toml(entries='[{ slug = "check-beta", reason = "because" }]'),
+    )
+
+    outcome = rows.assert_canonical_check_slugs_wired(ctx=ctx, member=_MEMBER)
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert _MEMBER.repo in outcome.message
+    assert "omits check-c" in outcome.message
+    assert "check-beta" not in outcome.message.split("omits", 1)[1]
+    assert outcome.waivers == (("check-beta", "because"),)
+
+
+def test_a_waiver_of_a_selected_slug_is_a_stale_error(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    outcome = _evaluate(
+        monkeypatch=monkeypatch,
+        ctx=_waiver_context(
+            targets=_CANONICAL,
+            pyproject=_waivers_toml(entries='[{ slug = "check-beta", reason = "once needed" }]'),
+        ),
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert outcome.waivers == ()
+    assert "stale" in outcome.message
+    assert "check-beta" in outcome.message
+    assert _MEMBER.repo in outcome.message
+
+
+def test_a_malformed_waiver_is_an_error_naming_the_slug_or_the_position(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outcome = _evaluate(
+        monkeypatch=monkeypatch,
+        ctx=_waiver_context(
+            targets=_CANONICAL,
+            pyproject=_waivers_toml(
+                entries='[{ slug = "check-beta", reason = "" }, { reason = "no slug" }]'
+            ),
+        ),
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert outcome.severity == "error"
+    assert outcome.message.count("malformed") == 2
+    assert "check-beta" in outcome.message
+    assert "entry at position 1" in outcome.message
+
+
+def test_an_unreadable_or_unparseable_pyproject_skips_rather_than_applying_no_waiver(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unreadable = _evaluate(
+        monkeypatch=monkeypatch,
+        ctx=_waiver_context(targets=("check-alpha",), pyproject=None),
+    )
+    unparseable = _evaluate(
+        monkeypatch=monkeypatch,
+        ctx=_waiver_context(targets=("check-alpha",), pyproject="[tool.livespec_dev_tooling\nx"),
+    )
+
+    for outcome in (unreadable, unparseable):
+        assert isinstance(outcome, RowSkip)
+        assert _PYPROJECT_PATH in outcome.reason
+        assert _MEMBER.repo in outcome.reason
+
+
+def test_a_member_without_a_pyproject_declares_no_waiver(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outcome = _evaluate(
+        monkeypatch=monkeypatch,
+        ctx=_waiver_context(targets=("check-alpha",), pyproject=None, in_tree=False),
+    )
+
+    assert isinstance(outcome, RowFinding)
+    assert "omits check-beta" in outcome.message
+
+
+def test_a_truncated_tree_without_a_pyproject_is_not_definitive_absence(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outcome = _evaluate(
+        monkeypatch=monkeypatch,
+        ctx=_waiver_context(
+            targets=("check-alpha",), pyproject=None, in_tree=False, truncated=True
+        ),
+    )
+
+    assert isinstance(outcome, RowSkip)
+    assert "truncated" in outcome.reason
