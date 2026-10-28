@@ -65,13 +65,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a canonical check waived in pyproject.toml is exempt from the aggregate and fleet gates",
-    "work_item": "livespec-dev-tooling-cmy3kd",
-    "first_seen": "2026-10-28"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a detached gate outlives the caller that launched it and reports its own exit code",
     "work_item": "livespec-dev-tooling-ycahud",
     "first_seen": "2026-10-26"
