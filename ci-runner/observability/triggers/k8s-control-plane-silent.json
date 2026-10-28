@@ -1,0 +1,42 @@
+{
+  "name": "k8s control-plane dead-man — no readiness probe rows for 20 min",
+  "description": "Fires when ZERO livespec.ci_k3s.readiness_check datapoints arrive in the trailing 20 min (evaluated every 10 min). The probe runs every minute, so silence means the timer, the unit or the collector is down; an absent probe is not a failed probe, so k8s API server readiness failing cannot fire on it. UNGROUPED, because a grouped query cannot fire on a silent subject. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (1-min timer, livespec-dev-tooling-vdleg7). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: ssh poweredge-xubuntu; systemctl status ci-k3s-control-plane-telemetry.timer ci-k3s-control-plane-telemetry.service; journalctl -u ci-k3s-control-plane-telemetry --since -30min. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "COUNT_DATAPOINTS",
+        "column": "livespec.ci_k3s.readiness_check"
+      }
+    ],
+    "time_range": 1200
+  },
+  "threshold": {
+    "op": "<",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 600,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-control-plane"
+    },
+    {
+      "key": "component",
+      "value": "api-readiness"
+    },
+    {
+      "key": "kind",
+      "value": "dead-man"
+    }
+  ]
+}

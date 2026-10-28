@@ -1,0 +1,48 @@
+{
+  "name": "k8s datastore — the datastore filesystem is at or above 80% used",
+  "description": "Fires when MAX(datastore_used_bytes / datastore_total_bytes) over the trailing 10 min is at or above 0.80. The filesystem is the tmpfs the datastore-tmpfs unit mounts at /var/lib/rancher/k3s/server/db, which holds kine's SQLite database; at 100% it refuses every write. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (1-min timer, livespec-dev-tooling-vdleg7). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; ssh poweredge-xubuntu; kubectl get --raw='/readyz?verbose'; journalctl -u k3s --since -30min; df -h /var/lib/rancher/k3s/server/db. Compare apiserver_storage_size_bytes on the board; see plan k3s-embedded-etcd-datastore. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculated_fields": [
+      {
+        "name": "datastore_filesystem_used_ratio",
+        "expression": "DIV($livespec.ci_k3s.datastore_used_bytes, $livespec.ci_k3s.datastore_total_bytes)"
+      }
+    ],
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "datastore_filesystem_used_ratio"
+      }
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">=",
+    "value": 0.8,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-control-plane"
+    },
+    {
+      "key": "component",
+      "value": "datastore"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

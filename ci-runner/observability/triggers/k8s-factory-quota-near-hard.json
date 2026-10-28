@@ -1,0 +1,73 @@
+{
+  "name": "k8s factory — a ResourceQuota stays at or above 90% of hard in factory or factory-mi-homelab for 15 min",
+  "description": "Fires, per namespace and constrained resource, when the LOWEST k8s.resource_quota.used / k8s.resource_quota.hard_limit ratio in the trailing 15 min is at or above 0.90: usage stayed at 90% the whole window. Covers pods, requests/limits CPU and memory of factory-runs and factory-mi-homelab-runs. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl get pods -n <namespace> -o wide; kubectl describe pod -n <namespace> <pod>; kubectl get events -n <namespace> --sort-by=.lastTimestamp. kubectl get pods -n <namespace> --sort-by=.metadata.creationTimestamp; kubectl describe resourcequota -n <namespace>. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculated_fields": [
+      {
+        "name": "resource_quota_used_ratio",
+        "expression": "DIV($k8s.resource_quota.used, $k8s.resource_quota.hard_limit)"
+      }
+    ],
+    "calculations": [
+      {
+        "op": "MIN",
+        "column": "resource_quota_used_ratio"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.namespace.name",
+        "op": "in",
+        "value": [
+          "factory",
+          "factory-mi-homelab"
+        ]
+      },
+      {
+        "column": "resource",
+        "op": "in",
+        "value": [
+          "pods",
+          "requests.cpu",
+          "limits.cpu",
+          "requests.memory",
+          "limits.memory"
+        ]
+      }
+    ],
+    "breakdowns": [
+      "k8s.namespace.name",
+      "resource"
+    ],
+    "time_range": 900
+  },
+  "threshold": {
+    "op": ">=",
+    "value": 0.9,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-workloads"
+    },
+    {
+      "key": "component",
+      "value": "factory-quota"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

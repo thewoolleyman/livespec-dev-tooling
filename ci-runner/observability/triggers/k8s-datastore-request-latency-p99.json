@@ -1,0 +1,42 @@
+{
+  "name": "k8s datastore — API server datastore request latency p99 exceeds 1 s over 5 min",
+  "description": "Fires when P99(etcd_request_duration_seconds) over the trailing 5 min exceeds 1 second. Under kine this histogram measures the SQL round trip, so it is the slow-SQL stall (Slow SQL: INSERT INTO kine in the k3s journal) visible before a run fails. If Honeycomb cannot take P99 on the OTLP histogram, replace the calculation with the share of requests in buckets at or above 1 s. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (1-min timer, livespec-dev-tooling-vdleg7). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; ssh poweredge-xubuntu; kubectl get --raw='/readyz?verbose'; journalctl -u k3s --since -30min; df -h /var/lib/rancher/k3s/server/db. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "P99",
+        "column": "etcd_request_duration_seconds"
+      }
+    ],
+    "time_range": 300
+  },
+  "threshold": {
+    "op": ">",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 60,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-control-plane"
+    },
+    {
+      "key": "component",
+      "value": "datastore"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

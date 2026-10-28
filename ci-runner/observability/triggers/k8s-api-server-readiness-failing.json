@@ -1,0 +1,51 @@
+{
+  "name": "k8s API server — the readiness probe or any named readiness check fails for 3 consecutive minutes",
+  "description": "Fires, per readiness check, when MAX(livespec.ci_k3s.readiness_check) over the trailing 3 min is below 1: the check reported 0 on every once-a-minute probe. The check named api-server is the probe itself (kubectl could not read /readyz?verbose); every other name is a line of /readyz?verbose. Complements, and does not replace, ci-k3s-api-unavailable, which fires on a k3s restart seen by the lifecycle sweep. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (1-min timer, livespec-dev-tooling-vdleg7). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; ssh poweredge-xubuntu; kubectl get --raw='/readyz?verbose'; journalctl -u k3s --since -30min; df -h /var/lib/rancher/k3s/server/db. Silence is the control-plane dead-man's job. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "MAX",
+        "column": "livespec.ci_k3s.readiness_check"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.readiness_check",
+        "op": "exists"
+      }
+    ],
+    "breakdowns": [
+      "k8s.readiness_check"
+    ],
+    "time_range": 180
+  },
+  "threshold": {
+    "op": "<",
+    "value": 1,
+    "exceeded_limit": 1
+  },
+  "frequency": 60,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-control-plane"
+    },
+    {
+      "key": "component",
+      "value": "api-readiness"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}

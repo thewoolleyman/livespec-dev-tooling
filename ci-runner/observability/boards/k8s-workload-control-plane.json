@@ -1,0 +1,763 @@
+{
+  "name": "Kubernetes workloads and control plane — pod health, quotas, API server, datastore, controllers and Kueue",
+  "description": "Health of the k3s cluster's workloads and control plane: pod phases, restarts and termination reasons per namespace, PersistentVolumeClaim phases, Warning events, ResourceQuota used against hard, API server readiness by check, the kine datastore, controller replicas and Kueue ClusterQueues. Defined as code in livespec-dev-tooling ci-runner/observability/boards/k8s-workload-control-plane.json and converged by apply-boards.sh; edit the definition, never this board in the UI. Plan kubernetes-node-observability, livespec-dev-tooling-t6om4l.",
+  "type": "flexible",
+  "layout_generation": "manual",
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-workloads"
+    },
+    {
+      "key": "component",
+      "value": "workload-control-plane"
+    },
+    {
+      "key": "kind",
+      "value": "board"
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 0,
+        "height": 3,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "# Kubernetes workloads and control plane\n\nWhether what runs on the k3s nodes, and the cluster that schedules it, is healthy: pod phases, restarts and termination reasons per namespace (`factory` and `factory-mi-homelab` included), PersistentVolumeClaim phases, Warning events, ResourceQuota used against hard, API server readiness by check, the kine datastore, the controllers every job passes through, and Kueue ClusterQueues. The node-level companion is the **Kubernetes node load** board.\n\n**This board is code**: `ci-runner/observability/boards/k8s-workload-control-plane.json` in `thewoolleyman/livespec-dev-tooling`, converged by `apply-boards.sh`; triggers beside it in `../triggers/k8s-*.json`. Plan `kubernetes-node-observability` (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l."
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 3,
+        "height": 2,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## Workload state per namespace"
+      }
+    },
+    {
+      "type": "query",
+      "key": "pod-phase-counts",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 5,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Pod phase counts by namespace",
+        "description": "COUNT_DISTINCT of k8s.pod.name per k8s.pod.phase and namespace (1 Pending, 2 Running, 3 Succeeded, 4 Failed, 5 Unknown). Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT_DISTINCT",
+            "column": "k8s.pod.name"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.pod.phase",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.namespace.name",
+          "k8s.pod.phase"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "container-restarts",
+      "dataset": "metrics",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 5,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Container restarts by namespace and pod",
+        "description": "MAX of k8s.container.restarts per namespace and pod, for containers that have restarted. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "k8s.container.restarts"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.container.restarts",
+            "op": ">",
+            "value": 0
+          }
+        ],
+        "breakdowns": [
+          "k8s.namespace.name",
+          "k8s.pod.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "termination-reasons",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 11,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Last termination reason by namespace",
+        "description": "COUNT_DISTINCT of pods per namespace and k8s.container.status.last_terminated_reason (OOMKilled, Error, Completed): how each container last died. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT_DISTINCT",
+            "column": "k8s.pod.name"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.container.status.last_terminated_reason",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.namespace.name",
+          "k8s.container.status.last_terminated_reason"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "waiting-reasons",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 11,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Current container status reason by namespace",
+        "description": "COUNT_DISTINCT of pods per namespace and k8s.container.status.reason (CrashLoopBackOff, ImagePullBackOff, ContainerCreating, OOMKilled). Only the container's actual reason has a row; the collector drops the enum's zero datapoints. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT_DISTINCT",
+            "column": "k8s.pod.name"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.container.status.reason",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.namespace.name",
+          "k8s.container.status.reason"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "pvc-phases",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 17,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "PersistentVolumeClaim phases by namespace",
+        "description": "SUM of k8s.persistentvolumeclaim.claims (1 per claim per 60 s pull) per namespace and phase at 60 s granularity, so the sum is the claim count. A claim stuck Pending or Terminating is readable. Emitter: k8sobjects/pvc and the count/pvc connector on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.persistentvolumeclaim.claims"
+          }
+        ],
+        "breakdowns": [
+          "k8s.namespace.name",
+          "k8s.persistentvolumeclaim.phase"
+        ],
+        "time_range": 7200,
+        "granularity": 60
+      }
+    },
+    {
+      "type": "query",
+      "key": "warning-events",
+      "dataset": "k8s-events",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 17,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Recent Warning events by reason and namespace",
+        "description": "SUM of k8s.event.count per k8s.event.reason and namespace in dataset k8s-events (FailedScheduling, OOMKilling, BackOff, Evicted, FailedMount, FailedCreatePodSandBox). Join a pending pod to its event on k8s.namespace.name and k8s.pod.name. Emitter: k8sobjects/events on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.event.count"
+          }
+        ],
+        "breakdowns": [
+          "k8s.event.reason",
+          "k8s.namespace.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "warning-events-detail",
+      "dataset": "k8s-events",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 23,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Warning events with object and message",
+        "description": "Table of Warning events: reason, namespace, involved object kind and name, and message, with the total count and the node a kubelet event names. Emitter: k8sobjects/events on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "SUM",
+            "column": "k8s.event.count"
+          }
+        ],
+        "breakdowns": [
+          "k8s.event.reason",
+          "k8s.namespace.name",
+          "k8s.event.object.kind",
+          "k8s.event.object.name",
+          "k8s.event.message"
+        ],
+        "time_range": 86400
+      }
+    },
+    {
+      "type": "query",
+      "key": "emitter-liveness",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 23,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Cluster-state and probe emitters: datapoints per step",
+        "description": "COUNT_DATAPOINTS of k8s.pod.phase and of livespec.ci_k3s.readiness_check: the two series the dead-man triggers read, so a gap here is the emitter's silence rather than a healthy cluster. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (item livespec-dev-tooling-vdleg7)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "COUNT_DATAPOINTS",
+            "column": "k8s.pod.phase"
+          },
+          {
+            "op": "COUNT_DATAPOINTS",
+            "column": "livespec.ci_k3s.readiness_check"
+          }
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 29,
+        "height": 2,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## Quotas"
+      }
+    },
+    {
+      "type": "query",
+      "key": "quota-ratio",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 31,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "ResourceQuota used / hard by namespace and resource",
+        "description": "MAX of k8s.resource_quota.used over k8s.resource_quota.hard_limit per namespace and constrained resource. 0.90 sustained for 15 min is the factory quota trigger's threshold. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculated_fields": [
+          {
+            "name": "resource_quota_used_ratio",
+            "expression": "DIV($k8s.resource_quota.used, $k8s.resource_quota.hard_limit)"
+          }
+        ],
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "resource_quota_used_ratio"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.resource_quota.hard_limit",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.namespace.name",
+          "resource"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "quota-used-hard",
+      "dataset": "metrics",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 31,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "ResourceQuota used and hard by namespace and resource",
+        "description": "Latest-window MAX of k8s.resource_quota.used and k8s.resource_quota.hard_limit per namespace and resource (CPU in cores, memory in bytes). Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "k8s.resource_quota.used"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.resource_quota.hard_limit"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.resource_quota.hard_limit",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.namespace.name",
+          "resource"
+        ],
+        "time_range": 3600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 37,
+        "height": 2,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## API server and datastore"
+      }
+    },
+    {
+      "type": "query",
+      "key": "readiness-by-check",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 39,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "API server readiness by check",
+        "description": "MIN of livespec.ci_k3s.readiness_check (1 pass, 0 fail) per k8s.readiness_check, from the once-a-minute /readyz?verbose probe; the check named api-server is the probe itself. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (item livespec-dev-tooling-vdleg7)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MIN",
+            "column": "livespec.ci_k3s.readiness_check"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.readiness_check",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "k8s.readiness_check"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "readiness-latency",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 39,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "API server readiness probe latency",
+        "description": "MAX of livespec.ci_k3s.readiness_latency_seconds: the round trip of the /readyz?verbose probe. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (item livespec-dev-tooling-vdleg7)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "livespec.ci_k3s.readiness_latency_seconds"
+          }
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "datastore-size",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 45,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Datastore size (apiserver_storage_size_bytes)",
+        "description": "MAX of apiserver_storage_size_bytes: the datastore size as the API server reports it (kine over SQLite on the datastore-tmpfs mount). Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (item livespec-dev-tooling-vdleg7)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "apiserver_storage_size_bytes"
+          }
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "datastore-fs-used",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 45,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Datastore filesystem used share",
+        "description": "MAX of datastore_used_bytes over datastore_total_bytes for the filesystem holding /var/lib/rancher/k3s/server/db. 0.80 is the datastore trigger's threshold. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (item livespec-dev-tooling-vdleg7)."
+      },
+      "query": {
+        "calculated_fields": [
+          {
+            "name": "datastore_filesystem_used_ratio",
+            "expression": "DIV($livespec.ci_k3s.datastore_used_bytes, $livespec.ci_k3s.datastore_total_bytes)"
+          }
+        ],
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "datastore_filesystem_used_ratio"
+          }
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "datastore-latency",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 51,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Datastore request latency p50, p95, p99",
+        "description": "P50, P95 and P99 of etcd_request_duration_seconds, which under kine measures the SQL round trip. 1 s p99 over 5 min is the datastore trigger's threshold. Emitter: ci-runner/observability/ci-k3s-control-plane-telemetry.sh (item livespec-dev-tooling-vdleg7)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "P50",
+            "column": "etcd_request_duration_seconds"
+          },
+          {
+            "op": "P95",
+            "column": "etcd_request_duration_seconds"
+          },
+          {
+            "op": "P99",
+            "column": "etcd_request_duration_seconds"
+          }
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "text",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 57,
+        "height": 2,
+        "width": 12
+      },
+      "text_panel": {
+        "content": "## Controllers and Kueue admission"
+      }
+    },
+    {
+      "type": "query",
+      "key": "controller-replicas",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 59,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "Controller available against desired replicas",
+        "description": "MIN of k8s.deployment.available and MAX of k8s.deployment.desired per Deployment for arc-gha-rs-controller, kueue-controller-manager, coredns and local-path-provisioner. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MIN",
+            "column": "k8s.deployment.available"
+          },
+          {
+            "op": "MAX",
+            "column": "k8s.deployment.desired"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.deployment.name",
+            "op": "in",
+            "value": [
+              "arc-gha-rs-controller",
+              "kueue-controller-manager",
+              "coredns",
+              "local-path-provisioner"
+            ]
+          }
+        ],
+        "breakdowns": [
+          "k8s.deployment.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "arc-listener-ready",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 59,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "ARC listener container readiness",
+        "description": "MIN of k8s.container.ready per pod in arc-systems whose name ends in -listener: one per-repository scale-set listener each. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp)."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MIN",
+            "column": "k8s.container.ready"
+          }
+        ],
+        "filters": [
+          {
+            "column": "k8s.namespace.name",
+            "op": "=",
+            "value": "arc-systems"
+          },
+          {
+            "column": "k8s.pod.name",
+            "op": "ends-with",
+            "value": "-listener"
+          }
+        ],
+        "breakdowns": [
+          "k8s.pod.name"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "clusterqueue-pending-admitted",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 65,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "ClusterQueue pending and admitted workloads",
+        "description": "MAX of livespec.ci_pool.queue_pending and livespec.ci_pool.queue_admitted per ClusterQueue. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh (1-min timer), via the poweredge-xubuntu collector."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "livespec.ci_pool.queue_pending"
+          },
+          {
+            "op": "MAX",
+            "column": "livespec.ci_pool.queue_admitted"
+          }
+        ],
+        "breakdowns": [
+          "ci.queue"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "clusterqueue-usage-ratio",
+      "dataset": "metrics",
+      "query_style": "combo",
+      "position": {
+        "x_coordinate": 6,
+        "y_coordinate": 65,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "ClusterQueue usage against nominal quota",
+        "description": "MAX of livespec.ci_pool.queue_resource_usage over livespec.ci_pool.queue_resource_quota per ClusterQueue, Kueue flavor and resource: a saturated queue approaches 1. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh (1-min timer), via the poweredge-xubuntu collector."
+      },
+      "query": {
+        "calculated_fields": [
+          {
+            "name": "clusterqueue_usage_ratio",
+            "expression": "DIV($livespec.ci_pool.queue_resource_usage, $livespec.ci_pool.queue_resource_quota)"
+          }
+        ],
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "clusterqueue_usage_ratio"
+          }
+        ],
+        "filters": [
+          {
+            "column": "livespec.ci_pool.queue_resource_quota",
+            "op": "exists"
+          }
+        ],
+        "breakdowns": [
+          "ci.queue",
+          "kueue.flavor",
+          "k8s.resource"
+        ],
+        "time_range": 21600
+      }
+    },
+    {
+      "type": "query",
+      "key": "clusterqueue-usage-quota",
+      "dataset": "metrics",
+      "query_style": "table",
+      "position": {
+        "x_coordinate": 0,
+        "y_coordinate": 71,
+        "height": 6,
+        "width": 6
+      },
+      "annotation": {
+        "name": "ClusterQueue usage and nominal quota",
+        "description": "MAX of livespec.ci_pool.queue_resource_usage and livespec.ci_pool.queue_resource_quota per ClusterQueue, Kueue flavor and resource. Emitter: ci-runner/observability/ci-pool-attributed-gauges.sh (1-min timer), via the poweredge-xubuntu collector."
+      },
+      "query": {
+        "calculations": [
+          {
+            "op": "MAX",
+            "column": "livespec.ci_pool.queue_resource_usage"
+          },
+          {
+            "op": "MAX",
+            "column": "livespec.ci_pool.queue_resource_quota"
+          }
+        ],
+        "breakdowns": [
+          "ci.queue",
+          "kueue.flavor",
+          "k8s.resource"
+        ],
+        "time_range": 3600
+      }
+    }
+  ]
+}

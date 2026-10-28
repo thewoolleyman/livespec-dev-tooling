@@ -53,7 +53,44 @@ reports, so that arming it cannot page for a node that was never wired; a new
 pool node gets its own `k8s-node-silent-<node>.json` (plan
 `kubernetes-node-observability`, livespec-dev-tooling-uftb4o).
 
-## `boards/` — the pool board and the node-load board
+The `k8s-*.json` triggers other than `k8s-node-*` realize
+`SPECIFICATION/non-functional-requirements.md` §"Runner-pool workload and
+control-plane telemetry" (plan `kubernetes-node-observability`,
+livespec-dev-tooling-t6om4l). The spec's bullets that name several conditions
+are one trigger per condition here, because a Honeycomb trigger carries one
+calculation:
+
+| Trigger | Reads | Window |
+|---|---|---|
+| `k8s-factory-container-oom-crashloop` | `k8s.container.status.reason` in OOMKilled, CrashLoopBackOff, namespaces `factory`, `factory-mi-homelab` | 10 min |
+| `k8s-factory-pod-pending` | more than 20 `k8s.pod.phase = 1` samples per pod (30 s scrape) | 15 min |
+| `k8s-factory-quota-near-hard` | MIN of `k8s.resource_quota.used / hard_limit` at or above 0.90 | 15 min |
+| `k8s-api-server-readiness-failing` | MAX `livespec.ci_k3s.readiness_check` below 1, per check | 3 min |
+| `k8s-datastore-etcd-check-failing` | MIN of the `etcd` / `etcd-readiness` checks below 1 (single probe, as the spec states) | 2 min |
+| `k8s-datastore-filesystem-used` | MAX `datastore_used_bytes / datastore_total_bytes` at or above 0.80 | 10 min |
+| `k8s-datastore-request-latency-p99` | P99 `etcd_request_duration_seconds` above 1 s | 5 min |
+| `k8s-controller-zero-available` | MAX `k8s.deployment.available` below 1 for ARC controller, Kueue controller-manager, CoreDNS, local-path-provisioner | 5 min |
+| `k8s-arc-listener-not-ready` | MAX `k8s.container.ready` below 1 for `*-listener` pods in `arc-systems` (a listener is a Pod, not a Deployment) | 5 min |
+| `k8s-cluster-state-silent` | no `k8s.pod.phase` datapoints, ungrouped | 20 min |
+| `k8s-control-plane-silent` | no `livespec.ci_k3s.readiness_check` datapoints, ungrouped | 20 min |
+
+`ci-k3s-api-unavailable` stays; `k8s-api-server-readiness-failing` complements
+it. Events (`k8s-events` dataset) and PersistentVolumeClaim phases ride the
+same collector process as the pod phase rows, so `k8s-cluster-state-silent`
+covers a stopped collector; a stopped `k8sobjects` watch alone is read off the
+board's Warning events panel.
+
+**Validated on the host, not in the sandbox.** The definitions are committed
+against the columns the collector configuration and the emitters define, and
+`apply-triggers.sh` / `apply-boards.sh` need `HONEYCOMB_CONFIG_KEY_LIVESPEC`
+and live columns. After the host apply, a trigger or panel Honeycomb refuses
+is reported by name. Two columns carry a known caveat: P99 on the OTLP
+histogram `etcd_request_duration_seconds` (if Honeycomb cannot take it, use the
+share of requests in buckets at or above 1 s), and the same-row pairing of
+`k8s.resource_quota.used` with `hard_limit` that the ratio calculated fields
+assume (the node working-set ratio relies on the same pairing).
+
+## `boards/` — the pool, node-load, and workload and control-plane boards
 
 One board, `ci-runner-pool.json`, named **"CI runner pool — PowerEdge: queued,
 admitted and running by repository"**. It is the named READER of the
@@ -87,6 +124,17 @@ limits against allocatable, and pod usage by node and namespace. The same
 `apply-boards.sh` converges it. It realizes `SPECIFICATION/non-functional-requirements.md`
 §"Runner-pool node telemetry" (plan `kubernetes-node-observability`,
 livespec-dev-tooling-uftb4o).
+
+A third board, `k8s-workload-control-plane.json`, named **"Kubernetes workloads
+and control plane — pod health, quotas, API server, datastore, controllers and
+Kueue"**, reads the cluster-state rows (`k8s.pod.phase`, `k8s.container.*`,
+`k8s.resource_quota.*`, `k8s.deployment.*`), the PersistentVolumeClaim phase
+gauge, the Warning events (dataset `k8s-events`, so that panel names it), the
+control-plane emitter's `livespec.ci_k3s.*`, `apiserver_storage_size_bytes` and
+`etcd_request_duration_seconds`, and the ClusterQueue `livespec.ci_pool.queue_*`
+gauges. It realizes `SPECIFICATION/non-functional-requirements.md` §"Runner-pool
+workload and control-plane telemetry" (plan `kubernetes-node-observability`,
+livespec-dev-tooling-t6om4l).
 
 A panel whose columns do not exist yet is SKIPPED and reported, and the script
 still exits non-zero at the end so the incompleteness is visible. That is the

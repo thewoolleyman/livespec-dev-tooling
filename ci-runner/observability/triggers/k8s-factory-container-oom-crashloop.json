@@ -1,0 +1,64 @@
+{
+  "name": "k8s factory — a container is OOMKilled or in CrashLoopBackOff in factory or factory-mi-homelab",
+  "description": "Fires, per namespace/pod/container, when any k8s.container.status.reason row for namespace factory or factory-mi-homelab reads OOMKilled or CrashLoopBackOff in the trailing 10 min. The collector drops the enum's zero rows, so a row IS the reason. Emitter: k8s_cluster on the poweredge-xubuntu collector (thewoolleyman/otel-collector config.ci-runner-host.yaml, item livespec-dev-tooling-ec2rkp). Receiver: the poweredge-xubuntu otel-collector (thewoolleyman/otel-collector config.ci-runner-host.yaml) -> Honeycomb env livespec. Runbook: open the 'Kubernetes workloads and control plane' board; kubectl get pods -n <namespace> -o wide; kubectl describe pod -n <namespace> <pod>; kubectl get events -n <namespace> --sort-by=.lastTimestamp. kubectl logs --previous <pod> -c <container>; compare its memory limit with its usage. Plan kubernetes-node-observability (livespec-dev-tooling-dfdiil), item livespec-dev-tooling-t6om4l.",
+  "query": {
+    "calculations": [
+      {
+        "op": "COUNT"
+      }
+    ],
+    "filters": [
+      {
+        "column": "k8s.namespace.name",
+        "op": "in",
+        "value": [
+          "factory",
+          "factory-mi-homelab"
+        ]
+      },
+      {
+        "column": "k8s.container.status.reason",
+        "op": "in",
+        "value": [
+          "OOMKilled",
+          "CrashLoopBackOff"
+        ]
+      }
+    ],
+    "breakdowns": [
+      "k8s.namespace.name",
+      "k8s.pod.name",
+      "k8s.container.name"
+    ],
+    "time_range": 600
+  },
+  "threshold": {
+    "op": ">",
+    "value": 0,
+    "exceeded_limit": 1
+  },
+  "frequency": 300,
+  "alert_type": "on_change",
+  "recipients": [
+    {
+      "id": "jKw2EyfLJ3W"
+    },
+    {
+      "id": "fort2EXXuVy"
+    }
+  ],
+  "tags": [
+    {
+      "key": "service",
+      "value": "k8s-workloads"
+    },
+    {
+      "key": "component",
+      "value": "factory-containers"
+    },
+    {
+      "key": "kind",
+      "value": "value"
+    }
+  ]
+}
