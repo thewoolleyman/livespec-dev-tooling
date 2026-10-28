@@ -94,19 +94,16 @@ class _Log:
     """A lane logger double keeping each event with its structured fields."""
 
     def __init__(self) -> None:
-        self.records: list[tuple[str, str, dict[str, object]]] = []
+        self.records: list[tuple[str, dict[str, object]]] = []
 
     def info(self, event: str, **fields: object) -> None:
-        self.records.append(("info", event, fields))
+        self.records.append((event, fields))
 
-    def warning(self, event: str, **fields: object) -> None:
-        self.records.append(("warning", event, fields))
-
-    def error(self, event: str, **fields: object) -> None:
-        self.records.append(("error", event, fields))
+    warning = info
+    error = info
 
     def events(self, *, event: str) -> list[dict[str, object]]:
-        return [fields for _, name, fields in self.records if name == event]
+        return [fields for name, fields in self.records if name == event]
 
 
 def _context(*, justfile: str, pyproject: str | None) -> FleetContext:
