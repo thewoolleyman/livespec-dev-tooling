@@ -239,6 +239,24 @@ class _LaneTallies:
     read_failures: list[ReadFailure]
 
 
+def _log_honoured_waivers(
+    *,
+    waivers: tuple[tuple[str, str], ...],
+    row_id: str,
+    member_repo: str,
+    log: structlog.stdlib.BoundLogger,
+) -> None:
+    """Record each canonical-check waiver an outcome was excused by, whatever it decided."""
+    for slug, reason in waivers:
+        log.info(
+            "fleet obligation honoured a canonical-check waiver",
+            row=row_id,
+            member=member_repo,
+            slug=slug,
+            reason=reason,
+        )
+
+
 def _fold_member_outcome(
     *,
     outcome: RowOutcome,
@@ -285,6 +303,9 @@ def _fold_member_outcome(
             return 0
         case RowPass():
             tallies.evaluated[row.row_id] = tallies.evaluated.get(row.row_id, 0) + 1
+            _log_honoured_waivers(
+                waivers=outcome.waivers, row_id=row.row_id, member_repo=member_repo, log=log
+            )
             if outcome.note.startswith(EXCLUDED_NOTE_PREFIX):
                 log.info(
                     "fleet obligation excluded with reason",
@@ -295,6 +316,9 @@ def _fold_member_outcome(
             return 0
         case RowFinding():
             tallies.evaluated[row.row_id] = tallies.evaluated.get(row.row_id, 0) + 1
+            _log_honoured_waivers(
+                waivers=outcome.waivers, row_id=row.row_id, member_repo=member_repo, log=log
+            )
             if outcome.severity == "warning":
                 log.warning(
                     "fleet obligation warning",
