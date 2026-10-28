@@ -32,20 +32,48 @@ def _load():
 
 def test_argv_uses_test_nprocs_for_worker_count() -> None:
     mod = _load()
-    argv = mod.suite_pytest_argv(environ={"test_nprocs": "4"}, xdist_available=True)
+    argv = mod.suite_pytest_argv(
+        environ={"test_nprocs": "4"}, xdist_available=True, visible_cpus=32
+    )
     assert argv == [sys.executable, "-m", "pytest", "--tb=no", "-q", "-n", "4"]
 
 
-def test_argv_defaults_to_auto_when_unset_or_blank() -> None:
+# Without `test_nprocs` (most consumers compute it in a script and never export
+# it) the worker count follows the SAME lane-aware rule their justfiles use:
+# `auto` only on the hosted CI lane, then LIVESPEC_TEST_PARALLELISM, then a
+# quarter of the visible CPUs (min 1). Never a bare `auto` elsewhere: in a
+# factory pod xdist's `auto` sees every HOST core (32-72) against a 4-cpu quota.
+def test_argv_unset_uses_auto_only_on_the_hosted_lane() -> None:
     mod = _load()
-    for environ in ({}, {"test_nprocs": ""}, {"test_nprocs": "  "}):
-        argv = mod.suite_pytest_argv(environ=environ, xdist_available=True)
-        assert argv[-2:] == ["-n", "auto"]
+    argv = mod.suite_pytest_argv(
+        environ={"LIVESPEC_CI_LANE": "hosted"}, xdist_available=True, visible_cpus=32
+    )
+    assert argv[-2:] == ["-n", "auto"]
+
+
+def test_argv_unset_honours_livespec_test_parallelism() -> None:
+    mod = _load()
+    argv = mod.suite_pytest_argv(
+        environ={"test_nprocs": " ", "LIVESPEC_TEST_PARALLELISM": "6"},
+        xdist_available=True,
+        visible_cpus=32,
+    )
+    assert argv[-2:] == ["-n", "6"]
+
+
+def test_argv_unset_uses_a_quarter_of_visible_cpus_minimum_one() -> None:
+    mod = _load()
+    cases = ((32, "8"), (72, "18"), (4, "1"), (1, "1"))
+    for visible_cpus, expected in cases:
+        argv = mod.suite_pytest_argv(environ={}, xdist_available=True, visible_cpus=visible_cpus)
+        assert argv[-2:] == ["-n", expected]
 
 
 def test_argv_falls_back_to_serial_without_xdist() -> None:
     mod = _load()
-    argv = mod.suite_pytest_argv(environ={"test_nprocs": "4"}, xdist_available=False)
+    argv = mod.suite_pytest_argv(
+        environ={"test_nprocs": "4"}, xdist_available=False, visible_cpus=32
+    )
     assert argv == [sys.executable, "-m", "pytest", "--tb=no", "-q"]
 
 

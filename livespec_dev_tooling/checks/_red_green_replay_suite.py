@@ -2,8 +2,9 @@
 
 The green-verified leg runs the FULL pytest suite inside the commit-msg
 hook. On a large suite a serial run takes tens of minutes, so this helper
-module parallelizes it under pytest-xdist (worker count read from the
-`test_nprocs` env var the consuming justfiles export), bounds it with a
+module parallelizes it under pytest-xdist (worker count from the
+`test_nprocs` env var when a justfile exports it, else the consumers'
+lane-aware rule), bounds it with a
 timeout whose expiry kills the whole process group (xdist workers
 included), and checksums its output over a canonical form that does not
 depend on parallel line ordering or run duration.
@@ -53,6 +54,8 @@ __all__: list[str] = [
 DEFAULT_TIMEOUT_SECONDS: int = 2400
 _TIMEOUT_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
 _NPROCS_ENV: str = "test_nprocs"
+_LANE_ENV: str = "LIVESPEC_CI_LANE"
+_PARALLELISM_ENV: str = "LIVESPEC_TEST_PARALLELISM"
 _KILL_GRACE_SECONDS: int = 30
 
 # Lines that vary with xdist scheduling or terminal progress, not with the
@@ -82,12 +85,33 @@ def suite_timeout_seconds(*, environ: Mapping[str, str]) -> int:
     return DEFAULT_TIMEOUT_SECONDS
 
 
-def suite_pytest_argv(*, environ: Mapping[str, str], xdist_available: bool) -> list[str]:
-    """Return the full-suite pytest argv: `-n <test_nprocs|auto>` when xdist is importable."""
+def _lane_worker_count(*, environ: Mapping[str, str], visible_cpus: int) -> str:
+    """The consumers' own lane-aware rule, for a repo that does not export `test_nprocs`.
+
+    `auto` only on the hosted CI lane (small dedicated runners), then an explicit
+    LIVESPEC_TEST_PARALLELISM, then a quarter of the visible CPUs (minimum 1), as
+    `just-test-nprocs.sh` and the justfile `test_nprocs` expression compute it.
+    Never a bare `auto` elsewhere: in a factory pod xdist's `auto` counts every
+    HOST core (32-72) against the pod's 4-cpu quota.
+    """
+    if environ.get(_LANE_ENV, "local") == "hosted":
+        return "auto"
+    explicit = environ.get(_PARALLELISM_ENV, "").strip()
+    if explicit:
+        return explicit
+    return str(max(1, visible_cpus // 4))
+
+
+def suite_pytest_argv(
+    *, environ: Mapping[str, str], xdist_available: bool, visible_cpus: int
+) -> list[str]:
+    """Return the full-suite pytest argv, with `-n <workers>` when xdist is importable."""
     argv = [sys.executable, "-m", "pytest", "--tb=no", "-q"]
     if not xdist_available:
         return argv
-    nprocs = environ.get(_NPROCS_ENV, "").strip() or "auto"
+    nprocs = environ.get(_NPROCS_ENV, "").strip() or _lane_worker_count(
+        environ=environ, visible_cpus=visible_cpus
+    )
     return [*argv, "-n", nprocs]
 
 
@@ -162,7 +186,11 @@ def _handle_suite_green_mode(
             hint="Add pytest-xdist to this repo's dev dependencies to parallelize this leg.",
         )
     timeout_seconds = suite_timeout_seconds(environ=os.environ)
-    argv = suite_pytest_argv(environ=os.environ, xdist_available=xdist_available)
+    argv = suite_pytest_argv(
+        environ=os.environ,
+        xdist_available=xdist_available,
+        visible_cpus=len(os.sched_getaffinity(0)),
+    )
     log.info(
         "suite-green-argv: full-suite pytest invocation",
         check_id="red-green-replay-suite-green-argv",
