@@ -1252,5 +1252,13 @@
     "test": "TODO",
     "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
     "work_item": "livespec-dev-tooling-ycahud"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a canonical check waived in pyproject.toml is exempt from the aggregate and fleet gates",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, driving check-aggregate-completeness and the fleet-conformance row canonical-check-slugs-wired against consumer trees that declare canonical_check_waivers; livespec-dev-tooling-cmy3kd owns it.",
+    "work_item": "livespec-dev-tooling-cmy3kd"
   }
 ]
