@@ -75,6 +75,17 @@ def test_every_trigger_description_names_emitter_receiver_item_and_runbook() -> 
         assert "Runbook:" in description, name
 
 
+def test_no_k8s_metrics_trigger_uses_a_bare_count_calculation() -> None:
+    for name, definition in _triggers().items():
+        for calculation in _list(value=_dict(value=definition["query"])["calculations"]):
+            entry = _dict(value=calculation)
+            assert entry["op"] != "COUNT" or "column" in entry, name
+    oom = _dict(value=_triggers()["k8s-factory-container-oom-crashloop"]["query"])
+    assert oom["calculations"] == [
+        {"op": "COUNT_DATAPOINTS", "column": "k8s.container.status.reason"},
+    ]
+
+
 def test_every_trigger_fits_honeycomb_limits_and_has_a_unique_name() -> None:
     definitions = _triggers()
     names = [str(definition["name"]) for definition in definitions.values()]
