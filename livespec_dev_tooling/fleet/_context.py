@@ -118,9 +118,14 @@ class Adopter:
 
 @dataclass(frozen=True, kw_only=True)
 class RowPass:
-    """The member satisfies the obligation row."""
+    """The member satisfies the obligation row.
+
+    `waivers` are the (slug, reason) pairs the member was excused from, so the
+    lane can log what a pass was earned by waiver rather than by wiring.
+    """
 
     note: str = ""
+    waivers: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)

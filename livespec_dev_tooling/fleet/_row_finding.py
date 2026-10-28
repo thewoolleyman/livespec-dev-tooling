@@ -68,6 +68,7 @@ class RowFinding:
     message: str
     severity: str = "error"
     finding_class: str = ""
+    waivers: tuple[tuple[str, str], ...] = ()
 
 
 def pin_staleness_finding(*, message: str, severity: str) -> RowFinding:
