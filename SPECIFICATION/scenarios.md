@@ -1453,3 +1453,57 @@ Then the runner MUST spawn no child process on any observation of the config
 And the waiter MUST spawn no child process on any poll of the run's state
 
 And `gate-wait` MUST still return within five seconds of the run's `exit_code` appearing
+
+## Scenario: a canonical check waived in pyproject.toml is exempt from the aggregate and fleet gates
+
+Given a fleet member whose `pyproject.toml` declares `canonical_check_waivers` under `[tool.livespec_dev_tooling]` with slug `check-heading-coverage` and a non-empty reason
+
+And its `just check` aggregate does not select `check-heading-coverage`
+
+When `check-aggregate-completeness` runs in the member and the fleet-conformance row `canonical-check-slugs-wired` evaluates the member's master tree
+
+Then neither fails on `check-heading-coverage`
+
+And the fleet-conformance run logs the waiver with the member, the slug and the reason
+
+Scenario: a stale waiver fails
+
+Given a member whose `canonical_check_waivers` names `check-file-lloc`
+
+And its `just check` aggregate selects `check-file-lloc`
+
+When `check-aggregate-completeness` runs
+
+Then it fails, naming `check-file-lloc` as a stale waiver
+
+Scenario: a malformed waiver fails
+
+Given a member whose `canonical_check_waivers` holds an entry that has an empty reason, lacks a key, carries an extra key, or gives `slug` or `reason` a non-string value
+
+When the fleet-conformance row `canonical-check-slugs-wired` evaluates the member
+
+Then it fails, naming the entry's slug (or its position when it has no string slug) as a malformed waiver
+
+Scenario: an unreadable member pyproject.toml makes the fleet row skip rather than apply no waiver
+
+Given a member whose `just check` aggregate omits a canonical slug that its `pyproject.toml` waives
+
+And the fleet-conformance run cannot read or parse that member's master-tree `pyproject.toml`
+
+When the fleet-conformance row `canonical-check-slugs-wired` evaluates the member
+
+Then the row skips the member
+
+And it MUST NOT report the omitted slug as a finding
+
+Scenario: an unparseable pyproject.toml applies no waiver in the in-repo check
+
+Given a consumer whose `just check` aggregate omits a canonical slug
+
+And its own `pyproject.toml` cannot be parsed
+
+When `check-aggregate-completeness` runs
+
+Then it applies no waiver
+
+And it fails, naming the omitted slug as missing
