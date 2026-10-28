@@ -536,3 +536,65 @@ def test_an_aggregate_this_reader_cannot_enumerate_declares_no_authority_member(
     _ = (tmp_path / "justfile").write_text("check:\n    uv run just lint\n", encoding="utf-8")
 
     assert _members(repo_root=tmp_path) == ()
+
+
+def test_a_justfile_only_consumer_resolves_the_workflow_edit_guard_as_a_ledger_member(
+    *, tmp_path: Path
+) -> None:
+    """`check-no-workflow-edits` is named from its pack identity, not from an inventory.
+
+    THE MEASURED DEFECT. The guard ships as a worktree-pack SHELL script, so it
+    has no `checks/<slug>.py` to carry a `CHECK_AUTHORITY` constant, and a
+    repository with only a justfile aggregate has no inventory line to annotate.
+    Measured 2026-10-28 on livespec-runtime PR 787: an authorized workflow edit
+    failed gate Job `gate-livespec-runtime-k77pn` with "the ledger-held
+    authorization could not be evaluated -- FAILING CLOSED", and the same class
+    failed `gate-livespec-dev-tooling-54f19942138d` on 2026-10-19. Both verdicts
+    were right about the pod and wrong about the tree.
+
+    SO THE LIBRARY DECLARES IT, for every consumer, the way a shipped module's
+    constant does, and the declaration OUTRANKS an inventory line: an
+    unannotated inventory line must not put the guard back in a pod that holds
+    no ledger. `check-file-lloc` sits beside it so a resolver naming every
+    selected member fails rather than passing by accident.
+    """
+    _fixture_justfile_aggregate(
+        repo_root=tmp_path, slugs=(_SHIPPED_TREE_PURE, _WORKFLOW_EDIT_GUARD)
+    )
+
+    assert _members(repo_root=tmp_path) == (_WORKFLOW_EDIT_GUARD,)
+
+    inventoried = tmp_path / "inventoried"
+    inventoried.mkdir()
+    _fixture_inventory(
+        repo_root=inventoried, lines=(f"{_WORKFLOW_EDIT_GUARD}  # purity: world-reading",)
+    )
+
+    assert _members(repo_root=inventoried) == (_WORKFLOW_EDIT_GUARD,)
+
+
+def test_a_delegated_gate_of_a_justfile_only_consumer_runs_the_workflow_edit_guard_on_the_host(
+    *, tmp_path: Path
+) -> None:
+    """The pushing host runs the guard against the ledger; the Job's skip is computed from the same names.
+
+    The host half is asserted as an INVOCATION through the gate client's command
+    seam, in the pushing worktree. The Job half is decided by the same
+    resolution `scripts/just/check.sh` feeds into its skip under the gate pod's
+    own `LIVESPEC_GATE_CONTEXT` signal, so the member the host runs is exactly
+    the member the Job leaves out.
+    """
+    _fixture_justfile_aggregate(
+        repo_root=tmp_path, slugs=(_SHIPPED_TREE_PURE, _WORKFLOW_EDIT_GUARD)
+    )
+    host = _CannedHost()
+
+    ran = run_host_authority_members(repo_root=tmp_path, tree_hash=_TREE, runner=host)
+
+    assert tuple(one.member for one in ran) == (_WORKFLOW_EDIT_GUARD,)
+    assert host.argvs == [("just", _WORKFLOW_EDIT_GUARD)]
+    assert host.cwds == [tmp_path]
+
+    guarded = _gate_context_block(script=_CHECK_SH.read_text(encoding="utf-8"))
+
+    assert "livespec_dev_tooling.check_authority members" in guarded
