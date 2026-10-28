@@ -4,7 +4,8 @@
   "query": {
     "calculations": [
       {
-        "op": "COUNT"
+        "op": "COUNT_DATAPOINTS",
+        "column": "k8s.container.status.reason"
       }
     ],
     "filters": [
