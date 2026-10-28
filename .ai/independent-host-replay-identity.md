@@ -55,3 +55,44 @@ This removes a WRONG identity; it does not choose one, so it is not a way
 around the independence refusal. Brief the replayer with the assertion
 verbatim and the steps to run, but never with the capture's results: the
 replayer re-measures, and it may publish `host_not_reproduced`.
+
+## Knowing when the replayer has finished
+
+Do not decide from its PID or its log. Measured 2026-10-28 on
+livespec-runtime-r6qc2o: the PID that the `setsid nohup … &` form hands back
+exited within a minute, and the log held only the echoed brief. The real codex
+process carried on, published `host_verified` at 19:09Z, and its post drove the
+acceptance pass that closed the item. Reading the dead PID as a dead replayer
+led to a relaunch, and the replay ran twice and posted a duplicate record.
+
+The reliable signal is the record itself: watch the item's pull request for a
+`Proof of Done — host_verified` (or `host_not_reproduced`) comment, and the
+item's status. If you want a completion notice instead, start the same
+`env -u … codex exec …` command as a harness background task, without
+`setsid nohup … &`, and wait for its notification.
+
+## Capturing a delegated-gate carrier's three pushes
+
+A delegated-gate opt-in carrier usually owes three host-captured assertions:
+a green push that completes, a red push refused on a failing verdict, and a
+push refused when no verdict comes back. Three things made the first capture
+(livespec-runtime-r6qc2o, 2026-10-28) work:
+
+- **Each push needs a tree never gated before.** A byte-identical tree hits
+  its green token and skips the gate, so give each case its own commit.
+- **A red tree has to survive the commit hooks.** A non-`.py` change keeps the
+  commit-time hook to its doc-only subset. A repo-private aggregate member, a
+  justfile recipe that exits 1 and is appended to the `check` targets, is red
+  only in the full aggregate the gate runs. A malformed proposed-change front
+  matter is NOT red, because doctor-static does not judge it.
+- **No verdict without delete rights.** The gates kubeconfig cannot delete a
+  Job. Simulate a lost cluster instead. Copy `/etc/ci-runner/gates.kubeconfig`
+  to a mode-600 file (`umask 077` and `command cp`; `install` is aliased to an
+  apt wrapper here), rewrite its `server:` to an unreachable address, and pass
+  `env GATES_KUBECONFIG=<copy>` to that one push. The host stays eligible,
+  submission fails, the client reports `NO_VERDICT` and refuses. State the
+  method in the record, and delete the copy afterwards.
+
+Delete any proof branch that reached the forge with
+`gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<branch>`, which fires no
+pre-push hook.
