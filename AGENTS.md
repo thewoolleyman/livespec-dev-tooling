@@ -152,6 +152,9 @@ The files:
   it to YOUR identity and refuses its verdict as a self-replay (c62xtb,
   2026-10-25). Name this repository's GIT release tag in the record's
   build, never an image tag, or the replay is silently not counted (jxepvj).
+  The same file holds the three-push capture recipe for a delegated-gate
+  carrier, and why a replayer's PID is no sign it has finished (r6qc2o,
+  2026-10-28).
 - Read `.ai/claude-transcript-usage-dedupe.md` before summing tokens or cost
   out of Claude Code transcripts (`~/.claude/projects/**/*.jsonl`). One
   response is written as several records that repeat the same `usage`, so a
