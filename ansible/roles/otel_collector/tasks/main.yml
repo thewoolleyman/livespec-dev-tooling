@@ -14,6 +14,73 @@
 # missing cluster identity discovered after the binary is installed, has already
 # changed the host.
 
+# --- the commit every fetch below is made at -------------------------------
+
+- name: Resolve the collector ref to the commit every fetch is made at
+  # `git ls-remote` reads the repository directly, so it sees a merge the moment
+  # it lands. raw.githubusercontent.com caches a BRANCH name for five minutes, and
+  # a fetch by name inside that window installs the pre-merge copy and reports
+  # `changed=0` -- a green converge that reads as "already converged", which the
+  # drift run cannot catch because it reads through the same cache. A commit URL
+  # is immutable. The peeled tag is listed first so an annotated tag resolves to
+  # the commit it points at rather than to the tag object. Run on the control
+  # node, because the fetches themselves are control-node lookups; under
+  # `--check` too, because a dry run has to read the same commit an apply would.
+  ansible.builtin.command:
+    argv:
+      - git
+      - ls-remote
+      - --
+      - "{{ otel_collector_repository_url }}"
+      - "refs/tags/{{ otel_collector_config_ref }}^{}"
+      - "refs/tags/{{ otel_collector_config_ref }}"
+      - "refs/heads/{{ otel_collector_config_ref }}"
+  delegate_to: localhost
+  become: false
+  environment:
+    GIT_TERMINAL_PROMPT: "0"
+  register: otel_collector_ref_listing
+  changed_when: false
+  check_mode: false
+  retries: 3
+  delay: 5
+  until: otel_collector_ref_listing.rc == 0
+  when: not (otel_collector_config_ref is match('^[0-9a-f]{40}$'))
+
+- name: Take a collector ref that is already a full commit sha as the commit
+  # A host pinned to a sha keeps working unchanged, with no network read.
+  ansible.builtin.set_fact:
+    otel_collector_config_commit: "{{ otel_collector_config_ref }}"
+  when: otel_collector_config_ref is match('^[0-9a-f]{40}$')
+
+- name: Name the commit the collector ref resolves to
+  # Plain Jinja on purpose. A ref git does not know leaves the commit empty, and
+  # the refusal below says so before anything is fetched or written.
+  ansible.builtin.set_fact:
+    otel_collector_config_commit: >-
+      {%- set found = {} -%}
+      {%- for line in otel_collector_ref_listing.stdout_lines -%}
+      {%- set _ = found.update({line.split()[1]: line.split()[0]}) -%}
+      {%- endfor -%}
+      {{ found.get('refs/tags/' ~ otel_collector_config_ref ~ '^{}')
+         or found.get('refs/tags/' ~ otel_collector_config_ref)
+         or found.get('refs/heads/' ~ otel_collector_config_ref)
+         or '' }}
+  when: not (otel_collector_config_ref is match('^[0-9a-f]{40}$'))
+
+- name: Refuse a collector ref that did not resolve to a commit
+  ansible.builtin.assert:
+    that:
+      - otel_collector_config_commit is match('^[0-9a-f]{40}$')
+    fail_msg: >-
+      otel_collector_config_ref {{ otel_collector_config_ref }} did not resolve
+      to a commit in {{ otel_collector_repository_url }}. It must name a branch,
+      a tag or a full 40-character commit sha. Nothing has been written and the
+      running service is untouched.
+    success_msg: >-
+      the collector ref {{ otel_collector_config_ref }} resolves to commit
+      {{ otel_collector_config_commit }}
+
 # --- the preconditions, all of them, before anything is written -------------
 
 - name: Look for the collector binary the unit runs

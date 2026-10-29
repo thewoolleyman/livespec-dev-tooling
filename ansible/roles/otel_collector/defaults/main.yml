@@ -9,6 +9,16 @@
 # `otel_collector_config_ref` to a commit sha to hold a host at a known
 # configuration, or to roll one back.
 #
+# THE REF IS NEVER FETCHED BY NAME. raw.githubusercontent.com serves a branch
+# name with `cache-control: max-age=300`, so a converge started within five
+# minutes of a merge read the pre-merge copy, installed nothing and reported
+# `changed=0` (2026-10-27, livespec-dev-tooling-aqzi32). The first tasks of the
+# role resolve the ref to a commit sha through `git ls-remote`, which does not
+# go through that CDN, and publish it as `otel_collector_config_commit`; every
+# URL below is addressed by that commit, and a sha URL is immutable. The commit
+# variable is deliberately NOT declared here: a default would be a fallback to
+# the branch name for any run that skipped the resolution.
+#
 # FOUR SHAPES, ONE ROLE. That repository carries one configuration file per host
 # posture — `config.yaml` for the dev host, `config.ci-runner-host.yaml` for the
 # cluster-reading CI-runner host, `config.k3s-agent-host.yaml` for a plain agent,
@@ -16,9 +26,10 @@
 # through `otel_collector_config_file`. Every default below is the DEV HOST's, so
 # a host that overrides nothing resolves to the posture it already runs.
 otel_collector_config_ref: main
+otel_collector_repository_url: https://github.com/thewoolleyman/otel-collector.git
 otel_collector_config_file: config.yaml
 otel_collector_config_url: >-
-  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/{{ otel_collector_config_file }}
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_commit }}/{{ otel_collector_config_file }}
 
 # The CI-runner host's k3s datastore starts empty after each reboot, so its
 # collector needs a small, read-only identity reconstructed from the collector
@@ -27,11 +38,11 @@ otel_collector_config_url: >-
 otel_collector_cluster_identity: false
 otel_collector_identity_lib_dir: /usr/local/lib/otel-collector
 otel_collector_identity_rbac_url: >-
-  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/k8s/otel-collector-rbac.yaml
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_commit }}/k8s/otel-collector-rbac.yaml
 otel_collector_identity_render_script_url: >-
-  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/scripts/render-k8s-identity.sh
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_commit }}/scripts/render-k8s-identity.sh
 otel_collector_identity_unit_url: >-
-  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_ref }}/systemd/otel-collector-identity.ci-runner-host.service
+  https://raw.githubusercontent.com/thewoolleyman/otel-collector/{{ otel_collector_config_commit }}/systemd/otel-collector-identity.ci-runner-host.service
 otel_collector_identity_rbac_path: >-
   {{ otel_collector_identity_lib_dir }}/otel-collector-rbac.yaml
 otel_collector_identity_render_script_path: >-
