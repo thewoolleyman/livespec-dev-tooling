@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.138.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.0...v1.138.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **cross_repo:** autodiscover the factory-reach env-file image pin ([7f5ec5b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7f5ec5b699ba6239761f14233a923866d5479ed4))
+* **cross_repo:** rewrite the factory-reach env-file image pin ([a864e8a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/a864e8a3ecbe2b2fd9fe667351abd07f282e4f05))
+
 ## [1.138.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.137.2...v1.138.0) (2026-10-28)
 
 
