@@ -21,6 +21,9 @@ rules", the directory-scan formats are:
   function each; every matching line yields its own record, so one release
   fan-out reconciles a consumer's CI image and its Fabro sandbox image
   together instead of leaving CI behind.
+- The third surface of that same format, the `FACTORY_REACH_SANDBOX_IMAGE=<ref>`
+  line of `ci-runner/k3s/phase2/factory/factory-reach-image.env`, is walked by
+  the sibling `_pin_factory_reach_format` (this module is at its LLOC ceiling).
 
 Co-located here (it is the sibling docker-image adapter pin, though it
 reads one well-known file rather than scanning a directory):
@@ -54,6 +57,8 @@ from returns.unsafe import unsafe_perform_io  # noqa: E402  — vendor-path-awar
 
 __all__: list[str] = [
     "FABRO_SANDBOX_IMAGE",
+    "FABRO_SANDBOX_SOURCE_REPO",
+    "PIN_FORMAT_FABRO_DOCKER",
     "PinFileUnparseable",
     "PinFileUnreadable",
     "PinWalkFailure",
@@ -130,7 +135,7 @@ PinWalkResult = IOResult[list[dict[str, str]], PinWalkFailure]
 
 
 _PIN_FORMAT_WORKFLOW_USES = "github_workflow_uses_ref"
-_PIN_FORMAT_FABRO_DOCKER = "fabro_sandbox_docker_image"
+PIN_FORMAT_FABRO_DOCKER = "fabro_sandbox_docker_image"
 _PIN_FORMAT_CODEX_ACP = "codex_acp_docker_arg"
 
 # The fabro-sandbox image is BUILT + RELEASED by livespec-dev-tooling and its
@@ -144,7 +149,7 @@ _PIN_FORMAT_CODEX_ACP = "codex_acp_docker_arg"
 # would make the readiness probe wait on an image nobody publishes while the
 # rewrite happily edits another.
 FABRO_SANDBOX_IMAGE = "ghcr.io/thewoolleyman/livespec-fabro-sandbox"
-_FABRO_SANDBOX_SOURCE_REPO = "livespec-dev-tooling"
+FABRO_SANDBOX_SOURCE_REPO = "livespec-dev-tooling"
 # Fleet consumers carry the Fabro workflow config at one of two roots: the
 # orchestrator under `.claude-plugin/.fabro/workflows/`, the console under the
 # top-level `.fabro/workflows/`. Both are walked so neither consumer is missed.
@@ -341,7 +346,7 @@ def walk_fabro_workflow_docker(
     # The source repo is fixed at the literal "livespec-dev-tooling" (the image
     # is released by this repo; its tag tracks the dev-tooling release version),
     # so honor the filter up front — nothing here can match another source.
-    source_repo = _FABRO_SANDBOX_SOURCE_REPO
+    source_repo = FABRO_SANDBOX_SOURCE_REPO
     if source_repo_filter is not None and source_repo_filter != source_repo:
         return IOSuccess([])
     out: list[dict[str, str]] = []
@@ -361,7 +366,7 @@ def walk_fabro_workflow_docker(
             for match in _FABRO_DOCKER_RE.finditer(text):
                 out.append(
                     record(
-                        pin_format=_PIN_FORMAT_FABRO_DOCKER,
+                        pin_format=PIN_FORMAT_FABRO_DOCKER,
                         file_path=rel_path,
                         pin_key=FABRO_SANDBOX_IMAGE,
                         current_value=match.group("tag"),
@@ -400,7 +405,7 @@ def walk_github_workflow_container_image(
     # released by livespec-dev-tooling and its tag tracks the dev-tooling release
     # version), which is what lets a dev-tooling release fan-out rewrite a
     # consumer's CI image in the SAME bump commit as its pyproject/compat pins.
-    source_repo = _FABRO_SANDBOX_SOURCE_REPO
+    source_repo = FABRO_SANDBOX_SOURCE_REPO
     if source_repo_filter is not None and source_repo_filter != source_repo:
         return IOSuccess([])
     workflows_dir = root / ".github" / "workflows"
@@ -420,7 +425,7 @@ def walk_github_workflow_container_image(
                 continue
             out.append(
                 record(
-                    pin_format=_PIN_FORMAT_FABRO_DOCKER,
+                    pin_format=PIN_FORMAT_FABRO_DOCKER,
                     file_path=rel_path,
                     pin_key=FABRO_SANDBOX_IMAGE,
                     current_value=match.group("tag"),

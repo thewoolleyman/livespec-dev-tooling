@@ -79,13 +79,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a dev-tooling release bump rewrites the factory-reach image pin with the workflow image pins",
-    "work_item": "livespec-dev-tooling-7enfyd",
-    "first_seen": "2026-10-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-22"

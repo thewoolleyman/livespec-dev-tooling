@@ -21,6 +21,10 @@ formats, split across three cohesive helper modules:
   (`agentclientprotocol/codex-acp`) means no fleet fan-out rewrites it and a
   bump is factory-gated (section "codex-acp factory gate"). The shared `record`
   normalizer lives there too.
+- factory-reach env file (`_pin_factory_reach_format`): the third surface of
+  the fabro-sandbox docker image format, the `FACTORY_REACH_SANDBOX_IMAGE=<ref>`
+  line of `ci-runner/k3s/phase2/factory/factory-reach-image.env`, which a
+  release bump must rewrite together with the workflow `container:` pins.
 - Claude settings format (`_pin_claude_settings_format`):
   `.claude/settings.json` `extraKnownMarketplaces.<name>.source.ref`
   entries whose ref is a concrete release tag. The literal `release`
@@ -109,6 +113,9 @@ from livespec_dev_tooling.cross_repo._pin_directory_scan_formats import (  # noq
     walk_github_workflow_container_image,
     walk_github_workflow_uses,
 )
+from livespec_dev_tooling.cross_repo._pin_factory_reach_format import (  # noqa: E402
+    walk_factory_reach_sandbox_image,
+)
 from livespec_dev_tooling.cross_repo._pin_single_file_formats import (  # noqa: E402
     walk_livespec_jsonc,
     walk_pyproject_toml,
@@ -129,6 +136,7 @@ _WALKS = (
     walk_github_workflow_uses,
     walk_fabro_workflow_docker,
     walk_github_workflow_container_image,
+    walk_factory_reach_sandbox_image,
     walk_codex_acp_docker_arg,
     walk_claude_settings_extra_known_marketplaces,
 )
@@ -165,7 +173,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "consumer it walks. Covers "
             ".livespec.jsonc, pyproject.toml [tool.uv.sources], .vendor.jsonc, "
             ".github/workflows/*.yml uses: refs, the fabro-sandbox docker "
-            "image tag in .fabro workflow.toml files, and the codex-acp "
+            "image tag in .fabro workflow.toml files, the factory-reach env file's "
+            "FACTORY_REACH_SANDBOX_IMAGE line, and the codex-acp "
             "Dockerfile ARG CODEX_ACP_VERSION pin, plus concrete Claude "
             "settings extraKnownMarketplaces source refs."
         ),

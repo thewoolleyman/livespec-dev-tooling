@@ -1209,9 +1209,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release bump rewrites the factory-reach image pin with the workflow image pins",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the pin autodiscovery walk yielding a fabro-sandbox record for the factory-reach-image.env line, and a bump rewriting it with the workflow container pins. livespec-dev-tooling-7enfyd owns it.",
-    "work_item": "livespec-dev-tooling-7enfyd"
+    "test": "tests.livespec_dev_tooling.cross_repo.test_pin_factory_reach_format.test_release_bump_rewrites_the_factory_reach_pin_with_the_workflow_pins",
+    "reason": "Integration-tier by the static `pytest.mark.integration` marker: the test builds a repository fixture whose `ci.yml` and `factory-reach-image.env` pin the same sandbox image, runs the real pin autodiscovery walk, drives the real `fabro_image_pin_rewrite.main()` once per record with the release tag, and asserts both files now name the bumped tag (work-item livespec-dev-tooling-7enfyd)."
   },
   {
     "spec_root": "SPECIFICATION",
