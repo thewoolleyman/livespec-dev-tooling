@@ -229,8 +229,11 @@ falling back (freeze ruling R70, `livespec-dev-tooling-jvnqwv`).
 `otel-collector.service`. The role reads that file on the control node from
 the ref `otel_collector_config_ref` names (`main`, the merged branch, unless
 an operator pins a sha to hold or roll back the host) and installs it at
-`/etc/otel-collector/config.yaml`. Two commands, and no hand `systemctl`
-step:
+`/etc/otel-collector/config.yaml`. The ref is first resolved to a commit sha with
+`git ls-remote`, and every file is fetched at that sha: raw.githubusercontent.com
+caches a branch name for five minutes (`max-age=300`), so a converge started just
+after a merge would otherwise install the pre-merge copy and report no change.
+Two commands, and no hand `systemctl` step:
 
 ```bash
 just ansible-drift ansible/dev-host.yml --tags otel_collector

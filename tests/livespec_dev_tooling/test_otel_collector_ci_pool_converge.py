@@ -114,6 +114,11 @@ _BINARY_SHA256 = "17cc9a8f2e44e80ceff0e0647aec18b28a6b1b17823040e362ddc4a9fd017c
 # carries under the credential wrapper.
 _CONTROLLER_KEY = "HONEYCOMB_INGEST_KEY_LIVESPEC"
 
+# The tasks resolve `otel_collector_config_ref` to a commit at apply time and
+# publish it as `otel_collector_config_commit`; the defaults deliberately do not
+# declare it, so a render here stands the resolved value in.
+_RESOLVED_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
 # The three directives the two sibling units carry and `vps`'s deliberately does
 # not: its collector runs as the login account with `hostmetrics` scraping the
 # whole machine, so a sandbox there is a behaviour change rather than a transcription.
@@ -371,7 +376,11 @@ def _resolved(*, host: str) -> dict[str, object]:
     """
     declared = _declared_variables()
     return _to_fixed_point(
-        variables={**declared["defaults"], **declared[host]},
+        variables={
+            **declared["defaults"],
+            **declared[host],
+            "otel_collector_config_commit": _RESOLVED_COMMIT,
+        },
         source=f"defaults/main.yml or host_vars/{host}.yml",
     )
 
@@ -876,7 +885,7 @@ def test_cluster_identity_artifacts_follow_the_configured_collector_ref() -> Non
     for variable, source, destination, mode in artifacts:
         url = poweredge.get(variable)
         assert isinstance(url, str) and url.endswith(f"/{source}"), (variable, url)
-        assert f"/{poweredge['otel_collector_config_ref']}/" in url, (variable, url)
+        assert f"/{_RESOLVED_COMMIT}/" in url, (variable, url)
         fetches = [
             block
             for block in blocks
@@ -911,7 +920,7 @@ def test_render_script_is_fetched_from_the_configured_collector_ref() -> None:
     poweredge = _resolved(host=_POWEREDGE)
     url = poweredge["otel_collector_identity_render_script_url"]
     assert url.endswith("/scripts/render-k8s-identity.sh"), url
-    assert f"/{poweredge['otel_collector_config_ref']}/" in url, url
+    assert f"/{_RESOLVED_COMMIT}/" in url, url
 
     fetches = [
         block
