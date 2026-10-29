@@ -302,6 +302,13 @@ cross_repo_public_api = [
     { file = "livespec_dev_tooling/canonical_checks.py", function = "canonical_check_slugs", reason = "product import: livespec's canonical_slugs_projection.py, copier_template_smoke_canonical.py and doctor/static/wiring_completeness_cross_repo.py" },
     { file = "livespec_dev_tooling/fleet/contract.py", function = "parse_manifest", reason = "product import: livespec-orchestrator-beads-fabro's .claude-plugin/hooks/codex_yolo_gate.py — the dx8l consumer" },
     { file = "livespec_dev_tooling/fleet/worktree_pack_wiring.py", function = "worktree_pack_wiring_gaps", reason = "cross-repo test import: livespec's copier-template lockstep test renders the impl-plugin template and asserts the rendered shape carries zero worktree-pack wiring gaps. DECLARED WITH THE PREDICATE rather than after that test lands: the function was made public FOR that consumer (which is why the module is public rather than a `_rows_*` sibling), so declaring it later would leave the omission this key exists to prevent open across the window between the two repos' commits" },
+    # Arrived with the delegated-gate fleet rollout (plan delegated-gate-fleet-rollout):
+    # livespec-driver-codex e46ee51 (2026-10-28T22:22Z) and livespec-driver-pi e011242
+    # (2026-10-28T22:56Z), after this repo's last green fleet-conformance run (f57b373,
+    # 22:18Z), so the gap opened in the fleet rather than in any one PR here. GUARD READ
+    # BEFORE DECLARING: both consumers assert `delegated_gate_enabled(...) is True` on the
+    # plain `bool` return, with no `is None` guard, so the Result-vs-None hazard does not apply.
+    { file = "livespec_dev_tooling/gate_remote_delegate.py", function = "delegated_gate_enabled", reason = "cross-repo test import: livespec-driver-codex's and livespec-driver-pi's tests/integration/test_delegated_pre_push.py assert `gate_remote_delegate.delegated_gate_enabled(repo_root=_REPO_ROOT) is True` in-process; bool return, no `is None` guard at either site" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "test_workflow_full_round_trip", reason = "cross-repo test import: the e2e round-trip suites of both Drivers and both orchestrators" },
     { file = "livespec_dev_tooling/testing/cli_e2e.py", function = "assert_coverage", reason = "cross-repo test import: livespec-driver-codex's tests/e2e-cli/test_cli_e2e.py" },
     # Arrived with livespec-driver-pi's progressive-guidance witnesses (e7e0bbb..d114f96,
