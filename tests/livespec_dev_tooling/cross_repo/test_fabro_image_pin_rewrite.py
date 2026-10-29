@@ -217,6 +217,26 @@ def test_rewrite_pin_in_text_rewrites_workflow_container_image() -> None:
     assert new_text == "jobs:\n" + _container_job(job="check-python", tag="python-v0.44.0")
 
 
+def test_rewrite_pin_in_text_rewrites_factory_reach_env_line() -> None:
+    """The `FACTORY_REACH_SANDBOX_IMAGE=<ref>` env-file line is rewritten, comments untouched.
+
+    The factory-reach image env file carries a SECOND copy of the workflow's
+    sandbox image pin; its comment block names the pin too, and only the
+    assignment line may move.
+    """
+    comment = f"# FACTORY_REACH_SANDBOX_IMAGE={_IMAGE}:python-v1.110.0 stays in this comment\n"
+    text = comment + f"FACTORY_REACH_SANDBOX_IMAGE={_IMAGE}:python-v1.110.0\n"
+    result = rewrite_pin_in_text(
+        text=text,
+        image_key=_IMAGE,
+        current_tag="python-v1.110.0",
+        release_tag="v1.134.5",
+    )
+    new_text, count = result.unwrap()
+    assert count == 1
+    assert new_text == comment + f"FACTORY_REACH_SANDBOX_IMAGE={_IMAGE}:python-v1.134.5\n"
+
+
 def test_rewrite_pin_in_text_rewrites_container_shorthand() -> None:
     """The one-line `container: <image>` shorthand is rewritten too."""
     text = f"jobs:\n  check:\n    container: {_IMAGE}:python-rust-v0.48.2\n"

@@ -7,8 +7,9 @@ tag" step (the `fabro_sandbox_docker_image` case). Per
 pin is `docker = "ghcr.io/thewoolleyman/livespec-fabro-sandbox:<tag>"` in a
 Fabro `workflow.toml`, and the SAME image reference under a GitHub Actions job's
 `container:` block (`image: ghcr.io/…:<tag>`) where a cut-over consumer runs its
-CI inside the baked sandbox image. Both surfaces are the one format and this
-module rewrites both.
+CI inside the baked sandbox image, and the `FACTORY_REACH_SANDBOX_IMAGE=<ref>` line
+of `ci-runner/k3s/phase2/factory/factory-reach-image.env`. All surfaces are the one
+format and this module rewrites each.
 
 Since the layer split (livespec-3lev.4) that `<tag>` carries a `<layer>-` prefix
 — `python-v<X.Y.Z>` / `python-rust-v<X.Y.Z>` — over the bare release version.
@@ -158,8 +159,9 @@ def rewrite_pin_in_text(
     `SPECIFICATION/contracts.md` section "Pin autodiscovery rules" — the Fabro
     `workflow.toml` line `docker = "<image_key>:<current_tag>"`, or the GitHub
     Actions job `container:` block's `image: <image_key>:<current_tag>` line
-    (including its one-line `container: <image>` shorthand) — and rewrites the
-    tag via `rewrite_layered_docker_tag`. `match_count` is 0 (pin absent, text
+    (including its one-line `container: <image>` shorthand), or the factory-reach
+    env file's `FACTORY_REACH_SANDBOX_IMAGE=<image_key>:<current_tag>` line — and
+    rewrites the tag via `rewrite_layered_docker_tag`. `match_count` is 0 (pin absent, text
     returned unchanged) or 1 (pin rewritten) — the caller enforces the expected 1.
 
     When `rewrite_layered_docker_tag` refuses the tag there is no valid
@@ -188,6 +190,9 @@ def rewrite_pin_in_text(
         # GitHub Actions: a job container: block's image: line, or the
         # one-line `container: <image>` shorthand.
         r"^[ \t]*(?:image|container):[ \t]+[\"']?" + escaped_key + r":"
+        r"|"
+        # factory-reach-image.env: FACTORY_REACH_SANDBOX_IMAGE=<image>:<tag>
+        r"^[ \t]*FACTORY_REACH_SANDBOX_IMAGE=" + escaped_key + r":"
         r")"
         + re.escape(current_tag)
         +
