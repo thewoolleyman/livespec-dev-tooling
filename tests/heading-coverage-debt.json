@@ -65,6 +65,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a container-termination drill produces a crash-looping and an OOM-killed container in a throwaway namespace and deletes it",
+    "work_item": "livespec-dev-tooling-2zii7l",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a detached gate outlives the caller that launched it and reports its own exit code",
     "work_item": "livespec-dev-tooling-ycahud",
     "first_seen": "2026-10-26"

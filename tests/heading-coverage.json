@@ -549,6 +549,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a container-termination drill produces a crash-looping and an OOM-killed container in a throwaway namespace and deletes it",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, applying the committed `ansible/container-termination-drill.yml` through the pinned `ansible-core` against stand-in `kubectl` as `tests.livespec_dev_tooling.test_node_loss_drill_playbook` does for the node-loss drill; livespec-dev-tooling-2zii7l owns it, and its Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-2zii7l"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier",
     "test": "tests.livespec_dev_tooling.checks.test_heading_coverage_debt_register.test_the_scope_lever_still_refuses_a_newly_authored_unregistered_todo",
     "reason": "Integration-tier: drives the shipped ratchet's `main()` against a real git repository whose staged change ADDS a `TODO` row absent from the register, with the authoring-time lever `LIVESPEC_SCOPE_HEADING_COVERAGE_DEBT_TO_HEAD_DIFF` set — the armed tier this scenario names — and asserts the run fails naming the row as an `unregistered_todo` cop-out outside the frozen baseline. Control arm `test_an_inherited_registered_todo_does_not_fail_an_unrelated_commit` runs the same lever over a registered row and passes, so a narrowing that simply stopped judging satisfies neither (plan fleet-heading-coverage-convergence P2 burn-down, livespec-dev-tooling-joyx5c)."
