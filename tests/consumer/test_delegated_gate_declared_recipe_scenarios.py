@@ -196,6 +196,23 @@ if [ "${1:-}" = "--show" ]; then
     *)          exit 1 ;;
   esac
 fi
+if [ -n "${SUMMARY_SEQUENCE:-}" ]; then
+  for item in ${SUMMARY_SEQUENCE}; do
+    kind="${item%%=*}"
+    members="${item#*=}"
+    members="${members//,/ }"
+    case "${kind}" in
+      dispatcher)
+        printf '\\nFailed targets (1):\\n'
+        for member in ${members}; do printf '  - %s\\n' "${member}"; done
+        ;;
+      bash-stdout) printf 'FAILED targets: %s\\n' "${members}" ;;
+      bash-stderr) printf 'FAILED targets: %s\\n' "${members}" >&2 ;;
+    esac
+    sleep 0.2
+  done
+  exit 1
+fi
 if [ -n "${FAILING_MEMBER:-}" ]; then
   printf '\\n::: just %s [FAILED, wall: 1.0s]\\n' "${FAILING_MEMBER}"
   printf '%s\\n' "${MEMBER_CAPTURED_OUTPUT:-}"
@@ -762,6 +779,7 @@ def _run_the_pod_script(
     provides: tuple[str, ...] = (),
     failing_member: str = "",
     member_captured_output: str = "",
+    summary_sequence: str = "",
 ) -> tuple[int, str, str, list[str]]:
     """Run the rendered pod script here, against a `just` that provides nothing.
 
@@ -781,6 +799,11 @@ def _run_the_pod_script(
     `member_captured_output` is what that member printed — the Given of a tree
     whose recipe reached its own members rather than one whose provisioning
     stopped short of them.
+
+    `summary_sequence` makes the recipe go red printing the named summaries in
+    order, as space-separated `<kind>=<member>,<member>` items where kind is
+    `dispatcher` (the `Failed targets (N):` block on stdout), `bash-stdout` or
+    `bash-stderr` (a `FAILED targets: <members>` line on that stream).
 
     Returns the exit status, STDOUT, stderr and the invocation log, in that
     order. Both streams are returned because the pod writes to each for a
@@ -823,6 +846,8 @@ def _run_the_pod_script(
     if failing_member:
         env["FAILING_MEMBER"] = failing_member
         env["MEMBER_CAPTURED_OUTPUT"] = member_captured_output
+    if summary_sequence:
+        env["SUMMARY_SEQUENCE"] = summary_sequence
     completed = subprocess.run(
         ["bash", str(script)],
         cwd=str(root),
@@ -1457,3 +1482,69 @@ def test_a_red_members_verdict_names_the_member_not_a_fatal_from_its_own_output(
         "every termination-log write the gate container makes precedes its recipes, so a "
         "member that writes that file mid-run is the message the cluster reports"
     )
+
+
+@pytest.mark.parametrize(
+    ("summary_sequence", "named", "not_named"),
+    [
+        (
+            "bash-stderr=check-shell-quality,proof-red-5jr2xu",
+            ("check-shell-quality", "proof-red-5jr2xu"),
+            (),
+        ),
+        ("bash-stdout=check-master-ci-green", ("check-master-ci-green",), ()),
+        ("dispatcher=check-types,check-lint", ("check-types", "check-lint"), ()),
+        (
+            "dispatcher=stale-member bash-stderr=fresh-one,fresh-two",
+            ("fresh-one", "fresh-two"),
+            ("stale-member",),
+        ),
+        ("bash-stdout=stale-member dispatcher=fresh-member", ("fresh-member",), ("stale-member",)),
+        ("bash-stderr=stale-member bash-stdout=fresh-member", ("fresh-member",), ("stale-member",)),
+    ],
+    ids=[
+        "bash-summary-on-stderr",
+        "bash-summary-on-stdout",
+        "dispatcher-summary-on-stdout",
+        "last-is-bash-stderr",
+        "last-is-dispatcher",
+        "last-is-bash-stdout",
+    ],
+)
+def test_a_red_verdict_names_the_members_of_the_last_summary_in_either_shape(
+    *, tmp_path: Path, summary_sequence: str, named: tuple[str, ...], not_named: tuple[str, ...]
+) -> None:
+    """The FAILED verdict detail names the last summary's members, whichever shape printed it.
+
+    The fleet's dispatcher closes a red run with `Failed targets (N):` on
+    stdout, but the bash aggregates (driver-claude's inline loop,
+    `dev-tooling/check-aggregate.sh` in driver-pi and driver-codex) print
+    `FAILED targets: a b c` on STDERR. Measured 2026-10-28 on Jobs
+    gate-livespec-driver-claude-sxm9n, gate-livespec-driver-codex-swm9r and
+    gate-livespec-driver-pi-w8zk2, every one of which ended with the verdict
+    "without naming a failing member in its summary" though its log carried the
+    members (livespec-dev-tooling-gcm72h).
+    """
+    consumer = _a_consumer_repository(
+        root=tmp_path / "declaring",
+        declaration=f'gate_check_suite = ["{_CONSUMER_RECIPE}"]\n',
+    )
+    manifest = _rendered_for(repo_root=consumer)
+
+    returncode, _stdout, stderr, invoked = _run_the_pod_script(
+        manifest=manifest,
+        root=tmp_path / "pod",
+        provides=(_CONSUMER_RECIPE,),
+        summary_sequence=summary_sequence,
+    )
+
+    assert invoked == [f"just --show {_CONSUMER_RECIPE}", f"just {_CONSUMER_RECIPE}"]
+    assert returncode == 1
+    assert "without naming a failing member" not in stderr, stderr
+    verdict_line = next(
+        line for line in stderr.splitlines() if "RAN and these of its members" in line
+    )
+    for member in named:
+        assert member in verdict_line, verdict_line
+    for member in not_named:
+        assert member not in verdict_line, verdict_line

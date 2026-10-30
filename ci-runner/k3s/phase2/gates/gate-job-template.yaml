@@ -425,12 +425,32 @@ spec:
               # LAST such block wins because a member's captured output can
               # carry an earlier one verbatim — the same reason
               # `worktree_pack/gate-run.sh` takes the last summary it finds.
-              # Stderr is deliberately NOT merged in: the streams mean
-              # different things here, and the summary is on stdout.
+              #
+              # THE BASH AGGREGATES SAY IT ANOTHER WAY, ON STDERR
+              # (livespec-dev-tooling-gcm72h): driver-claude's inline `check:`
+              # loop and `dev-tooling/check-aggregate.sh` in driver-pi and
+              # driver-codex close a red run with one `FAILED targets: a b c`
+              # line on STDERR. Measured 2026-10-28 on Jobs
+              # gate-livespec-driver-claude-sxm9n, gate-livespec-driver-codex-swm9r
+              # and gate-livespec-driver-pi-w8zk2: the log named the members and
+              # the verdict said it could not. Both shapes are read, from
+              # either stream, and the LAST summary printed wins.
+              #
+              # STDERR IS COPIED INTO THE CAPTURE, NOT MERGED INTO STDOUT: each
+              # stream still reaches the Job log on its own descriptor, so what
+              # an operator reads is unchanged. Both tees append to the one
+              # capture file so the awk below sees the summaries in print order.
               gate_failing_members() {
                 awk '
                   { sub(/\r$/, "") }
                   /^Failed targets \([0-9]+\):$/ { names = ""; collecting = 1; next }
+                  /^FAILED targets:/ {
+                    line = $0
+                    sub(/^FAILED targets:[ \t]*/, "", line)
+                    sub(/[ \t]+$/, "", line)
+                    gsub(/[ \t]+/, " ", line)
+                    names = line; collecting = 0; next
+                  }
                   collecting && /^  - / { names = names (names == "" ? "" : " ") substr($0, 5); next }
                   collecting { collecting = 0 }
                   END { print names }
@@ -442,10 +462,14 @@ spec:
               # as it does with no capture at all, while the status has to reach
               # the lines below rather than killing the script at the pipe.
               set +e
+              : > "${recipe_log}"
               {
-                set -e
-                @@GATE_RECIPES@@
-              } | tee "${recipe_log}"
+                {
+                  set -e
+                  @@GATE_RECIPES@@
+                } 2>&1 1>&3 | tee -a "${recipe_log}" >&2
+                exit "${PIPESTATUS[0]}"
+              } 3>&1 | tee -a "${recipe_log}"
               recipe_status="${PIPESTATUS[0]}"
               set -e
               if [ "${recipe_status}" -eq 0 ]; then
