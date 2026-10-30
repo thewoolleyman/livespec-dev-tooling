@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.140.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.139.0...v1.140.0) (2026-10-30)
+
+
+### Features
+
+* **gate-run:** pin zero idle forks for the watch and the wait poll ([aae481f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aae481f052db67154b029049128dfe1a64689646))
+
 ## [1.139.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.3...v1.139.0) (2026-10-30)
 
 
