@@ -365,6 +365,14 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped fleet-conformance evaluation with a member whose committed `.livespec.jsonc` does not parse. The behaviour already ships (livespec-dev-tooling-9hpu, PR #2275) and is proven at the unit tier by `tests.livespec_dev_tooling.fleet.test_rows_beads.test_unparseable_livespec_jsonc_is_a_finding` and `test_unparseable_livespec_jsonc_escalates_in_the_preflight`, which the tier gate does not accept for a scenario; livespec-dev-tooling-kvvfo3 owns the consumer-tier test.",
+    "work_item": "livespec-dev-tooling-kvvfo3"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a deficient App installation budget waits for the later reset",
     "test": "tests.consumer.test_github_rate_budget_token.test_helper_waits_to_later_deficient_reset_plus_cushion_and_jitter"
   },
@@ -1152,6 +1160,14 @@
     "test": "TODO",
     "reason": "Spec-first: a real integration-tier test is owed; exercised by the implementing item livespec-dev-tooling-s6go5s.",
     "work_item": "livespec-dev-tooling-s6go5s"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the fabro_server role deletes an instance's retired sandbox environments",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, converging the `fabro_server` role against a stand-in Fabro API that records the catalog DELETE, the non-terminal-run read and the both-lists refusal; livespec-dev-tooling-lmuhvi owns it, and its Definition of Done asserts this behaviour.",
+    "work_item": "livespec-dev-tooling-lmuhvi"
   },
   {
     "spec_root": "SPECIFICATION",

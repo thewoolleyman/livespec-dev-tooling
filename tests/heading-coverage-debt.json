@@ -233,6 +233,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip",
+    "work_item": "livespec-dev-tooling-kvvfo3",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an unready API server or a failing datastore fires its trigger",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
@@ -278,5 +285,12 @@
     "heading": "## Scenario: the dev-host play points the PATH client at a declared build and leaves the server binary it used to name untouched",
     "work_item": "livespec-dev-tooling-rpw6",
     "first_seen": "2026-10-23"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the fabro_server role deletes an instance's retired sandbox environments",
+    "work_item": "livespec-dev-tooling-lmuhvi",
+    "first_seen": "2026-10-30"
   }
 ]

@@ -212,6 +212,18 @@ And the finding MUST be distinguishable from that member carrying no pin of that
 
 And the finding MUST be error severity in the release fan-out preflight and warning severity in every other evaluating context
 
+## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip
+
+Given a fleet member's committed `.livespec.jsonc` is present and does not parse
+
+When the tenant-connection consistency row is evaluated for that member
+
+Then the row MUST NOT report a skip or a passing outcome
+
+And the row MUST report a finding naming the member and its `.livespec.jsonc`
+
+And the finding MUST be error severity in the release fan-out preflight and warning severity in every other evaluating context
+
 ## Scenario: a healthy App installation budget yields a fresh exactly-scoped token
 
 Given the GitHub App installation's REST core and GraphQL remaining budgets meet the caller's configured minima
@@ -1319,6 +1331,20 @@ And `factory-python` MUST carry the same image, resources and provider as `lives
 And `livespec-ci-k8s` MUST stay in the catalog while any governed repository's committed `environment` or any non-terminal run on that instance names it
 
 And after the removal, the catalog MUST NOT list `livespec-ci-k8s`, and its only `python-agent` environment MUST be `factory-python`
+
+## Scenario: the fabro_server role deletes an instance's retired sandbox environments
+
+Given a `fabro_server_instances` mapping whose `retired_environments` lists `livespec-ci`, and whose instance's catalog holds `livespec-ci`
+
+When the `fabro_server` role converges that instance while no non-terminal run on it uses `livespec-ci`
+
+Then the instance's catalog MUST NOT list `livespec-ci`
+
+And a second converge of the same mapping MUST succeed and report no change
+
+And a converge while a non-terminal run on that instance uses a listed id MUST fail naming the run and the id, and MUST leave that id in the catalog
+
+And a converge of a mapping that lists one id in both `environments` and `retired_environments` MUST fail before changing anything
 
 ## Scenario: a member whose only error findings are stale pins still receives the release dispatch
 
