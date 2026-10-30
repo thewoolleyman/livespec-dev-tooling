@@ -119,10 +119,12 @@ The files:
   copy against a quiet source (paid for on hp-xubuntu, 2026-10-12).
 - Read `.ai/fabro-dispatch-diagnosis.md` before reading anything into a
   quiet or stuck factory dispatch, before adding a ledger comment meant to
-  reach a running worker, or before claiming a template token renders (or not)
-  in a Fabro run — a bare `fabro ps` asks the wrong server, `runnable` can mean
-  an orphaned run that will never start, a worker's brief is frozen at
-  dispatch, and `fabro create` plus `fabro dump` shows the resolved spec.
+  reach a running worker or to record a queued item's wait, or before claiming
+  a template token renders (or not) in a Fabro run — a bare `fabro ps` asks the
+  wrong server, `runnable` can mean an orphaned run that will never start, a
+  worker's brief is frozen at dispatch, a comment saying an item is "held"
+  makes petri's screen refuse it, and `fabro create` plus `fabro dump` shows
+  the resolved spec.
 - Read `.ai/false-green-gates-and-audits.md` before trusting a green gate
   that disagrees with reality, writing a gate that replays a production step,
   auditing `.livespec.jsonc` keys across the fleet, or re-running a coverage
