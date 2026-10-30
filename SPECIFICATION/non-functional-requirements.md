@@ -290,7 +290,7 @@ Every trigger description MUST name the emitter path, the receiver path, the own
 
 ## Consent-gated pool-node disruption
 
-**Scope.** This section covers deliberately disrupting a runner-pool node, such as rebooting the control-plane node or taking an agent node's k3s agent down to exercise node loss. That is a host action, and this section states how this repository performs it. Rebuilding a node from empty storage is governed by §"Runner-pool node rebuild recipe", not by this section.
+**Scope.** This section covers deliberately disrupting a runner-pool node, such as rebooting the control-plane node or taking an agent node's k3s agent down to exercise node loss, and deliberately terminating containers on the cluster to exercise termination telemetry. That is a host action, and this section states how this repository performs it. Rebuilding a node from empty storage is governed by §"Runner-pool node rebuild recipe", not by this section.
 
 **Committed and consent-gated.** Every deliberate disruption of a pool node MUST be performed by a committed playbook applied from the control node `vps` with `just ansible-apply`, and MUST NOT be performed by a command run by hand on any host. Such a playbook MUST act only on the single host named by an explicit confirmation variable equal to that host's inventory name. It MUST change nothing when the confirmation is absent or names another host.
 
@@ -299,6 +299,8 @@ Every trigger description MUST name the emitter path, the receiver path, the own
 **It waits for CI, never for its subject.** Before it takes the agent down, a node-loss drill MUST wait until the node carries no CI runner pod and no gate Job pod, or until the runner pool reads idle. It MUST NOT cordon, drain, evict or delete any pod, because a workload left on the node is what the drill exists to observe.
 
 **It restores and verifies.** A node-loss drill MUST restore the node after its configured hold. It MUST fail unless the node returns Ready with its taints, its factory label and its admission capacity unchanged, and it MUST report the UTC times at which the API first showed the node NotReady and Ready again.
+
+**A container-termination drill works only in a throwaway namespace.** A playbook that terminates containers to exercise termination telemetry MUST create its own namespace and MUST exit non-zero before any cluster write when its configured namespace is `factory`, `factory-mi-homelab`, or any namespace that already exists. In that namespace it MUST produce one container the API server reports waiting with reason `CrashLoopBackOff` after at least 3 restarts, and one container whose last terminated state carries reason `OOMKilled`. It MUST print its start and end UTC times and the namespace's name. It MUST delete that namespace in an `always` block, so the namespace is deleted when a wait step fails or times out, and the API server MUST no longer list the namespace once the drill exits. It MUST NOT create, modify or delete any object outside that namespace.
 
 ## Fabro factory host provisioning
 

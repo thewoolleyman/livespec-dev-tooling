@@ -520,6 +520,20 @@ And the drill MUST NOT have cordoned, drained, evicted or deleted the factory sa
 
 And the drill MUST report the times the node went NotReady and became Ready again, and MUST fail unless the node's taints, factory label and admission capacity are unchanged
 
+## Scenario: a container-termination drill produces a crash-looping and an OOM-killed container in a throwaway namespace and deletes it
+
+Given the k3s cluster reached from the control node `vps` and a drill namespace name that the API server does not list
+
+When an operator applies the container-termination drill with its confirmation naming the target host
+
+Then the API server MUST report one container in that namespace waiting with reason `CrashLoopBackOff` after at least 3 restarts and another whose last terminated state carries reason `OOMKilled`
+
+And the drill MUST print its start and end UTC times and the namespace's name
+
+And once the drill exits the API server MUST NOT list that namespace, and no object outside it MUST have been created, modified or deleted
+
+And applying the drill without its confirmation, or with `factory`, `factory-mi-homelab` or an existing namespace configured, MUST exit before any cluster write
+
 ## Scenario: a new heading-coverage TODO row absent from the debt register fails the authoring-time armed tier
 
 Given a contributor's staged change adds a `test: "TODO"` heading-coverage row that is not present in the repository's `tests/heading-coverage-debt.json` register
