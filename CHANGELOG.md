@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.138.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.2...v1.138.3) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ansible:** fetch the otel_collector role's files at a resolved commit sha ([7d432ad](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7d432ad0977c4291114dbe39010f51b4d9dfb7bf))
+
 ## [1.138.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.1...v1.138.2) (2026-10-30)
 
 
