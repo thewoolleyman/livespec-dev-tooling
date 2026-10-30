@@ -65,13 +65,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a container-termination drill produces a crash-looping and an OOM-killed container in a throwaway namespace and deletes it",
-    "work_item": "livespec-dev-tooling-2zii7l",
-    "first_seen": "2026-10-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-22"

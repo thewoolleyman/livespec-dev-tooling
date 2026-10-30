@@ -1,0 +1,308 @@
+---
+# container-termination-drill.yml — the ONE sanctioned way to make this cluster
+# produce a CrashLoopBackOff container and an OOM-killed container.
+#
+# WHY IT EXISTS (livespec-dev-tooling-2zii7l, positive control for
+# livespec-dev-tooling-t6om4l's host leg). The cluster has had zero container
+# restarts, so the termination-reasons panel column and the OOM/CrashLoop
+# trigger's rows have never existed to be read. Creating the containers by hand
+# is a hand change the Driver's `fleet_host_guard.py` refuses, and
+# the "Consent-gated pool-node disruption" section of
+# `SPECIFICATION/non-functional-requirements.md` forbids it; this play is the committed path.
+#
+# THE FENCE IS A VARIABLE. Reachable by `just ansible-apply
+# ansible/container-termination-drill.yml -e
+# container_termination_drill_confirm=<k3s server inventory name>` and by nothing
+# else that matters: without the confirmation it reads nothing, changes nothing
+# and exits 0. Only the k3s server acts, because it is the host that holds the
+# admin kubeconfig; the host is identified by `cluster_role`, never by a name
+# spelled here.
+#
+# CONSENT IS NOT SUFFICIENT. The drill refuses, before any cluster write, a
+# configured namespace that is a factory namespace or that already exists, so it
+# can neither disturb factory pods nor adopt and then delete somebody's
+# namespace. Everything it writes lives in its own namespace, and that namespace
+# is deleted in an `always:` so a wait that fails or times out cannot leave it.
+
+- name: Produce a crash-looping and an OOM-killed container in a throwaway namespace
+  hosts: ci_pool
+  gather_facts: false
+  # The admin kubeconfig is root-owned on the k3s server.
+  become: true
+  vars:
+    container_termination_drill_namespace: container-termination-drill
+    container_termination_drill_refused_namespaces:
+      - factory
+      - factory-mi-homelab
+    container_termination_drill_admin_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    container_termination_drill_image: busybox:1.37.0
+    container_termination_drill_crash_pod: crash-loop
+    container_termination_drill_oom_pod: oom-kill
+    container_termination_drill_min_restarts: 3
+    container_termination_drill_oom_memory_limit: 32Mi
+    # The CrashLoopBackOff delay is 10 s, 20 s, 40 s, so the third restart lands
+    # about 70 s in; 60 attempts x 10 s leaves the wait generous.
+    container_termination_drill_wait_interval: 10
+    container_termination_drill_wait_retries: 60
+    container_termination_drill_delete_timeout: 300s
+    # `| bool` on each half is load-bearing: a non-empty string is truthy in
+    # Jinja, so the strings 'True' / 'False' would otherwise both pass.
+    container_termination_drill_named: >-
+      {{ container_termination_drill_confirm | default('') == inventory_hostname
+         and cluster_role | default('') == 'server' }}
+    container_termination_drill_namespace_refused: >-
+      {{ container_termination_drill_namespace
+         in container_termination_drill_refused_namespaces
+         or container_termination_drill_namespace
+         is not match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$') }}
+    container_termination_drill_manifest:
+      apiVersion: v1
+      kind: List
+      items:
+        - apiVersion: v1
+          kind: Pod
+          metadata:
+            name: "{{ container_termination_drill_crash_pod }}"
+            namespace: "{{ container_termination_drill_namespace }}"
+          spec:
+            restartPolicy: Always
+            terminationGracePeriodSeconds: 0
+            automountServiceAccountToken: false
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+            containers:
+              - name: crash
+                image: "{{ container_termination_drill_image }}"
+                command: ["sh", "-c", "exit 1"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+        - apiVersion: v1
+          kind: Pod
+          metadata:
+            name: "{{ container_termination_drill_oom_pod }}"
+            namespace: "{{ container_termination_drill_namespace }}"
+          spec:
+            restartPolicy: Always
+            terminationGracePeriodSeconds: 0
+            automountServiceAccountToken: false
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+            containers:
+              - name: oom
+                image: "{{ container_termination_drill_image }}"
+                # Doubles a shell variable until the memory limit kills it.
+                command: ["sh", "-c", "a=x; while true; do a=\"$a$a\"; done"]
+                resources:
+                  limits:
+                    memory: "{{ container_termination_drill_oom_memory_limit }}"
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+  environment:
+    KUBECONFIG: "{{ container_termination_drill_admin_kubeconfig }}"
+  tasks:
+    - name: Report a run that carries no container-termination confirmation for this host
+      ansible.builtin.debug:
+        msg: >-
+          Not drilling {{ inventory_hostname }}: this run does not carry
+          `container_termination_drill_confirm` naming the k3s server (it
+          carries `{{ container_termination_drill_confirm | default('<unset>') }}`).
+          Nothing was read and nothing was changed. To run the drill, from the
+          control node: just ansible-apply
+          ansible/container-termination-drill.yml -e
+          container_termination_drill_confirm=<k3s server inventory name>
+      when: not (container_termination_drill_named | bool)
+
+    - name: Refuse a drill namespace that is a factory namespace or not a valid name
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the container-termination drill: namespace
+          `{{ container_termination_drill_namespace }}` is one of
+          {{ container_termination_drill_refused_namespaces | join(', ') }} or
+          is not a valid namespace name. Nothing was read and nothing was changed.
+      when:
+        - container_termination_drill_named | bool
+        - container_termination_drill_namespace_refused | bool
+
+    - name: Read whether the drill namespace already exists
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - namespace
+          - "{{ container_termination_drill_namespace }}"
+          - --ignore-not-found
+          - --output
+          - name
+      register: container_termination_drill_existing
+      # A read, so it runs under `--check` too. It fails closed: a read that
+      # errored is not evidence that the namespace is absent.
+      check_mode: false
+      changed_when: false
+      when: container_termination_drill_named | bool
+
+    - name: Refuse a drill namespace that already exists
+      ansible.builtin.fail:
+        msg: >-
+          Refusing the container-termination drill: namespace
+          `{{ container_termination_drill_namespace }}` already exists, and the
+          drill deletes its namespace when it ends. Nothing was created and
+          nothing was deleted.
+      when:
+        - container_termination_drill_named | bool
+        - container_termination_drill_existing.stdout | trim != ''
+
+    - name: Note that a check-mode run issues no cluster write
+      ansible.builtin.debug:
+        msg: >-
+          Check mode: the drill would create namespace
+          `{{ container_termination_drill_namespace }}`, run one crash-looping and
+          one OOM-killed pod in it, and delete it. Nothing was created.
+      when:
+        - container_termination_drill_named | bool
+        - ansible_check_mode
+
+    - name: Drive the drill in its own namespace and delete the namespace afterwards
+      when:
+        - container_termination_drill_named | bool
+        - not ansible_check_mode
+      block:
+        - name: Read the drill's start time
+          ansible.builtin.command:
+            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+          register: container_termination_drill_start
+          changed_when: false
+
+        - name: Create the drill namespace
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - create
+              - namespace
+              - "{{ container_termination_drill_namespace }}"
+          register: container_termination_drill_create
+          changed_when: true
+
+        - name: Create the crash-looping and the OOM-killed pod in the drill namespace
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - apply
+              - --namespace
+              - "{{ container_termination_drill_namespace }}"
+              - --filename
+              - "-"
+            stdin: "{{ container_termination_drill_manifest | to_json }}"
+          changed_when: true
+
+        - name: Wait until the crash pod's container is CrashLoopBackOff with enough restarts
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - get
+              - pod
+              - "{{ container_termination_drill_crash_pod }}"
+              - --namespace
+              - "{{ container_termination_drill_namespace }}"
+              - --output
+              - >-
+                jsonpath=reason={.status.containerStatuses[0].state.waiting.reason};restarts={.status.containerStatuses[0].restartCount}
+          register: container_termination_drill_crash_read
+          changed_when: false
+          retries: "{{ container_termination_drill_wait_retries }}"
+          delay: "{{ container_termination_drill_wait_interval }}"
+          until: >-
+            container_termination_drill_crash_read.rc == 0
+            and container_termination_drill_crash_read.stdout is search('^reason=CrashLoopBackOff;')
+            and (container_termination_drill_crash_read.stdout
+                 | regex_findall('restarts=([0-9]+)') | first | default(0) | int)
+                >= (container_termination_drill_min_restarts | int)
+          failed_when: >-
+            container_termination_drill_crash_read.rc != 0
+            or container_termination_drill_crash_read.stdout is not search('^reason=CrashLoopBackOff;')
+            or (container_termination_drill_crash_read.stdout
+                | regex_findall('restarts=([0-9]+)') | first | default(0) | int)
+               < (container_termination_drill_min_restarts | int)
+
+        - name: Wait until the OOM pod's container records an OOMKilled last terminated state
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - get
+              - pod
+              - "{{ container_termination_drill_oom_pod }}"
+              - --namespace
+              - "{{ container_termination_drill_namespace }}"
+              - --output
+              - jsonpath=reason={.status.containerStatuses[0].lastState.terminated.reason}
+          register: container_termination_drill_oom_read
+          changed_when: false
+          retries: "{{ container_termination_drill_wait_retries }}"
+          delay: "{{ container_termination_drill_wait_interval }}"
+          until: >-
+            container_termination_drill_oom_read.rc == 0
+            and container_termination_drill_oom_read.stdout == 'reason=OOMKilled'
+          failed_when: >-
+            container_termination_drill_oom_read.rc != 0
+            or container_termination_drill_oom_read.stdout != 'reason=OOMKilled'
+
+        - name: Report what the API server read for both containers
+          ansible.builtin.debug:
+            msg: >-
+              Namespace {{ container_termination_drill_namespace }}: crash pod
+              read `{{ container_termination_drill_crash_read.stdout }}`, OOM pod
+              read `{{ container_termination_drill_oom_read.stdout }}`.
+      always:
+        - name: Delete the drill namespace
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - delete
+              - namespace
+              - "{{ container_termination_drill_namespace }}"
+              - --ignore-not-found
+              - --wait=true
+              - "--timeout={{ container_termination_drill_delete_timeout }}"
+          changed_when: true
+          # Only a namespace THIS run created: a run that never reached the
+          # create must not delete a namespace it does not own.
+          when: >-
+            container_termination_drill_create is defined
+            and container_termination_drill_create.rc | default(1) == 0
+
+        - name: Read whether the drill namespace is gone
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - get
+              - namespace
+              - "{{ container_termination_drill_namespace }}"
+              - --ignore-not-found
+              - --output
+              - name
+          register: container_termination_drill_after
+          changed_when: false
+          retries: "{{ container_termination_drill_wait_retries }}"
+          delay: "{{ container_termination_drill_wait_interval }}"
+          until: container_termination_drill_after.rc == 0 and container_termination_drill_after.stdout | trim == ''
+          when: >-
+            container_termination_drill_create is defined
+            and container_termination_drill_create.rc | default(1) == 0
+
+        - name: Read the drill's end time
+          ansible.builtin.command:
+            argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+          register: container_termination_drill_end
+          changed_when: false
+
+        - name: Report the drill's start and end UTC times and its namespace
+          ansible.builtin.debug:
+            msg: >-
+              Container-termination drill namespace {{ container_termination_drill_namespace }}
+              started at {{ container_termination_drill_start.stdout | default('unobserved') }}
+              ended at {{ container_termination_drill_end.stdout }}
