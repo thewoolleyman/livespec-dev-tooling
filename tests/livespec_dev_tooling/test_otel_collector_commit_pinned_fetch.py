@@ -25,10 +25,12 @@ WHAT THESE TESTS HOLD THE ROLE TO.
 
 from __future__ import annotations
 
+import itertools
 import re
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import cast
 
 import jinja2
 
@@ -90,24 +92,18 @@ def _task_index(*, name: str) -> int:
 def _argv(*, block: str) -> list[str]:
     """The list items under a command task's `argv:` key, unquoted."""
     section = block.split("    argv:\n", 1)[1]
-    items: list[str] = []
-    for line in section.splitlines():
-        match = re.match(r"^      - (?P<item>.+)$", line)
-        if match is None:
-            break
-        items.append(match["item"].strip().strip('"'))
-    return items
+    matches = itertools.takewhile(
+        lambda match: match is not None,
+        (re.match(r"^      - (?P<item>.+)$", line) for line in section.splitlines()),
+    )
+    return [cast("re.Match[str]", match)["item"].strip().strip('"') for match in matches]
 
 
 def _folded_value(*, block: str, key: str) -> str:
     """A `key: >-` folded scalar's value, folded the way YAML folds it."""
     section = block.split(f"    {key}: >-\n", 1)[1]
-    lines: list[str] = []
-    for line in section.splitlines():
-        if not line.startswith("      "):
-            break
-        lines.append(line.strip())
-    return " ".join(lines)
+    indented = itertools.takewhile(lambda line: line.startswith("      "), section.splitlines())
+    return " ".join(line.strip() for line in indented)
 
 
 def _environment() -> jinja2.Environment:
