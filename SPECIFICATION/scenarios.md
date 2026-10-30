@@ -1547,3 +1547,27 @@ When `check-aggregate-completeness` runs
 Then it applies no waiver
 
 And it fails, naming the omitted slug as missing
+
+## Scenario: a test-only commit runs only its staged tests unless shared test support changed
+
+Given a commit that stages only `tests/test_alpha.py` and no implementation file and no shared test-support file
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST run only the tests in `tests/test_alpha.py`, and MUST NOT run the full suite
+
+## Scenario: a test-only commit that changes shared test support runs the full suite
+
+Given a commit that stages only test files, one of which is `tests/conftest.py`
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then it MUST run the full suite
+
+## Scenario: a test-only commit whose staged tests fail is refused
+
+Given a commit that stages only `tests/test_alpha.py`, one of whose tests fails
+
+When the commit-msg `red_green_replay` check runs its suite-green leg
+
+Then the commit MUST be refused
