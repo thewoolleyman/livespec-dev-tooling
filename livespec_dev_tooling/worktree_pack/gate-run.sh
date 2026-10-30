@@ -139,12 +139,47 @@ readonly EX_USAGE=64
 readonly EX_SOFTWARE=70
 readonly EX_NO_VERDICT=75
 readonly SIGNAL_EXIT_FLOOR=128
-readonly POLL_INTERVAL_S=5
+# How often `wait` re-reads the run's state. Every poll is bash builtins
+# only (see `idle_sleep` and `derive_state_into`), so the cadence costs
+# wakeups, never processes; one second keeps `wait` well inside the
+# five-second return budget the spec sets from `exit_code` appearing.
+readonly POLL_INTERVAL_S=1
 # The config watcher's poll cadence. Fast enough that a writer which is
 # still alive one tick after its write is caught in the descendant-tree
-# snapshot; slow enough that a 20-minute gate pays a few thousand cheap
-# `stat` calls rather than tens of thousands.
+# snapshot. A tick forks nothing (see `config_changed`), so the cadence
+# costs wakeups only.
 readonly WATCH_INTERVAL_S=0.2
+
+# Descriptor that no writer ever feeds, so a timed `read` on it is a sleep
+# that spawns nothing. `sleep` is an external program: one fork+exec per
+# tick, which at the watcher's cadence was about 15 forks per second per
+# live gate (livespec-dev-tooling-ycahud). Empty when the host's bash
+# cannot do a fractional `read -t`, in which case `idle_sleep` degrades to
+# `sleep` rather than spinning.
+IDLE_FD=""
+
+open_idle_fd() {
+    local fd=""
+    if { exec {fd}<> <(:); } 2>/dev/null; then
+        # A bash that rejects a fractional timeout returns at once with a
+        # status below the 128+ timeout range; using it would busy-loop.
+        local status=0
+        read -r -t 0.01 -u "$fd" _ 2>/dev/null || status=$?
+        if [[ "$status" -gt 128 ]]; then
+            IDLE_FD="$fd"
+            return 0
+        fi
+    fi
+    IDLE_FD=""
+}
+
+idle_sleep() {
+    if [[ -n "$IDLE_FD" ]]; then
+        read -r -t "$1" -u "$IDLE_FD" _ || true
+    else
+        sleep "$1"
+    fi
+}
 
 repo_root() {
     git rev-parse --show-toplevel
@@ -214,35 +249,45 @@ USAGE
 # state derivation — the single source of truth for every verdict word
 # ---------------------------------------------------------------------
 
-# Echo the terminal-state word for a run directory. Pure function of the
-# files on disk plus a liveness probe; no side effects.
-derive_state() {
-    local dir="$1"
+# Set STATE to the terminal-state word for a run directory. Pure function
+# of the files on disk plus a liveness probe; no side effects. Builtins
+# only (`read`, `kill -0`, `[[ ]]`) — no command substitution — because
+# `wait` calls it on every poll and an idle waiter must spawn nothing.
+STATE=""
+derive_state_into() {
+    local dir="$1" code="" pid=""
     if [[ ! -d "$dir" ]]; then
-        printf 'UNKNOWN_RUN'
+        STATE='UNKNOWN_RUN'
         return
     fi
     if [[ -f "$dir/exit_code" ]]; then
-        local code
-        code=$(cat "$dir/exit_code")
+        read -r code <"$dir/exit_code" || code=""
         if [[ "$code" == "0" ]]; then
-            printf 'PASSED'
+            STATE='PASSED'
         elif [[ "$code" -ge "$SIGNAL_EXIT_FLOOR" ]]; then
-            printf 'DIED_WITHOUT_VERDICT'
+            STATE='DIED_WITHOUT_VERDICT'
         else
-            printf 'FAILED'
+            STATE='FAILED'
         fi
         return
     fi
-    if [[ -f "$dir/pid" ]] && kill -0 "$(cat "$dir/pid")" 2>/dev/null; then
-        printf 'RUNNING'
-        return
+    if [[ -f "$dir/pid" ]]; then
+        read -r pid <"$dir/pid" || pid=""
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            STATE='RUNNING'
+            return
+        fi
     fi
     # A run directory with no exit_code and no live process. Either the
     # child was killed before it could record a verdict, or it never got
     # far enough to publish its pid. Both are the same thing to a caller:
     # there is no verdict and none is coming.
-    printf 'DIED_WITHOUT_VERDICT'
+    STATE='DIED_WITHOUT_VERDICT'
+}
+
+derive_state() {
+    derive_state_into "$1"
+    printf '%s' "$STATE"
 }
 
 state_exit_code() {
@@ -318,6 +363,32 @@ config_signature() {
     stat -c '%i %s %Y' "$1" 2>/dev/null \
         || stat -f '%i %z %m' "$1" 2>/dev/null \
         || printf 'absent'
+}
+
+# Fork-free "has the config been rewritten since the baseline?" The
+# baseline is two files in the run directory: a HARD LINK to the config as
+# it was (`config.ref`) and a stamp (`config.stamp`) touched at the same
+# moment. git rewrites the config through a lockfile and a rename, so a
+# real write leaves `$cfg` on a NEW inode while the link still pins the old
+# one — `-ef` (same device and inode) catches that regardless of timestamp
+# granularity. An in-place write keeps the inode and moves the mtime, which
+# `-nt` against the stamp catches. Both tests are `[[ ]]` builtins, so a
+# tick that finds nothing spawns nothing. Returns 0 when it changed.
+config_changed() {
+    local cfg="$1" ref="$2" stamp="$3"
+    [[ -e "$cfg" ]] || return 0
+    if [[ -e "$ref" ]] && ! [[ "$cfg" -ef "$ref" ]]; then
+        return 0
+    fi
+    [[ "$cfg" -nt "$stamp" ]]
+}
+
+# Re-baseline after an event. Forks, but only when something happened.
+config_rebaseline() {
+    local cfg="$1" ref="$2" stamp="$3"
+    rm -f "$ref" 2>/dev/null || true
+    ln "$cfg" "$ref" 2>/dev/null || true
+    : >"$stamp" 2>/dev/null || true
 }
 
 # Parent pid from /proc/<pid>/stat without forking: `comm` may itself
@@ -427,7 +498,9 @@ record_config_event() {
 watch_config_writes() {
     local cfg="$1" dir="$2" gate_pid="$3" last="$4"
     local log="$dir/config-writes.log" lock="$cfg.lock"
+    local ref="$dir/config.ref" stamp="$dir/config.stamp"
     local cur lock_seen=0
+    open_idle_fd
     while kill -0 "$gate_pid" 2>/dev/null; do
         if [[ -e "$lock" ]]; then
             if [[ "$lock_seen" == "0" ]]; then
@@ -437,12 +510,13 @@ watch_config_writes() {
         else
             lock_seen=0
         fi
-        cur="$(config_signature "$cfg")"
-        if [[ "$cur" != "$last" ]]; then
+        if config_changed "$cfg" "$ref" "$stamp"; then
+            cur="$(config_signature "$cfg")"
             record_config_event "$log" "config CHANGED ($last -> $cur)" "$cfg" "$gate_pid"
             last="$cur"
+            config_rebaseline "$cfg" "$ref" "$stamp"
         fi
-        sleep "$WATCH_INTERVAL_S"
+        idle_sleep "$WATCH_INTERVAL_S"
     done
 }
 
@@ -617,6 +691,7 @@ cmd_child() {
         : >"$dir/config-writes.log"
         # Sampled HERE, before the gate exists, so no writer can beat the
         # watcher to the baseline.
+        config_rebaseline "$cfg" "$dir/config.ref" "$dir/config.stamp"
         baseline="$(config_signature "$cfg")"
         # errexit/nounset relaxed inside the watcher for the same reason.
         ( set +e +u +o pipefail; watch_config_writes "$cfg" "$dir" "$$" "$baseline" ) &
@@ -640,6 +715,7 @@ cmd_child() {
         kill "$watch_pid" 2>/dev/null || true
         wait "$watch_pid" 2>/dev/null || true
     fi
+    rm -f "$dir/config.ref" "$dir/config.stamp" 2>/dev/null || true
     if [[ -n "$cfg" ]]; then
         maybe_write_flip_marker "$dir" || true
     fi
@@ -812,16 +888,17 @@ cmd_status() {
 
 cmd_wait() {
     [[ $# -ge 1 ]] || usage
-    local run_id="$1" dir state
+    local run_id="$1" dir
     dir="$(runs_root)/$run_id"
     if [[ ! -d "$dir" ]]; then
         printf 'UNKNOWN_RUN %s — no such run directory\n' "$run_id" >&2
         return "$EX_USAGE"
     fi
+    open_idle_fd
     while true; do
-        state="$(derive_state "$dir")"
-        [[ "$state" == "RUNNING" ]] || break
-        sleep "$POLL_INTERVAL_S"
+        derive_state_into "$dir"
+        [[ "$STATE" == "RUNNING" ]] || break
+        idle_sleep "$POLL_INTERVAL_S"
     done
     cmd_status "$run_id"
 }

@@ -21,6 +21,7 @@ self-instrument under `pytest --cov`.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -317,6 +318,7 @@ def test_the_run_record_names_the_worktree_and_the_command_line(
     assert "echo recorded" in status.stdout
 
 
+@pytest.mark.integration
 def test_a_config_flip_during_the_gate_marks_the_run_and_names_the_writer(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
@@ -463,3 +465,135 @@ def _core_fields(*, path: Path) -> dict[str, str]:
         if key in {"core.bare", "core_sha256"}:
             fields[key] = value
     return fields
+
+
+# Every external command the runner reaches for. A shim in front of each one
+# logs its exec, so a process spawned on a watch tick or a wait poll shows up
+# as a line in the log.
+_SHIMMED_COMMANDS: tuple[str, ...] = (
+    "cat",
+    "date",
+    "find",
+    "git",
+    "grep",
+    "ls",
+    "readlink",
+    "sha256sum",
+    "sleep",
+    "stat",
+    "tr",
+)
+_IDLE_GATE_S = 4
+_IDLE_SETTLE_S = 0.7
+_IDLE_WINDOW_S = 1.5
+_WAIT_RETURN_BUDGET_S = 5.0
+
+
+def _shim_dir(*, root: Path) -> Path:
+    """A PATH directory whose entries log their own exec to `$GATE_SHIM_LOG`, then run the real one."""
+    shims = root / "shims"
+    shims.mkdir()
+    for name in _SHIMMED_COMMANDS:
+        real = shutil.which(name)
+        assert real is not None, name
+        shim = shims / name
+        _ = shim.write_text(
+            f'#!/bin/sh\nprintf \'%s\\n\' "{name}" >> "$GATE_SHIM_LOG"\nexec {real} "$@"\n',
+            encoding="utf-8",
+        )
+        shim.chmod(0o755)
+    return shims
+
+
+def _shimmed_env(*, env: dict[str, str], shims: Path, log: Path) -> dict[str, str]:
+    shimmed = dict(env)
+    shimmed["PATH"] = f"{shims}{os.pathsep}{env['PATH']}"
+    shimmed["GATE_SHIM_LOG"] = str(log)
+    return shimmed
+
+
+def _spawn_count(*, log: Path) -> int:
+    return len(log.read_text(encoding="utf-8").splitlines()) if log.is_file() else 0
+
+
+@pytest.mark.integration
+def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """The cost of doing nothing: no exec per watch tick, none per wait poll."""
+    primary, worktree, env = fixture_repo
+    shims = _shim_dir(root=tmp_path)
+    runner_log = tmp_path / "runner-spawns.log"
+    waiter_log = tmp_path / "waiter-spawns.log"
+    ready = tmp_path / "gate-is-idle"
+    idle_gate = f"touch {ready}; exec 3<> <(:); read -t {_IDLE_GATE_S} -u 3; exit {_GATE_EXIT_CODE}"
+    run_id = _start(
+        cwd=worktree,
+        env=_shimmed_env(env=env, shims=shims, log=runner_log),
+        command=["bash", "-c", idle_gate],
+    )
+    waiter = subprocess.Popen(
+        [str(primary / "dev-tooling" / _SCRIPT), "wait", run_id],
+        cwd=str(primary),
+        env=_shimmed_env(env=env, shims=shims, log=waiter_log),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert _wait_for_file(path=ready, timeout_s=_VERDICT_TIMEOUT_S)
+    time.sleep(_IDLE_SETTLE_S)
+    # Control arm: the shims are live, so a silent log means silence, not blindness.
+    assert _spawn_count(log=runner_log) > 0
+    assert _spawn_count(log=waiter_log) > 0
+    runner_before = _spawn_count(log=runner_log)
+    waiter_before = _spawn_count(log=waiter_log)
+
+    time.sleep(_IDLE_WINDOW_S)
+
+    assert _spawn_count(log=runner_log) == runner_before
+    assert _spawn_count(log=waiter_log) == waiter_before
+
+    _ = _await_verdict(primary=primary, run_id=run_id)
+    verdict_at = time.monotonic()
+    stdout, _stderr = waiter.communicate(timeout=_VERDICT_TIMEOUT_S)
+    assert time.monotonic() - verdict_at < _WAIT_RETURN_BUDGET_S
+    assert waiter.returncode == _GATE_EXIT_CODE
+    assert "FAILED" in stdout
+
+
+@pytest.mark.integration
+def test_gate_wait_reports_the_gates_own_exit_code_for_a_finished_detached_run(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """Scenario: the gate outlives the launching shell and its code is the verdict."""
+    primary, worktree, env = fixture_repo
+    run_id = _start(
+        cwd=worktree, env=env, command=["bash", "-c", f"sleep 0.3; exit {_GATE_EXIT_CODE}"]
+    )
+    waited = _gate(cwd=primary, env=env, args=["wait", run_id])
+
+    run_dir = primary / _STORE / run_id
+    assert (run_dir / "exit_code").read_text(encoding="utf-8").strip() == str(_GATE_EXIT_CODE)
+    assert waited.returncode == _GATE_EXIT_CODE
+    assert "FAILED" in waited.stdout
+
+
+@pytest.mark.integration
+def test_a_run_whose_process_died_without_a_verdict_exits_75_and_is_not_a_pass(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """Scenario: a recorded pid, no exit_code, and a pid that is gone."""
+    primary, _worktree, env = fixture_repo
+    gone = subprocess.Popen(["true"])
+    _ = gone.wait()
+    run_dir = primary / _STORE / "20260101T000000Z-1"
+    _write(path=run_dir / "pid", text=f"{gone.pid}\n")
+    _write(path=run_dir / "command", text="just\ncheck\n")
+    _write(path=run_dir / "output.log", text="")
+
+    for subcommand in ("wait", "status"):
+        result = _gate(cwd=primary, env=env, args=[subcommand, run_dir.name])
+
+        assert result.returncode == 75, subcommand
+        assert "DIED_WITHOUT_VERDICT" in result.stdout, subcommand
+        assert "PASSED" not in result.stdout, subcommand

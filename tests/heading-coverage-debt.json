@@ -72,20 +72,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a detached gate outlives the caller that launched it and reports its own exit code",
-    "work_item": "livespec-dev-tooling-ycahud",
-    "first_seen": "2026-10-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: a detached gate whose process dies without a verdict reports DIED_WITHOUT_VERDICT and exits 75",
-    "work_item": "livespec-dev-tooling-ycahud",
-    "first_seen": "2026-10-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a dev-tooling release fan-out dispatches only after its sandbox image tags are served",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-22"
@@ -177,13 +163,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario: a shared-config write during a detached gate is recorded with writer attribution and marks the run",
-    "work_item": "livespec-dev-tooling-ycahud",
-    "first_seen": "2026-10-26"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario: a silent cluster-state emitter fires its dead-man",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
@@ -236,13 +215,6 @@
     "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario: an idle detached gate run and an idle waiter spawn no per-tick process",
-    "work_item": "livespec-dev-tooling-ycahud",
-    "first_seen": "2026-10-26"
   },
   {
     "spec_root": "SPECIFICATION",

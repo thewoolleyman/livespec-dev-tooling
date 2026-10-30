@@ -1241,40 +1241,35 @@
     "spec_file": "contracts.md",
     "heading": "## Detached gate runner",
     "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_a_config_flip_during_the_gate_marks_the_run_and_names_the_writer",
-    "reason": "Unit-tier, driving the shipped `gate-run.sh` end to end through real `bash` and `git` subprocesses: a gate whose descendant rewrites the shared `.git/config` `[core]` section records its own exit code, writes the `CORE_BARE_FLIP` marker, names the writer in `config-writes.log`, and `gate-status` exits with the gate's own code. The run record, worktree-survival and status-evidence clauses are pinned by its siblings in the same file. The Idle cost bullet is spec-first and owed by livespec-dev-tooling-ycahud, which also owes the four integration-tier scenario tests below.",
-    "work_item": "livespec-dev-tooling-ycahud"
+    "reason": "Unit-tier, driving the shipped `gate-run.sh` end to end through real `bash` and `git` subprocesses: a gate whose descendant rewrites the shared `.git/config` `[core]` section records its own exit code, writes the `CORE_BARE_FLIP` marker, names the writer in `config-writes.log`, and `gate-status` exits with the gate's own code. The run record, worktree-survival and status-evidence clauses are pinned by its siblings in the same file. The Idle cost bullet is pinned by `test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process` in the same file (livespec-dev-tooling-ycahud)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a detached gate outlives the caller that launched it and reports its own exit code",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
-    "work_item": "livespec-dev-tooling-ycahud"
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_gate_wait_reports_the_gates_own_exit_code_for_a_finished_detached_run",
+    "reason": "Integration-tier (static `pytest.mark.integration`): drives the shipped `gate-run.sh` through real `bash` and `git` subprocesses. `gate-start` launches a gate that exits 7 and returns; `gate-wait` then reports `FAILED`, exits 7, and the run record's `exit_code` equals 7 (livespec-dev-tooling-ycahud)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a detached gate whose process dies without a verdict reports DIED_WITHOUT_VERDICT and exits 75",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
-    "work_item": "livespec-dev-tooling-ycahud"
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_a_run_whose_process_died_without_a_verdict_exits_75_and_is_not_a_pass",
+    "reason": "Integration-tier (static `pytest.mark.integration`): a hand-written run record carries a `pid` of a reaped process and no `exit_code`; both `gate-wait` and `gate-status`, run through real `bash`, report `DIED_WITHOUT_VERDICT`, exit 75 and never print `PASSED` (livespec-dev-tooling-ycahud)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a shared-config write during a detached gate is recorded with writer attribution and marks the run",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
-    "work_item": "livespec-dev-tooling-ycahud"
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_a_config_flip_during_the_gate_marks_the_run_and_names_the_writer",
+    "reason": "Integration-tier (static `pytest.mark.integration`): a detached gate whose descendant rewrites the primary's shared `.git/config` `[core]` section from a linked worktree records the write in `config-writes.log` naming the writer, writes the `CORE_BARE_FLIP` marker, and `gate-status` surfaces it while exiting with the gate's own code (livespec-dev-tooling-ycahud)."
   },
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: an idle detached gate run and an idle waiter spawn no per-tick process",
-    "test": "TODO",
-    "reason": "Spec-first: an integration-tier test under `tests.consumer` of the shipped detached gate runner is owed for this scenario; exercised by the implementing item livespec-dev-tooling-ycahud, whose Definition of Done asserts this behaviour.",
-    "work_item": "livespec-dev-tooling-ycahud"
+    "test": "tests.livespec_dev_tooling.worktree_pack.test_gate_run.test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process",
+    "reason": "Integration-tier (static `pytest.mark.integration`): with a PATH shim in front of every external command the runner uses, an idle detached gate and a blocked `gate-wait` log no exec across an observation window (after a control arm proves the shims are live), and `gate-wait` returns the gate's own exit code within five seconds of `exit_code` appearing (livespec-dev-tooling-ycahud)."
   },
   {
     "spec_root": "SPECIFICATION",
