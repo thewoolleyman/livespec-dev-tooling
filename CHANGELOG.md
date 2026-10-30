@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.139.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.3...v1.139.0) (2026-10-30)
+
+
+### Features
+
+* **cross-repo:** hold, thrash, stall and hard-cap decision for fix-forward claims ([6d772a8](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d772a8dbd0ed3d64cf54837cad33ec0cf72a4ca))
+* **cross-repo:** refuse a revert that would clobber a later commit or revert a revert ([524500e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/524500e381610aee4b62b6a09d44b80364f24d41))
+
 ## [1.138.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.2...v1.138.3) (2026-10-30)
 
 
