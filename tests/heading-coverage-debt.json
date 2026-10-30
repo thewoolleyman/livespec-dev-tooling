@@ -198,6 +198,27 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test-only commit runs only its staged tests unless shared test support changed",
+    "work_item": "livespec-dev-tooling-h3gcs6",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test-only commit that changes shared test support runs the full suite",
+    "work_item": "livespec-dev-tooling-h3gcs6",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test-only commit whose staged tests fail is refused",
+    "work_item": "livespec-dev-tooling-h3gcs6",
+    "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a thrashing fix-forward releases the held revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"

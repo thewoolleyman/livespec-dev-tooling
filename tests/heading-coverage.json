@@ -1282,5 +1282,29 @@
     "heading": "## Scenario: a canonical check waived in pyproject.toml is exempt from the aggregate and fleet gates",
     "test": "tests.consumer.test_canonical_check_waivers_scenarios.test_a_waived_canonical_check_is_exempt_from_both_gates_and_the_fleet_run_logs_it",
     "reason": "Consumer-tier: drives `check-aggregate-completeness` through its own `main()` over a consumer tree, and the fleet-conformance row `canonical-check-slugs-wired` through `run_member_rows` over a canned member master tree, both against the REAL canonical inventory. A member whose aggregate omits `check-heading-coverage` and whose `pyproject.toml` waives it with a reason is convicted by neither gate (the same aggregate without the waiver is convicted by both), and the fleet run logs the waiver with member, slug and reason. The scenario's sibling arms — a stale waiver, a malformed waiver, an unreadable member pyproject.toml skipping the fleet row, and an unparseable one applying no waiver in the in-repo check — are asserted beside it in the same module (livespec-dev-tooling-cmy3kd)."
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test-only commit runs only its staged tests unless shared test support changed",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-h3gcs6 owns it.",
+    "work_item": "livespec-dev-tooling-h3gcs6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test-only commit that changes shared test support runs the full suite",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-h3gcs6 owns it.",
+    "work_item": "livespec-dev-tooling-h3gcs6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a test-only commit whose staged tests fail is refused",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-h3gcs6 owns it.",
+    "work_item": "livespec-dev-tooling-h3gcs6"
   }
 ]

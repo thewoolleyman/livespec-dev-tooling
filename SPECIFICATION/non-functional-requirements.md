@@ -18,6 +18,7 @@ The library MUST follow the same Red → Green → Refactor cycle livespec appli
 
 - Tests are written FIRST. A `feat:` or `fix:` commit MUST be preceded by a Red commit containing a failing test, then a Green commit containing the implementation that turns it green. Refactor commits are separate, never touch the test, and MUST keep the suite green.
 - The Red → Green commit pair is enforced by the `red_green_replay` check at commit-msg time (once the gate migrates from livespec-core).
+- For a commit that stages only test files, the `red_green_replay` check's suite-green leg MUST run only the tests in the staged test files, unless the commit also stages a shared test-support file. A shared test-support file is a `conftest.py` or any module under `tests/` that another test module imports. When the commit stages one, the leg MUST run the full suite. A test-only commit whose run tests fail MUST be refused. The full suite still runs at pre-push and in CI, so this leg narrows commit-time work and does not narrow what gates a merge.
 - Every source file MUST have a paired test at the mirror path under `tests/`; the pairing is enforced by `commit_pairs_source_and_test` at pre-commit time and by `per_file_coverage`'s 100% per-file gate at `just check`.
 
 ## Testing approach
