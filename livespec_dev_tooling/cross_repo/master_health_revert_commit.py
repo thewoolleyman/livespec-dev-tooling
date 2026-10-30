@@ -62,10 +62,12 @@ from dataclasses import dataclass
 __all__: list[str] = [
     "FORGE_COMMIT_MUTATION",
     "REVERT_COMMIT_CREDENTIAL",
+    "REVERT_HEADLINE_PREFIX",
     "CulpritPath",
     "FileAddition",
     "RevertCommitRequest",
     "revert_commit_request",
+    "revert_headline_marker",
 ]
 
 # The forge operation that COMMITS a tree the caller describes. It is the whole
@@ -87,6 +89,11 @@ REVERT_COMMIT_CREDENTIAL = "github-app-installation-token"
 # state, not a lock or a cursor, is what stops a second revert.
 _REVERT_BRANCH_PREFIX = "master-health/revert-"
 _SHORT_SHA_CHARS = 12
+
+# The headline every reconciler-made revert starts with. It is the lookup the
+# revert guard reads off the branch's own history to recognise a revert this
+# reconciler created, so it is homed beside the code that writes it.
+REVERT_HEADLINE_PREFIX = "chore(revert): undo "
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -150,6 +157,11 @@ class RevertCommitRequest:
     deletions: tuple[str, ...]
 
 
+def revert_headline_marker(*, culprit_sha: str) -> str:
+    """The headline prefix identifying a reconciler revert of `culprit_sha`."""
+    return f"{REVERT_HEADLINE_PREFIX}{culprit_sha[:_SHORT_SHA_CHARS]} "
+
+
 def _encoded(*, contents: bytes) -> str:
     """`contents` as the base64 the mutation's `additions` entries carry."""
     return base64.b64encode(contents).decode("ascii")
@@ -188,8 +200,7 @@ def revert_commit_request(
         ),
         deletions=tuple(changed.path for changed in ordered if changed.parent_contents is None),
         headline=(
-            f"chore(revert): undo {culprit_sha[:_SHORT_SHA_CHARS]} "
-            f"to return {target_branch} to green"
+            f"{revert_headline_marker(culprit_sha=culprit_sha)}to return {target_branch} to green"
         ),
         body=(
             f"This reverts commit {culprit_sha}.\n"

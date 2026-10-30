@@ -56,6 +56,7 @@ from livespec_dev_tooling.cross_repo.master_health_episode import (
 )
 from livespec_dev_tooling.cross_repo.master_health_fix_forward import hold_verdict
 from livespec_dev_tooling.cross_repo.master_health_gating import gating_state
+from livespec_dev_tooling.cross_repo.master_health_revert_guard import revert_refusal
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_SUCCESS,
     ReconcileConfig,
@@ -308,6 +309,15 @@ def _regression_step(
                 "window is truncated, the episode opens on an undecided run, or "
                 "the culprit was a direct push with no pull request"
             ),
+            episode_key=key,
+        )
+
+    refusal = revert_refusal(culprit=culprit, later=block[block.index(culprit) + 1 :])
+    if refusal is not None:
+        return ReconcileStep(
+            kind=STEP_NEEDS_ATTENTION,
+            target_branch=config.target_branch,
+            reason=refusal,
             episode_key=key,
         )
 

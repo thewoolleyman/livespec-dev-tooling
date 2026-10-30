@@ -101,6 +101,12 @@ class MasterCommit:
     what the hard cap measures how long `master` has been red from. It is
     `None` when the forge did not report it, which makes a claim not hold
     rather than guessing an age.
+
+    `changed_paths` are the paths the commit changed (a rename lists both its
+    old and new path). It is recorded for the commits inside a red episode and
+    is `None` when the forge did not report it or the list was truncated; the
+    revert guard reads that as "cannot show a revert is safe", never as "no
+    overlap".
     """
 
     sha: str
@@ -111,6 +117,7 @@ class MasterCommit:
     failure_signature: str | None
     subject: str
     ci_completed_at: int | None = None
+    changed_paths: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -376,6 +376,27 @@ jobs:
             mv signatures.next.json signatures.json
           done
 
+          # The paths each commit OUTSIDE the green set changed, for the revert
+          # guard: a revert restores the culprit's parent bytes, so it is only
+          # safe when no later commit changed one of the same paths. A rename
+          # lists both names, and a commit whose file list the API truncated is
+          # recorded as unknown rather than short, because a short list would
+          # read as "no overlap".
+          echo '{}' > paths.json
+          green_shas=$(jq -r '[ .[] | select(.conclusion == "success") | .head_sha ]
+                              | unique | .[]' runs.json)
+          for sha in $(jq -r '.[].sha' commits.json); do
+            if printf '%s\n' "${green_shas}" | grep -qx "${sha}"; then
+              continue
+            fi
+            paths=$(gh api "repos/${REPO}/commits/${sha}" --jq '
+              if (.files | length) >= 300 then null
+              else [ .files[] | .filename, (.previous_filename // empty) ] | unique end')
+            jq --arg sha "${sha}" --argjson paths "${paths}" \
+              '. + {($sha): $paths}' paths.json > paths.next.json
+            mv paths.next.json paths.json
+          done
+
           # The revert pull request already in flight, if any. GitHub's own
           # revert branches are named `revert-<number>-<branch>`, which is what
           # ties a revert back to the pull request it reverts. The ref is
@@ -518,6 +539,7 @@ jobs:
             --slurpfile commits commits.json \
             --slurpfile runs runs.json \
             --slurpfile signatures signatures.json \
+            --slurpfile paths paths.json \
             --slurpfile revert revert.json \
             --slurpfile titles issue-titles.json '
             ($runs[0] | group_by(.head_sha)
@@ -552,6 +574,7 @@ jobs:
                   ci_conclusion: (($bysha[.sha].conclusion) // "pending"),
                   failure_signature: (($signatures[0][.sha]) // null),
                   subject: .subject,
+                  changed_paths: (($paths[0][.sha]) // null),
                   ci_completed_at: (if $bysha[.sha].conclusion == null
                                     then null
                                     else ($bysha[.sha].updated_at | fromdateiso8601) end)

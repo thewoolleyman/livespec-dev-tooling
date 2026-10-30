@@ -403,3 +403,16 @@ tick rather than at once; changing that alters the canonical shim bytes for the
 whole fleet and is a separate step. A per-repository CI stall (15/20/25 minutes
 by the calibration table) needs a per-repository `with:` in the shim for the
 same reason; the workflow default of 20 minutes applies until then.
+
+### The revert guard — three refusals before a revert is opened
+
+The revert commit restores the culprit's PARENT bytes, so `master_health_revert_guard`
+refuses to open one in three cases, each raising needs-attention that names the
+commit responsible. A later commit in the red episode that changed a path the
+culprit changed would be overwritten (renames count under both names). A culprit
+that is itself a revert (the reconciler's `chore(revert): undo` headline, or the
+forge's `Revert "` subject) is never reverted. A culprit whose reconciler revert
+has already landed in the episode is not reverted again. Unrecorded changed
+paths refuse too, whenever a later commit exists: an unknown list cannot show
+there is no overlap, and a file list the API truncated at 300 entries is
+recorded as unknown, not short.
