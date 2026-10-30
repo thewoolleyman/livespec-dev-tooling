@@ -1,7 +1,7 @@
 """The recorded-GitHub-state vocabulary the master-health reconciler decides over.
 
-Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
-surface", and the design recorded in this repository's
+Per `SPECIFICATION/contracts.md` section "Master-health reconciler",
+and the design recorded in this repository's
 `plan/red-master-self-healing/research/001-charter-red-master-self-healing.md`
 (child C1, work-item `livespec-dev-tooling-hrpcgl`).
 
@@ -29,9 +29,15 @@ __all__: list[str] = [
     "CI_FAILURE",
     "CI_PENDING",
     "CI_SUCCESS",
+    "FIX_CLOSED",
+    "FIX_MERGED",
+    "FIX_OPEN",
     "RERUN_NOT_ATTEMPTED",
     "RERUN_PASSED",
     "RERUN_STILL_RED",
+    "FixCommit",
+    "FixForwardClaim",
+    "FixPullRequest",
     "MasterCommit",
     "ReconcileConfig",
     "ReconcileState",
@@ -54,6 +60,13 @@ CI_PENDING = "pending"
 RERUN_NOT_ATTEMPTED = "not-attempted"
 RERUN_PASSED = "passed"
 RERUN_STILL_RED = "still-red"
+
+# The three states a fix pull request can be recorded in. A fix that is neither
+# open nor merged was closed without landing, which can make no further forward
+# transition.
+FIX_OPEN = "open"
+FIX_MERGED = "merged"
+FIX_CLOSED = "closed"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -83,6 +96,11 @@ class MasterCommit:
     It is required for the same reason `ci_workflow` is: a record whose subject
     is unrecorded would read as an ordinary merge, and an ordinary merge is
     exactly what those rules route away from the plain revert.
+
+    `ci_completed_at` is when that CI run concluded, in epoch seconds, and is
+    what the hard cap measures how long `master` has been red from. It is
+    `None` when the forge did not report it, which makes a claim not hold
+    rather than guessing an age.
     """
 
     sha: str
@@ -92,6 +110,61 @@ class MasterCommit:
     ci_conclusion: str
     failure_signature: str | None
     subject: str
+    ci_completed_at: int | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class FixForwardClaim:
+    """One comment on the revert pull request, carried RAW.
+
+    The comment body is carried unparsed so that WHICH fix it names and whether
+    it carries a `Claimed-By:` line are decided in the pure module under test,
+    never by the gatherer. `posted_at` is epoch seconds and starts the first
+    step's clock.
+    """
+
+    author: str
+    body: str
+    posted_at: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class FixCommit:
+    """One commit of a fix pull request, with the CI the forge reported on it.
+
+    `failing_checks` lists one entry per failed check RUN, so a check that failed
+    again on a re-run of the same commit appears twice: that repetition is the
+    "same check fails repeatedly" evidence. `ci_conclusion` uses the
+    `CI_*` vocabulary, and `CI_CANCELLED` and `CI_PENDING` are undecided.
+    """
+
+    sha: str
+    pushed_at: int
+    ci_conclusion: str
+    ci_started_at: int | None
+    ci_finished_at: int | None
+    failing_checks: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class FixPullRequest:
+    """The recorded state of one fix pull request a claim names.
+
+    `commits` are OLDEST-FIRST. `master_ci_conclusion` and `master_ci_started_at`
+    describe the gating CI run on the fix's merge commit and are `None` until
+    that run exists. Every timestamp is epoch seconds; the forward-transition
+    clock is the newest of them, so a field the gatherer cannot read is `None`
+    rather than a guess.
+    """
+
+    number: int
+    state: str
+    opened_at: int
+    commits: tuple[FixCommit, ...]
+    auto_merge_armed_at: int | None
+    merged_at: int | None
+    master_ci_conclusion: str | None
+    master_ci_started_at: int | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -105,17 +178,20 @@ class RevertPullRequest:
 
     `auto_merge_armed` records whether the hold has ALREADY been released, which
     is the same idempotence for the release step that this value's existence is
-    for the open step. `fix_forward_claim` names the claimed fix-forward (a
-    label or comment naming a fix PR) and is `None` when nothing is claimed;
-    this module's consumer only distinguishes claimed from unclaimed, because
-    judging a claim's PROGRESS is child C2's work, not C1's.
+    for the open step. `claims` are the comments posted on this pull request,
+    raw, and `culprit_opened_by` is the login that opened the culprit pull
+    request: the two facts the claimant set is judged against.
+    `fix_pull_requests` carries the recorded state of every pull request a
+    `Fix-Forward:` line in those comments names, valid claimant or not.
     """
 
     number: int
     reverts_pull_request: int
     ci_conclusion: str
     auto_merge_armed: bool
-    fix_forward_claim: str | None
+    culprit_opened_by: str | None = None
+    claims: tuple[FixForwardClaim, ...] = ()
+    fix_pull_requests: tuple[FixPullRequest, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -143,12 +219,27 @@ class ReconcileConfig:
     recurring-failure read may look for the same failing check — counted in
     commits, because the decision path holds no clock (see
     `master_health_flake_history` for why the bound is load-bearing).
+
+    The last six fields are the fix-forward half. `maintainer_login` is the
+    forge login whose claim is always valid; `hard_cap_minutes` and the four
+    `stall_*_minutes` are how long `master` may stay red and how long a claimed
+    fix may go without a forward transition in each step. EACH IS `None` WHEN
+    MISSING OR MALFORMED AND NONE CARRIES A BUILT-IN DEFAULT, deliberately: the
+    fleet default is provisioned into committed configuration, and a number
+    baked in here would silently stand in for a missing key and defeat the
+    fail-closed clause. A `None` limit makes every claim not hold.
     """
 
     target_branch: str
     infra_outage_markers: tuple[str, ...]
     gating_workflow: str
     unrelated_lookback_commits: int
+    maintainer_login: str | None = None
+    hard_cap_minutes: int | None = None
+    stall_claim_to_fix_pr_minutes: int | None = None
+    stall_ci_in_flight_minutes: int | None = None
+    stall_fix_to_merge_minutes: int | None = None
+    stall_merged_to_green_minutes: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -171,6 +262,10 @@ class ReconcileState:
     not expressible over it. `commits` is the single source for that evidence
     now: a red commit recorded below a green one is a previous episode, which is
     what `master_health_flake_history` reads.
+
+    `observed_at` is NOW, in epoch seconds, supplied by the gatherer so the
+    decision path holds no clock of its own; `None` means it was not recorded,
+    which makes every fix-forward claim not hold.
     """
 
     head_sha: str
@@ -178,3 +273,4 @@ class ReconcileState:
     rerun_outcome: str
     revert_pull_request: RevertPullRequest | None
     open_needs_attention_episodes: tuple[str, ...]
+    observed_at: int | None = None

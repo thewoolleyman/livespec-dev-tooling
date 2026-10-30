@@ -218,6 +218,58 @@ on:
         required: false
         type: number
         default: 20
+      maintainer_login:
+        description: >-
+          The maintainer's forge login: a fix-forward claim posted by it is
+          always valid. Any other claim is valid only from the login that
+          opened the culprit pull request AND with a `Claimed-By:` line naming
+          the owning session; every other claim is ignored.
+        required: false
+        type: string
+        default: thewoolleyman
+      hard_cap_minutes:
+        description: >-
+          How long `master` may stay red before the reconciler releases the
+          revert regardless of fix-forward progress (and only when the
+          revert's own CI is green). The fleet default is PROVISIONED here, in
+          committed configuration, because the decision code carries no
+          fallback: a missing or malformed value fails closed to
+          revert-by-default.
+        required: false
+        type: number
+        default: 120
+      stall_claim_to_fix_pr_minutes:
+        description: >-
+          How long a fix-forward claim may wait for its fix pull request to be
+          opened before it stops holding the revert. Measured p90 x 1.5,
+          rounded up to 5 minutes (plan red-master-self-healing calibration).
+        required: false
+        type: number
+        default: 80
+      stall_ci_in_flight_minutes:
+        description: >-
+          How long a CI run (the fix's, or master's on the merged fix) may go
+          without a forward transition before the claim stops holding the
+          revert. The fleet default; a repository whose CI is faster or slower
+          overrides it through its committed shim configuration.
+        required: false
+        type: number
+        default: 20
+      stall_fix_to_merge_minutes:
+        description: >-
+          How long an opened fix pull request may go without any push, CI start,
+          CI result or auto-merge arming before the claim stops holding the
+          revert.
+        required: false
+        type: number
+        default: 75
+      stall_merged_to_green_minutes:
+        description: >-
+          How long a merged fix may wait for master to go green before the
+          claim stops holding the revert.
+        required: false
+        type: number
+        default: 20
       infra_outage_markers:
         description: >-
           Newline-separated substrings that identify a failure as an
@@ -275,6 +327,12 @@ jobs:
           GATING_WORKFLOW: ${{ inputs.gating_workflow }}
           LOOKBACK: ${{ inputs.unrelated_lookback_commits }}
           MARKERS: ${{ inputs.infra_outage_markers }}
+          MAINTAINER: ${{ inputs.maintainer_login }}
+          HARD_CAP: ${{ inputs.hard_cap_minutes }}
+          STALL_CLAIM: ${{ inputs.stall_claim_to_fix_pr_minutes }}
+          STALL_CI: ${{ inputs.stall_ci_in_flight_minutes }}
+          STALL_MERGE: ${{ inputs.stall_fix_to_merge_minutes }}
+          STALL_GREEN: ${{ inputs.stall_merged_to_green_minutes }}
         run: |
           set -euo pipefail
 
@@ -296,7 +354,9 @@ jobs:
           # answered without the reconciler remembering anything between runs.
           runs_path="repos/${REPO}/actions/workflows/${GATING_WORKFLOW}/runs"
           gh api "${runs_path}?branch=${BRANCH}&per_page=100" \
-            --jq '[ .workflow_runs[] | { head_sha, conclusion, run_attempt, id } ]' > runs.json
+            --jq '[ .workflow_runs[]
+                    | { head_sha, conclusion, run_attempt, id,
+                        run_started_at, updated_at } ]' > runs.json
 
           # The failing CHECK names per red commit are the failure SIGNATURE the
           # classifier compares across commits — against the outage markers, and
@@ -321,9 +381,7 @@ jobs:
           # ties a revert back to the pull request it reverts. The ref is
           # matched as a SHAPE rather than split on `-`: a hand-made branch
           # called `revert-something` would otherwise reach `tonumber` and take
-          # the whole recording down with it. The fix-forward
-          # CLAIM is a label on that pull request; only its presence is recorded
-          # here, because judging a claim's PROGRESS is child C2's work.
+          # the whole recording down with it.
           gh api "repos/${REPO}/pulls?state=open&per_page=100" --jq '
             [ .[]
               | select(.head.ref | test("^revert-[0-9]+-"))
@@ -331,9 +389,7 @@ jobs:
                   reverts_pull_request: (.head.ref
                                          | capture("^revert-(?<n>[0-9]+)-").n
                                          | tonumber),
-                  auto_merge_armed: (.auto_merge != null),
-                  fix_forward_claim: ([ .labels[].name
-                                        | select(startswith("fix-forward")) ] | first) }
+                  auto_merge_armed: (.auto_merge != null) }
             ] | first // null' > revert.json
 
           revert_number=$(jq -r '.number // empty' revert.json)
@@ -346,7 +402,96 @@ jobs:
                 elif any(. == "failure" or . == "timed_out" or . == "cancelled") then "failure"
                 elif all(. == "success" or . == "skipped" or . == "neutral") then "success"
                 else "pending" end')
-            jq --arg conclusion "${revert_conclusion}" '. + {ci_conclusion: $conclusion}' \
+
+            # The fix-forward CLAIMS are the comments on the revert pull request,
+            # recorded RAW: whether a comment is a claim at all, who may make one
+            # and which fix it names are judged by the decision, never here. Only
+            # the `Fix-Forward: #N` lines are read, and only to know WHICH fix
+            # pull requests to record the state of.
+            reverted=$(jq -r '.reverts_pull_request' revert.json)
+            culprit_opener=$(gh api "repos/${REPO}/pulls/${reverted}" --jq '.user.login')
+            gh api "repos/${REPO}/issues/${revert_number}/comments?per_page=100" --jq '
+              [ .[] | { author: .user.login, body: .body,
+                        posted_at: (.created_at | fromdateiso8601) } ]' > claims.json
+            fix_numbers=$(jq -r '
+              [ .[].body | scan("^Fix-Forward:[ \\t]*#([0-9]+)[ \\t]*\\r?$")
+                | .[0] | tonumber ] | unique | .[]' claims.json)
+
+            echo '[]' > fixes.json
+            for fix in ${fix_numbers}; do
+              gh api "repos/${REPO}/pulls/${fix}" > fix-pull.json
+              gh api "repos/${REPO}/pulls/${fix}/commits?per_page=100" --jq '
+                [ .[] | { sha: .sha,
+                          pushed_at: (.commit.committer.date | fromdateiso8601) } ]' \
+                > fix-commits.json
+              echo '[]' > fix-commit-ci.json
+              for fix_sha in $(jq -r '.[].sha' fix-commits.json); do
+                # Every check RUN on the commit, re-runs included (`filter=all`):
+                # the verdict is each check's LATEST attempt, while a check whose
+                # earlier attempts also failed is listed once per failed attempt,
+                # which is the "same check failed repeatedly" evidence.
+                gh api "repos/${REPO}/commits/${fix_sha}/check-runs?filter=all&per_page=100" \
+                  > fix-check-runs.json
+                jq --arg sha "${fix_sha}" --slurpfile commits fix-commits.json \
+                  --slurpfile checks fix-check-runs.json '
+                  def failed: .conclusion == "failure" or .conclusion == "timed_out";
+                  ($checks[0].check_runs | group_by(.name) | map(sort_by(.id))) as $attempts
+                  | ($attempts | map(last)) as $latest
+                  | . + [ {
+                      sha: $sha,
+                      pushed_at: ($commits[0][] | select(.sha == $sha) | .pushed_at),
+                      ci_conclusion: (
+                        if ($latest | length) == 0 then "pending"
+                        elif any($latest[]; .status != "completed") then "pending"
+                        elif any($latest[]; failed) then "failure"
+                        elif any($latest[]; .conclusion == "cancelled") then "cancelled"
+                        else "success" end),
+                      ci_started_at: ([ $latest[].started_at | select(. != null)
+                                        | fromdateiso8601 ] | min),
+                      ci_finished_at: (
+                        if ($latest | length) > 0 and all($latest[]; .status == "completed")
+                        then [ $latest[].completed_at | fromdateiso8601 ] | max
+                        else null end),
+                      failing_checks: [ $attempts[] | select(last | failed)
+                                        | .[] | select(failed) | .name ]
+                    } ]' fix-commit-ci.json > fix-commit-ci.next.json
+                mv fix-commit-ci.next.json fix-commit-ci.json
+              done
+              armed_at=$(gh api "repos/${REPO}/issues/${fix}/timeline?per_page=100" --jq '
+                [ .[] | select(.event == "auto_merge_enabled"
+                               or .event == "auto_merge_disabled") ] | last
+                | if . != null and .event == "auto_merge_enabled"
+                  then (.created_at | fromdateiso8601) else null end')
+              # `jq --null-input` rather than the short flag: the recording
+              # reader in the sibling test keys off the FIRST short-flag program.
+              jq --null-input --argjson armed "${armed_at}" \
+                --slurpfile pull fix-pull.json --slurpfile commits fix-commit-ci.json \
+                --slurpfile runs runs.json '
+                $pull[0] as $p
+                | ($runs[0] | map(select(.head_sha == $p.merge_commit_sha))
+                            | max_by(.run_attempt)) as $master
+                | { number: $p.number,
+                    state: (if $p.merged_at != null then "merged"
+                            elif $p.state == "closed" then "closed" else "open" end),
+                    opened_at: ($p.created_at | fromdateiso8601),
+                    commits: $commits[0],
+                    auto_merge_armed_at: $armed,
+                    merged_at: (if $p.merged_at == null then null
+                                else ($p.merged_at | fromdateiso8601) end),
+                    master_ci_conclusion: (if $master == null then null
+                                           else ($master.conclusion // "pending") end),
+                    master_ci_started_at: (if $master == null or $master.run_started_at == null
+                                           then null
+                                           else ($master.run_started_at | fromdateiso8601) end) }' \
+                > fix-record.json
+              jq --slurpfile record fix-record.json '. + $record' fixes.json > fixes.next.json
+              mv fixes.next.json fixes.json
+            done
+
+            jq --arg conclusion "${revert_conclusion}" --arg opener "${culprit_opener}" \
+              --slurpfile claims claims.json --slurpfile fixes fixes.json \
+              '. + { ci_conclusion: $conclusion, culprit_opened_by: $opener,
+                     claims: $claims[0], fix_pull_requests: $fixes[0] }' \
               revert.json > revert.next.json
             mv revert.next.json revert.json
           fi
@@ -364,6 +509,12 @@ jobs:
             --arg markers "${MARKERS}" \
             --arg gating "${GATING_WORKFLOW}" \
             --argjson lookback "${LOOKBACK}" \
+            --arg maintainer "${MAINTAINER}" \
+            --arg hard_cap "${HARD_CAP}" \
+            --arg stall_claim "${STALL_CLAIM}" \
+            --arg stall_ci "${STALL_CI}" \
+            --arg stall_merge "${STALL_MERGE}" \
+            --arg stall_green "${STALL_GREEN}" \
             --slurpfile commits commits.json \
             --slurpfile runs runs.json \
             --slurpfile signatures signatures.json \
@@ -377,6 +528,13 @@ jobs:
                 infra_outage_markers: ($markers | split("\n") | map(select(length > 0))),
                 gating_workflow: $gating,
                 unrelated_lookback_commits: $lookback,
+                maintainer_login: $maintainer,
+                hard_cap_minutes: ($hard_cap | tonumber? // null),
+                stall_claim_to_fix_pr_minutes: ($stall_claim | tonumber? // null),
+                stall_ci_in_flight_minutes: ($stall_ci | tonumber? // null),
+                stall_fix_to_merge_minutes: ($stall_merge | tonumber? // null),
+                stall_merged_to_green_minutes: ($stall_green | tonumber? // null),
+                observed_at: (now | floor),
                 head_sha: ($commits[0][0].sha // ""),
                 rerun_outcome: (
                   [ $commits[0][] | $bysha[.sha] // empty
@@ -393,7 +551,10 @@ jobs:
                   ci_workflow: $gating,
                   ci_conclusion: (($bysha[.sha].conclusion) // "pending"),
                   failure_signature: (($signatures[0][.sha]) // null),
-                  subject: .subject
+                  subject: .subject,
+                  ci_completed_at: (if $bysha[.sha].conclusion == null
+                                    then null
+                                    else ($bysha[.sha].updated_at | fromdateiso8601) end)
                 } ],
                 revert_pull_request: ($revert[0] // null),
                 needs_attention_issue_titles: $titles[0]

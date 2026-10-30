@@ -1,7 +1,7 @@
 """Decide the ONE next step that heals a red branch, or that nothing is owed.
 
-Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
-surface", and the design recorded in this repository's
+Per `SPECIFICATION/contracts.md` section "Master-health reconciler",
+and the design recorded in this repository's
 `plan/red-master-self-healing/research/001-charter-red-master-self-healing.md`
 (child C1, work-item `livespec-dev-tooling-hrpcgl`).
 
@@ -54,6 +54,7 @@ from livespec_dev_tooling.cross_repo.master_health_episode import (
     head_commit,
     red_block,
 )
+from livespec_dev_tooling.cross_repo.master_health_fix_forward import hold_verdict
 from livespec_dev_tooling.cross_repo.master_health_gating import gating_state
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_SUCCESS,
@@ -199,7 +200,11 @@ def _green_branch_step(*, state: ReconcileState, config: ReconcileConfig) -> Rec
 
 
 def _revert_in_flight_step(
-    *, revert: RevertPullRequest, config: ReconcileConfig, key: str | None
+    *,
+    revert: RevertPullRequest,
+    state: ReconcileState,
+    config: ReconcileConfig,
+    key: str | None,
 ) -> ReconcileStep:
     """Decide what is owed to a revert pull request that is already open.
 
@@ -208,18 +213,22 @@ def _revert_in_flight_step(
     branch" — and because it is the half that grows: every further rule about
     holding, releasing or escalating a revert belongs here, where the revert
     is in scope and the branch's verdict is not.
+
+    A valid fix-forward claim that still holds the revert is judged first, by
+    `master_health_fix_forward`. Dropping the hold changes nothing else: what
+    follows is the ordinary unclaimed path, so only a revert whose own CI is
+    green is ever released, at the hard cap included.
     """
-    if revert.fix_forward_claim is not None:
+    hold = hold_verdict(revert=revert, state=state, config=config)
+    if hold.holds:
         return ReconcileStep(
             kind=STEP_NONE,
             target_branch=config.target_branch,
-            reason=(
-                "a fix-forward claim holds this revert; judging the claim's "
-                "progress is not this reconciler's decision"
-            ),
+            reason=f"a valid fix-forward claim holds this revert: {hold.reason}",
             revert_pull_request=revert.number,
             episode_key=key,
         )
+    released = f" (the fix-forward hold is released: {hold.reason})" if hold.claimed else ""
     # Only an explicit success reads as mergeable. A FAILING revert CI is
     # evidence that reverting does not restore green — the breakage is not the
     # culprit's, or the revert itself conflicts — and merging it would add a
@@ -232,7 +241,7 @@ def _revert_in_flight_step(
             target_branch=config.target_branch,
             reason=(
                 f"revert CI is {revert.ci_conclusion}, not green; merge nothing "
-                "and raise the episode for a human"
+                f"and raise the episode for a human{released}"
             ),
             revert_pull_request=revert.number,
             episode_key=key,
@@ -255,7 +264,7 @@ def _revert_in_flight_step(
     return ReconcileStep(
         kind=STEP_RELEASE_REVERT,
         target_branch=config.target_branch,
-        reason="revert CI is green and nothing is claimed; release it to merge",
+        reason=f"revert CI is green and no claim holds it; release it to merge{released}",
         revert_pull_request=revert.number,
         episode_key=key,
     )
@@ -355,7 +364,7 @@ def reconcile_step(*, state: ReconcileState, config: ReconcileConfig) -> Reconci
     # been answered.
     revert = gating.revert_pull_request
     if revert is not None:
-        return _revert_in_flight_step(revert=revert, config=config, key=key)
+        return _revert_in_flight_step(revert=revert, state=gating, config=config, key=key)
 
     if verdict == VERDICT_UNCLASSIFIED:
         return ReconcileStep(

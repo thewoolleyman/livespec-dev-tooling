@@ -625,11 +625,47 @@ def test_the_recording_carries_exactly_what_the_decision_reads() -> None:
     expected = (
         {field.name for field in fields(ReconcileConfig)}
         | {field.name for field in fields(MasterCommit)}
-        | {"head_sha", "rerun_outcome", "commits", "revert_pull_request"}
+        | {"head_sha", "rerun_outcome", "commits", "revert_pull_request", "observed_at"}
         | {"needs_attention_issue_titles"}
     )
 
     assert _recorded_state_keys(body=_reusable_workflow_body()) == expected
+
+
+def _workflow_input_default(*, body: str, name: str) -> str | None:
+    """The `default:` value of the `workflow_call` input `name`, or None when it has none."""
+    block = body.partition(f"\n      {name}:\n")[2]
+    block = re.split(r"\n      \w+:\n|\npermissions:", block)[0]
+    found = re.search(r"(?m)^\s+default:\s*(\S+)\s*$", block)
+    return None if found is None else found.group(1)
+
+
+def test_the_reusable_workflow_commits_the_fleet_cap_and_stall_defaults() -> None:
+    """The hard cap and stall durations are PROVISIONED into committed configuration.
+
+    The decision code carries no fallback for a missing key (a missing or
+    malformed value fails closed to revert-by-default), so the fleet default of
+    120 minutes for the cap, and the calibrated stall durations, must be written
+    down here, in committed configuration, or the cap would never be set.
+    """
+    body = _reusable_workflow_body()
+
+    assert {
+        name: _workflow_input_default(body=body, name=name)
+        for name in (
+            "hard_cap_minutes",
+            "stall_claim_to_fix_pr_minutes",
+            "stall_ci_in_flight_minutes",
+            "stall_fix_to_merge_minutes",
+            "stall_merged_to_green_minutes",
+        )
+    } == {
+        "hard_cap_minutes": "120",
+        "stall_claim_to_fix_pr_minutes": "80",
+        "stall_ci_in_flight_minutes": "20",
+        "stall_fix_to_merge_minutes": "75",
+        "stall_merged_to_green_minutes": "20",
+    }
 
 
 def test_the_workflow_performs_every_step_the_decision_can_choose() -> None:

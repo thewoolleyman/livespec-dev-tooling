@@ -1,7 +1,7 @@
 """Read what a master commit's SUBJECT says it is, for the rules that need it.
 
-Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
-surface", and the design recorded in this repository's
+Per `SPECIFICATION/contracts.md` section "Master-health reconciler",
+and the design recorded in this repository's
 `plan/red-master-self-healing/research/001-charter-red-master-self-healing.md`
 (the culprit-selection calibration of child C1, work-item
 `livespec-dev-tooling-zdqnr2`).

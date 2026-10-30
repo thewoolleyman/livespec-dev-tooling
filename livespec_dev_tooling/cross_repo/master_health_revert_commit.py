@@ -1,7 +1,6 @@
 """Build the revert COMMIT the master-health reconciler's revert step requests.
 
-Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
-surface", the design in this repository's
+Per `SPECIFICATION/contracts.md` section "Master-health reconciler", the design in this repository's
 `plan/red-master-self-healing/research/001-charter-red-master-self-healing.md`
 (epic `livespec-dev-tooling-zcp5vb`), and the negative verification recorded in
 `docs/master-health-reconciler.md` section "The negative verification: a

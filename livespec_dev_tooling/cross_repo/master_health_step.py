@@ -1,7 +1,7 @@
 """Turn a recorded forge state into the ONE step a reconcile run takes.
 
-Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
-surface", and child D of plan `red-master-self-healing` (epic
+Per `SPECIFICATION/contracts.md` section "Master-health reconciler",
+and child D of plan `red-master-self-healing` (epic
 `livespec-dev-tooling-zcp5vb`, work-item `livespec-dev-tooling-dw7dzd`).
 
 THE SEAM `master_health_state` NAMES. That module's docstring records the split
@@ -59,6 +59,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from livespec_dev_tooling.cross_repo._master_health_records import (
+    number_field,
+    parse_revert,
+    positive_field,
+    strings_field,
+    text_field,
+)
 from livespec_dev_tooling.cross_repo.master_health_reconcile import (
     STEP_NEEDS_ATTENTION,
     ReconcileStep,
@@ -68,7 +75,6 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
     MasterCommit,
     ReconcileConfig,
     ReconcileState,
-    RevertPullRequest,
 )
 
 _VENDOR_DIR = Path(__file__).resolve().parent.parent / "_vendor"
@@ -124,34 +130,6 @@ def step_payload(*, step: ReconcileStep) -> dict[str, object]:
     return payload
 
 
-def _text(*, record: dict[str, object], key: str) -> str | None:
-    """`record[key]` when it is a string; None when absent, null or another type."""
-    value = record.get(key)
-    return value if isinstance(value, str) else None
-
-
-def _number(*, record: dict[str, object], key: str) -> int | None:
-    """`record[key]` when it is an integer; None when absent, null or another type.
-
-    `bool` is excluded explicitly: it is an `int` subclass in Python, so a
-    recorded `true` would otherwise parse as pull request number 1 — or as a
-    lookback of one commit, which is a bound nobody configured.
-    """
-    value = record.get(key)
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
-def _strings(*, record: dict[str, object], key: str) -> tuple[str, ...] | None:
-    """`record[key]` as a tuple of strings; None when it is not a list of strings."""
-    value = record.get(key)
-    if not isinstance(value, list):
-        return None
-    entries = cast("list[object]", value)
-    if not all(isinstance(entry, str) for entry in entries):
-        return None
-    return tuple(cast("list[str]", entries))
-
-
 def _commit(*, payload: object) -> MasterCommit | None:
     """One recorded branch commit, or None when it does not parse.
 
@@ -164,11 +142,11 @@ def _commit(*, payload: object) -> MasterCommit | None:
     if not isinstance(payload, dict):
         return None
     record = cast("dict[str, object]", payload)
-    sha = _text(record=record, key="sha")
-    parent_sha = _text(record=record, key="parent_sha")
-    ci_workflow = _text(record=record, key="ci_workflow")
-    ci_conclusion = _text(record=record, key="ci_conclusion")
-    subject = _text(record=record, key="subject")
+    sha = text_field(record=record, key="sha")
+    parent_sha = text_field(record=record, key="parent_sha")
+    ci_workflow = text_field(record=record, key="ci_workflow")
+    ci_conclusion = text_field(record=record, key="ci_conclusion")
+    subject = text_field(record=record, key="subject")
     if sha is None or parent_sha is None or ci_workflow is None:
         return None
     if ci_conclusion is None or subject is None:
@@ -178,11 +156,14 @@ def _commit(*, payload: object) -> MasterCommit | None:
         parent_sha=parent_sha,
         # Legitimately absent on a direct push, which is the case the decision
         # table refuses to act on rather than hand-rolling a revert commit.
-        pull_request=_number(record=record, key="pull_request"),
+        pull_request=number_field(record=record, key="pull_request"),
         ci_workflow=ci_workflow,
         ci_conclusion=ci_conclusion,
-        failure_signature=_text(record=record, key="failure_signature"),
+        failure_signature=text_field(record=record, key="failure_signature"),
         subject=subject,
+        # Legitimately absent: a run still in flight has not concluded. The hard
+        # cap treats an unknown time as "cannot show the claim is inside it".
+        ci_completed_at=number_field(record=record, key="ci_completed_at"),
     )
 
 
@@ -204,39 +185,24 @@ def _commits(*, payload: object) -> tuple[MasterCommit, ...] | None:
     return tuple(parsed)
 
 
-def _revert(*, payload: object) -> RevertPullRequest | None:
-    """The recorded revert pull request, or None when it does not parse."""
-    if not isinstance(payload, dict):
-        return None
-    record = cast("dict[str, object]", payload)
-    number = _number(record=record, key="number")
-    reverts = _number(record=record, key="reverts_pull_request")
-    ci_conclusion = _text(record=record, key="ci_conclusion")
-    if number is None or reverts is None or ci_conclusion is None:
-        return None
-    return RevertPullRequest(
-        number=number,
-        reverts_pull_request=reverts,
-        ci_conclusion=ci_conclusion,
-        auto_merge_armed=bool(record.get("auto_merge_armed")),
-        # Null when nothing is claimed; this module only carries the value, and
-        # judging a claim's PROGRESS is child C2's work.
-        fix_forward_claim=_text(record=record, key="fix_forward_claim"),
-    )
-
-
 def _config(*, record: dict[str, object]) -> ReconcileConfig | None:
     """The committed-configuration half of the decision's inputs, or None.
 
-    All four fields are required and none is defaulted here. `gating_workflow`
+    The first four fields are required and none is defaulted here. `gating_workflow`
     is a per-repository fact, and `unrelated_lookback_commits` is the bound that
     stops the already-failing read exonerating every regression — a default for
     either would be this module configuring the decision.
+
+    The fix-forward fields are the opposite: a missing or malformed hard cap,
+    stall duration or maintainer login does NOT refuse the recording. It parses
+    to `None`, which the decision reads as "fail closed to revert-by-default" —
+    every claim stops holding and only a green-CI revert is ever merged — so a
+    bad value costs the fix-forward grace period and nothing else.
     """
-    target_branch = _text(record=record, key="target_branch")
-    markers = _strings(record=record, key="infra_outage_markers")
-    gating_workflow = _text(record=record, key="gating_workflow")
-    lookback = _number(record=record, key="unrelated_lookback_commits")
+    target_branch = text_field(record=record, key="target_branch")
+    markers = strings_field(record=record, key="infra_outage_markers")
+    gating_workflow = text_field(record=record, key="gating_workflow")
+    lookback = number_field(record=record, key="unrelated_lookback_commits")
     if target_branch is None or markers is None:
         return None
     if gating_workflow is None or lookback is None:
@@ -246,19 +212,29 @@ def _config(*, record: dict[str, object]) -> ReconcileConfig | None:
         infra_outage_markers=markers,
         gating_workflow=gating_workflow,
         unrelated_lookback_commits=lookback,
+        maintainer_login=text_field(record=record, key="maintainer_login"),
+        hard_cap_minutes=positive_field(record=record, key="hard_cap_minutes"),
+        stall_claim_to_fix_pr_minutes=positive_field(
+            record=record, key="stall_claim_to_fix_pr_minutes"
+        ),
+        stall_ci_in_flight_minutes=positive_field(record=record, key="stall_ci_in_flight_minutes"),
+        stall_fix_to_merge_minutes=positive_field(record=record, key="stall_fix_to_merge_minutes"),
+        stall_merged_to_green_minutes=positive_field(
+            record=record, key="stall_merged_to_green_minutes"
+        ),
     )
 
 
 def _state(*, record: dict[str, object]) -> ReconcileState | None:
     """The recorded forge-state half of the decision's inputs, or None."""
-    head_sha = _text(record=record, key="head_sha")
-    rerun_outcome = _text(record=record, key="rerun_outcome")
+    head_sha = text_field(record=record, key="head_sha")
+    rerun_outcome = text_field(record=record, key="rerun_outcome")
     commits = _commits(payload=record.get("commits"))
-    titles = _strings(record=record, key="needs_attention_issue_titles")
+    titles = strings_field(record=record, key="needs_attention_issue_titles")
     if head_sha is None or rerun_outcome is None or commits is None or titles is None:
         return None
     revert_payload = record.get("revert_pull_request")
-    revert = None if revert_payload is None else _revert(payload=revert_payload)
+    revert = None if revert_payload is None else parse_revert(payload=revert_payload)
     if revert_payload is not None and revert is None:
         # See this module's docstring: a revert that will not parse must never
         # read as "no revert in flight".
@@ -269,6 +245,7 @@ def _state(*, record: dict[str, object]) -> ReconcileState | None:
         rerun_outcome=rerun_outcome,
         revert_pull_request=revert,
         open_needs_attention_episodes=open_episode_keys(titles=titles),
+        observed_at=number_field(record=record, key="observed_at"),
     )
 
 
