@@ -83,6 +83,20 @@ source of truth for how the tool is invoked.
 | `reboot-ci-server.yml` | `ci_pool`, and only the host its confirmation names | nothing — no committed artifact could reboot a pool node |
 | `node-loss-drill.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could take a pool node's k3s agent down |
 | `restart-k3s-agent.yml` | `ci_pool`, and only the AGENT host its confirmation names | nothing — no committed artifact could restart a pool agent's k3s agent |
+| `container-termination-drill.yml` | `ci_pool`, and only the k3s SERVER its confirmation names | nothing — no committed artifact could produce a crash-looping or OOM-killed container |
+
+`container-termination-drill.yml` is the ONE sanctioned way to make the cluster
+produce a `CrashLoopBackOff` container and an `OOMKilled` container, the
+positive control for the termination-reasons telemetry
+(`livespec-dev-tooling-2zii7l`). It is `just ansible-apply
+ansible/container-termination-drill.yml -e
+container_termination_drill_confirm=<k3s server inventory name>`; without that
+confirmation it reads nothing and changes nothing. It exits non-zero before any
+cluster write when the configured namespace
+(`container_termination_drill_namespace`) is `factory`, `factory-mi-homelab` or
+already exists, creates that namespace and two pods in it, waits for the API
+server to report both conditions, prints its start and end UTC times and the
+namespace's name, and deletes the namespace in an `always:`.
 
 `reboot-ci-server.yml` is the ONE sanctioned way to reboot the k3s server, and
 the only play here that reboots a host. It is an ordinary
