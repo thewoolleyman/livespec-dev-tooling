@@ -73,7 +73,9 @@ _NON_GATING = "nightly-drill.yml"
 # pull request, and a commit that is not red has no failure signature. Every
 # OTHER field of `MasterCommit` is required, and the table-driven fail-closed
 # assertion below enumerates them from the dataclass rather than restating them.
-_NULLABLE_COMMIT_FIELDS = frozenset({"pull_request", "failure_signature", "ci_completed_at"})
+_NULLABLE_COMMIT_FIELDS = frozenset(
+    {"pull_request", "failure_signature", "ci_completed_at", "changed_paths"}
+)
 
 
 # The committed-configuration fields whose absence does NOT red the job: the hard cap,

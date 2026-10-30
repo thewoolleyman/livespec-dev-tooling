@@ -164,6 +164,9 @@ def _commit(*, payload: object) -> MasterCommit | None:
         # Legitimately absent: a run still in flight has not concluded. The hard
         # cap treats an unknown time as "cannot show the claim is inside it".
         ci_completed_at=number_field(record=record, key="ci_completed_at"),
+        # Null when the forge did not report them; the revert guard refuses to
+        # open a revert it cannot show is safe rather than assume no overlap.
+        changed_paths=strings_field(record=record, key="changed_paths"),
     )
 
 
