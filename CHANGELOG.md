@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.138.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.1...v1.138.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* name a bash aggregate's FAILED targets in the delegated gate verdict ([15c67f2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/15c67f2515f2db63aa4928e8fe0caedf99caf7c3))
+
 ## [1.138.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.138.0...v1.138.1) (2026-10-29)
 
 
