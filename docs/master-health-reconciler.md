@@ -351,3 +351,55 @@ red — and it is graded after the release carrying this lands through the norma
 pin path. The negative verification above (a web-flow revert here is UNSIGNED)
 still stands, so the culprit that proves it must touch no product `.py` until
 the signed-revert follow-up lands.
+
+## The fix-forward claim, progress and hard cap — decisions recorded by child C2
+
+Work-item `livespec-dev-tooling-joqff6`; the policy is `SPECIFICATION/contracts.md`
+section "Master-health reconciler". The decision lives in
+`master_health_fix_forward.py` and is reached from `_revert_in_flight_step`.
+
+**The claim convention is two mechanical lines in a comment on the revert pull
+request.** `Fix-Forward: #<number>` names the fix pull request, and
+`Claimed-By: <session>` names the owning session. A comment counts as a claim
+only when it names a fix and its author is the maintainer's forge login
+(`maintainer_login`), or the login that opened the culprit pull request AND the
+comment carries a non-blank `Claimed-By:` line. Everything else is ignored, and
+the revert proceeds as though unclaimed. The gatherer records comments RAW; the
+decision parses them, so the rule is replay-testable.
+
+**"Release" only drops the hold.** After a release the revert is judged as an
+unclaimed one, so it merges only when its own CI is green. At the hard cap with
+a revert whose CI is not green, the reconciler merges nothing and raises
+needs-attention.
+
+**Forward transitions restart one clock.** The clock is the newest recorded
+timestamp among the claim, the fix pull request opening, each push, each CI
+start and finish, auto-merge being armed, the merge, and master CI starting on
+the fix. The stall duration applied depends on the step the fix is waiting in:
+no fix pull request yet uses `stall_claim_to_fix_pr_minutes`; CI running, or not
+yet started, uses `stall_ci_in_flight_minutes` (as does master CI running on the
+merged fix); a decided CI result or an armed auto-merge uses
+`stall_fix_to_merge_minutes`; a merged fix waiting for master CI to start uses
+`stall_merged_to_green_minutes`.
+
+**Thrash is read off the fix's decided commits.** A check listed twice for one
+commit (it failed again on a re-run), a later commit whose failing set is not
+strictly smaller, a later commit failing a check the previous decided commit did
+not, and a fix that merged while master CI on it failed all release the hold.
+Cancelled and pending commits are undecided and skipped, because a newer push
+routinely cancels the older run. A fix pull request closed without merging, or
+a second fix pull request claimed, also releases it.
+
+**Configuration fails closed, and carries no code default.** The cap (fleet
+default 120 minutes) and the four stall durations are inputs of the reusable
+workflow, whose committed defaults are the provisioning. A value that is
+missing, non-numeric or not strictly positive parses to `None`; with any of them
+`None`, with `observed_at` unrecorded, or with a red episode whose failing
+commit did not record when its CI concluded, every claim stops holding.
+
+**Not done here.** The shim's `pull_request` triggers do not include
+`issue_comment`, so a claim comment is seen on the next five-minute schedule
+tick rather than at once; changing that alters the canonical shim bytes for the
+whole fleet and is a separate step. A per-repository CI stall (15/20/25 minutes
+by the calibration table) needs a per-repository `with:` in the shim for the
+same reason; the workflow default of 20 minutes applies until then.

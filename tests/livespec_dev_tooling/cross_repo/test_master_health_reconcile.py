@@ -155,13 +155,12 @@ def test_a_regression_whose_culprit_has_no_pull_request_escalates_instead() -> N
     assert NEEDS_ATTENTION_LABEL == "master-health-needs-attention"
 
 
-def _green_revert(*, number: int = 3001, claim: str | None = None) -> RevertPullRequest:
+def _green_revert(*, number: int = 3001) -> RevertPullRequest:
     return RevertPullRequest(
         number=number,
         reverts_pull_request=2917,
         ci_conclusion=CI_SUCCESS,
         auto_merge_armed=False,
-        fix_forward_claim=claim,
     )
 
 
@@ -323,23 +322,6 @@ def test_a_held_revert_with_green_ci_and_no_claim_is_released_to_merge() -> None
     assert step.auto_merge_held is False
 
 
-def test_a_fix_forward_claim_holds_the_revert_rather_than_releasing_it() -> None:
-    """A claim suspends the release, and C1 judges the claim no further.
-
-    Whether a claimed fix-forward is making PROGRESS is child C2's decision
-    with calibrated step durations behind it. C1 must therefore do the one
-    thing that is safe without that calibration: hold, and take no step. A
-    reconciler that released through a claim would make C2 unimplementable,
-    because the revert would already have landed.
-    """
-    claimed = _green_revert(claim="fix-forward: #3100")
-
-    step = reconcile_step(state=_still_red_with_revert(revert=claimed), config=_CONFIG)
-
-    assert step.kind == STEP_NONE
-    assert "claim" in step.reason
-
-
 def test_a_revert_whose_own_ci_is_red_is_not_merged_and_escalates() -> None:
     """The acceptance assertion: a red revert CI is never merged.
 
@@ -354,7 +336,6 @@ def test_a_revert_whose_own_ci_is_red_is_not_merged_and_escalates() -> None:
         reverts_pull_request=2917,
         ci_conclusion=CI_FAILURE,
         auto_merge_armed=False,
-        fix_forward_claim=None,
     )
 
     step = reconcile_step(state=_still_red_with_revert(revert=red_revert), config=_CONFIG)
@@ -376,7 +357,6 @@ def test_a_revert_whose_ci_has_not_concluded_is_not_merged_either() -> None:
         reverts_pull_request=2917,
         ci_conclusion=CI_PENDING,
         auto_merge_armed=False,
-        fix_forward_claim=None,
     )
 
     step = reconcile_step(state=_still_red_with_revert(revert=pending_revert), config=_CONFIG)
@@ -429,7 +409,6 @@ def test_a_revert_already_armed_for_merge_is_not_released_a_second_time() -> Non
         reverts_pull_request=2917,
         ci_conclusion=CI_SUCCESS,
         auto_merge_armed=True,
-        fix_forward_claim=None,
     )
 
     step = reconcile_step(state=_still_red_with_revert(revert=armed), config=_CONFIG)

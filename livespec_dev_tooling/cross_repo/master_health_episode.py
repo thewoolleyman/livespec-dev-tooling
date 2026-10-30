@@ -1,7 +1,7 @@
 """Read ONE red episode off the watched branch's recorded timeline.
 
-Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
-surface", and the design recorded in this repository's
+Per `SPECIFICATION/contracts.md` section "Master-health reconciler",
+and the design recorded in this repository's
 `plan/red-master-self-healing/research/001-charter-red-master-self-healing.md`
 (child C1, work-item `livespec-dev-tooling-hrpcgl`).
 
@@ -43,7 +43,7 @@ from livespec_dev_tooling.cross_repo.master_health_state import (
     ReconcileState,
 )
 
-__all__: list[str] = ["culprit_commit", "head_commit", "lookback_block", "red_block"]
+__all__: list[str] = ["culprit_commit", "head_commit", "lookback_block", "red_block", "red_since"]
 
 
 def _by_sha(*, state: ReconcileState) -> dict[str, MasterCommit]:
@@ -125,4 +125,19 @@ def culprit_commit(*, state: ReconcileState) -> MasterCommit | None:
         parent = by_sha.get(commit.parent_sha)
         if parent is not None and parent.ci_conclusion == CI_SUCCESS:
             return commit
+    return None
+
+
+def red_since(*, state: ReconcileState) -> int | None:
+    """When the branch went red: the earliest FAILED commit's CI completion time.
+
+    An undecided run (cancelled, still pending) does not start the clock, for the
+    same reason it can never be a culprit: it has not failed. `None` is the
+    honest answer both for a green branch and for an episode whose failing
+    commit did not record when its CI concluded; the hard cap treats the second
+    as "cannot show the claim is inside the cap", never as "just went red".
+    """
+    for commit in red_block(state=state):
+        if commit.ci_conclusion == CI_FAILURE:
+            return commit.ci_completed_at
     return None

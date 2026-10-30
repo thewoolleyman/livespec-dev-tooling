@@ -1,7 +1,7 @@
 """Classify a red episode: is it a regression a revert would actually fix?
 
-Per `SPECIFICATION/contracts.md` section "Cross-repo coordination automation
-surface", and the design recorded in this repository's
+Per `SPECIFICATION/contracts.md` section "Master-health reconciler",
+and the design recorded in this repository's
 `plan/red-master-self-healing/research/001-charter-red-master-self-healing.md`
 (child C1, work-item `livespec-dev-tooling-hrpcgl`).
 

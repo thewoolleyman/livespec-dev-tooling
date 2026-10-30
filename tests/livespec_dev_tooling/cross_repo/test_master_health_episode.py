@@ -13,10 +13,13 @@ green-then-red pair silently picks the wrong culprit on exactly that traffic.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from livespec_dev_tooling.cross_repo.master_health_episode import (
     culprit_commit,
     head_commit,
     red_block,
+    red_since,
 )
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_CANCELLED,
@@ -206,3 +209,62 @@ def test_no_culprit_when_the_block_opens_on_a_cancelled_run() -> None:
 
     assert [commit.sha for commit in red_block(state=state)] == ["b", "c"]
     assert culprit_commit(state=state) is None
+
+
+def _timed(*, commit: MasterCommit, completed_at: int | None) -> MasterCommit:
+    return replace(commit, ci_completed_at=completed_at)
+
+
+def test_the_branch_went_red_when_the_earliest_failed_commit_s_ci_concluded() -> None:
+    """The hard cap measures from the first FAILURE, skipping an undecided opener."""
+    state = _state(
+        head_sha="d",
+        commits=(
+            _commit(sha="a", parent_sha="root", conclusion=CI_SUCCESS),
+            _timed(
+                commit=_commit(sha="b", parent_sha="a", conclusion=CI_CANCELLED), completed_at=50
+            ),
+            _timed(
+                commit=_commit(
+                    sha="c", parent_sha="b", conclusion=CI_FAILURE, signature=_LINT_FAILURE
+                ),
+                completed_at=100,
+            ),
+            _timed(
+                commit=_commit(
+                    sha="d", parent_sha="c", conclusion=CI_FAILURE, signature=_LINT_FAILURE
+                ),
+                completed_at=200,
+            ),
+        ),
+    )
+
+    assert red_since(state=state) == 100
+
+
+def test_no_red_since_for_a_green_branch_or_one_with_no_failed_commit() -> None:
+    green = _state(
+        head_sha="a", commits=(_commit(sha="a", parent_sha="root", conclusion=CI_SUCCESS),)
+    )
+    undecided = _state(
+        head_sha="b",
+        commits=(
+            _commit(sha="a", parent_sha="root", conclusion=CI_SUCCESS),
+            _timed(
+                commit=_commit(sha="b", parent_sha="a", conclusion=CI_CANCELLED), completed_at=5
+            ),
+        ),
+    )
+    untimed = _state(
+        head_sha="b",
+        commits=(
+            _commit(sha="a", parent_sha="root", conclusion=CI_SUCCESS),
+            _commit(sha="b", parent_sha="a", conclusion=CI_FAILURE, signature=_LINT_FAILURE),
+        ),
+    )
+
+    assert (red_since(state=green), red_since(state=undecided), red_since(state=untimed)) == (
+        None,
+        None,
+        None,
+    )

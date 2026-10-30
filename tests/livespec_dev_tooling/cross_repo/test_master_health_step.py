@@ -73,7 +73,23 @@ _NON_GATING = "nightly-drill.yml"
 # pull request, and a commit that is not red has no failure signature. Every
 # OTHER field of `MasterCommit` is required, and the table-driven fail-closed
 # assertion below enumerates them from the dataclass rather than restating them.
-_NULLABLE_COMMIT_FIELDS = frozenset({"pull_request", "failure_signature"})
+_NULLABLE_COMMIT_FIELDS = frozenset({"pull_request", "failure_signature", "ci_completed_at"})
+
+
+# The committed-configuration fields whose absence does NOT red the job: the hard cap,
+# the stall durations and the maintainer login fail closed to revert-by-default instead
+# (`test_master_health_fix_forward` proves that), so a missing one is not a malformed
+# recording.
+_FAIL_CLOSED_CONFIG_FIELDS = frozenset(
+    {
+        "maintainer_login",
+        "hard_cap_minutes",
+        "stall_claim_to_fix_pr_minutes",
+        "stall_ci_in_flight_minutes",
+        "stall_fix_to_merge_minutes",
+        "stall_merged_to_green_minutes",
+    }
+)
 
 
 def _commit(
@@ -305,7 +321,9 @@ def test_a_green_revert_with_no_claim_yields_the_release_step(*, tmp_path: Path)
                 "reverts_pull_request": 7,
                 "ci_conclusion": "success",
                 "auto_merge_armed": False,
-                "fix_forward_claim": None,
+                "culprit_opened_by": None,
+                "claims": [],
+                "fix_pull_requests": [],
             },
         ),
     )
@@ -333,7 +351,9 @@ def test_a_revert_a_later_green_commit_superseded_yields_the_close_step(*, tmp_p
                 "reverts_pull_request": 7,
                 "ci_conclusion": "success",
                 "auto_merge_armed": False,
-                "fix_forward_claim": None,
+                "culprit_opened_by": None,
+                "claims": [],
+                "fix_pull_requests": [],
             }
         ),
     )
@@ -411,6 +431,8 @@ def test_every_field_of_the_committed_configuration_is_required(*, tmp_path: Pat
     live red master — instead of as a failing assertion here.
     """
     for field in fields(ReconcileConfig):
+        if field.name in _FAIL_CLOSED_CONFIG_FIELDS:
+            continue
         record = _recording()
         del record[field.name]
 

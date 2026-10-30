@@ -139,4 +139,27 @@ def test_committed_configuration_carries_the_branch_the_markers_and_the_gate() -
         "infra_outage_markers",
         "gating_workflow",
         "unrelated_lookback_commits",
+        "maintainer_login",
+        "hard_cap_minutes",
+        "stall_claim_to_fix_pr_minutes",
+        "stall_ci_in_flight_minutes",
+        "stall_fix_to_merge_minutes",
+        "stall_merged_to_green_minutes",
     }
+
+
+def test_the_hard_cap_and_stall_durations_carry_no_code_default() -> None:
+    """A missing hard cap or stall duration is `None`, never a built-in number.
+
+    The fleet default is provisioned into committed configuration; a number
+    baked in here would silently stand in for a missing key and defeat the
+    fail-closed clause.
+    """
+    optional = {
+        field.name: field.default
+        for field in fields(ReconcileConfig)
+        if field.name.startswith(("stall_", "hard_cap_")) or field.name == "maintainer_login"
+    }
+
+    assert len(optional) == 6
+    assert all(default is None for default in optional.values())
