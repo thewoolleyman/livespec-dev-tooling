@@ -1,7 +1,8 @@
 # Diagnosing A Factory Dispatch From The Host
 
 Use this before reading anything into a quiet, stuck, or surprising factory
-dispatch, before adding a ledger comment meant to reach a running worker, and
+dispatch, before adding a ledger comment meant to reach a running worker or to
+record a queued item's wait, and
 before claiming that a templated token or input binding does or does not render
 in a Fabro run. Each section below records a trap that produced a confident
 wrong answer with no error. Carried from session auto-memory on 2026-10-18;
@@ -77,6 +78,23 @@ for humans and successor sessions, not as a message to the worker. The only
 way to reach a dispatched worker is to remove the run and re-dispatch so the
 goal file regenerates. Prefer waiting over churning a healthy run, and put
 anything load-bearing on the item before dispatch.
+
+## A comment saying an item is "held" holds it
+
+Measured 2026-10-30 on `livespec-dev-tooling-2zii7l`.
+
+A ledger comment is also INPUT to the dispatcher's screen, not only a record.
+petri's screen carries a hold-rider gate: a comment that reads as an owner
+hold makes the screen refuse the item's ticket. A plan seat relaying petri's
+own lane hold opened a comment with "DISPATCH HELD, NOT REFUSED"; the gate
+matched it, and the next ticket (22:21Z) was refused as an owner hold. petri
+had to post a "HOLD RELEASED" comment and re-ticket, which cost a dispatch
+cycle during a headroom-starved window. Nothing errored on the writer's side.
+
+**How to apply:** when you record that an item is waiting on someone else's
+queue, a lane stop-the-line or a fleet outage, say it as a wait, for example
+"waiting in petri's dev-tooling lane (session-headroom-shortfall)". Reserve
+"hold", "held" and "HOLD" for an owner hold you mean the dispatcher to honour.
 
 ## `fabro create` plus `fabro dump` shows what a run actually resolved
 
