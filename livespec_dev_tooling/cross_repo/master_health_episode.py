@@ -14,15 +14,13 @@ and a rule that trusted that order would read a correct window as a different
 timeline. Walking the links means a caller supplying its commits newest-first,
 oldest-first or unordered gets the same answer.
 
-A CANCELLED OR PENDING RUN IS UNDECIDED — NOT GREEN, AND NOT RED. It is counted
-INSIDE the episode (the branch is not known-good there, so the episode has not
-ended) but it can neither BE a culprit nor PROVE one. Those are two separate
-consequences of the same fact and both are load-bearing: treating an undecided
-run as green reverts a commit on the strength of a run that never spoke, and
-treating it as red names a culprit whose own CI never failed. The plan's
-measurements make this the common case rather than an edge — 46 merges in 24 h
-at a peak of 6/h in the busiest fleet repository, where runs are routinely
-cancelled by a newer push or batched.
+A PENDING RUN IS UNDECIDED — NOT GREEN, AND NOT RED. Pending runs before the
+first completed failure do not begin an episode: no gating job has reported a
+red verdict yet. A pending run after that failure remains inside its episode,
+but can neither BE a culprit nor PROVE one. Treating pending CI as red is how a
+reconciler re-runs jobs that do not exist. The plan's measurements make pending
+runs common rather than an edge — 46 merges in 24 h at a peak of 6/h in the
+busiest fleet repository, where runs are routinely batched.
 
 THE CULPRIT RULE IS DELIBERATELY INCOMPLETE, AND FAILS TO "NONE". A red commit
 is named only when its parent is recorded AND green, because the parent's
@@ -38,6 +36,7 @@ from __future__ import annotations
 
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_FAILURE,
+    CI_PENDING,
     CI_SUCCESS,
     MasterCommit,
     ReconcileState,
@@ -67,9 +66,10 @@ def red_block(*, state: ReconcileState) -> tuple[MasterCommit, ...]:
     """The episode: commits from the head back to the last green, OLDEST-FIRST.
 
     Walks parents from `head_sha` and stops at the first commit whose own CI
-    was green, or when the window runs out. Oldest-first is the contract the
-    culprit rule reads "earliest" off, so reversing it would invert that rule
-    silently rather than failing.
+    was green, or when the window runs out. A pending prefix is discarded: an
+    episode starts only at a completed failure. Oldest-first is the contract
+    the culprit rule reads "earliest" off, so reversing it would invert that
+    rule silently rather than failing.
 
     A green head yields an empty block, which is how a caller distinguishes a
     healthy branch from an episode of length one.
@@ -81,7 +81,10 @@ def red_block(*, state: ReconcileState) -> tuple[MasterCommit, ...]:
         block.append(cursor)
         cursor = by_sha.get(cursor.parent_sha)
     block.reverse()
-    return tuple(block)
+    for index, commit in enumerate(block):
+        if commit.ci_conclusion != CI_PENDING:
+            return tuple(block[index:])
+    return ()
 
 
 def lookback_block(*, state: ReconcileState, lookback: int) -> tuple[MasterCommit, ...]:

@@ -24,6 +24,7 @@ from livespec_dev_tooling.cross_repo.master_health_episode import (
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_CANCELLED,
     CI_FAILURE,
+    CI_PENDING,
     CI_SUCCESS,
     RERUN_STILL_RED,
     MasterCommit,
@@ -142,6 +143,31 @@ def test_a_green_head_has_no_red_block_and_no_culprit() -> None:
 
     assert red_block(state=state) == ()
     assert culprit_commit(state=state) is None
+
+
+def test_a_pending_commit_never_anchors_an_episode_with_a_completed_failure() -> None:
+    """Pending CI above and below a failure does not become the episode start.
+
+    The head is still pending, but `failed` is the newest completed red
+    verdict. The older pending run cannot make the episode key look like a
+    failure began before any gating job had actually failed.
+    """
+    state = _state(
+        head_sha="pending-after",
+        commits=(
+            _commit(sha="green", parent_sha="root", conclusion=CI_SUCCESS),
+            _commit(sha="pending-before", parent_sha="green", conclusion=CI_PENDING),
+            _commit(
+                sha="failed",
+                parent_sha="pending-before",
+                conclusion=CI_FAILURE,
+                signature=_LINT_FAILURE,
+            ),
+            _commit(sha="pending-after", parent_sha="failed", conclusion=CI_PENDING),
+        ),
+    )
+
+    assert [commit.sha for commit in red_block(state=state)] == ["failed", "pending-after"]
 
 
 def test_the_head_record_is_read_by_sha_and_is_none_when_the_window_misses_it() -> None:
