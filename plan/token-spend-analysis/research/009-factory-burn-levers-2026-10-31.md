@@ -68,8 +68,20 @@ The total for all consumers over 7 days was $14,377.02.
 | Factory Codex `review_fix` / `proof_capture` / `review` / `fix` | $322.58 / $290.12 / $206.35 / $177.98 |
 
 The handoff gave local seats as "about $4k". The file's local-session rows total $5.5k. The difference is mostly the $1,342
-of session-unnamed spend, which the handoff appears to have left out. That row is a coverage gap in `session.name`, and it is
-the same kind of gap assertion 8's reconciliation is meant to surface.
+of session-unnamed spend, which the handoff appears to have left out.
+
+**Correction (2026-10-31, later the same day):** this row is NOT a live coverage gap in `session.name` among the
+seats, as first written here. Re-measured in Honeycomb (env livespec, llm-spend, `spend.where = local`,
+`session.name = ''`):
+
+- Rows with no `consumer.kind` at all exist only on 2026-10-24 ($907.18, 3,472 rows) and 2026-10-25 ($2,055.05,
+  2,079 rows), before consumer attribution started, and none since 2026-10-26. They are pre-attribution originals,
+  offset by the 2026-10-25 retraction rows (-$3,048.59), whose priced restatements carry a consumer. That is an attribution-start artefact.
+- From 2026-10-26 to 2026-10-31T17Z, unnamed `local session` spend is $48.22 of $3,291.41 (1.5%).
+- `claude -p` rows are never named ($1,469.32 over 7 days). That is the real gap: headless spend cannot be tied to
+  what launched it. It is carried by the plan spend-purpose-attribution (epic livespec-dev-tooling-vf3bqf).
+
+An earlier spot check in this session put "$1,310 on 10-25" behind the $1,342; the per-day figures above replace it.
 
 ## Long-context seats
 
@@ -116,6 +128,6 @@ factory, `cost_usd > 0`, per response (`trace.span_id`), over 48 h. The raw rows
 Nothing in the Definition of Done. These are uses of the board, not repairs to it. Two observations bear on assertions already
 on record:
 
-- The $1,342 session-unnamed row is consistent with assertion 8 being graded on surfacing gaps (the 2026-10-28 ruling).
+- The $1,342 session-unnamed row is not a live seat gap (see the correction above); the live unnamed spend is `claude -p`.
 - A fallback-model field would let the board show routing drain directly. It is not an assertion and is not filed. It is a
   candidate for the maintainer's review of notes 006-008.
