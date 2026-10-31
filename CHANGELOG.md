@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.140.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.140.2...v1.140.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* **ansible:** let a registered-provider environment be declared back onto docker ([8c51893](https://github.com/thewoolleyman/livespec-dev-tooling/commit/8c518933662bbd336fcd17e8f6be465451a04714))
+
 ## [1.140.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.140.1...v1.140.2) (2026-10-31)
 
 
