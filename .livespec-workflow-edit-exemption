@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-3e3tlw
-reason=Re-pin release-dispatch.yml to reusable-release-dispatch.yml@v1.134.4, the first release whose fan-out runs the await-sandbox-image job (PR #2880); maintainer authorized the workflow edits on 2026-10-25.
+work_item=livespec-dev-tooling-myltix
+reason=Land the reusable master-health reconciler workflow byte-rendered from REUSABLE_RECONCILER_BODY, which every fleet shim calls (host-side child of livespec-d5c2mf; coordinator ruling 2026-10-31 under the maintainer approval to install the reconciler).
