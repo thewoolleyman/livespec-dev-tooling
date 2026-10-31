@@ -60,7 +60,18 @@ and `dev-tooling/dod-preflight.sh` (around line 255) runs it as `claude -p`.
   no transcript, so its spend never reaches `llm-spend` at all. Assertion 1 is untouched, because it covers only
   responses that are sent. Assertion 4's per-plan total is understated by whatever these calls cost. Relay R2
   (orchestrator) has two options: emit the usage that the `stream_usage` path already reports, or drop
-  `--no-session-persistence` for the judge. Sizing R2 comes first.
+  `--no-session-persistence` for the judge.
+
+  **F1 sized (2026-10-31 ~18:00Z): the loss has not happened yet. It will happen silently.** On a probe, `claude -p
+  --no-session-persistence` wrote no transcript at all. Yet DoD-gate transcripts that carry the dispatcher's own
+  `HOST_ENDING_CONTRACT` were still being written at 17:58Z. They also show no `--add-dir` directory, so the dispatcher
+  builds running now predate `e501307e4` (2026-10-28), the commit that added the flag. When a dispatcher restarts on a
+  build that has it, the DoD-gate spend leaves `llm-spend` with no error. That spend is $641 over 7 days: 874 sessions,
+  about $0.73 each, 17.8% of headless spend. It was measured from the transcripts, not estimated. For comparison, the
+  ledger holds 319 `livespec-dod-judgement` records over the same 7 days across 7 tenants (orchestrator 213, dev-tooling
+  46, overseer 35, livespec 14, runtime 6, console 4, dolt-server 1). A judgement can run several candidates, which
+  explains why there are more sessions than records. R2 is therefore a priority relay, and it must land BEFORE the
+  newer builds take over.
 
 ## Assertion 2 — plan, work item or standing role on every local session response
 
@@ -120,10 +131,21 @@ the plan of record.
 
 | # | Kind | Work | Depends on |
 |---|---|---|---|
-| H1 | host | emitter `spend.purpose` (name prefix, then signature fallback) | — |
-| H2 | host | emitter `spend.plan` / `spend.role` / `spend.work_item` for local sessions | — |
+| H1 | host | emitter `spend.purpose` (name prefix, then signature fallback) | DONE (`e1d1d68`) |
+| H2 | host | emitter `spend.plan` / `spend.role` / `spend.work_item` for local sessions | DONE (`e1d1d68`) |
 | H3 | host | factory join from work item to plan slug in `emit_factory.py` | the sibling plan's commits |
 | H4 | host | per-plan query and board panel | H1–H3 |
 | H5 | host | context size and compaction marker | DONE (`8c5e119`) |
 | R1 | orchestrator, through petri | `--name purpose:…` on the judge and DoD-gate launchers | — |
 | R2 | orchestrator, through petri | make the `--no-session-persistence` host-judge spend visible (F1) | sizing |
+
+## H1 and H2 landed (host commit `e1d1d68`, `scripts/attribution.py`)
+
+I replayed the last 24 h of transcripts through `local_claude()` without sending anything:
+
+- `claude -p`: $88.4 in total, 0% `unclassified`. The DoD gate was $70.6, replayers $15.5, `/livespec` commands $2.4.
+- Local sessions: $980.8 in total, 0.2% unattributed. 76.4% resolved by plan name, 18.9% by role name and 4.6% by a
+  plan named in the first prompt.
+
+Both are well inside the under-5% and under-10% targets. The assertions are judged on a full UTC day of live events
+after the fix, the first being 2026-11-01.
