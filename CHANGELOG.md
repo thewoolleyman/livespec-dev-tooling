@@ -58,6 +58,15 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.140.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.140.1...v1.140.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **cross-repo:** a cancelled head over a green commit is not a red episode ([97dff4b](https://github.com/thewoolleyman/livespec-dev-tooling/commit/97dff4bd4c55f9a96dfd464e73fbd1f73d4825ff))
+* **cross-repo:** anchor red episodes at failures ([b93537a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b93537a172f3ce12ac27c759f3077869c6fb1e75))
+* **cross-repo:** distinguish pending master CI from red ([ca96d96](https://github.com/thewoolleyman/livespec-dev-tooling/commit/ca96d96cb53ea15c2683c8981c4ebb9584964f2e))
+
 ## [1.140.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.140.0...v1.140.1) (2026-10-31)
 
 
