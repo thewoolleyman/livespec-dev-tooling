@@ -36,7 +36,6 @@ from __future__ import annotations
 
 from livespec_dev_tooling.cross_repo.master_health_state import (
     CI_FAILURE,
-    CI_PENDING,
     CI_SUCCESS,
     MasterCommit,
     ReconcileState,
@@ -66,10 +65,10 @@ def red_block(*, state: ReconcileState) -> tuple[MasterCommit, ...]:
     """The episode: commits from the head back to the last green, OLDEST-FIRST.
 
     Walks parents from `head_sha` and stops at the first commit whose own CI
-    was green, or when the window runs out. A pending prefix is discarded: an
-    episode starts only at a completed failure. Oldest-first is the contract
-    the culprit rule reads "earliest" off, so reversing it would invert that
-    rule silently rather than failing.
+    was green, or when the window runs out. Any undecided (pending or
+    cancelled) prefix is discarded: an episode starts only at a completed
+    failure. Oldest-first is the contract the culprit rule reads "earliest"
+    off, so reversing it would invert that rule silently rather than failing.
 
     A green head yields an empty block, which is how a caller distinguishes a
     healthy branch from an episode of length one.
@@ -82,7 +81,7 @@ def red_block(*, state: ReconcileState) -> tuple[MasterCommit, ...]:
         cursor = by_sha.get(cursor.parent_sha)
     block.reverse()
     for index, commit in enumerate(block):
-        if commit.ci_conclusion != CI_PENDING:
+        if commit.ci_conclusion == CI_FAILURE:
             return tuple(block[index:])
     return ()
 
@@ -113,7 +112,10 @@ def lookback_block(*, state: ReconcileState, lookback: int) -> tuple[MasterCommi
 
 
 def culprit_commit(*, state: ReconcileState) -> MasterCommit | None:
-    """The earliest RED commit in the episode whose parent was GREEN, or `None`.
+    """The earliest RED commit in the episode if its parent was GREEN, else `None`.
+
+    The episode opens on its earliest FAILED commit, and every later commit's
+    parent sits inside the episode (not green), so only the opener can qualify.
 
     Both halves of the test are required, and neither is a formality: the
     commit itself must have FAILED (an undecided run is not a regression), and
@@ -121,13 +123,13 @@ def culprit_commit(*, state: ReconcileState) -> MasterCommit | None:
     state before this merge is unknown). See this module's docstring for why
     the honest answer when neither holds is `None`.
     """
-    by_sha = _by_sha(state=state)
-    for commit in red_block(state=state):
-        if commit.ci_conclusion != CI_FAILURE:
-            continue
-        parent = by_sha.get(commit.parent_sha)
-        if parent is not None and parent.ci_conclusion == CI_SUCCESS:
-            return commit
+    block = red_block(state=state)
+    if not block:
+        return None
+    earliest = block[0]
+    parent = _by_sha(state=state).get(earliest.parent_sha)
+    if parent is not None and parent.ci_conclusion == CI_SUCCESS:
+        return earliest
     return None
 
 
@@ -140,7 +142,5 @@ def red_since(*, state: ReconcileState) -> int | None:
     commit did not record when its CI concluded; the hard cap treats the second
     as "cannot show the claim is inside the cap", never as "just went red".
     """
-    for commit in red_block(state=state):
-        if commit.ci_conclusion == CI_FAILURE:
-            return commit.ci_completed_at
-    return None
+    block = red_block(state=state)
+    return block[0].ci_completed_at if block else None
