@@ -82,6 +82,35 @@ These figures come from the handoff and are not in the raw file.
 - When a seat sits idle for more than an hour, the prompt cache expires. The next response re-writes a 600k+ prefix for about
   $3-5. The spikes on `github-app-checks-read` are this.
 
+## Late-node cache writes: once per session, not re-written (lever 3)
+
+The coordinator asked whether proof_capture, proof_verify and review re-write their prompt cache. Each of them writes 10-12M
+cache tokens per 48 h. The answer is no: each session writes its prefix once.
+
+The query is `~/token-spend-report/scripts/cache_rewrite_q.py`, summarised by `cache_rewrite_report.py`. It reads schema 6,
+factory, `cost_usd > 0`, per response (`trace.span_id`), over 48 h. The raw rows are in
+`~/token-spend-report/node/cache-rewrite-2026-10-31.json`: 5,186 responses, all on `sonnet-5.5`.
+
+| Node | Runs | Sessions | Cache write $ | $/run | First write per session, P50 tokens |
+|---|---:|---:|---:|---:|---:|
+| proof_capture | 62 | 104 | $31.11 | $0.50 | 109k |
+| review | 51 | 83 | $25.43 | $0.50 | 103k |
+| proof_verify | 59 | 92 | $25.03 | $0.42 | 103k |
+| implement | 59 | 60 | $22.87 | $0.39 | 88k |
+| dod_gate | 82 | 95 | $19.32 | $0.24 | 86k |
+
+- A session reads a shared 22,104-token prefix from cache, then writes 85-111k tokens on its first response, for about
+  $0.25. After that, each response writes only the new turn: the per-response P50 is 2-4k tokens.
+- Only 8 of about 470 sessions had a second write over 50k tokens, and each of those came with a large cache read. They are
+  large mid-session additions, not misses.
+- First writes are 82-86% of the late nodes' cache-write cost. Cutting writes to one per session would therefore save about
+  nothing, because they already are.
+- The real lever is sessions per run. The late nodes average 1.6-1.7 sessions per run, against implement's 1.0. The extra
+  sessions cost about $27 per 48 h. This note does not establish whether they are node re-entries (fix→review loops) or
+  subagents with their own session id.
+- No TTL split is recorded for factory Claude, so writes are priced at the 5-minute rate. If Claude Code actually writes at
+  the 1 h TTL, these dollar figures are about 1.6x too low.
+
 ## What this changes for the plan
 
 Nothing in the Definition of Done. These are uses of the board, not repairs to it. Two observations bear on assertions already
