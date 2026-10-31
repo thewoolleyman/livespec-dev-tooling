@@ -59,6 +59,29 @@ Measured that night: a coordinator forwarded "plan bd-ib-raqyki has two
 deferred assertions" to the maintainer with no context and no attempt by the
 owner to decide.
 
+## 5. Never bring a split to the maintainer, or a gate with an obvious way round it
+
+The maintainer, on 2026-10-31: "You do not need to ask me for approval for
+splitting things. If they need to be split, split them. That's not worthy of
+my attention." That covers regroom cuts too, even though the groom contract
+says the maintainer owns the cut. The coordinator, or the owning session,
+decides the cut and reports it.
+
+Before you put any credential, host or approval gate to the maintainer, do two
+things:
+
+- **Look for a route that needs no new authority.** For example, an isolated
+  `CLAUDE_CONFIG_DIR` can SYMLINK `.credentials.json` to
+  `~/.claude/.credentials.json`. That leaves one credential file, rotated in
+  place, so there is no copied refresh token and no new token to mint. A seat
+  that offers only "mint a new token or copy the file" has missed that route.
+- **Be able to say in one line why the action is needed at all.** If you
+  can't, the question isn't ready to ask.
+
+Measured that day: the coordinator held three "maintainer decisions". One was a
+routine regroom cut. Another, the replay credential, had the symlink route. The
+maintainer asked why each needed them.
+
 ## Also: look before you delete
 
 `/data/projects/livespec-dev-tooling/.overseer-state` at the repo root can be
