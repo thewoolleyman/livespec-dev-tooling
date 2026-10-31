@@ -263,10 +263,18 @@ fabro_server_instances:
       # and merge into this one id. The old ids are deleted only after every
       # fleet repository's petri environment names factory-python and no
       # non-terminal run on this instance runs in either of them.
+      #
+      # TEMPORARILY ON DOCKER for the tested Docker fallback of plan
+      # kubernetes-sandbox-backend (bd-ib-nmuyjc.2), in a launch window the fleet
+      # coordinator scheduled: one real dispatch must land in a Docker sandbox
+      # here. The revert that restores `provider: kubernetes` follows within the
+      # same window. A rollback between providers changes the provider, never the
+      # id (SPECIFICATION "Factory sandbox environment naming").
       - id: factory-python
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2
         cpu: 4
         memory: 8GB
-        provider: kubernetes
+        provider: docker
       # The Kubernetes twin of livespec-ci-rust, for livespec-console-beads-fabro
       # (coordinator ruling on livespec-dev-tooling-dfixhe, 2026-10-24). A
       # registered provider's environment cannot name an image, and the
