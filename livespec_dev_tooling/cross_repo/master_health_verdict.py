@@ -53,6 +53,7 @@ from __future__ import annotations
 from livespec_dev_tooling.cross_repo.master_health_episode import red_block
 from livespec_dev_tooling.cross_repo.master_health_flake_history import recurring_signatures
 from livespec_dev_tooling.cross_repo.master_health_state import (
+    CI_FAILURE,
     RERUN_NOT_ATTEMPTED,
     RERUN_PASSED,
     ReconcileConfig,
@@ -108,7 +109,7 @@ def red_verdict(*, state: ReconcileState, config: ReconcileConfig) -> str:
     without spending a re-run is reached first — see this module's docstring
     for why that ordering is load-bearing rather than incidental.
     """
-    if not red_block(state=state):
+    if not any(commit.ci_conclusion == CI_FAILURE for commit in red_block(state=state)):
         return VERDICT_GREEN
 
     signatures = _episode_signatures(state=state)

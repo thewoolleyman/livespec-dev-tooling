@@ -140,6 +140,34 @@ def test_a_green_branch_yields_no_step_at_all() -> None:
     assert step.episode_key is None
 
 
+def test_pending_commits_above_a_green_verdict_yield_no_step() -> None:
+    """Unfinished CI is not a red episode and owes no failed-job re-run.
+
+    The newest completed gating verdict is green. The two commits above it are
+    still pending, so their runs have not supplied evidence that master is red.
+    """
+    state = ReconcileState(
+        head_sha="pending-two",
+        commits=(
+            _commit(sha="green", parent_sha="root", conclusion=CI_SUCCESS),
+            _commit(sha="pending-one", parent_sha="green", conclusion=CI_PENDING),
+            _commit(
+                sha="pending-two",
+                parent_sha="pending-one",
+                conclusion=CI_PENDING,
+            ),
+        ),
+        rerun_outcome=RERUN_NOT_ATTEMPTED,
+        revert_pull_request=None,
+        open_needs_attention_episodes=(),
+    )
+
+    step = reconcile_step(state=state, config=_CONFIG)
+
+    assert step.kind == STEP_NONE
+    assert step.reason == "branch is green; nothing to heal"
+
+
 def test_a_regression_whose_culprit_has_no_pull_request_escalates_instead() -> None:
     """A direct push cannot be reverted through a pull request.
 
