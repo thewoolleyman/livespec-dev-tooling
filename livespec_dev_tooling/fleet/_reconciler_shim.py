@@ -22,6 +22,8 @@ path that no longer resolves.
 
 from __future__ import annotations
 
+import re
+
 __all__: list[str] = [
     "MASTER_HEALTH_WORKFLOW",
     "RECONCILER_SHIM_TEMPLATE",
@@ -95,24 +97,9 @@ on:
 
 jobs:
   reconcile:
-    uses: {owner}/livespec-dev-tooling/{workflow}@master
+{permissions}    uses: {owner}/livespec-dev-tooling/{workflow}@master
     secrets: inherit
 """
-
-
-# The template `_reconcile_shims` PUTs and `reconciler_shim_content` renders —
-# ONE string, so the install path and the drift read can never disagree about
-# what the canonical bytes are. The `{workflow}` slot is resolved HERE rather
-# than left to each caller: the reusable workflow's path is a property of this
-# repository, not of the member being wired, and only `{owner}` is.
-RECONCILER_SHIM_TEMPLATE = _RECONCILER_SHIM_SOURCE.replace(
-    "{workflow}", REUSABLE_RECONCILER_WORKFLOW
-)
-
-
-def reconciler_shim_content(*, owner: str) -> str:
-    """The canonical reconciler shim body rendered against `owner`."""
-    return RECONCILER_SHIM_TEMPLATE.format(owner=owner)
 
 
 # The canonical body of this repository's OWN reusable reconciler workflow —
@@ -696,3 +683,42 @@ jobs:
               ;;
           esac
 """.lstrip("\n")
+
+
+def _reusable_workflow_permissions(*, body: str) -> tuple[tuple[str, str], ...]:
+    """Parse the reusable workflow's top-level token permission mapping."""
+    block = body.partition("\npermissions:\n")[2].partition("\n\n")[0]
+    return tuple(
+        (match.group("scope"), match.group("access"))
+        for line in block.splitlines()
+        if (match := re.fullmatch(r"  (?P<scope>[a-z-]+): (?P<access>[a-z]+)", line))
+    )
+
+
+def _render_reusable_workflow_permissions(*, body: str) -> str:
+    """Render the reusable workflow's parsed permissions for the caller job."""
+    permissions = _reusable_workflow_permissions(body=body)
+    return "\n".join(
+        (
+            "    permissions:",
+            *(f"      {scope}: {access}" for scope, access in permissions),
+            "",
+        )
+    )
+
+
+# The template `_reconcile_shims` PUTs and `reconciler_shim_content` renders —
+# ONE string, so the install path and the drift read can never disagree about
+# what the canonical bytes are. The `{workflow}` slot is resolved HERE rather
+# than left to each caller: the reusable workflow's path is a property of this
+# repository, not of the member being wired, and only `{owner}` is. The caller
+# job's permissions are parsed from the reusable workflow, so a new grant on
+# that workflow cannot leave a read-default member unable to start the call.
+RECONCILER_SHIM_TEMPLATE = _RECONCILER_SHIM_SOURCE.replace(
+    "{workflow}", REUSABLE_RECONCILER_WORKFLOW
+).replace("{permissions}", _render_reusable_workflow_permissions(body=REUSABLE_RECONCILER_BODY))
+
+
+def reconciler_shim_content(*, owner: str) -> str:
+    """The canonical reconciler shim body rendered against `owner`."""
+    return RECONCILER_SHIM_TEMPLATE.format(owner=owner)

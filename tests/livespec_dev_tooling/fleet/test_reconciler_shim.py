@@ -193,6 +193,40 @@ def test_the_shim_invokes_the_reusable_reconciler_workflow_at_the_owner() -> Non
     assert MASTER_HEALTH_WORKFLOW == ".github/workflows/master-health-reconcile.yml"
 
 
+def _workflow_permissions(*, body: str) -> dict[str, str]:
+    """Parse a workflow or job-level permissions mapping from a canonical body."""
+    pattern = "".join(
+        (
+            r"(?m)^(?P<indent> *)permissions:\n",
+            r"(?P<entries>(?:^(?P=indent)  [a-z-]+: [a-z]+\n?)+)",
+        )
+    )
+    mapping = re.search(
+        pattern,
+        body,
+    )
+    assert mapping is not None
+    return {
+        scope: access
+        for line in mapping.group("entries").splitlines()
+        if (match := re.fullmatch(r"\s+(?P<scope>[a-z-]+): (?P<access>[a-z]+)", line))
+        for scope, access in [(match.group("scope"), match.group("access"))]
+    }
+
+
+def test_the_shim_grants_every_permission_the_reusable_workflow_requires() -> None:
+    """A called workflow cannot receive more token access than its caller holds."""
+    required = _workflow_permissions(body=_reusable_workflow_body())
+
+    assert required == {
+        "actions": "write",
+        "contents": "read",
+        "issues": "write",
+        "pull-requests": "write",
+    }
+    assert _workflow_permissions(body=reconciler_shim_content(owner=_OWNER)) == required
+
+
 def _put_args(*, path: str) -> tuple[str, ...]:
     return ("api", f"repos/acme/widget/contents/{path}", "--method", "PUT", "--input", "-")
 
