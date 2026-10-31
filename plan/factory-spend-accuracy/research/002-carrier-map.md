@@ -145,3 +145,23 @@ the result this plan needs from it.
   cancelled, rework, abandoned), and each attempt's window (start, end), model
   and fallback flag. Every one of these attributes is allowlisted in
   `_otel_scrub`.
+
+## Change 2026-10-31: the Codex credits trigger alarms on draws, not on a level
+
+The first `spend_staleness.py` run fired `token-spend Codex credits low`, a
+level trigger on balance < 4,000. The coordinator measured, and the owner
+re-verified over 30 h in 6 h buckets, that the balance is a flat 3,351.6,
+`SUM(codex.credits_drop)` is 0 in every bucket, and `MAX(codex.used_percent)` is
+2-16%. Credits are drawn only at 100% of the weekly allowance, so the balance is
+static leftover and a level threshold above it fires forever. A trigger that
+always fires trains everyone to ignore it.
+
+The fix is host commit 061f7fc. The trigger is converted in place, keeping its
+id `ytMVcVZCawC`, into `token-spend Codex credits drawn`, which fires on
+`SUM(codex.credits_drop) > 0` over 15 minutes. A new early warning,
+`token-spend Codex allowance near limit` (`wFv7MbGL79`), fires on
+`MAX(codex.used_percent) >= 90`. `spend_staleness.py` checks both.
+
+The same query found no quota readings from 2026-10-31 00Z to 12Z, a second
+hole of about 12 hours after the 16-hour one in the charter. The new 2-hour
+`Codex quota readings` trigger covers exactly this case.
