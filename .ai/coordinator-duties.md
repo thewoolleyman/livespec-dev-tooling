@@ -70,17 +70,23 @@ decides the cut and reports it.
 Before you put any credential, host or approval gate to the maintainer, do two
 things:
 
-- **Look for a route that needs no new authority.** For example, an isolated
-  `CLAUDE_CONFIG_DIR` can SYMLINK `.credentials.json` to
-  `~/.claude/.credentials.json`. That leaves one credential file, rotated in
-  place, so there is no copied refresh token and no new token to mint. A seat
-  that offers only "mint a new token or copy the file" has missed that route.
+- **Look for a route that needs no new authority, and MEASURE it before you
+  call it one.** A credential question often goes away when you change the
+  work rather than the credential. For example, re-capture a proof against the
+  build the normal install already gives you, instead of pinning an older
+  build in an isolated `CLAUDE_CONFIG_DIR`. One plausible route was measured
+  and FAILED: symlinking an isolated dir's `.credentials.json` to
+  `~/.claude/.credentials.json`. Claude Code saves credentials by writing a
+  new file and renaming it into place, so its first credential write (during
+  `claude plugin marketplace add`, before any model call) REPLACED the symlink
+  with an independent copy of the refresh token. Never offer that as a
+  solution.
 - **Be able to say in one line why the action is needed at all.** If you
   can't, the question isn't ready to ask.
 
 Measured that day: the coordinator held three "maintainer decisions". One was a
-routine regroom cut. Another, the replay credential, had the symlink route. The
-maintainer asked why each needed them.
+routine regroom cut. Another was a replay credential that a re-capture against
+the current release avoids entirely. The maintainer asked why each needed them.
 
 ## Also: look before you delete
 
