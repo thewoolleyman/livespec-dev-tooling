@@ -226,8 +226,9 @@ fabro_server_instances:
       # kubernetes provider's process_spec below, which carries the
       # python-agent-v1.114.1 image this entry named while it ran Docker. The
       # catalog is server-managed, so this converges by a PUT with no restart and
-      # a live Docker run keeps its container. ROLLBACK to Docker: drop
-      # `provider` and restore
+      # a live Docker run keeps its container. ROLLBACK to Docker: set
+      # `provider: docker` (dropping it keeps kubernetes, which the role refuses
+      # beside an image) and restore
       # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.136.2`.
       - id: livespec-ci
         cpu: 4
@@ -440,7 +441,7 @@ fabro_server_instances:
     # ON KUBERNETES since 2026-10-24 (work-item bd-ib-yetegc, plan
     # kubernetes-sandbox-backend bd-ib-nmuyjc): livespec-ci names no image and
     # selects the `kubernetes` provider below, whose process_spec carries that
-    # tag. ROLLBACK to Docker: drop `provider` and restore
+    # tag. ROLLBACK to Docker: set `provider: docker` and restore
     # `image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.126.0`.
     environments:
       - id: livespec-ci

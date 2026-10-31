@@ -201,16 +201,28 @@
   # else would take the image and ignore it — an environment that looks declared
   # and runs something else, which is the shape of the failure this whole slice
   # exists to end.
+  #
+  # The second arm is the rollback between providers. An entry the catalog
+  # already holds is its own base, so an environment on a registered provider
+  # (kubernetes) has that provider as its base. Declaring it explicitly back to
+  # `provider: docker` with its image writes provider docker, so the image is
+  # not ignored; without this arm the documented Docker rollback of a
+  # registered-provider environment could never apply (found 2026-10-31,
+  # bd-ib-nmuyjc.2, gmktec factory-python). Dropping `provider` instead keeps
+  # the base's registered provider, so the first arm still refuses it.
   ansible.builtin.assert:
     that:
-      - (fabro_server_environment_base.provider | default('')) in ['docker', fabro_server_environment.provider | default('docker')]
+      - >-
+        (fabro_server_environment_base.provider | default('')) in ['docker', fabro_server_environment.provider | default('docker')]
+        or ((fabro_server_environment.provider | default('')) in ['docker', 'daytona'] and fabro_server_environment.image is defined)
     fail_msg: >-
       The catalog entry {{ fabro_server_environment.id }} would be derived from
       has provider '{{ fabro_server_environment_base.provider | default('none') }}',
       not docker, while this declaration names the docker image
       {{ fabro_server_environment.image | default("no image (registered provider)") }}. A non-docker environment ignores an
       image, so writing this would produce an environment that reads as declared
-      and runs something else. Nothing has been written.
+      and runs something else. To move it back to docker, declare `provider: docker`
+      beside the image. Nothing has been written.
     success_msg: this environment's base entry runs docker images
 
 - name: Resolve the image and resource settings version control declares

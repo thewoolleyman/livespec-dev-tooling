@@ -234,3 +234,24 @@ def test_the_role_document_names_the_axis_and_its_plugin_environment() -> None:
     assert (
         "inherit_env" in doc and "HOME" in doc
     ), "the document MUST say the plugin's cleared environment needs HOME passed through"
+
+
+def test_the_base_entry_refusal_accepts_an_explicit_move_back_to_docker() -> None:
+    """A rollback between providers changes `provider` and never the `id`.
+
+    `## Factory sandbox environment naming` ("Placement is never in the id") makes the
+    Docker rollback of a registered-provider environment a provider edit on the same id.
+    The catalog entry being replaced is its own base, so its provider is the registered
+    kind; a refusal that demanded a docker base would make that rollback unappliable.
+    Found 2026-10-31 preparing the Docker fallback test of plan kubernetes-sandbox-backend
+    (bd-ib-nmuyjc.2): `factory-python` on gmktec, on `kubernetes`, could not be declared
+    back to `provider: docker` with its image.
+    """
+    refusal = _named(
+        name="Refuse to derive a docker-image environment from a non-docker catalog entry",
+        source=_ENVIRONMENT_TASKS,
+    )
+    assert (
+        "((fabro_server_environment.provider | default('')) in ['docker', 'daytona']"
+        " and fabro_server_environment.image is defined)" in refusal
+    ), "an entry declared explicitly back onto docker, with its image, MUST be accepted"
