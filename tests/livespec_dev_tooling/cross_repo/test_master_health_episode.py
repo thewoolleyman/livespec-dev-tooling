@@ -170,6 +170,24 @@ def test_a_pending_commit_never_anchors_an_episode_with_a_completed_failure() ->
     assert [commit.sha for commit in red_block(state=state)] == ["failed", "pending-after"]
 
 
+def test_undecided_commits_over_a_green_commit_form_no_episode() -> None:
+    """Cancelled and pending heads above a green commit have not failed.
+
+    No gating job has reported a failure, so there is no episode to re-run.
+    """
+    state = _state(
+        head_sha="pending",
+        commits=(
+            _commit(sha="green", parent_sha="root", conclusion=CI_SUCCESS),
+            _commit(sha="cancelled", parent_sha="green", conclusion=CI_CANCELLED),
+            _commit(sha="pending", parent_sha="cancelled", conclusion=CI_PENDING),
+        ),
+    )
+
+    assert red_block(state=state) == ()
+    assert culprit_commit(state=state) is None
+
+
 def test_the_head_record_is_read_by_sha_and_is_none_when_the_window_misses_it() -> None:
     """A truncated window answers `None`, which is not the same as a green head.
 
@@ -233,7 +251,7 @@ def test_no_culprit_when_the_block_opens_on_a_cancelled_run() -> None:
         ),
     )
 
-    assert [commit.sha for commit in red_block(state=state)] == ["b", "c"]
+    assert [commit.sha for commit in red_block(state=state)] == ["c"]
     assert culprit_commit(state=state) is None
 
 
