@@ -1,6 +1,6 @@
 # Carrier map: where each factory-spend field can be measured
 
-Scoping by the owner seat, 2026-10-31 (~18:30Z), under the coordinator
+Scoping by the owner seat, 2026-10-31 (~17:30Z), under the coordinator
 (gitops-fleet-capacity-monitoring). Every claim below was checked against the
 Honeycomb `livespec` environment's column lists and live queries, against the
 orchestrator source at `origin/master` (3da35b8bd), or against upstream Codex
@@ -89,7 +89,16 @@ Host only (`build_triggers.py`), and it can start now. Two findings shape it:
 - The only Honeycomb recipients in env livespec are two email addresses. The
   coordinator is a session and cannot read email, so the trigger's `triggered`
   state is also exposed through a host check the coordinator runs each tick
-  (`spend_staleness.py`). Reported to the coordinator for objection.
+  (`spend_staleness.py`).
+
+**Coordinator-accepted deviation (2026-10-31, gitops-fleet-capacity-monitoring),
+recorded for the maintainer's objection.** Assertion 5 reads "sends no event to
+llm-spend for 2 hours". It is met with a per-source heartbeat event, and the
+2-hour trigger fires on the heartbeat. A trigger on spend events would fire
+whenever a fallback or idle source is legitimately quiet. The coordinator also
+ruled on the channel: `spend_staleness.py` exits non-zero and names each fired
+trigger, the coordinator runs it on every tick and from the handoff loop
+prompt, and the maintainer email recipient stays.
 
 ## Assertion 6: machine-readable time series from hcq.py
 
@@ -113,3 +122,26 @@ raw-row or table form, so that no caller parses a chart.
 Host children run in `~/token-spend-report` on this host. That is not a
 factory-dispatchable repository, so the owner seat does them directly. The
 orchestrator relays go through petri's factory queue.
+
+## Relays pending filing
+
+`capture-work-item` is waiting on the `_vendor` import fix under
+anthropic-burn-mitigation, so these three relays are recorded here and filed in
+the livespec-orchestrator-beads-fabro ledger once that fix lands. Each one names
+the result this plan needs from it.
+
+- **R1, Codex cache keys allowlisted.** Required result: in Honeycomb env
+  livespec, dataset `codex-app-server`, `handle_responses` spans dispatched
+  after the release carry `gen_ai.usage.cache_read.input_tokens` and
+  `gen_ai.usage.cache_write.input_tokens`.
+- **R2, factory Claude TTL split carried.** Required result: every factory
+  Claude response's spend telemetry carries its cache-write tokens split into
+  5-minute and 1-hour lifetimes, with `livespec.dispatch.id` and a per-response
+  key that joins to `claude_code.llm_request` (`trace.span_id` or the request
+  id).
+- **R3, terminal dispatch span.** Required result: in dataset
+  `livespec-dispatcher`, one span per terminated dispatch carries
+  `livespec.dispatch.id`, a bounded run-outcome enum (succeeded, failed,
+  cancelled, rework, abandoned), and each attempt's window (start, end), model
+  and fallback flag. Every one of these attributes is allowlisted in
+  `_otel_scrub`.
