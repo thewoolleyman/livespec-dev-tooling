@@ -1571,3 +1571,11 @@ Given a commit that stages only `tests/test_alpha.py`, one of whose tests fails
 When the commit-msg `red_green_replay` check runs its suite-green leg
 
 Then the commit MUST be refused
+
+## Scenario: the whole-suite coverage run prints its thirty slowest test phases
+
+Given a `just check-per-file-coverage` run whose test suite has more than thirty test phases
+
+When the run's test suite completes
+
+Then the run's output MUST list the thirty slowest test phases of that run, each with its duration

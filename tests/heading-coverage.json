@@ -1301,5 +1301,13 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the consumer tier (`tests.consumer`, this repository's `scenario_tiers`) is owed for this scenario, driving the shipped `red_green_replay` check's suite-green leg on a test-only staged tree; livespec-dev-tooling-h3gcs6 owns it.",
     "work_item": "livespec-dev-tooling-h3gcs6"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving `just check-per-file-coverage` and asserting its output lists the thirty slowest test phases with their durations; livespec-dev-tooling-tt4w7h owns it.",
+    "work_item": "livespec-dev-tooling-tt4w7h"
   }
 ]
