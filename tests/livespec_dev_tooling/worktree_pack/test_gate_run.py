@@ -487,6 +487,7 @@ _IDLE_GATE_S = 4
 _IDLE_SETTLE_S = 0.7
 _IDLE_WINDOW_S = 1.5
 _WAIT_RETURN_BUDGET_S = 5.0
+_WAKE_RETURN_BUDGET_S = 0.5
 
 
 def _shim_dir(*, root: Path) -> Path:
@@ -557,6 +558,38 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
     verdict_at = time.monotonic()
     stdout, _stderr = waiter.communicate(timeout=_VERDICT_TIMEOUT_S)
     assert time.monotonic() - verdict_at < _WAIT_RETURN_BUDGET_S
+    assert waiter.returncode == _GATE_EXIT_CODE
+    assert "FAILED" in stdout
+
+
+@pytest.mark.integration
+def test_gate_wait_promptly_observes_a_verdict_after_becoming_idle(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A missed poll leaves enough margin for the five-second contract under load."""
+    primary, worktree, env = fixture_repo
+    ready = tmp_path / "gate-ready"
+    fifo = tmp_path / "gate-release"
+    gate = f'mkfifo "{fifo}"; touch "{ready}"; read -r _ < "{fifo}"; exit {_GATE_EXIT_CODE}'
+    run_id = _start(cwd=worktree, env=env, command=["bash", "-c", gate])
+    waiter = subprocess.Popen(
+        [str(primary / "dev-tooling" / _SCRIPT), "wait", run_id],
+        cwd=str(primary),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert _wait_for_file(path=ready, timeout_s=_VERDICT_TIMEOUT_S)
+    time.sleep(0.25)
+    with fifo.open("w", encoding="utf-8") as release:
+        _ = release.write("release\n")
+
+    _ = _await_verdict(primary=primary, run_id=run_id)
+    verdict_at = time.monotonic()
+    stdout, _stderr = waiter.communicate(timeout=_VERDICT_TIMEOUT_S)
+
+    assert time.monotonic() - verdict_at < _WAKE_RETURN_BUDGET_S
     assert waiter.returncode == _GATE_EXIT_CODE
     assert "FAILED" in stdout
 
