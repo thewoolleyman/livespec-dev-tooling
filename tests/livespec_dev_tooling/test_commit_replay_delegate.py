@@ -162,3 +162,62 @@ def test_a_tree_that_cannot_be_read_returns_an_absent_verdict(
     assert unavailable.tree_hash is None
     assert unavailable.exit_status is None
     assert unavailable.reason == "the staged tree could not be read"
+
+
+def test_a_remote_replay_submits_the_staged_tree_and_reports_the_job(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real gate path receives the index tree, test selection and Job verdict."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+    request = GateRunRequest(
+        repo_root=tmp_path,
+        mirror_url="mirror",
+        manifest="manifest",
+        gate_ref="refs/gates/a",
+    )
+
+    def build(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return Success(request)
+
+    monkeypatch.setattr(module, "gate_remote_request", build)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(
+        module,
+        "run_gated_push",
+        lambda **_kwargs: GateVerdict(
+            state=GATE_PASSED,
+            detail="the Job passed",
+            token_written=True,
+            job_name="gate-replay-1",
+            output_checksum="checksum",
+        ),
+    )
+
+    verdict = module.run_replay(
+        repo_root=tmp_path,
+        pytest_argv=["pytest", "tests/test_widget.py"],
+    )
+
+    assert captured["tree_hash"] == "a" * 40
+    assert captured["pytest_argv"] == ("pytest", "tests/test_widget.py")
+    assert verdict == module.ReplayVerdict(
+        local=False,
+        reason="the Job passed",
+        job_name="gate-replay-1",
+        tree_hash="a" * 40,
+        exit_status=0,
+        output_checksum="checksum",
+    )
