@@ -69,6 +69,7 @@ _NOISE_LINE = re.compile(
     r"|[.FEsxX]*\s*\[\s*\d+%\])$"
 )
 _DURATION = re.compile(r"\bin \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?")
+_FAILED_SUMMARY_LINE = re.compile(r"^FAILED\s+(\S+)", re.MULTILINE)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -170,6 +171,14 @@ def canonical_output_checksum(*, output: str) -> str:
     return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
+def _suite_failure_summary(*, output: str) -> str:
+    """Return pytest failure node ids, falling back to the bounded output head."""
+    failed_node_ids = _FAILED_SUMMARY_LINE.findall(output)
+    if failed_node_ids:
+        return " ".join(failed_node_ids)[:400]
+    return " ".join(output.split())[:400]
+
+
 def run_suite(*, argv: list[str], timeout_seconds: int) -> SuiteRun:
     """Run `argv` in its own process group; on timeout kill the whole group."""
     with subprocess.Popen(
@@ -263,7 +272,7 @@ def _handle_suite_green_mode(
             "suite-red: selected pytest tests do not pass against the staged tree",
             check_id="red-green-replay-suite-red",
             pytest_returncode=suite_result.returncode,
-            failure_summary=" ".join(suite_output.split())[:400],
+            failure_summary=_suite_failure_summary(output=suite_output),
             hint=(
                 "The green-verified leg requires its selected tests to pass (exit 0; "
                 "an empty selection, pytest exit 5, also rejects): a behavior-"
