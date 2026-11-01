@@ -52,6 +52,13 @@ def test_argv_accepts_staged_test_paths() -> None:
     assert argv[-3:] == ["-n", "8", "tests/test_changed.py"]
 
 
+def test_shared_test_support_requires_the_full_suite() -> None:
+    """A conftest change keeps the suite-green replay broad."""
+    mod = _load()
+    assert hasattr(mod, "has_shared_test_support")
+    assert mod.has_shared_test_support(staged_paths=["tests/test_changed.py", "tests/conftest.py"])
+
+
 # Without `test_nprocs` (most consumers compute it in a script and never export
 # it) the worker count follows the SAME lane-aware rule their justfiles use:
 # `auto` only on the hosted CI lane, then LIVESPEC_TEST_PARALLELISM, then a

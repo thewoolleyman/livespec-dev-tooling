@@ -45,6 +45,7 @@ __all__: list[str] = [
     "SuiteRun",
     "_handle_suite_green_mode",
     "canonical_output_checksum",
+    "has_shared_test_support",
     "run_suite",
     "suite_pytest_argv",
     "suite_timeout_seconds",
@@ -122,6 +123,21 @@ def suite_pytest_argv(
 def xdist_importable() -> bool:
     """Return True iff pytest-xdist is importable under this interpreter."""
     return importlib.util.find_spec("xdist") is not None
+
+
+def has_shared_test_support(*, staged_paths: list[str]) -> bool:
+    """Return whether staged test material can affect tests it does not name.
+
+    Every file below ``tests/`` other than a ``test_*.py`` test module is
+    conservatively shared support.  That includes ``conftest.py``, package
+    initializers, fixture modules, and fixture data; any can alter collection
+    or behavior outside the named test files.
+    """
+    return any(
+        path.startswith("tests/")
+        and not (Path(path).suffix == ".py" and Path(path).name.startswith("test_"))
+        for path in staged_paths
+    )
 
 
 def canonical_output_checksum(*, output: str) -> str:
