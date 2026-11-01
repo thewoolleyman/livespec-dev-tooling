@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.144.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.143.2...v1.144.0) (2026-11-01)
+
+
+### Features
+
+* add replay delegation decision test ([aaf7962](https://github.com/thewoolleyman/livespec-dev-tooling/commit/aaf7962e3955d6b855ff0aef31fd105985602b44))
+* cover replay delegation outcomes ([792796a](https://github.com/thewoolleyman/livespec-dev-tooling/commit/792796ae324a6853561b3c664f71f7dc3a1590b5))
+
+
+### Bug Fixes
+
+* **commit-replay:** push a commit object for the staged tree ([6d79922](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d79922d82d274b5a04a43c8597f901a15c7946e))
+* **gate:** checksum the Job output of a capturing gate request ([1f28a57](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1f28a57ccd99b63551b21e5bfc0f8d50879bf20a))
+
 ## [1.143.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.143.1...v1.143.2) (2026-11-01)
 
 
