@@ -118,6 +118,7 @@ _RUNS_ON = re.compile(r"^\s*runs-on:\s*(?P<target>.+?)\s*$", re.MULTILINE)
 _PROBE_STUBS = {
     "lsblk": """\
 #!/bin/sh
+echo "lsblk $*" >> "$PROBE_LOG"
 case "$*" in
   *PARTLABEL*) [ -f "$WORLD/partlabels" ] && cat "$WORLD/partlabels" ;;
   *PARTN*) [ -f "$WORLD/partns" ] && cat "$WORLD/partns" ;;
@@ -126,6 +127,7 @@ exit 0
 """,
     "blkid": """\
 #!/bin/sh
+echo "blkid $*" >> "$PROBE_LOG"
 key=; device=
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -142,6 +144,7 @@ exit 0
 }
 _LVM_PROBE = """\
 #!/bin/sh
+echo "%(kind)ss $*" >> "$PROBE_LOG"
 for argument; do :; done
 grep -qxF "%(kind)s:$argument" "$WORLD/lvm" 2>/dev/null && echo "  $argument"
 exit 0
@@ -182,6 +185,7 @@ class _Rehearsal:
     notes: str
     refusal: str
     executed: list[str]
+    diagnosis: str
 
 
 def _profile(*, name: str) -> dict[str, str]:
@@ -241,7 +245,10 @@ def _rehearse(
     root.mkdir(parents=True, exist_ok=True)
     tripwire = root / "tripwire"
     tripwire.write_text("", encoding="utf-8")
+    probe_log = root / "probe-calls"
+    probe_log.write_text("", encoding="utf-8")
     binaries = _scratch_path(root=root)
+    world_dir = _write_world(root=root, world=world or {})
     done = subprocess.run(
         [
             "bash",
@@ -256,8 +263,9 @@ def _rehearse(
         check=False,
         env={
             "PATH": f"{binaries}{os.pathsep}/usr/bin{os.pathsep}/bin",
-            "WORLD": str(_write_world(root=root, world=world or {})),
+            "WORLD": str(world_dir),
             "TRIPWIRE": str(tripwire),
+            "PROBE_LOG": str(probe_log),
         },
     )
     return _Rehearsal(
@@ -266,6 +274,30 @@ def _rehearse(
         notes=done.stdout,
         refusal=done.stderr,
         executed=[line for line in tripwire.read_text(encoding="utf-8").splitlines() if line],
+        diagnosis=_diagnosis(probe_log=probe_log, world_dir=world_dir, stderr=done.stderr),
+    )
+
+
+def _diagnosis(*, probe_log: Path, world_dir: Path, stderr: str) -> str:
+    """What the stage's probes were asked and what the world held, for a failure message.
+
+    The stage's own `probe` discards a read-only tool's stderr and exit status,
+    so a probe that failed to run reads exactly like one that answered "absent".
+    This is the record that tells them apart: every stub logs its call before it
+    answers, so a call missing here never ran, and the world listing shows what
+    the answering stub could read. Measured 2026-10-31: one full-suite run
+    planned partition 1 where the committed rehearsal plans 3, which only an
+    empty `lsblk -rno PARTN` answer produces, and the run left nothing to tell
+    which; 200 isolated parallel runs and an instrumented full run did not
+    reproduce it.
+    """
+    listing = [
+        f"{entry.name} mode={oct(entry.stat().st_mode & 0o777)} bytes={entry.stat().st_size}"
+        for entry in sorted(world_dir.iterdir())
+    ]
+    return (
+        f"probe calls={probe_log.read_text(encoding='utf-8').splitlines()} "
+        f"world={listing} stderr={stderr!r}"
     )
 
 
@@ -378,7 +410,7 @@ def test_a_pool_node_is_rebuilt_from_bare_metal_by_the_recipe_and_its_profile(
             f"{name}: the run must reproduce the rehearsal outcome committed beside the profile, "
             f"byte for byte. A step silently added, dropped or reworded between two asserted "
             f"rungs passes every structural check and only fails this one; planned="
-            f"{rehearsed.plan}"
+            f"{rehearsed.plan} {rehearsed.diagnosis}"
         )
         assert not rehearsed.executed, (
             f"{name}: a dry run must execute nothing — asserted from tripwires on every mutating "
