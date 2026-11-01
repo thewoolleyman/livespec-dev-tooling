@@ -282,6 +282,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
+    "work_item": "livespec-dev-tooling-tjldi2",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: every k3s pool node's load is visible and a silent node fires its dead-man",
     "work_item": "livespec-dev-tooling-uftb4o",
     "first_seen": "2026-10-24"
@@ -299,6 +306,13 @@
     "heading": "## Scenario: missing or malformed reconciler configuration fails closed to revert-by-default",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
+    "work_item": "livespec-dev-tooling-tjldi2",
+    "first_seen": "2026-11-01"
   },
   {
     "spec_root": "SPECIFICATION",
