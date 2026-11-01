@@ -72,6 +72,10 @@ enforcement suite and has nothing to do with provisioning hosts. Both
 versions are pinned exactly in the justfile recipes, which remain the single
 source of truth for how the tool is invoked.
 
+## Runbooks beside the playbooks
+
+- `factory-sandbox-backend-runbook.md` — the petri factory's sandbox backend on gmktec. It covers the Kubernetes cutover record, the tested switch to Docker and back through `fabro-hosts.yml`, rescue of a stranded pod-backed run, and what to do when the cluster goes down mid-run.
+
 ## The playbooks
 
 | Playbook | Hosts | Migrated from |
