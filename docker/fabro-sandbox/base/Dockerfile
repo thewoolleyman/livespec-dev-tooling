@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # livespec fleet Fabro sandbox image — BASE layer.
 #
 # The bottom of the base → python → {python-agent, python-rust →
@@ -142,7 +143,14 @@ ENV MISE_VERSION=${MISE_VERSION}
 RUN curl -fsSL --retry 5 --retry-all-errors --retry-connrefused https://mise.run | sh
 ENV PATH=/root/.local/share/mise/shims:/root/.local/bin:$PATH
 
-RUN mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
+# mise authenticates its GitHub API calls (release lookups, attestation
+# verification) with MISE_GITHUB_TOKEN, mounted as a BuildKit secret so it
+# never lands in a layer or a build arg. Without it a hosted runner's SHARED
+# IP hits GitHub's unauthenticated limit: the v1.143.2 build failed with
+# "403 API rate limit exceeded" (livespec-dev-tooling-jw3cyl). The secret is
+# optional, so a local build without it still works, unauthenticated.
+RUN --mount=type=secret,id=github_token,env=MISE_GITHUB_TOKEN \
+    mise use -g just@${JUST_VERSION} lefthook@${LEFTHOOK_VERSION} \
         shellcheck@${SHELLCHECK_VERSION} node@${NODE_VERSION} \
     && mise reshim
 

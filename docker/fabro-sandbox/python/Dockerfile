@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # livespec fleet Fabro sandbox image — PYTHON layer.
 #
 # FROM the base layer + uv and a uv-managed CPython. This is the image
@@ -35,7 +36,14 @@ FROM ${BASE_IMAGE}
 ARG UV_VERSION=0.9.26
 ARG PYTHON_VERSION=3.10.16
 
-RUN mise use -g uv@${UV_VERSION} \
+# mise authenticates its GitHub API calls (release lookups, attestation
+# verification) with MISE_GITHUB_TOKEN, mounted as a BuildKit secret so it
+# never lands in a layer or a build arg. Without it a hosted runner's SHARED
+# IP hits GitHub's unauthenticated limit: the v1.143.2 build failed with
+# "403 API rate limit exceeded" (livespec-dev-tooling-jw3cyl). The secret is
+# optional, so a local build without it still works, unauthenticated.
+RUN --mount=type=secret,id=github_token,env=MISE_GITHUB_TOKEN \
+    mise use -g uv@${UV_VERSION} \
     && mise reshim
 
 RUN uv python install ${PYTHON_VERSION}
