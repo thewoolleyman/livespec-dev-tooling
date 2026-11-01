@@ -1,0 +1,16 @@
+1: VERBATIM livespec-dev-tooling-me5aqz #1
+2: VERBATIM livespec-dev-tooling-me5aqz #2
+3: VERBATIM livespec-dev-tooling-me5aqz #3
+4: CARRIED bd-ib-nmuyjc 1+5 (non-hp generalization of gmktec; pod+merged PR in 1, Kubernetes default in 5)
+5: VERBATIM livespec-dev-tooling-me5aqz #4
+6: VERBATIM livespec-dev-tooling-me5aqz #5
+7: VERBATIM livespec-dev-tooling-s2aqob #1
+8: VERBATIM livespec-dev-tooling-s2aqob #2
+9: VERBATIM livespec-dev-tooling-s2aqob #3
+10: VERBATIM livespec-dev-tooling-s2aqob #4
+11: VERBATIM livespec-dev-tooling-s2aqob #5
+12: VERBATIM livespec-dev-tooling-s2aqob #6
+13: VERBATIM bd-ib-qy5wol #4
+14: VERBATIM livespec-dev-tooling-6vuiwe #7
+15: VERBATIM bd-ib-qy5wol #5
+ALL CARRIED

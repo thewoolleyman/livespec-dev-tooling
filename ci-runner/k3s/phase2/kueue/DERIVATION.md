@@ -800,7 +800,7 @@ This is the dated derivation for the committed manifests. It supersedes the
 podman-era weights in the historical tables above; those tables remain as a
 record of earlier capacity decisions, not as inputs to the current manifests.
 The measured input is the operator-host capture in
-`plan/gitops-fleet-capacity-monitoring/research/003-ci-pool-job-hours-7d-2026-10-22.md`:
+`plan/archive/gitops-fleet-capacity-monitoring/research/003-ci-pool-job-hours-7d-2026-10-22.md`:
 one `cache.job-summary` Honeycomb span per k3s-pool CI job, grouped by `repo`,
 from 2026-10-15T01:14:57Z to 2026-10-22T01:14:57Z. Job-hours are
 `SUM(duration_ms) / 3,600,000`.

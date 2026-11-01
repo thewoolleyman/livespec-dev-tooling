@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Print each owner epic's status, plan_slug and Definition-of-Done bullets (numbered).
+show() { (cd "$1" && /usr/local/bin/with-livespec-env.sh -- bd show "$2" --json 2>/dev/null) | python3 -c "
+import json,sys
+d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d
+desc=d['description']; s=desc[desc.find('## Definition of Done'):]
+nxt=s.find('\n## ',5); s=s if nxt<0 else s[:nxt]
+print('=====',d['id'],d['status'],(d.get('metadata') or {}).get('plan_slug'))
+for i,l in enumerate([l for l in s.splitlines() if l.startswith('- ')],1): print(f'{i}. {l[2:]}')"; }
+DT=/data/projects/livespec-dev-tooling; OR=/data/projects/livespec-orchestrator-beads-fabro
+show $DT livespec-dev-tooling-dfixhe
+show $DT livespec-dev-tooling-me5aqz
+show $OR bd-ib-nmuyjc
+show $DT livespec-dev-tooling-s2aqob
+show $OR bd-ib-qy5wol
+show $DT livespec-dev-tooling-6vuiwe
