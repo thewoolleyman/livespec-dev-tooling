@@ -69,7 +69,7 @@ _NOISE_LINE = re.compile(
     r"|[.FEsxX]*\s*\[\s*\d+%\])$"
 )
 _DURATION = re.compile(r"\bin \d+(?:\.\d+)?s(?: \(\d+:\d{2}:\d{2}\))?")
-_FAILED_SUMMARY_LINE = re.compile(r"^FAILED\s+(\S+)", re.MULTILINE)
+_FAILED_SUMMARY_LINE = re.compile(r"^(?:FAILED|ERROR)\s+(\S+)", re.MULTILINE)
 
 
 @dataclass(frozen=True, kw_only=True)
