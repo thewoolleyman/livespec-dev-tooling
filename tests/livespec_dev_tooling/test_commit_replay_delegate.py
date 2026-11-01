@@ -194,17 +194,19 @@ def test_a_remote_replay_submits_the_staged_tree_and_reports_the_job(
     monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
     monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
     monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
-    monkeypatch.setattr(
-        module,
-        "run_gated_push",
-        lambda **_kwargs: GateVerdict(
+    monkeypatch.setattr(module, "_staged_commit", lambda **_kwargs: "f" * 40)
+
+    def run(**kwargs: object) -> GateVerdict:
+        captured["pushed"] = kwargs["request"]
+        return GateVerdict(
             state=GATE_PASSED,
             detail="the Job passed",
             token_written=True,
             job_name="gate-replay-1",
             output_checksum="checksum",
-        ),
-    )
+        )
+
+    monkeypatch.setattr(module, "run_gated_push", run)
 
     verdict = module.run_replay(
         repo_root=tmp_path,
@@ -213,6 +215,9 @@ def test_a_remote_replay_submits_the_staged_tree_and_reports_the_job(
 
     assert captured["tree_hash"] == "a" * 40
     assert captured["pytest_argv"] == ("pytest", "tests/test_widget.py")
+    pushed = captured["pushed"]
+    assert pushed.source_ref == "f" * 40
+    assert pushed.capture_output is True
     assert verdict == module.ReplayVerdict(
         local=False,
         reason="the Job passed",
@@ -251,3 +256,87 @@ def test_an_unbuilt_remote_replay_is_an_explicit_no_verdict(
     assert verdict.local is False
     assert verdict.exit_status is None
     assert verdict.reason == "the gate Job reached no verdict: renderer refused"
+
+
+def _git_runner(*, calls: list[list[str]], commit_works: bool) -> object:
+    """Answer `git write-tree` with one tree and `git commit-tree` with one commit."""
+    from returns.result import Failure, Success
+
+    from livespec_dev_tooling.gate_remote_invocation import GateCommandNotRun, GateCommandResult
+
+    def run(**kwargs: object) -> object:
+        argv = list(kwargs["argv"])
+        calls.append(argv)
+        if "commit-tree" in argv:
+            if not commit_works:
+                return Failure(GateCommandNotRun(argv=tuple(argv), detail="not found"))
+            return Success(GateCommandResult(returncode=0, stdout="d" * 40 + "\n", stderr=""))
+        return Success(GateCommandResult(returncode=0, stdout="a" * 40 + "\n", stderr=""))
+
+    return run
+
+
+def _opted_in_replay(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, commit_works: bool
+) -> tuple[object, list[list[str]], list[object]]:
+    """Run one delegated replay against stubbed git and a stubbed gate Job."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+    pushed: list[object] = []
+    request = GateRunRequest(
+        repo_root=tmp_path, mirror_url="mirror", manifest="manifest", gate_ref="ref"
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "gate_remote_request", lambda **_kwargs: Success(request))
+    monkeypatch.setattr(
+        module, "default_gate_command_runner", _git_runner(calls=calls, commit_works=commit_works)
+    )
+
+    def run(**kwargs: object) -> GateVerdict:
+        pushed.append(kwargs["request"])
+        return GateVerdict(state=GATE_PASSED, detail="the Job passed", token_written=True)
+
+    monkeypatch.setattr(module, "run_gated_push", run)
+    verdict = module.run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_widget.py"])
+    return verdict, calls, pushed
+
+
+def test_the_staged_tree_is_committed_so_the_gate_pushes_it_and_not_head(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The gate pushes a commit object, so the index tree needs one to be pushed."""
+    verdict, calls, pushed = _opted_in_replay(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, commit_works=True
+    )
+
+    commit_calls = [argv for argv in calls if "commit-tree" in argv]
+    assert [argv[-5:-1] for argv in commit_calls] == [["commit-tree", "a" * 40, "-p", "HEAD"]]
+    assert [request.source_ref for request in pushed] == ["d" * 40]
+    assert [request.capture_output for request in pushed] == [True]
+    assert verdict.exit_status == 0
+
+
+def test_a_staged_tree_that_cannot_be_committed_is_an_explicit_no_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no object to push, nothing is submitted and nothing reads as a verdict."""
+    verdict, _calls, pushed = _opted_in_replay(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, commit_works=False
+    )
+
+    assert pushed == []
+    assert verdict.local is False
+    assert verdict.exit_status is None
+    assert verdict.job_name is None
+    assert verdict.tree_hash == "a" * 40
+    assert verdict.reason == "the staged tree could not be committed for the gate"
