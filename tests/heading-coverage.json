@@ -1349,5 +1349,21 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the gate client's commit-time delegation of the red_green_replay test runs against a staged tree; livespec-dev-tooling-sewnfp owns it.",
     "work_item": "livespec-dev-tooling-sewnfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising one run of the committed retention script over a fixture /tmp/claude-<uid> tree holding a dead session's aged scratch directory and an equally aged one whose session id a real live child process carries; livespec-dev-tooling-tjldi2 owns it.",
+    "work_item": "livespec-dev-tooling-tjldi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the committed capacity-check script against stubbed filesystem usage and a stub ntfy endpoint, run twice inside the repeat interval; livespec-dev-tooling-tjldi2 owns it.",
+    "work_item": "livespec-dev-tooling-tjldi2"
   }
 ]

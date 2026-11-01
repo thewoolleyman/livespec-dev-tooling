@@ -1114,6 +1114,34 @@ And the live gate run's directory MUST remain in place
 
 And the run's log MUST name the removed directory and the root filesystem's free space before and after
 
+## Scenario: dev host retention removes a dead session's scratch directory and leaves a live one
+
+Given a session scratch directory under `/tmp/claude-<uid>` unmodified for longer than the scratch retention period whose session id no running process carries
+
+And a session scratch directory equally old whose session id a running process carries
+
+When one run of the dev host retention script completes
+
+Then the dead session's directory MUST be removed
+
+And the live session's directory MUST remain in place
+
+And the run's log MUST name the removed directory and the free space of the root filesystem and of `/tmp` before and after
+
+## Scenario: the dev host capacity check alerts when /tmp passes its threshold
+
+Given `/tmp` on the dev host with a used share at or above its configured threshold
+
+And the root filesystem below its threshold
+
+When the capacity check runs
+
+Then it MUST publish one notification to the host's ntfy topic naming `/tmp`, its used share and its free space
+
+And it MUST NOT publish a notification naming the root filesystem
+
+And a second run inside the repeat interval MUST NOT publish another
+
 ## Scenario: an opted-in push whose consumer names a private cross-repository sibling clones it with a read-only installation token
 
 Given a consumer repository whose `[tool.livespec_dev_tooling]` table sets `delegated_gate = true`

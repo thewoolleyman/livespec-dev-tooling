@@ -586,16 +586,21 @@ The role's `HOST_VARS.md` MUST document the key, both of its fields and these re
 
 ## Dev host disk retention
 
-**Scope.** This section states the standing disk retention on the maintainer's dev host, the host the `ansible/dev-host.yml` play selects through `dev_hosts`. That host is also the Ansible control node, and its root filesystem holds every governed checkout, their `tmp/gate-runs` directories, the uv cache and the docker store its factory and gate work leave behind.
+**Scope.** This section states the standing disk retention on the maintainer's dev host, the host the `ansible/dev-host.yml` play selects through `dev_hosts`. That host is also the Ansible control node, and its root filesystem holds every governed checkout, their `tmp/gate-runs` directories, the uv cache and the docker store its factory and gate work leave behind. Its `/tmp` is a memory-backed tmpfs that agent sessions, pytest and factory tooling write scratch data into, so filling it breaks the shell of every session on the host.
 
 **Provisioned, not hand-installed.** The retention MUST run at least daily from a systemd timer that a role included by `ansible/dev-host.yml` installs, as §"Host provisioning tree" requires for every service on an inventory host. Its script MUST be committed in that role, and its retention period MUST be a role variable documented in the role's `HOST_VARS.md`.
 
 **What one run reclaims, and what it leaves.**
 
 - It MUST remove dangling docker images and MUST leave every tagged image and every image a container uses in place.
-- It MUST prune the uv cache. When the prune cannot remove a path, the run MUST log that path and continue with its remaining steps, never abort.
+- It MUST prune the uv cache AS THE USER THAT OWNS THAT CACHE. The run executes with root privilege so that, before the prune, it MUST restore the cache owner's ownership of every path in the cache that another user owns, and it MUST then run the prune as the cache owner, the role's configured retention user. When the prune still cannot remove a path, the run MUST log that path and continue with its remaining steps, never abort.
 - It MUST remove a gate-run directory under a governed checkout's `tmp/gate-runs` only when that run is TERMINAL — it carries a recorded exit code, or its recorded process is no longer alive — and is older than the retention period. It MUST leave a gate run whose recorded process is alive in place, whatever its age.
-- Each run MUST log what it removed and the root filesystem's free space before and after.
+- It MUST remove a session scratch directory under the per-user Claude Code temp root (`/tmp/claude-<uid>/<project>/<session-id>`) only when no running process carries that session id in its `CLAUDE_CODE_SESSION_ID` environment variable AND the directory has not been modified for longer than the scratch retention period. The liveness check MUST read the environment of every running process on the host, whatever user owns it. It MUST leave the directory of a session a running process carries in place, whatever its age.
+- It MUST remove an entry under pytest's per-user base temp directory (`/tmp/pytest-of-<user>`) only when it has not been modified for longer than the scratch retention period.
+- It MUST hold the bulk-dump directory, a role variable, which MUST name a path on the root filesystem and never on a tmpfs, under its configured size cap by removing its oldest files first. Automation this repository provisions on the dev host MUST write run dumps (such as fabro event dumps) there and MUST NOT write them under `/tmp`.
+- Each run MUST log what it removed and the free space of the root filesystem and of `/tmp`, before and after.
+
+**Alert before full.** A second systemd timer, installed by the same role, MUST run a capacity check at least every 15 minutes. When the used share of the root filesystem or of `/tmp` is at or above that filesystem's threshold, the check MUST publish a notification to the host's ntfy topic naming the filesystem, its used share and its free space. While the condition holds it MUST NOT publish again more often than once per repeat interval. The ntfy topic MUST be the host's `claude_ntfy_topic` inventory value. The scratch retention period is a role variable distinct from the gate-run retention period. The two thresholds, the scratch retention period, the bulk-dump directory, its size cap and the repeat interval MUST be role variables documented in the role's `HOST_VARS.md`, with defaults of 85% for the root filesystem, 75% for `/tmp`, 6 hours for scratch retention, `/var/tmp/livespec-dumps` for the bulk-dump directory, 20 G for its cap and 1 hour for the repeat interval.
 
 Cargo build targets are deliberately outside this section: the large ones belong to the fabro repository's owner, whose retention rule governs them.
 
