@@ -31,10 +31,12 @@ export skip := ""
 # GitHub-hosted CI (LIVESPEC_CI_LANE=hosted, set from CI_RUNNER_LABELS in
 # ci.yml) uses all cores (-n auto — GH runners are small + dedicated). The
 # self-hosted/local lane throttles to LIVESPEC_TEST_PARALLELISM, defaulting to
-# 25% of cores (min 1) so a shared host is never oversubscribed. Tune per host
-# by exporting LIVESPEC_TEST_PARALLELISM (a dedicated box can set it to `auto`
-# or a high N); local dev may export it to speed a laptop run.
-export test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hosted" { "auto" } else { env_var_or_default("LIVESPEC_TEST_PARALLELISM", `c=$(nproc 2>/dev/null || echo 4); n=$(( c / 4 )); [ "$n" -ge 1 ] || n=1; echo "$n"`) }
+# 25% of CPUs available to this process (min 1) so a shared host is never
+# oversubscribed. A finite cgroup-v2 `cpu.max` quota wins; otherwise `nproc`
+# observes the process affinity mask. Tune per host by exporting
+# LIVESPEC_TEST_PARALLELISM (a dedicated box can set it to `auto` or a high N);
+# local dev may export it to speed a laptop run.
+export test_nprocs := if env_var_or_default("LIVESPEC_CI_LANE", "local") == "hosted" { "auto" } else { env_var_or_default("LIVESPEC_TEST_PARALLELISM", `c=$(nproc 2>/dev/null || echo 4); cpu_max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || true); quota=${cpu_max%% *}; period=${cpu_max#* }; if [ "$quota" != max ] && [ "$quota" -gt 0 ] 2>/dev/null && [ "$period" -gt 0 ] 2>/dev/null; then c=$(( quota / period )); fi; n=$(( c / 4 )); [ "$n" -ge 1 ] || n=1; echo "$n"`) }
 
 # `red_staged` — the single staged test path at a Red commit (empty
 # otherwise). When non-empty, `check:` derives the Red-mode skip set
