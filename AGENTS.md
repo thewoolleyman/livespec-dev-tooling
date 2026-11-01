@@ -182,6 +182,12 @@ The files:
   `.pytest_cache/v/cache/lastfailed` names the failing test in two seconds. A
   2026-10-27 session searched for `*.log`, found nothing, and had to retract
   "the janitor discards output" to the coordinator.
+- Read `.ai/stale-plugin-build-path.md` before saying an orchestrator verb,
+  function or flag does not exist, or before running a plugin script from a
+  skill's base directory. A long session's skill path can be an OLDER build
+  than this project's install. On 2026-11-01 a session reported that no
+  `classify-tier` verb existed, and the coordinator ruled on that report. The
+  verb had shipped in the installed build.
 
 ## Backlog drive — this repo has no foreman seat
 
