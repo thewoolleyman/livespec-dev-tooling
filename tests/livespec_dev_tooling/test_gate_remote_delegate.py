@@ -820,6 +820,28 @@ def test_a_repository_that_declares_nothing_gets_its_local_fall_through_recipe(
     assert [entry for entry in GATE_CHECK_SUITE_FALL_THROUGH if "=" in entry] == []
 
 
+def test_this_repository_declares_its_janitor_cluster_venue_and_gate_suite() -> None:
+    """The post-merge janitor delegates this repository's cold-pod gate suite.
+
+    The venue is consumed by livespec-orchestrator-beads-fabro after a merge;
+    this client's explicit suite warms Pyright before its pre-push aggregate.
+    Keeping both committed declarations under test prevents a later config edit
+    from silently moving the janitor back to the dev host or dropping the
+    required cold-pod preparation.
+    """
+    config = (_REPO_ROOT / ".livespec.jsonc").read_text(encoding="utf-8")
+
+    assert re.search(r'"janitor"\s*:\s*\{\s*"venue"\s*:\s*"cluster_job"\s*\}', config) is not None
+    declared = declared_gate_check_suite(repo_root=_REPO_ROOT)
+    assert isinstance(declared, Success)
+    assert declared.unwrap() == (
+        "install-worktree-pack",
+        "install-commit-refuse-hooks",
+        "warm-typecheck",
+        "hook_gate=1 check",
+    )
+
+
 def test_a_declared_suite_is_read_in_its_declaration_order(*, tmp_path: Path) -> None:
     """Order is the gate's run order, so the declaration is a sequence."""
     _write_pyproject(
