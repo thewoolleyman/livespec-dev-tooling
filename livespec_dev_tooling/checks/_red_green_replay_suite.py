@@ -48,6 +48,7 @@ __all__: list[str] = [
     "canonical_output_checksum",
     "has_shared_test_support",
     "run_suite",
+    "stages_only_shared_test_support",
     "suite_pytest_argv",
     "suite_timeout_seconds",
     "xdist_importable",
@@ -138,6 +139,17 @@ def has_shared_test_support(*, staged_paths: list[str]) -> bool:
         path.startswith("tests/")
         and not (Path(path).suffix == ".py" and Path(path).name.startswith("test_"))
         for path in staged_paths
+    )
+
+
+def stages_only_shared_test_support(*, staged_paths: list[str], tests_paths: list[str]) -> bool:
+    """Return whether shared test support is staged with no test module beside it.
+
+    Such a staging has no test of its own to fail or pass (pytest exits 5), so
+    it is never a Red: it is green-verified by the full suite it can affect.
+    """
+    return has_shared_test_support(staged_paths=staged_paths) and not any(
+        Path(path).name.startswith("test_") for path in tests_paths
     )
 
 

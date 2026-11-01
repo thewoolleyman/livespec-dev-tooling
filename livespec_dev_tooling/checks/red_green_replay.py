@@ -108,6 +108,9 @@ from _red_green_replay_revert import (  # noqa: E402  — sibling private import
     RANGE_MISSING_TRAILERS_HINT,
     is_forge_authored_revert,
 )
+from _red_green_replay_suite import (  # noqa: E402  — sibling private import
+    stages_only_shared_test_support,
+)
 from _red_green_replay_trailers import (  # noqa: E402  — sibling private import
     _narrate_git_failure,
     dropped_red_trailers,
@@ -566,7 +569,12 @@ def main() -> int:
         # premise false — see `_stages_non_python_implementation`.
         non_py_impl = _stages_non_python_implementation(paths=staged_paths)
         declares_red_intent = _RED_INTENT_TYPE_RE.match(subject) is not None and not non_py_impl
-        if declares_red_intent or not _staged_tests_pass(tests_paths=tests_paths):
+        # Shared support staged with no test module has no test of its own
+        # to fail or pass (pytest exits 5), so it is never a Red: it is
+        # green-verified by the full suite it can affect.
+        if not stages_only_shared_test_support(
+            staged_paths=staged_paths, tests_paths=tests_paths
+        ) and (declares_red_intent or not _staged_tests_pass(tests_paths=tests_paths)):
             # Branch 2 (failing tests ⇒ Red leg, any prefix) and
             # branch 3's feat:/fix: arm (declared Red intent: the
             # handler records Red trailers on failure and rejects a
