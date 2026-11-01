@@ -1309,5 +1309,45 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this scenario, driving `just check-per-file-coverage` and asserting its output lists the thirty slowest test phases with their durations; livespec-dev-tooling-tt4w7h owns it.",
     "work_item": "livespec-dev-tooling-tt4w7h"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Delegated commit-time replay test runs",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the gate client's commit-time delegation of the red_green_replay test runs against a staged tree; livespec-dev-tooling-sewnfp owns it.",
+    "work_item": "livespec-dev-tooling-sewnfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an opted-in commit from a credentialed host runs its replay tests against the staged tree",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the gate client's commit-time delegation of the red_green_replay test runs against a staged tree; livespec-dev-tooling-sewnfp owns it.",
+    "work_item": "livespec-dev-tooling-sewnfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated replay leg's trailers name the gate Job and the staged tree",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the gate client's commit-time delegation of the red_green_replay test runs against a staged tree; livespec-dev-tooling-sewnfp owns it.",
+    "work_item": "livespec-dev-tooling-sewnfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated replay leg with no verdict falls back to a local run",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the gate client's commit-time delegation of the red_green_replay test runs against a staged tree; livespec-dev-tooling-sewnfp owns it.",
+    "work_item": "livespec-dev-tooling-sewnfp"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a commit from a host without the gates credential runs its replay tests locally and says so",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the gate client's commit-time delegation of the red_green_replay test runs against a staged tree; livespec-dev-tooling-sewnfp owns it.",
+    "work_item": "livespec-dev-tooling-sewnfp"
   }
 ]
