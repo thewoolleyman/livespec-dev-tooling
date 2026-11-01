@@ -33,6 +33,10 @@ _HOST_INPUTS = frozenset({"GITHUB_ACTIONS", "COVERAGE_PROCESS_START"})
 _PYTEST_LINE = (
     "run pytest -n 1 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing"
 )
+_PYTEST_WITH_DURATIONS_LINE = (
+    "run pytest -n 1 --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing "
+    "--durations=30"
+)
 _PER_FILE_LINE = "run python -m livespec_dev_tooling.checks.per_file_coverage"
 _REPORT_LINE = "run coverage report --fail-under=100"
 _FAKE_UV = """#!/usr/bin/env bash
@@ -165,9 +169,23 @@ def test_producer_marker_unlocks_consume_once_reuse(*, tmp_path: Path) -> None:
     assert consumer.returncode == 0, consumer.stderr
     assert "provenance marker matches the current tracked tree" in consumer.stdout
     assert _reported_total(output=consumer.stdout) == "8675309"
-    assert _uv_log(tmp_path=tmp_path) == [_PYTEST_LINE, _PER_FILE_LINE, _REPORT_LINE]
+    assert _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE, _PER_FILE_LINE, _REPORT_LINE]
     assert not (tmp_path / ".coverage").exists()
     assert not (tmp_path / _REUSE_STAMP).exists()
+
+
+def test_producer_lists_the_thirty_slowest_test_phases(*, tmp_path: Path) -> None:
+    """The coverage-suite producer asks pytest to report its thirty slowest phases."""
+    _install_harness(tmp_path=tmp_path, git_tree=True)
+
+    producer = _run(
+        tmp_path=tmp_path,
+        script="check-per-file-coverage.sh",
+        extra={"FAKE_PYTEST_TOTAL": "1"},
+    )
+
+    assert producer.returncode == 0, producer.stderr
+    assert _uv_log(tmp_path=tmp_path) == [_PYTEST_WITH_DURATIONS_LINE, _PER_FILE_LINE]
 
 
 def test_marker_is_invalidated_by_a_tracked_tree_change(*, tmp_path: Path) -> None:
