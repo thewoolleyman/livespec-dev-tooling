@@ -45,6 +45,7 @@ with nothing anywhere raising an error.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -143,7 +144,9 @@ class _StubCluster:
         raises: str | None = None,
         job_status_payload: str | None = None,
         created_payload: str | None = None,
+        log_output: str = "",
     ) -> None:
+        self._log_output = log_output
         self.calls: list[_Invocation] = []
         self.naps: list[float] = []
         self._states = list(job_states)
@@ -191,6 +194,8 @@ class _StubCluster:
             return self._job_status_payload or _job_status(state=self._next_state())
         if kind == "submit-job":
             return self._created_payload if self._created_payload is not None else _CREATED
+        if kind == "stream-logs":
+            return self._log_output
         return ""
 
     def _next_state(self) -> str:
@@ -527,6 +532,32 @@ def test_the_logs_are_streamed_rather_than_captured() -> None:
         "--all-containers",
         "--follow",
     )
+
+
+def test_a_capturing_request_checksums_the_job_output_and_still_shows_it(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A commit-time replay must carry evidence of the output its Job produced."""
+    output = "1 passed\n"
+    cluster = _StubCluster(log_output=output)
+    request = dataclasses.replace(_REQUEST, capture_output=True)
+
+    outcome = run_gate(request=request, runner=cluster, sleeper=cluster.sleep)
+
+    assert cluster.only(kind="stream-logs").stream is False
+    assert outcome.unwrap().output_checksum == (
+        f"sha256:{hashlib.sha256(output.encode('utf-8')).hexdigest()}"
+    )
+    assert capsys.readouterr().out == output
+
+
+def test_a_streaming_request_retains_no_output_checksum() -> None:
+    """An uncaptured stream reached the terminal only, so nothing can be checksummed."""
+    cluster = _StubCluster(log_output="1 passed\n")
+
+    outcome = run_gate(request=_REQUEST, runner=cluster, sleeper=cluster.sleep)
+
+    assert outcome.unwrap().output_checksum == ""
 
 
 def test_a_failed_gate_comes_back_as_a_raw_terminal_state_rather_than_a_verdict() -> None:
