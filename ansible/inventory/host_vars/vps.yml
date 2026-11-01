@@ -38,6 +38,9 @@ container_reclaim_system_hostname: vmi3006760
 # are this login's, not root's; a root run would prune root's empty cache and
 # leave the 52G one measured on 2026-10-21.
 dev_host_retention_user: ubuntu
+# systemd runs this role as root, whose PATH does not include ubuntu's mise
+# shims. The retention script supplies ubuntu's HOME while invoking this shim.
+dev_host_retention_uv_bin: /home/ubuntu/.local/share/mise/shims/uv
 
 # --- fabro_server ---
 fabro_server_host_user: ubuntu

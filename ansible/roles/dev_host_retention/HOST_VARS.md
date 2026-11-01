@@ -60,6 +60,7 @@ with no installed runner is SKIPPED and says so.
 | `dev_host_retention_bulk_dump_cap_bytes` | `21474836480` | 20 G (20 GiB) bulk-dump cap; the oldest files go first |
 | `dev_host_retention_capacity_repeat_interval_seconds` | `3600` | one-hour minimum interval between repeated capacity notifications per filesystem |
 | `dev_host_retention_user` | `root` | the login the retention runs as; see below, it is the one value the dev host must set |
+| `dev_host_retention_uv_bin` | `/usr/bin/uv` | absolute path to the uv executable the retention invokes while pruning that user's cache |
 | `dev_host_retention_checkout_roots` | `[/data/projects]` | the directories the governed checkouts sit directly inside; the sweep descends one level and takes every entry carrying a `.git` |
 | `dev_host_retention_filesystem` | `/` | the filesystem whose free space each run reports before and after |
 | `dev_host_retention_bin` | `/usr/local/sbin/livespec-dev-host-retention` | where the retention script is installed |
@@ -76,6 +77,11 @@ cache owner: root restores this user's ownership below `~/.cache/uv`, then runs
 cache behind. The default is `root` because it is the only value that is right
 for a host nobody has set this on.
 
+**Why `dev_host_retention_uv_bin` is an absolute path.** The systemd unit runs
+as root, whose PATH does not include a login's mise shims. The unit passes this
+configured executable to the script, which sets the retention user's HOME when
+it invokes a non-root user's uv so a mise shim can resolve its configuration.
+
 Linked worktrees need no entry of their own: a worktree's gate runs are written
 to its PRIMARY checkout's store, which is why a run outlives the worktree that
 started it.
@@ -85,6 +91,7 @@ started it.
 # `ubuntu` login's (the same login `codex_config_user` and `fabro_server_host_user`
 # name).
 dev_host_retention_user: ubuntu
+dev_host_retention_uv_bin: /home/ubuntu/.local/share/mise/shims/uv
 ```
 
 ## Operator procedure

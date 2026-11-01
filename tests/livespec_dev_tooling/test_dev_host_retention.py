@@ -71,6 +71,7 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _SERVICE_TEMPLATE = _ROLE / "templates" / "livespec-dev-host-retention.service.j2"
 _TIMER_TEMPLATE = _ROLE / "templates" / "livespec-dev-host-retention.timer.j2"
 _ROLE_DOC = _ROLE / "HOST_VARS.md"
+_VPS_HOST_VARS = _ANSIBLE / "inventory" / "host_vars" / "vps.yml"
 
 # The role variable the section requires: "its retention period MUST be a role
 # variable documented in the role's HOST_VARS.md".
@@ -470,6 +471,24 @@ def test_the_retention_service_hands_its_configured_uv_executable_to_the_script(
     ), (
         "the rendered retention service must hand the configured uv executable to the "
         f"script:\n{service}"
+    )
+
+
+def test_the_uv_executable_is_documented_and_set_for_the_dev_host() -> None:
+    """The mise shim is explicit because systemd does not inherit the login PATH."""
+    doc = _read(path=_ROLE_DOC)
+    assert _UV_BIN_VARIABLE in doc, (
+        f"the owning role's HOST_VARS.md must document {_UV_BIN_VARIABLE}: the "
+        "configured executable is how the root-run unit reaches the user's uv cache"
+    )
+    vps_host_vars = _read(path=_VPS_HOST_VARS)
+    assert re.search(
+        rf"^{_UV_BIN_VARIABLE}: /home/ubuntu/\.local/share/mise/shims/uv$",
+        vps_host_vars,
+        re.MULTILINE,
+    ), (
+        "the dev host must configure ubuntu's uv shim, which is the executable that "
+        f"can prune the cache systemd's root PATH cannot reach:\n{vps_host_vars}"
     )
 
 
