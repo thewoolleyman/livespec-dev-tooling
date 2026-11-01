@@ -901,7 +901,39 @@ cmd_wait() {
         [[ "$STATE" == "RUNNING" ]] || break
         idle_sleep "$POLL_INTERVAL_S"
     done
-    cmd_status "$run_id"
+    # The full status renderer parses captured output and shells out to
+    # several reporting tools. Once the verdict exists, doing that work
+    # before returning lets host contention spend the five-second wait
+    # budget even though the waiter observed the result promptly. Render
+    # the terminal verdict with bash builtins only; `status` remains the
+    # detailed evidence view for an operator who needs it.
+    local code=""
+    printf '=== gate run %s ===\n' "$run_id"
+    printf '  state             : %s\n' "$STATE"
+    case "$STATE" in
+        PASSED)
+            printf '  exit_code         : 0\n'
+            printf '  VERDICT: the gate RAN TO COMPLETION and PASSED.\n'
+            return 0
+            ;;
+        FAILED)
+            read -r code <"$dir/exit_code" || code="$EX_NO_VERDICT"
+            printf '  exit_code         : %s\n' "$code"
+            printf '  VERDICT: the gate RAN TO COMPLETION and REFUSED (exit %s).\n' "$code"
+            printf '  This IS a verdict and it must be honored — read output.log for the reason.\n'
+            return "$code"
+            ;;
+        DIED_WITHOUT_VERDICT)
+            printf '  ⛔ NO VERDICT: the gate DID NOT FINISH.\n'
+            printf '  This is NOT a pass and NOT a refusal. Nothing was decided, so nothing\n'
+            printf '  may be concluded from it. Re-run the gate; do not treat this as green.\n'
+            return "$EX_NO_VERDICT"
+            ;;
+        *)
+            printf '  ⛔ NO VERDICT: the gate state could not be derived.\n'
+            return "$EX_NO_VERDICT"
+            ;;
+    esac
 }
 
 cmd_list() {

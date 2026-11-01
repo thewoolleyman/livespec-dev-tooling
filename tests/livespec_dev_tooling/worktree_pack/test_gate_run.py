@@ -566,8 +566,10 @@ def test_an_idle_detached_gate_run_and_an_idle_waiter_spawn_no_per_tick_process(
 def test_gate_wait_promptly_observes_a_verdict_after_becoming_idle(
     *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
-    """A missed poll leaves enough margin for the five-second contract under load."""
+    """The terminal path stays builtin-only after an idle wait."""
     primary, worktree, env = fixture_repo
+    shims = _shim_dir(root=tmp_path)
+    waiter_log = tmp_path / "waiter-terminal-spawns.log"
     ready = tmp_path / "gate-ready"
     fifo = tmp_path / "gate-release"
     gate = f'mkfifo "{fifo}"; touch "{ready}"; read -r _ < "{fifo}"; exit {_GATE_EXIT_CODE}'
@@ -575,13 +577,14 @@ def test_gate_wait_promptly_observes_a_verdict_after_becoming_idle(
     waiter = subprocess.Popen(
         [str(primary / "dev-tooling" / _SCRIPT), "wait", run_id],
         cwd=str(primary),
-        env=env,
+        env=_shimmed_env(env=env, shims=shims, log=waiter_log),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
     assert _wait_for_file(path=ready, timeout_s=_VERDICT_TIMEOUT_S)
     time.sleep(0.25)
+    waiter_before_verdict = _spawn_count(log=waiter_log)
     with fifo.open("w", encoding="utf-8") as release:
         _ = release.write("release\n")
 
@@ -592,6 +595,7 @@ def test_gate_wait_promptly_observes_a_verdict_after_becoming_idle(
     assert time.monotonic() - verdict_at < _WAKE_RETURN_BUDGET_S
     assert waiter.returncode == _GATE_EXIT_CODE
     assert "FAILED" in stdout
+    assert _spawn_count(log=waiter_log) == waiter_before_verdict
 
 
 @pytest.mark.integration
