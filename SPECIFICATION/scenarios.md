@@ -1665,3 +1665,15 @@ Given a `just check-per-file-coverage` run whose test suite has more than thirty
 When the run's test suite completes
 
 Then the run's output MUST list the thirty slowest test phases of that run, each with its duration
+
+## Scenario: a token-bearing response on a model the LLM-spend price table does not list is sent at a marked fallback price
+
+Given the shared LLM-spend price table lists `gpt-6.1-sol` and does not list `gpt-7-sol`
+
+When an emitter sends a response on `gpt-7-sol` that carries non-zero tokens to the `llm-spend` dataset
+
+Then the event's `cost_usd` MUST be non-zero and computed at `gpt-6.1-sol`'s list price
+
+And the event MUST carry `spend.price_fallback` = `true` and a `cost_note` naming `gpt-6.1-sol`
+
+And a response on `gpt-6.1-sol` itself MUST be sent at its list price with no fallback marker
