@@ -75,6 +75,7 @@ _ROLE_DOC = _ROLE / "HOST_VARS.md"
 # The role variable the section requires: "its retention period MUST be a role
 # variable documented in the role's HOST_VARS.md".
 _PERIOD_VARIABLE = "dev_host_retention_gate_run_days"
+_UV_BIN_VARIABLE = "dev_host_retention_uv_bin"
 # The task whose presence in a plain converge IS "the play includes the role that
 # installs the retention script and its daily systemd timer".
 _ARM_TASK = "Enable and start the dev host retention timer"
@@ -453,6 +454,22 @@ def test_the_retention_period_is_a_role_variable_documented_in_host_vars() -> No
     assert _PERIOD_VARIABLE in doc, (
         f"the owning role's HOST_VARS.md must document {_PERIOD_VARIABLE}: the section "
         "names that file as where the retention period is documented"
+    )
+
+
+def test_the_retention_service_hands_its_configured_uv_executable_to_the_script() -> None:
+    """Systemd's root PATH cannot be the source of the executable the script runs."""
+    defaults = _read(path=_DEFAULTS)
+    assert re.search(rf"^{_UV_BIN_VARIABLE}: /\S+$", defaults, re.MULTILINE), (
+        f"{_ROLE_NAME} must configure the uv executable as a path rather than depend on "
+        f"systemd's PATH:\n{defaults}"
+    )
+    service = _read(path=_SERVICE_TEMPLATE)
+    assert (
+        f'Environment="LIVESPEC_DEV_HOST_RETENTION_UV_BIN={{{{ {_UV_BIN_VARIABLE} }}}}"' in service
+    ), (
+        "the rendered retention service must hand the configured uv executable to the "
+        f"script:\n{service}"
     )
 
 
