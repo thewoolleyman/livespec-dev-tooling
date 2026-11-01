@@ -16,3 +16,11 @@
     daemon_reload: true
   become: true
   when: not ansible_check_mode or dev_host_retention_timer_unit.stat.exists
+
+- name: Restart the dev host capacity check timer
+  ansible.builtin.systemd_service:
+    name: "{{ dev_host_retention_capacity_check_timer }}"
+    state: restarted
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or dev_host_retention_timer_unit.stat.exists

@@ -16,13 +16,16 @@ Wants=docker.service
 
 [Service]
 Type=oneshot
-User={{ dev_host_retention_user }}
 ExecStart={{ dev_host_retention_bin }}
 # Reclamation must never compete with the work it exists to serve: it is
 # background work whose only deadline is "before the disk fills".
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec={{ dev_host_retention_timeout_start_sec }}
-Environment="LIVESPEC_DEV_HOST_RETENTION_DAYS={{ dev_host_retention_days }}"
+Environment="LIVESPEC_DEV_HOST_RETENTION_DAYS={{ dev_host_retention_gate_run_days }}"
 Environment="LIVESPEC_DEV_HOST_RETENTION_CHECKOUT_ROOTS={{ dev_host_retention_checkout_roots | join(' ') }}"
 Environment="LIVESPEC_DEV_HOST_RETENTION_FILESYSTEM={{ dev_host_retention_filesystem }}"
+Environment="LIVESPEC_DEV_HOST_RETENTION_USER={{ dev_host_retention_user }}"
+Environment="LIVESPEC_DEV_HOST_SCRATCH_RETENTION_SECONDS={{ dev_host_retention_scratch_retention_hours | int * 3600 }}"
+Environment="LIVESPEC_DEV_HOST_BULK_DUMP_DIR={{ dev_host_retention_bulk_dump_dir }}"
+Environment="LIVESPEC_DEV_HOST_BULK_DUMP_CAP_BYTES={{ dev_host_retention_bulk_dump_cap_bytes }}"

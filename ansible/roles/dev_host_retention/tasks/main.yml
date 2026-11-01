@@ -34,12 +34,17 @@
       - dev_host_retention_on_calendar | string | length > 0
       - dev_host_retention_randomized_delay_sec | string | length > 0
       - dev_host_retention_timeout_start_sec | string | length > 0
+      - dev_host_retention_scratch_retention_hours | string | length > 0
+      - dev_host_retention_bulk_dump_dir | string | length > 0
+      - dev_host_retention_bulk_dump_cap_bytes | string | length > 0
+      - dev_host_retention_capacity_check_bin | string | length > 0
+      - dev_host_retention_capacity_check_state_dir | string | length > 0
     fail_msg: >-
       Every field of the dev host retention must carry a non-empty value; check
       this host's host_vars against the role defaults.
     success_msg: every field of the dev host retention carries a value
 
-- name: Refuse a retention period that is not a whole number of days
+- name: Refuse a gate-run retention period that is not a whole number of days
   # The value reaches the script through the unit's environment and is then
   # multiplied into an epoch cutoff. A non-numeric value makes that arithmetic
   # a shell error, which leaves every gate run in place while the timer reports
@@ -47,12 +52,56 @@
   # makes every terminal run eligible the moment it finishes.
   ansible.builtin.assert:
     that:
-      - dev_host_retention_days | string is match('^[0-9]+$')
-      - dev_host_retention_days | int > 0
+      - dev_host_retention_gate_run_days | string is match('^[0-9]+$')
+      - dev_host_retention_gate_run_days | int > 0
     fail_msg: >-
-      dev_host_retention_days must be a whole number of days greater than zero,
-      got '{{ dev_host_retention_days }}'
-    success_msg: the retention period is a whole number of days
+      dev_host_retention_gate_run_days must be a whole number of days greater than zero,
+      got '{{ dev_host_retention_gate_run_days }}'
+    success_msg: the gate-run retention period is a whole number of days
+
+- name: Refuse invalid scratch, capacity and bulk-dump values
+  ansible.builtin.assert:
+    that:
+      - dev_host_retention_scratch_retention_hours | int > 0
+      - dev_host_retention_root_threshold_percent | int > 0
+      - dev_host_retention_root_threshold_percent | int <= 100
+      - dev_host_retention_tmp_threshold_percent | int > 0
+      - dev_host_retention_tmp_threshold_percent | int <= 100
+      - dev_host_retention_bulk_dump_cap_bytes | int > 0
+      - dev_host_retention_capacity_repeat_interval_seconds | int > 0
+    fail_msg: >-
+      Scratch retention, capacity thresholds, bulk-dump cap and repeat interval
+      must all be positive; thresholds cannot exceed 100 percent.
+
+- name: Resolve the root filesystem mount for bulk-dump validation
+  ansible.builtin.command:
+    argv: [findmnt, --noheadings, --output, TARGET, --target, /]
+  changed_when: false
+  check_mode: false
+  register: dev_host_retention_root_mount
+
+- name: Resolve the bulk-dump filesystem mount
+  ansible.builtin.command:
+    argv: [findmnt, --noheadings, --output, TARGET, --target, "{{ dev_host_retention_bulk_dump_dir }}"]
+  changed_when: false
+  check_mode: false
+  register: dev_host_retention_bulk_dump_mount
+
+- name: Resolve the bulk-dump filesystem type
+  ansible.builtin.command:
+    argv: [findmnt, --noheadings, --output, FSTYPE, --target, "{{ dev_host_retention_bulk_dump_dir }}"]
+  changed_when: false
+  check_mode: false
+  register: dev_host_retention_bulk_dump_fstype
+
+- name: Refuse a bulk-dump directory outside the root filesystem or on tmpfs
+  ansible.builtin.assert:
+    that:
+      - dev_host_retention_bulk_dump_mount.stdout | trim == dev_host_retention_root_mount.stdout | trim
+      - dev_host_retention_bulk_dump_fstype.stdout | trim != 'tmpfs'
+    fail_msg: >-
+      dev_host_retention_bulk_dump_dir resolves outside the root filesystem or
+      to tmpfs. Run dumps must be retained under the root filesystem, never /tmp.
 
 - name: Refuse a checkout root that is not an absolute path
   # The sweep descends one level from each root. A relative value would resolve
@@ -80,6 +129,35 @@
     group: root
     mode: "0755"
     validate: bash -n %s
+  become: true
+
+- name: Install the dev host retention scratch helper
+  ansible.builtin.copy:
+    src: dev-host-retention-scratch.sh
+    dest: "{{ dev_host_retention_bin | dirname }}/dev-host-retention-scratch.sh"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  become: true
+
+- name: Install the dev host capacity check script
+  ansible.builtin.copy:
+    src: dev-host-capacity-check.sh
+    dest: "{{ dev_host_retention_capacity_check_bin }}"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  become: true
+
+- name: Create the capacity check state directory
+  ansible.builtin.file:
+    path: "{{ dev_host_retention_capacity_check_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
   become: true
 
 - name: Check whether the dev host retention timer unit is already installed
@@ -111,9 +189,37 @@
   become: true
   notify: Restart the dev host retention timer
 
+- name: Install the dev host capacity check service unit
+  ansible.builtin.template:
+    src: livespec-dev-host-capacity-check.service.j2
+    dest: "{{ dev_host_retention_unit_dir }}/{{ dev_host_retention_capacity_check_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install the dev host capacity check timer unit
+  ansible.builtin.template:
+    src: livespec-dev-host-capacity-check.timer.j2
+    dest: "{{ dev_host_retention_unit_dir }}/{{ dev_host_retention_capacity_check_timer }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart the dev host capacity check timer
+
 - name: Enable and start the dev host retention timer
   ansible.builtin.systemd_service:
     name: "{{ dev_host_retention_timer }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true
+  when: not ansible_check_mode or dev_host_retention_timer_unit.stat.exists
+
+- name: Enable and start the dev host capacity check timer
+  ansible.builtin.systemd_service:
+    name: "{{ dev_host_retention_capacity_check_timer }}"
     enabled: true
     state: started
     daemon_reload: true
