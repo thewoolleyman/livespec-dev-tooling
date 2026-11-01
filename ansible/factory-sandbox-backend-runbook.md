@@ -249,17 +249,33 @@ the work is already on origin. Rescue only what is not there.
 6. Record the rescue ref on the work-item. Then re-dispatch, or open a pull
    request from the rescued commits.
 
-**Demonstrated 2026-10-31** on run `01M68T1WYT71N1TJJRHE8B3ARY`
-(`bd-ib-nonaor`, orchestrator tenant). It was a real petri run in pod
-`petri-01m68t1wyt71n1tjjrhe8b3ary-l0`, which no longer existed by then; its
-workspace survived on `poweredge-xubuntu`.
+**Demonstrated 2026-11-01 on genuinely unpublished work.** Run
+`01M68640A8N82PEJKTTVG2J875` (`bd-ib-55vxu5`, orchestrator tenant) was a real
+petri run in pod `petri-01m68640a8n82pejkttvg2j875-l0`. It was **cancelled**
+(status `failed`, reason `cancelled`) after its implement and review_fix stages
+had committed. That path writes no needs-human ref, so the run's last implement
+commit, `598970f8a` ("fix: give the Codex judgement candidate a private home and
+no profile hooks"), existed on no origin ref.
 
-- `fabro dump` exported 199 files.
-- The read-only fetch recovered the run branch, tip `fe163cf1`, with the
-  implement commits `199ddc0c` ("feat: measure overtaken pull request
-  conflicts") and `74f68369` ("feat: classify overtaken record-file conflicts").
-- The push created `refs/heads/rescue/01M68T1WYT71N1TJJRHE8B3ARY` on origin at
-  `fe163cf1`, with both implement commits reachable from it.
+- `fabro dump` exported 244 files. On this cancelled run it took more than
+  5 minutes, so give it a long timeout and do not read a slow dump as a hang.
+- The read-only fetch from the retained workspace on `poweredge-xubuntu`
+  recovered the run branch, tip `7be3238f`, which contains `598970f8a`.
+- The push created `refs/heads/rescue/01M68640A8N82PEJKTTVG2J875`.
+  `git branch -r --contains 598970f8a` now lists that rescue ref and nothing
+  else.
+
+An earlier run of the same procedure, on run `01M68T1WYT71N1TJJRHE8B3ARY`
+(`bd-ib-nonaor`, rescue ref `rescue/01M68T1WYT71N1TJJRHE8B3ARY` at
+`fe163cf1`), proved the mechanics. That run, however, had already reached the
+needs-human exit, so its implement commits `199ddc0c` and `74f68369` were
+already on origin at `needs-human/91e3cec80478470fa79e8c555f4d078e`. Step 1
+exists for that reason: a run that ended at needs-human usually needs no rescue,
+while a cancelled, reaped or infrastructure-killed run does.
+
+**Shell note.** In zsh, `"$RUN:refs/..."` applies the `:r` modifier to `$RUN`
+and mangles the refspec. Write `"${RUN}:refs/..."`, or spell the run id out in
+full.
 
 ## 4. The cluster becomes unavailable while runs are in flight
 
