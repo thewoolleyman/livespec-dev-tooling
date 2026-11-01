@@ -1,0 +1,38 @@
+"""Summarise a sample3.py window: mean cores per class, test/gate total, host cross-check."""
+import json, sys, collections, datetime
+rows = [json.loads(l) for l in open(sys.argv[1])]
+UTC = datetime.timezone.utc
+TG = ["commit-pre-commit-aggregate", "commit-red-green-replay", "pre-push", "janitor-post-merge",
+      "adhoc-gate-start", "adhoc-pytest-or-check", "coverage-tree"]
+secs = sum(r["interval"] for r in rows); hz = rows[0]["hz"]; cap = rows[0]["ncpu"]
+c = collections.Counter(); cs = collections.Counter()
+for r in rows:
+    for k, (u, s) in r["classes"].items():
+        c[k] += u + s; cs[k] += s
+cores = {k: v / hz / secs for k, v in c.items()}
+att = sum(cores.values())
+h = collections.Counter()
+for r in rows:
+    for k, v in r["host"].items():
+        h[k] += v
+acct = sum(h.values())
+print(f"window {datetime.datetime.fromtimestamp(rows[0]['t'] - rows[0]['interval'], UTC):%Y-%m-%d %H:%M:%S}Z -> "
+      f"{datetime.datetime.fromtimestamp(rows[-1]['t'], UTC):%H:%M:%S}Z  intervals={len(rows)}  hours={secs/3600:.2f}")
+print(f"attributed runtime {att:.2f} cores of {cap};  /proc/stat accounted {acct/hz/secs:.2f} of {cap} wall cores "
+      f"(busy {(h['user']+h['system']+h['irq'])/hz/secs:.2f}, sys {h['system']/hz/secs:.2f}, idle {h['idle']/hz/secs:.2f}, iowait {h['iowait']/hz/secs:.2f})")
+over = sum(1 for r in rows if r["attributed_ticks"] > r["interval"] * hz * cap * 1.02)
+print(f"intervals attributing more than wall capacity: {over}")
+print(f"{'class':32}{'cores':>8}{'share':>8}{'sys%':>7}")
+for k in sorted(cores, key=lambda k: -cores[k]):
+    print(f"{k:32}{cores[k]:8.2f}{cores[k]/att*100:7.1f}%{cs[k]/max(c[k],1)*100:6.0f}%")
+tg = sum(cores.get(k, 0) for k in TG)
+print(f"TEST/GATE TOTAL {tg:.2f} cores = {tg/att*100:.1f}% of attributed runtime")
+if len(sys.argv) > 2:
+    step = int(sys.argv[2])
+    for i in range(0, len(rows), step):
+        rs = rows[i:i + step]; s2 = sum(r["interval"] for r in rs); cc = collections.Counter()
+        for r in rs:
+            for k, (u, s) in r["classes"].items():
+                cc[k] += u + s
+        print(f"{datetime.datetime.fromtimestamp(rs[0]['t'], UTC):%H:%M}Z tg={sum(cc[k] for k in TG)/hz/s2:5.2f} " +
+              " ".join(f"{k}={cc[k]/hz/s2:.2f}" for k in TG if cc[k] / hz / s2 >= 0.05))
