@@ -5,9 +5,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from livespec_dev_tooling._gate_remote_assembly import declared_gate_check_suite
+from livespec_dev_tooling._gate_remote_assembly import check_suite_argv, declared_gate_check_suite
 from livespec_dev_tooling.gate_private_sibling_token import private_sibling_credential
-from livespec_dev_tooling.gate_remote_invocation import GateCommandRunner, GateStepFailed
+from livespec_dev_tooling.gate_remote_invocation import (
+    GateCommandRunner,
+    GateStepFailed,
+    require_success,
+)
 
 # `returns` is VENDORED, not installed; a bare import here would resolve only
 # when some earlier import in the process happened to run first.
@@ -17,7 +21,34 @@ if str(_VENDOR_DIR) not in sys.path:
 
 from returns.result import Failure, Result, Success  # noqa: E402  — vendor-path-aware import.
 
-__all__: list[str] = ["gate_request_inputs"]
+__all__: list[str] = [
+    "gate_request_inputs",
+    "gate_tree_hash",
+    "render_check_arguments",
+]
+
+_READ_TREE_STEP = "read-tree-hash"
+
+
+def gate_tree_hash(
+    *, repo_root: Path, runner: GateCommandRunner, supplied: str | None
+) -> Result[str, GateStepFailed]:
+    """Use an explicitly selected tree, or read the current committed tree."""
+    if supplied is not None:
+        return Success(supplied)
+    argv = ["git", "rev-parse", "HEAD^{tree}"]
+    return require_success(
+        step=_READ_TREE_STEP, argv=argv, outcome=runner(argv=argv, cwd=repo_root)
+    ).map(lambda ran: ran.stdout.strip())
+
+
+def render_check_arguments(
+    *, pytest_argv: tuple[str, ...] | None, suite: tuple[str, ...]
+) -> list[str]:
+    """Render either the replay's named pytest selection or a declared suite."""
+    if pytest_argv is not None:
+        return [flag for argument in pytest_argv for flag in ("--pytest-arg", argument)]
+    return check_suite_argv(suite=suite)
 
 
 def gate_request_inputs(

@@ -8,7 +8,13 @@ from pathlib import Path
 
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_commit_tests
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
+from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
 from livespec_dev_tooling.gate_remote_invocation import default_gate_command_runner
+from livespec_dev_tooling.gate_remote_verdict import (
+    GATE_FAILED,
+    GATE_PASSED,
+    run_gated_push,
+)
 
 # `returns` is vendored, so a direct module invocation needs to make its
 # sibling package importable before it imports the Result implementation.
@@ -58,10 +64,27 @@ def _staged_tree_hash(*, repo_root: Path) -> str:
 
 
 def _run_remote(*, repo_root: Path, pytest_argv: list[str], tree_hash: str) -> ReplayVerdict:
-    """Represent an unanswered remote replay as an explicit no-verdict result."""
-    _ = (repo_root, pytest_argv)
+    """Submit the selected index tree and retain the Job's own verdict."""
+    built = gate_remote_request(
+        repo_root=repo_root,
+        renderer=resolve_renderer(repo_root=repo_root),
+        runner=default_gate_command_runner,
+        tree_hash=tree_hash,
+        pytest_argv=tuple(pytest_argv),
+    )
+    if isinstance(built, Failure):
+        return ReplayVerdict(
+            local=False,
+            reason=f"the gate Job reached no verdict: {built.failure().detail}",
+            tree_hash=tree_hash,
+        )
+    remote = run_gated_push(request=built.unwrap(), runner=default_gate_command_runner)
+    exit_status = 0 if remote.state == GATE_PASSED else 1 if remote.state == GATE_FAILED else None
     return ReplayVerdict(
         local=False,
-        reason="the gate Job reached no verdict",
+        reason=remote.detail,
+        job_name=remote.job_name,
         tree_hash=tree_hash,
+        exit_status=exit_status,
+        output_checksum=remote.output_checksum,
     )
