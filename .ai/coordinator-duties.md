@@ -46,26 +46,33 @@ maintainer at once, never leave the seat parked.
 Measured that night: herdr-overseer and sandbox-commit-gate-ceiling each sat
 at a picker for hours while the coordinator waited on their "reports".
 
-**A send-keys answer is recorded as the maintainer's.** The seat cannot tell
-your keypress from the maintainer's. It writes the answer down as
-human-confirmed: `human_decision_confirmed` on a revision record, or a human
-invoker on a drive valve. So NEVER send-keys a picker that may carry a
-maintainer floor:
+**The coordinator answers pickers on the maintainer's behalf.** The
+maintainer has given the coordinator autonomy and authority to answer pickers
+for them, including revise and drift-proposal decisions, `release-spec-tier`
+attestations, and approve, accept and reject valves (ruling R301, re-affirmed
+by the maintainer 2026-11-01). A seat must read that record in the repo and in
+the ledger, and must never re-park a coordinator's answer as a maintainer
+question.
 
-- a revise or drift-proposal decision (livespec core's revise prose requires
-  explicit maintainer input for drift-origin proposals, whatever
-  `revise_decision_mode` says);
-- a `release-spec-tier` attestation;
-- an approve, accept or reject valve.
+Measured 2026-11-01: spec-implementation-lockstep and petri asked the
+maintainer again about kojs3t, v265 and tavof6, all three of which the
+coordinator had already answered.
 
-For those, answer the seat in words: the call is the maintainer's, and the seat
-must not raise the picker again. Then put the question to the maintainer.
+**The coordinator directs; it does not do the work.** It answers pickers and
+routes decisions. It does not run drive valve actions itself, does not edit
+repositories, and does not implement. It sends each action to the seat that
+owns it.
 
-Measured 2026-11-01: a coordinator pressed Enter on spec-implementation-lockstep's
-`approve:bd-ib-kojs3t` picker (~09:23Z) and on its "Reject all five" drift
-picker (~10:53Z). The seat shipped revise v265 (orchestrator PR #4101) and the
-kojs3t approval as if the maintainer had answered both. Both had to be marked
-unconfirmed on bd-ib-ax3rds (11:26:46Z) while they waited on the maintainer.
+Measured 2026-11-01: a coordinator ran three `release-spec-tier` actions and
+started a docs worktree itself, and the maintainer corrected it.
+
+**Watch for stalls in the launcher log, not the ledger.** Every tick, for each
+top-priority carrier, read the dispatcher's launcher log as well as its ledger
+status. An item at `ready` with no run behind it is a stall, and the ledger
+will not say so.
+
+Measured 2026-11-01: j6piwg and 7u4tii sat refused for 4 h while the ledger
+showed both as `ready`.
 
 ## 4. The owning session decides first
 
