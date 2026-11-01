@@ -491,6 +491,10 @@ def _evaluate_fallback(*, expression: str, variables: Mapping[str, str]) -> str:
     """
     if expression.strip() in ("[]", "{}"):
         return ""
+    # A BOOLEAN literal belongs to a flag axis — `retained_read_only` — that no unit
+    # template line names, so its text is all a renderer can say about it.
+    if expression.strip() in ("false", "true"):
+        return expression.strip()
     resolved: list[str] = []
     for term in (part.strip() for part in expression.split("~")):
         if term.startswith("'") and term.endswith("'"):
