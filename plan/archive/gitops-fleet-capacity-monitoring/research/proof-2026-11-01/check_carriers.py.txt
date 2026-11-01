@@ -1,0 +1,29 @@
+"""Compare dfixhe's superseded assertions with their owners' DoD bullets (input: owner_dods.out)."""
+import re, sys
+blocks = {}
+cur = None
+for line in open(sys.argv[1]):
+    if line.startswith("===== "):
+        cur = line.split()[1]; blocks[cur] = {}
+    elif cur and re.match(r"^\d+\. ", line):
+        n, t = line.split(". ", 1); blocks[cur][int(n)] = t.rstrip("\n")
+import json, subprocess
+desc = json.loads(subprocess.run(["/usr/local/bin/with-livespec-env.sh", "--", "bd", "show", "livespec-dev-tooling-dfixhe", "--json"], capture_output=True, text=True, cwd="/data/projects/livespec-dev-tooling").stdout)[0]["description"]
+sup = desc[desc.find("## Superseded"):]
+old = {int(m.group(1)): m.group(2) for m in re.finditer(r"^(\d+)\. (.*?) OWNER: .*$", sup, re.M)}
+M = {1: ("livespec-dev-tooling-me5aqz", 1), 2: ("livespec-dev-tooling-me5aqz", 2), 3: ("livespec-dev-tooling-me5aqz", 3),
+     5: ("livespec-dev-tooling-me5aqz", 4), 6: ("livespec-dev-tooling-me5aqz", 5),
+     **{i: ("livespec-dev-tooling-s2aqob", i - 6) for i in range(7, 13)},
+     13: ("bd-ib-qy5wol", 4), 15: ("bd-ib-qy5wol", 5), 14: ("livespec-dev-tooling-6vuiwe", 7)}
+ok = True
+for i in range(1, 16):
+    if i == 4:
+        b = blocks["bd-ib-nmuyjc"]
+        g = ("ImplementWorkItem workflow in a pod" in b[1] and "merged pull request" in b[1] and "Kubernetes backend" in b[5])
+        print(f"{i}: {'CARRIED' if g else 'MISSING'} bd-ib-nmuyjc 1+5 (non-hp generalization of gmktec; pod+merged PR in 1, Kubernetes default in 5)"); ok &= g; continue
+    epic, n = M[i]; want = old[i]
+    if i == 12: want = want.replace("assertion 11", "assertion 5")
+    got = blocks.get(epic, {}).get(n)
+    v = got == want; ok &= v
+    print(f"{i}: {'VERBATIM' if v else 'MISMATCH'} {epic} #{n}")
+print("ALL CARRIED" if ok else "NOT ALL CARRIED"); sys.exit(0 if ok else 1)
