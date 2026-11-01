@@ -81,15 +81,27 @@
   register: dev_host_retention_root_mount
 
 - name: Resolve the bulk-dump filesystem mount
+  # The directory may not exist yet on a fresh host, and findmnt exits 1 for a
+  # nonexistent target, so resolve against the nearest existing ancestor.
   ansible.builtin.command:
-    argv: [findmnt, --noheadings, --output, TARGET, --target, "{{ dev_host_retention_bulk_dump_dir }}"]
+    argv:
+      - sh
+      - -c
+      - 'd="$1"; while [ ! -e "$d" ]; do d=$(dirname "$d"); done; exec findmnt --noheadings --output TARGET --target "$d"'
+      - sh
+      - "{{ dev_host_retention_bulk_dump_dir }}"
   changed_when: false
   check_mode: false
   register: dev_host_retention_bulk_dump_mount
 
 - name: Resolve the bulk-dump filesystem type
   ansible.builtin.command:
-    argv: [findmnt, --noheadings, --output, FSTYPE, --target, "{{ dev_host_retention_bulk_dump_dir }}"]
+    argv:
+      - sh
+      - -c
+      - 'd="$1"; while [ ! -e "$d" ]; do d=$(dirname "$d"); done; exec findmnt --noheadings --output FSTYPE --target "$d"'
+      - sh
+      - "{{ dev_host_retention_bulk_dump_dir }}"
   changed_when: false
   check_mode: false
   register: dev_host_retention_bulk_dump_fstype
