@@ -119,3 +119,46 @@ def test_an_absent_remote_verdict_is_never_a_pass_or_a_failure(
     assert verdict.exit_status is None
     assert verdict.job_name is None
     assert verdict.reason == "the gate Job reached no verdict"
+
+
+def test_a_tree_that_cannot_be_read_returns_an_absent_verdict(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A tree that cannot be read cannot be mistaken for the current HEAD."""
+    from returns.result import Failure, Success
+
+    from livespec_dev_tooling.gate_remote_invocation import GateCommandNotRun, GateCommandResult
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(
+        module,
+        "default_gate_command_runner",
+        lambda **_kwargs: Success(GateCommandResult(returncode=0, stdout="c" * 40, stderr="")),
+    )
+
+    verdict = module.run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_widget.py"])
+
+    assert verdict.local is False
+    assert verdict.tree_hash == "c" * 40
+    assert verdict.exit_status is None
+
+    monkeypatch.setattr(
+        module,
+        "default_gate_command_runner",
+        lambda **_kwargs: Failure(GateCommandNotRun(argv=("git",), detail="not found")),
+    )
+
+    unavailable = module.run_replay(
+        repo_root=tmp_path,
+        pytest_argv=["pytest", "tests/test_widget.py"],
+    )
+
+    assert unavailable.local is False
+    assert unavailable.tree_hash is None
+    assert unavailable.exit_status is None
+    assert unavailable.reason == "the staged tree could not be read"
