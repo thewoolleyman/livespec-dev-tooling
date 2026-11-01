@@ -17,6 +17,7 @@ Wants=docker.service
 [Service]
 Type=oneshot
 ExecStart={{ dev_host_retention_bin }}
+Environment="LIVESPEC_DEV_HOST_RETENTION_UV_BIN={{ dev_host_retention_uv_bin }}"
 # Reclamation must never compete with the work it exists to serve: it is
 # background work whose only deadline is "before the disk fills".
 Nice=10
