@@ -1,12 +1,26 @@
 # Diagnosing A Factory Dispatch From The Host
 
 Use this before reading anything into a quiet, stuck, or surprising factory
-dispatch, before adding a ledger comment meant to reach a running worker or to
+dispatch, before launching a dispatch yourself, before adding a ledger comment meant to reach a running worker or to
 record a queued item's wait, and
 before claiming that a templated token or input binding does or does not render
 in a Fabro run. Each section below records a trap that produced a confident
 wrong answer with no error. Carried from session auto-memory on 2026-10-18;
 the measurement dates are given per section.
+
+## Launch through petri, never a direct `drive impl:` call
+
+Coordinator correction, 2026-11-01.
+
+When a `ready` item has to go to the factory, ask the
+`petri-factory-on-gmktec` seat to issue it a ticket. Do not run
+`drive.py --action impl:<id>` yourself, even after the credential probe reads
+`usable`. A direct `drive impl:` launch skips petri's gmktec FIFO queue, the
+fleet cap and its holds, so that launch follows a different control path from
+every other one. Nothing errors when this happens.
+livespec-dev-tooling-tjldi2 was dispatched that way on 2026-11-01, and the run
+was allowed to finish. The process chain in the next section is what a
+dispatch looks like once it is running. It does not say how to start one.
 
 ## A run's health is its live process chain, not its `ps` status
 

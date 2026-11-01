@@ -117,8 +117,10 @@ The files:
   tool: measure the file count and layout first, pass `-lptgoD -HAX
   --numeric-ids` (it rejects `-a`), log progress, and checksum only AFTER the
   copy against a quiet source (paid for on hp-xubuntu, 2026-10-12).
-- Read `.ai/fabro-dispatch-diagnosis.md` before reading anything into a
-  quiet or stuck factory dispatch, before adding a ledger comment meant to
+- Read `.ai/fabro-dispatch-diagnosis.md` before launching a factory dispatch
+  yourself (route it through the `petri-factory-on-gmktec` seat, never a direct
+  `drive impl:` call), before reading anything into a quiet or stuck factory
+  dispatch, before adding a ledger comment meant to
   reach a running worker or to record a queued item's wait, or before claiming
   a template token renders (or not) in a Fabro run — a bare `fabro ps` asks the
   wrong server, `runnable` can mean an orphaned run that will never start, a
