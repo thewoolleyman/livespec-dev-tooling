@@ -59,13 +59,14 @@ _RED_AWAITING_GREEN = True
 
 @pytest.fixture
 def supervisor() -> Iterator[ModuleType]:
-    """The supervisor module, loaded standalone the way the hook loads it."""
+    """Load the supervisor with its repository-state dependency pinned."""
     spec = importlib.util.spec_from_file_location(
         "red_green_replay_git_failure_edges", _SUPERVISOR_PATH
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module.merge_in_progress = lambda: IOSuccess(inner_value=False)
     return module
 
 
