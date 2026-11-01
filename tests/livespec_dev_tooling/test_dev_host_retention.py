@@ -308,6 +308,36 @@ def test_a_run_prunes_the_uv_cache(*, tmp_path: Path) -> None:
     )
 
 
+def test_a_run_with_no_uv_on_path_uses_the_configured_uv_executable(*, tmp_path: Path) -> None:
+    """The root systemd PATH must not prevent the retention user's cache prune."""
+    env = _base_env(tmp_path=tmp_path)
+    configured_uv = tmp_path / "configured-uv"
+    _ = configured_uv.write_text(_UV_STUB, encoding="utf-8")
+    configured_uv.chmod(0o755)
+    cache_dir = tmp_path / "uv-cache"
+    cache_dir.mkdir()
+    env |= {
+        "PATH": "/usr/bin:/bin",
+        "LIVESPEC_DEV_HOST_RETENTION_UV_BIN": str(configured_uv),
+        "LIVESPEC_DEV_HOST_UV_CACHE_DIR": str(cache_dir),
+    }
+
+    no_uv = subprocess.run(
+        ["bash", "-c", "command -v uv"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert no_uv.returncode != 0, "this regression needs a PATH without uv"
+
+    done = _retain(env=env)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "cache prune" in (tmp_path / "uv.log").read_text(encoding="utf-8")
+    assert "uv cache prune: Removed 4096 files" in done.stdout
+
+
 def test_a_uv_path_the_prune_cannot_remove_is_logged_and_the_run_still_finishes(
     *, tmp_path: Path
 ) -> None:
