@@ -18,7 +18,18 @@ dev_host_retention_timer: livespec-dev-host-retention.timer
 # a week has either merged or been abandoned. The 4935 directories measured on
 # 2026-10-21 spanned months, so the vast majority of that 1.1G is evidence
 # nobody will open again.
-dev_host_retention_days: 7
+dev_host_retention_gate_run_days: 7
+dev_host_retention_scratch_retention_hours: 6
+dev_host_retention_root_threshold_percent: 85
+dev_host_retention_tmp_threshold_percent: 75
+dev_host_retention_bulk_dump_dir: /var/tmp/livespec-dumps
+dev_host_retention_bulk_dump_cap_bytes: 21474836480
+dev_host_retention_capacity_repeat_interval_seconds: 3600
+dev_host_retention_capacity_check_bin: /usr/local/sbin/livespec-dev-host-capacity-check
+dev_host_retention_capacity_check_service: livespec-dev-host-capacity-check.service
+dev_host_retention_capacity_check_timer: livespec-dev-host-capacity-check.timer
+dev_host_retention_capacity_check_on_unit_active_sec: 15min
+dev_host_retention_capacity_check_state_dir: /var/lib/livespec-dev-host-capacity
 
 # Where this host's governed checkouts live. The sweep descends ONE level and
 # takes every directory that carries a `.git`, so adding a repository to the

@@ -43,6 +43,12 @@ set -uo pipefail
 RETENTION_DAYS=${LIVESPEC_DEV_HOST_RETENTION_DAYS:-7}
 CHECKOUT_ROOTS=${LIVESPEC_DEV_HOST_RETENTION_CHECKOUT_ROOTS:-/data/projects}
 FILESYSTEM=${LIVESPEC_DEV_HOST_RETENTION_FILESYSTEM:-/}
+TMP_ROOT=${LIVESPEC_DEV_HOST_TMP_ROOT:-/tmp}
+SCRATCH_RETENTION_SECONDS=${LIVESPEC_DEV_HOST_SCRATCH_RETENTION_SECONDS:-21600}
+BULK_DUMP_DIR=${LIVESPEC_DEV_HOST_BULK_DUMP_DIR:-/var/tmp/livespec-dumps}
+BULK_DUMP_CAP_BYTES=${LIVESPEC_DEV_HOST_BULK_DUMP_CAP_BYTES:-21474836480}
+RETENTION_USER=${LIVESPEC_DEV_HOST_RETENTION_USER:-root}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
 log() {
     printf '%s livespec-dev-host-retention: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -53,13 +59,13 @@ log() {
 # blocks. Without it a long device name wraps and the reading silently becomes
 # the mount point.
 report_free_space() {
-    local when=$1 avail
-    avail=$(df -P -k "$FILESYSTEM" | awk 'NR == 2 {print $4}')
+    local when=$1 filesystem=$2 avail
+    avail=$(df -P -k "$filesystem" | awk 'NR == 2 {print $4}')
     if [[ -z $avail ]]; then
-        log "WARNING: could not measure free space on $FILESYSTEM"
+        log "WARNING: could not measure free space on $filesystem"
         return 0
     fi
-    log "free space $when: $avail KiB available on $FILESYSTEM"
+    log "free space $when: $avail KiB available on $filesystem"
 }
 
 prune_docker_images() {
@@ -86,12 +92,27 @@ unremovable_paths() {
 }
 
 prune_uv_cache() {
-    local output path
+    local output path cache_home cache_dir owner_uid owner_gid
     if ! command -v uv >/dev/null 2>&1; then
         log "uv is not on PATH; no cache prune attempted"
         return 0
     fi
-    if output=$(uv cache prune 2>&1); then
+    cache_home=$(getent passwd "$RETENTION_USER" 2>/dev/null | cut -d: -f6)
+    cache_dir=${LIVESPEC_DEV_HOST_UV_CACHE_DIR:-${cache_home:+$cache_home/.cache/uv}}
+    if [[ -n $cache_dir && -d $cache_dir ]]; then
+        owner_uid=$(id -u "$RETENTION_USER" 2>/dev/null) || owner_uid=
+        owner_gid=$(id -g "$RETENTION_USER" 2>/dev/null) || owner_gid=
+        if [[ -n $owner_uid && -n $owner_gid ]]; then
+            find "$cache_dir" -xdev ! -user "$owner_uid" -exec chown -h "$owner_uid:$owner_gid" {} + 2>/dev/null || \
+                log "WARNING: could not restore all $RETENTION_USER ownership under $cache_dir"
+        fi
+    fi
+    if [[ $RETENTION_USER == root || $RETENTION_USER == 0 ]]; then
+        output=$(uv cache prune 2>&1)
+    else
+        output=$(runuser -u "$RETENTION_USER" -- uv cache prune 2>&1)
+    fi
+    if [[ $? -eq 0 ]]; then
         log "uv cache prune: ${output//$'\n'/; }"
         return 0
     fi
@@ -101,6 +122,16 @@ prune_uv_cache() {
         log "uv cache prune could not remove $path; continuing with the remaining steps"
     done < <(unremovable_paths "$output")
 }
+
+# The scratch and bulk legs are separate because their liveness and ordering
+# rules are independent from the checkout-owned gate-run predicate above.
+# Keeping them in a sibling also keeps this orchestration script cohesive.
+if [[ -r $SCRIPT_DIR/dev-host-retention-scratch.sh ]]; then
+    # shellcheck source=dev-host-retention-scratch.sh
+    source "$SCRIPT_DIR/dev-host-retention-scratch.sh"
+else
+    log "WARNING: scratch retention helper is not installed; tmpfs cleanup is skipped"
+fi
 
 # Seconds since the epoch for a gate run's `started_at`, or nothing when the
 # record cannot be read. "Older than the retention period" is anchored on
@@ -177,9 +208,14 @@ sweep_checkout_roots() {
     done
 }
 
-log "retention period: ${RETENTION_DAYS} days; checkout roots: ${CHECKOUT_ROOTS}"
-report_free_space before
+log "gate-run retention period: ${RETENTION_DAYS} days; scratch retention: ${SCRATCH_RETENTION_SECONDS}s"
+report_free_space before "$FILESYSTEM"
+report_free_space before /tmp
 prune_docker_images
 prune_uv_cache
 sweep_checkout_roots
-report_free_space after
+if declare -F reclaim_scratch_and_bulk >/dev/null; then
+    reclaim_scratch_and_bulk "$TMP_ROOT" "$SCRATCH_RETENTION_SECONDS" "$BULK_DUMP_DIR" "$BULK_DUMP_CAP_BYTES"
+fi
+report_free_space after "$FILESYSTEM"
+report_free_space after /tmp

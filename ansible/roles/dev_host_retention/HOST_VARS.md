@@ -1,8 +1,10 @@
 # `dev_host_retention` — per-host values for the inventory's `host_vars`
 
-The dev host's standing disk retention: a oneshot unit that removes dangling
-docker images, prunes the uv cache and removes aged TERMINAL gate runs under
-each governed checkout's `tmp/gate-runs`, armed by a daily systemd timer.
+The dev host's standing disk retention: a root-run oneshot that removes
+dangling docker images, restores the retention user's uv-cache ownership before
+pruning as that user, and reclaims aged gate-run, Claude Code and pytest
+scratch. A second timer checks root and `/tmp` every 15 minutes and alerts the
+host's `claude_ntfy_topic` before either fills.
 
 **Why it exists.** Measured 2026-10-21 for coordinator R510: `/` at 94% — 637G
 of 678G, 39.4G free — with no standing retention of any kind. The reclaimable
@@ -16,12 +18,18 @@ control was a human noticing (work-item `livespec-dev-tooling-fj6dm5`).
 
 - dangling docker images go; every tagged image and every image a container
   uses stays;
-- the uv cache is pruned, and a path the prune cannot remove is LOGGED and the
-  run continues — it never aborts;
+- root restores every path in the retention user's uv cache to that user's
+  ownership, then the retention user prunes it; a path the prune cannot remove
+  is LOGGED and the run continues — it never aborts;
 - a gate run under a governed checkout's `tmp/gate-runs` is removed only when
   it is TERMINAL and older than the retention period; a run whose recorded
   process is alive stays, whatever its age;
-- each run logs what it removed and the filesystem's free space before and
+- old `/tmp/claude-<uid>/<project>/<session-id>` directories go only when no
+  process carries their session id in `CLAUDE_CODE_SESSION_ID`; old pytest base
+  temp entries go; a live session always stays;
+- bulk dumps are capped oldest-first, but only under a root-filesystem
+  directory: the role refuses a tmpfs location;
+- each run logs what it removed and the free space of `/` and `/tmp` before and
   after.
 
 **Cargo build targets are deliberately out of scope.** The two large ones
@@ -44,7 +52,13 @@ with no installed runner is SKIPPED and says so.
 
 | variable | default | what it is |
 | --- | --- | --- |
-| `dev_host_retention_days` | `7` | **THE RETENTION PERIOD**, in whole days: how long a terminal gate run's evidence survives, anchored on the run's own `started_at` |
+| `dev_host_retention_gate_run_days` | `7` | **THE GATE-RUN RETENTION PERIOD**, in whole days: how long a terminal gate run's evidence survives, anchored on the run's own `started_at` |
+| `dev_host_retention_scratch_retention_hours` | `6` | how long Claude Code and pytest scratch must be untouched before removal |
+| `dev_host_retention_root_threshold_percent` | `85` | root-filesystem used-share alert threshold |
+| `dev_host_retention_tmp_threshold_percent` | `75` | `/tmp` used-share alert threshold |
+| `dev_host_retention_bulk_dump_dir` | `/var/tmp/livespec-dumps` | dump directory, required to resolve onto the root filesystem and never tmpfs |
+| `dev_host_retention_bulk_dump_cap_bytes` | `21474836480` | 20 G (20 GiB) bulk-dump cap; the oldest files go first |
+| `dev_host_retention_capacity_repeat_interval_seconds` | `3600` | one-hour minimum interval between repeated capacity notifications per filesystem |
 | `dev_host_retention_user` | `root` | the login the retention runs as; see below, it is the one value the dev host must set |
 | `dev_host_retention_checkout_roots` | `[/data/projects]` | the directories the governed checkouts sit directly inside; the sweep descends one level and takes every entry carrying a `.git` |
 | `dev_host_retention_filesystem` | `/` | the filesystem whose free space each run reports before and after |
@@ -56,12 +70,11 @@ with no installed runner is SKIPPED and says so.
 | `dev_host_retention_randomized_delay_sec` | `30m` | jitter, so the reclaim does not land in the same second as every other daily unit |
 | `dev_host_retention_timeout_start_sec` | `30min` | bounds ONE run; the first run after this role lands walks the whole gate-run backlog |
 
-**Why `dev_host_retention_user` is the one value a host must set.** Two of the
-three legs are per-user: `uv cache prune` prunes the cache of the user it runs
-as, and the docker leg needs that user's access to the daemon socket. A root
-run on the dev host would prune root's empty cache and leave the 52G one that
-was actually measured. The default is `root` because it is the only value that
-is right for a host nobody has set this on.
+**Why `dev_host_retention_user` is the one value a host must set.** It is the
+cache owner: root restores this user's ownership below `~/.cache/uv`, then runs
+`uv cache prune` as this user. A root prune would leave the measured user's
+cache behind. The default is `root` because it is the only value that is right
+for a host nobody has set this on.
 
 Linked worktrees need no entry of their own: a worktree's gate runs are written
 to its PRIMARY checkout's store, which is why a run outlives the worktree that
@@ -86,7 +99,7 @@ just ansible-apply ansible/dev-host.yml --tags dev_host_retention
 To read what the retention has reclaimed, and when it next fires:
 
 ```bash
-systemctl list-timers livespec-dev-host-retention.timer
+systemctl list-timers livespec-dev-host-retention.timer livespec-dev-host-capacity-check.timer
 journalctl -u livespec-dev-host-retention.service --since -2d
 ```
 

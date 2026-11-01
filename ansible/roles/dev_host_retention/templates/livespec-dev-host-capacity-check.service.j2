@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Alert before the dev host root filesystem or tmpfs fills
+
+[Service]
+Type=oneshot
+ExecStart={{ dev_host_retention_capacity_check_bin }}
+Environment="LIVESPEC_DEV_HOST_ROOT_THRESHOLD_PERCENT={{ dev_host_retention_root_threshold_percent }}"
+Environment="LIVESPEC_DEV_HOST_TMP_THRESHOLD_PERCENT={{ dev_host_retention_tmp_threshold_percent }}"
+Environment="LIVESPEC_DEV_HOST_CAPACITY_REPEAT_SECONDS={{ dev_host_retention_capacity_repeat_interval_seconds }}"
+Environment="LIVESPEC_DEV_HOST_CAPACITY_STATE_DIR={{ dev_host_retention_capacity_check_state_dir }}"
+Environment="LIVESPEC_DEV_HOST_NTFY_TOPIC={{ claude_ntfy_topic }}"

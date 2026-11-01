@@ -74,7 +74,7 @@ _ROLE_DOC = _ROLE / "HOST_VARS.md"
 
 # The role variable the section requires: "its retention period MUST be a role
 # variable documented in the role's HOST_VARS.md".
-_PERIOD_VARIABLE = "dev_host_retention_days"
+_PERIOD_VARIABLE = "dev_host_retention_gate_run_days"
 # The task whose presence in a plain converge IS "the play includes the role that
 # installs the retention script and its daily systemd timer".
 _ARM_TASK = "Enable and start the dev host retention timer"
@@ -395,14 +395,15 @@ def test_a_run_logs_what_it_removed_and_the_free_space_before_and_after(
         str(aged) in done.stdout
     ), f"the run must name the directory it removed:\n{done.stdout + done.stderr}"
     free = re.findall(r"free space (before|after): (\d+) KiB available on (\S+)", done.stdout)
-    assert [entry[0] for entry in free] == ["before", "after"], (
+    assert [entry[0] for entry in free] == ["before", "before", "after", "after"], (
         "the run must report the filesystem's free space before and after, in that "
         f"order — a reclamation nobody can measure is a reclamation nobody trusts:"
         f"\n{done.stdout + done.stderr}"
     )
     assert {entry[2] for entry in free} == {
-        "/"
-    }, f"the default filesystem the run measures is the root one:\n{done.stdout}"
+        "/",
+        "/tmp",
+    }, f"the retention must report both the root filesystem and tmpfs:\n{done.stdout}"
 
 
 def test_the_retention_period_is_a_role_variable_documented_in_host_vars() -> None:
