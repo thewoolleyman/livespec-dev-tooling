@@ -1538,6 +1538,42 @@ And the committing host MUST verify that tree hash before honouring the reported
 
 And the committing host MUST run no pytest for that leg
 
+## Scenario: a seat's gate-runner full suite runs as a gate Job by default
+
+Given a repository with `delegated_gate = true`
+
+And a host whose user can read the gates kubeconfig
+
+When a seat runs `gate-start -- just check` in a worktree with uncommitted changes
+
+Then the suite MUST run as a gate Job against a tree that includes those changes
+
+And the run record MUST carry `venue: cluster_job`, the gate Job's name and the tree hash
+
+## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict
+
+Given a repository with `delegated_gate = true`
+
+And a host whose user can read the gates kubeconfig
+
+When a seat runs `gate-start -- just check` and the gate Job is lost before it reports
+
+Then the run MUST end as `DIED_WITHOUT_VERDICT` and `gate-wait` MUST exit `75`
+
+And the runner MUST NOT re-run the command on the dev host
+
+## Scenario: an explicit local gate-runner run is recorded as local
+
+Given a repository with `delegated_gate = true`
+
+And a host whose user can read the gates kubeconfig
+
+When a seat runs `gate-start --local -- just check`
+
+Then the suite MUST run on the dev host
+
+And the run record MUST carry `venue: host_local` and the reason `--local`
+
 ## Scenario: a delegated replay leg's trailers name the gate Job and the staged tree
 
 Given a repository with `delegated_commit_tests = true`
@@ -1579,6 +1615,34 @@ When the developer commits
 Then the replay gate's test runs MUST execute on the committing host
 
 And the hook MUST say that it gated locally
+
+## Scenario: a delegated pre-commit aggregate gates the staged tree on the cluster
+
+Given a repository with `delegated_pre_commit = true`
+
+And a committing host whose user can read the gates kubeconfig
+
+When a hand commit runs the pre-commit hook
+
+Then the pre-commit aggregate MUST run as a gate Job against the staged tree's hash
+
+And the hook output MUST name that gate Job and the staged tree hash
+
+And a red Job verdict MUST refuse the commit
+
+## Scenario: a delegated pre-commit aggregate with no cluster verdict gates locally
+
+Given a repository with `delegated_pre_commit = true`
+
+And a committing host whose user can read the gates kubeconfig
+
+When a hand commit runs the pre-commit hook and the gate Job cannot be submitted
+
+Then the committing host MUST run the pre-commit aggregate itself
+
+And the hook output MUST say that it gated locally
+
+And the commit MUST NOT be refused because the cluster returned no verdict
 
 ## Scenario: a canonical check waived in pyproject.toml is exempt from the aggregate and fleet gates
 

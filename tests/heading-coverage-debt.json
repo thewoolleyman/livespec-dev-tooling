@@ -9,6 +9,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
+    "heading": "## Delegated gate-runner runs",
+    "work_item": "livespec-dev-tooling-qgv3tb",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Delegated pre-commit aggregate",
+    "work_item": "livespec-dev-tooling-3buhph",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
     "heading": "## Master-health reconciler",
     "work_item": "livespec-dev-tooling-zcp5vb",
     "first_seen": "2026-10-22"
@@ -81,6 +95,27 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a commit from a host without the gates credential runs its replay tests locally and says so",
     "work_item": "livespec-dev-tooling-sewnfp",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
+    "work_item": "livespec-dev-tooling-qgv3tb",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated pre-commit aggregate gates the staged tree on the cluster",
+    "work_item": "livespec-dev-tooling-3buhph",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated pre-commit aggregate with no cluster verdict gates locally",
+    "work_item": "livespec-dev-tooling-3buhph",
     "first_seen": "2026-11-01"
   },
   {
@@ -191,6 +226,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
+    "work_item": "livespec-dev-tooling-qgv3tb",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a silent cluster-state emitter fires its dead-man",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
@@ -250,6 +292,13 @@
     "heading": "## Scenario: an OOM-killed or unschedulable factory pod is visible with its reason and fires its trigger",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
+    "work_item": "livespec-dev-tooling-qgv3tb",
+    "first_seen": "2026-11-01"
   },
   {
     "spec_root": "SPECIFICATION",
