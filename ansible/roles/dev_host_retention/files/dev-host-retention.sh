@@ -48,6 +48,7 @@ SCRATCH_RETENTION_SECONDS=${LIVESPEC_DEV_HOST_SCRATCH_RETENTION_SECONDS:-21600}
 BULK_DUMP_DIR=${LIVESPEC_DEV_HOST_BULK_DUMP_DIR:-/var/tmp/livespec-dumps}
 BULK_DUMP_CAP_BYTES=${LIVESPEC_DEV_HOST_BULK_DUMP_CAP_BYTES:-21474836480}
 RETENTION_USER=${LIVESPEC_DEV_HOST_RETENTION_USER:-root}
+UV_BIN=${LIVESPEC_DEV_HOST_RETENTION_UV_BIN:-uv}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
 log() {
@@ -93,8 +94,12 @@ unremovable_paths() {
 
 prune_uv_cache() {
     local output path cache_home cache_dir owner_uid owner_gid
-    if ! command -v uv >/dev/null 2>&1; then
-        log "uv is not on PATH; no cache prune attempted"
+    if [[ $UV_BIN == */* && ! -x $UV_BIN ]]; then
+        log "configured uv executable is not executable: $UV_BIN; no cache prune attempted"
+        return 0
+    fi
+    if [[ $UV_BIN != */* ]] && ! command -v "$UV_BIN" >/dev/null 2>&1; then
+        log "configured uv executable is not on PATH: $UV_BIN; no cache prune attempted"
         return 0
     fi
     cache_home=$(getent passwd "$RETENTION_USER" 2>/dev/null | cut -d: -f6)
@@ -108,9 +113,9 @@ prune_uv_cache() {
         fi
     fi
     if [[ $RETENTION_USER == root || $RETENTION_USER == 0 ]]; then
-        output=$(uv cache prune 2>&1)
+        output=$("$UV_BIN" cache prune 2>&1)
     else
-        output=$(runuser -u "$RETENTION_USER" -- uv cache prune 2>&1)
+        output=$(runuser -u "$RETENTION_USER" -- env "HOME=$cache_home" "$UV_BIN" cache prune 2>&1)
     fi
     if [[ $? -eq 0 ]]; then
         log "uv cache prune: ${output//$'\n'/; }"
