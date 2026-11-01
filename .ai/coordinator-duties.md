@@ -46,6 +46,27 @@ maintainer at once, never leave the seat parked.
 Measured that night: herdr-overseer and sandbox-commit-gate-ceiling each sat
 at a picker for hours while the coordinator waited on their "reports".
 
+**A send-keys answer is recorded as the maintainer's.** The seat cannot tell
+your keypress from the maintainer's. It writes the answer down as
+human-confirmed: `human_decision_confirmed` on a revision record, or a human
+invoker on a drive valve. So NEVER send-keys a picker that may carry a
+maintainer floor:
+
+- a revise or drift-proposal decision (livespec core's revise prose requires
+  explicit maintainer input for drift-origin proposals, whatever
+  `revise_decision_mode` says);
+- a `release-spec-tier` attestation;
+- an approve, accept or reject valve.
+
+For those, answer the seat in words: the call is the maintainer's, and the seat
+must not raise the picker again. Then put the question to the maintainer.
+
+Measured 2026-11-01: a coordinator pressed Enter on spec-implementation-lockstep's
+`approve:bd-ib-kojs3t` picker (~09:23Z) and on its "Reject all five" drift
+picker (~10:53Z). The seat shipped revise v265 (orchestrator PR #4101) and the
+kojs3t approval as if the maintainer had answered both. Both had to be marked
+unconfirmed on bd-ib-ax3rds (11:26:46Z) while they waited on the maintainer.
+
 ## 4. The owning session decides first
 
 A plan-level question (a deferred assertion, a disposition, a scope call) goes
