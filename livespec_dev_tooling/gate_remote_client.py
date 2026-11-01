@@ -207,6 +207,11 @@ class GateRunRequest:
     mirror_url: str
     manifest: str
     gate_ref: str
+    # A commit-time replay may gate the index before it is committed.  Its
+    # temporary commit is the object pushed to the mirror, while this is the
+    # tree identity the manifest and verdict must retain.
+    source_ref: str = "HEAD"
+    tree_hash: str = ""
     private_sibling_token: str = ""
     private_sibling_secret: str = ""
     namespace: str = GATE_NAMESPACE
@@ -251,6 +256,7 @@ class GateRunOutcome:
     failure_message: str = ""
     started_at: str = ""
     finished_at: str = ""
+    output_checksum: str = ""
 
 
 def run_gate(
@@ -267,10 +273,12 @@ def run_gate(
     is worth more than a clean-looking return — but a failure from the gate
     itself wins, because it is the one the operator has to act on first.
     """
-    tree = _head_tree_hash(request=request, runner=runner)
-    if isinstance(tree, Failure):
-        return Failure(tree.failure())
-    tree_hash = tree.unwrap()
+    tree_hash = request.tree_hash
+    if not tree_hash:
+        tree = _head_tree_hash(request=request, runner=runner)
+        if isinstance(tree, Failure):
+            return Failure(tree.failure())
+        tree_hash = tree.unwrap()
     push_argv = [
         *_mirror_push(),
         # `--atomic` is what makes the two refs ONE FACT. The mirror is created
@@ -280,7 +288,7 @@ def run_gate(
         # never pushed rather than on the code under test.
         "--atomic",
         request.mirror_url,
-        f"HEAD:{request.gate_ref}",
+        f"{request.source_ref}:{request.gate_ref}",
         f"{GATE_RANGE_BASE_REF}:{request.gate_ref}{GATE_BASE_REF_SUFFIX}",
     ]
     pushed = require_success(
@@ -476,6 +484,7 @@ def _gate_a_pushed_tree(
         argv=logs_argv,
         outcome=runner(argv=logs_argv, cwd=request.repo_root, stream=True),
     )
+
     return streamed.map(
         lambda ran: GateRunOutcome(
             tree_hash=tree_hash,

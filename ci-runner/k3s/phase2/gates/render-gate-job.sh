@@ -26,6 +26,7 @@
 #                      [--parallelism N] [--ttl-seconds N] [--gate-ref REF]
 #                      [--livespec-core-ref REF]
 #                      [--check-suite 'RECIPE' ...]
+#                      [--pytest-arg ARG ...]
 #
 # --repo defaults to the basename of --repo-root. --source-url defaults to the
 # in-cluster read-only mirror R4.S4 builds. The resource defaults are the terms
@@ -93,6 +94,7 @@ repo_root=""; tree_hash=""; repo=""; source_url=""; gated_repository=""
 cpu="5"; memory="6Gi"; parallelism="4"; ttl_seconds="3600"; gate_ref=""
 livespec_core_ref=""
 check_suite=()
+pytest_argv=()
 private_siblings=()
 private_sibling_secret=""
 authority_skip_env=""
@@ -123,6 +125,7 @@ while [ $# -gt 0 ]; do
     --gate-ref)          gate_ref="$2"; shift 2 ;;
     --livespec-core-ref) livespec_core_ref="$2"; shift 2 ;;
     --check-suite)       check_suite+=("$2"); shift 2 ;;
+    --pytest-arg)        pytest_argv+=("$2"); shift 2 ;;
     --private-sibling)   private_siblings+=("$2"); shift 2 ;;
     --private-sibling-secret) private_sibling_secret="$2"; shift 2 ;;
     --authority-skip-env)     authority_skip_env="$2"; shift 2 ;;
@@ -495,7 +498,12 @@ image="${images[0]}"
 # with no flag and compares. Never this repository's `warm-typecheck` or its own
 # `hook_gate=1 check`, which no other repository carries — that constant is the
 # defect livespec-dev-tooling-saxz removed.
-if [ "${#check_suite[@]}" -eq 0 ]; then
+if [ "${#pytest_argv[@]}" -gt 0 ] && [ "${pytest_argv[0]}" != "pytest" ]; then
+  echo "FATAL: --pytest-arg must begin with pytest" >&2
+  exit 2
+fi
+
+if [ "${#check_suite[@]}" -eq 0 ] && [ "${#pytest_argv[@]}" -eq 0 ]; then
   check_suite=("install-worktree-pack" "install-commit-refuse-hooks" "check-pre-push")
 fi
 
@@ -535,10 +543,18 @@ done
 # The invocations themselves, one per line, substituted as a BLOCK so the
 # rendered manifest reads as the script it is rather than as one packed line.
 gate_recipe_lines=""
-for entry in "${check_suite[@]}"; do
-  gate_recipe_lines="${gate_recipe_lines:+${gate_recipe_lines}
+if [ "${#pytest_argv[@]}" -gt 0 ]; then
+  for argument in "${pytest_argv[@]}"; do
+    printf -v escaped_argument '%q' "${argument}"
+    gate_recipe_lines="${gate_recipe_lines:+${gate_recipe_lines} }${escaped_argument}"
+  done
+  gate_recipe_lines="uv run ${gate_recipe_lines}"
+else
+  for entry in "${check_suite[@]}"; do
+    gate_recipe_lines="${gate_recipe_lines:+${gate_recipe_lines}
 }just ${entry}"
-done
+  done
+fi
 
 # --- the members this Job must NOT run (livespec-dev-tooling-mex6ga) ---------
 # The one exception in the "What the delegated gate runs" bullet of

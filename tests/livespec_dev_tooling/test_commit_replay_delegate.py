@@ -221,3 +221,33 @@ def test_a_remote_replay_submits_the_staged_tree_and_reports_the_job(
         exit_status=0,
         output_checksum="checksum",
     )
+
+
+def test_an_unbuilt_remote_replay_is_an_explicit_no_verdict(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A request failure cannot be reported as a red or green Job result."""
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+
+    module = _module()
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "b" * 40)
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Failure(
+            GateStepFailed(step="render", argv=(), returncode=1, detail="renderer refused")
+        ),
+    )
+
+    verdict = module.run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_widget.py"])
+
+    assert verdict.local is False
+    assert verdict.exit_status is None
+    assert verdict.reason == "the gate Job reached no verdict: renderer refused"

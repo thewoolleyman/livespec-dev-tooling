@@ -150,6 +150,7 @@ class GateVerdict:
     namespace: str | None = None
     job_started_at: str | None = None
     job_finished_at: str | None = None
+    output_checksum: str | None = None
 
     @property
     def refuses_push(self) -> bool:
@@ -232,6 +233,7 @@ def _decided(
         namespace=request.namespace,
         job_started_at=outcome.started_at or None,
         job_finished_at=outcome.finished_at or None,
+        output_checksum=outcome.output_checksum or None,
     )
 
 

@@ -78,6 +78,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from livespec_dev_tooling import _gate_remote_request_inputs as request_inputs
 from livespec_dev_tooling._gate_authority_skip import authority_skip_resolution
 from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
@@ -85,13 +86,11 @@ from livespec_dev_tooling._gate_host_authority import (
 )
 from livespec_dev_tooling._gate_remote_assembly import (
     assembly_refusal,
-    check_suite_argv,
     gate_ref_tree_hash,
     gate_repo_name,
     per_run_gate_ref,
     renderer_refusal,
 )
-from livespec_dev_tooling._gate_remote_request_inputs import gate_request_inputs
 from livespec_dev_tooling._gate_remote_verdict_fields import verdict_job_fields
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_gate
 from livespec_dev_tooling.gate_credential import (
@@ -273,7 +272,12 @@ def resolve_renderer(*, repo_root: Path) -> Path:
 
 
 def gate_remote_request(
-    *, repo_root: Path, renderer: Path, runner: GateCommandRunner
+    *,
+    repo_root: Path,
+    renderer: Path,
+    runner: GateCommandRunner,
+    tree_hash: str | None = None,
+    pytest_argv: tuple[str, ...] | None = None,
 ) -> Result[GateRunRequest, GateStepFailed]:
     """Assemble the one request S7a needs, out of the repository itself.
 
@@ -286,18 +290,15 @@ def gate_remote_request(
     already reads the same way, and a caller that can write a fixture repository
     can vary it without a seam.
     """
-    tree_argv = ["git", "rev-parse", "HEAD^{tree}"]
-    tree = require_success(
-        step=_READ_TREE_STEP, argv=tree_argv, outcome=runner(argv=tree_argv, cwd=repo_root)
-    )
+    tree = request_inputs.gate_tree_hash(repo_root=repo_root, runner=runner, supplied=tree_hash)
     if isinstance(tree, Failure):
         return Failure(tree.failure())
-    tree_hash = tree.unwrap().stdout.strip()
+    tree_hash = tree.unwrap()
     named = gate_repo_name(repo_root=repo_root, runner=runner)
     if isinstance(named, Failure):
         return Failure(named.failure())
     repo = named.unwrap()
-    inputs = gate_request_inputs(
+    inputs = request_inputs.gate_request_inputs(
         repo_root=repo_root,
         runner=runner,
         helper=GATE_PRIVATE_SIBLING_TOKEN_HELPER,
@@ -341,7 +342,7 @@ def gate_remote_request(
         # pod that skipped a member nobody ran would be an unread authorization
         # treated as granted (`_gate_authority_skip`).
         *authority_skip.argv,
-        *check_suite_argv(suite=suite),
+        *request_inputs.render_check_arguments(pytest_argv=pytest_argv, suite=suite),
     ]
     rendered = require_success(
         step=_RENDER_STEP, argv=render_argv, outcome=runner(argv=render_argv, cwd=repo_root)
@@ -354,6 +355,7 @@ def gate_remote_request(
             mirror_url=f"{GATE_MIRROR_ROOT}/{repo}.git",
             manifest=rendered.unwrap().stdout,
             gate_ref=gate_ref,
+            tree_hash=tree_hash,
             private_sibling_token=private_sibling_token,
             private_sibling_secret=private_sibling_secret if private_siblings else "",
         )
