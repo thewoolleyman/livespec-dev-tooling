@@ -100,6 +100,7 @@ __all__: list[str] = [
     "iter_py_files",
     "list_tracked_py",
     "load_config",
+    "load_delegated_commit_tests",
     "load_delegated_gate",
     "load_destructive_cli_allowlist",
     "load_gate_check_suite",
@@ -1278,6 +1279,14 @@ def load_delegated_gate(*, repo_root: Path) -> bool | None:
     if table is None or "delegated_gate" not in table:
         return None
     return _as_bool(value=table["delegated_gate"], key="delegated_gate")
+
+
+def load_delegated_commit_tests(*, repo_root: Path) -> bool | None:
+    """Return the commit-replay delegation opt-in, or ``None`` when absent."""
+    table = _read_table(repo_root=repo_root)
+    if table is None or "delegated_commit_tests" not in table:
+        return None
+    return _as_bool(value=table["delegated_commit_tests"], key="delegated_commit_tests")
 
 
 def load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
