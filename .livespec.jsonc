@@ -262,6 +262,7 @@
         "verify_commit_refuse_hook": { "mode": "internal_livespec_dev_tooling" },
         "verify_plugin_resolution": { "mode": "internal_livespec_dev_tooling" }
       },
+      "janitor": { "venue": "cluster_job" },
       "auto_approve_ready": true,
       "acceptance_mode": "ai-only",
       // AMENDED 2026-10-20 (coordinator R273, stability): implement is back on
