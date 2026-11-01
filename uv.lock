@@ -408,7 +408,7 @@ wheels = [
 
 [[package]]
 name = "livespec-dev-tooling"
-version = "1.141.0"
+version = "1.142.0"
 source = { editable = "." }
 
 [package.dev-dependencies]
