@@ -102,6 +102,17 @@ slice, sets the baseline. The window resumed at 16:11:45Z under the transient us
 20:27Z. The first sampler was stopped at 16:11:37Z: this seat killed its bpftrace child by mistake while chasing a false
 "process absent" reading from its own over-narrow `pgrep` pattern. Part 1 is truncated there.
 
+### Correction at 16:25Z, and the 4-hour window's true start
+
+The first v3 slice charged a `covns-full-tree` coverage tree to `coverage-tree` by its own cwd. Its owner was a janitor: the
+coverage tree's processes run under `/tmp/covns-full-tree-*` beneath `just check-per-file-coverage` in a `janitor-*`
+worktree. So the 0.52 `coverage-tree` cores in the table above belong largely to `janitor-post-merge`. The committed
+`sample3.py.txt` now treats a covns tree as a sub-tree, charged to whatever launched it, and charges `coverage-tree` only
+when no owner is found above it.
+
+The assertion-1 window was restarted with that sampler at **16:25:50Z** (unit `vpsload-window4h`). It ends about
+**20:41Z**. Slices taken before 16:25:50Z are kept in the scratchpad only and are not part of the window.
+
 ## 5. Where the system time goes: TLB-shootdown IPIs (coordinator's lead, not test/gate)
 
 A 15 s `perf record -a -g` (16:3xZ) put **19–23% of ALL host CPU samples in one kernel function, `smp_call_function_many_cond`**.
