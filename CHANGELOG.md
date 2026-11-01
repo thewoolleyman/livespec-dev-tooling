@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.145.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.144.0...v1.145.0) (2026-11-01)
+
+
+### Features
+
+* **ansible:** cover dev host tmpfs retention ([b9a02b5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b9a02b5a281153553e82c7675263a88477e336b9))
+
 ## [1.144.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.143.2...v1.144.0) (2026-11-01)
 
 
