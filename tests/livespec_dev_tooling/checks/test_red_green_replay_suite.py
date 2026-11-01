@@ -7,6 +7,7 @@ timeout, process-group kill, and order-independent output checksum.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 import time
 from pathlib import Path
@@ -36,6 +37,19 @@ def test_argv_uses_test_nprocs_for_worker_count() -> None:
         environ={"test_nprocs": "4"}, xdist_available=True, visible_cpus=32
     )
     assert argv == [sys.executable, "-m", "pytest", "--tb=no", "-q", "-n", "4"]
+
+
+def test_argv_accepts_staged_test_paths() -> None:
+    """A test-only suite-green leg selects its staged test files."""
+    mod = _load()
+    assert "test_paths" in inspect.signature(mod.suite_pytest_argv).parameters
+    argv = mod.suite_pytest_argv(
+        environ={},
+        test_paths=["tests/test_changed.py"],
+        xdist_available=True,
+        visible_cpus=32,
+    )
+    assert argv[-3:] == ["-n", "8", "tests/test_changed.py"]
 
 
 # Without `test_nprocs` (most consumers compute it in a script and never export

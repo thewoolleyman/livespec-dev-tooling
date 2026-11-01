@@ -103,16 +103,20 @@ def _lane_worker_count(*, environ: Mapping[str, str], visible_cpus: int) -> str:
 
 
 def suite_pytest_argv(
-    *, environ: Mapping[str, str], xdist_available: bool, visible_cpus: int
+    *,
+    environ: Mapping[str, str],
+    test_paths: list[str] | None = None,
+    xdist_available: bool,
+    visible_cpus: int,
 ) -> list[str]:
-    """Return the full-suite pytest argv, with `-n <workers>` when xdist is importable."""
+    """Return pytest argv for the suite or the supplied staged test paths."""
     argv = [sys.executable, "-m", "pytest", "--tb=no", "-q"]
     if not xdist_available:
-        return argv
+        return [*argv, *(test_paths or [])]
     nprocs = environ.get(_NPROCS_ENV, "").strip() or _lane_worker_count(
         environ=environ, visible_cpus=visible_cpus
     )
-    return [*argv, "-n", nprocs]
+    return [*argv, "-n", nprocs, *(test_paths or [])]
 
 
 def xdist_importable() -> bool:
