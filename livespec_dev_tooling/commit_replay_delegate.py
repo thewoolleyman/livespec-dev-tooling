@@ -33,6 +33,6 @@ def run_replay(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
         local=not readable,
         reason={
             False: "gates kubeconfig is not readable",
-            True: "delegation selected",
+            True: "delegated replay completed",
         }[readable],
     )

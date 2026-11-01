@@ -46,3 +46,20 @@ def test_an_unavailable_replay_route_runs_locally(
 
     assert verdict.local is True
     assert verdict.reason == reason
+
+
+def test_an_opted_in_credentialed_host_selects_delegation(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The credentialed opt-in is the only route that may submit a gate Job."""
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "livespec_dev_tooling.commit_replay_delegate.gates_kubeconfig_readable", lambda: True
+    )
+    verdict = run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_widget.py"])
+
+    assert verdict.local is False
+    assert verdict.reason == "delegated replay completed"
