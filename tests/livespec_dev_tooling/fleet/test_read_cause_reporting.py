@@ -22,16 +22,21 @@ per-member row, and the run's overall verdict.
 from __future__ import annotations
 
 import importlib
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pytest
 from _gh_railway import lift_gh
+from returns.io import IOSuccess
 from test_fleet_conformance import make_absent_git_reader
 
 from livespec_dev_tooling.fleet import fleet_conformance
 from livespec_dev_tooling.fleet._context import FleetContext, GhResult, GhRunner, ReadFailure
 from livespec_dev_tooling.fleet._contract_rows import CENTRAL_VANTAGE
+from livespec_dev_tooling.fleet._snapshot import DownloadOutcome, DownloadResult, GhDownloader
 from livespec_dev_tooling.fleet.contract import parse_manifest
 from livespec_dev_tooling.fleet.fleet_conformance import run_member_rows
 
@@ -110,13 +115,48 @@ def _refusing_runner(*, stderr: str) -> GhRunner:
     return lift_gh(run)
 
 
+def _refusing_downloader(*, stderr: str) -> GhDownloader:
+    """Refuse every archive read through the same controlled failure as `run_gh`."""
+
+    def download(*, args: list[str], dest: Path) -> DownloadResult:
+        del args, dest
+        return IOSuccess(DownloadOutcome(returncode=1, stderr=stderr))
+
+    return download
+
+
+def _refuse_host_subprocess_reads(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make a missed read seam fail before it can consult this host's `gh`."""
+
+    def unexpected_run(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("member read escaped the test's refusing runners")
+
+    monkeypatch.setattr(shutil, "which", lambda _program: "/usr/bin/gh")
+    monkeypatch.setattr(subprocess, "run", unexpected_run)
+
+
 def _swept(*, stderr: str) -> tuple[FleetContext, RecordingLog]:
     """Run the central member sweep with every member read refused by `stderr`."""
-    ctx = FleetContext(owner="acme", run_gh=_refusing_runner(stderr=stderr))
+    ctx = FleetContext(
+        owner="acme",
+        run_gh=_refusing_runner(stderr=stderr),
+        download_gh=_refusing_downloader(stderr=stderr),
+    )
     manifest = parse_manifest(source=_MANIFEST_SOURCE).unwrap()
     log = RecordingLog()
     _ = run_member_rows(ctx=ctx, manifest=manifest, log=log, vantages=frozenset({CENTRAL_VANTAGE}))
     return ctx, log
+
+
+def test_the_host_read_guard_rejects_an_escaped_member_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing seam must fail the test before it consults the host's `gh`."""
+    _refuse_host_subprocess_reads(monkeypatch=monkeypatch)
+
+    with pytest.raises(AssertionError, match="member read escaped the test's refusing runners"):
+        _ = subprocess.run([], check=False)
 
 
 def _causes(*, log: RecordingLog, event: str) -> set[object]:
@@ -154,8 +194,11 @@ def test_a_member_row_counts_the_two_kinds_separately() -> None:
     assert "rate_limited" in fields["read_failure_kinds"]
 
 
-def test_the_blind_row_report_carries_the_cause_and_its_remedy() -> None:
+def test_the_blind_row_report_carries_the_cause_and_its_remedy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`blind_rows` is a PROGRESS marker; without the cause it reads as a finding count."""
+    _refuse_host_subprocess_reads(monkeypatch=monkeypatch)
     _ctx, log = _swept(stderr=_RATE_LIMITED_STDERR)
 
     blind = log.fields_for(event=_BLIND_ROW_EVENT)
@@ -174,8 +217,17 @@ def test_the_overall_verdict_reports_the_two_kinds_apart(
     monkeypatch.setattr(
         fleet_conformance, "default_gh_runner", _refusing_runner(stderr=_RATE_LIMITED_STDERR)
     )
+    monkeypatch.setattr(
+        fleet_conformance,
+        "default_gh_downloader",
+        _refusing_downloader(stderr=_RATE_LIMITED_STDERR),
+    )
     monkeypatch.setattr(fleet_conformance, "default_git_reader", make_absent_git_reader())
+    monkeypatch.setattr(
+        fleet_conformance, "resolve_repo_name", lambda **_kwargs: IOSuccess("widget")
+    )
     monkeypatch.setattr(fleet_conformance, "local_vantage", lambda **_kwargs: (None, None))
+    _refuse_host_subprocess_reads(monkeypatch=monkeypatch)
     log = RecordingLog()
     monkeypatch.setattr(fleet_conformance.structlog, "get_logger", lambda _name: log)
 
