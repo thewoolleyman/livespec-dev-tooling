@@ -1,9 +1,6 @@
 ---
 btop_loop_bin_dir: /usr/local/bin
 
-# The kernel hostname this tool belongs on. Host-specific — see HOST_VARS.md.
-btop_loop_expected_hostname: vmi3006760
-
 # The digest this host and every other host running the tool must share. The
 # same bytes are installed on the CI pool from this repository's
 # ci-runner/k3s/phase2/host-tools/btop-loop and on hp-xubuntu from fabro-hosts
