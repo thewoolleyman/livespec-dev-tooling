@@ -278,5 +278,12 @@
     "heading": "## Scenario: the fabro_server role deletes an instance's retired sandbox environments",
     "work_item": "livespec-dev-tooling-lmuhvi",
     "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the whole-suite coverage run prints its thirty slowest test phases",
+    "work_item": "livespec-dev-tooling-tt4w7h",
+    "first_seen": "2026-11-01"
   }
 ]
