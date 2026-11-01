@@ -2067,6 +2067,32 @@ def test_chore_replays_only_a_passing_staged_test(
     assert "TDD-Suite-Green-Scope: staged-tests" in msg_path.read_text(encoding="utf-8")
 
 
+def test_shared_test_support_keeps_the_full_suite(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A staged conftest can break an unstaged test, so it keeps full replay."""
+    _stage_files(
+        tmp_path=tmp_path,
+        files={
+            "tests/conftest.py": "VALUE = 1\n",
+            "tests/test_changed.py": "def test_changed() -> None:\n    assert True\n",
+        },
+    )
+    (tmp_path / "tests" / "test_unrelated.py").write_text(
+        "def test_unrelated() -> None:\n    assert False, 'unrelated failure'\n",
+        encoding="utf-8",
+    )
+    msg_path = tmp_path / "COMMIT_EDITMSG"
+    msg_path.write_text("chore: update test support\n", encoding="utf-8")
+
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
+    )
+
+    assert result.returncode == 1
+    assert "suite-red" in result.stderr
+
+
 def test_chore_with_failing_test_staged_alone_authors_a_red(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
