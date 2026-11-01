@@ -1365,5 +1365,61 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the committed capacity-check script against stubbed filesystem usage and a stub ntfy endpoint, run twice inside the repeat interval; livespec-dev-tooling-tjldi2 owns it.",
     "work_item": "livespec-dev-tooling-tjldi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Delegated pre-commit aggregate",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-3buhph owns it.",
+    "work_item": "livespec-dev-tooling-3buhph"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "contracts.md",
+    "heading": "## Delegated gate-runner runs",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
+    "work_item": "livespec-dev-tooling-qgv3tb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a seat's gate-runner full suite runs as a gate Job by default",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
+    "work_item": "livespec-dev-tooling-qgv3tb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated gate-runner run with no cluster verdict ends without a verdict",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
+    "work_item": "livespec-dev-tooling-qgv3tb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising gate-start's default delegation of full-suite gate commands to a gates Job and its recorded venue; livespec-dev-tooling-qgv3tb owns it.",
+    "work_item": "livespec-dev-tooling-qgv3tb"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated pre-commit aggregate gates the staged tree on the cluster",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-3buhph owns it.",
+    "work_item": "livespec-dev-tooling-3buhph"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a delegated pre-commit aggregate with no cluster verdict gates locally",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the pre-commit hook's delegation of `just check-pre-commit` to a gates Job keyed to the staged tree; livespec-dev-tooling-3buhph owns it.",
+    "work_item": "livespec-dev-tooling-3buhph"
   }
 ]
