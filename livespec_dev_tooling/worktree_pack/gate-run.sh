@@ -887,6 +887,35 @@ cmd_status() {
     return "$(state_exit_code "$dir" "$state")"
 }
 
+# Print the last `count` lines of `log` using bash builtins only, so the
+# terminal `wait` path forks nothing. A missing log prints nothing.
+print_log_tail_builtin() {
+    local log="$1" count="$2" line start
+    local -a lines=()
+    [[ -r "$log" ]] || return 0
+    mapfile -t lines <"$log"
+    start=$((${#lines[@]} - count))
+    ((start >= 0)) || start=0
+    printf '  --- last %s lines ---\n' "$count"
+    for ((; start < ${#lines[@]}; start++)); do
+        line="${lines[$start]}"
+        printf '%s\n' "$line"
+    done
+}
+
+# Print the CORE_BARE_FLIP marker framed as `status` frames it, with bash
+# builtins only. Prints nothing when the run carries no marker.
+print_core_bare_flip_builtin() {
+    local marker="$1" line
+    [[ -f "$marker" ]] || return 0
+    printf '\n'
+    printf '  ############################################################\n'
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        printf '%s\n' "$line"
+    done <"$marker"
+    printf '  ############################################################\n'
+}
+
 cmd_wait() {
     [[ $# -ge 1 ]] || usage
     local run_id="$1" dir
@@ -905,35 +934,41 @@ cmd_wait() {
     # several reporting tools. Once the verdict exists, doing that work
     # before returning lets host contention spend the five-second wait
     # budget even though the waiter observed the result promptly. Render
-    # the terminal verdict with bash builtins only; `status` remains the
-    # detailed evidence view for an operator who needs it.
+    # the terminal verdict, the failure's output.log tail and the
+    # CORE_BARE_FLIP marker with bash builtins only; `status` remains the
+    # view that also counts check targets.
     local code=""
     printf '=== gate run %s ===\n' "$run_id"
     printf '  state             : %s\n' "$STATE"
     case "$STATE" in
         PASSED)
+            code=0
             printf '  exit_code         : 0\n'
+            printf '  output.log        : %s\n' "$dir/output.log"
             printf '  VERDICT: the gate RAN TO COMPLETION and PASSED.\n'
-            return 0
             ;;
         FAILED)
             read -r code <"$dir/exit_code" || code="$EX_NO_VERDICT"
             printf '  exit_code         : %s\n' "$code"
+            printf '  output.log        : %s\n' "$dir/output.log"
             printf '  VERDICT: the gate RAN TO COMPLETION and REFUSED (exit %s).\n' "$code"
             printf '  This IS a verdict and it must be honored — read output.log for the reason.\n'
-            return "$code"
+            print_log_tail_builtin "$dir/output.log" 40
             ;;
         DIED_WITHOUT_VERDICT)
+            code="$EX_NO_VERDICT"
+            printf '  output.log        : %s\n' "$dir/output.log"
             printf '  ⛔ NO VERDICT: the gate DID NOT FINISH.\n'
             printf '  This is NOT a pass and NOT a refusal. Nothing was decided, so nothing\n'
             printf '  may be concluded from it. Re-run the gate; do not treat this as green.\n'
-            return "$EX_NO_VERDICT"
             ;;
         *)
+            code="$EX_NO_VERDICT"
             printf '  ⛔ NO VERDICT: the gate state could not be derived.\n'
-            return "$EX_NO_VERDICT"
             ;;
     esac
+    print_core_bare_flip_builtin "$dir/CORE_BARE_FLIP"
+    return "$code"
 }
 
 cmd_list() {

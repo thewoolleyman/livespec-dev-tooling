@@ -481,6 +481,7 @@ _SHIMMED_COMMANDS: tuple[str, ...] = (
     "sha256sum",
     "sleep",
     "stat",
+    "tail",
     "tr",
 )
 _IDLE_GATE_S = 4
@@ -596,6 +597,37 @@ def test_gate_wait_promptly_observes_a_verdict_after_becoming_idle(
     assert waiter.returncode == _GATE_EXIT_CODE
     assert "FAILED" in stdout
     assert _spawn_count(log=waiter_log) == waiter_before_verdict
+
+
+@pytest.mark.integration
+def test_a_failed_runs_wait_report_carries_the_log_tail_and_the_flip_marker_without_forking(
+    *, tmp_path: Path, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """The terminal `wait` report keeps the status evidence yet spawns no reporting tool."""
+    primary, worktree, env = fixture_repo
+    writer = _flip_writer(tmp_path=tmp_path, primary=primary)
+    reason = "gate-refusal-reason-line"
+    run_id = _start(
+        cwd=worktree, env=env, command=["bash", "-c", f'echo {reason}; exec bash "{writer}"']
+    )
+    _ = _await_verdict(primary=primary, run_id=run_id)
+    shims = _shim_dir(root=tmp_path)
+    spawn_log = tmp_path / "terminal-report-spawns.log"
+
+    waited = _gate(
+        cwd=primary, env=_shimmed_env(env=env, shims=shims, log=spawn_log), args=["wait", run_id]
+    )
+
+    assert waited.returncode == _GATE_EXIT_CODE
+    assert "FAILED" in waited.stdout
+    assert reason in waited.stdout
+    assert "CORE_BARE_FLIP" in waited.stdout
+    assert writer.name in waited.stdout
+    spawned = spawn_log.read_text(encoding="utf-8").split() if spawn_log.is_file() else []
+    assert "tail" not in spawned
+    assert "cat" not in spawned
+    assert "grep" not in spawned
+    assert "tr" not in spawned
 
 
 @pytest.mark.integration
