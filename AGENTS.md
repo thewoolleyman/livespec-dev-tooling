@@ -72,7 +72,9 @@ The files:
   reporting a surprising `No such file or directory`: `ls` is aliased to lsd
   here, the symptom is a FALSE ABSENCE, and it has cost three different roles a
   false observation across 42 days.
-- Read `.ai/fleet-and-secrets.md` before changing fleet coordination workflows,
+- Read `.ai/fleet-and-secrets.md` before pushing any change under
+  `.github/workflows/` (it needs an exemption, a label and the wrapper), before
+  changing fleet coordination workflows,
   maintainer signaling, GitHub App automation, or 1Password-backed secret
   projection, and before relying on a session environment variable
   (such as `LIVESPEC_PLAN_UNATTENDED`) inside a `with-livespec-env.sh` call —

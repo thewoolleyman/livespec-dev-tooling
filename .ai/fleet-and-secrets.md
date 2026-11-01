@@ -94,3 +94,17 @@ inner boundary:
 
 The wrapper is for credentials; it is not a transparent environment
 passthrough.
+
+## A Workflow-File Push Needs The Wrapper Too
+
+A push that changes anything under `.github/workflows/` needs three things before the pre-push gate admits it:
+
+1. A per-change `.livespec-workflow-edit-exemption` in the branch, with exactly one `work_item=<ledger-id>` line and one `reason=` line. An exemption inherited from master is refused.
+2. The `approval:workflow-edit` label on that work item. An agent sets it only on the maintainer's explicit per-case authorization.
+3. The push run inside the credential wrapper:
+
+   ```bash
+   mise exec -- just gate-start -- /usr/local/bin/with-livespec-env.sh -- mise exec -- git push -u origin <branch>
+   ```
+
+The delegated gate Job skips `check-no-workflow-edits` because it reads an authorization held outside the tree, so the check runs on the pushing host and calls `bd show <item>`. Without the wrapper that call fails with `Error 1045 (28000): Access denied`, and the push is refused as `HOST_AUTHORITY_REFUSED` even when the label is set. Measured 2026-11-01 on livespec-dev-tooling-jw3cyl (PR #3046): it took three pushes — missing exemption, then missing wrapper, then admitted.
