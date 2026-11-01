@@ -222,10 +222,12 @@
     # of erroring over the report.
     node_loss_drill_notready_at: >-
       {{ node_loss_drill_notready_reads.stdout | default('')
-         | regex_findall('observed-at=(\S+)') | first | default('unobserved') }}
+         | regex_findall('ready=(?:False|Unknown) observed-at=(\S+)')
+         | first | default('unobserved') }}
     node_loss_drill_ready_at: >-
       {{ node_loss_drill_ready_reads.stdout | default('')
-         | regex_findall('observed-at=(\S+)') | first | default('unobserved') }}
+         | regex_findall('ready=True observed-at=(\S+)')
+         | first | default('unobserved') }}
   tasks:
     - name: Report a run that carries no node-loss confirmation for this host
       # The refusal an operator meets most often, and it has to be LEGIBLE: a
@@ -525,8 +527,8 @@
                         executable: /bin/bash
                         # Same fail-closed split assignment as the idle gate above, for
                         # the same reason: a masked kubectl failure would print an empty
-                        # status, and an empty status is not `True`, so it would read as
-                        # NotReady and end the wait on a read that never happened.
+                        # status. An empty Ready selector is likewise not an observation,
+                        # so only the two API NotReady statuses can end this wait.
                         cmd: |
                           set -euo pipefail
                           ready_condition() {
@@ -545,10 +547,12 @@
                       changed_when: false
                       until: >-
                         node_loss_drill_notready_reads.rc == 0
-                        and 'ready=True' not in node_loss_drill_notready_reads.stdout
+                        and ('ready=False' in node_loss_drill_notready_reads.stdout
+                        or 'ready=Unknown' in node_loss_drill_notready_reads.stdout)
                       failed_when: >-
                         node_loss_drill_notready_reads.rc != 0
-                        or 'ready=True' in node_loss_drill_notready_reads.stdout
+                        or ('ready=False' not in node_loss_drill_notready_reads.stdout
+                        and 'ready=Unknown' not in node_loss_drill_notready_reads.stdout)
                       retries: "{{ node_loss_drill_status_retries }}"
                       delay: "{{ node_loss_drill_status_interval }}"
 
@@ -633,6 +637,21 @@
                       {{ node_loss_drill_paused_timers | join(', ') | default('<none>', true) }}.
                       No other timer on this node was touched.
 
+                - name: Report the UTC times the API first showed the node NotReady and Ready again
+                  # FROM THE OUTER `always:`, not after it. These two instants
+                  # are the artifact the drill is run to produce, and a failure
+                  # in the nested hold block otherwise skips every later task.
+                  # A NotReady read whose window ran out therefore reports
+                  # `unobserved` rather than disappearing with the failure.
+                  ansible.builtin.debug:
+                    msg: >-
+                      Node-loss drill on {{ inventory_hostname }}: the API first showed
+                      the node NotReady at {{ node_loss_drill_notready_at }} and Ready
+                      again at {{ node_loss_drill_ready_at }}, after a configured hold
+                      of {{ node_loss_drill_hold_minutes }} minute(s).
+                      {{ node_loss_drill_agent_unit }} was stopped and started on the
+                      node itself, and no workload on it was touched.
+
             - name: Read the node's posture again and wait for it to match the recorded one
               # RETRIED, and the verdict is NOT here. `until` gives the node
               # lifecycle controller its moment to take its own `unreachable` /
@@ -661,19 +680,6 @@
               failed_when: node_loss_drill_node_after.rc != 0
               retries: "{{ node_loss_drill_posture_retries }}"
               delay: "{{ node_loss_drill_posture_interval }}"
-
-            - name: Report the UTC times the API first showed the node NotReady and Ready again
-              # BEFORE the verification, not after. These two instants are the
-              # artifact the drill is run to produce, and a run whose verification
-              # fails is exactly the run an operator needs them from.
-              ansible.builtin.debug:
-                msg: >-
-                  Node-loss drill on {{ inventory_hostname }}: the API first showed
-                  the node NotReady at {{ node_loss_drill_notready_at }} and Ready
-                  again at {{ node_loss_drill_ready_at }}, after a configured hold
-                  of {{ node_loss_drill_hold_minutes }} minute(s).
-                  {{ node_loss_drill_agent_unit }} was stopped and started on the
-                  node itself, and no workload on it was touched.
 
             - name: Fail unless the node's taints, factory label and churn-slot capacity are unchanged
               # The restore is not "the node answers again" — it is the node being

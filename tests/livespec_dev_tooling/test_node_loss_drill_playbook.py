@@ -264,7 +264,10 @@ exec "$@"
 # something on the host put the agent back. With it set, the NotReady wait
 # exhausts its window and the play fails there — the exact run recorded on
 # gmktec-xubuntu — so the restore and re-arm path can be asserted on a run that
-# failed AFTER the agent was stopped.
+# failed AFTER the agent was stopped. `NODE_LOSS_DRILL_EMPTY_READY_WHILE_STOPPED`
+# instead makes the API's Ready selector return no status at all. An empty read
+# observes nothing, so it must also exhaust the NotReady wait rather than being
+# accepted as evidence that the node is NotReady.
 #
 # THE NODE OBJECT IS SERVED FROM TWO FILES AND A READ COUNTER: the first
 # `-o json` read gets the recorded "before" document, every later one gets the
@@ -289,6 +292,8 @@ case "$*" in
     if [ "${{agent_state}}" = running ] \
        || [ "${{NODE_LOSS_DRILL_READY_WHILE_STOPPED}}" = yes ]; then
       printf 'True'
+    elif [ "${{NODE_LOSS_DRILL_EMPTY_READY_WHILE_STOPPED}}" = yes ]; then
+      :
     else
       printf 'Unknown'
     fi
@@ -570,7 +575,7 @@ def _write_inventory(*, scratch: _Scratch) -> Path:
 
 
 def _playbook_environment(
-    *, scratch: _Scratch, pods: str, ready_while_stopped: bool
+    *, scratch: _Scratch, pods: str, ready_while_stopped: bool, empty_ready_while_stopped: bool
 ) -> dict[str, str]:
     """The child's environment, built rather than inherited wholesale.
 
@@ -601,6 +606,9 @@ def _playbook_environment(
             # it with no `set -u`, so an unset variable would make the knob's
             # off state untested rather than tested.
             "NODE_LOSS_DRILL_READY_WHILE_STOPPED": "yes" if ready_while_stopped else "no",
+            "NODE_LOSS_DRILL_EMPTY_READY_WHILE_STOPPED": (
+                "yes" if empty_ready_while_stopped else "no"
+            ),
             # Skipped tasks are SHOWN, as `ansible/ansible.cfg` shows them: a
             # task that vanishes from the output cannot be read as "this was not
             # evaluated", and the unconfirmed cases assert on exactly those lines.
@@ -621,6 +629,7 @@ def _run_playbook(
     check_mode: bool = False,
     pods: str = "idle",
     ready_while_stopped: bool = False,
+    empty_ready_while_stopped: bool = False,
 ) -> tuple[int, str]:
     """Run the committed playbook; return its exit code and its callback output."""
     assert _PLAYBOOK.is_file(), (
@@ -666,7 +675,10 @@ def _run_playbook(
         argv,
         cwd=scratch.root,
         env=_playbook_environment(
-            scratch=scratch, pods=pods, ready_while_stopped=ready_while_stopped
+            scratch=scratch,
+            pods=pods,
+            ready_while_stopped=ready_while_stopped,
+            empty_ready_while_stopped=empty_ready_while_stopped,
         ),
         capture_output=True,
         text=True,
@@ -1240,6 +1252,65 @@ def test_the_drill_re_arms_the_paused_timers_when_a_step_after_the_stop_fails(
             f"a failed run must still name `{timer}` as paused and re-armed — it "
             f"is the run an operator most needs that from:\n{output}"
         )
+
+
+def test_an_empty_ready_status_does_not_count_as_a_notready_observation(
+    *, scratch: _Scratch
+) -> None:
+    """An API response with no Ready condition fails closed and restores the node.
+
+    A successful kubectl invocation says only that the API answered. It does
+    not say that the response contained a Ready condition, much less that the
+    condition showed this node NotReady. The NotReady wait must therefore retry
+    an empty response and fail once its bounded window closes, while its nested
+    cleanup still starts the agent and re-arms every paused timer. The report's
+    `unobserved` value makes the missing observation explicit rather than
+    lending an empty read a timestamp it never earned.
+    """
+    exit_code, output = _run_playbook(
+        scratch=scratch,
+        confirm=_AGENT,
+        empty_ready_while_stopped=True,
+    )
+
+    assert exit_code != 0, (
+        "a drill whose API read has no Ready status must fail — an empty read "
+        f"is not evidence that the node is NotReady:\n{output}"
+    )
+    statuses = _task_statuses(output=output, host=_AGENT)
+    assert _status_of(statuses=statuses, task=_NOTREADY_WAIT_TASK) == "fatal"
+    assert _status_of(statuses=statuses, task=_REARM_TASK) in {"ok", "changed"}, (
+        f"the re-arm must run after an unobserved NotReady wait; it reported "
+        f"{statuses.get(_REARM_TASK)}\n{output}"
+    )
+    commands = _commands(scratch=scratch)
+    agent_stop = _first_index(commands=commands, needle=f"systemctl stop {_AGENT_UNIT}")
+    agent_start = _first_index(commands=commands, needle=f"systemctl start {_AGENT_UNIT}")
+    status_reads_before_restore = [
+        command
+        for command in commands[agent_stop + 1 : agent_start]
+        if "kubectl get node" in command and "jsonpath" in command
+    ]
+    assert len(status_reads_before_restore) == 2, (
+        "the bounded NotReady wait must retry an empty status before restoring "
+        f"the agent; it made {len(status_reads_before_restore)} reads: {commands}"
+    )
+    assert (
+        agent_start > agent_stop >= 0
+    ), f"the failed drill must restore `{_AGENT_UNIT}` after stopping it: {commands}"
+    assert scratch.agent_state.read_text(encoding="utf-8") == "running", (
+        "the agent must be left running even when its Ready condition was "
+        f"unobserved; it was left `{scratch.agent_state.read_text(encoding='utf-8')}`"
+    )
+    for timer in _PAUSED_TIMERS:
+        assert (scratch.state_dir / timer).read_text(encoding="utf-8") == "running", (
+            f"`{timer}` must be re-armed after the failed NotReady wait; it was "
+            f"left `{(scratch.state_dir / timer).read_text(encoding='utf-8')}`"
+        )
+    assert "the node NotReady at unobserved" in output, (
+        "the report must describe the NotReady instant as unobserved, rather "
+        f"than assigning an instant to an empty API read:\n{output}"
+    )
 
 
 @pytest.mark.parametrize(
