@@ -120,3 +120,20 @@ the current release avoids entirely. The maintainer asked why each needed them.
 
 `/data/projects/livespec-dev-tooling/.overseer-state` at the repo root can be
 ANOTHER session's state marker. Read a file before removing it.
+
+## 6. Never block: no pickers, ever (maintainer ruling 2026-11-01)
+
+The maintainer said: "You should be forbidden from presenting blocking pickers. You are only ever supposed to run
+autonomously, never block."
+
+- A coordinator or dispatcher seat never calls AskUserQuestion, and never ends a turn waiting for an answer.
+- It decides what it can under R301 and reports the decision.
+- For an ask that is genuinely the maintainer's (host mutation, secrets, a values call), it writes the ask as plain text
+  under `FOR THE MAINTAINER (non-blocking)` in its tick report and keeps looping. The item waits; the seat does not.
+
+This is enforced. The user-scope hook `~/.claude/hooks/no-blocking-picker-guard.py` (matcher `AskUserQuestion`) denies
+the tool for sessions named `legacy-coordinator-agent` or `legacy-dispatcher-agent`. The detail is in
+`plan/legacy-coordinator-agent/research/002-never-block.md`.
+
+Measured 2026-11-01 ~21:0xZ: the new coordinator parked on a two-question picker (the Dolt drill and a Fabro deferral)
+on its first live tick.
