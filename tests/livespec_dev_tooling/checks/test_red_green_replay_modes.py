@@ -167,6 +167,31 @@ def test_suite_green_nonzero_and_exit_five_still_reject_without_trailers(
         assert log.check_ids("error") == ["red-green-replay-suite-red"]
 
 
+def test_suite_red_summary_names_every_failure_after_long_progress_output(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Suite-red prefers pytest's failure summary over long progress output."""
+    run = _suite_run_cls()(
+        returncode=1,
+        output=(
+            f"{' .' * 250}\n"
+            "=========================== short test summary info ============================\n"
+            "FAILED tests/test_epoch.py::test_fractional_start[0.65] - assertion failed\n"
+            "FAILED tests/test_epoch.py::test_fractional_start[0.75] - assertion failed\n"
+        ),
+        timed_out=False,
+    )
+    rc, log, _message, _seen, _ = _run_suite_leg(monkeypatch, tmp_path, suite_run=run)
+
+    assert rc == 1
+    failure_event = next(kwargs for level, _event, kwargs in log.records if level == "error")
+    summary = failure_event["failure_summary"]
+    assert isinstance(summary, str)
+    assert "tests/test_epoch.py::test_fractional_start[0.65]" in summary
+    assert "tests/test_epoch.py::test_fractional_start[0.75]" in summary
+
+
 def _suite_run_cls():
     _load_modes()  # puts the checks dir on sys.path
     from _red_green_replay_suite import SuiteRun
