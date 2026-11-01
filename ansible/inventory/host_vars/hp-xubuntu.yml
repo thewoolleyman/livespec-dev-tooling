@@ -71,6 +71,12 @@ fabro_server_instances:
     # state directory under home_dir are all KEPT, so the instance comes back by
     # flipping this one word to running and re-applying.
     service_state: stopped
+    # RETAINED READ-ONLY since 2026-11-02 (plan gmktec-factory-placement, epic
+    # livespec-dev-tooling-me5aqz, item livespec-dev-tooling-yw7via): the binary
+    # and the whole state root under home_dir lose every write bit, kept only as
+    # the rollback path. A rollback flips this to false and service_state to
+    # running; see roles/fabro_server/HOST_VARS.md for the write bits.
+    retained_read_only: true
   - unit_name: fabro-server-mi-homelab
     home_dir: /home/cwoolley/.fabro-mi-homelab
     port: 32277
