@@ -106,7 +106,9 @@ from types import ModuleType
 from typing import NamedTuple
 
 import pytest
+from returns.io import IOFailure
 
+from livespec_dev_tooling.checks._red_green_replay_trailers import GitCommandFailed
 from livespec_dev_tooling.config import (
     Config,
     DeclaredPrefixes,
@@ -3134,6 +3136,73 @@ def test_genuine_green_amend_on_red_only_head_still_takes_green_leg(
     assert (
         "TDD-Suite-Green-Captured-At:" not in final_msg
     ), f"a genuine amend must not take the suite-green leg; got final_msg={final_msg!r}"
+
+
+def test_merge_on_red_only_head_takes_suite_green_leg_and_logs_its_routing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A merge is never an amend, even when its first parent is an open Red.
+
+    A refresh merge replaces the commit message and can stage implementation
+    from its second parent. Its first parent may legitimately be a tests-only
+    Red commit, but the merge cannot complete that Red's pair. Routing it to
+    the Green leg would therefore mistake the merge message's absent Red
+    block for a destructive amend and refuse it as a half-pair.
+    """
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum=checksum,
+    )
+    msg_path.write_text("Merge remote-tracking branch 'origin/master'\n", encoding="utf-8")
+    (tmp_path / ".git" / "MERGE_HEAD").write_text("f" * 40 + "\n", encoding="utf-8")
+
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
+    )
+
+    assert result.returncode == 0, (
+        "a merge on a Red-only first parent must be suite-green, not refused "
+        f"as a Green amend; rc={result.returncode} stderr={result.stderr!r}"
+    )
+    final_msg = msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" in final_msg, final_msg
+    assert "TDD-Green-Verified-At:" not in final_msg, final_msg
+    assert _HALF_PAIR_CHECK_ID not in result.stderr, result.stderr
+    assert '"check_id": "red-green-replay-merge-routing"' in result.stderr, result.stderr
+    assert '"leg": "suite-green"' in result.stderr, result.stderr
+
+
+def test_unreadable_merge_marker_refuses_without_selecting_a_leg(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unreadable merge marker cannot safely be treated as an ordinary amend."""
+    test_bytes = b"def test_x() -> None:\n    assert True\n"
+    checksum = f"sha256:{hashlib.sha256(test_bytes).hexdigest()}"
+    msg_path = _author_green_fixture(
+        tmp_path=tmp_path,
+        test_bytes=test_bytes,
+        recorded_checksum=checksum,
+    )
+    assert hasattr(_MODULE, "merge_in_progress")
+    monkeypatch.setattr(
+        _MODULE,
+        "merge_in_progress",
+        lambda: IOFailure(
+            GitCommandFailed(argv="git rev-parse --git-path MERGE_HEAD", detail="exit 128")
+        ),
+    )
+
+    result = _run_check(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, capsys=capsys, msg_path=msg_path
+    )
+
+    assert result.returncode != 0, result.stderr
+    assert '"check_id": "red-green-replay-git-command-failed"' in result.stderr, result.stderr
+    assert "TDD-Green-Verified-At:" not in msg_path.read_text(encoding="utf-8")
+    assert "TDD-Suite-Green-Captured-At:" not in msg_path.read_text(encoding="utf-8")
 
 
 def test_red_green_cycles_route_correctly_in_sequence(

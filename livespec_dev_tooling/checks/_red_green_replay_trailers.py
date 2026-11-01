@@ -76,6 +76,7 @@ __all__: list[str] = [
     "dropped_red_trailers",
     "head_red_awaiting_green",
     "head_trailer_value",
+    "merge_in_progress",
     "write_trailers",
 ]
 
@@ -222,6 +223,18 @@ def head_red_awaiting_green() -> IOResult[bool, GitCommandFailed]:
         )
     return _git_stdout(args=_HEAD_MESSAGE_ARGS).map(
         lambda message: _RED_TRAILER_KEY in message and _GREEN_TRAILER_KEY not in message
+    )
+
+
+def merge_in_progress() -> IOResult[bool, GitCommandFailed]:
+    """Whether commit-msg is running for a merge commit.
+
+    `MERGE_HEAD` exists only while Git is constructing a merge commit. A merge
+    may have an open Red as its first parent, but it cannot be that Red's
+    amend, so it must bypass the Green-amend half-pair guard.
+    """
+    return _git_stdout(args=["rev-parse", "--git-path", "MERGE_HEAD"]).map(
+        lambda marker_path: Path(marker_path).is_file()
     )
 
 
