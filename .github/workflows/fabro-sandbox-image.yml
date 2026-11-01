@@ -143,6 +143,8 @@ jobs:
         with:
           context: .
           file: docker/fabro-sandbox/base/Dockerfile
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           push: true
           provenance: false
           tags: ${{ steps.meta_base.outputs.tags }}
@@ -167,6 +169,8 @@ jobs:
         with:
           context: .
           file: docker/fabro-sandbox/python/Dockerfile
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           push: true
           provenance: false
           build-args: |

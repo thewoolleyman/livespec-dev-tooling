@@ -1,2 +1,2 @@
-work_item=livespec-dev-tooling-myltix
-reason=Land the reusable master-health reconciler workflow byte-rendered from REUSABLE_RECONCILER_BODY, which every fleet shim calls (host-side child of livespec-d5c2mf; coordinator ruling 2026-10-31 under the maintainer approval to install the reconciler).
+work_item=livespec-dev-tooling-jw3cyl
+reason=Hand the job GITHUB_TOKEN to the base and python sandbox image builds as a BuildKit secret mounted only for `mise use`, so a hosted runner shared IP cannot rate-limit the release image build (v1.143.2 build failed 403 rate limit, run 41324169993).
