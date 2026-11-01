@@ -63,3 +63,32 @@ def test_an_opted_in_credentialed_host_selects_delegation(
 
     assert verdict.local is False
     assert verdict.reason == "delegated replay completed"
+
+
+def test_a_credentialed_replay_delegates_the_staged_tree(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The delegated path carries the index tree, never the current HEAD tree."""
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_commit_tests = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "livespec_dev_tooling.commit_replay_delegate.gates_kubeconfig_readable", lambda: True
+    )
+    captured: dict[str, object] = {}
+    expected = object()
+
+    def _remote(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        "livespec_dev_tooling.commit_replay_delegate._staged_tree_hash", lambda **_kwargs: "a" * 40
+    )
+    monkeypatch.setattr("livespec_dev_tooling.commit_replay_delegate._run_remote", _remote)
+
+    assert (
+        run_replay(repo_root=tmp_path, pytest_argv=["pytest", "tests/test_widget.py"]) is expected
+    )
+    assert captured["tree_hash"] == "a" * 40
