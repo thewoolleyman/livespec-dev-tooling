@@ -574,7 +574,12 @@ def main() -> int:
             return _handle_red_mode(msg_path=msg_path, log=log, tests_paths=tests_paths)
         # Branch 3, other prefixes — a passing test-only cleanup is
         # green-verified.
-        return _handle_suite_green_mode(msg_path=msg_path, log=log, staged_paths=staged_paths)
+        return _handle_suite_green_mode(
+            msg_path=msg_path,
+            log=log,
+            staged_paths=staged_paths,
+            tests_paths=tests_paths,
+        )
     return _dispatch_impl_staged(
         msg_path=msg_path, log=log, impl_paths=impl_paths, staged_paths=staged_paths
     )
