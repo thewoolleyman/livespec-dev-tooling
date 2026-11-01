@@ -102,6 +102,7 @@ from _red_green_replay_modes import (  # noqa: E402  — sibling private import
     _handle_green_mode,
     _handle_red_mode,
     _handle_suite_green_mode,
+    _refuse_half_pair,
 )
 from _red_green_replay_revert import (  # noqa: E402  — sibling private import
     FORGE_EXEMPTION_UNPROBED,
@@ -115,6 +116,7 @@ from _red_green_replay_trailers import (  # noqa: E402  — sibling private impo
     _narrate_git_failure,
     dropped_red_trailers,
     head_red_awaiting_green,
+    merge_in_progress,
 )
 from returns.io import IOFailure  # noqa: E402  — vendor-path-aware import.
 from returns.pipeline import is_successful  # noqa: E402  — vendor-path-aware import.
@@ -447,41 +449,6 @@ def _validate_range() -> int:
     return 1
 
 
-def _refuse_half_pair(*, log: structlog.stdlib.BoundLogger, dropped: tuple[str, ...]) -> int:
-    """Refuse a Green amend whose message no longer carries HEAD's Red block.
-
-    ⛔ REFUSED, not repaired. The Green leg APPENDS its trailers; it does not
-    re-derive Red. Admitting the amend therefore produces one commit carrying
-    `TDD-Red-*: 0` and `TDD-Green-*: 2` — evidence that READS as a completed
-    pair and is half of one, written by the gate whose whole job is to
-    certify the pair.
-
-    And nothing downstream looks again in time. At the Green amend HEAD is
-    still the tests-only Red commit, which touches no product impl `.py` and
-    so falls OUTSIDE the range validator's predicate entirely: `just check`
-    passes legitimately, minutes before the defective commit exists. That is
-    why this refusal lives on the commit-msg path rather than being left to
-    the range gate.
-    """
-    log.error(
-        "green-amend-dropped-red-trailers: the amended message no longer carries "
-        "the TDD-Red-* trailers HEAD carries, so admitting it would certify a "
-        "HALF-PAIR — Green evidence for a Red the commit no longer records",
-        check_id="red-green-replay-green-amend-dropped-red-trailers",
-        dropped_trailers=list(dropped),
-        hint=(
-            "`git commit --amend -m` and `git commit --amend -F` REPLACE the "
-            "entire commit message. `git commit --amend --no-edit` is the safe "
-            "spelling: it passes the existing message through, Red trailer "
-            "block included. To reword, start from `git log -1 --format=%B` so "
-            "the block is carried into the new body verbatim — the hook cannot "
-            "re-derive it, because the Red pytest run that produced it is gone."
-        ),
-        protocol=RED_GREEN_REPLAY_PROTOCOL,
-    )
-    return 1
-
-
 def _dispatch_impl_staged(
     *,
     msg_path: Path,
@@ -502,27 +469,37 @@ def _dispatch_impl_staged(
     5 and stamps `TDD-Suite-Green-*` onto what may well be a Green amend. A
     fail-WRONG, not a fail-closed.
     """
-    awaiting = head_red_awaiting_green()
-    if isinstance(awaiting, IOFailure):
-        return _narrate_git_failure(log=log, failed=unsafe_perform_io(awaiting.failure()))
-    if unsafe_perform_io(awaiting.unwrap()):
-        # Branch 4 — a genuine amend-in-progress (Red WITHOUT Green at
-        # HEAD), prefix-agnostic. Red-trailer PRESENCE alone is not
-        # enough: a completed Red+Green commit at HEAD also carries
-        # Red trailers (work-item livespec-dev-tooling-xn0).
-        #
-        # The Red block must SURVIVE the amend, not merely exist at HEAD
-        # while the leg reads it (work-item livespec-dev-tooling-zv78). The
-        # check belongs HERE rather than inside the leg because this is the
-        # seam where HEAD's Red state is established: the same reading that
-        # elects branch 4 is the one the amended message must honour.
-        dropped = dropped_red_trailers(message=msg_path.read_text(encoding="utf-8"))
-        if isinstance(dropped, IOFailure):
-            return _narrate_git_failure(log=log, failed=unsafe_perform_io(dropped.failure()))
-        lost = unsafe_perform_io(dropped.unwrap())
-        if lost:
-            return _refuse_half_pair(log=log, dropped=lost)
-        return _handle_green_mode(msg_path=msg_path, log=log, impl_paths=impl_paths)
+    merging = merge_in_progress()
+    if isinstance(merging, IOFailure):
+        return _narrate_git_failure(log=log, failed=unsafe_perform_io(merging.failure()))
+    if unsafe_perform_io(merging.unwrap()):
+        log.info(
+            "merge-routing: MERGE_HEAD bypasses the Green-amend leg",
+            check_id="red-green-replay-merge-routing",
+            leg="suite-green",
+        )
+    else:
+        awaiting = head_red_awaiting_green()
+        if isinstance(awaiting, IOFailure):
+            return _narrate_git_failure(log=log, failed=unsafe_perform_io(awaiting.failure()))
+        if unsafe_perform_io(awaiting.unwrap()):
+            # Branch 4 — a genuine amend-in-progress (Red WITHOUT Green at
+            # HEAD), prefix-agnostic. Red-trailer PRESENCE alone is not
+            # enough: a completed Red+Green commit at HEAD also carries
+            # Red trailers (work-item livespec-dev-tooling-xn0).
+            #
+            # The Red block must SURVIVE the amend, not merely exist at HEAD
+            # while the leg reads it (work-item livespec-dev-tooling-zv78). The
+            # check belongs HERE rather than inside the leg because this is the
+            # seam where HEAD's Red state is established: the same reading that
+            # elects branch 4 is the one the amended message must honour.
+            dropped = dropped_red_trailers(message=msg_path.read_text(encoding="utf-8"))
+            if isinstance(dropped, IOFailure):
+                return _narrate_git_failure(log=log, failed=unsafe_perform_io(dropped.failure()))
+            lost = unsafe_perform_io(dropped.unwrap())
+            if lost:
+                return _refuse_half_pair(log=log, dropped=lost)
+            return _handle_green_mode(msg_path=msg_path, log=log, impl_paths=impl_paths)
     # Branch 5 — product impl `.py` without a Red awaiting its Green
     # (refactor / behavior-preserving chore / any prefix / fresh
     # commits atop completed history): green-verified.

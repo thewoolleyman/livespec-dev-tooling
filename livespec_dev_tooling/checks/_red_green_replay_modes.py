@@ -58,7 +58,29 @@ __all__: list[str] = [
     "_handle_green_mode",
     "_handle_red_mode",
     "_handle_suite_green_mode",
+    "_refuse_half_pair",
 ]
+
+
+def _refuse_half_pair(*, log: structlog.stdlib.BoundLogger, dropped: tuple[str, ...]) -> int:
+    """Refuse a Green amend whose message no longer carries HEAD's Red block."""
+    log.error(
+        "green-amend-dropped-red-trailers: the amended message no longer carries "
+        "the TDD-Red-* trailers HEAD carries, so admitting it would certify a "
+        "HALF-PAIR — Green evidence for a Red the commit no longer records",
+        check_id="red-green-replay-green-amend-dropped-red-trailers",
+        dropped_trailers=list(dropped),
+        hint=(
+            "`git commit --amend -m` and `git commit --amend -F` REPLACE the "
+            "entire commit message. `git commit --amend --no-edit` is the safe "
+            "spelling: it passes the existing message through, Red trailer "
+            "block included. To reword, start from `git log -1 --format=%B` so "
+            "the block is carried into the new body verbatim — the hook cannot "
+            "re-derive it, because the Red pytest run that produced it is gone."
+        ),
+        protocol=RED_GREEN_REPLAY_PROTOCOL,
+    )
+    return 1
 
 
 def _handle_red_mode(
