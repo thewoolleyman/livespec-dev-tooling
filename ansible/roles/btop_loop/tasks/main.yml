@@ -11,6 +11,16 @@
 # the verification at the end of this role stands in for the `systemctl
 # is-active` that a service role would finish with.
 
+- name: Assert the inventory declares btop_loop_expected_hostname
+  # This is required rather than defaulted: the kernel hostname is a fact about
+  # the machine being converged, so it belongs in that machine's host_vars.
+  # Keeping this before every host-changing task makes an omitted inventory fact
+  # a refusal rather than an accidental converge of another host.
+  ansible.builtin.assert:
+    that: btop_loop_expected_hostname is defined
+    fail_msg: >-
+      btop_loop_expected_hostname is missing from this host's inventory variables.
+
 - name: Assert this host is the one btop-loop is provisioned for
   # The inventory is the primary guard; this is defence in depth against a
   # mis-scoped --limit. It matters because the same file is installed on three
@@ -24,8 +34,7 @@
     fail_msg: >-
       this role targets {{ btop_loop_expected_hostname }} but
       {{ inventory_hostname }} reports {{ ansible_facts['hostname'] }}.
-      hp-xubuntu is served by fabro-hosts services/host-tools/; poweredge-xubuntu
-      and gmktec-xubuntu by this repository's ci-runner/k3s/phase2/host-tools/.
+      btop-loop on other hosts is served by their provisioners' host-tool trees.
     success_msg: "{{ ansible_facts['hostname'] }} is the intended host"
 
 - name: Find btop on the target's PATH
