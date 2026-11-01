@@ -58,6 +58,20 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.142.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.141.0...v1.142.0) (2026-11-01)
+
+
+### Features
+
+* replay only touched tests for test cleanups ([f47d810](https://github.com/thewoolleyman/livespec-dev-tooling/commit/f47d81079886c202438e9acd5559b7f5ef880d8c))
+* retain full replay for shared test support ([81b5026](https://github.com/thewoolleyman/livespec-dev-tooling/commit/81b50268c26b459c7575014bb3b704800909e3b4))
+* scope suite-green replay to staged tests ([2dcd71f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2dcd71f36bdb9cb28f9b8ceb9a0b2366eb99216d))
+
+
+### Bug Fixes
+
+* **red-green-replay:** replay the full suite when only shared test support is staged ([55a1ad0](https://github.com/thewoolleyman/livespec-dev-tooling/commit/55a1ad062584df3cd2bdf78a0f91ff34eb855286))
+
 ## [1.141.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.140.3...v1.141.0) (2026-11-01)
 
 
