@@ -20,7 +20,7 @@ set -euo pipefail
 # per-file failure still leaves the consumer a reusable, current file.
 reuse_stamp=.livespec-coverage-reuse-token
 rm -f "$reuse_stamp"
-env -u COVERAGE_FILE uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing
+env -u COVERAGE_FILE uv run pytest -n "${test_nprocs}" --cov --cov-branch --cov-config=pyproject.toml --cov-report=term-missing --durations=30
 if reuse_id="$(scripts/just/coverage-reuse-id.sh)"; then
     printf '%s\n' "$reuse_id" > "$reuse_stamp"
 else
