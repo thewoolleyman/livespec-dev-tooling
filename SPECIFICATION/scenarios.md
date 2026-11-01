@@ -1494,6 +1494,64 @@ And the waiter MUST spawn no child process on any poll of the run's state
 
 And `gate-wait` MUST still return within five seconds of the run's `exit_code` appearing
 
+## Scenario: an opted-in commit from a credentialed host runs its replay tests against the staged tree
+
+Given a repository with `delegated_commit_tests = true`
+
+And a committing host whose user can read the gates kubeconfig
+
+And a working directory whose unstaged edits differ from the index
+
+When the developer makes a Red commit
+
+Then the gate Job MUST run the Red leg's staged tests against the tree `git write-tree` names for the index
+
+And the committing host MUST verify that tree hash before honouring the reported outcome
+
+And the committing host MUST run no pytest for that leg
+
+## Scenario: a delegated replay leg's trailers name the gate Job and the staged tree
+
+Given a repository with `delegated_commit_tests = true`
+
+And a committing host whose user can read the gates kubeconfig
+
+When the gate Job reports the Red leg's test as failed, with its output
+
+Then the committing host MUST judge the Red expectation from that reported outcome
+
+And the TDD-Red trailers MUST record the output checksum computed from the reported output
+
+And the TDD-Red trailers MUST name the gate Job and the staged tree hash
+
+## Scenario: a delegated replay leg with no verdict falls back to a local run
+
+Given a repository with `delegated_commit_tests = true`
+
+And a committing host whose user can read the gates kubeconfig
+
+When the developer makes a Red commit and the gate Job returns no verdict
+
+Then the committing host MUST run the Red leg's staged tests itself
+
+And the TDD-Red trailers MUST be recorded from that local run, not from the absent verdict
+
+And the hook MUST say that it gated locally
+
+And the commit MUST NOT be refused because the cluster returned no verdict
+
+## Scenario: a commit from a host without the gates credential runs its replay tests locally and says so
+
+Given a repository with `delegated_commit_tests = true`
+
+And a committing host whose user cannot read the gates kubeconfig
+
+When the developer commits
+
+Then the replay gate's test runs MUST execute on the committing host
+
+And the hook MUST say that it gated locally
+
 ## Scenario: a canonical check waived in pyproject.toml is exempt from the aggregate and fleet gates
 
 Given a fleet member whose `pyproject.toml` declares `canonical_check_waivers` under `[tool.livespec_dev_tooling]` with slug `check-heading-coverage` and a non-empty reason
