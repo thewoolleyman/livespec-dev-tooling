@@ -67,8 +67,6 @@ def own_class(cmd, cwd):
     j = " ".join(a)
     if "/janitor" in cwd or "janitor-" in cwd or "janitor" in j[:300]:
         return "janitor-post-merge"
-    if "covns" in j or "covns" in cwd:
-        return "coverage-tree"
     if "red_green_replay" in j or "check-red-green-replay" in j:
         return "commit-red-green-replay"
     if exe == "lefthook" and "pre-push" in j:
@@ -168,6 +166,10 @@ def classify_chain(start_cmd, start_cwd, ppid, tables, comm):
     if c:
         return c
     first_test = "adhoc-pytest-or-check" if (not is_agent(start_cmd) and ("pytest" in start_cmd or "coverage" in start_cmd)) else None
+    # a covns coverage tree is a SUB-tree of whatever launched it (a janitor, a commit, a seat): it is
+    # charged to that owner, and to coverage-tree only when no owner is found above it
+    if not is_agent(start_cmd) and ("covns" in start_cmd or "covns" in start_cwd):
+        first_test = "coverage-tree"
     p = ppid
     for _ in range(40):
         info = None
@@ -182,8 +184,10 @@ def classify_chain(start_cmd, start_cwd, ppid, tables, comm):
         if c:
             return c
         j = info["cmd"]
-        if first_test is None and ("pytest" in j or "just check" in j or " just " in j or "just-check" in j or "coverage" in j):
-            first_test = "adhoc-pytest-or-check"
+        if first_test is None and ("covns" in j or "covns" in info["cwd"]):
+            first_test = "coverage-tree"
+        elif first_test in (None, "coverage-tree") and ("pytest" in j or "just check" in j or " just " in j or "just-check" in j):
+            first_test = first_test or "adhoc-pytest-or-check"
         p = info["ppid"]
         if p <= 1:
             break
