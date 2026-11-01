@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.143.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.143.0...v1.143.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* preserve suite-red failure node ids ([3483865](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3483865c62ecd550c6a9d36b7708991fba75879f))
+* report suite-red error node ids ([4f57b27](https://github.com/thewoolleyman/livespec-dev-tooling/commit/4f57b27ba416b64e58afbc9f3898a532220ad4c2))
+
 ## [1.143.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.142.0...v1.143.0) (2026-11-01)
 
 
