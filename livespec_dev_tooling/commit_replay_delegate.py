@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_commit_tests
@@ -63,6 +63,26 @@ def _staged_tree_hash(*, repo_root: Path) -> str:
     return written.unwrap().stdout.strip()
 
 
+def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
+    """Wrap the index tree in a commit object the gate can push."""
+    argv = [
+        "git",
+        "-c",
+        "user.name=livespec-replay",
+        "-c",
+        "user.email=replay@livespec.invalid",
+        "commit-tree",
+        tree_hash,
+        "-p",
+        "HEAD",
+        "-mcommit-time replay of the staged tree",
+    ]
+    committed = default_gate_command_runner(argv=argv, cwd=repo_root)
+    if isinstance(committed, Failure):
+        return ""
+    return committed.unwrap().stdout.strip()
+
+
 def _run_remote(*, repo_root: Path, pytest_argv: list[str], tree_hash: str) -> ReplayVerdict:
     """Submit the selected index tree and retain the Job's own verdict."""
     built = gate_remote_request(
@@ -78,7 +98,15 @@ def _run_remote(*, repo_root: Path, pytest_argv: list[str], tree_hash: str) -> R
             reason=f"the gate Job reached no verdict: {built.failure().detail}",
             tree_hash=tree_hash,
         )
-    remote = run_gated_push(request=built.unwrap(), runner=default_gate_command_runner)
+    source = _staged_commit(repo_root=repo_root, tree_hash=tree_hash)
+    if not source:
+        return ReplayVerdict(
+            local=False,
+            reason="the staged tree could not be committed for the gate",
+            tree_hash=tree_hash,
+        )
+    request = replace(built.unwrap(), source_ref=source, capture_output=True)
+    remote = run_gated_push(request=request, runner=default_gate_command_runner)
     exit_status = 0 if remote.state == GATE_PASSED else 1 if remote.state == GATE_FAILED else None
     return ReplayVerdict(
         local=False,
