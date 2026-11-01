@@ -79,6 +79,7 @@ namespace growth weeks later.
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -211,6 +212,9 @@ class GateRunRequest:
     # temporary commit is the object pushed to the mirror, while this is the
     # tree identity the manifest and verdict must retain.
     source_ref: str = "HEAD"
+    # A commit-time replay owes the caller evidence of the Job's output, so it
+    # reads the log instead of streaming it past this process.
+    capture_output: bool = False
     tree_hash: str = ""
     private_sibling_token: str = ""
     private_sibling_secret: str = ""
@@ -482,9 +486,8 @@ def _gate_a_pushed_tree(
     streamed = require_invocation(
         step=_STREAM_STEP,
         argv=logs_argv,
-        outcome=runner(argv=logs_argv, cwd=request.repo_root, stream=True),
+        outcome=runner(argv=logs_argv, cwd=request.repo_root, stream=not request.capture_output),
     )
-
     return streamed.map(
         lambda ran: GateRunOutcome(
             tree_hash=tree_hash,
@@ -494,8 +497,17 @@ def _gate_a_pushed_tree(
             failure_message=message,
             started_at=reported_time(status=ended.status, key=_START_TIME),
             finished_at=reported_time(status=ended.status, key=_COMPLETION_TIME),
+            output_checksum=_shown_output_checksum(request=request, output=ran.stdout),
         )
     )
+
+
+def _shown_output_checksum(*, request: GateRunRequest, output: str) -> str:
+    """Show a captured log to the operator and checksum it; an uncaptured one has none."""
+    if not request.capture_output:
+        return ""
+    _ = sys.stdout.write(output)
+    return f"sha256:{hashlib.sha256(output.encode('utf-8')).hexdigest()}"
 
 
 def _failure_message(*, request: GateRunRequest, runner: GateCommandRunner, job_name: str) -> str:
