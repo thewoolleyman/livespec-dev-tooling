@@ -141,9 +141,9 @@ readonly EX_NO_VERDICT=75
 readonly SIGNAL_EXIT_FLOOR=128
 # How often `wait` re-reads the run's state. Every poll is bash builtins
 # only (see `idle_sleep` and `derive_state_into`), so the cadence costs
-# wakeups, never processes; one second keeps `wait` well inside the
-# five-second return budget the spec sets from `exit_code` appearing.
-readonly POLL_INTERVAL_S=1
+# wakeups, never processes; a tenth of a second leaves the scheduler nearly
+# the entire five-second return budget after `exit_code` appears.
+readonly POLL_INTERVAL_S=0.1
 # The config watcher's poll cadence. Fast enough that a writer which is
 # still alive one tick after its write is caught in the descendant-tree
 # snapshot. A tick forks nothing (see `config_changed`), so the cadence

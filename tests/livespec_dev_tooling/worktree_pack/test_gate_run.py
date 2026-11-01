@@ -489,6 +489,11 @@ _IDLE_WINDOW_S = 1.5
 _WAIT_RETURN_BUDGET_S = 5.0
 
 
+def test_gate_wait_polls_well_inside_its_five_second_return_budget() -> None:
+    """The built-in-only wait cadence leaves scheduling margin on a loaded host."""
+    assert "readonly POLL_INTERVAL_S=0.1" in CANONICAL_GATE_RUN_BODY
+
+
 def _shim_dir(*, root: Path) -> Path:
     """A PATH directory whose entries log their own exec to `$GATE_SHIM_LOG`, then run the real one."""
     shims = root / "shims"
