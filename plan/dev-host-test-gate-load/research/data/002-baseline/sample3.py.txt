@@ -1,0 +1,251 @@
+"""Attribute dev-host CPU to routine test/gate load classes (v3).
+
+Every INTERVAL s: read utime/stime (own and reaped-children) of every process, take deltas,
+and charge each to a class from the process's own cmdline/cwd and its ancestors'.
+
+v2 fixes over the 2026-11-01 sample.py (sv6m5p seat):
+  * processes are keyed by (pid, starttime), so an exec is not a death;
+  * the CPU a vanished process had already been charged (own + cut at the previous sample)
+    is credited against its NEAREST SURVIVING ancestor, not its direct parent.  v1 credited the
+    direct parent only, so a grandchild reaped through a dying intermediate (pytest-xdist
+    workers under a pytest main under `just check`) was charged twice: once alive, once again as
+    its whole lifetime in the surviving ancestor's cutime.  That produced a 1347 core-second
+    spike in one 10 s interval of the v1 baseline;
+  * utime and stime are kept apart, the host /proc/stat totals are recorded per interval for a
+    cross-check, and agents-and-other is split into the sub-classes the coordinator asked for.
+
+v3: no cutime at all. Live processes are charged their own utime+stime delta from /proc;
+a process that EXITS is charged from a bpftrace sched_process_exit (group_dead) event carrying
+its whole-group sum_exec_runtime, minus what it was charged while alive.  Every CPU-second is
+therefore counted exactly once, wherever the child was reaped (reparenting to a subreaper made
+v2's cutime netting over-count).  Short-lived processes never seen alive are classified from
+their exit comm and their parent chain in the snapshot tables.
+
+Usage: sample3.py INTERVAL COUNT OUT.jsonl
+"""
+import json, os, sys, time
+
+INTERVAL = float(sys.argv[1]); COUNT = int(sys.argv[2]); OUT = sys.argv[3]
+HZ = os.sysconf("SC_CLK_TCK"); SELF = os.getpid()
+
+TEST_CLASSES = (
+    "janitor-post-merge", "coverage-tree", "commit-red-green-replay", "pre-push",
+    "commit-pre-commit-aggregate", "adhoc-gate-start", "adhoc-pytest-or-check",
+)
+
+
+def read(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            s = f.read()
+        rest = s[s.rindex(")") + 2:].split()
+        ppid = int(rest[1]); start = int(rest[19])
+        ut, st, cut, cst = int(rest[11]), int(rest[12]), int(rest[13]), int(rest[14])
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmd = f.read().replace(b"\0", b" ").decode(errors="replace")[:600]
+        if not cmd:
+            cmd = "[" + s[s.index("(") + 1:s.rindex(")")] + "]"
+        try:
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            cwd = ""
+        return {"ppid": ppid, "start": start, "u": ut, "s": st, "cu": cut, "cs": cst, "cmd": cmd, "cwd": cwd}
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def is_agent(cmd):
+    a = cmd.split(); exe = os.path.basename(a[0]) if a else ""
+    return exe in ("claude", "codex") or exe.startswith("2.1.") or "herdr" in exe
+
+
+def own_class(cmd, cwd):
+    if is_agent(cmd):
+        return None  # a seat's prompt text names janitors, coverage and checks; never classify by it
+    a = cmd.split()
+    exe = os.path.basename(a[0]) if a else ""
+    j = " ".join(a)
+    if "/janitor" in cwd or "janitor-" in cwd or "janitor" in j[:300]:
+        return "janitor-post-merge"
+    if "covns" in j or "covns" in cwd:
+        return "coverage-tree"
+    if "red_green_replay" in j or "check-red-green-replay" in j:
+        return "commit-red-green-replay"
+    if exe == "lefthook" and "pre-push" in j:
+        return "pre-push"
+    if exe == "lefthook" and "pre-commit" in j:
+        return "commit-pre-commit-aggregate"
+    if exe == "git" and len(a) > 1 and a[1] == "push":
+        return "pre-push"
+    if exe == "git" and len(a) > 1 and a[1] == "commit":
+        return "commit-pre-commit-aggregate"
+    if "gate-run.sh __child" in j:
+        return "adhoc-gate-start"
+    return None
+
+
+def other_class(cmd):
+    """Split of the non-test remainder, by the process's OWN command line."""
+    a = cmd.split(); exe = os.path.basename(a[0]) if a else ""
+    if any(x in cmd for x in ("k3s", "containerd", "kubelet", "dockerd")):
+        return "k3s-docker"
+    if exe in ("op", "bd", "bd-real", "bd-guard-emit", "1password") or "with-livespec-env" in cmd \
+            or "/usr/local/bin/bd " in cmd or exe == "sudo" and "WRAPPER_STAGE" in cmd:
+        return "op-bd-wrapper"
+    if exe == "gh":
+        return "gh-cli"
+    if "/.claude/plugins/cache/" in cmd and "/hooks/" in cmd:
+        return "agent-hooks"
+    if "dolt" in cmd:
+        return "dolt"
+    if "herdr" in cmd:
+        return "herdr"
+    if exe == "claude" or "/claude " in cmd or exe.startswith("2.1.") or exe == "codex" or "codex " in cmd[:40]:
+        return "agent-sessions"
+    if any(x in cmd for x in ("dispatch-dual", "dispatcher.py", "probe-gate.sh", "petri", "fabro", "overseerd", "drive.py")):
+        return "factory-dispatch-supervision"
+    return "other"
+
+
+def classify(pid, procs):
+    p = pid; first_test = None
+    for _ in range(40):
+        info = procs.get(p)
+        if not info:
+            break
+        c = own_class(info["cmd"], info["cwd"])
+        if c:
+            return c
+        j = info["cmd"]
+        if first_test is None and ("pytest" in j or "just check" in j or " just " in j or "just-check" in j
+                                   or "coverage" in j):
+            first_test = "adhoc-pytest-or-check"
+        p = info["ppid"]
+        if p <= 1:
+            break
+    if first_test:
+        return first_test
+    if pid == SELF:
+        return "sampler"
+    return other_class(procs[pid]["cmd"])
+
+
+def host_cpu():
+    with open("/proc/stat") as f:
+        v = [int(x) for x in f.readline().split()[1:]]
+    return v  # user nice system idle iowait irq softirq steal ...
+
+
+def snapshot():
+    procs = {}
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            r = read(int(d))
+            if r:
+                procs[int(d)] = r
+    return procs
+
+
+
+import subprocess, threading, collections
+BT = ('tracepoint:sched:sched_process_exit /args->group_dead/ { printf("X %d %d %s %llu %llu %llu\\n", '
+      'curtask->tgid, curtask->real_parent->tgid, comm, curtask->se.sum_exec_runtime + curtask->signal->sum_sched_runtime, '
+      'curtask->utime + curtask->signal->utime, curtask->stime + curtask->signal->stime); }')
+exits = collections.deque(); lock = threading.Lock()
+bt = subprocess.Popen(["sudo", "-n", "bpftrace", "-e", BT], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+def reader():
+    for line in bt.stdout:
+        p = line.split()
+        if len(p) == 7 and p[0] == "X":
+            with lock:
+                exits.append((int(p[1]), int(p[2]), p[3], int(p[4]), int(p[5]), int(p[6])))
+threading.Thread(target=reader, daemon=True).start()
+time.sleep(3)
+NS_PER_TICK = 1e9 / HZ
+
+def classify_chain(start_cmd, start_cwd, ppid, tables, comm):
+    c = own_class(start_cmd, start_cwd)
+    if c:
+        return c
+    first_test = "adhoc-pytest-or-check" if (not is_agent(start_cmd) and ("pytest" in start_cmd or "coverage" in start_cmd)) else None
+    p = ppid
+    for _ in range(40):
+        info = None
+        for t in tables:
+            if p in t:
+                info = t[p]; break
+        if not info:
+            break
+        if is_agent(info["cmd"]):
+            break  # nothing above an agent session is a test runner
+        c = own_class(info["cmd"], info["cwd"])
+        if c:
+            return c
+        j = info["cmd"]
+        if first_test is None and ("pytest" in j or "just check" in j or " just " in j or "just-check" in j or "coverage" in j):
+            first_test = "adhoc-pytest-or-check"
+        p = info["ppid"]
+        if p <= 1:
+            break
+    return first_test or other_class(start_cmd if start_cmd and not start_cmd.startswith("[") else comm)
+
+prev = snapshot(); prev_host = host_cpu()
+with lock:
+    exits.clear()
+try:
+  with open(OUT, "a") as out:
+    for i in range(COUNT):
+        time.sleep(INTERVAL)
+        procs = snapshot(); hostv = host_cpu()
+        with lock:
+            ev = list(exits); exits.clear()
+        classes = {}; top = {}; tot_u = tot_s = 0.0; n_exit = 0; exit_ticks = 0.0
+        def charge(c, du, ds, label):
+            global tot_u, tot_s
+            e = classes.setdefault(c, [0.0, 0.0]); e[0] += du; e[1] += ds
+            tot_u += du; tot_s += ds
+            k = c + " :: " + label[:120]; top[k] = top.get(k, 0) + du + ds
+        for pid, n in procs.items():
+            o = prev.get(pid)
+            if not (o and o["start"] == n["start"]):
+                o = {"u": 0, "s": 0}  # born this interval: charge everything it has used
+            du = n["u"] - o["u"]; ds = n["s"] - o["s"]
+            if du + ds <= 0:
+                continue
+            c = classify_chain(n["cmd"], n["cwd"], n["ppid"], (procs,), n["cmd"]) if pid != SELF else "sampler"
+            charge(c, du, ds, n["cmd"])
+        for tgid, ppid, comm, rt_ns, u_ns, s_ns in ev:
+            tot = rt_ns / NS_PER_TICK
+            o = prev.get(tgid)
+            already = (o["u"] + o["s"]) if o else 0
+            if tgid in procs and o and procs[tgid]["start"] == o["start"]:
+                continue  # pid still alive with same start: a stray non-final event
+            d = tot - already
+            if d <= 0:
+                continue
+            fs = s_ns / (u_ns + s_ns) if (u_ns + s_ns) else 0.5
+            cmd = o["cmd"] if o else comm; cwd = o["cwd"] if o else ""
+            if tgid == bt.pid or comm == "bpftrace":
+                c = "sampler"
+            else:
+                c = classify_chain(cmd, cwd, (o["ppid"] if o else ppid), (procs, prev), comm)
+            charge(c, d * (1 - fs), d * fs, cmd)
+            n_exit += 1; exit_ticks += d
+        hd = [a - b for a, b in zip(hostv, prev_host)]
+        out.write(json.dumps({
+            "t": time.time(), "interval": INTERVAL, "hz": HZ, "ncpu": os.cpu_count(), "method": "v3",
+            "attributed_ticks": round(tot_u + tot_s), "attributed_stime": round(tot_s),
+            "exits": n_exit, "exit_ticks": round(exit_ticks),
+            "host": {"user": hd[0] + hd[1], "system": hd[2], "idle": hd[3], "iowait": hd[4],
+                     "irq": hd[5] + hd[6], "steal": hd[7] if len(hd) > 7 else 0},
+            "classes": {k: [round(v[0]), round(v[1])] for k, v in classes.items()},
+            "top": dict(sorted(((k, round(v)) for k, v in top.items()), key=lambda kv: -kv[1])[:20]),
+        }) + "\n")
+        out.flush()
+        prev = procs; prev_host = hostv
+finally:
+    bt.terminate()
+    try:
+        bt.wait(10)
+    except subprocess.TimeoutExpired:
+        bt.kill()
