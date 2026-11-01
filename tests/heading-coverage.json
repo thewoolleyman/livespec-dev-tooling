@@ -1365,5 +1365,21 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the committed capacity-check script against stubbed filesystem usage and a stub ntfy endpoint, run twice inside the repeat interval; livespec-dev-tooling-tjldi2 owns it.",
     "work_item": "livespec-dev-tooling-tjldi2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## LLM-spend telemetry pricing",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, exercising the LLM-spend emitter's shared price table: a listed model priced at list with no fallback marker, a dated id priced as its listed model, an unlisted model priced at its family fallback and marked, and a second correction run refused; the emitter is host-local (~/token-spend-report), so the test needs it moved under a tested surface first. livespec-dev-tooling-mnj7 owns it.",
+    "work_item": "livespec-dev-tooling-mnj7"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a token-bearing response on a model the LLM-spend price table does not list is sent at a marked fallback price",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, sending a gpt-7-sol response through the emitter's pricing path and asserting a non-zero cost at gpt-6.1-sol's list price, spend.price_fallback=true and a cost_note naming gpt-6.1-sol; the emitter is host-local (~/token-spend-report), so the test needs it moved under a tested surface first. livespec-dev-tooling-mnj7 owns it.",
+    "work_item": "livespec-dev-tooling-mnj7"
   }
 ]

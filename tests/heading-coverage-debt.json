@@ -37,6 +37,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## LLM-spend telemetry pricing",
+    "work_item": "livespec-dev-tooling-mnj7",
+    "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool node telemetry",
     "work_item": "livespec-dev-tooling-uftb4o",
     "first_seen": "2026-10-24"
@@ -222,6 +229,13 @@
     "heading": "## Scenario: a thrashing fix-forward releases the held revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a token-bearing response on a model the LLM-spend price table does not list is sent at a marked fallback price",
+    "work_item": "livespec-dev-tooling-mnj7",
+    "first_seen": "2026-11-01"
   },
   {
     "spec_root": "SPECIFICATION",
