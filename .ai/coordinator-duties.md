@@ -73,6 +73,27 @@ file is rewritten, so read the last lines before acting on one.
 
 Measured 2026-11-01: j6piwg and 7u4tii sat refused as spec-change tier for 4 h while the ledger showed both as `ready`.
 
+**Audit every child of a top-3 plan, every tick.** A seat that is busy on one child hides the rest of its plan, so its
+pane and its own report are never evidence that the plan is moving. For each owning plan of priorities 1-3:
+
+1. Enumerate EVERY child from the ledger (`bd list --status all`, the union of the dotted-id prefix and the parent
+   edge; see CLAUDE.md "The beads read-surface trap catalogue"). Never only the items a handoff or a seat names.
+2. Give every child that is not `closed` a hold reason, checked live:
+   - `pending-approval`: read its latest Definition-of-Done finding and re-verify it against `origin/master`. A finding
+     older than the latest spec revise is presumed stale until re-checked.
+   - `blocked`, or carrying a `blocks` edge: name the blocker and its status, and test whether the edge is still real.
+   - `ready`: a run or a feeder ticket stands behind it, or it is a stall.
+   - `active`: its run id is live.
+   - `acceptance`: name the proof leg it waits on.
+3. Compare the plan's typed `next_action` with that audit. A plan awaiting one item while other children are held is a
+   stall. Route it to the owning seat at once, not at the seat's next tick.
+4. DEPENDENCIES lists every non-closed child with its hold reason, never the subset a seat is working.
+
+Measured 2026-11-02: priority 3, dev-host-test-gate-load, had its two main carriers (qgv3tb, 3buhph) at
+`pending-approval` from 21:30Z on Definition-of-Done findings that went stale when spec v108 merged at 23:45Z. The seat
+was awaiting a third item, its pane looked healthy, and the coordinator reported the priority as waiting. The
+maintainer had to ask why it was held. Ruling recorded on epic `livespec-dev-tooling-6tgd2z`, 2026-11-02T01:56:11Z.
+
 ## 4. The owning session decides first
 
 A plan-level question goes to the session that owns the plan, to DECIDE. That covers a deferred assertion, a
