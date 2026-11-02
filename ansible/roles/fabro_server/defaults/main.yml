@@ -91,15 +91,14 @@ fabro_server_instances: []
 #                       Declared, the role checks the control-node file's
 #                       digest BEFORE touching the host, and then — only if
 #                       the host's copy is not already that build — stages a
-#                       copy beside binary_path, keeps the outgoing binary
-#                       under a name carrying its own sha256 prefix, and
-#                       renames the staged copy into place. A replacement
-#                       notifies the restart handler, which still refuses by
-#                       default and, wherever it does not, is still gated by
-#                       the carrying-runs refusal. Either way replacing a
-#                       binary never interrupts a factory that is carrying
-#                       runs: a rename leaves the inode a running process
-#                       execs untouched. HOST_VARS.md has the whole sequence.
+#                       copy beside binary_path. A running server launches
+#                       workers from its own executable path, so when a restart
+#                       is deferred the role leaves binary_path untouched and
+#                       records the deferred restart. An allowed restart (or a
+#                       safe start) keeps the outgoing binary under a name
+#                       carrying its sha256 prefix, then renames the staged copy
+#                       into place before systemd starts it. HOST_VARS.md has
+#                       the whole sequence.
 #
 #                       The role STILL never builds a binary. What it will do
 #                       is carry one the operator has already staged, which
