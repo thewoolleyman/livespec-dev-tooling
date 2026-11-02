@@ -1913,3 +1913,103 @@ When the input contains the pattern near its start and is larger than 64 KiB
 Then the script MUST report the pattern as present
 
 And its verdict MUST be the same as for a 200-byte input that contains the pattern
+
+## Scenario: a radar that lists the same target twice fails just check
+
+Given the committed `RADAR` lists tenant `livespec-dev-tooling`, id `livespec-dev-tooling-abc123` at index 2 and again at index 5
+
+When `just check` runs
+
+Then the aggregate MUST fail
+
+And the failure MUST name `livespec-dev-tooling-abc123` and both indexes
+
+## Scenario: a radar consumer refuses an item already covered by a listed plan
+
+Given the committed `RADAR` lists `plan` entry `livespec-dev-tooling-p1` and, at a later index, `item` entry `livespec-dev-tooling-p1.3`
+
+And `livespec-dev-tooling-p1.3` has a null `parent` field and no `parent-child` edge
+
+When a radar consumer calls the radar load entry point
+
+Then the call MUST refuse with a defect naming `livespec-dev-tooling-p1.3` as a child of `livespec-dev-tooling-p1`
+
+And the consumer MUST receive no radar entries
+
+## Scenario: a related edge does not block a radar target
+
+Given item `I` has a `relates-to` edge to an open item `J`, a `discovered-from` edge to an open item `K`, and a `blocks` edge to a closed item `L`
+
+And `I` is listed on the radar with an empty `blocked_by`
+
+When readiness is computed for `I`
+
+Then `I` MUST be ready
+
+And no open item MUST be named as its blocker
+
+## Scenario: a closed radar entry is reported as done and does not stall its consumers
+
+Given the committed `RADAR` lists `plan` entry `livespec-dev-tooling-p2`, whose epic has just closed
+
+When a radar consumer calls the radar load entry point
+
+Then the call MUST return the radar with a finding naming `livespec-dev-tooling-p2` as done
+
+And readers MUST treat `livespec-dev-tooling-p2` as needing no work
+
+And `just radar-validate` MUST fail naming `livespec-dev-tooling-p2` as a closed entry
+
+## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test
+
+Given a committed query spec that expects column `p90_cpu_seconds` of type float
+
+When the contract test runs that spec against live Honeycomb and the result has no `p90_cpu_seconds` column
+
+Then the contract test MUST fail naming the spec and the missing column
+
+## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions
+
+Given the MCP endpoint override names a host that does not resolve
+
+When an admission tick runs
+
+Then every decision in that tick MUST carry `inputs: fallback` with the failure reason
+
+And the coordinator printout MUST show a `HONEYCOMB UNREACHABLE since <UTC>` line above radar entry 1
+
+And the radar array MUST be unchanged
+
+## Scenario: a per-tick query set larger than the budget constant fails the unit tests
+
+Given the per-tick budget constant is N
+
+When a change adds query specs so that one tick would run N + 1 queries
+
+Then the unit test that counts the per-tick set MUST fail naming the count and the constant
+
+## Scenario: an execution target's pressure stall readings are queryable in livespec by host
+
+Given the pressure emitter is converged on `gmktec-xubuntu`
+
+When 15 minutes pass with the host running
+
+Then the `livespec` environment's metrics dataset MUST hold `some` and `full` readings for cpu, memory and io with `avg10`, `avg60` and `avg300` values stamped `host.name` = `gmktec-xubuntu` within that window
+
+## Scenario: a host with no pressure file makes the emitter fail rather than report zero
+
+Given a host whose kernel exposes no `/proc/pressure/memory`
+
+When the pressure emitter runs
+
+Then the emitter MUST exit non-zero with a log line naming `/proc/pressure/memory`
+
+And no memory pressure datapoint MUST be emitted for that host in that run
+
+## Scenario: the dev host's available memory is queryable in livespec
+
+Given the dev host's collector is converged from the merged configuration
+
+When 15 minutes pass
+
+Then the `livespec` environment's metrics dataset MUST hold `system.linux.memory.available` stamped with the dev host's `host.name` within that window
