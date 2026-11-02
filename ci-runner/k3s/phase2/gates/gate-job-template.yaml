@@ -226,6 +226,24 @@ spec:
           volumeMounts:
             - name: livespec-core
               mountPath: /livespec-core
+        # Apply the operator switch before the gate entrypoint. A postStart
+        # hook races the entrypoint, whereas an init container finishes first.
+        # It removes this Job's private reflink seed, never the warm generation.
+        - name: apply-cache-kill-switch
+          image: @@IMAGE@@
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ "${CI_CACHE_KILL_SWITCH:-}" = "operator" ]; then
+                rm -rf /__w/_warm/uv
+              fi
+          env:
+            - name: CI_CACHE_KILL_SWITCH
+              value: "@@CACHE_KILL_SWITCH@@"
+          volumeMounts:
+            - name: warm-uv-cache
+              mountPath: /__w
       containers:
         - name: gate
           # Requirement 1: resolved by render-gate-job.sh from the GATED
@@ -638,7 +656,7 @@ spec:
             - name: PYPI_FILES_PROXY
               value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
             - name: CI_CACHE_KILL_SWITCH
-              value: ""
+              value: "@@CACHE_KILL_SWITCH@@"
             - name: SCCACHE_REDIS_ENDPOINT
               value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
             - name: SCCACHE_REDIS_RW_MODE

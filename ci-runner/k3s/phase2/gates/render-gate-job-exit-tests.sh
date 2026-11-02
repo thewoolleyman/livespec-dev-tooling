@@ -59,6 +59,8 @@
 #      so the provisioner seeds the current warm generation before the gate starts.
 #   T. uv and uvx misses resolve through the in-cluster PyPI files proxy.
 #   U. a locked artifact the proxy cannot serve falls through to PyPI directly.
+#   V. the operator cache kill switch removes the gate's private uv seed before
+#      the gate container starts.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -380,6 +382,31 @@ elif ! grep -F 'location /simple/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
   fail "the PyPI files proxy does not provide a decodable Simple API that rewrites artifacts through /packages/"
 else
   pass "uv and uvx use the proxy Simple API and its rewritten artifact URLs"
+fi
+
+echo "== V. the operator cache kill switch makes the gate's uv volume cold =="
+operator_out="${SCRATCH}/operator-cache-off.yaml"
+if CI_CACHE_KILL_SWITCH=operator "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${operator_out}" 2>"${SCRATCH}/operator-cache-off.err"; then
+  operator_switch="$(grep -A1 -F 'name: CI_CACHE_KILL_SWITCH' "${operator_out}" | grep -oE 'value: .*' | head -1)"
+  if [ "${operator_switch}" != 'value: "operator"' ]; then
+    fail "CI_CACHE_KILL_SWITCH=operator does not reach the gate container"
+  elif grep -F 'postStart:' "${operator_out}" >/dev/null; then
+    fail "the gate removes its uv seed in a postStart hook, which races the entrypoint"
+  elif ! awk '
+      /^      initContainers:/ { in_init = 1; next }
+      /^      containers:/ { in_init = 0 }
+      in_init && /- name: apply-cache-kill-switch/ { named = 1 }
+      in_init && named && /rm -rf \/__w\/_warm\/uv/ { removed = 1 }
+      in_init && named && /mountPath: \/__w$/ { mounted = 1 }
+      END { exit !(removed && mounted) }
+    ' "${operator_out}"; then
+    fail "the uv seed is not removed by an init container that mounts warm-uv-cache at /__w"
+  else
+    pass "the operator switch reaches the gate and removes its uv seed before the entrypoint"
+  fi
+else
+  fail "renderer errored under CI_CACHE_KILL_SWITCH=operator: $(cat "${SCRATCH}/operator-cache-off.err")"
 fi
 
 echo "== I. the fetch brings the RANGE and a resolvable diff base =="
