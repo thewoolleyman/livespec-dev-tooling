@@ -486,7 +486,7 @@ else
   else
     note "probe:    ${controller_cli} not present — reading the controller as unconfigured"
   fi
-  if printf '%s' "$vd_show" | grep -iE "RAID${CFG[VD_RAID_LEVEL]}([^0-9]|\$ >/dev/null)"; then
+  if printf '%s' "$vd_show" | grep -iE "RAID${CFG[VD_RAID_LEVEL]}([^0-9]|\$)" >/dev/null; then
     note "no change: ${controller} already carries a RAID${CFG[VD_RAID_LEVEL]} virtual disk"
   else
     if printf '%s' "$vd_show" | grep -iE '\bRAID[0-9]' >/dev/null; then

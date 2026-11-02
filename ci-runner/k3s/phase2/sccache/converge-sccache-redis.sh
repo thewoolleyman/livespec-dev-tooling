@@ -88,7 +88,7 @@ if [ "${DRY_RUN}" -eq 1 ]; then
   writer_pass="<the host-held writer credential>"
 elif [ ! -s "${WRITER_PASS_FILE}" ]; then
   install -d -m 0755 "$(dirname "${WRITER_PASS_FILE}")"
-  (umask 077; head -c 48 /dev/urandom | base64 | tr -d '\n=/+' | head -c 48 > "${WRITER_PASS_FILE}")
+  (umask 077; head -c 48 /dev/urandom | base64 | tr -d '\n=/+' | awk '{printf "%s", substr($0, 1, 48)}' > "${WRITER_PASS_FILE}")
   chmod 0600 "${WRITER_PASS_FILE}"
   echo "generated a new writer credential (the cache is regenerable; nothing to migrate)"
   writer_pass="$(cat "${WRITER_PASS_FILE}")"
