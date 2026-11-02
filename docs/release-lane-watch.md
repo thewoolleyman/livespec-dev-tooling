@@ -82,7 +82,8 @@ OPENS PULL REQUESTS. This one mutates nothing.
 The reusable workflow `.github/workflows/reusable-release-lane-watch.yml` is
 landed MAINTAINER-SIDE, separately from this branch: a factory branch never
 writes under `.github/workflows/`, and `check-no-workflow-edits` refuses such a
-branch without a human-set `approval:workflow-edit` label. The branch that added
+branch without a ledger authorization label (`approval:workflow-edit-additive`
+for an attested add-only edit, `approval:workflow-edit` otherwise). The branch that added
 this document carries the detector, the runner and their tests, and reports the
 workflow's unified diff for that landing.
 

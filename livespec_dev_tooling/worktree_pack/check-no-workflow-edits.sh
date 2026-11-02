@@ -12,9 +12,27 @@
 # escape. This body carries NONE: there is no environment variable, flag,
 # or mechanical allowance that changes what it does.
 #
-# THE RULE (maintainer, 2026-09-04): the factory MUST NOT land changes to
-# `.github/workflows/` autonomously. An agent may INVOKE the human
-# authorization override below but cannot FABRICATE it.
+# THE RULE (maintainer, 2026-09-04; tiered 2026-11-02): the factory MUST NOT
+# land changes to `.github/workflows/` autonomously. Every workflow edit needs
+# prior authorization recorded on the ledger, in one of TWO TIERS:
+#
+#   ADDITIVE tier — the workflow diff adds lines only (no deleted or modified
+#     line under `.github/workflows/`, measured mechanically against the merge
+#     base), AND the declaration attests `change=additive` and
+#     `ci_runtime=no-significant-increase`. Admitted under the label
+#     `approval:workflow-edit-additive`, which the maintainer MAY delegate to a
+#     coordinator agent to set (or under the maintainer label below).
+#   MAINTAINER tier — everything else: any deleted or modified workflow line,
+#     any edit that removes or reduces test coverage or a quality gate, any
+#     edit that significantly increases CI runtime, or any declaration that
+#     does not attest the additive tier. Admitted ONLY under
+#     `approval:workflow-edit`, which ONLY the maintainer sets, directly. An
+#     agent never sets it.
+#
+# A declaration that CLAIMS `change=additive` over a diff that deletes or
+# modifies a workflow line is refused outright, naming the offending lines —
+# whatever label the item carries. An agent may INVOKE an authorization but
+# cannot FABRICATE it.
 #
 # WHAT THIS IS NOT
 # ================
@@ -41,18 +59,30 @@
 #            AUTHORED IN THIS CHANGE (present in <base>...HEAD or pending),
 #            carrying exactly one `work_item=<ledger-id>` line and exactly
 #            one non-empty `reason=` line — livespec-overseer's rules,
-#            verbatim. A declaration inherited from the base is NOT an
-#            authorization: one exemption binds to one reviewed change.
+#            verbatim — plus, for the ADDITIVE tier, at most one
+#            `change=additive` line and at most one `ci_runtime=` line
+#            (`no-significant-increase` attests the tier). A declaration
+#            inherited from the base is NOT an authorization: one exemption
+#            binds to one reviewed change.
+#        (t) the tier: `change=additive` is checked against the union of the
+#            committed (<merge-base>..HEAD), staged and unstaged workflow
+#            diffs; any deleted line (a modification is a deletion plus an
+#            addition), a deleted file, or a mode change refuses the claim
+#            with exit 1 and the offending lines. An attested, add-only edit
+#            is the ADDITIVE tier; anything else is the MAINTAINER tier.
 #        (b) when the repo has a ledger (`.beads/config.yaml` present), the
-#            named work item MUST carry the label `approval:workflow-edit`,
-#            read via `bd show <id> --json` (`LIVESPEC_BD_PATH` if set and
-#            executable, else `bd` on PATH). The label is an ADVISORY
-#            human-authorization marker: NO hook prevents an agent from
-#            setting it, so an agent MAY set it ONLY on the maintainer's
-#            explicit per-case authorization, and doing so SHOULD notify
-#            the maintainer. An unreachable ledger FAILS CLOSED.
+#            named work item MUST carry a label that admits the tier, read
+#            via `bd show <id> --json` (`LIVESPEC_BD_PATH` if set and
+#            executable, else `bd` on PATH): ADDITIVE accepts
+#            `approval:workflow-edit-additive` or `approval:workflow-edit`;
+#            MAINTAINER accepts `approval:workflow-edit` only. No hook stops
+#            an agent from setting a label, so the labels are ADVISORY
+#            authorization markers: an agent MAY set the additive label only
+#            under the maintainer's prior authorization (directly, or as a
+#            coordinator holding delegated authority), and never sets the
+#            maintainer label. An unreachable ledger FAILS CLOSED.
 #        (c) a repo with NO ledger accepts the valid declaration alone, and
-#            says so.
+#            says so (a false additive claim is still refused).
 #   5. No environment variable of any kind changes any of the above.
 #
 # EXIT CODES
@@ -75,6 +105,7 @@ set -euo pipefail
 declaration=".livespec-workflow-edit-exemption"
 workflows_dir=".github/workflows"
 approval_label="approval:workflow-edit"
+additive_label="approval:workflow-edit-additive"
 ledger_config=".beads/config.yaml"
 guard="check-no-workflow-edits"
 
@@ -147,12 +178,25 @@ declared_value() {
     printf '%s\n' "${lines#*=}"
 }
 
+# Returns 0 with the value on stdout when `key=` appears AT MOST once (empty
+# when absent); 1 when it appears more than once.
+optional_value() {
+    local key="$1" lines
+    lines="$(grep -E "^${key}=" "$declaration" || true)"
+    if [[ "$(printf '%s\n' "$lines" | sed '/^$/d' | wc -l | tr -d ' ')" -gt 1 ]]; then
+        return 1
+    fi
+    printf '%s\n' "${lines#*=}"
+}
+
 # Sets `declaration_status` to one of:
 #   absent     — no declaration authored in this change (exit 1 territory)
 #   malformed  — a declaration is here but cannot be evaluated (exit 2)
-#   valid      — sets `work_item`
+#   valid      — sets `work_item`, `change_claim`, `ci_runtime_claim`
 declaration_status=""
 work_item=""
+change_claim=""
+ci_runtime_claim=""
 inspect_declaration() {
     if [[ ! -f "$declaration" ]]; then
         note "missing workflow-edit exemption declaration: $declaration"
@@ -201,25 +245,48 @@ inspect_declaration() {
         declaration_status="malformed"
         return 0
     fi
+    if ! change_claim="$(optional_value "change")"; then
+        note "malformed declaration: $declaration may contain at most one change= line"
+        declaration_status="malformed"
+        return 0
+    fi
+    if [[ -n "$change_claim" && "$change_claim" != "additive" ]]; then
+        note "malformed declaration: change= must be 'additive' (or absent for the maintainer tier), got '$change_claim'"
+        declaration_status="malformed"
+        return 0
+    fi
+    if ! ci_runtime_claim="$(optional_value "ci_runtime")"; then
+        note "malformed declaration: $declaration may contain at most one ci_runtime= line"
+        declaration_status="malformed"
+        return 0
+    fi
     declaration_status="valid"
 }
 
 print_offending_paths() {
     {
-        echo "$guard: changes under $workflows_dir/ require HUMAN authorization:"
+        echo "$guard: changes under $workflows_dir/ require prior authorization on the ledger:"
         printf '%s\n' "$workflow_paths" | sed 's/^/  /'
     } >&2
 }
 
 print_human_procedure() {
     {
-        echo "$guard: the two-step human-authorization path:"
+        echo "$guard: the two-step authorization path:"
         echo "  1. add or update $declaration in THIS branch (tracked), with exactly one"
         echo "     work_item=<ledger-id> line and exactly one reason=<reviewable reason> line;"
-        echo "  2. set the approval label on that work item, on the maintainer's per-case authorization:"
+        echo "     an edit that ONLY ADDS workflow lines may also attest the additive tier with"
+        echo "       change=additive"
+        echo "       ci_runtime=no-significant-increase"
+        echo "  2. the work item must carry a label that admits the tier:"
+        echo "     ADDITIVE tier (attested, add-only diff):"
+        echo "       bd label add <ledger-id> $additive_label"
+        echo "       (set only under the maintainer's prior authorization — directly, or by a"
+        echo "        coordinator agent holding delegated maintainer authority)"
+        echo "     MAINTAINER tier (any deleted or modified workflow line, any reduction of test"
+        echo "     coverage or quality gates, any significant CI-runtime increase, or no attestation):"
         echo "       bd label add <ledger-id> $approval_label"
-        echo "     (advisory: no hook enforces this. An agent MAY set it only on the maintainer's"
-        echo "      explicit per-case authorization, and setting it should notify the maintainer)."
+        echo "       (set ONLY by the maintainer, directly; an agent never sets it)"
         echo "  No environment variable or flag bypasses this guard."
     } >&2
 }
@@ -241,10 +308,64 @@ case "$declaration_status" in
 esac
 
 # --------------------------------------------------------------------------
+# 4t. The tier — an additive claim is verified against the diff itself
+# --------------------------------------------------------------------------
+# Every deleted line in any of the three views of the change: what is
+# committed (and so what is pushed), what is staged, and what is on disk. A
+# modification is a deletion plus an addition, so deleted lines are exactly
+# the "deleted or modified" set. Untracked workflow files are new files and
+# so add-only by construction.
+merge_base="$(git merge-base "$base" HEAD 2>/dev/null || true)"
+non_additive_lines() {
+    local -a views=()
+    if [[ -n "$merge_base" ]]; then
+        views=("$merge_base HEAD" "--cached $merge_base" "$merge_base")
+    else
+        views=("--cached" "")
+    fi
+    local view
+    for view in "${views[@]}"; do
+        # shellcheck disable=SC2086  # each view is a deliberate word list
+        git diff --no-ext-diff --no-renames --no-color -U0 $view -- "$workflows_dir" | awk '
+            /^diff --git / { file = $NF; sub(/^b\//, "", file); in_hunk = 0; next }
+            /^(old|new|deleted file) mode / { print file ": " $0; next }
+            /^@@/ { in_hunk = 1; next }
+            in_hunk && /^-/ { print file ": " $0 }
+        '
+    done | awk '!seen[$0]++'
+}
+
+tier="maintainer"
+if [[ "$change_claim" == "additive" ]]; then
+    offending_lines="$(non_additive_lines)"
+    if [[ -n "$offending_lines" ]]; then
+        print_offending_paths
+        {
+            echo "$guard: $declaration claims change=additive, but the workflow diff deletes or modifies lines:"
+            printf '%s\n' "$offending_lines" | sed 's/^/  /'
+            echo "$guard: a false additive attestation is refused whatever label the item carries;"
+            echo "  remove change=additive (the MAINTAINER tier, label $approval_label) or make the edit add-only"
+        } >&2
+        exit 1
+    fi
+    if [[ "$ci_runtime_claim" == "no-significant-increase" ]]; then
+        tier="additive"
+    else
+        note "change=additive without the attestation ci_runtime=no-significant-increase is the maintainer tier"
+    fi
+fi
+
+if [[ "$tier" == "additive" ]]; then
+    accepted_labels=("$additive_label" "$approval_label")
+else
+    accepted_labels=("$approval_label")
+fi
+
+# --------------------------------------------------------------------------
 # 4c. No ledger — the declaration alone authorizes, and we say so
 # --------------------------------------------------------------------------
 if [[ ! -f "$ledger_config" ]]; then
-    note "this repository has no ledger ($ledger_config absent): accepting the tracked declaration alone (work_item=$work_item) as the human authorization"
+    note "this repository has no ledger ($ledger_config absent): accepting the tracked declaration alone (work_item=$work_item, $tier tier) as the authorization"
     exit 0
 fi
 
@@ -282,13 +403,14 @@ fi
 
 # The record may arrive as a bare object, a list of records, or an envelope
 # with a `data` key, possibly behind a non-JSON preamble — the same shapes
-# `checks/_plan_ledger.py` tolerates. Exit 0 when the label is present, 1
-# when it is absent, 3 when the output cannot be read as a ledger record.
+# `checks/_plan_ledger.py` tolerates. Exit 0 printing the first accepted
+# label present, 1 when none is present, 3 when the output cannot be read as
+# a ledger record.
 label_probe='
 import json
 import sys
 
-wanted = sys.argv[1]
+wanted = sys.argv[1:]
 text = sys.stdin.read()
 starts = [pos for pos in (text.find("{"), text.find("[")) if pos >= 0]
 if not starts:
@@ -306,23 +428,32 @@ if not isinstance(parsed, dict):
 labels = parsed.get("labels") or []
 if not isinstance(labels, list):
     sys.exit(3)
-sys.exit(0 if wanted in labels else 1)
+for label in wanted:
+    if label in labels:
+        print(label)
+        sys.exit(0)
+sys.exit(1)
 '
 
 set +e
-printf '%s' "$bd_json" | python3 -c "$label_probe" "$approval_label"
+matched_label="$(printf '%s' "$bd_json" | python3 -c "$label_probe" "${accepted_labels[@]}")"
 probe_status=$?
 set -e
 
 case "$probe_status" in
     0)
-        note "workflow edit authorized: $work_item carries $approval_label (declaration: $declaration)"
+        note "workflow edit authorized ($tier tier): $work_item carries $matched_label (declaration: $declaration)"
         exit 0
         ;;
     1)
         print_offending_paths
-        note "the declared work item $work_item does NOT carry the label $approval_label"
-        note "a human must run, from their own terminal:  bd label add $work_item $approval_label"
+        if [[ "$tier" == "additive" ]]; then
+            note "additive tier: the declared work item $work_item carries neither $additive_label nor $approval_label"
+            note "under the maintainer's prior (possibly delegated) authorization:  bd label add $work_item $additive_label"
+        else
+            note "maintainer tier: the declared work item $work_item does NOT carry the label $approval_label"
+            note "the maintainer must run, from their own terminal:  bd label add $work_item $approval_label"
+        fi
         print_human_procedure
         exit 1
         ;;
