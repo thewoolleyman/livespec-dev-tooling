@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.148.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.147.0...v1.148.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** pre-pull the factory sandbox image into k3s containerd ([749e294](https://github.com/thewoolleyman/livespec-dev-tooling/commit/749e294defc649a0ca4b1ceff789fc30b93eea41))
+
 ## [1.147.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.146.3...v1.147.0) (2026-11-02)
 
 
