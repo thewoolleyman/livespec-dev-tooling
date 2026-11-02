@@ -16,6 +16,18 @@ the MCP endpoint with the MCP key. The working pattern is
 `livespec-orchestrator-beads-fabro` repository; the dispatcher's reflector uses
 the same key (`_dispatcher_reflector_oob.py`).
 
+## The REST Query Data API is not available here: do not ask the maintainer for it
+
+The team is on Honeycomb's **Pro** plan. Honeycomb's REST Query Data API, which needs the "Run Queries" permission on a
+configuration key, requires the **Enterprise** plan. Being on a paid plan is not enough. The maintainer cannot enable
+it, so `queries: false` on the configuration key is permanent, not a setting someone forgot. The maintainer, 2026-11-02:
+"I can't enable run queries, I am on a pro plan, not an enterprise plan ... so you stop asking me."
+
+Every query, from an agent or from a deterministic script, therefore goes through the MCP endpoint with the MCP key
+(below). The endpoint is plain HTTPS with JSON-RPC, so a script can call it with no LLM involved. Its budget is about
+100 queries per hour, shared with the dispatcher's reflector, so a recurring script runs a small fixed query set and
+caches the results.
+
 Two traps:
 
 - `GET https://api.honeycomb.io/1/auth` answers `unauthenticated` for the MCP
