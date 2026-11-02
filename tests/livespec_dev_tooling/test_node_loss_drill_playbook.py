@@ -286,8 +286,10 @@ case "$*" in
     fi
     exit 0 ;;
   *'get node'*jsonpath*)
-    if [ "${{agent_state}}" = running ] \
-       || [ "${{NODE_LOSS_DRILL_READY_WHILE_STOPPED}}" = yes ]; then
+    if [ "${{NODE_LOSS_DRILL_EMPTY_READY_WHILE_STOPPED}}" = yes ]; then
+      :
+    elif [ "${{agent_state}}" = running ] \
+         || [ "${{NODE_LOSS_DRILL_READY_WHILE_STOPPED}}" = yes ]; then
       printf 'True'
     else
       printf 'Unknown'
@@ -570,7 +572,7 @@ def _write_inventory(*, scratch: _Scratch) -> Path:
 
 
 def _playbook_environment(
-    *, scratch: _Scratch, pods: str, ready_while_stopped: bool
+    *, scratch: _Scratch, pods: str, ready_while_stopped: bool, empty_ready_while_stopped: bool
 ) -> dict[str, str]:
     """The child's environment, built rather than inherited wholesale.
 
@@ -601,6 +603,9 @@ def _playbook_environment(
             # it with no `set -u`, so an unset variable would make the knob's
             # off state untested rather than tested.
             "NODE_LOSS_DRILL_READY_WHILE_STOPPED": "yes" if ready_while_stopped else "no",
+            "NODE_LOSS_DRILL_EMPTY_READY_WHILE_STOPPED": (
+                "yes" if empty_ready_while_stopped else "no"
+            ),
             # Skipped tasks are SHOWN, as `ansible/ansible.cfg` shows them: a
             # task that vanishes from the output cannot be read as "this was not
             # evaluated", and the unconfirmed cases assert on exactly those lines.
@@ -621,6 +626,7 @@ def _run_playbook(
     check_mode: bool = False,
     pods: str = "idle",
     ready_while_stopped: bool = False,
+    empty_ready_while_stopped: bool = False,
 ) -> tuple[int, str]:
     """Run the committed playbook; return its exit code and its callback output."""
     assert _PLAYBOOK.is_file(), (
@@ -666,7 +672,10 @@ def _run_playbook(
         argv,
         cwd=scratch.root,
         env=_playbook_environment(
-            scratch=scratch, pods=pods, ready_while_stopped=ready_while_stopped
+            scratch=scratch,
+            pods=pods,
+            ready_while_stopped=ready_while_stopped,
+            empty_ready_while_stopped=empty_ready_while_stopped,
         ),
         capture_output=True,
         text=True,
@@ -1240,6 +1249,29 @@ def test_the_drill_re_arms_the_paused_timers_when_a_step_after_the_stop_fails(
             f"a failed run must still name `{timer}` as paused and re-armed — it "
             f"is the run an operator most needs that from:\n{output}"
         )
+
+
+def test_the_drill_rejects_an_empty_ready_status_as_an_unobserved_notready_instant(
+    *, scratch: _Scratch
+) -> None:
+    """An empty Ready read is no observation, never evidence of NotReady."""
+    exit_code, output = _run_playbook(
+        scratch=scratch,
+        confirm=_AGENT,
+        empty_ready_while_stopped=True,
+    )
+
+    assert exit_code != 0, (
+        "a drill whose API Ready read is empty while the agent is stopped must "
+        f"fail at the NotReady wait rather than accepting an unobserved instant:\n{output}"
+    )
+    statuses = _task_statuses(output=output, host=_AGENT)
+    assert _status_of(statuses=statuses, task=_NOTREADY_WAIT_TASK) == "fatal"
+    assert _status_of(statuses=statuses, task=_START_TASK) in {"ok", "changed"}
+    assert _status_of(statuses=statuses, task=_REARM_TASK) in {"ok", "changed"}
+    assert "node NotReady at unobserved" in output, (
+        "a failed NotReady wait must report that no NotReady instant was observed:\n" f"{output}"
+    )
 
 
 @pytest.mark.parametrize(
