@@ -1,0 +1,33 @@
+---
+# This role owns the dev host's persistent setting and proves the copy became
+# the running value, rather than relying on the next boot's systemd-sysctl run.
+
+- name: Install the proactive-compaction sysctl drop-in
+  ansible.builtin.copy:
+    src: 99-dev-host-compaction.conf
+    dest: /etc/sysctl.d/99-dev-host-compaction.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Apply the proactive-compaction setting
+
+- name: Apply any pending proactive-compaction setting before verifying it
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the running proactive-compaction setting
+  ansible.builtin.command: sysctl -n vm.compaction_proactiveness
+  register: dev_host_compaction_running
+  changed_when: false
+  become: true
+  when: not ansible_check_mode
+
+- name: Require proactive compaction to be disabled
+  ansible.builtin.assert:
+    that:
+      - dev_host_compaction_running.stdout == '0'
+    fail_msg: >-
+      vm.compaction_proactiveness is {{ dev_host_compaction_running.stdout }} after
+      applying the managed drop-in, expected 0
+    success_msg: proactive memory compaction is disabled
+  when: not ansible_check_mode

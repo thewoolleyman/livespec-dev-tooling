@@ -1,0 +1,6 @@
+---
+- name: Apply the proactive-compaction setting
+  ansible.builtin.command: >-
+    sysctl --load /etc/sysctl.d/99-dev-host-compaction.conf
+  become: true
+  changed_when: true

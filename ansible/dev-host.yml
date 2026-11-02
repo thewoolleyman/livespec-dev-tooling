@@ -44,6 +44,8 @@
       tags: [ssh_hardening]
     - role: keyring_quota
       tags: [keyring_quota]
+    - role: dev_host_compaction
+      tags: [dev_host_compaction]
     - role: tmux_config
       tags: [tmux_config]
     - role: claude_code_hooks
