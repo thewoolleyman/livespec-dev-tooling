@@ -83,9 +83,13 @@ def kill_reason(
 
 def _drain_available(
     *, stream: IO[bytes], decoder: codecs.IncrementalDecoder, progress: SuiteProgress
-) -> None:
-    """Read one available pipe chunk and treat its arrival as suite progress."""
-    progress.saw(chunk=decoder.decode(os.read(stream.fileno(), _READ_BYTES)))
+) -> bool:
+    """Read one available pipe chunk; return False at EOF, which is not progress."""
+    chunk = os.read(stream.fileno(), _READ_BYTES)
+    if not chunk:
+        return False
+    progress.saw(chunk=decoder.decode(chunk))
+    return True
 
 
 def _drain_after_exit(
@@ -129,7 +133,8 @@ def run_suite(
                     _ = proc.wait(timeout=_KILL_GRACE_SECONDS)
                     break
                 for _key, _mask in selector.select(timeout=_POLL_SECONDS):
-                    _drain_available(stream=stream, decoder=decoder, progress=progress)
+                    if not _drain_available(stream=stream, decoder=decoder, progress=progress):
+                        _ = selector.unregister(stream)
         _drain_after_exit(stream=stream, decoder=decoder, progress=progress)
         return SuiteRun(
             returncode=None if reason is not None else proc.returncode,

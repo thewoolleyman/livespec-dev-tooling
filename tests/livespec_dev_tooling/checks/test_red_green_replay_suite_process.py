@@ -106,3 +106,15 @@ def test_a_stalled_run_kills_the_whole_process_group(tmp_path: Path) -> None:
     while _live_processes_carrying(token) and time.monotonic() < hang_guard:  # pragma: no branch
         time.sleep(0.1)  # pragma: no cover
     assert _live_processes_carrying(token) == []
+
+
+def test_a_closed_pipe_is_not_progress_so_a_silent_survivor_still_stalls() -> None:
+    """EOF on the output pipe is not output; a suite that closes it and idles is killed."""
+    mod = _load()
+    run = mod.run_suite(
+        argv=[sys.executable, "-c", "import os, time; os.close(1); os.close(2); time.sleep(20)"],
+        bound=mod.SuiteBound(stall_seconds=2, ceiling_seconds=None),
+    )
+    assert run.kill_reason == "stalled"
+    assert run.timed_out is True
+    assert run.returncode is None
