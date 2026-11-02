@@ -58,6 +58,22 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.150.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.149.1...v1.150.0) (2026-11-02)
+
+
+### Features
+
+* cover delegated pre-commit fallback ([894bc6e](https://github.com/thewoolleyman/livespec-dev-tooling/commit/894bc6e7bd2c2df8e88015f4417f156f8f46c5e7))
+
+
+### Bug Fixes
+
+* exclude test Markdown from shared support ([2e371b2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/2e371b29e6877b50413592f3bf692492b9564ace))
+* **pre-commit:** join the host authority members into a delegated pre-commit verdict ([45944fc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/45944fc8a287a1992039eda52f59fd42b2548b62))
+* **pre-commit:** run the delegated aggregate from a rewound staged-tree checkout ([afcdb45](https://github.com/thewoolleyman/livespec-dev-tooling/commit/afcdb455a741b9bee4b8992b9815363c9c0e7195))
+* report the gate Job's own tree label, never the requested tree ([b3fe160](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b3fe160ac0c7dd1e6ad76dcf8526126f4a393b3d))
+* report the tree the created gate Job names ([1c53def](https://github.com/thewoolleyman/livespec-dev-tooling/commit/1c53defd9fd4a91c77128de813378fc2fe07a3bb))
+
 ## [1.149.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.149.0...v1.149.1) (2026-11-02)
 
 
