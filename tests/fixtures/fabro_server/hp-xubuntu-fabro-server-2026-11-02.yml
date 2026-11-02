@@ -1,0 +1,156 @@
+# FROZEN TEST FIXTURE, not inventory. This is hp-xubuntu's `fabro_server`
+# section from ansible/inventory/host_vars/hp-xubuntu.yml, copied verbatim as it
+# stood on master on 2026-11-02. That was the day hp-xubuntu left
+# `sandbox_hosts`, and its instances left the inventory (plan
+# gmktec-factory-placement, item livespec-dev-tooling-2yn4yb).
+#
+# The fabro_server role's axis and catalog scenarios used hp's three instances as
+# their worked example: a fleet instance, a candidate that names its own binary
+# and home, and an instance that names neither. No live host carries that set
+# any more, so the scenarios read this frozen copy, together with the role's
+# HOST_VARS.md hp block, which documents it. Nothing converges from this file.
+
+# --- fabro_server ---
+# The service account is cwoolley, NOT ubuntu: the tailnet ACL rejects the
+# ubuntu account on this host, and the checkout root is under $HOME rather
+# than /data/projects.
+fabro_server_host_user: cwoolley
+fabro_server_host_group: cwoolley
+fabro_server_host_home: /home/cwoolley
+fabro_server_host_checkout: /home/cwoolley/repos/livespec-orchestrator-beads-fabro
+fabro_server_instances:
+  - unit_name: fabro-server
+    home_dir: /home/cwoolley/.fabro
+    port: 32276
+    canonical_host: hp-xubuntu.perch-rudd.ts.net:32276
+    cli_target_url: http://127.0.0.1:32276
+    # 10, raised back from 7 on 2026-10-13 by maintainer decision. History:
+    # 15 drove the 15-minute load average past 59 on 16 cores (2026-10-12);
+    # 10 settled toward 31; 7 held 9-19. At 7 the measured outcome improved
+    # (success rate 50% against 27%, successes/hour 1.34 against 0.71, no
+    # kernel OOM kills since the 160 GiB swap went live), and the step to 10
+    # is judged by successes/hour over a 24-hour re-measure, not by load
+    # (livespec-dev-tooling .ai/ci-node-capacity-reads.md). Step back down if
+    # successes/hour drops or infrastructure failures return.
+    max_concurrent_runs: 10
+    github_app_id: "3668528"
+    # Live on the host since 2026-08-21.
+    otel_dropin: present
+    # The SAME build this instance has run since 2026-10-01 — fabro 0.254.0 at
+    # 8869e88 (tag carrier-8869e88-pre-rebuild-2026-10-10 on
+    # thewoolleyman/fabro) — rebuilt 2026-10-16 with NODE_ENV=production
+    # exported, because fabro-web's build.ts never sets it and every earlier
+    # build embedded React's DEVELOPMENT build in the web console. Engine source
+    # is identical; only the SPA differs. STAGED, NOT RESTARTED: this instance is
+    # never idle, so an apply with fabro_server_restart_allowed false swaps the
+    # file atomically under the running server and records the deferred restart.
+    # The new console goes live at the next restart: a zero-live window, or the
+    # fabro-currency cutover (gitops-fleet-capacity-monitoring ruling R80). The
+    # path is shared with fabro-server-mi-homelab, which names no binary_path and
+    # is stopped. Provenance is in BUILD_INFO beside the binary.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0254-8869e88/fabro
+    binary_sha256: 199407cec8119735fc0751407272ba3282703bd45ada87d34a89cc8f62a22421
+    # STOPPED 2026-10-24 by the petri-factory-on-gmktec plan (epic
+    # bd-ib-fyozyd, coordinator gitops-fleet-capacity-monitoring): every
+    # repository's committed factory table had dropped `legacy` and petri on
+    # gmktec-xubuntu serves the fleet. The unit, its drop-in, the binary and the
+    # state directory under home_dir are all KEPT, so the instance comes back by
+    # flipping this one word to running and re-applying.
+    service_state: stopped
+    # RETAINED READ-ONLY since 2026-11-02 (plan gmktec-factory-placement, epic
+    # livespec-dev-tooling-me5aqz, item livespec-dev-tooling-yw7via): the binary
+    # and the whole state root under home_dir lose every write bit, kept only as
+    # the rollback path. A rollback flips this to false and service_state to
+    # running; see roles/fabro_server/HOST_VARS.md for the write bits.
+    retained_read_only: true
+  - unit_name: fabro-server-mi-homelab
+    home_dir: /home/cwoolley/.fabro-mi-homelab
+    port: 32277
+    canonical_host: hp-xubuntu.perch-rudd.ts.net:32277
+    cli_target_url: http://127.0.0.1:32277
+    # A chosen value, not an observation: the host's 16 cores are already
+    # over-subscribed by the fleet instance's 15, and the org factory serves
+    # one repository. Raise it deliberately, with the fleet instance's number
+    # in view, never by copying the entry above.
+    max_concurrent_runs: 5
+    github_app_id: "4688510"
+    # Live on the host since 2026-08-22.
+    otel_dropin: present
+    # STOPPED 2026-09-12 by maintainer instruction: the homelab project is on
+    # hold. The unit, its drop-in, settings.toml and the state directory under
+    # home_dir are all KEPT — nothing is deleted — so the instance comes back
+    # by flipping this one word to running and re-applying. The role stops and
+    # disables the unit, never restarts it, and skips the running-server
+    # verification for it. vps's mi-homelab instance is untouched by this.
+    service_state: stopped
+  # The fabro-currency cutover candidate. Hand-installed on 2026-10-08 and
+  # reported by every drift read since, because the role could not express an
+  # instance that runs its own build: expressing it here is the fix, not a
+  # second exception. It carries the Petri-era build production moves onto,
+  # beside the fleet instance above still carrying the current one, and
+  # publishes as the SAME fleet App — it is the fleet factory, pre-cutover,
+  # not a second project.
+  - unit_name: fabro-server-candidate
+    home_dir: /home/cwoolley/.fabro-candidate
+    port: 32278
+    canonical_host: hp-xubuntu.perch-rudd.ts.net:32278
+    cli_target_url: http://127.0.0.1:32278
+    # Chosen deliberately and small, with the fleet instance's 15 in view: the
+    # host's 16 cores are already over-subscribed by that instance, and this
+    # one carries rehearsal dispatches rather than the fleet's traffic. Raise
+    # it AT the cutover, when the fleet instance's number comes down.
+    max_concurrent_runs: 2
+    github_app_id: "3668528"
+    # A decision, not a default: this instance becomes hp's production factory
+    # at the cutover, and both instances above export, so a candidate that did
+    # not would blind the factory telemetry for exactly the window in which it
+    # is being proven. Setting `present` ADDS the drop-in if the hand-install
+    # left none — read the drift report before applying, as the play requires.
+    otel_dropin: present
+    # Its own build, beside its own state root — the two axes this instance
+    # exists to exercise. HOME is the state root rather than the account home,
+    # which is how it was hand-installed.
+    binary_path: /home/cwoolley/.fabro-candidate/bin/fabro
+    home_env: /home/cwoolley/.fabro-candidate
+    # The v0.382 carrier build, staged on the control node (vps) and carried
+    # from there. Measured 2026-10-11: the host's candidate instance was
+    # running fabro 0.378.0-nightly.0 (64b9d88), so the first apply after this
+    # lands REPLACES that binary. The digest is the gate — the source path is
+    # inside a mutable state tree, so a declaration without one would install
+    # whatever is there on the day it runs. The replacement does not restart
+    # the instance: fabro_server_restart_allowed is false by default and the
+    # carrying-runs refusal gates it even when it is true.
+    #
+    # Rebuilt 2026-10-16 from the SAME commit (adeefec4c) with
+    # NODE_ENV=production exported. fabro-web's build.ts never sets NODE_ENV,
+    # so every earlier build, including effe9d03, embedded React's DEVELOPMENT
+    # build in the web console. The engine source is identical; only the SPA
+    # differs. A rebuild without NODE_ENV=production regresses the console to
+    # the dev UI. Provenance is in BUILD_INFO beside the binary.
+    binary_source: /home/ubuntu/.local/state/fabro-web-prod/v0382-adeefec/fabro
+    binary_sha256: 26872440c75c50edfd59a0d33f1401baf70a9e5de81fb65192a1f7042817f7c1
+    # The sandbox environment the factory's own runs are prepared in. Measured
+    # 2026-10-11: this instance's catalog held only the server's seeded `default`
+    # entry — buildpack-deps:noble, 2 CPU, 4GB — so the canary run dispatched to
+    # it was prepared in that image and failed at run preparation with
+    # `mise: not found`. The image tag FOLLOWS THE ORCHESTRATOR WORKFLOW PIN:
+    # `.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml` in
+    # livespec-orchestrator-beads-fabro, today python-agent-v1.93.5. Bump the
+    # two together — a tag here that the workflow does not pin is an
+    # environment the factory never dispatches into. The envelope is the one
+    # the factory's runs are sized for, against the fleet instance's 15 slots
+    # and this instance's 2.
+    environments:
+      - id: livespec-ci
+        image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.93.5
+        cpu: 4
+        memory: 8GB
+    # STOPPED 2026-10-18 (livespec-dev-tooling-hkf457, plan bd-ib-fyozyd): the
+    # maintainer ruled that gmktec-xubuntu replaces hp as the Petri-era
+    # factory's home, so the current Fabro server now serves from gmktec and
+    # this hp instance is parked. Unit, drop-in, settings.toml, binary and
+    # state directory are all KEPT; the role stops and disables the unit and
+    # never restarts it. Bring it back by flipping this word to running.
+    service_state: stopped
+
+# --- end of fixture ---

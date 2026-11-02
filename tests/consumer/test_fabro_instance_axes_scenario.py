@@ -120,7 +120,11 @@ _TASKS = _ROLE / "tasks" / "main.yml"
 _HANDLERS = _ROLE / "handlers" / "main.yml"
 _DEFAULTS = _ROLE / "defaults" / "main.yml"
 _ROLE_DOC = _ROLE / "HOST_VARS.md"
-_INVENTORY = _ANSIBLE / "inventory" / "host_vars" / "hp-xubuntu.yml"
+# hp-xubuntu's instances left the inventory on 2026-11-02 (livespec-dev-tooling-2yn4yb);
+# the worked example is now a frozen verbatim copy of the section they left.
+_INVENTORY = (
+    _REPO_ROOT / "tests" / "fixtures" / "fabro_server" / "hp-xubuntu-fabro-server-2026-11-02.yml"
+)
 _ANSIBLE_CFG = _ANSIBLE / "ansible.cfg"
 _NON_FUNCTIONAL = _REPO_ROOT / "SPECIFICATION" / "non-functional-requirements.md"
 
