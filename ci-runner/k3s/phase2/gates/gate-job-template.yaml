@@ -226,6 +226,26 @@ spec:
           volumeMounts:
             - name: livespec-core
               mountPath: /livespec-core
+        # The operator cache kill switch, applied BEFORE the gate container's
+        # entrypoint. A postStart hook runs concurrently with the entrypoint, so
+        # it could not guarantee the gate starts on a cold UV_CACHE_DIR; an init
+        # container finishes first. It removes only this Job's private reflink
+        # seed, never the warm generation.
+        - name: apply-cache-kill-switch
+          image: @@IMAGE@@
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ "${CI_CACHE_KILL_SWITCH:-}" = "operator" ]; then
+                rm -rf /__w/_warm/uv
+              fi
+          env:
+            - name: CI_CACHE_KILL_SWITCH
+              value: "@@CACHE_KILL_SWITCH@@"
+          volumeMounts:
+            - name: warm-uv-cache
+              mountPath: /__w
       containers:
         - name: gate
           # Requirement 1: resolved by render-gate-job.sh from the GATED
@@ -550,8 +570,9 @@ spec:
             - name: UV_DEFAULT_INDEX
               value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple
             # Keep the fleet cache kill switch on the gate's one seeded work
-            # volume too. The postStart hook below removes only this Job's
-            # private reflink seed when an operator needs a cold control.
+            # volume too. The apply-cache-kill-switch init container above
+            # removes only this Job's private reflink seed when an operator
+            # needs a cold control.
             - name: CI_CACHE_KILL_SWITCH
               value: "@@CACHE_KILL_SWITCH@@"
             - name: SCCACHE_REDIS_ENDPOINT
@@ -591,18 +612,6 @@ spec:
               # for memory and cannot be evicted under node pressure mid-run,
               # which would read as a gate failure rather than as an eviction.
               memory: "@@MEMORY@@"
-          lifecycle:
-            postStart:
-              exec:
-                command:
-                  - /bin/sh
-                  - -c
-                  - |
-                    # Match the ARC hook template: the operator switch removes
-                    # this volume's private seed, never the warm generation.
-                    if [ "${CI_CACHE_KILL_SWITCH:-}" = "operator" ]; then
-                      rm -rf /__w/_warm/uv
-                    fi
           volumeMounts:
             - name: workspace
               mountPath: /workspace
