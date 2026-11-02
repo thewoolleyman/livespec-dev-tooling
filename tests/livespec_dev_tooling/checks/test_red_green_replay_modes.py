@@ -262,6 +262,7 @@ def _run_suite_leg(
 
     monkeypatch.setattr(suite, "run_suite", fake_run_suite)
     monkeypatch.setattr(suite, "xdist_importable", lambda: xdist)
+    monkeypatch.setattr(suite, "read_pre_commit_evidence", lambda **_kwargs: None)
     msg = tmp_path / "COMMIT_EDITMSG"
     msg.write_text("chore: x\n", encoding="utf-8")
     log = _RecordingLog()
