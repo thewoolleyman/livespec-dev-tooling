@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.147.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.146.3...v1.147.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** docker_sandbox_slice retires its envelope on one host ([7105a39](https://github.com/thewoolleyman/livespec-dev-tooling/commit/7105a39c3cf1c9c89f1d2d65aba253d7170c8867))
+
 ## [1.146.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.146.2...v1.146.3) (2026-11-02)
 
 
