@@ -142,6 +142,7 @@ run autonomously, never block."
 
 - A coordinator or dispatcher seat never calls AskUserQuestion, and never ends a turn waiting for an answer.
 - It decides what it can under R301 and reports the decision.
+- It never does a docs commit, push, rebase or PR wait in its own foreground turn. Each goes to a background subagent with the exact change, so the seat keeps answering peers and alerts. Maintainer correction 2026-11-02 ~18:2xZ: "You blocked yourself."
 - An ask that is genuinely the maintainer's (host mutation, secrets, a values call) goes in the tick report as plain
   text under `FOR THE MAINTAINER (non-blocking)`, and the seat keeps looping. The item waits; the seat does not.
 - Never self-wind-down (rule D).
