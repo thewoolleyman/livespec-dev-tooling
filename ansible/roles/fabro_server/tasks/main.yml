@@ -887,9 +887,11 @@
   # restart can promote it.
   #
   # A first install and an inactive or failed service have no running
-  # executable whose path needs preserving, and a parked instance is stopped
-  # before the run ends. In those cases promotion is safe even with the default
-  # flag. Only those two systemd answers count: `activating` (a Type=simple unit
+  # executable whose path needs preserving, so promotion is safe there even
+  # with the default flag. A still-active instance that this run parks
+  # (service_state: stopped) is NOT such a case: the stop task runs after this
+  # promotion, so it keeps its candidate at .incoming and a later run, finding
+  # the unit inactive, promotes it. Only those systemd answers count: `activating` (a Type=simple unit
   # whose ExecStartPost is still running) and `deactivating` and `reloading`
   # all have a live Fabro process, so they are treated as running. An
   # explicitly allowed restart is the remaining case: the install tasks below
@@ -898,7 +900,6 @@
     fabro_server_binary_install_now: >-
       {{ fabro_server_binary_replace | bool
       and ((fabro_server_restart_allowed | bool)
-           or fabro_server_service_state == 'stopped'
            or not (fabro_server_binary.stat.exists)
            or fabro_server_is_active.stdout | default('') | trim == 'inactive'
            or fabro_server_is_active.stdout | default('') | trim == 'failed') }}

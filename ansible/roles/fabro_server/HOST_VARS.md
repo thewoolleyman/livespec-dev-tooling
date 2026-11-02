@@ -105,7 +105,10 @@ For an instance that declares the pair, one apply does this and only this:
    and what `Restart=always` re-execs, which is why nothing is ever written to it
    directly.
 6. Otherwise, leaves the candidate at `<binary_path>.incoming`, leaves
-   `binary_path` untouched, and records the deferred restart.
+   `binary_path` untouched, and records the deferred restart. This includes a
+   still-active instance that the run parks (`service_state: stopped`): the stop
+   happens after the install tasks, so the candidate waits at `.incoming` and a
+   later run, finding the unit inactive, promotes it.
 
 A replacement notifies the same `Fabro instance files changed` handler a changed
 unit file does, so it obeys the same two refusals: the handler does nothing

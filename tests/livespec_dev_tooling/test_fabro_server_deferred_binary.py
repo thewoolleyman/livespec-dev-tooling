@@ -76,3 +76,14 @@ def test_promotion_remains_available_for_an_allowed_restart_or_safe_start() -> N
         "a first install has no live executable to preserve and must promote its staged "
         "binary before systemd starts the unit"
     )
+
+
+def test_parking_an_instance_does_not_promote_before_the_stop() -> None:
+    """The stop task runs after promotion, so a parked-but-live server keeps its path."""
+    decision = _task_bodies()["Decide whether this run may promote this instance's staged binary"]
+    expression = decision[decision.index("fabro_server_binary_install_now:") :]
+
+    assert "service_state" not in expression, (
+        "promotion must not key on service_state: stopped, because the stop task runs after "
+        "the rename and a still-active server would lose its executable path before it stops"
+    )
