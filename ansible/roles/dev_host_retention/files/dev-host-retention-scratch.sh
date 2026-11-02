@@ -2,11 +2,11 @@
 # Scratch retention helpers sourced by dev-host-retention.sh.
 
 session_is_live() {
-    local session_id=$1 process environment
-    for process in /proc/[0-9]*; do
+    local session_id=$1 proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} process environment
+    for process in "$proc_root"/[0-9]*; do
         environment="$process/environ"
         [[ -r $environment ]] || continue
-        if tr '\0' '\n' <"$environment" 2>/dev/null | grep -Fxq "CLAUDE_CODE_SESSION_ID=$session_id"; then
+        if tr '\0' '\n' 2>/dev/null <"$environment" | grep -Fxq "CLAUDE_CODE_SESSION_ID=$session_id"; then
             return 0
         fi
     done

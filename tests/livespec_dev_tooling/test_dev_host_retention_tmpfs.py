@@ -12,6 +12,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 _ROLE = _ROOT / "ansible" / "roles" / "dev_host_retention"
 _RETENTION = _ROLE / "files" / "dev-host-retention.sh"
+_SCRATCH = _ROLE / "files" / "dev-host-retention-scratch.sh"
 _CAPACITY = _ROLE / "files" / "dev-host-capacity-check.sh"
 _CAPACITY_TIMER = _ROLE / "templates" / "livespec-dev-host-capacity-check.timer.j2"
 # The retention period and the ages straddle it by an hour each way, so a run
@@ -103,6 +104,37 @@ def _hermetic_env(*, tmp_path: Path, tmp_root: Path, bulk: Path) -> dict[str, st
         "LIVESPEC_DEV_HOST_RETENTION_CHECKOUT_ROOTS": str(checkout_roots),
         "LIVESPEC_DEV_HOST_UV_CACHE_DIR": str(uv_cache),
     }
+
+
+def test_retention_keeps_a_live_session_when_an_environment_cannot_be_read(
+    *, tmp_path: Path
+) -> None:
+    """An unreadable process environment must be silent and not stop liveness discovery."""
+    assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
+    tmp_root = tmp_path / "tmp"
+    live = tmp_root / "claude-1000" / "project" / "live"
+    live.mkdir(parents=True)
+    _age(path=live, seconds=_AGED_SECONDS)
+    proc_root = tmp_path / "proc"
+    live_environment = proc_root / "100" / "environ"
+    live_environment.parent.mkdir(parents=True)
+    live_environment.write_bytes(b"CLAUDE_CODE_SESSION_ID=live\0")
+    # Reading a directory as an environment fails like a disappeared /proc file.
+    (proc_root / "101" / "environ").mkdir(parents=True)
+    bulk = tmp_path / "bulk"
+
+    done = subprocess.run(
+        ["bash", str(_RETENTION)],
+        env=_hermetic_env(tmp_path=tmp_path, tmp_root=tmp_root, bulk=bulk)
+        | {"LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT": str(proc_root)},
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert live.exists(), done.stdout
+    assert done.stderr == ""
 
 
 def test_retention_reclaims_dead_tmp_scratch_pytest_and_oldest_bulk_dumps(
