@@ -137,15 +137,18 @@ fail() { echo "  FAIL  $1"; failures=$((failures + 1)); }
 wait_for_stand_in_proxy() {
   # Arguments: label, port.
   # A TCP accept is not proof that Python's HTTP server is ready to answer.
-  local label="$1" port="$2" deadline status
+  local label="$1" port="$2" deadline status read_timeout
   deadline=$((SECONDS + PROXY_READINESS_TIMEOUT_SECONDS))
   while [ "${SECONDS}" -lt "${deadline}" ]; do
+    # A server that accepts but never answers must not outlast the deadline.
+    read_timeout=$((deadline - SECONDS))
+    [ "${read_timeout}" -ge 1 ] || read_timeout=1
     status="$(
       {
         status=""
         exec 9<>"/dev/tcp/127.0.0.1/${port}"
         printf 'GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n' >&9
-        IFS= read -r status <&9 || true
+        IFS= read -r -t "${read_timeout}" status <&9 || true
         exec 9>&-
         exec 9<&-
         printf '%s' "${status}"
