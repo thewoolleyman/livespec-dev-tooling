@@ -148,8 +148,10 @@ the manifest's header explains that the memo's tested config did not have:
 the store is FLAT (no `levels=`), because nginx's level subdirectories are
 0700 and the capability-less populator could not count them; and
 `readOnlyRootFilesystem` holds because nginx's pid and temp paths point at
-emptyDirs. Workflow pods never use the proxy (their locks are untouched),
-so there is no hostPort and no NetworkPolicy change. An unreachable proxy
+emptyDirs. Workflow pods never use the proxy (their locks are untouched);
+delegated gate Jobs (`../gates/gate-job-template.yaml`) do, rewriting the same
+prefix in their own throwaway `/workspace` locks when `/health` answers. There
+is no hostPort and no NetworkPolicy change. An unreachable proxy
 degrades a rebuild to a direct PyPI build and records
 `proxy_unavailable=1`; it never fails the run.
 
