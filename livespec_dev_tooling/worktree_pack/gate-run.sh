@@ -700,11 +700,6 @@ cmd_start() {
     printf '%s\n' "$@" >"$dir/command"
     : >"$dir/output.log"
 
-    if [[ "$venue" == "cluster_job" ]]; then
-        printf 'ERROR: cluster_job execution is not installed for this gate runner\n' >&2
-        return "$EX_SOFTWARE"
-    fi
-
     local self
     self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
