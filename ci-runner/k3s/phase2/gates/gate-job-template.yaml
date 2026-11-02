@@ -586,6 +586,11 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+            # The local-path provisioner seeds _warm/uv at a work volume's
+            # root before its consumer starts. Mount its parent at /__w so the
+            # UV_CACHE_DIR below reaches that private reflink seed.
+            - name: warm-uv-cache
+              mountPath: /__w
             # The core tree the init container fetched, at the path
             # LIVESPEC_CORE_PLUGIN_ROOT above names. Without this mount that
             # variable names an empty path and the checks that read it fail
@@ -598,4 +603,16 @@ spec:
           emptyDir: {}
         - name: livespec-core
           emptyDir: {}
+        # A generic ephemeral PVC uses the same local-path class as ARC's work
+        # volumes, so its provision-time setup reflink-seeds the live uv
+        # generation at _warm/uv before this gate container starts.
+        - name: warm-uv-cache
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                storageClassName: local-path
+                resources:
+                  requests:
+                    storage: 5Gi
         @@GATE_PRIVATE_SIBLING_VOLUME@@
