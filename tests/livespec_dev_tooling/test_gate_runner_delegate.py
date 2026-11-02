@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -212,6 +213,36 @@ def test_gate_start_records_and_executes_every_host_local_path(*, tmp_path: Path
     undelegated = _start(root=root, env=environment, args=["--", "just", "check"])
     assert (undelegated / "venue").read_text(encoding="utf-8") == "host_local\n"
     assert (undelegated / "venue_reason").read_text(encoding="utf-8") == "undelegated repository\n"
+
+
+def test_gate_start_uses_the_project_python_when_no_venv_is_activated(*, tmp_path: Path) -> None:
+    """The pack selects a venue even when bare ``python3`` lacks the package."""
+    root, environment = _init_repo(tmp_path=tmp_path)
+    fake_bin = tmp_path / "bin"
+    _ = fake_bin.mkdir()
+    uv_log = tmp_path / "uv.log"
+    python3 = fake_bin / "python3"
+    _ = python3.write_text("#!/bin/sh\nexit 83\n", encoding="utf-8")
+    _ = python3.chmod(0o755)
+    uv = fake_bin / "uv"
+    _ = uv.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$*" > "{uv_log}"\n'
+        'test "$1" = run && shift\n'
+        'test "$1" = --no-sync && shift\n'
+        'test "$1" = python && shift\n'
+        f'exec "{sys.executable}" "$@"\n',
+        encoding="utf-8",
+    )
+    _ = uv.chmod(0o755)
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+
+    run_dir = _start(root=root, env=environment, args=["--", "true"])
+
+    assert (run_dir / "venue").read_text(encoding="utf-8") == "host_local\n"
+    assert uv_log.read_text(encoding="utf-8") == (
+        "run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- true\n"
+    )
 
 
 def test_gate_start_keeps_commit_and_push_hooks_on_the_launching_host(*, tmp_path: Path) -> None:
