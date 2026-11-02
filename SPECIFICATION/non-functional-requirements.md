@@ -325,6 +325,29 @@ Every trigger description MUST name the emitter path, the receiver path, the own
 
 **Sandbox resource envelope.** A factory host MAY bound its Fabro sandbox containers inside one systemd slice by setting the Docker daemon's default `cgroup-parent`, with the slice's limits read from role variables. A role that edits `/etc/docker/daemon.json` MUST preserve every key it does not own. A converge MUST NOT restart `dockerd`: a setting that takes effect only on a daemon restart MUST be recorded as pending and applied only by an operator-selected restart, performed inside a window in which the host's Fabro servers carry no active runs.
 
+**The sandbox image warm keeps only current tags.** This clause governs every sandbox image warm that the `sandbox_image_warm` role installs, whether it fills a k3s node's containerd store or a Docker factory host's image store. Three terms are used below.
+
+- A warm's *pinned set* is the set of sandbox image references it is currently configured to pull. For the Docker store, that is one `<image>:<prefix>-v<version>` reference per configured layer prefix, at the fleet's released version. For the containerd store, it is the `process_spec.image` values the warm reads.
+- A warm *pulled* a tag when that warm itself pulled the tag into its store, the pull succeeded, and the warm then recorded it. A run that finds a tag already present MUST NOT add that tag to the record. The record MUST survive a reboot. A tag present before the warm first kept its record MUST be treated as not pulled by the warm. Such a tag is therefore never removed by the warm, and is left to the store's other retention, such as kubelet image garbage collection or a host's docker prune.
+- A tag is *in use* when any container on that host, in any state, references it, as that store's own runtime reports. A container references a tag when it uses that tag, the tag's image ID, or another tag that resolves to the same image ID.
+
+Once every reference of the current pinned set is present in its store, each warm run MUST make a removal pass. The pass removes from the store every tag the warm pulled that is neither in the current pinned set nor in use. The intent is that the warm's own pulls hold no more than the current pinned set plus the tags in use, apart from the tags the rules below leave in place, so that the store's disk use does not grow with the number of releases.
+
+Each removal MUST delete only the one reference it targets. The warm MUST NOT remove a tag when doing so would also delete another reference that is in the current pinned set, was not pulled by the warm, or is in use. That includes a reference that resolves to the same image record or image ID.
+
+A container can start between the in-use check and the removal, and the warm MUST close that gap.
+
+- **A store that refuses.** Some stores' runtimes refuse to remove an image that a container references, as the Docker store does when no force flag is passed. In such a store, the warm MAY rely on that refusal, and it MUST NOT pass a force flag.
+- **A store that does not refuse.** Other stores' runtimes do not refuse, as the containerd store's CRI `RemoveImage` does not. In such a store, the warm MUST re-check in-use state immediately after each removal. If the removed tag is then referenced, the warm MUST pull it again and MUST make that run exit non-zero, naming the tag.
+
+A warm run MUST NOT remove any tag while any reference of the current pinned set is absent from its store. It also MUST NOT remove any tag unless it read and parsed every source of its pinned set in that run. A run that could not resolve its full pinned set MUST remove nothing and MUST exit non-zero, naming the source it could not read.
+
+Leaving a tag in place because it is in use, or because removing it would delete another protected reference, is not a failure. The warm MUST NOT change the run's exit status on account of that tag, and a later run MUST consider that tag again. A removal that the store refuses, or that errors for any other reason, MUST leave the tag in place and MUST make that run exit non-zero, naming the tag.
+
+The role MUST provide a variable that disables the removal pass without retiring the warm. Its `HOST_VARS.md` MUST document that variable, how the warm records the tags it pulled, and where that record lives.
+
+This clause does not change how other images in either store are retained, such as kubelet image garbage collection or a host's docker prune.
+
 **Documented beside the values.** The owning role's `HOST_VARS.md` MUST document every per-host variable the role reads, with its default where it has one. An interim control MUST also carry its operator procedure, its rollback and the condition under which it is retired.
 
 **Retired environments are a declared axis.** A `fabro_server_instances` mapping MAY carry a `retired_environments` list of environment ids. For each listed id the instance's catalog holds, the `fabro_server` role MUST delete it through `DELETE /api/v1/environments/{id}`, authenticating with the same credential the role uses for its other catalog requests and treating a 404 as already absent; a converge in which every listed id is already absent MUST succeed and report no change. Before deleting a listed id, the role MUST read that instance's non-terminal runs through its own API and MUST fail the converge, naming the run and the id and leaving the id in the catalog, when any such run uses that environment. The role MUST fail the converge, before changing anything, when one mapping lists the same id in both `environments` and `retired_environments`. This is the role-driven form of step 3 of a rename under §"Factory sandbox environment naming", and the role's `HOST_VARS.md` MUST document the list.
