@@ -62,7 +62,10 @@ def _is_full_suite(*, command: tuple[str, ...]) -> bool:
     if command[:1] == ("just",):
         return len(command) >= _JUST_COMMAND_MINIMUM_WORDS and (
             command[_JUST_RECIPE_POSITION] == "check"
-            or command[_JUST_RECIPE_POSITION].startswith("check-")
+            or (
+                command[_JUST_RECIPE_POSITION].startswith("check-")
+                and command[_JUST_RECIPE_POSITION] != "check-"
+            )
         )
     return command[:1] == ("pytest",) or command[:3] == ("uv", "run", "pytest")
 
