@@ -1,0 +1,14 @@
+---
+# fabro_server_cpu_weight — the CPU share every Fabro server instance on this
+# host runs with, as a systemd CPUWeight= drop-in. See HOST_VARS.md.
+
+# The CPUWeight= every instance unit in fabro_server_instances runs with: an
+# integer from 1 to 10000. Empty, the default, means this role manages no
+# weight: it removes a drop-in an earlier converge wrote, so the units fall back
+# to systemd's default weight of 100. Set per host in host_vars.
+fabro_server_cpu_weight_value: ""
+
+# Where the instance units live, and the drop-in's file name inside each
+# <unit>.service.d. Shared with the fabro_server role's own unit directory.
+fabro_server_cpu_weight_unit_dir: /etc/systemd/system
+fabro_server_cpu_weight_drop_in: 50-cpu-weight.conf

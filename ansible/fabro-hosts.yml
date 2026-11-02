@@ -114,6 +114,13 @@
     # whose mappings were made by hand are left as they are; see HOST_VARS.md.
     - role: tailscale_serve
       tags: [tailscale_serve]
+    # The CPUWeight= every Fabro instance unit on the host runs with
+    # (bd-ib-s6a2ex). Off unless the host declares fabro_server_cpu_weight_value. A
+    # role of its own, not a task in fabro_server, so it can never notify that
+    # role's restart chain: its apply is a daemon-reload and nothing else, and
+    # its own tag narrows an apply to exactly its drop-ins. See HOST_VARS.md.
+    - role: fabro_server_cpu_weight
+      tags: [fabro_server_cpu_weight]
   tasks:
     - name: Refuse a Fabro target unit this host does not declare
       ansible.builtin.assert:
