@@ -878,6 +878,36 @@
       != fabro_server_binary_path }}
   check_mode: false
 
+- name: Decide whether this run may promote this instance's staged binary
+  # A running Fabro server launches each new run worker from its own executable
+  # path. Renaming a new binary over that path leaves the server process alive,
+  # but turns /proc/<pid>/exe into "<binary_path> (deleted)" and makes every
+  # subsequent worker launch fail with ENOENT. A deferred restart must therefore
+  # leave binary_path alone: the candidate stays at .incoming until an allowed
+  # restart can promote it.
+  #
+  # A first install and an inactive or failed service have no running
+  # executable whose path needs preserving, so promotion is safe even with the
+  # default flag. `service_state: stopped` is deliberately NOT such a case: it
+  # is the desired end state, and the stop task runs after this promotion, so an
+  # active instance being parked still has a live server until then. Only the
+  # systemd answers `inactive` and `failed` count; `activating` (a Type=simple unit
+  # whose ExecStartPost is still running) and `deactivating` and `reloading`
+  # all have a live Fabro process, so they are treated as running. An
+  # explicitly allowed restart of a RUNNING instance is the remaining case: the
+  # install tasks below promote the candidate before the restart handler starts
+  # the unit. The restart handler skips a parked instance, so for one an allowed
+  # restart promotes nothing: the candidate stays staged while its server is
+  # live, and the run that finds the unit inactive promotes it.
+  ansible.builtin.set_fact:
+    fabro_server_binary_install_now: >-
+      {{ fabro_server_binary_replace | bool
+      and ((fabro_server_restart_allowed | bool and fabro_server_service_state == 'running')
+           or not (fabro_server_binary.stat.exists)
+           or fabro_server_is_active.stdout | default('') | trim == 'inactive'
+           or fabro_server_is_active.stdout | default('') | trim == 'failed') }}
+  check_mode: false
+
 - name: Claim a restart this instance carried over from an earlier run
   # THE TASK THAT MAKES A DEFERRAL REDEEMABLE. Handlers run only when
   # something notifies them, and on the run the operator makes to APPLY a
@@ -1042,12 +1072,11 @@
 # THE BINARY GOES FIRST, AND IT GOES IN THREE STEPS. Every refusal above has
 # already run — including, wherever a restart is on the table at all, the
 # carrying-runs one — so by here the role is allowed to change this instance.
-# Note what the exception means rather than hides: with the default
-# fabro_server_restart_allowed false, the carrying-runs probe is skipped and a
-# binary IS replaced under a busy factory. That is safe and deliberate.
-# Renaming over a path does not touch the inode a running process already
-# execs, so the server keeps serving its runs from the old build and the
-# handler says out loud that it was not restarted.
+# With the default fabro_server_restart_allowed false, a binary difference on a
+# running factory is staged but NOT promoted: renaming over the path the server
+# itself executes would make every later worker spawn resolve a deleted path.
+# The promoted path remains atomic; the difference is that promotion waits for
+# the run that is allowed to restart (or safely starts) this instance.
 #
 # The three steps are stage, keep, rename, and the split
 # is not ceremony: binary_path is the file a running server's ExecStart
@@ -1055,10 +1084,9 @@
 # factory that cannot start. Nothing becomes live until the rename, which is
 # rename(2) within one directory.
 #
-# All three are gated on the single decision fact, so a converged host skips
-# them and the role stays idempotent — and, because only the rename notifies,
-# a dry run cannot produce a phantom restart of a live factory out of a copy
-# it never performed.
+# A converged host skips all three and the role stays idempotent. Staging notifies
+# as well as promotion: a staged candidate is durable configuration drift that
+# must produce the same restart marker as a changed unit file.
 
 - name: Stage this instance's binary beside the one it replaces
   # The owner, group and mode are set HERE, once, because rename(2) carries
@@ -1073,6 +1101,26 @@
     mode: "0755"
   become: true
   when: fabro_server_binary_replace | bool
+  # A deferred binary update needs the same durable restart marker as a unit
+  # update. The staged file is deliberately not a notification-free no-op: its
+  # content describes the server this instance must next restart into.
+  notify: Fabro instance files changed
+
+- name: Claim the restart owed by a staged binary that cannot yet be promoted
+  # A copy reports unchanged when an earlier interrupted run already left the
+  # same candidate at .incoming. The binary at binary_path can still be old in
+  # that state, so the marker must be claimed from the decision rather than
+  # only from the copy task's changed result.
+  ansible.builtin.debug:
+    msg: >-
+      {{ fabro_server_unit_name }} staged {{ fabro_server_binary_path }}.incoming
+      and leaves {{ fabro_server_binary_path }} in place until an allowed
+      restart promotes the candidate.
+  changed_when: true
+  when:
+    - fabro_server_binary_replace | bool
+    - not (fabro_server_binary_install_now | bool)
+  notify: Fabro instance files changed
 
 - name: Keep the outgoing binary beside the one that replaces it
   # Named for the sha256 of the build it HOLDS, not for the time it was kept.
@@ -1091,9 +1139,7 @@
     group: "{{ fabro_server_host_group }}"
     mode: "0755"
   become: true
-  when:
-    - fabro_server_binary_replace | bool
-    - fabro_server_binary.stat.exists
+  when: fabro_server_binary_install_now | bool and fabro_server_binary.stat.exists
 
 - name: Rename the staged copy onto this instance's binary path
   # The one step that changes which build the instance will start, and the
@@ -1109,7 +1155,7 @@
       - "{{ fabro_server_binary_path }}"
   become: true
   changed_when: true
-  when: fabro_server_binary_replace | bool
+  when: fabro_server_binary_install_now | bool
   notify: Fabro instance files changed
 
 - name: Create the shared libexec directory

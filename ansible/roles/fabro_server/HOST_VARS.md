@@ -90,18 +90,22 @@ For an instance that declares the pair, one apply does this and only this:
    the run if the file is absent or hashes to anything but `binary_sha256`.
    Nothing on the factory host has been read at this point, let alone written.
 2. Compares `binary_sha256` against the digest of whatever the host holds at
-   `binary_path`. Equal means the host already runs that build and steps 3–5 are
+   `binary_path`. Equal means the host already runs that build and steps 3–6 are
    all skipped — a converged host reports no change.
 3. Stages a copy at `<binary_path>.incoming`, owned by the instance's service
    user with mode `0755`.
-4. Keeps the outgoing binary at `<binary_path>.<first-12-of-its-sha256>.bak`, so
-   a rollback can name the build it is returning to. Skipped on a first install,
-   where there is nothing to keep.
-5. Renames the staged copy onto `binary_path` — `rename(2)` within one
+4. When this run can safely start or restart the instance, keeps the outgoing
+   binary at `<binary_path>.<first-12-of-its-sha256>.bak`, so a rollback can
+   name the build it is returning to. Skipped on a first install, where there is
+   nothing to keep.
+5. In that same safe-start or allowed-restart run, renames the staged copy onto
+   `binary_path` — `rename(2)` within one
    directory, so the binary is either the old build or the new one and never a
    half-written file. `binary_path` is what a running server's `ExecStart` named
    and what `Restart=always` re-execs, which is why nothing is ever written to it
    directly.
+6. Otherwise, leaves the candidate at `<binary_path>.incoming`, leaves
+   `binary_path` untouched, and records the deferred restart.
 
 A replacement notifies the same `Fabro instance files changed` handler a changed
 unit file does, so it obeys the same two refusals: the handler does nothing
@@ -109,18 +113,25 @@ unless `fabro_server_restart_allowed` is set, and whenever that flag IS set the
 carrying-runs preflight has already halted the play if the instance is carrying
 runs.
 
-**Replacing a binary therefore never interrupts a live factory.** Note the one
-case the two refusals do not cover and why it is still safe: with the default
-`fabro_server_restart_allowed` false, the carrying-runs probe is skipped
-entirely, so the binary is replaced under a busy factory. `rename(2)` does not
-touch the inode a running process already execs — the server keeps serving its
-runs from the old build, the new one sits at `binary_path` waiting for the next
-start, and the handler says out loud in the run output that it did not restart.
-Picking up the new build is then an operator's deliberate act: quiesce the
-instance and re-run with `-e fabro_server_restart_allowed=true`, or restart it by
-hand. That re-run works because the refusing run RECORDED the deferral on the
-host — see "The deferred restart" below for what it wrote and what the re-run
-does with it.
+**A deferred binary update never unlinks a live factory executable.** A running
+Fabro server spawns each run's worker from its own executable path. Renaming a
+new binary over that path leaves the server process alive but causes Linux to
+report its executable as `<binary_path> (deleted)`, so later worker spawns fail.
+`binary_path` is never replaced while its server will not restart. With the
+default `fabro_server_restart_allowed` false, a busy factory therefore keeps the
+old binary at `binary_path` and the requested build at
+`<binary_path>.incoming`; the handler records the deferred restart. Picking up
+the new build is then an operator's deliberate act: quiesce the instance and
+re-run with `-e fabro_server_restart_allowed=true`. That run promotes the staged
+build before restarting the server — see "The deferred restart" below for what
+the refusing run wrote and what the re-run does with it.
+
+A parked instance (`service_state: stopped`) is never restarted, so an allowed
+restart does not promote its staged build while its unit is still live: the stop
+runs after the install tasks, and replacing `binary_path` first would break the
+worker spawns of a server that has not yet stopped. The build stays at
+`<binary_path>.incoming`, and the next run that finds the unit inactive or
+failed promotes it.
 
 **Quiesce means cancel the runs, then re-dispatch them — never wait for them to
 end.** A factory run is restartable, so the carrying-runs refusal means "cancel to
@@ -763,28 +774,35 @@ by hand. Never put it in host_vars.
 
 The current Fabro server's host (plan `petri-factory-on-gmktec`). The fleet
 factory runs here as two instances under the `cwoolley` account: `fabro-server`
-on port 32276 under `/home/cwoolley/.fabro`, and the registered-provider carrier
-canary `fabro-server-candidate` on port 32278 under
-`/home/cwoolley/.fabro-candidate`. The canary runs the next carrier BESIDE the
-fleet instance rather than in place of it — its own unit, port, state root and
-`binary_path` — and is retired (`service_state: stopped`) once the fleet
-instance carries the build it proved; its own `max_concurrent_runs` is 2 because
-it shares this host with the fleet instance's runs. The org-owned
+on port 32276 under `/home/cwoolley/.fabro`, and `fabro-server-candidate` on
+port 32278 under `/home/cwoolley/.fabro-candidate`. The candidate began as the
+registered-provider carrier canary; by the maintainer's ruling of 2026-11-02 it
+is now the fleet instance's PERMANENT MIRROR — a hot fallback, and the
+fabro-currency seat's dogfood factory. It is configured exactly like
+`fabro-server` (environments, providers and their `process_spec`, vault, App id,
+`max_concurrent_runs`, otel) and differs only in its identity — its own unit,
+port, state root, `binary_path` and `HOME` — in the build it is dogfooding, and
+in each kubernetes provider's record store, which must not be shared (the
+plugin lists sandboxes from its state directory). Both instances launch into the
+same `factory` namespace, so the shared `factory-runs` quota bounds them
+together. The org-owned
 `fabro-server-mi-homelab` on port 32277 is declared beside them and belongs to a
 different project, not to the fleet factory.
 
-The candidate is pinned to Fabro `0.393.0-nightly.1` at commit `9f6c38f` — the
-registered-provider carrier, `thewoolleyman/fabro`
-`carrier-candidate-registered-20261023` with Petri `e92b191`, staged on the
-control node and carried from there by `binary_source` and `binary_sha256`. It
-replaces the v0.382 carrier the fleet instance ran while this host was being
-stood up. The fleet instance runs the next commit on that same carrier branch,
-`613add1` (2026-11-02): `9f6c38f` plus the per-run GitHub App selection
+The registered-provider carrier is Fabro `0.393.0-nightly.1` at commit `9f6c38f`
+— `thewoolleyman/fabro` `carrier-candidate-registered-20261023` with Petri
+`e92b191`, staged on the control node and carried from there by `binary_source`
+and `binary_sha256`. It replaced the v0.382 carrier the fleet instance ran while
+this host was being stood up. The fleet instance runs `613add1` (2026-11-02) on
+that same carrier branch: `9f6c38f` plus the per-run GitHub App selection
 (`[run.integrations.github.app]`, `thewoolleyman/fabro#13`,
 livespec-orchestrator-beads-fabro `bd-ib-voozdp`), which lets a run on the
-shared instance publish as its target repository's own App. The coordinator
-ruled that build onto `fabro-server` alone, so the candidate and
-`fabro-server-mi-homelab` keep `9f6c38f`. The rollback target is named in `host_vars` beside the pin and never
+shared instance publish as its target repository's own App. The candidate and
+`fabro-server-mi-homelab` run the branch tip `84fb903` (2026-11-02): `613add1`
+plus the node name on `run_turn` spans (`thewoolleyman/fabro#14`), ruled onto
+those two ahead of the fleet instance by the maintainer (plan `fabro-currency`).
+Both pin the plugin digest installed on the host until the window that moves
+the fleet instance moves the shared plugin. The rollback target is named in `host_vars` beside the pin and never
 here, because that is the file an operator rolling back edits.
 
 `fabro_server_host_checkout_remote` is declared because the host had no
