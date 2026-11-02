@@ -900,11 +900,13 @@ def _install_scope(
     host_checksum: str | None,
     source_checksum: str | None,
     unit_activity: str | None = None,
+    restart_allowed: bool = False,
 ) -> dict[str, _Value]:
     """Every name the role's binary-install guards read, for one instance and one host state.
 
     `unit_activity` overrides the modelled `systemctl is-active` answer; left unset, a
-    stopped instance is inactive and every running one active.
+    stopped instance is inactive and every running one active. `restart_allowed` models
+    the `-e fabro_server_restart_allowed=true` an operator passes to apply a restart.
 
     `host_checksum=None` models a `binary_path` with no file at it: `stat` reports
     `exists: false` and OMITS `checksum` entirely rather than reporting an empty one,
@@ -916,6 +918,7 @@ def _install_scope(
     instead of being re-described by them.
     """
     scope: dict[str, _Value] = dict(_resolved_facts(instance=instance, source=_INVENTORY))
+    scope["fabro_server_restart_allowed"] = "true" if restart_allowed else "false"
     scope["fabro_server_binary.stat.exists"] = host_checksum is not None
     scope["fabro_server_binary.stat.executable"] = host_checksum is not None
     scope["fabro_server_binary.stat.checksum"] = host_checksum
@@ -1328,6 +1331,54 @@ def test_an_active_instance_being_parked_is_not_promoted_before_it_stops() -> No
         "ENOENT worker-spawn failure"
     )
     assert not _holds(conditions=_when(name=_RENAME_TASK), scope=scope)
+
+
+def test_an_active_instance_being_parked_is_not_promoted_even_when_a_restart_is_allowed() -> None:
+    """The restart handler skips a parked instance, so an allowed restart never starts it again."""
+    instance = {
+        **_instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY),
+        "service_state": "stopped",
+    }
+    scope = _install_scope(
+        instance=instance,
+        host_checksum="0" * 64,
+        source_checksum=_CANDIDATE_BINARY_SHA256,
+        unit_activity="active",
+        restart_allowed=True,
+    )
+
+    assert scope[_INSTALL_NOW_FACT] is False, (
+        "fabro_server_restart_allowed does not restart a parked instance, and the stop runs "
+        "after promotion, so promoting here would unlink the executable of a server that is "
+        "still launching workers; the candidate must stay staged until the unit is down"
+    )
+    assert not _holds(conditions=_when(name=_RENAME_TASK), scope=scope)
+
+
+def test_an_allowed_restart_promotes_for_a_running_instance_and_a_down_parked_one() -> None:
+    """A restarted unit gets its build before it starts; a parked unit that is down has none."""
+    differing = {"host_checksum": "0" * 64, "source_checksum": _CANDIDATE_BINARY_SHA256}
+    running = {
+        **_instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY),
+        "service_state": "running",
+    }
+    parked = {
+        **_instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY),
+        "service_state": "stopped",
+    }
+
+    restarted = _install_scope(instance=running, restart_allowed=True, **differing)
+    parked_down = _install_scope(
+        instance=parked, unit_activity="inactive", restart_allowed=True, **differing
+    )
+
+    assert restarted[_INSTALL_NOW_FACT] is True, (
+        "an allowed restart of a running instance must install the staged build at binary_path "
+        "before the handler starts the unit, so the restarted server executes the declared build"
+    )
+    assert (
+        parked_down[_INSTALL_NOW_FACT] is True
+    ), "a parked instance whose unit is already down has no executable path to preserve"
 
 
 def test_an_instance_with_no_live_process_promotes_a_differing_binary() -> None:
