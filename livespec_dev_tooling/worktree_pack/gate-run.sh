@@ -237,7 +237,7 @@ runs_root() {
 usage() {
     cat >&2 <<'USAGE'
 usage:
-  gate-run.sh start [--label LABEL] -- COMMAND [ARG...]
+  gate-run.sh start [--label LABEL] [--local] -- COMMAND [ARG...]
   gate-run.sh wait  RUN_ID
   gate-run.sh status [RUN_ID]
   gate-run.sh list
@@ -595,12 +595,17 @@ ensure_worktree_pack() {
 
 cmd_start() {
     local label="gate"
+    local force_local="false"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --label)
                 [[ $# -ge 2 ]] || usage
                 label="$2"
                 shift 2
+                ;;
+            --local)
+                force_local="true"
+                shift
                 ;;
             --) shift; break ;;
             *) usage ;;
@@ -609,6 +614,21 @@ cmd_start() {
     [[ $# -ge 1 ]] || usage
 
     ensure_worktree_pack "$(repo_root)"
+
+    local venue_fields=()
+    if [[ "$force_local" == "true" ]]; then
+        mapfile -t venue_fields < <(
+            python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@"
+        )
+    else
+        mapfile -t venue_fields < <(python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@")
+    fi
+    [[ "${#venue_fields[@]}" == "2" ]] || {
+        printf 'ERROR: gate venue selection did not return a venue and reason\n' >&2
+        return "$EX_SOFTWARE"
+    }
+    local venue="${venue_fields[0]}"
+    local venue_reason="${venue_fields[1]}"
 
     local root run_id dir
     root="$(runs_root)"
@@ -619,6 +639,8 @@ cmd_start() {
     mkdir -p "$dir"
 
     printf '%s\n' "$label" >"$dir/label"
+    printf '%s\n' "$venue" >"$dir/venue"
+    printf '%s\n' "$venue_reason" >"$dir/venue_reason"
     printf '%s\n' "$(timestamp)" >"$dir/started_at"
     printf '%s\n' "$(pwd)" >"$dir/cwd"
     # The store is shared across every worktree of the repository, so the
@@ -634,6 +656,11 @@ cmd_start() {
     # re-quoting guesswork when someone reads it back later.
     printf '%s\n' "$@" >"$dir/command"
     : >"$dir/output.log"
+
+    if [[ "$venue" == "cluster_job" ]]; then
+        printf 'ERROR: cluster_job execution is not installed for this gate runner\n' >&2
+        return "$EX_SOFTWARE"
+    fi
 
     local self
     self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -843,6 +870,9 @@ cmd_status() {
     printf '=== gate run %s ===\n' "$run_id"
     printf '  state             : %s\n' "$state"
     printf '  label             : %s\n' "$(cat "$dir/label" 2>/dev/null || echo '?')"
+    printf '  venue             : %s (%s)\n' \
+        "$(cat "$dir/venue" 2>/dev/null || echo '?')" \
+        "$(cat "$dir/venue_reason" 2>/dev/null || echo '?')"
     printf '  command           : %s\n' "$(tr '\n' ' ' <"$dir/command" 2>/dev/null || echo '?')"
     printf '  worktree          : %s\n' "$(cat "$dir/worktree" 2>/dev/null || echo '?')"
     printf '  branch @ head     : %s @ %s\n' \
