@@ -31,11 +31,13 @@ rather than restated, exactly as `test_node_status_credential_one_renderer.py`
 lifts the role's renderer invocation: a test carrying its own copy of the task
 would keep passing over a role that had dropped the serialization.
 
-HOW OVERLAP IS MEASURED. The stand-in `kubectl` claims a lock directory with
-`mkdir` — atomic, so the claim cannot be lost — holds it for a couple of
-seconds, and records `enter`/`leave` into one shared log. A second apply that
-arrives while the first holds the lock records `overlap` and the log's
-enter/leave markers stop alternating. So "they did not overlap" is read off the
+HOW OVERLAP IS MEASURED. The control arm enables a rendezvous in the stand-in
+`kubectl`. It claims a lock directory with `mkdir` — atomic, so the claim
+cannot be lost — then holds each server-side apply until both agents have
+entered. The second apply records `overlap`, and the log's `enter`/`leave`
+markers stop alternating. Thus fork-start latency cannot make the control arm
+miss the race: it either measures two in-flight applies or fails loudly after
+its bounded rendezvous deadline. So "they did not overlap" is read off the
 order two real processes wrote, not off a model of ansible's forks.
 
 AND THE DETECTOR HAS A CONTROL ARM. The same lifted task with its serialization
@@ -72,6 +74,7 @@ pytestmark = pytest.mark.integration
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _JUSTFILE = _REPO_ROOT / "justfile"
+_KUBECTL_STAND_IN_PATH = _REPO_ROOT / "tests" / "fixtures" / "node_status_rbac_kubectl_stand_in.sh"
 _ROLE_TASKS = _REPO_ROOT / "ansible" / "roles" / "node_status_credential" / "tasks" / "main.yml"
 _RBAC_TEMPLATE = (
     _REPO_ROOT
@@ -131,11 +134,9 @@ _GRANT = """  - apiGroups:
 # The four per-node objects the role must still apply, beside that Namespace.
 _PER_NODE_KINDS = ("ServiceAccount", "Secret", "ClusterRole", "ClusterRoleBinding")
 
-# How long each simulated server-side apply holds the cluster. Long enough that
-# two applies dispatched together by a five-fork controller genuinely overlap —
-# which the control arm measures rather than assumes — and short enough that the
-# serialized arm costs the suite four seconds.
-_HOLD_SECONDS = 2
+# The control arm's bounded rendezvous. It bounds a broken controller without
+# making the committed serialized arm wait: only the control arm enables it.
+_RENDEZVOUS_TIMEOUT_SECONDS = 15
 
 # Bounded: a cold `uvx` resolves and caches ansible-core before the first play
 # runs. A hung play must fail this test rather than the suite's whole budget.
@@ -175,8 +176,11 @@ exec "$@"
 # THE SERVER-SIDE HALF IS THE CONTENDED ONE. It claims a lock DIRECTORY with
 # `mkdir`, which is atomic: the loser cannot mistake a half-made claim for a
 # free cluster. A loser records `overlap` and does NOT release a lock it never
-# held. Both halves append `enter`/`leave` to one shared log, so the ordering is
-# read off what two real processes wrote.
+# held. In the control arm, each apply records its own entry and waits for the
+# peer's entry before leaving. The bounded deadline turns a controller that
+# never starts a peer into an explicit failure rather than a false pass. The
+# committed serialized arm does not enable the rendezvous, so it retains its
+# immediate alternating `enter`/`leave` evidence.
 #
 # IT CAPTURES WHAT IT WAS SENT, one file per invocation, which is how the grant
 # assertions below read the bytes the server received rather than a re-render of
@@ -184,31 +188,7 @@ exec "$@"
 # than returning a plausible empty string: a task that had moved to
 # `--server-side` apply must break this test and be re-examined, not quietly
 # satisfy it.
-_KUBECTL_STAND_IN = """#!/bin/sh
-case "$*" in
-  *'--dry-run=client'*)
-    cat
-    exit 0 ;;
-  'apply -f -')
-    if mkdir "${RBAC_APPLY_LOCK}" 2>/dev/null; then
-      holder=yes
-    else
-      holder=no
-      printf 'overlap\\n' >> "${RBAC_APPLY_LOG}"
-    fi
-    cat > "${RBAC_APPLY_CAPTURES}/manifest.$$"
-    printf 'enter %s\\n' "$$" >> "${RBAC_APPLY_LOG}"
-    sleep "${RBAC_APPLY_HOLD_SECONDS}"
-    printf 'leave %s\\n' "$$" >> "${RBAC_APPLY_LOG}"
-    if [ "${holder}" = yes ]; then
-      rmdir "${RBAC_APPLY_LOCK}"
-    fi
-    printf 'namespace/%s configured\\n' "${RBAC_APPLY_NAMESPACE}"
-    exit 0 ;;
-esac
-printf 'stand-in kubectl: unexpected invocation: %s\\n' "$*" >&2
-exit 1
-"""
+_KUBECTL_STAND_IN = _KUBECTL_STAND_IN_PATH.read_text(encoding="utf-8")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -266,7 +246,7 @@ def _committed_apply_task() -> str:
     return lifted[0]
 
 
-def _play(*, task: str) -> str:
+def _play(*, task: str, agents: tuple[str, ...]) -> str:
     """A one-task play carrying `task` at the nesting the role declares it in.
 
     The agent-gated `block:` is reproduced rather than flattened away, because
@@ -278,7 +258,7 @@ def _play(*, task: str) -> str:
     return (
         "---\n"
         "- name: The role's delegated per-node RBAC apply, as the role declares it\n"
-        f"  hosts: {','.join(_AGENTS)}\n"
+        f"  hosts: {','.join(agents)}\n"
         "  gather_facts: false\n"
         "  tasks:\n"
         "    - name: Mint and deliver this agent's node-status credential\n"
@@ -287,7 +267,7 @@ def _play(*, task: str) -> str:
     )
 
 
-def _inventory(*, root: Path) -> Path:
+def _inventory(*, root: Path, agents: tuple[str, ...]) -> Path:
     """Two agents and one server, all local, each agent carrying its own node name.
 
     The node name rides as an INVENTORY var because it is per-host and because
@@ -298,7 +278,7 @@ def _inventory(*, root: Path) -> Path:
         f"        {agent}:\n"
         f"          ansible_connection: local\n"
         f"          node_status_credential_node: {node}\n"
-        for agent, node in zip(_AGENTS, _NODE_NAMES, strict=True)
+        for agent, node in zip(agents, _NODE_NAMES[: len(agents)], strict=True)
     )
     inventory = root / "inventory.yml"
     inventory.write_text(
@@ -314,13 +294,21 @@ def _inventory(*, root: Path) -> Path:
     return inventory
 
 
-def _run_lifted_task(*, root: Path, task: str) -> _Run:
+def _run_lifted_task(
+    *,
+    root: Path,
+    task: str,
+    agents: tuple[str, ...] = _AGENTS,
+    rendezvous: bool | None = None,
+) -> _Run:
     """Run `task` over both agents and return its exit code and its evidence.
 
     `ANSIBLE_FORKS` is SET rather than inherited: a one-fork controller would
     serialize every task for a reason that has nothing to do with the role, and
     the control arm would then pass for a role that had dropped its
-    serialization entirely.
+    serialization entirely. The rendezvous follows the task shape by default:
+    only an unserialized task enables it. Thus removing `throttle: 1` from the
+    committed task also makes the serialized-arm assertion detect overlap.
     """
     bin_dir = root / "bin"
     bin_dir.mkdir()
@@ -330,10 +318,14 @@ def _run_lifted_task(*, root: Path, task: str) -> _Run:
         stand_in.chmod(0o755)
     captures = root / "captures"
     captures.mkdir()
+    enters = root / "enters"
+    enters.mkdir()
     log = root / "apply.log"
     log.write_text("", encoding="utf-8")
     playbook = root / "apply.yml"
-    playbook.write_text(_play(task=task), encoding="utf-8")
+    playbook.write_text(_play(task=task, agents=agents), encoding="utf-8")
+    if rendezvous is None:
+        rendezvous = _SERIALIZATION not in task
 
     env = {
         key: value
@@ -346,8 +338,10 @@ def _run_lifted_task(*, root: Path, task: str) -> _Run:
             "RBAC_APPLY_LOCK": str(root / "lock"),
             "RBAC_APPLY_LOG": str(log),
             "RBAC_APPLY_CAPTURES": str(captures),
-            "RBAC_APPLY_HOLD_SECONDS": str(_HOLD_SECONDS),
+            "RBAC_APPLY_ENTERS": str(enters),
             "RBAC_APPLY_NAMESPACE": _SHARED_NAMESPACE,
+            "RBAC_APPLY_RENDEZVOUS": "enabled" if rendezvous else "disabled",
+            "RBAC_APPLY_RENDEZVOUS_TIMEOUT_SECONDS": str(_RENDEZVOUS_TIMEOUT_SECONDS),
             "ANSIBLE_FORKS": "5",
             "ANSIBLE_NOCOWS": "1",
             "ANSIBLE_RETRY_FILES_ENABLED": "False",
@@ -362,7 +356,7 @@ def _run_lifted_task(*, root: Path, task: str) -> _Run:
             _ansible_core_pin(),
             "ansible-playbook",
             "-i",
-            str(_inventory(root=root)),
+            str(_inventory(root=root, agents=agents)),
             "-e",
             f"node_status_credential_rbac_template={_RBAC_TEMPLATE}",
             "-e",
@@ -473,12 +467,25 @@ def test_the_same_apply_without_its_serialization_does_overlap(*, tmp_path: Path
         f"two agents' applies of one object race on its resourceVersion"
     )
 
-    run = _run_lifted_task(root=tmp_path, task="\n".join([*kept, ""]))
+    missing_peer_root = tmp_path / "missing-peer"
+    missing_peer_root.mkdir()
+    missing_peer = _run_lifted_task(
+        root=missing_peer_root,
+        task="\n".join([*kept, ""]),
+        agents=_AGENTS[:1],
+    )
+    assert missing_peer.returncode != 0
+    assert "two unserialized applies were never in flight together" in missing_peer.output
+
+    run = _run_lifted_task(
+        root=tmp_path,
+        task="\n".join([*kept, ""]),
+    )
 
     assert "overlap" in _markers(run=run), (
-        f"this fixture could not make two unserialized applies overlap, so it "
-        f"cannot convict one that does; the role's serialization is therefore "
-        f"unmeasured: {run.log}\n{run.output}"
+        f"two unserialized applies were never in flight together, so this "
+        f"control arm cannot convict one that does; the role's serialization "
+        f"is therefore unmeasured: {run.log}\n{run.output}"
     )
 
 
