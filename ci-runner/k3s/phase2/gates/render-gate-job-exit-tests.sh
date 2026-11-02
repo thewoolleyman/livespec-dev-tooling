@@ -1046,14 +1046,24 @@ fi
 # the gate script gives the proxy 2 s to answer /health and treats silence as "proxy down", so a stand-in
 # still starting under CI load turned the W case's proxied artifact direct (master run 41505312652, PR 3174).
 wait_for_stand_in_proxy() {
-  local port="$1" _
-  for _ in $(seq 1 300); do
-    if (exec 9<>"/dev/tcp/127.0.0.1/${port}" && printf 'HEAD / HTTP/1.0\r\n\r\n' >&9 && head -n 1 <&9 | grep -q '^HTTP/') 2>/dev/null; then
+  local port="$1" deadline_seconds="${STAND_IN_PROXY_READY_DEADLINE_SECONDS:-30}" deadline remaining
+  deadline=$((SECONDS + deadline_seconds))
+  while [ "${SECONDS}" -lt "${deadline}" ]; do
+    remaining=$((deadline - SECONDS))
+    if timeout --signal=KILL "${remaining}s" bash -c '
+      exec 9<>"/dev/tcp/127.0.0.1/$1"
+      printf "HEAD / HTTP/1.0\\r\\n\\r\\n" >&9
+      IFS= read -r status <&9
+      case "${status}" in
+        HTTP/*) exit 0 ;;
+      esac
+      exit 1
+    ' bash "${port}" 2>/dev/null; then
       return 0
     fi
     sleep 0.1
   done
-  fail "the stand-in proxy on port ${port} never answered HTTP within 30 s"
+  fail "the stand-in proxy on port ${port} never answered HTTP within ${deadline_seconds} s"
   return 1
 }
 
