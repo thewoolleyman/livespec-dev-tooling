@@ -6,10 +6,12 @@ timeout, process-group kill, and order-independent output checksum.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import inspect
 import sys
 import time
+import uuid
 from pathlib import Path
 
 __all__: list[str] = []
@@ -148,27 +150,42 @@ def test_run_suite_captures_output_and_returncode() -> None:
     assert "err" in run.output
 
 
-def _is_gone(pid: int) -> bool:
-    # A killed child is either already reaped (no /proc entry) or a zombie;
-    # which one depends on timing, so neither arm may be a separate branch
-    # that per-file coverage would need luck to reach.
-    stat_path = Path(f"/proc/{pid}/stat")
-    stat = stat_path.read_text() if stat_path.exists() else "(reaped) Z"
-    return stat.rsplit(")", 1)[1].split()[0] == "Z"
+def _live_processes_carrying(token: str) -> list[str]:
+    """Pids of non-zombie processes whose command line carries `token`."""
+    live: list[str] = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        # A process can exit between the glob and the reads; one that does is
+        # not live, which the defaults below already say, with no branch for
+        # per-file coverage to need luck to reach.
+        cmdline, state = "", "Z"
+        with contextlib.suppress(OSError):
+            cmdline = (proc / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+            state = (proc / "stat").read_text().rsplit(")", 1)[1].split()[0]
+        live += [proc.name] * (token in cmdline and state != "Z")
+    return live
 
 
-def test_run_suite_timeout_kills_the_whole_process_group(tmp_path: Path) -> None:
+def test_run_suite_timeout_kills_the_whole_process_group() -> None:
+    """The timeout kills the suite's whole process group, judged by ORDERING.
+
+    The leader backgrounds a marked grandchild before it does anything else and
+    then waits forever, so the 2 s timeout always fires. The verdict never rests
+    on how fast an interpreter starts: the earlier form waited for a Python
+    child to write its pid file, and under host load the kill landed first and
+    the read raised FileNotFoundError (kubernetes-sandbox-backend's commit gate,
+    2026-11-02). Whatever the grandchild managed before the kill, no process
+    carrying the marker may outlive it, because the grandchild is in the
+    group. A run_suite that killed only the leader would leave it running.
+    """
     mod = _load()
-    pid_file = tmp_path / "child.pid"
-    script = (
-        "import subprocess, sys, time\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'])\n"
-        f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
-        "time.sleep(300)\n"
-    )
-    run = mod.run_suite(argv=[sys.executable, "-c", script], timeout_seconds=2)
+    token = f"livespec-killpg-probe-{uuid.uuid4().hex}"
+    leader = f"sh -c 'sleep 300; :' {token} & sleep 300; :"
+
+    run = mod.run_suite(argv=["sh", "-c", leader], timeout_seconds=2)
+
     assert run.timed_out is True
     assert run.returncode is None
-    child_pid = int(pid_file.read_text())
-    time.sleep(1)
-    assert _is_gone(child_pid)
+    hang_guard = time.monotonic() + 30
+    while _live_processes_carrying(token) and time.monotonic() < hang_guard:
+        time.sleep(0.1)
+    assert _live_processes_carrying(token) == []
