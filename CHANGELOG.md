@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.146.3](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.146.2...v1.146.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* **ansible:** point dev host retention at a pinned uv and refuse a missing one ([0431274](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0431274d16a7a741ab8d6669ead0db5215f5d161))
+
 ## [1.146.2](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.146.1...v1.146.2) (2026-11-02)
 
 
