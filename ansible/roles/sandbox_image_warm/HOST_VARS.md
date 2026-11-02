@@ -64,6 +64,8 @@ something to differ from.
 | `sandbox_image_warm_tag_prefixes` | `[python-agent]` | the layer prefixes to warm; one reference per prefix, `<image>:<prefix>-v<version>` |
 | `sandbox_image_warm_pin_url` | this repository's `.release-please-manifest.json` on `master` | where the version is read from |
 | `sandbox_image_warm_lock_dir` | `/run/<name>` | where the per-reference lock files live; on tmpfs, because a lock has no meaning across a reboot |
+| `sandbox_image_warm_remove_superseded` | `true` | the removal pass; set `false` to keep every tag the warm pulled without retiring the warm (see "Keeping only current tags" below) |
+| `sandbox_image_warm_record_dir` | `/var/lib/<name>` | where the warm records the tags it pulled, as `<dir>/pulled`, one reference per line; the unit's `StateDirectory`, so it survives a reboot |
 | `sandbox_image_warm_lock_timeout_seconds` | `1800` | how long a warm waits for a concurrent warm's pull before giving up; a warm that hits the ceiling exits non-zero and pulls NOTHING |
 | `sandbox_image_warm_on_boot_sec` | `2min` | the first warm after a boot |
 | `sandbox_image_warm_on_unit_active_sec` | `5min` | the cadence thereafter |
@@ -130,9 +132,52 @@ That stops and disables `livespec-sandbox-image-warm.timer` and removes the
 runner and both units. Reverting the role alone would NOT remove them, because
 a converge never removes what it no longer declares.
 
-Nothing else on the host changes: the warm holds no state but the tmpfs lock
-files, and the images it pulled are ordinary images the existing
+Nothing else on the host changes. The warm holds two kinds of state: the tmpfs
+lock files, and its durable pull record under `sandbox_image_warm_record_dir`,
+which retiring leaves in place (it is a few lines of text, and a re-enabled warm
+picks it up). The images it pulled are ordinary images the existing
 `docker-prune.timer` and `disk-guard` reclaim on their own terms.
+
+## Keeping only current tags
+
+**What it does.** Work-item `livespec-dev-tooling-xknoqf` implements the spec clause
+"The sandbox image warm keeps only current tags." in
+`SPECIFICATION/non-functional-requirements.md`. Every release bump made the warm
+pull new tags, and nothing removed the old ones until a store crossed its own
+high-water mark. Measured 2026-11-02 on gmktec-xubuntu, about 135G of earlier
+sandbox tags sat in Docker's store before disk_guard's emergency prune. So once
+every reference of the current pinned set is present, each warm run makes a
+removal pass.
+
+**The record.** Each reference the warm itself pulls is appended to
+`<sandbox_image_warm_record_dir>/pulled`, one per line. It is written only after
+a pull succeeds; a run that finds the tag already present records nothing. The
+directory is the unit's `StateDirectory=` under `/var/lib`, so it survives a
+reboot. A tag present before the record first existed, or pulled by anyone
+else, is never in it and is never removed by the warm. Those tags are left to
+kubelet image garbage collection or `docker-prune`. After each pass the record is
+pruned to the references the store still holds.
+
+**What a pass removes.** Every recorded reference that is not in the pinned set,
+whose image no container on the host references in any state, and whose image
+no other protected reference shares. A protected reference is one that is
+pinned, was not pulled by the warm, or is in use. A tag kept for any of those
+reasons does not fail the run, and the next run considers it again.
+
+**Docker store.** `docker rmi <tag>`, never forced. Docker refuses an image a
+container uses, and that refusal closes the gap between the in-use check and the
+removal. A refused or failed removal leaves the tag and fails the run, naming it.
+
+**Containerd store.** `crictl rmi <tag>`. CRI `RemoveImage` does not refuse, so
+the warm re-checks in-use state after each removal. If a container now
+references the image, the warm pulls the tag back and fails the run, naming it.
+
+**What removes nothing.** A run that failed to read a pinned-set source or to
+pull any pinned reference, a run whose store does not hold the whole pinned set
+afterwards, and a run with `sandbox_image_warm_remove_superseded: false`.
+
+**Rollback.** Set `sandbox_image_warm_remove_superseded: false` in the host's
+host_vars and converge. The warm keeps warming and removes nothing.
 
 ## The containerd store
 

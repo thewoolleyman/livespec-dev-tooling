@@ -261,6 +261,12 @@ def _warm_env(*, tmp_path: Path, pin_readable: bool, install_stubs: bool = True)
         "LIVESPEC_SANDBOX_IMAGE_WARM_TAG_PREFIXES": _PREFIX,
         "LIVESPEC_SANDBOX_IMAGE_WARM_PIN_URL": "https://pin.invalid/manifest.json",
         "LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_DIR": str(tmp_path / "locks"),
+        # The pull record lives in a scratch directory, never the host's
+        # /var/lib. This module proves the PULL; the removal pass (and the store
+        # listing it needs, which these stubs do not answer) is proved in
+        # test_sandbox_image_warm_keep_current_tags.
+        "LIVESPEC_SANDBOX_IMAGE_WARM_RECORD_DIR": str(tmp_path / "record"),
+        "LIVESPEC_SANDBOX_IMAGE_WARM_REMOVE_SUPERSEDED": "false",
     }
 
 
@@ -647,12 +653,19 @@ def test_the_warm_service_passes_the_role_variables_the_script_reads() -> None:
         "LIVESPEC_SANDBOX_IMAGE_WARM_TAG_PREFIXES",
         "LIVESPEC_SANDBOX_IMAGE_WARM_PIN_URL",
         "LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_DIR",
+        "LIVESPEC_SANDBOX_IMAGE_WARM_RECORD_DIR",
+        "LIVESPEC_SANDBOX_IMAGE_WARM_REMOVE_SUPERSEDED",
     ):
         assert variable in service, (
             f"the unit must pass {variable} from the role's variables, or the host runs "
             f"on the script's built-in default and the inventory cannot change it:\n{service}"
         )
     doc = _read(path=_ROLE_DOC)
+    for documented in ("sandbox_image_warm_remove_superseded", "sandbox_image_warm_record_dir"):
+        assert documented in doc, (
+            f"HOST_VARS.md must document {documented}: the keep-only-current-tags clause "
+            "requires the disabling variable and where the pull record lives"
+        )
     assert "sandbox_image_warm_image" in doc, (
         "the owning role's HOST_VARS.md must document every per-host variable the role "
         "reads, per the Fabro factory host provisioning section's documentation clause"

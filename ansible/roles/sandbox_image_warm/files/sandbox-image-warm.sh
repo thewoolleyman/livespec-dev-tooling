@@ -60,6 +60,23 @@
 # exactly as the release-pin read does for docker. Only references inside
 # LIVESPEC_SANDBOX_IMAGE_WARM_IMAGE are ever pulled.
 #
+# THE WARM KEEPS ONLY CURRENT TAGS (work-item livespec-dev-tooling-xknoqf; spec
+# non-functional-requirements.md "The sandbox image warm keeps only current
+# tags."). Every release bump pulls new tags, and nothing removed the old ones
+# until a store crossed its own high-water mark. Measured 2026-11-02 on
+# gmktec-xubuntu: about 135G of earlier sandbox tags in Docker's store before
+# disk_guard's emergency prune. So once every reference of the current pinned
+# set is present, each run makes a REMOVAL PASS over the tags this warm itself
+# pulled (the RECORD, one reference per line, in a directory that survives a
+# reboot). A tag is removed only when it is not in the pinned set, no
+# container references its image, and no other protected reference shares that
+# image. A tag the warm never pulled is never touched. A run that could not
+# resolve and pull the whole pinned set removes nothing. Docker refuses to
+# remove an image a container uses, so the warm never passes it a force flag.
+# CRI RemoveImage does not refuse, so after each containerd removal the warm
+# re-checks, and if a container now references the tag it pulls the tag back
+# and fails the run, naming it.
+#
 # Every value below is read from the environment the systemd unit sets from the
 # role's variables; the defaults are the fleet's current ones so that running
 # this script by hand on a factory host does the same thing the timer does.
@@ -73,6 +90,12 @@ LOCK_TIMEOUT_SECONDS=${LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_TIMEOUT_SECONDS:-1800}
 STORE=${LIVESPEC_SANDBOX_IMAGE_WARM_STORE:-docker}
 CRICTL=${LIVESPEC_SANDBOX_IMAGE_WARM_CRICTL:-k3s crictl}
 PROCESS_SPEC_URLS=${LIVESPEC_SANDBOX_IMAGE_WARM_PROCESS_SPEC_URLS:-}
+# The record directory matches the role's unit name: the docker warm is
+# livespec-sandbox-image-warm, every other store's carries a -<store> suffix.
+if [[ $STORE == docker ]]; then _record_default=/var/lib/livespec-sandbox-image-warm; else _record_default=/var/lib/livespec-sandbox-image-warm-$STORE; fi
+RECORD_DIR=${LIVESPEC_SANDBOX_IMAGE_WARM_RECORD_DIR:-$_record_default}
+REMOVE_SUPERSEDED=${LIVESPEC_SANDBOX_IMAGE_WARM_REMOVE_SUPERSEDED:-true}
+RECORD="$RECORD_DIR/pulled"
 
 log() {
     printf '%s livespec-sandbox-image-warm: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -167,6 +190,150 @@ store_pull() {
     esac
 }
 
+# Every tagged reference the store holds, as "<reference> <image-id>" lines.
+# This is the alias map: two references sharing an image id are one image to
+# the store, so removing one can delete the other's bytes (CRI) or must be
+# refused when the other is protected.
+store_images() {
+    case "$STORE" in
+        docker)
+            docker images --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}' |
+                awk '$1 !~ /:<none>$/ && NF == 2 { print $1, $2 }'
+            ;;
+        containerd)
+            "${crictl[@]}" images --no-trunc |
+                awk 'NR > 1 && $2 != "<none>" && NF >= 3 { print $1 ":" $2, $3 }'
+            ;;
+    esac
+}
+
+# The image id of every container on the host, in any state. A container
+# references a tag when it uses that tag, its image id, or another tag of the
+# same image, so in-use is decided by image id. A value that is not an id is a
+# reference, and it is resolved to its id through the alias map.
+store_in_use_ids() {
+    local ids images
+    case "$STORE" in
+        docker)
+            ids=$(docker ps --all --quiet --no-trunc) || return 1
+            [[ -z $ids ]] && return 0
+            # shellcheck disable=SC2086 # one container id per word
+            docker container inspect --format '{{.Image}}' $ids || return 1
+            ;;
+        containerd)
+            images=$(store_images) || return 1
+            "${crictl[@]}" ps --all --no-trunc | awk 'NR > 1 && NF >= 2 { print $2 }' |
+                while IFS= read -r value; do
+                    if [[ $value == sha256:* ]]; then
+                        printf '%s\n' "$value"
+                    else
+                        printf '%s\n' "$images" | awk -v ref="$value" '$1 == ref { print $2 }'
+                    fi
+                done
+            ;;
+    esac
+}
+
+# Remove ONE reference. Docker's `rmi` untags only the named reference and
+# refuses an image a container uses; no force flag is ever passed, so that
+# refusal closes the gap between the in-use check and the removal.
+store_remove() {
+    case "$STORE" in
+        docker) docker rmi "$1" ;;
+        containerd) "${crictl[@]}" rmi "$1" ;;
+    esac
+}
+
+# The record: every reference this warm itself pulled, one per line. It lives in
+# RECORD_DIR, a systemd StateDirectory that survives a reboot. A tag present
+# before the record existed, or pulled by anyone else, is never in it.
+record_init() {
+    mkdir -p "$RECORD_DIR" && { [[ -f $RECORD ]] || : >"$RECORD"; }
+}
+
+record_add() {
+    (
+        flock --exclusive 8 || exit 1
+        grep -qxF -- "$1" "$RECORD" || printf '%s\n' "$1" >>"$RECORD"
+    ) 8>>"$RECORD.lock"
+}
+
+# Keep only the recorded references the store still holds: a tag removed here or
+# by anyone else leaves the record, so a later pull by another party of the same
+# tag is not mistaken for this warm's own.
+record_prune() {
+    local held=$1
+    (
+        flock --exclusive 8 || exit 1
+        awk 'NR == FNR { held[$1] = 1; next } ($1 in held)' \
+            <(printf '%s\n' "$held") "$RECORD" >"$RECORD.new" && mv "$RECORD.new" "$RECORD"
+    ) 8>>"$RECORD.lock"
+}
+
+# The removal pass. Arguments: the current pinned set. Returns non-zero when a
+# removal failed or a containerd removal had to be undone; a tag left in place
+# because it is protected is not a failure.
+remove_superseded() {
+    local images in_use protected_ids reference id status=0
+    local -A pinned=() recorded=() id_of=()
+    for reference in "$@"; do pinned[$reference]=1; done
+    while IFS= read -r reference; do
+        [[ -n $reference ]] && recorded[$reference]=1
+    done <"$RECORD"
+    if ! images=$(store_images); then
+        log "ERROR: could not list the $STORE image store; nothing removed"
+        return 1
+    fi
+    if ! in_use=$(store_in_use_ids); then
+        log "ERROR: could not list the containers on this host; nothing removed"
+        return 1
+    fi
+    while read -r reference id; do
+        [[ -n $reference ]] && id_of[$reference]=$id
+    done <<<"$images"
+    # An image id is PROTECTED when any reference of it is pinned, was not
+    # pulled by this warm, or when a container uses it.
+    protected_ids=$(
+        printf '%s\n' "$in_use"
+        while read -r reference id; do
+            [[ -z $reference ]] && continue
+            if [[ -n ${pinned[$reference]:-} || -z ${recorded[$reference]:-} ]]; then
+                printf '%s\n' "$id"
+            fi
+        done <<<"$images"
+    )
+    for reference in "${!recorded[@]}"; do
+        [[ -n ${pinned[$reference]:-} ]] && continue
+        id=${id_of[$reference]:-}
+        [[ -z $id ]] && continue
+        if printf '%s\n' "$protected_ids" | grep -qxF -- "$id"; then
+            log "kept: $reference (in use, or it shares an image with a protected reference)"
+            continue
+        fi
+        log "removing superseded tag from $STORE: $reference"
+        if ! store_remove "$reference"; then
+            log "ERROR: the $STORE store refused or failed to remove $reference; it stays"
+            status=1
+            continue
+        fi
+        if [[ $STORE == containerd ]]; then
+            if ! in_use=$(store_in_use_ids) ||
+                printf '%s\n' "$in_use" | grep -qxF -- "$id"; then
+                log "ERROR: a container began referencing $reference during its removal;" \
+                    "pulling it back"
+                store_pull "$reference" || log "ERROR: could not pull $reference back"
+                status=1
+                continue
+            fi
+        fi
+        log "removed: $reference"
+    done
+    if images=$(store_images); then
+        record_prune "$(printf '%s\n' "$images" | awk '{ print $1 }')" || status=1
+    fi
+    return "$status"
+}
+
 warm_reference() {
     local reference=$1 lock
     if store_holds "$reference"; then
@@ -190,6 +357,10 @@ warm_reference() {
             exit 1
         fi
         log "warmed: $reference"
+        if ! record_add "$reference"; then
+            log "ERROR: pulled $reference but could not record it in $RECORD"
+            exit 1
+        fi
     ) 9>"$lock"
 }
 
@@ -243,7 +414,38 @@ else
 fi
 
 status=0
+record_ready=1
+if ! record_init; then
+    log "ERROR: could not create the pull record $RECORD; no tag will be removed this run"
+    status=1
+    record_ready=0
+fi
 for reference in "${references[@]}"; do
     warm_reference "$reference" || status=1
 done
+
+# The removal pass runs only after a run that read every pinned-set source (a
+# failed read already exited above) and pulled every reference, and only once
+# the store is seen to hold the whole pinned set.
+case "${REMOVE_SUPERSEDED,,}" in
+    true | 1 | yes | on) remove_enabled=1 ;;
+    *) remove_enabled=0 ;;
+esac
+if [[ $remove_enabled -eq 0 ]]; then
+    log "removal pass disabled (LIVESPEC_SANDBOX_IMAGE_WARM_REMOVE_SUPERSEDED=$REMOVE_SUPERSEDED)"
+elif [[ $status -ne 0 || $record_ready -eq 0 ]]; then
+    log "not every reference of the pinned set was pulled; no tag removed this run"
+else
+    whole_set=1
+    for reference in "${references[@]}"; do
+        if ! store_holds "$reference"; then
+            log "ERROR: $reference is absent from the $STORE store after the warm; no tag removed"
+            whole_set=0
+            status=1
+        fi
+    done
+    if [[ $whole_set -eq 1 ]]; then
+        remove_superseded "${references[@]}" || status=1
+    fi
+fi
 exit "$status"

@@ -39,6 +39,12 @@ Environment="LIVESPEC_SANDBOX_IMAGE_WARM_TAG_PREFIXES={{ sandbox_image_warm_tag_
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_PIN_URL={{ sandbox_image_warm_pin_url | trim }}"
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_DIR={{ sandbox_image_warm_lock_dir }}"
 Environment="LIVESPEC_SANDBOX_IMAGE_WARM_LOCK_TIMEOUT_SECONDS={{ sandbox_image_warm_lock_timeout_seconds }}"
+# The record of the tags this warm pulled. StateDirectory= is under /var/lib, so
+# it survives a reboot, which the removal pass needs: a tag is removed only if
+# this warm recorded pulling it.
+StateDirectory={{ sandbox_image_warm_name | trim }}
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_RECORD_DIR={{ sandbox_image_warm_record_dir }}"
+Environment="LIVESPEC_SANDBOX_IMAGE_WARM_REMOVE_SUPERSEDED={{ sandbox_image_warm_remove_superseded | bool | lower }}"
 {#
   The docker unit renders byte-identical to its pre-store form, so adding the
   containerd store is no drift on a docker factory host: the script's own
