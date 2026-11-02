@@ -58,6 +58,13 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.152.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.151.0...v1.152.0) (2026-11-02)
+
+
+### Features
+
+* **ansible:** retire four sandbox-play roles on one host through &lt;role&gt;_state: absent ([0d8fcbc](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0d8fcbcf08d630a32d4321d36231b92d1171adf9))
+
 ## [1.151.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.150.2...v1.151.0) (2026-11-02)
 
 
