@@ -74,7 +74,7 @@ def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
 
     def delegated(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
         assert repo_root == tmp_path
-        assert str(test_path) in pytest_argv
+        assert pytest_argv == ["pytest", "tests/test_red.py", "--tb=no", "-q"]
         return ReplayVerdict(
             local=False,
             reason="the Job reported a failing Red test",
@@ -128,7 +128,7 @@ def test_green_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
 
     def delegated(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
         assert repo_root == tmp_path
-        assert str(test_path) in pytest_argv
+        assert pytest_argv == ["pytest", "tests/test_green.py", "--tb=no", "-q"]
         return ReplayVerdict(
             local=False,
             reason="the Job reported a passing Green test",
@@ -186,19 +186,24 @@ def test_an_absent_remote_verdict_runs_the_replay_locally(
             reason="the gate Job reached no verdict",
         ),
     )
-    monkeypatch.setattr(
-        modes.subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+    local_argvs: list[list[str]] = []
+
+    def local_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        local_argvs.append(argv)
+        return subprocess.CompletedProcess(
             args=(), returncode=1, stdout="local failure\n", stderr=""
-        ),
-    )
+        )
+
+    monkeypatch.setattr(modes.subprocess, "run", local_run)
 
     replay = modes._run_replay_test(  # noqa: SLF001
         log=log,
-        pytest_argv=["pytest", "tests/test_red.py"],
+        pytest_argv=["/abs/python", "-m", "pytest", "/abs/tests/test_red.py"],
+        job_pytest_argv=["pytest", "tests/test_red.py"],
         trailer_prefix="Red",
     )
+
+    assert local_argvs == [["/abs/python", "-m", "pytest", "/abs/tests/test_red.py"]]
 
     assert replay.returncode == 1
     assert replay.output == "local failure\n"

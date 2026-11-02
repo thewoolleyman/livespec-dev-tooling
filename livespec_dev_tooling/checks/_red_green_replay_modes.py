@@ -16,7 +16,7 @@ import hashlib
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:  # pragma: no cover
     import structlog.stdlib
@@ -64,28 +64,28 @@ __all__: list[str] = [
 ]
 
 
-class _ReplayTestRun:
+class _ReplayTestRun(NamedTuple):
     """One replay result, retaining remote provenance only for a real verdict."""
 
-    def __init__(
-        self,
-        *,
-        returncode: int,
-        output: str,
-        output_checksum: str,
-        trailers: tuple[tuple[str, str], ...],
-    ) -> None:
-        self.returncode = returncode
-        self.output = output
-        self.output_checksum = output_checksum
-        self.trailers = trailers
+    returncode: int
+    output: str
+    output_checksum: str
+    trailers: tuple[tuple[str, str], ...]
 
 
 def _run_replay_test(
-    *, log: structlog.stdlib.BoundLogger, pytest_argv: list[str], trailer_prefix: str
+    *,
+    log: structlog.stdlib.BoundLogger,
+    pytest_argv: list[str],
+    job_pytest_argv: list[str],
+    trailer_prefix: str,
 ) -> _ReplayTestRun:
-    """Use the gate Job's verdict, or run locally when it did not produce one."""
-    verdict = run_replay(repo_root=Path.cwd(), pytest_argv=pytest_argv)
+    """Use the gate Job's verdict, or run locally when it did not produce one.
+
+    The Job checks the staged tree out itself, so it gets a literal `pytest`
+    and a repo-relative path; the local run keeps the host interpreter and path.
+    """
+    verdict = run_replay(repo_root=Path.cwd(), pytest_argv=job_pytest_argv)
     if (
         not verdict.local
         and verdict.exit_status is not None
@@ -175,6 +175,7 @@ def _handle_red_mode(
     replay = _run_replay_test(
         log=log,
         pytest_argv=[sys.executable, "-m", "pytest", str(test_file_path), "--tb=no", "-q"],
+        job_pytest_argv=["pytest", tests_paths[0], "--tb=no", "-q"],
         trailer_prefix="Red",
     )
     if replay.returncode == 0:
@@ -262,6 +263,7 @@ def _handle_green_mode(
     replay = _run_replay_test(
         log=log,
         pytest_argv=[sys.executable, "-m", "pytest", str(green_test_path), "--tb=no", "-q"],
+        job_pytest_argv=["pytest", recorded_test, "--tb=no", "-q"],
         trailer_prefix="Green",
     )
     if replay.returncode != 0:
