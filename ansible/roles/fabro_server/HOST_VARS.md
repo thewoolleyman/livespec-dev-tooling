@@ -126,6 +126,13 @@ re-run with `-e fabro_server_restart_allowed=true`. That run promotes the staged
 build before restarting the server — see "The deferred restart" below for what
 the refusing run wrote and what the re-run does with it.
 
+A parked instance (`service_state: stopped`) is never restarted, so an allowed
+restart does not promote its staged build while its unit is still live: the stop
+runs after the install tasks, and replacing `binary_path` first would break the
+worker spawns of a server that has not yet stopped. The build stays at
+`<binary_path>.incoming`, and the next run that finds the unit inactive or
+failed promotes it.
+
 **Quiesce means cancel the runs, then re-dispatch them — never wait for them to
 end.** A factory run is restartable, so the carrying-runs refusal means "cancel to
 idle", not "wait for idle". List the instance's active runs with

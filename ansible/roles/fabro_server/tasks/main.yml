@@ -894,12 +894,15 @@
   # systemd answers `inactive` and `failed` count; `activating` (a Type=simple unit
   # whose ExecStartPost is still running) and `deactivating` and `reloading`
   # all have a live Fabro process, so they are treated as running. An
-  # explicitly allowed restart is the remaining case: the install tasks below
-  # promote the candidate before the restart handler starts the unit.
+  # explicitly allowed restart of a RUNNING instance is the remaining case: the
+  # install tasks below promote the candidate before the restart handler starts
+  # the unit. The restart handler skips a parked instance, so for one an allowed
+  # restart promotes nothing: the candidate stays staged while its server is
+  # live, and the run that finds the unit inactive promotes it.
   ansible.builtin.set_fact:
     fabro_server_binary_install_now: >-
       {{ fabro_server_binary_replace | bool
-      and ((fabro_server_restart_allowed | bool)
+      and ((fabro_server_restart_allowed | bool and fabro_server_service_state == 'running')
            or not (fabro_server_binary.stat.exists)
            or fabro_server_is_active.stdout | default('') | trim == 'inactive'
            or fabro_server_is_active.stdout | default('') | trim == 'failed') }}
