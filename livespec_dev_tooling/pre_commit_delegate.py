@@ -11,6 +11,7 @@ from livespec_dev_tooling._gate_host_authority import (
     host_authority_decision,
     run_host_authority_members,
 )
+from livespec_dev_tooling._gate_remote_assembly import declared_gate_check_suite
 from livespec_dev_tooling.config import ConfigParseError, load_delegated_pre_commit
 from livespec_dev_tooling.gate_credential import gates_kubeconfig_readable
 from livespec_dev_tooling.gate_remote_delegate import gate_remote_request, resolve_renderer
@@ -23,7 +24,7 @@ from livespec_dev_tooling.gate_remote_verdict import (
 
 __all__: list[str] = ["PreCommitVerdict", "main", "run_pre_commit"]
 
-_CHECK_SUITE = ("check-pre-commit-gated-tree",)
+_GATED_TREE_CHECK = "check-pre-commit-gated-tree"
 _LOCAL_FALLBACK = 75
 
 
@@ -55,7 +56,16 @@ def run_pre_commit(*, repo_root: Path) -> PreCommitVerdict:
             local=True,
             reason="the staged tree could not be read, so the pre-commit aggregate gates locally",
         )
-    return _run_remote(repo_root=repo_root, tree_hash=tree_hash)
+    check_suite = _pre_commit_check_suite(repo_root=repo_root)
+    if check_suite is None:
+        return PreCommitVerdict(
+            local=True,
+            reason=(
+                "the gate check suite could not be read, so the pre-commit aggregate gates locally"
+            ),
+            tree_hash=tree_hash,
+        )
+    return _run_remote(repo_root=repo_root, tree_hash=tree_hash, check_suite=check_suite)
 
 
 def _staged_tree_hash(*, repo_root: Path) -> str:
@@ -90,7 +100,19 @@ def _staged_commit(*, repo_root: Path, tree_hash: str) -> str:
     return committed.unwrap().stdout.strip()
 
 
-def _run_remote(*, repo_root: Path, tree_hash: str) -> PreCommitVerdict:
+def _pre_commit_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
+    """Keep the declared bootstrap while substituting the staged-tree aggregate."""
+    from returns.result import Failure
+
+    declared = declared_gate_check_suite(repo_root=repo_root)
+    if isinstance(declared, Failure):
+        return None
+    return (*declared.unwrap()[:-1], _GATED_TREE_CHECK)
+
+
+def _run_remote(
+    *, repo_root: Path, tree_hash: str, check_suite: tuple[str, ...]
+) -> PreCommitVerdict:
     """Run the aggregate remotely and accept only a matching staged-tree verdict."""
     from returns.result import Failure
 
@@ -99,7 +121,7 @@ def _run_remote(*, repo_root: Path, tree_hash: str) -> PreCommitVerdict:
         renderer=resolve_renderer(repo_root=repo_root),
         runner=default_gate_command_runner,
         tree_hash=tree_hash,
-        check_suite=_CHECK_SUITE,
+        check_suite=check_suite,
     )
     if isinstance(built, Failure):
         return PreCommitVerdict(

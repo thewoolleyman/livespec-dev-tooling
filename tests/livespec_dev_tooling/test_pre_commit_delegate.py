@@ -122,6 +122,38 @@ def test_this_repository_enables_delegated_pre_commit_after_the_bootstrap_fix() 
     assert load_delegated_pre_commit(repo_root=_REPO_ROOT) is True
 
 
+def test_an_unreadable_declared_suite_gates_the_pre_commit_aggregate_locally(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A suite declaration the remote client cannot read retains the local gate."""
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+
+    module = _module()
+    assert hasattr(module, "_pre_commit_check_suite")
+    _ = (tmp_path / "pyproject.toml").write_text(
+        "[tool.livespec_dev_tooling]\ndelegated_pre_commit = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "gates_kubeconfig_readable", lambda: True)
+    monkeypatch.setattr(module, "_staged_tree_hash", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(
+        module,
+        "declared_gate_check_suite",
+        lambda **_kwargs: Failure(
+            GateStepFailed(step="read-gate-check-suite", argv=(), returncode=1, detail="bad suite")
+        ),
+        raising=False,
+    )
+
+    verdict = module.run_pre_commit(repo_root=tmp_path)
+
+    assert verdict.local is True
+    assert verdict.tree_hash == "a" * 40
+    assert "gate check suite could not be read" in verdict.reason
+
+
 @pytest.mark.parametrize(
     "remote",
     [
