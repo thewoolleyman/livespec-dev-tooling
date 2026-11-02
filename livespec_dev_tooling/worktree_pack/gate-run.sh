@@ -644,10 +644,27 @@ cmd_start() {
     local venue_fields=()
     if [[ "$force_local" == "true" ]]; then
         mapfile -t venue_fields < <(
-            python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@"
+            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate --local -- "$@" 2>/dev/null
         )
     else
-        mapfile -t venue_fields < <(python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@")
+        mapfile -t venue_fields < <(
+            uv run --no-sync python -m livespec_dev_tooling.gate_runner_delegate -- "$@" 2>/dev/null
+        )
+    fi
+    # Consumer worktrees normally have their pinned environment ready, but a
+    # source checkout with an importable package and no initialized project
+    # environment can still select locally through the interpreter that made
+    # the package importable.
+    if [[ "${#venue_fields[@]}" != "2" ]]; then
+        if [[ "$force_local" == "true" ]]; then
+            mapfile -t venue_fields < <(
+                python3 -m livespec_dev_tooling.gate_runner_delegate --local -- "$@"
+            )
+        else
+            mapfile -t venue_fields < <(
+                python3 -m livespec_dev_tooling.gate_runner_delegate -- "$@"
+            )
+        fi
     fi
     [[ "${#venue_fields[@]}" == "2" ]] || {
         printf 'ERROR: gate venue selection did not return a venue and reason\n' >&2
