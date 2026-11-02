@@ -245,3 +245,58 @@ def test_gate_start_keeps_commit_and_push_hooks_on_the_launching_host(*, tmp_pat
             "command outside full-suite set\n"
         )
     assert hook_log.read_text(encoding="utf-8").splitlines() == ["pre-commit", "pre-push"]
+
+
+def test_a_cluster_gate_uses_a_temporary_index_tree_and_records_its_job(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A delegated full suite gates the worktree tree without touching its index."""
+    from returns.result import Success
+
+    from livespec_dev_tooling.gate_remote_client import GateRunRequest
+    from livespec_dev_tooling.gate_remote_verdict import GATE_PASSED, GateVerdict
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    assert hasattr(module, "run_cluster_gate")
+    root, environment = _init_repo(tmp_path=tmp_path)
+    _ = (root / "tracked.txt").write_text("base\n", encoding="utf-8")
+    _ = _run(args=["git", "add", "tracked.txt"], cwd=root, env=environment)
+    _ = _run(args=["git", "commit", "--quiet", "-m", "base"], cwd=root, env=environment)
+    index_tree = _run(args=["git", "write-tree"], cwd=root, env=environment).stdout.strip()
+    _ = (root / "tracked.txt").write_text("uncommitted\n", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+    request = GateRunRequest(
+        repo_root=root,
+        mirror_url="mirror",
+        manifest="manifest",
+        gate_ref="refs/gates/worktree",
+    )
+
+    def build(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return Success(request)
+
+    def gate(**kwargs: object) -> GateVerdict:
+        captured["request"] = kwargs["request"]
+        return GateVerdict(
+            state=GATE_PASSED,
+            detail="the gate passed",
+            token_written=True,
+            job_name="gate-worktree-1",
+            tree_hash=str(captured["tree_hash"]),
+        )
+
+    monkeypatch.setattr(module, "gate_remote_request", build)
+    monkeypatch.setattr(module, "resolve_renderer", lambda **_kwargs: Path("renderer"))
+    monkeypatch.setattr(module, "run_gated_push", gate)
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 0
+    assert outcome.job_name == "gate-worktree-1"
+    assert outcome.tree_hash != index_tree
+    assert _run(args=["git", "write-tree"], cwd=root, env=environment).stdout.strip() == index_tree
+    pushed = captured["request"]
+    assert pushed.source_ref != "HEAD"
+    assert pushed.tree_hash == outcome.tree_hash
