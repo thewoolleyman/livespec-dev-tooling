@@ -165,7 +165,7 @@ def _live_processes_carrying(token: str) -> list[str]:
     return live
 
 
-def test_run_suite_timeout_kills_the_whole_process_group() -> None:
+def test_run_suite_timeout_kills_the_whole_process_group(tmp_path: Path) -> None:
     """The timeout kills the suite's whole process group, judged by ORDERING.
 
     The leader backgrounds a marked grandchild before it does anything else and
@@ -173,18 +173,24 @@ def test_run_suite_timeout_kills_the_whole_process_group() -> None:
     on how fast an interpreter starts: the earlier form waited for a Python
     child to write its pid file, and under host load the kill landed first and
     the read raised FileNotFoundError (kubernetes-sandbox-backend's commit gate,
-    2026-11-02). Whatever the grandchild managed before the kill, no process
-    carrying the marker may outlive it, because the grandchild is in the
-    group. A run_suite that killed only the leader would leave it running.
+    2026-11-02). The grandchild's FIRST action is a shell builtin that creates
+    `spawned`, so the test proves it existed before the kill without waiting
+    on any interpreter. It then asserts that no process carrying the marker
+    outlives the kill: the grandchild is in the group, and a run_suite that
+    killed only the leader would leave it running. Requiring `spawned` keeps
+    the no-survivor assertion from passing vacuously on a grandchild that
+    never started.
     """
     mod = _load()
     token = f"livespec-killpg-probe-{uuid.uuid4().hex}"
-    leader = f"sh -c 'sleep 300; :' {token} & sleep 300; :"
+    spawned = tmp_path / "spawned"
+    leader = f"sh -c ': > {spawned}; sleep 300; :' {token} & sleep 300; :"
 
     run = mod.run_suite(argv=["sh", "-c", leader], timeout_seconds=2)
 
     assert run.timed_out is True
     assert run.returncode is None
+    assert spawned.exists(), "the marked grandchild never started, so the kill proved nothing"
     hang_guard = time.monotonic() + 30
     while _live_processes_carrying(token) and time.monotonic() < hang_guard:
         time.sleep(0.1)
