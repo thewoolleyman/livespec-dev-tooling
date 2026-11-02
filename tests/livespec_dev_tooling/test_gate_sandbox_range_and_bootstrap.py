@@ -30,6 +30,8 @@ import subprocess
 from itertools import takewhile
 from pathlib import Path
 
+import pytest
+
 from livespec_dev_tooling import gate_remote_client
 
 __all__: list[str] = []
@@ -228,6 +230,74 @@ def test_the_gate_job_fetches_ancestry_rather_than_a_single_shallow_commit() -> 
     assert shallow == [], f"the gate fetch is still shallow: {shallow}"
     joined = "\n".join(_executable_lines())
     assert f'"+{_GATE_REF_TOKEN}:{_GATE_REF_TOKEN}"' in joined
+
+
+def test_stand_in_proxy_readiness_bounds_a_blocked_tcp_connect() -> None:
+    """A full listen backlog cannot hold the fixture's readiness check forever.
+
+    The exit suite opens its stand-in proxy before exercising proxy routing. A
+    TCP connect to a listener whose backlog is full can block before any HTTP
+    request is sent, so the helper must bound that connect itself and report
+    the fixture failure instead of letting a watchdog kill the suite.
+    """
+    script = r"""
+set -u
+helper="$(sed -n '/^wait_for_stand_in_proxy() {/,/^}/p' "$1")"
+eval "${helper}"
+failures=0
+fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
+port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+ready="$(mktemp)"
+python3 - "${port}" "${ready}" <<'PY' &
+import socket
+import sys
+import time
+
+listener = socket.socket()
+listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+listener.bind(("127.0.0.1", int(sys.argv[1])))
+listener.listen(1)
+with open(sys.argv[2], "w", encoding="utf-8") as output:
+    output.write("ready\n")
+clients = []
+for _ in range(128):
+    client = socket.socket()
+    client.setblocking(False)
+    try:
+        client.connect(("127.0.0.1", int(sys.argv[1])))
+    except BlockingIOError:
+        pass
+    clients.append(client)
+time.sleep(10)
+PY
+listener_pid=$!
+for _ in $(seq 1 100); do
+  [ -s "${ready}" ] && break
+  sleep 0.01
+done
+trap 'kill "${listener_pid}" 2>/dev/null || true; wait "${listener_pid}" 2>/dev/null || true; rm -f "${ready}"' EXIT
+[ -s "${ready}" ] || exit 2
+STAND_IN_PROXY_READY_DEADLINE_SECONDS=1 wait_for_stand_in_proxy "${port}"
+exit $?
+"""
+    try:
+        completed = subprocess.run(
+            ["bash", "-c", script, "--", str(_EXIT_TESTS)],
+            cwd=_REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=4,
+        )
+    except subprocess.TimeoutExpired as error:
+        pytest.fail(
+            "the blocked connect escaped the readiness deadline instead of "
+            f"reporting the stand-in proxy failure: {error}"
+        )
+
+    assert completed.returncode == 1, completed.stdout + completed.stderr
+    assert "FAIL  the stand-in proxy on port" in completed.stdout
+    assert "never answered HTTP within 1 s" in completed.stdout
 
 
 def test_the_base_companion_ref_lands_where_every_range_member_looks_for_it() -> None:
