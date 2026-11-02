@@ -1542,5 +1542,21 @@
     "heading": "## Scenario: the sandbox image warm's record of the tags it pulled survives a reboot",
     "test": "tests.livespec_dev_tooling.test_sandbox_image_warm_keep_current_tags.test_the_warms_record_of_the_tags_it_pulled_survives_a_reboot",
     "work_item": "livespec-dev-tooling-xknoqf"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Shell script pipeline verdicts",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-ftgiu4 owns it.",
+    "work_item": "livespec-dev-tooling-ftgiu4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-ftgiu4 owns it.",
+    "work_item": "livespec-dev-tooling-ftgiu4"
   }
 ]

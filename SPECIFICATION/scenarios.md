@@ -1903,3 +1903,13 @@ Then the event's `cost_usd` MUST be non-zero and computed at `gpt-6.1-sol`'s lis
 And the event MUST carry `spend.price_fallback` = `true` and a `cost_note` naming `gpt-6.1-sol`
 
 And a response on `gpt-6.1-sol` itself MUST be sent at its list price with no fallback marker
+
+## Scenario: a pipefail script reports a match in a large input as a match
+
+Given a shell script under `ci-runner/` that runs with `set -o pipefail` and tests whether its input contains a pattern
+
+When the input contains the pattern near its start and is larger than 64 KiB
+
+Then the script MUST report the pattern as present
+
+And its verdict MUST be the same as for a 200-byte input that contains the pattern
