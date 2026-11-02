@@ -45,6 +45,11 @@ def _is_named_document(document: dict[str, Any], *, kind: str, name: str) -> boo
     )
 
 
+def test_named_document_rejects_a_malformed_document_without_metadata() -> None:
+    """The manifest lookup ignores parser output missing Kubernetes metadata."""
+    assert not _is_named_document({"kind": "DaemonSet"}, kind="DaemonSet", name="example")
+
+
 def _manifest_document(documents: list[dict[str, Any]], *, kind: str, name: str) -> dict[str, Any]:
     """Return one named, parser-validated manifest document."""
     matched = [
