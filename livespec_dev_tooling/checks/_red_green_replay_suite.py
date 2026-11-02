@@ -36,7 +36,13 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
+from _red_green_replay_pre_commit import (  # noqa: E402
+    PreCommitAggregateEvidence,
+    reuse_pre_commit_evidence,
+    staged_tree_hash,
+)
 from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
+from _red_green_replay_suite_argv import lane_worker_count  # noqa: E402
 from _red_green_replay_suite_runner import (  # noqa: E402
     CEILING_ENV,
     DEFAULT_STALL_SECONDS,
@@ -49,17 +55,21 @@ from _red_green_replay_suite_runner import (  # noqa: E402
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
 from livespec_dev_tooling.commit_replay_delegate import run_replay  # noqa: E402
+from livespec_dev_tooling.green_token import read_pre_commit_evidence  # noqa: E402
 
 __all__: list[str] = [
     "CEILING_ENV",
     "DEFAULT_STALL_SECONDS",
     "STALL_ENV",
+    "PreCommitAggregateEvidence",
     "SuiteBound",
     "SuiteRun",
     "_handle_suite_green_mode",
     "canonical_output_checksum",
+    "handle_suite_green_mode",
     "has_shared_test_support",
     "run_suite",
+    "staged_tree_hash",
     "stages_only_shared_test_support",
     "suite_bound",
     "suite_pytest_argv",
@@ -67,8 +77,6 @@ __all__: list[str] = [
 ]
 
 _NPROCS_ENV: str = "test_nprocs"
-_LANE_ENV: str = "LIVESPEC_CI_LANE"
-_PARALLELISM_ENV: str = "LIVESPEC_TEST_PARALLELISM"
 
 # Lines that vary with xdist scheduling or terminal progress, not with the
 # suite's verdict: worker chatter, `created: N/N workers`, `N workers [M items]`
@@ -90,23 +98,6 @@ _TRACEBACK_LINE = re.compile(r"^\S+\.py:\d+: .+$", re.MULTILINE)
 _FAILURE_DETAIL_LIMIT = 4000
 
 
-def _lane_worker_count(*, environ: Mapping[str, str], visible_cpus: int) -> str:
-    """The consumers' own lane-aware rule, for a repo that does not export `test_nprocs`.
-
-    `auto` only on the hosted CI lane (small dedicated runners), then an explicit
-    LIVESPEC_TEST_PARALLELISM, then a quarter of the visible CPUs (minimum 1), as
-    `just-test-nprocs.sh` and the justfile `test_nprocs` expression compute it.
-    Never a bare `auto` elsewhere: in a factory pod xdist's `auto` counts every
-    HOST core (32-72) against the pod's 4-cpu quota.
-    """
-    if environ.get(_LANE_ENV, "local") == "hosted":
-        return "auto"
-    explicit = environ.get(_PARALLELISM_ENV, "").strip()
-    if explicit:
-        return explicit
-    return str(max(1, visible_cpus // 4))
-
-
 def suite_pytest_argv(
     *,
     environ: Mapping[str, str],
@@ -118,7 +109,7 @@ def suite_pytest_argv(
     argv = [sys.executable, "-m", "pytest", "--tb=line", "-q"]
     if not xdist_available:
         return [*argv, *(test_paths or [])]
-    nprocs = environ.get(_NPROCS_ENV, "").strip() or _lane_worker_count(
+    nprocs = environ.get(_NPROCS_ENV, "").strip() or lane_worker_count(
         environ=environ, visible_cpus=visible_cpus
     )
     return [*argv, "-n", nprocs, *(test_paths or [])]
@@ -186,6 +177,23 @@ def _suite_failure_detail(*, output: str) -> str:
     return "\n".join(_TRACEBACK_LINE.findall(output))[:_FAILURE_DETAIL_LIMIT]
 
 
+def _suite_argv(*, test_paths: list[str] | None, log: structlog.stdlib.BoundLogger) -> list[str]:
+    """Build the local suite command, recording the serial fallback when needed."""
+    xdist_available = xdist_importable()
+    if not xdist_available:
+        log.warning(
+            "suite-green-serial-fallback: pytest-xdist not importable; running the suite serially",
+            check_id="red-green-replay-suite-green-serial-fallback",
+            hint="Add pytest-xdist to this repo's dev dependencies to parallelize this leg.",
+        )
+    return suite_pytest_argv(
+        environ=os.environ,
+        test_paths=test_paths,
+        xdist_available=xdist_available,
+        visible_cpus=len(os.sched_getaffinity(0)),
+    )
+
+
 def _handle_suite_green_mode(
     *,
     msg_path: Path,
@@ -215,20 +223,15 @@ def _handle_suite_green_mode(
         staged_paths=staged_paths,
         tests_paths=selected_tests,
     )
-    xdist_available = xdist_importable()
-    if not xdist_available:
-        log.warning(
-            "suite-green-serial-fallback: pytest-xdist not importable; running the suite serially",
-            check_id="red-green-replay-suite-green-serial-fallback",
-            hint="Add pytest-xdist to this repo's dev dependencies to parallelize this leg.",
-        )
+    if scope == "full-suite" and reuse_pre_commit_evidence(
+        evidence=read_pre_commit_evidence(cwd=Path.cwd()),
+        index_tree=staged_tree_hash(cwd=Path.cwd()),
+        log=log,
+        msg_path=msg_path,
+    ):
+        return 0
     bound = suite_bound(environ=os.environ)
-    argv = suite_pytest_argv(
-        environ=os.environ,
-        test_paths=selected_tests,
-        xdist_available=xdist_available,
-        visible_cpus=len(os.sched_getaffinity(0)),
-    )
+    argv = _suite_argv(test_paths=selected_tests, log=log)
     log.info(
         "suite-green-argv: pytest invocation",
         check_id="red-green-replay-suite-green-argv",
@@ -325,3 +328,6 @@ def _handle_suite_green_mode(
         ),
     )
     return 0
+
+
+handle_suite_green_mode = _handle_suite_green_mode
