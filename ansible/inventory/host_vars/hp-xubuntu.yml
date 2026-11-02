@@ -17,6 +17,14 @@ container_reclaim_system_hostname: hp-xubuntu
 # --- disk_guard ---
 disk_guard_threshold_gb: 40
 
+# --- docker_sandbox_slice ---
+# RETIRED 2026-11-02 (plan gmktec-factory-placement, item
+# livespec-dev-tooling-2yn4yb). hp-xubuntu leaves the Fabro factory role and is
+# being reworked into a Kubernetes factory worker, so its Docker sandbox
+# envelope is removed through the role. See the role's HOST_VARS.md "Retiring
+# the envelope on one host".
+docker_sandbox_slice_state: absent
+
 # --- factory_kubeconfig ---
 # The LOCAL account whose tailnet ssh key reaches the control-plane node, and
 # the account put in the credential's read group. cwoolley, NOT ubuntu: the

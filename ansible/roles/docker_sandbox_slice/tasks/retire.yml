@@ -1,0 +1,129 @@
+---
+# docker_sandbox_slice — RETIRE the envelope on a host that keeps its daemon
+# (docker_sandbox_slice_state: absent).
+#
+# The role's documented "Rollback" was three steps by hand. The fleet host
+# guard forbids hand changes, and the role stays live on other hosts, so a
+# host leaves the envelope through this file instead. The converge mirrors the
+# install's ONE RULE: it never restarts dockerd. It takes `cgroup-parent` out of
+# daemon.json, preserving every other key, and records that the running daemon
+# still places containers in the slice. The restart, and the removal of the
+# slice unit, happen only under the operator's drained-restart tag — the slice
+# cannot be stopped first, because stopping a slice kills every process in it.
+#
+# Imported from main.yml under `when: docker_sandbox_slice_state == 'absent'`,
+# which Ansible applies to every task below. Plan gmktec-factory-placement,
+# item livespec-dev-tooling-2yn4yb (hp-xubuntu leaves the factory role).
+
+- name: Read the daemon configuration a retiring host carries
+  # `failed_when: false`: a host with no daemon.json has nothing to retire.
+  ansible.builtin.slurp:
+    src: "{{ docker_sandbox_slice_daemon_config }}"
+  become: true
+  register: docker_sandbox_slice_retire_raw
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Hold the daemon configuration a retiring host carries
+  ansible.builtin.set_fact:
+    docker_sandbox_slice_retire_config: >-
+      {{ (docker_sandbox_slice_retire_raw.content | b64decode | from_json)
+         if (docker_sandbox_slice_retire_raw.content is defined) else {} }}
+
+- name: Hold whether the running daemon was started inside the slice
+  # The daemon loads daemon.json at START, so the parent the file names before
+  # this converge is the parent the running daemon uses.
+  ansible.builtin.set_fact:
+    docker_sandbox_slice_retire_loaded: >-
+      {{ docker_sandbox_slice_retire_config['cgroup-parent'] | default('')
+         == docker_sandbox_slice_name }}
+
+- name: Remove cgroup-parent from the daemon configuration, preserving every other key
+  ansible.builtin.copy:
+    content: >-
+      {{ docker_sandbox_slice_retire_config
+         | dict2items
+         | rejectattr('key', 'equalto', 'cgroup-parent')
+         | items2dict
+         | to_nice_json }}
+    dest: "{{ docker_sandbox_slice_daemon_config }}"
+    # No owner or group: the file already exists here, and the write keeps
+    # whatever ownership the host gave it.
+    mode: "0644"
+  become: true
+  when: docker_sandbox_slice_retire_loaded | bool
+
+- name: Create the directory the retirement's pending-restart marker lives in
+  ansible.builtin.file:
+    path: "{{ docker_sandbox_slice_pending_restart_marker | dirname }}"
+    state: directory
+    mode: "0755"
+  become: true
+  when: docker_sandbox_slice_retire_loaded | bool
+
+- name: Record that a drained restart is owed to leave the slice
+  # Written only on the converge that removes the key, and cleared only by the
+  # drained restart, so it outlives every converge in between.
+  ansible.builtin.copy:
+    content: |
+      The container daemon on this host is RETIRING the Fabro sandbox envelope.
+      {{ docker_sandbox_slice_daemon_config }} no longer names
+      {{ docker_sandbox_slice_name }} as the default cgroup-parent, but the
+      running daemon loaded it at start, so containers stay in the slice until
+      {{ docker_sandbox_slice_daemon_service }} next starts.
+
+      Restarting the daemon KILLS every running container. Drain this host
+      first, then apply the role's drained-restart tag, which also stops and
+      removes the slice unit; see the role's HOST_VARS.md "Retiring the
+      envelope on one host".
+    dest: "{{ docker_sandbox_slice_pending_restart_marker }}"
+    mode: "0644"
+  become: true
+  when: docker_sandbox_slice_retire_loaded | bool
+
+- name: Restart the container daemon to leave the slice, inside a drained window
+  ansible.builtin.systemd_service:
+    name: "{{ docker_sandbox_slice_daemon_service }}"
+    state: restarted
+  become: true
+  tags: [never, docker_sandbox_slice_drained_restart]
+  when: "'docker_sandbox_slice_drained_restart' in ansible_run_tags"
+
+- name: Stop the retired sandbox slice
+  # After the restart nothing the daemon starts joins the slice, so stopping it
+  # ends only what the restart already ended. `failed_when` tolerates a slice
+  # that is already gone.
+  ansible.builtin.systemd_service:
+    name: "{{ docker_sandbox_slice_name }}"
+    state: stopped
+  become: true
+  register: docker_sandbox_slice_retire_stop
+  failed_when:
+    - docker_sandbox_slice_retire_stop.failed | default(false)
+    - "'Could not find the requested service' not in (docker_sandbox_slice_retire_stop.msg | default(''))"
+  tags: [never, docker_sandbox_slice_drained_restart]
+  when: "'docker_sandbox_slice_drained_restart' in ansible_run_tags"
+
+- name: Remove the retired sandbox slice unit
+  ansible.builtin.file:
+    path: "{{ docker_sandbox_slice_unit_dir }}/{{ docker_sandbox_slice_name }}"
+    state: absent
+  become: true
+  tags: [never, docker_sandbox_slice_drained_restart]
+  when: "'docker_sandbox_slice_drained_restart' in ansible_run_tags"
+
+- name: Reload systemd after removing the retired slice unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  tags: [never, docker_sandbox_slice_drained_restart]
+  when: "'docker_sandbox_slice_drained_restart' in ansible_run_tags"
+
+- name: Clear the pending-restart marker the retirement's restart satisfied
+  ansible.builtin.file:
+    path: "{{ docker_sandbox_slice_pending_restart_marker }}"
+    state: absent
+  become: true
+  tags: [never, docker_sandbox_slice_drained_restart]
+  when: "'docker_sandbox_slice_drained_restart' in ansible_run_tags"

@@ -58,3 +58,9 @@ docker_sandbox_slice_pending_restart_marker: /var/lib/docker-sandbox-slice/resta
 # marker is `confirmed` inside it. Kept equal to docker_engine_state_root in
 # roles/docker_engine/defaults/main.yml.
 docker_sandbox_slice_docker_engine_state_root: /var/lib/docker-engine-guard
+
+# `present` installs and holds the envelope. `absent` RETIRES it on a host that
+# keeps its daemon: cgroup-parent leaves daemon.json and, under the
+# drained-restart tag, dockerd restarts and the slice unit is removed. See
+# HOST_VARS.md "Retiring the envelope on one host".
+docker_sandbox_slice_state: present
