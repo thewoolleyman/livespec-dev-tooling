@@ -287,6 +287,21 @@ data:
     set -eu
     mkdir -m 0777 -p "${VOL_DIR}"
     chmod 700 "${VOL_DIR}/.."
+    # A VOLUME THIS SCRIPT ALREADY SEEDED IS LEFT ALONE (livespec-dev-tooling-5j5x).
+    # The provisioner can run setup TWICE for one claim: measured 2026-11-02 on
+    # poweredge-xubuntu, pvc-ece227b1 logged "Creating volume" at 21:42:23Z,
+    # ProvisioningSucceeded at 21:42:55Z, and "Creating volume" again at
+    # 21:42:55Z, 9 of 498 claims in that hour. By then the runner pod is
+    # running on the first seed. A re-run that drops and re-copies the seed
+    # pulls `externals` and `_warm` out from under it: the ARC hook found no
+    # marker and failed `EACCES ... mkdir '/home/runner/_work/externals/node20'`
+    # in the half re-created tree. The stamp is written LAST, so a run that
+    # never finished leaves none and its retry still starts clean.
+    seeded="${VOL_DIR}/.livespec-volume-seeded"
+    if [ -e "${seeded}" ]; then
+      echo "volume ${VOL_DIR} already seeded; leaving it untouched" >&2
+      exit 0
+    fi
     # Leave the volume root exactly as the kubelet's fsGroup handling would
     # (gid 1000 = the runner pod's fsGroup in every ../arc/values-*.yaml;
     # mode 2777 = 0777 plus setgid). The runner pods carry
@@ -379,14 +394,23 @@ data:
       rm -f "${VOL_DIR}"/externals/.externals-seeded-*
       rm -rf "${VOL_DIR}/externals"
     }
+    # The copy lands at a STAGING name and is renamed into place only once
+    # complete, so `<volume>/externals` is the whole seed with its marker or
+    # nothing, never a tree still being copied (livespec-dev-tooling-5j5x).
     externals="${VOL_DIR%/*}/.externals/current"
+    staging="${VOL_DIR}/.externals-staging"
     drop_externals_seed
+    rm -rf "${staging}"
     if [ -d "${externals}" ]; then
-      if ! cp -a --reflink=always "${externals}/." "${VOL_DIR}/externals"; then
+      if cp -a --reflink=always "${externals}/." "${staging}"; then
+        mv "${staging}" "${VOL_DIR}/externals"
+      else
         echo "externals seed from ${externals} failed; leaving none" >&2
+        rm -rf "${staging}"
         drop_externals_seed
       fi
     fi
+    : > "${seeded}"
   teardown: |-
     #!/bin/sh
     set -eu
