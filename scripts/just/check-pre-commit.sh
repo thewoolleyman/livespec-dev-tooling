@@ -6,6 +6,21 @@ if [[ -z "$(git diff --cached --name-only)" ]]; then
     exit 0
 fi
 
+set +e
+uv run python -m livespec_dev_tooling.pre_commit_delegate run
+delegate_status=$?
+set -e
+case "$delegate_status" in
+    0)
+        exit 0
+        ;;
+    75)
+        ;;
+    *)
+        exit "$delegate_status"
+        ;;
+esac
+
 staged=$(git diff --cached --name-only --diff-filter=AM)
 py_staged=$(echo "$staged" | grep -E '\.py$' || true)
 test_staged=$(echo "$staged" | grep -E '^tests/.*\.py$' || true)

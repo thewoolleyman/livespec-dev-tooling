@@ -278,6 +278,7 @@ def gate_remote_request(
     runner: GateCommandRunner,
     tree_hash: str | None = None,
     pytest_argv: tuple[str, ...] | None = None,
+    check_suite: tuple[str, ...] | None = None,
 ) -> Result[GateRunRequest, GateStepFailed]:
     """Assemble the one request S7a needs, out of the repository itself.
 
@@ -305,7 +306,8 @@ def gate_remote_request(
     )
     if isinstance(inputs, Failure):
         return Failure(inputs.failure())
-    suite, private_siblings, private_sibling_token = inputs.unwrap()
+    declared_suite, private_siblings, private_sibling_token = inputs.unwrap()
+    suite = check_suite if check_suite is not None else declared_suite
     authority_skip = authority_skip_resolution(repo_root=repo_root)
     if authority_skip.refusal is not None:
         return Failure(
