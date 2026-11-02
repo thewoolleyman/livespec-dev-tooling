@@ -651,3 +651,62 @@ livespec-dev-tooling's manifest parser and its fleet-conformance sweep are the r
 - The sweep MUST hold a `released` adopter whose profile is `["instruction-only"]` to the adopter plugin-currency row and to no other row. A committed `.claude/settings.json` declaring `livespecPluginCurrencySuccessor` with a non-empty `mechanism` and `documentedIn` satisfies that row.
 - The sweep MUST report an adopter whose `posture` is not `released` as posture-excluded and MUST NOT fail on it.
 - The member parser MUST read a `fleet` member entry by its `repo` and `class` alone and MUST NOT read a profile from it, so a `profile` written on a `fleet` member entry has no effect.
+
+## Maintainer radar
+
+The coordinator's priority order MUST be held in one committed, type-checked Python module of this repository, `livespec_dev_tooling/radar/radar.py`, which exports `RADAR`, an immutable tuple of `RadarEntry` values. Each entry MUST carry exactly these fields:
+
+- `kind`: `plan` or `item`.
+- `tenant`: the ledger tenant that holds the target.
+- `id`: the target's id.
+- `words`: the maintainer's words that put the target on the radar.
+- `said_at`: the date of those words.
+- `blocked_by`: zero or more `<tenant>:<id>` references, for blockers the ledger cannot express across tenants.
+
+The tuple index MUST be the only order. An entry MUST NOT carry a priority number, an override or slot marker, and the tuple MUST NOT be length-bounded: urgency is expressed only by reordering, and the radar's length is the maintainer's signal to drop entries. Only the maintainer orders the radar. A session that has evidence the order should change MUST report it as a finding and MUST NOT edit the array itself.
+
+A radar is VALID only when ALL of the following hold:
+
+- No `(tenant, id)` pair appears twice.
+- No `item` entry is a child of a `plan` entry listed elsewhere in the radar.
+- Every entry, and every `blocked_by` reference, resolves in its tenant's ledger.
+- Every `plan` entry's epic has a `plan/<slug>/` directory in its tenant's repository.
+- Every `blocked_by` reference has the form `<tenant>:<id>` with both parts non-empty.
+
+Defects that need only the committed file MUST fail `just check`, naming each defect (for a duplicate pair, the id and both indexes). These are duplicate pairs, malformed references and schema violations, the last through the repository's type gate. Defects that need the ledger MUST NOT be checked inside `just check`, because `just check` also runs where no ledger is reachable, and per constraints.md §"No network I/O" a check module performs no network I/O. They MUST instead be checked by the ONE load-time entry point every radar consumer calls, and by a `just radar-validate` recipe run through the credential wrapper. That entry point MUST refuse an invalid radar, naming every defect, and MUST NOT return a partial, cached or previously valid radar in its place.
+
+An entry whose target is closed is DONE. The load entry point MUST report it as a finding naming the entry, and readers MUST treat it as needing no work. A closed entry MUST NOT make the radar invalid: a target closing is an ordinary outcome, and refusing the radar would stall every consumer until the array is edited. `just radar-validate` MUST still fail on a closed entry, so that an edit to the radar cannot introduce or keep one. A `blocked_by` reference whose target is closed is a cleared blocker, not a defect. An open entry's target is NOT READY when any of its blockers is not closed. Its blockers are its ledger `blocks` edges and its declared `blocked_by` references. `parent-child`, `relates-to`, `discovered-from`, `related` and `duplicates` edges MUST NOT block. A plan's children MUST be computed as the union of its dotted-id descendants and the items carrying a `parent-child` edge to its epic, because neither source is complete alone. Readers MUST accept both dependency-row spellings the ledger emits: `depends_on_id` with `type` (from `bd list`) and `id` with `dependency_type` (from `bd show`). Readers MUST read an absent `dependencies` key as no edges.
+
+## Scheduler Honeycomb input contract
+
+Every measured observable that the radar admission function consumes MUST be read from the Honeycomb `livespec` environment by code, never by an LLM. That covers host pressure, available memory, node allocatable against requested resources, live runs per execution target, and per-run-class cost percentiles. The reader MUST query through the Honeycomb MCP endpoint (`https://mcp.honeycomb.io/mcp`) with the MCP key that `with-livespec-env.sh` injects, because the team's Pro plan has no REST Query Data API. The reader MUST accept an endpoint override as configuration, so a test can point it at a host that does not resolve. Neither the reader nor the live contract test is part of `just check`: both need the network and the credential.
+
+Each query MUST be a named query spec committed in code. A spec names:
+
+- its dataset;
+- its calculations, filters and breakdowns;
+- its time window;
+- every expected result column with that column's type;
+- a staleness bound.
+
+The set of specs one admission tick runs MUST be fixed and counted. A unit test MUST fail when that count exceeds the committed per-tick budget constant. Results MUST be cached for the duration of a tick, so a repeat read inside the tick spends no query. The constant MUST be set from a measurement of the other callers' share of the MCP key's hourly budget, recorded beside it, and MUST NOT be set from an estimate.
+
+A contract test, run against live Honeycomb through the credential wrapper, MUST fail for a spec in each of these cases:
+
+- a result is missing an expected column;
+- a column's parsed type differs from the spec;
+- the newest row is older than the spec's staleness bound.
+
+The required attribute and column set MUST be published from one committed file that other repositories' gates read, never duplicated. A Honeycomb board named `scheduler inputs` MUST be generated from the specs by a committed applier, whose read-only drift mode reports every difference between the live board and the generated definition.
+
+When the endpoint is unreachable, returns an error, or the per-tick budget is exhausted, the reader MUST return the fixed conservative defaults from a committed fallback table. Every decision made from those defaults MUST carry `inputs: fallback` together with the failure reason. The coordinator's printout MUST show a `HONEYCOMB UNREACHABLE since <UTC>` line above radar entry 1, and a work item for the outage MUST exist in the ledger within one tick. The reader MUST NOT reorder or edit the radar array.
+
+## Execution-target pressure telemetry
+
+**Scope.** This section covers every host the radar admission function can place work on. Those hosts are the execution targets `gmktec-xubuntu`, `hp-xubuntu` and `poweredge-xubuntu`, and the dev host (the VPS) for local work. It is the input side of §"Scheduler Honeycomb input contract", and it adds to §"Runner-pool node telemetry" without replacing it.
+
+**Pressure stall information on every execution target.** Every execution target MUST emit the kernel's pressure stall information to the Honeycomb `livespec` environment's metrics dataset. That means the `some` and `full` lines of `/proc/pressure/cpu`, `/proc/pressure/memory` and `/proc/pressure/io`, each with its `avg10`, `avg60` and `avg300` values. Every datapoint MUST be stamped with `host.name` equal to the host's own name. The emission interval MUST be at most 60 seconds, so every 15-minute window of a running host carries datapoints. A host whose kernel does not expose a pressure file MUST make the emitter exit non-zero with a log line naming the missing file. It MUST NOT emit zeros in its place, because a zero pressure reading would be read as an idle host.
+
+**The dev host's host metrics reach `livespec`.** The dev host's host metrics MUST also arrive in the `livespec` environment's metrics dataset stamped with its `host.name`, not only in the `agent-activity` environment. That includes `system.linux.memory.available`.
+
+**Converged, never hand-installed.** The pressure emitter on every execution target MUST be converged by this repository's Ansible tree from the control node. A hand-run installer MUST NOT be the deployment path, and the drift report of the playbook that converges it MUST report a host whose emitter differs from the merged definition.

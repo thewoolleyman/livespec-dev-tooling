@@ -44,6 +44,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Execution-target pressure telemetry",
+    "work_item": "livespec-dev-tooling-i7yxpt",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Factory sandbox environment naming",
     "work_item": "livespec-dev-tooling-s6go5s",
     "first_seen": "2026-10-24"
@@ -65,6 +72,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "non-functional-requirements.md",
+    "heading": "## Maintainer radar",
+    "work_item": "livespec-dev-tooling-xhbgdg",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
     "heading": "## Runner-pool node telemetry",
     "work_item": "livespec-dev-tooling-uftb4o",
     "first_seen": "2026-10-24"
@@ -75,6 +89,13 @@
     "heading": "## Runner-pool workload and control-plane telemetry",
     "work_item": "livespec-dev-tooling-dfdiil",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Scheduler Honeycomb input contract",
+    "work_item": "livespec-dev-tooling-34bee5",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -107,8 +128,22 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test",
+    "work_item": "livespec-dev-tooling-k3dpo2",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a behaviour-preserving commit runs the full suite, and an empty run is refused",
     "work_item": "livespec-dev-tooling-z5fwwn",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a closed radar entry is reported as done and does not stall its consumers",
+    "work_item": "livespec-dev-tooling-22wpdk",
     "first_seen": "2026-11-02"
   },
   {
@@ -212,6 +247,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
+    "work_item": "livespec-dev-tooling-i7yxpt",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a later master commit touching a culprit path blocks the revert",
     "work_item": "livespec-dev-tooling-joqff6",
     "first_seen": "2026-10-22"
@@ -247,8 +289,29 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
+    "work_item": "livespec-dev-tooling-34bee5",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a pipefail script reports a match in a large input as a match",
     "work_item": "livespec-dev-tooling-ftgiu4",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
+    "work_item": "livespec-dev-tooling-22wpdk",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a radar that lists the same target twice fails just check",
+    "work_item": "livespec-dev-tooling-xhbgdg",
     "first_seen": "2026-11-02"
   },
   {
@@ -263,6 +326,13 @@
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a refused suite-green run names why each test failed",
     "work_item": "livespec-dev-tooling-z5fwwn",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a related edge does not block a radar target",
+    "work_item": "livespec-dev-tooling-m2x5pt",
     "first_seen": "2026-11-02"
   },
   {
@@ -359,6 +429,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
+    "work_item": "livespec-dev-tooling-i7yxpt",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: an explicit local gate-runner run is recorded as local",
     "work_item": "livespec-dev-tooling-qgv3tb",
     "first_seen": "2026-11-01"
@@ -383,6 +460,13 @@
     "heading": "## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip",
     "work_item": "livespec-dev-tooling-kvvfo3",
     "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions",
+    "work_item": "livespec-dev-tooling-34bee5",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -439,6 +523,13 @@
     "heading": "## Scenario: the dev host capacity check alerts when /tmp passes its threshold",
     "work_item": "livespec-dev-tooling-tjldi2",
     "first_seen": "2026-11-01"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev host's available memory is queryable in livespec",
+    "work_item": "livespec-dev-tooling-z6yf2a",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",

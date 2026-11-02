@@ -1558,5 +1558,109 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running each swept pipefail shell script against an input larger than 64 KiB that contains its pattern; livespec-dev-tooling-ftgiu4 owns it.",
     "work_item": "livespec-dev-tooling-ftgiu4"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Maintainer radar",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, importing the committed RADAR and running its structural and ledger validation through the radar load entry point on fixtures; plan radar-and-deterministic-admission slice 1. livespec-dev-tooling-xhbgdg owns it.",
+    "work_item": "livespec-dev-tooling-xhbgdg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a radar that lists the same target twice fails just check",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the repo-local radar test against a radar listing one target twice and asserting the failure names the id and both indexes. livespec-dev-tooling-xhbgdg owns it.",
+    "work_item": "livespec-dev-tooling-xhbgdg"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a radar consumer refuses an item already covered by a listed plan",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, calling the radar load entry point over a ledger fixture where an item entry is a dotted-id child of a listed plan and asserting the refusal and that no entries are returned. livespec-dev-tooling-22wpdk owns it.",
+    "work_item": "livespec-dev-tooling-22wpdk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a related edge does not block a radar target",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, computing readiness over ledger fixtures in both dependency-row spellings with relates-to and discovered-from edges to open items and a blocks edge to a closed item. livespec-dev-tooling-m2x5pt owns it.",
+    "work_item": "livespec-dev-tooling-m2x5pt"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a closed radar entry is reported as done and does not stall its consumers",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, loading a radar whose plan entry's epic is closed over a ledger fixture, asserting a done finding and a returned radar, and asserting just radar-validate fails naming the entry. livespec-dev-tooling-22wpdk owns it.",
+    "work_item": "livespec-dev-tooling-22wpdk"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Scheduler Honeycomb input contract",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the scheduler's Honeycomb reader over its committed query specs with a stub MCP client for the cache, budget and fallback paths; plan radar-and-deterministic-admission slice 2. livespec-dev-tooling-34bee5 owns it.",
+    "work_item": "livespec-dev-tooling-34bee5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the contract test against a result lacking an expected column and asserting it fails naming the spec and the column. livespec-dev-tooling-k3dpo2 owns it.",
+    "work_item": "livespec-dev-tooling-k3dpo2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, pointing the reader's MCP endpoint override at an unresolvable host and asserting every value is marked inputs: fallback with the reason and the radar array is unchanged; the printout line lands with the slice-4 report generator. livespec-dev-tooling-34bee5 owns it.",
+    "work_item": "livespec-dev-tooling-34bee5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, adding query specs past the per-tick budget constant and asserting the counting test fails naming the count and the constant. livespec-dev-tooling-34bee5 owns it.",
+    "work_item": "livespec-dev-tooling-34bee5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Execution-target pressure telemetry",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter against fixture /proc/pressure files and a stub OTLP sink and asserting the emitted datapoints; plan radar-and-deterministic-admission slice 2. livespec-dev-tooling-i7yxpt owns it.",
+    "work_item": "livespec-dev-tooling-i7yxpt"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an execution target's pressure stall readings are queryable in livespec by host",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter against fixture pressure files and asserting some and full avg10/avg60/avg300 datapoints for cpu, memory and io stamped with the host's host.name. livespec-dev-tooling-i7yxpt owns it.",
+    "work_item": "livespec-dev-tooling-i7yxpt"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a host with no pressure file makes the emitter fail rather than report zero",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the pressure emitter with /proc/pressure/memory absent and asserting a non-zero exit naming the file and no memory datapoint. livespec-dev-tooling-i7yxpt owns it.",
+    "work_item": "livespec-dev-tooling-i7yxpt"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the dev host's available memory is queryable in livespec",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, asserting the dev host's collector configuration routes its host-metrics pipeline to the livespec environment as well as agent-activity. livespec-dev-tooling-z6yf2a owns it.",
+    "work_item": "livespec-dev-tooling-z6yf2a"
   }
 ]
