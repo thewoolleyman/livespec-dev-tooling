@@ -1223,6 +1223,11 @@ check-wrapper-shape:
 check-pre-commit:
     scripts/just/check-pre-commit.sh
 
+# The gate Job's entry for a delegated pre-commit aggregate: restores the
+# staged index in the Job's clean checkout, then runs `check-pre-commit`.
+check-pre-commit-gated-tree:
+    scripts/just/check-pre-commit-gated-tree.sh
+
 # When zero `.py` files are staged, `check-pre-commit` delegates here.
 # `check-pre-commit` delegates here for zero-`.py` staged trees — a local
 # pre-commit speed optimization only; pre-push and CI never subset.

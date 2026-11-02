@@ -102,6 +102,7 @@ __all__: list[str] = [
     "load_config",
     "load_delegated_commit_tests",
     "load_delegated_gate",
+    "load_delegated_pre_commit",
     "load_destructive_cli_allowlist",
     "load_gate_check_suite",
     "load_mutation_staging_dir",
@@ -1287,6 +1288,14 @@ def load_delegated_commit_tests(*, repo_root: Path) -> bool | None:
     if table is None or "delegated_commit_tests" not in table:
         return None
     return _as_bool(value=table["delegated_commit_tests"], key="delegated_commit_tests")
+
+
+def load_delegated_pre_commit(*, repo_root: Path) -> bool | None:
+    """Return the pre-commit aggregate delegation opt-in, or ``None`` when absent."""
+    table = _read_table(repo_root=repo_root)
+    if table is None or "delegated_pre_commit" not in table:
+        return None
+    return _as_bool(value=table["delegated_pre_commit"], key="delegated_pre_commit")
 
 
 def load_gate_check_suite(*, repo_root: Path) -> tuple[str, ...] | None:
