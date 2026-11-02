@@ -50,9 +50,11 @@ lan_ssh_fallback_must_stay_running: [tailscaled.service, k3s.service]
 # hp-xubuntu
 lan_ssh_fallback_interface: enp11s0
 lan_ssh_fallback_address: 192.168.1.4
+# fabro-server.service left the list on 2026-11-02: hp's legacy Fabro unit is
+# stopped, disabled and retained read-only (livespec-dev-tooling-yw7via), so a
+# before/after "must stay running" check on it would refuse every apply.
 lan_ssh_fallback_must_stay_running:
-  [tailscaled.service, k3s-agent.service, docker.service,
-   fabro-server.service]
+  [tailscaled.service, k3s-agent.service, docker.service]
 # gmktec-xubuntu
 lan_ssh_fallback_interface: eno1
 lan_ssh_fallback_address: 192.168.1.156
