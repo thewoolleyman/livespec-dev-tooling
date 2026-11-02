@@ -58,6 +58,14 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.148.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.148.0...v1.148.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* cover retention liveness scan reuse ([b0e541f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/b0e541f97ce6c995052e44a84f31e2c7a6f4a1b7))
+* make retention liveness scan testable ([6d79dd2](https://github.com/thewoolleyman/livespec-dev-tooling/commit/6d79dd21a174bc90e44a0b20fc7b967bf88fdddf))
+
 ## [1.148.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.147.0...v1.148.0) (2026-11-02)
 
 
