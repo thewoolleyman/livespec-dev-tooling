@@ -6,8 +6,13 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SHELL_TREES = ("ansible/", "ci-runner/", "dev-tooling/", "scripts/")
+_AGENT_JOIN_TOKEN_EXIT_TEST = _REPO_ROOT / (
+    "ci-runner/k3s/secret-reinjection/seed-k3s-agent-join-token-exit-tests.sh"
+)
 _EARLY_READER = re.compile(
     r"""\|\s*(?:
         grep\b[^\n]*(?:-[A-Za-z]*q\b|--quiet\b|-m\s*1\b|-m1\b)
@@ -54,3 +59,29 @@ def test_pipefail_scripts_do_not_use_early_exiting_pipeline_readers() -> None:
                 violations.append(f"{path.relative_to(_REPO_ROOT)}:{line_number}: {line.strip()}")
 
     assert not violations, "\n".join(violations)
+
+
+def test_pipefail_sweep_detects_an_unsafe_reader(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The sweep rejects the reader shape that loses pipefail's verdict."""
+    script = tmp_path / "unsafe-reader.sh"
+    script.write_text("set -o pipefail\nproducer | grep -q needle\n", encoding="utf-8")
+    monkeypatch.setitem(globals(), "_tracked_shell_paths", lambda: (script,))
+    monkeypatch.setitem(globals(), "_REPO_ROOT", tmp_path)
+
+    with pytest.raises(AssertionError, match=r"unsafe-reader\.sh:2:"):
+        test_pipefail_scripts_do_not_use_early_exiting_pipeline_readers()
+
+
+def test_agent_join_token_exit_test_retains_its_original_verdict() -> None:
+    """Replacing `grep -q` must not relax aligned-output assertions."""
+    completed = subprocess.run(
+        [_AGENT_JOIN_TOKEN_EXIT_TEST],
+        cwd=_REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr

@@ -179,19 +179,19 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -xF "target: ${TARGET}" >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF "target:   ${TARGET}" >/dev/null; then
   ok "A2  the plan names the CLUSTER_TOKEN_FILE the profile carries"
 else
   no "A2  the plan names the CLUSTER_TOKEN_FILE the profile carries"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep -xF 'mode: 0600 root:root' >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep -xF 'mode:     0600 root:root' >/dev/null; then
   ok "A3  the plan names the mode 0600 root:root"
 else
   no "A3  the plan names the mode 0600 root:root"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep "^parent: ${TARGET_DIR} (exists" >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep "^parent:   ${TARGET_DIR} (exists" >/dev/null; then
   ok "A4  the plan reports an existing parent as existing"
 else
   no "A4  the plan reports an existing parent as existing"
@@ -422,8 +422,8 @@ printf '\n== E. the committed gmktec-xubuntu profile plans the node'"'"'s own pa
 run_seed "$TRIPBIN" --dry-run "$AGENT_COMMITTED"
 
 if [ "$REPLY_RC" -eq 0 ] \
-   && printf '%s\n' "$REPLY_OUT" | grep -xF 'target: /etc/rancher/k3s/agent-join-token' \
- >/dev/null   && printf '%s\n' "$REPLY_OUT" | grep -xF 'node: gmktec-xubuntu' >/dev/null; then
+   && printf '%s\n' "$REPLY_OUT" | grep -xF 'target:   /etc/rancher/k3s/agent-join-token' >/dev/null \
+   && printf '%s\n' "$REPLY_OUT" | grep -xF 'node:     gmktec-xubuntu' >/dev/null; then
   ok "E1  the committed profile plans the seed of /etc/rancher/k3s/agent-join-token on gmktec-xubuntu"
 else
   no "E1  the committed profile plans the seed of /etc/rancher/k3s/agent-join-token on gmktec-xubuntu (rc=${REPLY_RC})"
@@ -439,8 +439,8 @@ fi
 # The defect this fixed, asserted on the COMMITTED value: whether or not
 # /etc/rancher/k3s exists on the machine running this suite, the plan for that
 # node is never a refusal — it either finds the directory or makes it.
-if printf '%s\n' "$REPLY_OUT" | grep '^parent: /etc/rancher/k3s (' \
- >/dev/null   && ! printf '%s\n' "$REPLY_OUT" | grep 'would refuse' >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep '^parent:   /etc/rancher/k3s (' >/dev/null \
+   && ! printf '%s\n' "$REPLY_OUT" | grep 'would refuse' >/dev/null; then
   ok "E3  the committed profile's parent is never a refusal, on a fresh node or a provisioned one"
 else
   no "E3  the committed profile's parent is never a refusal, on a fresh node or a provisioned one"
@@ -476,7 +476,7 @@ else
   printf '%s\n' "$REPLY_OUT"
 fi
 
-if printf '%s\n' "$REPLY_OUT" | grep "^parent: ${FRESH_PARENT} (absent.*will be created 0755 root:root >/dev/null)$"; then
+if printf '%s\n' "$REPLY_OUT" | grep "^parent:   ${FRESH_PARENT} (absent.*will be created 0755 root:root)$" >/dev/null; then
   ok "F2  the plan's parent line says it will be created 0755 root:root"
 else
   no "F2  the plan's parent line says it will be created 0755 root:root"
