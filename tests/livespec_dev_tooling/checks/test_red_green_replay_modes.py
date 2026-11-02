@@ -14,6 +14,9 @@ leading underscore stripped).
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
 
 __all__: list[str] = []
 
@@ -50,6 +53,57 @@ def test_red_green_replay_modes_helpers_importable() -> None:
     assert callable(module._handle_red_mode)  # noqa: SLF001
     assert callable(module._handle_green_mode)  # noqa: SLF001
     assert callable(module._handle_suite_green_mode)  # noqa: SLF001
+
+
+def test_red_leg_uses_a_delegated_verdict_and_records_its_job_evidence(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A delegated Red learns failure from the Job without running pytest locally."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    modes = _load_modes()
+    assert hasattr(modes, "run_replay")
+    test_path = tmp_path / "tests" / "test_red.py"
+    test_path.parent.mkdir()
+    test_path.write_text("def test_red() -> None:\n    assert False\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    local_pytest = Mock()
+    recorded: list[tuple[str, str]] = []
+
+    def delegated(*, repo_root: Path, pytest_argv: list[str]) -> ReplayVerdict:
+        assert repo_root == tmp_path
+        assert str(test_path) in pytest_argv
+        return ReplayVerdict(
+            local=False,
+            reason="the Job reported a failing Red test",
+            job_name="gate-red-1",
+            tree_hash="a" * 40,
+            exit_status=1,
+            output_checksum="sha256:remote-output",
+        )
+
+    def record(*, msg_path: Path, trailers: tuple[tuple[str, str], ...]) -> None:
+        assert msg_path.name == "COMMIT_EDITMSG"
+        recorded.extend(trailers)
+
+    monkeypatch.setattr(modes, "run_replay", delegated)
+    monkeypatch.setattr(modes.subprocess, "run", local_pytest)
+    monkeypatch.setattr(modes, "write_trailers", record)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("feat: red\n", encoding="utf-8")
+
+    assert (
+        modes._handle_red_mode(  # noqa: SLF001
+            msg_path=message,
+            log=_RecordingLog(),
+            tests_paths=["tests/test_red.py"],
+        )
+        == 0
+    )
+    assert local_pytest.call_count == 0
+    assert ("TDD-Red-Output-Checksum", "sha256:remote-output") in recorded
+    assert ("TDD-Red-Gate-Job", "gate-red-1") in recorded
+    assert ("TDD-Red-Staged-Tree", "a" * 40) in recorded
 
 
 class _RecordingLog:
