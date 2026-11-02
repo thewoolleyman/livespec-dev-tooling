@@ -1,7 +1,8 @@
 ---
 # node_sysctl — the kernel budgets the CI runner pool needs on every node that
-# runs pods: the per-user inotify INSTANCE budget and the per-user kernel
-# keyring quota.
+# runs pods: the per-user inotify INSTANCE budget, the per-user kernel
+# keyring quota, and the default socket receive buffer that keeps flannel's
+# netlink link subscription from overrunning (bd-ib-v7h3az).
 #
 # Replaces ci-runner/k3s/phase2/node-inotify-budget/install-inotify-sysctl.sh
 # and node-keyring-budget/install-keyring-sysctl.sh. One role, because they are

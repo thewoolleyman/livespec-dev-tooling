@@ -23,6 +23,15 @@ node_sysctl_dropins:
         value: 2000
       - key: kernel.keys.maxbytes
         value: 1048576
+  # The default socket receive buffer, sized so flannel's vxlan link-subscription
+  # netlink socket (which never sets SO_RCVBUF) does not overrun on ENOBUFS under
+  # veth churn and panic k3s (bd-ib-v7h3az; livespec-n5eudb rung 4). A socket
+  # takes this value when it is CREATED, so it reaches k3s at its next start.
+  - src: node-netlink-rmem/60-k3s-netlink-rmem-default.conf
+    dest: /etc/sysctl.d/60-k3s-netlink-rmem-default.conf
+    keys:
+      - key: net.core.rmem_default
+        value: 4194304
 # The untracked drop-in the keyring file replaces (same values, an earlier
 # lane's name). Removed so two files cannot disagree later.
 node_sysctl_legacy_dropins:
