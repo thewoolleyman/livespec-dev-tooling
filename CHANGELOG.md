@@ -58,6 +58,17 @@ returned exit 1 when `.github/workflows/ci.yml` was missing; it
 now returns exit 0 silently, with the test renamed from
 `test_missing_ci_yml_fails` to `test_missing_ci_yml_is_graceful`.
 
+## [1.152.1](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.152.0...v1.152.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **ci-runner:** apply the gate cache kill switch in an init container ([de4baf5](https://github.com/thewoolleyman/livespec-dev-tooling/commit/de4baf5a97e6961d699d9ee0cadc3e9bdd559f6f))
+* **ci-runner:** route gate Jobs' locked uv artifacts through the PyPI files proxy ([0a90e0d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/0a90e0dc7360434554196c80dfcca5002b966be8))
+* **ci-runner:** stop the PyPI proxy forwarding Accept-Encoding on /simple/ ([9816b97](https://github.com/thewoolleyman/livespec-dev-tooling/commit/9816b975da222d6ff2791b44b06e911bbbc42c56))
+* cover delegated pre-commit suite fallback ([74b572f](https://github.com/thewoolleyman/livespec-dev-tooling/commit/74b572f369e7e085d30504842e4301851c9056fa))
+* derive delegated pre-commit bootstrap ([3e6ac0d](https://github.com/thewoolleyman/livespec-dev-tooling/commit/3e6ac0d25744bcf0ebbd91e7b3528d7c7187fb68))
+
 ## [1.152.0](https://github.com/thewoolleyman/livespec-dev-tooling/compare/v1.151.0...v1.152.0) (2026-11-02)
 
 
