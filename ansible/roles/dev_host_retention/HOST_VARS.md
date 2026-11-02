@@ -58,6 +58,8 @@ with no installed runner is SKIPPED and says so.
 | `dev_host_retention_tmp_threshold_percent` | `75` | `/tmp` used-share alert threshold |
 | `dev_host_retention_bulk_dump_dir` | `/var/tmp/livespec-dumps` | dump directory, required to resolve onto the root filesystem and never tmpfs |
 | `dev_host_retention_bulk_dump_cap_bytes` | `21474836480` | 20 G (20 GiB) bulk-dump cap; the oldest files go first |
+| `dev_host_retention_retired_fstrim_cron` | `/etc/cron.hourly/fstrim` | the hand-installed hourly fstrim cron the role keeps ABSENT; see "Trim cadence" below |
+| `dev_host_retention_fstrim_timer` | `fstrim.timer` | the weekly systemd trim timer the role keeps enabled and started |
 | `dev_host_retention_capacity_repeat_interval_seconds` | `3600` | one-hour minimum interval between repeated capacity notifications per filesystem |
 | `dev_host_retention_user` | `root` | the login the retention runs as; see below, it is the one value the dev host must set |
 | `dev_host_retention_uv_bin` | `/usr/bin/uv` | absolute path to the uv executable the retention invokes while pruning that user's cache |
@@ -131,7 +133,18 @@ To run one retention by hand — the same thing the timer does:
 sudo -u ubuntu /usr/local/sbin/livespec-dev-host-retention
 ```
 
-## Rollback
+## Trim cadence
+
+`/` is trimmed two ways, and the role keeps it that way: the root filesystem's
+online `discard` mount option trims blocks as they are freed, and systemd's
+weekly `fstrim.timer` sweeps whatever that misses. The role REMOVES
+`/etc/cron.hourly/fstrim`, a `fstrim /` every hour that was hand-installed on
+2026-01-06 and owned by no package. Measured 2026-11-02, one hourly run took
+10 min 57 s in uninterruptible IO wait and discarded about 85 GiB, raising IO
+pressure from :17 to :45 past every hour (2.4-3.2 TiB of discards a day), all
+of it free space online discard had already trimmed. The maintainer approved
+its removal.
+
 
 ```bash
 sudo systemctl disable --now livespec-dev-host-retention.timer

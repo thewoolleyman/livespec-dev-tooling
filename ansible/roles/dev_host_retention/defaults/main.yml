@@ -64,3 +64,9 @@ dev_host_retention_randomized_delay_sec: 30m
 # of every governed checkout, and the first run after this role lands walks the
 # whole backlog.
 dev_host_retention_timeout_start_sec: 30min
+
+# The hourly fstrim cron this role keeps absent (see tasks/fstrim_cron.yml).
+# The weekly systemd `fstrim.timer` and the root filesystem's online `discard`
+# mount option stay; the role keeps the timer enabled and started.
+dev_host_retention_retired_fstrim_cron: /etc/cron.hourly/fstrim
+dev_host_retention_fstrim_timer: fstrim.timer
