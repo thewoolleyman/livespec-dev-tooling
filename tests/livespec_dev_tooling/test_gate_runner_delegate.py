@@ -300,3 +300,30 @@ def test_a_cluster_gate_uses_a_temporary_index_tree_and_records_its_job(
     pushed = captured["request"]
     assert pushed.source_ref != "HEAD"
     assert pushed.tree_hash == outcome.tree_hash
+
+
+def test_a_cluster_gate_without_a_verdict_never_runs_the_command_locally(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lost Job returns the runner's no-verdict status without a local retry."""
+    from returns.result import Failure
+
+    from livespec_dev_tooling.gate_remote_invocation import GateStepFailed
+
+    module = importlib.import_module("livespec_dev_tooling.gate_runner_delegate")
+    root, _ = _init_repo(tmp_path=tmp_path)
+    invoked: list[object] = []
+
+    monkeypatch.setattr(
+        module,
+        "gate_remote_request",
+        lambda **_kwargs: Failure(
+            GateStepFailed(step="submit", argv=(), returncode=None, detail="lost")
+        ),
+    )
+    monkeypatch.setattr(module, "run_gated_push", lambda **kwargs: invoked.append(kwargs))
+
+    outcome = module.run_cluster_gate(repo_root=root, command=("just", "check"))
+
+    assert outcome.exit_status == 75
+    assert invoked == []
