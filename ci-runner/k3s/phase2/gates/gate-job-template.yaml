@@ -544,6 +544,16 @@ spec:
             # cannot drift. Keep these in step with that file's container env.
             - name: UV_CACHE_DIR
               value: /__w/_warm/uv
+            # uvx and unlocked build dependencies read the Simple API. The
+            # proxy rewrites its artifact links through the cached /packages/
+            # route, so a tool environment misses use the same warm service.
+            - name: UV_DEFAULT_INDEX
+              value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple
+            # Frozen locks retain absolute files.pythonhosted.org URLs. The
+            # gate script probes this origin per artifact before replacing only
+            # URLs the proxy can serve; a miss remains direct PyPI.
+            - name: PYPI_FILES_PROXY
+              value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
             - name: CI_CACHE_KILL_SWITCH
               value: ""
             - name: SCCACHE_REDIS_ENDPOINT

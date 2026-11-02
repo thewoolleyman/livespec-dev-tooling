@@ -57,6 +57,7 @@
 #      shell-carrying form is refused at render time;
 #   S. the uv cache path is backed by a generic ephemeral local-path work volume,
 #      so the provisioner seeds the current warm generation before the gate starts.
+#   T. uv and uvx misses resolve through the in-cluster PyPI files proxy.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -117,6 +118,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RENDERER="${SCRIPT_DIR}/render-gate-job.sh"
 TEMPLATE="${SCRIPT_DIR}/gate-job-template.yaml"
 HOOK_POD_TEMPLATE="${SCRIPT_DIR}/../arc/hook-pod-template.yaml"
+PYPI_PROXY_TEMPLATE="${SCRIPT_DIR}/../warm-cache/pypi-proxy/pypi-proxy.yaml"
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "${SCRATCH}"' EXIT
 
@@ -130,6 +132,7 @@ fail() { echo "  FAIL  $1"; failures=$((failures + 1)); }
 [ -x "${RENDERER}" ] || { echo "FATAL: ${RENDERER} not found or not executable" >&2; exit 1; }
 [ -f "${TEMPLATE}" ] || { echo "FATAL: ${TEMPLATE} not found" >&2; exit 1; }
 [ -f "${HOOK_POD_TEMPLATE}" ] || { echo "FATAL: ${HOOK_POD_TEMPLATE} not found" >&2; exit 1; }
+[ -f "${PYPI_PROXY_TEMPLATE}" ] || { echo "FATAL: ${PYPI_PROXY_TEMPLATE} not found" >&2; exit 1; }
 
 # --- fixture repositories -----------------------------------------------------
 make_repo() {
@@ -356,6 +359,26 @@ if [ -n "${gate_cache_mount}" ] && \
   pass "UV_CACHE_DIR is under a local-path generic ephemeral volume"
 else
   fail "UV_CACHE_DIR is not mounted from a local-path generic ephemeral volume"
+fi
+
+echo "== T. uv and uvx misses resolve through the in-cluster PyPI files proxy =="
+# A frozen uv.lock carries absolute file-host URLs; uvx first reads Simple API
+# metadata. Both routes must reach the one proxy, whose Simple response has to
+# be rewritten before uv sees it. Clearing Accept-Encoding is load-bearing:
+# nginx sub_filter cannot rewrite a compressed upstream response.
+proxy_index="$(grep -A1 -F 'name: UV_DEFAULT_INDEX' "${out_a}" | grep -oE 'value: .*' | head -1)"
+proxy_origin="$(grep -A1 -F 'name: PYPI_FILES_PROXY' "${out_a}" | grep -oE 'value: .*' | head -1)"
+if [ "${proxy_index}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple' ]; then
+  fail "the gate does not set UV_DEFAULT_INDEX to the PyPI files proxy Simple API"
+elif [ "${proxy_origin}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081' ]; then
+  fail "the gate does not name the PyPI files proxy origin for locked artifacts"
+elif ! grep -F 'location /simple/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
+     ! grep -F 'proxy_set_header Accept-Encoding "";' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
+     ! grep -F 'https://files.pythonhosted.org/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
+     ! grep -F 'http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
+  fail "the PyPI files proxy does not provide a decodable Simple API that rewrites artifacts through /packages/"
+else
+  pass "uv and uvx use the proxy Simple API and its rewritten artifact URLs"
 fi
 
 echo "== I. the fetch brings the RANGE and a resolvable diff base =="
