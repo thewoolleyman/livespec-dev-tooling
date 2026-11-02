@@ -137,6 +137,54 @@ def test_retention_keeps_a_live_session_when_an_environment_cannot_be_read(
     assert done.stderr == ""
 
 
+def test_retention_reads_each_process_environment_once_for_all_aged_sessions(
+    *, tmp_path: Path
+) -> None:
+    """One liveness scan serves every aged session directory in the run."""
+    assert _SCRATCH.is_file(), "the committed scratch helper must implement liveness discovery"
+    tmp_root = tmp_path / "tmp"
+    for session_id in ("live-one", "live-two", "dead"):
+        session = tmp_root / "claude-1000" / "project" / session_id
+        session.mkdir(parents=True)
+        _age(path=session, seconds=_AGED_SECONDS)
+    proc_root = tmp_path / "proc"
+    for pid, session_id in (("100", "live-one"), ("101", "live-two"), ("102", "other")):
+        environment = proc_root / pid / "environ"
+        environment.parent.mkdir(parents=True)
+        environment.write_bytes(f"CLAUDE_CODE_SESSION_ID={session_id}\0".encode())
+    tr = shutil.which("tr")
+    assert tr is not None, "the retention helper requires tr for process environments"
+    tr_log = tmp_path / "tr.log"
+    tr_bin_dir = tmp_path / "tr-bin"
+    tr_bin_dir.mkdir()
+    _stub(
+        directory=tr_bin_dir,
+        name="tr",
+        body=f'#!/bin/sh\nprintf x >> "$TR_LOG"\nexec {tr} "$@"\n',
+    )
+    bulk = tmp_path / "bulk"
+    environment = _hermetic_env(tmp_path=tmp_path, tmp_root=tmp_root, bulk=bulk)
+    environment["PATH"] = f"{tr_bin_dir}:{environment['PATH']}"
+    environment |= {
+        "LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT": str(proc_root),
+        "TR_LOG": str(tr_log),
+    }
+
+    done = subprocess.run(
+        ["bash", str(_RETENTION)],
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (tmp_root / "claude-1000" / "project" / "live-one").exists()
+    assert (tmp_root / "claude-1000" / "project" / "live-two").exists()
+    assert not (tmp_root / "claude-1000" / "project" / "dead").exists()
+    assert len(tr_log.read_text(encoding="utf-8")) == 3
+
+
 def test_retention_reclaims_dead_tmp_scratch_pytest_and_oldest_bulk_dumps(
     *, tmp_path: Path
 ) -> None:

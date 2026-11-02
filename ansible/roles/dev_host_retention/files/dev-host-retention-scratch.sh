@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 # Scratch retention helpers sourced by dev-host-retention.sh.
 
-session_is_live() {
-    local session_id=$1 proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} process environment
+declare -A LIVE_SESSION_IDS=()
+
+scan_live_session_ids() {
+    local proc_root=${LIVESPEC_DEV_HOST_RETENTION_PROC_ROOT:-/proc} process environment entry
+    LIVE_SESSION_IDS=()
     for process in "$proc_root"/[0-9]*; do
         environment="$process/environ"
         [[ -r $environment ]] || continue
-        if tr '\0' '\n' 2>/dev/null <"$environment" | grep -Fxq "CLAUDE_CODE_SESSION_ID=$session_id"; then
-            return 0
-        fi
+        while IFS= read -r entry; do
+            case $entry in
+                CLAUDE_CODE_SESSION_ID=*) LIVE_SESSION_IDS[${entry#CLAUDE_CODE_SESSION_ID=}]=1 ;;
+            esac
+        done < <(tr '\0' '\n' 2>/dev/null <"$environment")
     done
-    return 1
+}
+
+session_is_live() {
+    local session_id=$1
+    [[ -v "LIVE_SESSION_IDS[$session_id]" ]]
 }
 
 older_than() {
@@ -22,6 +31,7 @@ older_than() {
 
 remove_old_scratch() {
     local tmp_root=$1 seconds=$2 session
+    scan_live_session_ids
     for session in "$tmp_root"/claude-*/*/*; do
         [[ -d $session ]] || continue
         older_than "$session" "$seconds" || continue
