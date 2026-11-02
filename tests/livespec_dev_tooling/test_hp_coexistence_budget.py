@@ -1,24 +1,23 @@
-"""hp-xubuntu's coexistence budget: the kubelet reservations, and the record beside them.
+"""hp-xubuntu's factory-worker kubelet budget: the reservations, and the record beside them.
 
 WHAT THIS FILE GRADES (work-item livespec-dev-tooling-7we6po, Definition of Done
-assertion 4). hp-xubuntu runs a k3s agent, the Docker sandbox slice every Fabro
-sandbox container joins, two Fabro server instances and the page cache, all on
-one 16-CPU / 30 GB machine. The kubelet must hold capacity back from the pods it
-would otherwise schedule, or the first node-pressure eviction takes a running
-factory dispatch with it. Two things are therefore required: the reservations
-themselves on this node's k3s agent configuration, and the BUDGET — the
-arithmetic, the resulting pod-allocatable figures and the condition under which
-they are revisited — recorded beside the values it derives from.
+assertion 4, re-sized 2026-11-02 for plan kubernetes-sandbox-backend, item
+bd-ib-kogktm). hp-xubuntu runs a k3s agent as a factory-only node on one 16-CPU /
+30 GB machine. The kubelet must hold back what the host itself needs, or the
+first node-pressure eviction takes a running factory dispatch with it. It offers
+the rest to factory pods. Two things are therefore required: the reservations
+themselves on this node's k3s agent configuration, and the BUDGET (the
+arithmetic, the resulting pod-allocatable figures and the conditions under which
+they are revisited) recorded once, beside the role that renders the values.
 
-WHERE THE RECORD LIVES, AND WHY THERE. Beside the slice limits, in
-`ansible/roles/docker_sandbox_slice/HOST_VARS.md`. That file already carries
-`MemoryHigh 22G`, `MemoryMax 24G` and `CPUQuota 1400%`, their derivation, and an
-Expiry condition that IS this budget's revisit condition — the Kubernetes
-sandbox backend cutover steps the slice budget down, and the reservations move
-with it. The slice ceiling is the dominant term in every line of the arithmetic,
-so recording the budget anywhere else would be recording it away from the numbers
-it is computed from. hp's profile points at it rather than restating it, because
-two copies of one budget is two budgets.
+WHERE THE RECORD LIVES, AND WHY THERE. In `ansible/roles/k3s_config/HOST_VARS.md`.
+Until 2026-11-02 it lived beside the Docker sandbox slice limits in
+`ansible/roles/docker_sandbox_slice/HOST_VARS.md`, because the slice ceiling
+(`24G` / `1400%`) was the dominant term in every line of the arithmetic. The slice
+was retired on hp that day (PR #3078), so the budget derives from nothing in that
+role any more. It now sits with the role that renders the drop-in. hp's profile
+points at it rather than restating it, because two copies of one budget are two
+budgets.
 
 WHERE THE VALUES LIVE. In hp's own committed phase0 profile, as `KUBELET_ARGS` —
 the per-node key, because a reservation is measured against the OTHER workloads
@@ -64,29 +63,32 @@ _SHARED_AGENT_CONFIG = (
     _REPO_ROOT / "ci-runner" / "k3s" / "phase2" / "k3s-config" / "config.agent.yaml"
 )
 _HP_PROFILE = _REPO_ROOT / "ci-runner" / "k3s" / "phase0-bare-metal" / "profiles" / "hp-xubuntu.env"
-_SLICE_DEFAULTS = _ANSIBLE / "roles" / "docker_sandbox_slice" / "defaults" / "main.yml"
-_BUDGET_RECORD = _ANSIBLE / "roles" / "docker_sandbox_slice" / "HOST_VARS.md"
+_BUDGET_RECORD = _K3S_CONFIG / "HOST_VARS.md"
 
 # The heading the record lives under, and the figures the Definition of Done
 # names. Stated because the item states them: the reservations, the eviction
-# thresholds, the slice limits and hp's resulting pod-allocatable CPU and memory.
-_BUDGET_HEADING = "## Coexistence with the k3s agent"
+# thresholds and hp's resulting pod-allocatable CPU and memory.
+_BUDGET_HEADING = "## hp-xubuntu factory-worker kubelet budget"
 _EXPECTED_RESERVED = (
-    "system-reserved=cpu=14500m,memory=25088Mi",
-    "kube-reserved=cpu=1000m,memory=1024Mi",
+    "system-reserved=cpu=1000m,memory=2048Mi",
+    "kube-reserved=cpu=500m,memory=1024Mi",
     "eviction-hard=memory.available<512Mi,nodefs.available<10%,imagefs.available<10%",
 )
 # The arithmetic's own answers, which the record must state so a reader is not
-# left to do the subtraction: 16000m - 14500m - 1000m, and (about) 29Gi -
-# 25088Mi - 1024Mi - 512Mi.
-_ALLOCATABLE_CPU = "500m"
-_ALLOCATABLE_MEMORY = "3Gi"
+# left to do the subtraction: 16000m - 1000m - 500m, and 32176236Ki (the node's
+# measured capacity) - 2048Mi - 1024Mi - 512Mi = 28506220Ki.
+_NODE_CAPACITY_MEMORY = "32176236Ki"
+_ALLOCATABLE_CPU = "14500m"
+_ALLOCATABLE_MEMORY = "28506220Ki"
+# What the allocatable line is sized to fund: three factory pods at the factory
+# workflow's declared requests and limits.
+_FACTORY_POD_CPU = "4"
+_FACTORY_POD_MEMORY = "7630Mi"
+_FACTORY_PODS_FUNDED = 3
+_MI_PER_KI = 1024
 
 _PLACEHOLDER = re.compile(r"\{\{ (?P<name>[a-z0-9_]+) \}\}")
 _ROLE_DEFAULT = re.compile(r"^(?P<name>k3s_config_[a-z_]+): (?P<value>\S.*)$", re.MULTILINE)
-_SLICE_DEFAULT = re.compile(
-    r"^(?P<name>docker_sandbox_slice_[a-z_]+): (?P<value>\S.*)$", re.MULTILINE
-)
 _KUBELET_ARG_LIST = re.compile(r"^kubelet-arg(?P<append>\+?): (?P<records>\[.*\])$", re.MULTILINE)
 _PROFILE_LINE = re.compile(r"^KUBELET_ARGS=(?P<value>.*)$", re.MULTILINE)
 
@@ -346,56 +348,83 @@ def test_the_role_renders_both_per_node_drop_ins_only_on_an_agent() -> None:
 # --- the record, beside the values it derives from -------------------------
 
 
-def test_the_coexistence_budget_is_recorded_beside_the_slice_limits_it_derives_from() -> None:
-    """The arithmetic, the resulting allocatable figures, and the revisit condition.
+def test_the_factory_worker_budget_is_recorded_beside_the_role_that_renders_it() -> None:
+    """The arithmetic, the resulting allocatable figures, and the revisit conditions.
 
-    Every number is asserted against the file that OWNS it rather than against a
-    literal here: the slice limits come out of the `docker_sandbox_slice`
-    defaults, the reservations out of hp's profile. A record that quoted a slice
-    ceiling the role no longer declares would be a budget computed from a number
-    that is not there any more, which is the failure mode of writing the
-    arithmetic down at all.
+    The reservations are asserted against hp's profile, which OWNS them, rather
+    than against a literal alone: a record quoting a reservation the profile no
+    longer declares would be a budget computed from a number that is not there
+    any more, which is the failure mode of writing the arithmetic down at all.
     """
     record = _BUDGET_RECORD.read_text(encoding="utf-8")
     assert _BUDGET_HEADING in record, (
         f"{_BUDGET_RECORD.relative_to(_REPO_ROOT)} must carry a `{_BUDGET_HEADING}` section: "
-        f"the slice limits are the dominant term in every line of hp's kubelet budget, so "
-        f"the budget belongs beside them and not in a file of its own"
+        f"the k3s_config role renders hp's kubelet reservations, so the budget belongs beside "
+        f"it and not in a file of its own"
     )
     section = record.split(_BUDGET_HEADING, 1)[1].split("\n## ", 1)[0]
 
-    slice_defaults = _declared(pattern=_SLICE_DEFAULT, source=_SLICE_DEFAULTS)
-    for name in (
-        "docker_sandbox_slice_memory_high",
-        "docker_sandbox_slice_memory_max",
-        "docker_sandbox_slice_cpu_quota",
-    ):
-        limit = _scalar(
-            declared=slice_defaults,
-            name=name,
-            source=_SLICE_DEFAULTS,
-            why="it is a term in hp's kubelet reservation budget",
-        )
-        assert limit in section, (
-            f"the budget must state the slice limit `{name}` ({limit}) it is computed from, "
-            f"so a reader can check the subtraction without leaving the file"
-        )
-    for record_line in _EXPECTED_RESERVED:
+    declared = _profile_kubelet_args(text=_HP_PROFILE.read_text(encoding="utf-8")).split()
+    for record_line in declared:
         assert record_line in section, (
             f"the budget must state the reservation {record_line!r} verbatim, so the record "
             f"and hp's profile cannot disagree about what the kubelet holds back"
         )
-    for figure in (_ALLOCATABLE_CPU, _ALLOCATABLE_MEMORY):
+    for figure in (_NODE_CAPACITY_MEMORY, _ALLOCATABLE_CPU, _ALLOCATABLE_MEMORY):
         assert figure in section, (
-            f"the budget must state hp's resulting pod-allocatable figure {figure!r}: the "
-            f"Definition of Done asks for the OUTCOME and not only the inputs, and a reader "
-            f"left to subtract four numbers will not"
+            f"the budget must state {figure!r}: the Definition of Done asks for the OUTCOME "
+            f"and not only the inputs, and a reader left to subtract four numbers will not"
         )
+    for figure in (_FACTORY_POD_CPU, _FACTORY_POD_MEMORY):
+        assert f"`{figure}`" in section, (
+            f"and the factory pod size {figure!r} the allocatable line is sized to fund, so a "
+            f"change to the workflow's declared resources visibly invalidates the fit"
+        )
+    assert "ADMISSION_CAPACITY_C" in section, (
+        "the budget must say why hp's churn-slot capacity stays 0 while its allocatable "
+        "grows: churn slots count CI runners, and this line funds factory pods"
+    )
     assert "revisit" in section.lower(), (
-        f"and the condition under which the budget is revisited, which is the one part a "
+        f"and the conditions under which the budget is revisited, which is the one part a "
         f"stale record cannot tell you it is missing;\nsection={section!r}"
     )
     assert "hp-xubuntu" in section, (
-        "the budget is hp-xubuntu's, measured against hp-xubuntu's other workloads; naming "
+        "the budget is hp-xubuntu's, measured against hp-xubuntu's own capacity; naming "
         "the host is what stops the next factory host inheriting it unexamined"
+    )
+
+
+def test_the_budget_arithmetic_funds_the_factory_pods_it_names() -> None:
+    """The subtraction itself, re-done from the profile, so the record cannot drift from it."""
+    declared = _profile_kubelet_args(text=_HP_PROFILE.read_text(encoding="utf-8")).split()
+    reserved_cpu_m = 0
+    reserved_memory_ki = 0
+    for record_line in declared:
+        name, _, value = record_line.partition("=")
+        if name not in {"system-reserved", "kube-reserved"}:
+            continue
+        terms = dict(term.split("=", 1) for term in value.split(","))
+        reserved_cpu_m += int(terms["cpu"].removesuffix("m"))
+        reserved_memory_ki += int(terms["memory"].removesuffix("Mi")) * _MI_PER_KI
+    eviction_ki = 512 * _MI_PER_KI
+    allocatable_cpu_m = 16000 - reserved_cpu_m
+    allocatable_memory_ki = (
+        int(_NODE_CAPACITY_MEMORY.removesuffix("Ki")) - reserved_memory_ki - eviction_ki
+    )
+    assert f"{allocatable_cpu_m}m" == _ALLOCATABLE_CPU, (
+        f"the record's CPU figure must be what the profile's reservations leave of 16000m; "
+        f"got {allocatable_cpu_m}m"
+    )
+    assert f"{allocatable_memory_ki}Ki" == _ALLOCATABLE_MEMORY, (
+        f"the record's memory figure must be what the profile's reservations and the 512Mi "
+        f"eviction threshold leave of the measured capacity; got {allocatable_memory_ki}Ki"
+    )
+    pods_cpu_m = _FACTORY_PODS_FUNDED * int(_FACTORY_POD_CPU) * 1000
+    pods_memory_ki = _FACTORY_PODS_FUNDED * int(_FACTORY_POD_MEMORY.removesuffix("Mi")) * _MI_PER_KI
+    assert (
+        pods_cpu_m <= allocatable_cpu_m
+    ), f"{_FACTORY_PODS_FUNDED} factory pods need {pods_cpu_m}m, more than {allocatable_cpu_m}m"
+    assert pods_memory_ki <= allocatable_memory_ki, (
+        f"{_FACTORY_PODS_FUNDED} factory pods need {pods_memory_ki}Ki, more than "
+        f"{allocatable_memory_ki}Ki"
     )

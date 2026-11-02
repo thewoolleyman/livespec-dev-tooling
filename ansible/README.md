@@ -151,7 +151,7 @@ restarts nothing on purpose, so the rendered file is an opinion until the next
 k3s start: on `hp-xubuntu` the reservations were written at 19:38 PDT
 2026-10-13 over an agent running since 19:19, and the live node kept reporting
 allocatable `cpu=16`, `memory=32176236Ki` for a node whose coexistence budget
-reserves nearly all of it. `reboot-ci-server.yml` reboots the SERVER, and
+of that time reserved nearly all of it. `reboot-ci-server.yml` reboots the SERVER, and
 `hp-xubuntu` is the Fabro factory host, so neither a reboot nor a hand
 `systemctl restart` over ssh was available. It is an ordinary
 `just ansible-apply ansible/restart-k3s-agent.yml -e
@@ -174,7 +174,7 @@ restarts the unit, waits for the API to report the node Ready again, and prints
 the node's capacity beside its allocatable so the apply's own output is the
 evidence the reservations took effect. A `--check` run performs the pod read,
 says the restart is withheld, and stops. See `livespec-dev-tooling-mbj3kz` and
-`roles/docker_sandbox_slice/HOST_VARS.md` §"Coexistence with the k3s agent".
+`roles/k3s_config/HOST_VARS.md` §"hp-xubuntu factory-worker kubelet budget".
 
 `ci-pool.yml` is the k3s pool's node-local provisioning — the roles
 `install-node.sh` drove, in that step order, role-aware by each node's

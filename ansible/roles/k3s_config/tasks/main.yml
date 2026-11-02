@@ -151,12 +151,12 @@
     - k3s_config_kubelet_args | length > 0
 
 - name: Render this agent's own kubelet arguments from its committed profile
-  # THE COEXISTENCE BUDGET, AS CONFIGURATION. On a node that is also a Fabro
-  # factory host, the kubelet must hold back what the Docker sandbox slice, the
-  # Fabro servers and the page cache need, or the first node-pressure eviction
-  # takes a running dispatch with it. The records are the profile's;
-  # ../../docker_sandbox_slice/HOST_VARS.md carries the arithmetic, the resulting
-  # pod-allocatable figures and the condition under which they are revisited.
+  # THE NODE'S KUBELET BUDGET, AS CONFIGURATION. The kubelet must hold back what
+  # the host itself needs (k3s, sshd, any workload that runs beside the kubelet,
+  # the page cache), or the first node-pressure eviction takes a running
+  # dispatch with it. The records are the profile's; ../HOST_VARS.md carries the
+  # arithmetic, the resulting pod-allocatable figures and the condition under
+  # which they are revisited.
   #
   # APPENDS rather than replaces — the template emits `kubelet-arg+`, which is the
   # only form k3s's multi-file merge appends with. See the template's own header
