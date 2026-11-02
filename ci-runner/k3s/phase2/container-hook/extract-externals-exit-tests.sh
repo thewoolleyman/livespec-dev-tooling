@@ -131,7 +131,7 @@ new_storage_root() {  # new_storage_root NAME -> a fresh scratch storage root
 # or 0. The two ordering assertions below are about which line comes FIRST, so
 # they compare positions rather than mere presence.
 line_number_of() {
-  printf '%s\n' "$2" | grep -n -- "$1" | head -1 | cut -d: -f1
+  printf '%s\n' "$2" | grep -n -- "$1" | sed -n 1p | cut -d: -f1
 }
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ else
   no "--dry-run exits 0 (got ${REPLY_RC})"
   printf '%s\n' "$REPLY_OUT"
 fi
-WAIT_LINE="$(printf '%s\n' "$REPLY_OUT" | grep -F 'wait up to' | head -1)"
+WAIT_LINE="$(printf '%s\n' "$REPLY_OUT" | grep -F 'wait up to' | sed -n 1p)"
 case "$WAIT_LINE" in
   *"wait up to 120s"*"every 2s"*"${SOCKET}"*"ctr version"*)
     ok "the plan's wait step states the bound, the cadence, the socket and the probe" ;;
@@ -174,7 +174,7 @@ case "$REPLY_OUT" in
   *) no "--dry-run reports the bound it was given" ;;
 esac
 run_extract 0 --dry-run --wait-seconds two --image "$FIXTURE_IMAGE" --storage-root "$(new_storage_root dry3)"
-if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep -q 'wait-seconds must be a non-negative integer'; then
+if [ "$REPLY_RC" -ne 0 ] && printf '%s\n' "$REPLY_OUT" | grep 'wait-seconds must be a non-negative integer' >/dev/null; then
   ok "a non-numeric --wait-seconds is refused, naming it"
 else
   no "a non-numeric --wait-seconds is refused, naming it (rc=${REPLY_RC}: ${REPLY_OUT})"
@@ -201,7 +201,7 @@ else
   no "the run probed \`ctr version\` until it succeeded (expected 3, got ${version_calls})"
   cat "$CTR_LOG"
 fi
-FIRST_PULL="$(grep -n 'images pull' "$CTR_LOG" | head -1 | cut -d: -f1)"
+FIRST_PULL="$(grep -n 'images pull' "$CTR_LOG" | sed -n 1p | cut -d: -f1)"
 LAST_VERSION="$(grep -n '^version$' "$CTR_LOG" | tail -1 | cut -d: -f1)"
 if [ -n "$FIRST_PULL" ] && [ -n "$LAST_VERSION" ] && [ "$LAST_VERSION" -lt "$FIRST_PULL" ]; then
   ok "the pull was issued only AFTER a probe succeeded"

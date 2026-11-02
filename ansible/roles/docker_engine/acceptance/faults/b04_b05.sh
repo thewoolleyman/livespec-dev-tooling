@@ -14,4 +14,4 @@ vm $I "sudo bash -c 'echo committed > /var/lib/docker-engine-guard/runs/$RUN/pha
 if [ "$CASE" = b05 ]; then vm $I 'sudo systemctl reboot' 2>/dev/null; sleep 20; for _ in $(seq 1 60); do vm $I true 2>/dev/null && break; sleep 5; done; echo "back at $(date -u +%T)"; sleep 20; fi
 vm $I "sudo bash -c 'for u in containerd.service docker.service docker.socket; do echo \$u \$(systemctl is-enabled \$u)/\$(systemctl is-active \$u); done'"
 converge $I tmp/faults/$CASE-vm$I.converge.log
-vm $I "sudo bash -c 'echo phase=\$(cat /var/lib/docker-engine-guard/runs/$RUN/phase); cat /var/lib/docker-engine-guard/confirmed; echo; for u in containerd.service docker.service docker.socket; do echo \$u \$(systemctl is-enabled \$u)/\$(systemctl is-active \$u); done; iptables -S FORWARD | head -1; ls /run/docker-engine-guard/'"
+vm $I "sudo bash -c 'echo phase=\$(cat /var/lib/docker-engine-guard/runs/$RUN/phase); cat /var/lib/docker-engine-guard/confirmed; echo; for u in containerd.service docker.service docker.socket; do echo \$u \$(systemctl is-enabled \$u)/\$(systemctl is-active \$u); done; iptables -S FORWARD | sed -n 1p; ls /run/docker-engine-guard/'"

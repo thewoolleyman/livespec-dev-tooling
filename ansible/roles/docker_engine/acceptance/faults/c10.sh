@@ -14,7 +14,7 @@ RUN=$(latest_run $I); G=/var/lib/docker-engine-guard/runs/$RUN
 kill -STOP -- -$CPID; echo "######## C-10 run=$RUN: controller frozen at published $(date -u +%T)"
 sleep 120; kill -CONT -- -$CPID; echo "controller resumed $(date -u +%T)"
 until [ "$(phase_of $I)" != published ] || ! kill -0 $CPID 2>/dev/null; do sleep 0.3; done; sleep 2
-vm $I "sudo bash -c 'echo deadline: \$(cat $G/deadline.json); echo now_monotonic: \$(cut -d\" \" -f1 /proc/uptime); systemctl show docker-engine-deadman-$RUN.timer -p NextElapseUSecMonotonic -p LastTriggerUSecMonotonic; systemctl list-timers --all --no-pager docker-engine-deadman-$RUN.timer | head -2'"
+vm $I "sudo bash -c 'echo deadline: \$(cat $G/deadline.json); echo now_monotonic: \$(cut -d\" \" -f1 /proc/uptime); systemctl show docker-engine-deadman-$RUN.timer -p NextElapseUSecMonotonic -p LastTriggerUSecMonotonic; systemctl list-timers --all --no-pager docker-engine-deadman-$RUN.timer | sed -n 1,2p'"
 python3 - "$(vm $I "sudo cat $G/deadline.json")" "$(vm $I "systemctl show docker-engine-deadman-$RUN.timer -p NextElapseUSecMonotonic --value")" <<'PY'
 import json, sys, re
 d = json.loads(sys.argv[1])["monotonic"]

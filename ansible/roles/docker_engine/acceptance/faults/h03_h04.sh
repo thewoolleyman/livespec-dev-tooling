@@ -36,7 +36,7 @@ echo "######## H-03 after"; state
 echo; echo "######## H-04 inject: a reconfigure killed after the daemon.json write"
 vm0 'sudo bash -s' <<'GUEST'
 set -eu
-RUN=$(python3 -c 'import json;print(json.load(open("/var/lib/docker-engine-guard/confirmed"))["run"])' 2>/dev/null || ls /var/lib/docker-engine-guard/runs | head -1)
+RUN=$(python3 -c 'import json;print(json.load(open("/var/lib/docker-engine-guard/confirmed"))["run"])' 2>/dev/null || ls /var/lib/docker-engine-guard/runs | sed -n 1p)
 echo "committed run: $RUN"
 rm -f /var/lib/docker-sandbox-slice/restart-pending
 python3 - "$RUN" <<'PY'

@@ -47,7 +47,7 @@ update-alternatives --set ip6tables /usr/sbin/ip6tables-nft >/dev/null
 # gmktec has no needrestart (measured 2026-10-15). The cloud image ships it,
 # and its dpkg hook can restart services after a package transaction, which
 # would make the guest behave unlike the host it stands in for.
-if dpkg-query -W -f='${Status}' needrestart 2>/dev/null | grep -q 'install ok installed'; then
+if dpkg-query -W -f='${Status}' needrestart 2>/dev/null | grep 'install ok installed' >/dev/null; then
   DEBIAN_FRONTEND=noninteractive apt-get purge -y -q needrestart >/dev/null
 fi
 
@@ -156,7 +156,7 @@ systemctl enable --now tailscaled.service local-homelab-llama-server.service
 # 2026-10-16). Skipped when this exact k3s is already running.
 K3S_VERSION="${K3S_VERSION:-v1.36.2+k3s1}"
 if ! { systemctl is-active --quiet k3s-agent.service \
-       && /usr/local/bin/k3s --version 2>/dev/null | grep -qF "${K3S_VERSION}"; }; then
+       && /usr/local/bin/k3s --version 2>/dev/null | grep -F "${K3S_VERSION}" >/dev/null; }; then
   curl -sfL https://get.k3s.io \
     | INSTALL_K3S_VERSION="${K3S_VERSION}" INSTALL_K3S_NAME=agent \
       INSTALL_K3S_EXEC="server --node-name guard-vm --write-kubeconfig-mode 600 --disable traefik --disable servicelb --disable metrics-server" \
@@ -164,7 +164,8 @@ if ! { systemctl is-active --quiet k3s-agent.service \
 fi
 for _ in $(seq 1 60); do
   if k3s kubectl get pods -n kube-system --no-headers 2>/dev/null \
-       | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {exit !found}'; then
+       | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {print found ? 1 : 0}' \
+       | grep -x 1 >/dev/null; then
     break
   fi
   sleep 5
@@ -198,7 +199,7 @@ for fact in "net.ipv4.ip_forward=1" "net.bridge.bridge-nf-call-iptables=1"; do
     fail=1
   }
 done
-iptables -S FORWARD | grep -qx -- '-P FORWARD ACCEPT' || {
+iptables -S FORWARD | grep -x -- '-P FORWARD ACCEPT' >/dev/null || {
   echo "baseline.sh: FORWARD policy is not ACCEPT" >&2
   fail=1
 }
@@ -208,7 +209,7 @@ for absent in /var/lib/docker /etc/docker /run/docker.sock; do
     fail=1
   }
 done
-if dpkg-query -W -f='${Status}\n' docker.io containerd runc 2>/dev/null | grep -q 'install ok installed'; then
+if dpkg-query -W -f='${Status}\n' docker.io containerd runc 2>/dev/null | grep 'install ok installed' >/dev/null; then
   echo "baseline.sh: a Docker package is already installed" >&2
   fail=1
 fi
@@ -221,7 +222,8 @@ curl -sf "http://127.0.0.1:${LLM_PORT}/health" >/dev/null || {
   fail=1
 }
 k3s kubectl get pods -n kube-system --no-headers 2>/dev/null \
-  | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {exit !found}' || {
+  | awk '$1 ~ /^coredns-/ && $3 == "Running" {found=1} END {print found ? 1 : 0}' \
+  | grep -x 1 >/dev/null || {
   echo "baseline.sh: no Running CoreDNS pod on the guest's k3s" >&2
   fail=1
 }

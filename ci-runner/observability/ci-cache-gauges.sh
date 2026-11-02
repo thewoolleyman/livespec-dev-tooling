@@ -123,7 +123,7 @@ fi
 # ---- crates proxy ------------------------------------------------------------
 if status="$(curl --silent --fail --max-time 5 "${PROXY_STATUS_URL}" 2>/dev/null)"; then
   put registry_up 1
-  requests="$(printf '%s\n' "${status}" | awk 'prev ~ /server accepts handled requests/ {print $3; exit} {prev=$0}')"
+  requests="$(printf '%s\n' "${status}" | awk 'prev ~ /server accepts handled requests/ && !found {print $3; found=1} {prev=$0}')"
   if [ -n "${requests}" ]; then
     put registry_requests_total "${requests}"
     if [ -n "${prev_requests}" ] && [ "${requests}" -ge "${prev_requests}" ]; then

@@ -130,7 +130,7 @@ log "2. Derive the bundled hook version from actions/runner v${runner_version} i
 dockerfile_url="${RUNNER_DOCKERFILE_RAW}/v${runner_version}/images/Dockerfile"
 curl -fsSL --retry 5 --retry-delay 3 -o "${build}/Dockerfile" "${dockerfile_url}" \
   || die "cannot fetch ${dockerfile_url} (is v${runner_version} a real actions/runner tag?)"
-hook_version="$(sed -n -E 's/^ARG RUNNER_CONTAINER_HOOKS_VERSION=([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' "${build}/Dockerfile" | head -1)"
+hook_version="$(sed -n -E 's/^ARG RUNNER_CONTAINER_HOOKS_VERSION=([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\1/p' "${build}/Dockerfile" | sed -n 1p)"
 [ -n "${hook_version}" ] || die "no 'ARG RUNNER_CONTAINER_HOOKS_VERSION=<x.y.z>' line in ${dockerfile_url}"
 echo "hook version:   ${hook_version}  (from ${dockerfile_url})"
 

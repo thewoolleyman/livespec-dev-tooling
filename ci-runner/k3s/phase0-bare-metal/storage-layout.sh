@@ -486,10 +486,10 @@ else
   else
     note "probe:    ${controller_cli} not present — reading the controller as unconfigured"
   fi
-  if printf '%s' "$vd_show" | grep -qiE "RAID${CFG[VD_RAID_LEVEL]}([^0-9]|\$)"; then
+  if printf '%s' "$vd_show" | grep -iE "RAID${CFG[VD_RAID_LEVEL]}([^0-9]|\$ >/dev/null)"; then
     note "no change: ${controller} already carries a RAID${CFG[VD_RAID_LEVEL]} virtual disk"
   else
-    if printf '%s' "$vd_show" | grep -qiE '\bRAID[0-9]'; then
+    if printf '%s' "$vd_show" | grep -iE '\bRAID[0-9]' >/dev/null; then
       require_consent "$vd_target" "the existing virtual disk on ${controller} is deleted and replaced"
       run "$controller_cli" "${controller}/vall" delete force
     fi
@@ -501,7 +501,7 @@ else
     if [ "$enclosure" = "auto" ]; then
       if [ -x "$controller_cli" ]; then
         note "resolving the enclosure id from the controller (VD_ENCLOSURE=auto)"
-        enclosure="$("$controller_cli" "${controller}/eall" show 2>/dev/null | awk '$1 ~ /^[0-9]+$/ {print $1; exit}')"
+        enclosure="$("$controller_cli" "${controller}/eall" show 2>/dev/null | awk '$1 ~ /^[0-9]+$/ && !found {print $1; found=1}')"
         [ -n "$enclosure" ] || die "could not read an enclosure id from ${controller_cli} ${controller}/eall show; set VD_ENCLOSURE in the profile"
       else
         enclosure="<enclosure>"
@@ -540,7 +540,7 @@ stage "3/7 partition table on ${CFG[TARGET_DEVICE]}"
 target="${CFG[TARGET_DEVICE]}"
 partlabels_seen="$(probe lsblk -rno PARTLABEL "$target" | grep . || true)"
 if [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
-  if printf '%s\n' "$partlabels_seen" | grep -qxF "${CFG[PV_PARTLABEL]}"; then
+  if printf '%s\n' "$partlabels_seen" | grep -xF "${CFG[PV_PARTLABEL]}" >/dev/null; then
     note "no change: ${target} already carries a partition labelled ${CFG[PV_PARTLABEL]}"
   else
     # The next free partition number, read off the table rather than assumed:
@@ -548,7 +548,7 @@ if [ "${CFG[DISK_PLAN]}" = "free-space" ]; then
     # procedure did not install, so their count is not the procedure's to know.
     partnums_seen="$(probe lsblk -rno PARTN "$target" | grep . || true)"
     partnum=1
-    while printf '%s\n' "$partnums_seen" | grep -qxF "$partnum"; do
+    while printf '%s\n' "$partnums_seen" | grep -xF "$partnum" >/dev/null; do
       partnum=$((partnum + 1))
     done
     note "plan:     partition ${partnum} takes the largest free region of ${target}"

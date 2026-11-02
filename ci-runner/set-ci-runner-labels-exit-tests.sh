@@ -187,7 +187,7 @@ reset_scenario
 export FAKE_TIER="first_time_contributors"
 ok=1
 if run_case nonzero "weak tier refusal" -- thewoolleyman/example example-k3s; then
-  if ! wrote_variable && printf '%s' "$LAST_OUT" | grep -q "REFUSING"; then ok=0; fi
+  if ! wrote_variable && printf '%s' "$LAST_OUT" | grep "REFUSING" >/dev/null; then ok=0; fi
 fi
 record "$ok" "3  self-hosted target at a weak tier refuses, writing nothing"
 
@@ -198,7 +198,7 @@ reset_scenario
 export FAKE_TIER_FAILS=1
 ok=1
 if run_case nonzero "unreadable tier refusal" -- thewoolleyman/example example-k3s; then
-  if ! wrote_variable && printf '%s' "$LAST_OUT" | grep -q "REFUSING"; then ok=0; fi
+  if ! wrote_variable && printf '%s' "$LAST_OUT" | grep "REFUSING" >/dev/null; then ok=0; fi
 fi
 record "$ok" "4  an unreadable tier refuses the write (fail-closed)"
 
