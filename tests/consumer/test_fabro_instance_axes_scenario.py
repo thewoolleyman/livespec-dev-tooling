@@ -1309,6 +1309,27 @@ def test_an_instance_with_a_live_process_in_any_transitional_state_is_not_promot
         assert not _holds(conditions=_when(name=_RENAME_TASK), scope=scope)
 
 
+def test_an_active_instance_being_parked_is_not_promoted_before_it_stops() -> None:
+    """`service_state: stopped` is a desired end state; the unit is still live at promotion."""
+    instance = {
+        **_instance_named(unit=_CANDIDATE_UNIT, source=_INVENTORY),
+        "service_state": "stopped",
+    }
+    scope = _install_scope(
+        instance=instance,
+        host_checksum="0" * 64,
+        source_checksum=_CANDIDATE_BINARY_SHA256,
+        unit_activity="active",
+    )
+
+    assert scope[_INSTALL_NOW_FACT] is False, (
+        "the stop task runs after promotion, so an active instance being parked still has a "
+        "live server launching workers from binary_path; promoting over it recreates the "
+        "ENOENT worker-spawn failure"
+    )
+    assert not _holds(conditions=_when(name=_RENAME_TASK), scope=scope)
+
+
 def test_an_instance_with_no_live_process_promotes_a_differing_binary() -> None:
     """`inactive` (including an absent unit) and `failed` have no executable to preserve."""
     instance = {
