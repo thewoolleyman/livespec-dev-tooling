@@ -259,17 +259,16 @@ def _handle_green_mode(
             protocol=RED_GREEN_REPLAY_PROTOCOL,
         )
         return 1
-    green_pytest_result = subprocess.run(
-        [sys.executable, "-m", "pytest", str(green_test_path), "--tb=no", "-q"],
-        capture_output=True,
-        text=True,
-        check=False,
+    replay = _run_replay_test(
+        log=log,
+        pytest_argv=[sys.executable, "-m", "pytest", str(green_test_path), "--tb=no", "-q"],
+        trailer_prefix="Green",
     )
-    if green_pytest_result.returncode != 0:
+    if replay.returncode != 0:
         log.error(
             "test-still-failing-at-green: not a valid Green moment",
             check_id="red-green-replay-test-still-failing",
-            pytest_returncode=green_pytest_result.returncode,
+            pytest_returncode=replay.returncode,
             test_path=recorded_test,
             hint=(
                 "Green mode requires the staged test to pass; "
@@ -290,6 +289,7 @@ def _handle_green_mode(
         trailers=(
             ("TDD-Green-Verified-At", green_verified_at),
             ("TDD-Green-Parent-Reflog", green_parent_reflog),
+            *replay.trailers,
         ),
     )
     return 0
