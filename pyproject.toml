@@ -97,6 +97,7 @@ dev = [
     "pytest-cov==6.0.0",
     "pytest-icdiff==0.9",
     "pytest-xdist==3.8.0",
+    "PyYAML==6.0.3",
     "hypothesis==6.122.3",
     "hypothesis-jsonschema==0.23.1",
     "mutmut==3.2.3",

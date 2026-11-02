@@ -375,7 +375,7 @@ spec:
             - name: KEEP_GENERATIONS
               value: "2"
             - name: WARM_CACHE_UV_ONLY
-                  value: "true"
+              value: "true"
             - name: WARM_BUDGET_BYTES
               valueFrom:
                 configMapKeyRef:
