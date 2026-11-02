@@ -299,16 +299,15 @@ def _run_lifted_task(
     root: Path,
     task: str,
     agents: tuple[str, ...] = _AGENTS,
-    rendezvous: bool | None = None,
 ) -> _Run:
     """Run `task` over both agents and return its exit code and its evidence.
 
     `ANSIBLE_FORKS` is SET rather than inherited: a one-fork controller would
     serialize every task for a reason that has nothing to do with the role, and
     the control arm would then pass for a role that had dropped its
-    serialization entirely. The rendezvous follows the task shape by default:
-    only an unserialized task enables it. Thus removing `throttle: 1` from the
-    committed task also makes the serialized-arm assertion detect overlap.
+    serialization entirely. The rendezvous follows the task shape: only an
+    unserialized task enables it. Thus removing `throttle: 1` from the committed
+    task also makes the serialized-arm assertion detect overlap.
     """
     bin_dir = root / "bin"
     bin_dir.mkdir()
@@ -324,8 +323,7 @@ def _run_lifted_task(
     log.write_text("", encoding="utf-8")
     playbook = root / "apply.yml"
     playbook.write_text(_play(task=task, agents=agents), encoding="utf-8")
-    if rendezvous is None:
-        rendezvous = _SERIALIZATION not in task
+    rendezvous = _SERIALIZATION not in task
 
     env = {
         key: value
