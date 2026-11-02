@@ -66,9 +66,16 @@ def _on_root_filesystem(*, candidates: tuple[Path, ...]) -> Path:
     directory qualifies differs by host: pytest's base temp is under a tmpfs
     /tmp on the dev host, and the checkout is on a separate volume in a gate
     pod. Without `findmnt` the script skips the check, so any candidate does.
+    Neither candidate qualifying FAILS the test, so the bulk cap is never left
+    untested in a venue.
     """
     root = _mount_of(path=Path("/"))
-    return next(candidate for candidate in candidates if _mount_of(path=candidate) == root)
+    mounts = {candidate: _mount_of(path=candidate) for candidate in candidates}
+    chosen = next((candidate for candidate, mount in mounts.items() if mount == root), None)
+    assert (
+        chosen is not None
+    ), f"no bulk-dump candidate is on the root filesystem ({root.strip()!r}): {mounts!r}"
+    return chosen
 
 
 def _hermetic_env(*, tmp_path: Path, tmp_root: Path, bulk: Path) -> dict[str, str]:
