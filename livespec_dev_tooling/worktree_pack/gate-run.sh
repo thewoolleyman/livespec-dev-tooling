@@ -234,6 +234,32 @@ runs_root() {
         "$(basename "${common:-unknown-repo}" .git)"
 }
 
+# Resolve a run recorded by either store version. New runs always use
+# `runs_root`, but a worktree can upgrade its pack between `start` and
+# `wait`: the old runner wrote below that worktree while the replacement reads
+# the shared primary store. Preserve the old run's real verdict instead of
+# reporting it as absent.
+run_dir_for_read() {
+    local run_id="$1" shared legacy
+    shared="$(runs_root)/$run_id"
+    if [[ -d "$shared" ]]; then
+        printf '%s' "$shared"
+        return 0
+    fi
+    legacy="$(repo_root)/tmp/gate-runs/$run_id"
+    if [[ -d "$legacy" ]]; then
+        printf '%s' "$legacy"
+        return 0
+    fi
+    return 1
+}
+
+unknown_run() {
+    local run_id="$1"
+    printf 'UNKNOWN_RUN %s — no run directory under shared store %s or invoking worktree store %s\n' \
+        "$run_id" "$(runs_root)/$run_id" "$(repo_root)/tmp/gate-runs/$run_id" >&2
+}
+
 usage() {
     cat >&2 <<'USAGE'
 usage:
@@ -859,11 +885,14 @@ cmd_status() {
         }
     fi
     local dir state
-    dir="$(runs_root)/$run_id"
+    dir="$(run_dir_for_read "$run_id")" || {
+        unknown_run "$run_id"
+        return "$EX_USAGE"
+    }
     state="$(derive_state "$dir")"
 
     if [[ "$state" == "UNKNOWN_RUN" ]]; then
-        printf 'UNKNOWN_RUN %s — no such run directory\n' "$run_id" >&2
+        unknown_run "$run_id"
         return "$EX_USAGE"
     fi
 
@@ -919,11 +948,10 @@ cmd_status() {
 cmd_wait() {
     [[ $# -ge 1 ]] || usage
     local run_id="$1" dir
-    dir="$(runs_root)/$run_id"
-    if [[ ! -d "$dir" ]]; then
-        printf 'UNKNOWN_RUN %s — no such run directory\n' "$run_id" >&2
+    dir="$(run_dir_for_read "$run_id")" || {
+        unknown_run "$run_id"
         return "$EX_USAGE"
-    fi
+    }
     open_idle_fd
     while true; do
         derive_state_into "$dir"

@@ -283,6 +283,20 @@ def test_run_started_in_a_worktree_is_readable_after_the_worktree_is_removed(
     assert "ran-in-worktree" in (run_dir / "output.log").read_text(encoding="utf-8")
 
 
+def test_gate_wait_reads_a_completed_legacy_worktree_local_run(
+    *, fixture_repo: tuple[Path, Path, dict[str, str]]
+) -> None:
+    """A pack upgraded after start still reports the old run's real verdict."""
+    _primary, worktree, env = fixture_repo
+    _record_run(repo=worktree, output_log=_PARALLEL_LOG, exit_code="0")
+
+    waited = _gate(cwd=worktree, env=env, args=["wait", _RUN_ID])
+
+    assert waited.returncode == 0, waited.stderr
+    assert "PASSED" in waited.stdout
+    assert "UNKNOWN_RUN" not in waited.stderr
+
+
 def test_gate_list_is_the_same_from_the_primary_and_from_a_linked_worktree(
     *, fixture_repo: tuple[Path, Path, dict[str, str]]
 ) -> None:
