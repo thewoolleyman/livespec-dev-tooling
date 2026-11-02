@@ -156,6 +156,68 @@ def test_run_suite_captures_output_and_returncode() -> None:
     assert "err" in run.output
 
 
+def test_suite_green_without_a_gates_credential_runs_locally_and_says_so(
+    *, monkeypatch, tmp_path: Path
+) -> None:
+    """A sandbox keeps suite-green local even when its repository opts in."""
+    from livespec_dev_tooling.commit_replay_delegate import ReplayVerdict
+
+    mod = _load()
+    assert hasattr(mod, "run_replay")
+    monkeypatch.chdir(tmp_path)
+    local_runs: list[list[str]] = []
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_text("chore: suite green\n", encoding="utf-8")
+    log = _RecordingLog()
+
+    monkeypatch.setattr(
+        mod,
+        "run_replay",
+        lambda **_kwargs: ReplayVerdict(local=True, reason="gates kubeconfig is not readable"),
+    )
+    monkeypatch.setattr(mod, "xdist_importable", lambda: False)
+
+    def local_suite(*, argv: list[str], timeout_seconds: int):
+        local_runs.append(argv)
+        assert timeout_seconds == 2400
+        return mod.SuiteRun(returncode=0, output="1 passed in 0.01s\n", timed_out=False)
+
+    monkeypatch.setattr(mod, "run_suite", local_suite)
+
+    assert (
+        mod._handle_suite_green_mode(  # noqa: SLF001
+            msg_path=message,
+            log=log,
+            staged_paths=["tests/test_changed.py"],
+            tests_paths=["tests/test_changed.py"],
+        )
+        == 0
+    )
+    assert local_runs == [
+        [sys.executable, "-m", "pytest", "--tb=line", "-q", "tests/test_changed.py"]
+    ]
+    assert "TDD-Suite-Green-Gate-Job" not in message.read_text(encoding="utf-8")
+    assert [event for _level, event, _kwargs in log.records] == [
+        "suite-green-candidate: product/test change without a Red leg; selecting replay scope",
+        "suite-green-serial-fallback: pytest-xdist not importable; running the suite serially",
+        "suite-green-argv: pytest invocation",
+        "commit-time replay gated locally",
+    ]
+
+
+class _RecordingLog:
+    """Minimal structured logger for suite-green route assertions."""
+
+    def __init__(self) -> None:
+        self.records: list[tuple[str, str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs: object) -> None:
+        self.records.append(("info", event, kwargs))
+
+    def warning(self, event: str, **kwargs: object) -> None:
+        self.records.append(("warning", event, kwargs))
+
+
 def _live_processes_carrying(token: str) -> list[str]:
     """Pids of non-zombie processes whose command line carries `token`."""
     live: list[str] = []
