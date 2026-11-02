@@ -8,6 +8,8 @@ Research date: 2026-11-02 UTC. Recommendation, not an infrastructure authorizati
 
 Start with a single manually enabled worker and one ARC canary workload. A Hetzner CX53 (16 shared vCPU, 32 GB) is an attractive conditional pilot: about **$13.70 for 240 billable hours or $35.59 for a continuously retained month**, including one IPv4 address, before tax. Its price and availability qualifications are below. A CX43 is cheaper for one factory sandbox; neither shared-CPU SKU promises sustained compiler performance. Do not build an autoscaler before proving that the worker improves completed jobs per hour and p95 queue-to-result time.
 
+**AWS does not change this.** EKS cannot act as a worker-only node joined to an existing non-EKS cluster: every EKS node registers with an EKS control plane billed per cluster-hour. The AWS equivalent of this recommendation is a plain EC2 k3s agent. A comparable x86 instance in `us-east-1` costs about **$88 burst / $251 retained on Spot, or $181 / $533 on-demand**, roughly 6–15× the CX53 (see [AWS comparison](#aws-comparison-eks-and-ec2)).
+
 This is a **3–5 engineer-day integration estimate**, not an install-command estimate. Production autoscaling adds work. It has bounded migration rework: retain IaC, scoped identity, workload policy and telemetry, but replace Ubuntu/k3s bootstrap with Talos/Omni/KubeSpan when the successor substrate is ready. A worker attached to the home API server is burst capacity, **not independent backup during a home outage**.
 
 ## Evidence and limits
@@ -86,7 +88,7 @@ An AWS ASG or Cluster Autoscaler is technically an alternative, but it is outsid
 
 **8–14 days total** for a defensible pool: A/B integration plus diversified instance/AZ capacity, interruption detection, draining, on-demand fallback, durable result delivery and explicit lost-run accounting. Networking and home dependencies remain as in A if workers join k3s. Use least-privilege instance identity, block workload access to management credentials, and keep cache storage costs explicit.
 
-[AWS interruption notices](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html) are best effort, normally two minutes before stop/termination. Suitable first for disposable CI work with explicit restart semantics. A lost gate has no verdict; a new invocation is a new measurement, not a masked retry. Long factory runs need verified recovery before Spot is useful. No current Spot quote was obtained; the cost section provides a sensitivity case rather than claiming a fixed discount. Do not assume Hetzner has an equivalent Spot product.
+[AWS interruption notices](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html) are best effort, normally two minutes before stop/termination. Suitable first for disposable CI work with explicit restart semantics. A lost gate has no verdict; a new invocation is a new measurement, not a masked retry. Long factory runs need verified recovery before Spot is useful. Current Spot quotes, taken 2026-11-03, are in the [AWS comparison](#aws-comparison-eks-and-ec2); they are point-in-time prices, not a fixed discount. Do not assume Hetzner has an equivalent Spot product.
 
 ### D. Separate cloud execution cluster — better isolation, more integration
 
@@ -124,6 +126,57 @@ Additional costs, also checked 2026-11-02:
 For a single CX53, daily delete/recreate saves roughly **$21.89/month** against retaining it. Several days of autoscaler engineering solely to save that amount are hard to justify. Retaining one worker may be the lower total-cost pilot; deletion becomes valuable for rare use or a larger pool. Conversely, dedicated CPU is substantially dearer than the cheapest shared SKU, so benchmark useful builds per dollar rather than vCPU count.
 
 This spends more money to buy throughput and reduce home contention. It does not inherently reduce Anthropic/OpenAI token use, Honeycomb charges, Contabo or existing AWS bills. Faster dispatch may **increase** model spend. No savings ranking against those services is defensible without their measured usage/billing; no token-savings claim is made here. Home electricity savings are also unpriced without watts and tariff measurements.
+
+## AWS comparison (EKS and EC2)
+
+Added 2026-11-03 at the maintainer's request. All AWS prices below were read live on 2026-11-03 for **`us-east-1`** (US East, N. Virginia). That region is chosen because the mi-homelab AWS backend and planned control plane already live there, and because the m7i.2xlarge row in the cost table above uses it. Home-to-region latency is still unmeasured. Frankfurt (`eu-central-1`) on-demand rates for the same instances are 14–20% higher.
+
+### Can EKS be only a worker node in an existing cluster?
+
+**No.** EKS has no worker-only product that joins a cluster it does not manage. The [EKS pricing page](https://aws.amazon.com/eks/pricing/) states: "All Amazon EKS clusters have a per cluster per hour fee", and every EKS node type registers with the control plane of an EKS cluster. That covers EC2 node groups, Fargate, Auto Mode and Hybrid Nodes. [EKS Hybrid Nodes](https://docs.aws.amazon.com/eks/latest/userguide/hybrid-nodes-overview.html) is the reverse direction: "you can use your on-premises and edge infrastructure as nodes in Amazon EKS clusters", and "AWS manages the AWS-hosted Kubernetes control plane". The home machines would join an AWS control plane, not the other way round. [EKS Anywhere](https://aws.amazon.com/eks/eks-anywhere/) is a separate product that creates and operates whole clusters on your own infrastructure. It does not add a node to an existing k3s cluster either.
+
+The same answer holds for the later Talos cluster. Its worker on AWS would be an EC2 instance running Talos and enrolled through Omni, as the homelab specification already plans. That is still not EKS.
+
+The real AWS equivalent of this report's recommendation is therefore **a plain EC2 instance running a k3s agent**, joined to the existing cluster exactly like the Hetzner CX53. It has no EKS and no control-plane fee.
+
+### EC2 worker prices next to the Hetzner pilot
+
+Scenarios match the cost section: **240 h** burst and **730 h** retained. Every AWS total adds a public IPv4 address at $0.005/h ($1.20 / $3.65) and a 100 GB gp3 root volume retained all month at $0.08/GB-month ($8.00), the same assumptions as the m7i row above. A 320 GB gp3 volume, matching the CX53's included disk, would cost $25.60/month instead of $8.00. Egress is excluded from the totals and treated below.
+
+| Candidate, `us-east-1` unless noted | vCPU / RAM | On-demand $/h | Spot $/h (Spot discount) | Spot interruption band | 240 h total, on-demand / Spot | Retained total, on-demand / Spot |
+|---|---|---:|---:|---|---:|---:|
+| **Hetzner CX53** (EU, shared vCPU, 320 GB disk, IPv4) | 16 / 32 GB | $0.0561 | n/a | n/a | **$13.70** | **$35.59** |
+| Hetzner CCX33 (EU, dedicated vCPU, IPv4) | 8 / 32 GB | $0.2612 | n/a | n/a | $62.93 | $163.59 |
+| c7i.4xlarge (Intel, x86) | 16 / 32 GiB | $0.7140 | $0.3279 (54%) | >20% | $180.56 / **$87.90** | $532.87 / **$251.02** |
+| c7a.4xlarge (AMD, x86) | 16 / 32 GiB | $0.8211 | $0.3811 (54%) | 5–10% | $206.27 / $100.66 | $611.07 / $289.85 |
+| c7g.4xlarge (Graviton3, arm64) | 16 / 32 GiB | $0.5800 | $0.2531 (56%) | <5% | $148.40 / $69.94 | $435.05 / $196.41 |
+| m7a.2xlarge (AMD, x86) | 8 / 32 GiB | $0.4637 | $0.2065 (55%) | >20% | $120.48 / $58.76 | $350.14 / $162.40 |
+| m7i.2xlarge (Intel, x86; the cost table's example) | 8 / 32 GiB | $0.4032 | $0.1774 (56%) | >20% | $105.97 / $51.78 | $305.99 / $141.15 |
+
+Sources, read 2026-11-03:
+
+- On-demand Linux rates come from the AWS pricing-page data feed for [US East (N. Virginia) Linux](https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/US%20East%20(N.%20Virginia)/Linux/index.json), published 2026-10-29. The m7i.2xlarge rate code `99TZRNZAZSFRSS24` matches the SKU already quoted above.
+- Spot rates come from the feed behind the [EC2 Spot pricing page](https://aws.amazon.com/ec2/spot/pricing/) (`website.spot.ec2.aws.a2z.com/spot.js`). Interruption bands come from the [Spot Instance Advisor](https://aws.amazon.com/ec2/spot/instance-advisor/) data (`spot-bid-advisor.s3.amazonaws.com/spot-advisor-data.json`). Spot prices move, and AZ choice changes both price and interruption rate.
+- IPv4 comes from [VPC pricing](https://aws.amazon.com/vpc/pricing/), where in-use and idle addresses are both $0.005/h. gp3 storage comes from the [EBS pricing](https://aws.amazon.com/ebs/pricing/) feed: $0.08/GB-month, 3,000 IOPS and 125 MB/s included.
+
+Egress is the cost Hetzner mostly does not have. Inbound transfer, such as image and dependency pulls into EC2, is free. Traffic **out** of EC2 to the internet is billed at $0.09/GB for the first 10 TB/month after a 100 GB monthly free allowance, per the [EC2 on-demand pricing page](https://aws.amazon.com/ec2/pricing/on-demand/). That allowance is shared across the whole account and all regions. Outbound traffic here includes kubelet and API traffic, logs, results, and any writes to home caches such as Redis or sccache, all carried over the tailnet. 200 GB/month beyond the allowance would add $18. Measure this in the pilot rather than assuming it.
+
+**Reading the table.** The cheapest **x86** 16-vCPU option, c7i.4xlarge on Spot, is about **6.4× the CX53 for burst and 7.1× retained**. On-demand it is **13–15×**. Graviton is cheaper and interrupts least, but the report already excludes arm64 until every image, toolchain and check is proven multiarchitecture. The comparison flatters Hetzner on one axis: CX53 vCPUs are shared, while c7i/c7a vCPUs are full, non-burstable vCPUs. The like-for-like dedicated comparison is the CCX33. Even so, an 8-vCPU m7i.2xlarge on Spot ($51.78 / $141.15) is in the same range as a CCX33 ($62.93 / $163.59), but it carries an interruption risk the CCX33 does not. **The numbers do not warrant changing the recommendation.** AWS is the fallback if Hetzner stock or sustained-CPU benchmarks fail. Even then, the next candidate is the CCX33 before AWS, unless the benchmark shows that AWS Spot gives more useful builds per dollar.
+
+### EKS proper, for completeness
+
+The cluster fee from the [EKS pricing page](https://aws.amazon.com/eks/pricing/) is **$0.10 per cluster-hour on standard support ($73.00/month)**, or **$0.60 per cluster-hour on extended support ($438.00/month)**. The control plane bills for every hour the cluster exists, even when no worker is running. A new EKS cluster plus one on-demand c7i.4xlarge node therefore costs about **$253.56 burst / $605.87 retained** on standard support, or **$618.56 / $970.87** on extended support. With a Spot node it costs $160.90 / $324.02 on standard support. These totals exclude Auto Mode, Provisioned Control Plane and any NAT gateway.
+
+[EKS Hybrid Nodes](https://aws.amazon.com/eks/pricing/) charges **$0.020 per vCPU-hour** for the first 576,000 vCPU-hours a month, on top of the cluster fee. Moving the home machines under an EKS control plane, about 118.5 allocatable vCPU, would cost roughly **$1,730/month plus $73**. Billing counts the vCPUs reported to Kubernetes, so the real figure is likely higher. AWS also asks for an account-team conversation for machines above 32 vCPU, which poweredge (72) is.
+
+**Why EKS does not fit.** EKS gives a *new* cluster with its own control plane, not a worker for the existing one. Using it means running a second cluster, which is option D with a $73/month control-plane floor that AWS manages, rather than Hetzner's $7.09 CX23. Alternatively it means migrating the home cluster under AWS's control plane through Hybrid Nodes. The homelab constraints also forbid managed Kubernetes control-plane fees (see the table below).
+
+### Integration differences from the Hetzner pilot
+
+- **Networking.** Tailscale on EC2 behaves as it does on Hetzner. The same unsolved underlay problem from option A applies, because the cloud node must reach LAN node addresses and Flannel. On AWS the instance needs a public subnet and public IPv4 for a direct WireGuard path, or it falls back to DERP relays. A NAT gateway costs $0.045/h plus $0.045/GB and is forbidden by homelab policy. The security group can stay closed inbound. Traffic leaving the tailnet toward home is billable egress, whereas Hetzner includes traffic. The latency from `us-east-1` to home is unmeasured, like the Hetzner path.
+- **Spot interruptions.** The notice is a best-effort two minutes. The worker needs an interruption watcher, such as aws-node-termination-handler or an IMDS poller, to taint, cordon and drain. A killed ARC job fails its GitHub check and needs an explicit re-run, never a masked retry. Gates and factory runs stay off Spot, as option C already says. Prefer the instance types with low interruption bands and diversify across AZs. In `us-east-1` today, c7i.4xlarge sits in the >20% band and c7a.4xlarge in the 5–10% band.
+- **Governance.** The homelab AWS allowlist permits only t4g.small/medium and gp3 volumes up to 20 GiB, and denies ASGs. Any of these instances therefore needs a separately owned account, or an explicit policy decision. It is not a quiet use of the homelab account.
+- **Effort.** An on-demand EC2 worker keeps option A's **3–5 days**. Add about 0.5–1 day for the VPC, security group, instance profile and account or cost ownership, which Hetzner does not need beyond its Cloud project. Spot moves the estimate to option C's **8–14 days**. An EKS-based route is option D's 5–8 / 8–15 days plus EKS-specific IAM, VPC CNI and add-on work. Hybrid Nodes is a cluster migration, not a burst pilot.
 
 ## Alignment with the Talos plan
 
