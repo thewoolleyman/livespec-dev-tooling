@@ -4,15 +4,18 @@ The host-served cache of `files.pythonhosted.org` that
 `../warm-cache-populate.sh` builds every generation through (livespec plan
 `ci-runner-pod-lifecycle-reliability`, item `livespec-41w4`, Carrier F2).
 Where `../../crates-proxy/` fronts crates.io for every job, this proxy fronts
-PyPI's file host for ONE consumer: the populator, which rebuilds the warm uv
-cache from empty on every lock change and would otherwise re-download ~105 MB
-from PyPI each time (48 rebuilds a day at the CronJob cadence is 5 GB/day
-direct). Workflow pods never use it — their locks are untouched and they read
-the seeded generation.
+PyPI's file host for the populator, which rebuilds the warm uv cache from empty
+on every lock change and would otherwise re-download ~105 MB from PyPI each
+time (48 rebuilds a day at the CronJob cadence is 5 GB/day direct), and for
+delegated gate Jobs. Gate Jobs start with the seeded generation, route any
+locked artifact the proxy serves through `/packages/`, fall through to direct
+PyPI for a miss or unreachable service, and use the rewritten `/simple/` API
+for `uvx` tool environments. Workflow pods otherwise do not use it: their locks
+remain untouched and they read the seeded generation.
 
 | Path | Role |
 |---|---|
-| `pypi-proxy.yaml` | Namespace `ci-warm-cache` (shared with the CronJob), the nginx config (one flat cache zone, verified upstream TLS, `limit_except GET HEAD`), the digest-pinned Deployment (`hostPath` store on the `ci-cache` tier, `readOnlyRootFilesystem`), and the ClusterIP Service on 8081. Its header carries the design: why a FILES proxy and not an index proxy, why the store is flat, the bound, the trust argument. |
+| `pypi-proxy.yaml` | Namespace `ci-warm-cache` (shared with the CronJob), the nginx config (one flat cache zone, verified upstream TLS, `limit_except GET HEAD`, and a rewritten `/simple/` API for gate `uvx`), the digest-pinned Deployment (`hostPath` store on the `ci-cache` tier, `readOnlyRootFilesystem`), and the ClusterIP Service on 8081. Its header carries the design: why a FILES proxy and not an index proxy, why the store is flat, the bound, the trust argument. |
 | `../converge-warm-cache.sh` | Applies this manifest (with a config-hash stamp so an edit rolls the pod, and a bounded rollout wait) before the CronJob's objects. Run by the boot converge and by hand after editing the manifest. |
 | `../warm-cache-populate.sh` | The reader: probes `/health`, rewrites the file-host prefix in its own clone of each routed `uv.lock` to `http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/`, and counts the store's objects before and after each build for the hit ratio. |
 
