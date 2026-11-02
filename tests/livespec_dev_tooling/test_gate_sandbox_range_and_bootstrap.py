@@ -294,6 +294,23 @@ def test_the_repository_bootstrap_precedes_the_aggregate_in_the_gate_container()
     assert steps == [f"just {recipe}" for recipe in _OUR_DECLARED_SUITE]
 
 
+def test_stand_in_proxies_are_http_ready_before_gate_cases_run() -> None:
+    """Proxy cases must prove an HTTP response, not merely an open TCP port.
+
+    A loaded runner can accept the old connection probes while the interpreter
+    has not yet answered a request. Running either gate case at that point
+    mistakes the gate's correct fail-open behavior for a lock-rewrite defect.
+    """
+    source = _EXIT_TESTS.read_text(encoding="utf-8")
+
+    assert "PROXY_READINESS_TIMEOUT_SECONDS=30" in source
+    assert "wait_for_stand_in_proxy()" in source
+    assert "GET / HTTP/1.1" in source
+    assert '[[ "${status}" == HTTP/* ]]' in source
+    assert source.count("wait_for_stand_in_proxy ") == 2
+    assert 'fail "${label} stand-in proxy did not start on port ${port}"' in source
+
+
 def test_the_renderers_own_exit_test_suite_passes() -> None:
     """Run the shell suite that proves the RENDERED manifest carries all of it.
 

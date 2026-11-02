@@ -130,8 +130,35 @@ HASH_A="aaaabbbbccccddddeeeeffff0000111122223333"
 HASH_B="99998888777766665555444433332222aaaabbbb"
 
 failures=0
+PROXY_READINESS_TIMEOUT_SECONDS=30
 pass() { echo "  PASS  $1"; }
 fail() { echo "  FAIL  $1"; failures=$((failures + 1)); }
+
+wait_for_stand_in_proxy() {
+  # Arguments: label, port.
+  # A TCP accept is not proof that Python's HTTP server is ready to answer.
+  local label="$1" port="$2" deadline status
+  deadline=$((SECONDS + PROXY_READINESS_TIMEOUT_SECONDS))
+  while [ "${SECONDS}" -lt "${deadline}" ]; do
+    status="$(
+      {
+        status=""
+        exec 9<>"/dev/tcp/127.0.0.1/${port}"
+        printf 'GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n' >&9
+        IFS= read -r status <&9 || true
+        exec 9>&-
+        exec 9<&-
+        printf '%s' "${status}"
+      } 2>/dev/null
+    )"
+    if [[ "${status}" == HTTP/* ]]; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  fail "${label} stand-in proxy did not start on port ${port}"
+  return 1
+}
 
 [ -x "${RENDERER}" ] || { echo "FATAL: ${RENDERER} not found or not executable" >&2; exit 1; }
 [ -f "${TEMPLATE}" ] || { echo "FATAL: ${TEMPLATE} not found" >&2; exit 1; }
@@ -1049,20 +1076,18 @@ printf 'simple api\n' > "${uvx_proxy_root}/simple/index.html"
 uvx_proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 (cd "${uvx_proxy_root}" && exec python3 -m http.server "${uvx_proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
 uvx_proxy_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  (exec 9<>"/dev/tcp/127.0.0.1/${uvx_proxy_port}") 2>/dev/null && break
-  sleep 0.1
-done
-if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_PROXY_FAIL=1 GATE_RUN_UVX=1 \
-     run_gate_script "${declared_out}" "verify publish"; then
-  if grep -qF "uvx index=http://127.0.0.1:${uvx_proxy_port}/simple args=test-tool" "${SCRATCH}/stub.log" && \
-     grep -qF 'uvx index= args=test-tool' "${SCRATCH}/stub.log"; then
-    pass "a resolver failure through a healthy proxy retries uvx against direct PyPI"
+if wait_for_stand_in_proxy "uvx" "${uvx_proxy_port}"; then
+  if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_PROXY_FAIL=1 GATE_RUN_UVX=1 \
+       run_gate_script "${declared_out}" "verify publish"; then
+    if grep -qF "uvx index=http://127.0.0.1:${uvx_proxy_port}/simple args=test-tool" "${SCRATCH}/stub.log" && \
+       grep -qF 'uvx index= args=test-tool' "${SCRATCH}/stub.log"; then
+      pass "a resolver failure through a healthy proxy retries uvx against direct PyPI"
+    else
+      fail "uvx did not use the proxy then direct fallback: $(cat "${SCRATCH}/stub.log")"
+    fi
   else
-    fail "uvx did not use the proxy then direct fallback: $(cat "${SCRATCH}/stub.log")"
+    fail "the uvx proxy-fallback path made the gate fail: $(cat "${SCRATCH}/gate.err")"
   fi
-else
-  fail "the uvx proxy-fallback path made the gate fail: $(cat "${SCRATCH}/gate.err")"
 fi
 kill "${uvx_proxy_pid}" 2>/dev/null || true
 wait "${uvx_proxy_pid}" 2>/dev/null || true
@@ -1092,22 +1117,20 @@ printf 'wheel\n' > "${proxy_root}/packages/good/good-1.0.whl"
 proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 (cd "${proxy_root}" && exec python3 -m http.server "${proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
 proxy_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  (exec 9<>"/dev/tcp/127.0.0.1/${proxy_port}") 2>/dev/null && break
-  sleep 0.1
-done
 printf '%s\n' "${lock_body}" > "${SCRATCH}/gate-cwd/uv.lock"
-if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
-  proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
-  rewritten="$(cat "${SCRATCH}/gate-cwd/uv.lock")"
-  if printf '%s' "${rewritten}" | grep -qF "${proxied_good}" && \
-     printf '%s' "${rewritten}" | grep -qF "${lock_missing}"; then
-    pass "a served locked artifact uses the proxy while its missing neighbour stays direct"
+if wait_for_stand_in_proxy "lock rewrite" "${proxy_port}"; then
+  if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+    proxied_good="http://127.0.0.1:${proxy_port}/packages/good/good-1.0.whl"
+    rewritten="$(cat "${SCRATCH}/gate-cwd/uv.lock")"
+    if printf '%s' "${rewritten}" | grep -qF "${proxied_good}" && \
+       printf '%s' "${rewritten}" | grep -qF "${lock_missing}"; then
+      pass "a served locked artifact uses the proxy while its missing neighbour stays direct"
+    else
+      fail "the lock did not route only the proxy-served artifact: ${rewritten}"
+    fi
   else
-    fail "the lock did not route only the proxy-served artifact: ${rewritten}"
+    fail "the gate script failed while preparing a lock with a proxy miss: $(cat "${SCRATCH}/gate.err")"
   fi
-else
-  fail "the gate script failed while preparing a lock with a proxy miss: $(cat "${SCRATCH}/gate.err")"
 fi
 kill "${proxy_pid}" 2>/dev/null || true
 wait "${proxy_pid}" 2>/dev/null || true
