@@ -308,13 +308,82 @@
   # ONE RELOAD FOR BOTH EDITS THIS ROLE CAN MAKE TO THE AGENT UNIT — the
   # `--node-taint` strip and the data-directory ordering drop-in. Two reload
   # tasks would be two answers to one question, and systemd needs telling once
-  # per pass however many files changed.
+  # per pass however many files changed. The k3s_cpu_weight reload further down
+  # is a separate question on a separately tagged apply, so it keeps its own.
   ansible.builtin.systemd_service:
     daemon_reload: true
   become: true
   when:
     - k3s_config_cluster_role == 'agent'
     - k3s_config_agent_unit_taint_strip.changed or k3s_config_data_dir_ordering.changed
+
+# THE k3s UNIT'S CPU WEIGHT (orchestrator work-item bd-ib-s6a2ex). Measured on
+# gmktec-xubuntu 2026-11-02 at about 19:40Z, with CPU PSI some avg10 at 51-55%
+# under a CI burst: the k3s agent, which carries the kubelet, sat in system.slice
+# at systemd's default weight of 100. These five tasks carry the tag
+# k3s_cpu_weight of their own, so an apply narrowed to it touches nothing else
+# this role manages. Unlike the drop-ins above, this one takes effect at once:
+# systemd re-applies a changed CPUWeight= to the running unit's cgroup on the
+# daemon-reload below. NOTHING HERE RESTARTS k3s — no task notifies the handler
+# chain, and the reload has no `state:`.
+
+- name: Refuse a k3s CPU weight systemd would not accept
+  ansible.builtin.assert:
+    that:
+      - k3s_config_cpu_weight | string | regex_search('^[0-9]+$') is not none
+      - k3s_config_cpu_weight | int >= 1
+      - k3s_config_cpu_weight | int <= 10000
+    fail_msg: >-
+      k3s_config_cpu_weight is {{ k3s_config_cpu_weight | to_json }}; it must be
+      an integer from 1 to 10000 (systemd's CPUWeight= range), or empty to
+      manage no weight.
+    success_msg: the k3s CPU weight is one systemd accepts
+  when: k3s_config_cpu_weight | string | length > 0
+  tags: [k3s_cpu_weight]
+
+- name: Create the k3s unit's drop-in directory for its CPU weight
+  ansible.builtin.file:
+    path: "{{ k3s_config_cpu_weight_unit_drop_in_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: k3s_config_cpu_weight | string | length > 0
+  tags: [k3s_cpu_weight]
+
+- name: Give the k3s unit its CPU weight
+  ansible.builtin.template:
+    src: cpu-weight.conf.j2
+    dest: "{{ k3s_config_cpu_weight_unit_drop_in_dir }}/{{ k3s_config_cpu_weight_drop_in }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: k3s_config_cpu_weight_written
+  when: k3s_config_cpu_weight | string | length > 0
+  tags: [k3s_cpu_weight]
+
+- name: Remove the k3s unit's CPU weight when none is declared
+  ansible.builtin.file:
+    path: "{{ k3s_config_cpu_weight_unit_drop_in_dir }}/{{ k3s_config_cpu_weight_drop_in }}"
+    state: absent
+  become: true
+  register: k3s_config_cpu_weight_removed
+  when: k3s_config_cpu_weight | string | length == 0
+  tags: [k3s_cpu_weight]
+
+- name: Make systemd apply the changed CPU weight to the running k3s unit
+  # daemon_reload ONLY. No `state:` — a k3s restart kills every CI job on the
+  # node and is a human-gated window. Reached only when this pass changed the
+  # drop-in, so a converged node reloads nothing.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: >-
+    (k3s_config_cpu_weight_written.changed | default(false))
+    or (k3s_config_cpu_weight_removed.changed | default(false))
+  tags: [k3s_cpu_weight]
 
 - name: Create the packaged-manifest directory on the server
   # 0700 as the shell installed it. This is under /var/lib/rancher/k3s/server/

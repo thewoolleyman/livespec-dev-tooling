@@ -485,7 +485,12 @@ def test_the_role_strips_the_unit_on_the_agent_and_reloads_systemd_when_it_did()
     assert (
         "k3s_config_cluster_role == 'agent'" in body
     ), f"only an agent has a k3s-agent.service to converge;\nbody={body!r}"
-    reload_body = _task_whose_body_names(source=_TASKS, needle="daemon_reload")
+    # Located by the condition that reaches it, not by `daemon_reload`: the role
+    # also carries the k3s_cpu_weight reload (bd-ib-s6a2ex), a different answer
+    # to a different question, so the bare module key no longer names one task.
+    reload_body = _task_whose_body_names(
+        source=_TASKS, needle="k3s_config_agent_unit_taint_strip.changed"
+    )
     assert "ansible.builtin.systemd_service" in reload_body, (
         f"systemd must be told to re-read the unit through its own module;\n"
         f"body={reload_body!r}"

@@ -110,3 +110,25 @@ with `cat .../memory.oom.group`; it reads `0` once the drop-in is in force.
 
 **Rollback.** Set `k3s_config_single_process_oom_kill: false` for the node,
 re-apply `ansible/ci-pool.yml`, and restart k3s on that node.
+
+## k3s unit CPU weight
+
+`k3s_config_cpu_weight` (default `""`) is the systemd `CPUWeight=` (1 to 10000)
+the node's k3s unit runs with: `k3s-agent.service` on an agent, `k3s.service` on
+the server. The role writes it as `<unit>.service.d/50-cpu-weight.conf` and runs
+one `systemctl daemon-reload` when the drop-in changed, which applies the weight
+to the running unit's cgroup. It never restarts k3s. Empty removes a drop-in an
+earlier converge wrote.
+
+`gmktec-xubuntu` declares `2000`. Measured 2026-11-02 at about 19:40Z, with CPU
+PSI some avg10 at 51-55% under a CI burst, the agent (which carries the kubelet)
+sat in `system.slice` at the default weight of 100 (orchestrator work-item
+`bd-ib-s6a2ex`). Apply it alone with:
+
+```bash
+just ansible-drift ansible/ci-pool.yml --limit <host> --tags k3s_cpu_weight
+just ansible-apply ansible/ci-pool.yml --limit <host> --tags k3s_cpu_weight
+```
+
+A unit's weight divides CPU among its siblings inside `system.slice`; it does
+not change `system.slice`'s own share against `kubepods.slice`.

@@ -173,6 +173,12 @@ fabro_server_host_checkout: /home/cwoolley/repos/livespec-orchestrator-beads-fab
 fabro_server_host_checkout_remote: https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git
 # A fresh instance has no settings.toml to preserve, so the role writes it.
 fabro_server_manage_settings: true
+# The CPU share the Fabro server instances and the k3s agent run with
+# (bd-ib-s6a2ex). Measured 2026-11-02 at about 19:40Z, with CPU PSI some avg10
+# at 51-55% under a CI burst, both sat in system.slice at systemd's default
+# weight of 100. Applied by a daemon-reload; neither apply restarts anything.
+fabro_server_cpu_weight_value: 2000
+k3s_config_cpu_weight: 2000
 fabro_server_instances:
   - unit_name: fabro-server
     home_dir: /home/cwoolley/.fabro

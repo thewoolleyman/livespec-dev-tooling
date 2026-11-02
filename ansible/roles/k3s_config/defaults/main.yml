@@ -81,3 +81,13 @@ k3s_config_default_data_dir: /var/lib/rancher/k3s
 # cgroup v2). See HOST_VARS.md, "Single-process OOM kill" (bd-ib-3kdjct).
 k3s_config_single_process_oom_kill: true
 k3s_config_single_process_oom_kill_drop_in: 50-single-process-oom-kill.conf
+
+# The systemd CPUWeight= (1 to 10000) this node's k3s unit runs with —
+# k3s-agent.service on an agent, k3s.service on the server. Empty, the default,
+# manages no weight and removes a drop-in an earlier converge wrote, so the unit
+# falls back to systemd's default of 100. Set per host in host_vars; see
+# HOST_VARS.md. Applied by a daemon-reload, never a restart.
+k3s_config_cpu_weight: ""
+k3s_config_cpu_weight_drop_in: 50-cpu-weight.conf
+k3s_config_cpu_weight_unit_drop_in_dir: >-
+  /etc/systemd/system/{{ 'k3s-agent' if k3s_config_cluster_role == 'agent' else 'k3s' }}.service.d

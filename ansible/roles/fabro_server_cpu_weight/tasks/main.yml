@@ -1,0 +1,84 @@
+---
+# fabro_server_cpu_weight — give every Fabro server instance on this host a
+# CPUWeight= of its own (orchestrator work-item bd-ib-s6a2ex).
+#
+# WHY. Measured on gmktec-xubuntu 2026-11-02 at about 19:40Z, with CPU PSI some
+# avg10 at 51-55%: the Fabro server instances sit in system.slice at systemd's
+# default weight of 100 while a CI burst saturates the host, and the main
+# instance's API slowed under it.
+#
+# WHY A ROLE OF ITS OWN AND NOT A TASK IN fabro_server. That role notifies ONE
+# handler chain for every file it writes, "Fabro instance files changed", and
+# that chain restarts the instance when fabro_server_restart_allowed is true.
+# A restart cancels every live factory run on the instance. This drop-in takes
+# effect on a daemon-reload alone, so it must never be able to reach that
+# chain — and a separate role, with NO notify and no handler at all, is the
+# only shape in which that is true by construction rather than by care. It also
+# gives the change a tag of its own, so an apply can be narrowed to exactly
+# these tasks: --tags fabro_server_cpu_weight touches no binary, no unit file,
+# no settings and no other drop-in.
+#
+# NOTHING HERE RESTARTS ANYTHING. The reload below is daemon_reload with no
+# `state:`, reached only when a drop-in actually changed. systemd re-applies a
+# changed CPUWeight= to the running unit's cgroup (cpu.weight) on that reload.
+
+- name: Refuse a CPU weight systemd would not accept
+  ansible.builtin.assert:
+    that:
+      - fabro_server_cpu_weight_value | string | regex_search('^[0-9]+$') is not none
+      - fabro_server_cpu_weight_value | int >= 1
+      - fabro_server_cpu_weight_value | int <= 10000
+    fail_msg: >-
+      fabro_server_cpu_weight_value is {{ fabro_server_cpu_weight_value | to_json }}; it
+      must be an integer from 1 to 10000 (systemd's CPUWeight= range), or empty
+      to manage no weight.
+    success_msg: the Fabro server CPU weight is one systemd accepts
+  when: fabro_server_cpu_weight_value | string | length > 0
+  tags: [fabro_server_cpu_weight]
+
+- name: Create each Fabro instance unit's drop-in directory
+  ansible.builtin.file:
+    path: "{{ fabro_server_cpu_weight_unit_dir }}/{{ item }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  loop: "{{ fabro_server_instances | default([]) | map(attribute='unit_name') | list }}"
+  when: fabro_server_cpu_weight_value | string | length > 0
+  tags: [fabro_server_cpu_weight]
+
+- name: Give each Fabro instance unit its CPU weight
+  ansible.builtin.template:
+    src: cpu-weight.conf.j2
+    dest: "{{ fabro_server_cpu_weight_unit_dir }}/{{ item }}.service.d/{{ fabro_server_cpu_weight_drop_in }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  loop: "{{ fabro_server_instances | default([]) | map(attribute='unit_name') | list }}"
+  register: fabro_server_cpu_weight_written
+  when: fabro_server_cpu_weight_value | string | length > 0
+  tags: [fabro_server_cpu_weight]
+
+- name: Remove each Fabro instance unit's CPU weight when none is declared
+  ansible.builtin.file:
+    path: "{{ fabro_server_cpu_weight_unit_dir }}/{{ item }}.service.d/{{ fabro_server_cpu_weight_drop_in }}"
+    state: absent
+  become: true
+  loop: "{{ fabro_server_instances | default([]) | map(attribute='unit_name') | list }}"
+  register: fabro_server_cpu_weight_removed
+  when: fabro_server_cpu_weight_value | string | length == 0
+  tags: [fabro_server_cpu_weight]
+
+- name: Make systemd apply the changed CPU weight to the running instances
+  # daemon_reload ONLY. No `state:` — a restart would cancel every live factory
+  # run on the instance. Reached only when this pass changed a drop-in, so a
+  # converged host reloads nothing.
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  become: true
+  when: >-
+    (fabro_server_cpu_weight_written.changed | default(false))
+    or (fabro_server_cpu_weight_removed.changed | default(false))
+  tags: [fabro_server_cpu_weight]
