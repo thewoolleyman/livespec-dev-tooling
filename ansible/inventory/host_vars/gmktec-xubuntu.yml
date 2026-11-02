@@ -344,10 +344,15 @@ fabro_server_instances:
       # instance (livespec-orchestrator-beads-fabro bd-ib-voozdp, fabro#13): a
       # run whose config names [run.integrations.github.app] app_id_secret =
       # HOMELAB_GITHUB_APP_ID and private_key_secret =
-      # HOMELAB_GITHUB_APP_PRIVATE_KEY publishes as homelab's org App 4688510,
-      # not as the fleet App above. The key comes from homelab's OWN controller
-      # variable, never from GITHUB_PRIVATE_KEY, for the reason the
-      # fabro-server-mi-homelab entry below gives. An apply that finds this
+      # /homelab/github/mi-homelab-factory-bot/private-key publishes as
+      # homelab's org App 4688510, not as the fleet App above. The key is a
+      # `file` entry, and Fabro requires a file entry's name to be an absolute
+      # path (only the literal GITHUB_APP_PRIVATE_KEY is exempt). It must NOT
+      # be a `token`: every run on this shared server can resolve any token
+      # entry by name, which would hand homelab's key to fleet runs. The key
+      # comes from homelab's OWN controller variable, never from
+      # GITHUB_PRIVATE_KEY, for the reason the fabro-server-mi-homelab entry
+      # below gives. An apply that finds this
       # vault lacking either name refuses unless that variable is bound, so
       # bind it for the apply that first creates them:
       #   hl param run --bind MI_HOMELAB_GITHUB_PRIVATE_KEY=/homelab/v1/providers/github/mi-homelab-factory-bot/private-key
@@ -356,7 +361,7 @@ fabro_server_instances:
         type: token
         description: GitHub App id of homelab's org App (mi-homelab-factory-bot); an id, not a secret
         value: "4688510"
-      - name: HOMELAB_GITHUB_APP_PRIVATE_KEY
+      - name: /homelab/github/mi-homelab-factory-bot/private-key
         type: file
         description: GitHub App 4688510 (mi-homelab-factory-bot) private key, selected per run
         from_controller_env: MI_HOMELAB_GITHUB_PRIVATE_KEY
