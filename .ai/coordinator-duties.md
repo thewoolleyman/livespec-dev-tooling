@@ -198,8 +198,22 @@ Every tick reports, in this order:
    - The owning plan appears as `plan-slug (epic-id)`, with work items as `title (work-item-id)` nested under it.
    - Each line has one status word and a short blocker note.
    - Never abbreviate to "unchanged".
+   - DEPENDENCIES uses exactly the PRIORITIES numbering: one block per priority number, never a repeated number.
+     When a slot holds two plans (for example 1a), both nest inside that one block. Every number in scope appears,
+     including a plan that is only waiting.
 4. The actions taken this tick.
 5. `FOR THE MAINTAINER (non-blocking)`, re-derived every tick (§7). It reads `none` if there is nothing to ask.
+
+**Slot 0, the stability override, is not a catch-all.** It holds only a live critical blocker, or a high-priority
+performance, security or stability item, while that item actually blocks flow. Once work flows again, or a stopgap
+mitigates it, the item moves back to its owning plan's normal priority slot, and slot 0 reads `clear`. The durable
+fix of a mitigated outage is tracked in that normal slot, not in slot 0.
+
+Maintainer corrections, 2026-11-02 ~14:3xZ, recorded verbatim on epic `livespec-dev-tooling-6tgd2z`: "Your report is
+flawed in numbers, you have multiple 1a, and 1b, and no 2 in dependencies section", and "The '0' override is a good
+idea, but it cannot be a catch all … Once things are flowing or able to move again or mitigated with a stopgap, the
+items must move back to a normal dedicated priority slot". The same session also wrote "bd-ib-voozdp needs it" in an
+ask, a bare id inside a reason clause; §7's naming rule covers every clause of every maintainer-facing line.
 
 The coordinator never reorders, adds or drops a priority on its own initiative. It reports evidence for a change as a
 finding with a recommendation.
