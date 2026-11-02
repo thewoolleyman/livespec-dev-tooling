@@ -156,6 +156,10 @@ entry from live state: `herdr agent list` in full, plus ledger reads.
   not raised.
 - A peer report is evidence of what was true when it was sent, never of what is true now.
 - Name seats and work to the maintainer by plan name, workspace and tab, never by pane id or repository name (R483).
+- Never name a work item by its bare id in anything the maintainer reads. Write its title, then its id: `beads-web
+  spawns gh api rate_limit once per bead card every 30 s (bd-ib-zm4gpr)`. Name a plan as `plan-slug (epic-id)`. This
+  applies to asks, status lines and summaries alike. Maintainer correction 2026-11-02 ~06:4xZ, recorded on epic
+  `livespec-dev-tooling-6tgd2z`, after an attestation ask named only `bd-ib-zm4gpr`.
 
 Measured 2026-11-01: the coordinator copied an ask about a "closed" seat forward, although the maintainer had reopened
 it. It also called a plan by its repository's name.
@@ -209,6 +213,12 @@ COMPLETED: <plan-slug (epic-id)> archived <ref>, seat closed <UTC> — acknowled
 
 A plan whose children are closed but which still owes its proof, review or archive is NOT complete. It stays on the
 list with its true status word, and its seat stays open.
+
+**"Finished", "done" and "complete" mean completely closed, and nothing less.** Use those words for a plan only when it
+is archived and its seat is closed. Otherwise the status word names what is still owed, for example `carriers closed;
+awaiting xbilme 7-day window (11-08), then proof, review, archive`. Never report closed children as a finished plan.
+The maintainer, 2026-11-02: "your mistake was ever calling Dolt finished when it is not archived and completely wrapped
+up. That is not finished."
 
 Maintainer ruling 2026-11-02 ~06:4xZ, recorded verbatim on epic `livespec-dev-tooling-6tgd2z`. Measured that day:
 priority 1, dolt-connection-exhaustion, had all five carriers closed. It still owed dolt-server-xbilme's seven-day
