@@ -48,6 +48,16 @@ Resolve a DECISION picker yourself under ruling R301 with `herdr pane send-keys 
 the explicit answer, so the seat has it in words and knows the coordinator chose under delegated authority. Never
 answer tool-permission or billing prompts.
 
+**Answer a picker by message first, keypress last.** SendMessage the answer to the seat FIRST. Put the provenance in
+that message: who decided (the coordinator under R301/R493, or the maintainer verbatim, relayed). A seat at a picker
+still reads an incoming message and resolves its own picker, so the record shows the true decider. Use
+`herdr pane send-keys` only when the seat is still blocked about 1 minute later, and say in the message that a
+keypress will follow. A relayed keypress is indistinguishable from a human's in the seat's record.
+
+Measured 2026-11-02 ~23:1x-23:3xZ: three seats (dolt-connection-exhaustion, dispatcher-run-watch-cost, and
+fabro-currency earlier) recorded the coordinator's keypresses as the maintainer's own answers, and two of them then
+had to post attribution corrections.
+
 **Codex hook-trust prompts are the coordinator's to answer.** A Codex review prompt such as "N hooks need review before
 they can run" (`t trust all`) may always be answered with trust, to unblock a Codex pane, without asking the maintainer.
 The maintainer, 2026-11-02: "you can always take this action to unblok codex panes, claude doens't even ask this so
