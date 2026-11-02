@@ -7,12 +7,17 @@ per-tick cache and spending rule, so neither transport may accidentally spend
 the shared MCP key twice for one spec.
 """
 
+import http.client
+import json
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import Final, Protocol, cast
+from urllib.parse import urlsplit
 
 from livespec_dev_tooling.radar_honeycomb_models import (
     FALLBACK_TABLE,
+    MAX_QUERIES_PER_TICK,
     TICK_SPECS,
     ColumnValue,
     InputValue,
@@ -21,10 +26,17 @@ from livespec_dev_tooling.radar_honeycomb_models import (
 )
 
 __all__: list[str] = [
+    "DEFAULT_MCP_ENDPOINT",
     "HoneycombReader",
+    "JsonRpcMcpClient",
     "McpClient",
     "McpResponse",
+    "reader_from_environment",
 ]
+
+DEFAULT_MCP_ENDPOINT: Final[str] = "https://mcp.honeycomb.io/mcp"
+_MCP_KEY_ENV: Final[str] = "HONEYCOMB_MCP_API_KEY_LIVESPEC"
+_MCP_TIMEOUT_SECONDS: Final[float] = 30.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -41,6 +53,65 @@ class McpClient(Protocol):
     def run_query(
         self, *, api_key: str, endpoint: str, payload: Mapping[str, object]
     ) -> McpResponse: ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class McpRequest:
+    """The HTTPS request the JSON-RPC client sends, retained as a testable value."""
+
+    endpoint: str
+    data: bytes
+    headers: Mapping[str, str]
+
+    def get_header(self, *, name: str) -> str | None:
+        """Return one request header for protocol-level assertions."""
+        return self.headers.get(name)
+
+
+def urlopen(*, request: McpRequest, timeout: float) -> http.client.HTTPResponse:
+    """One patchable HTTPS-only boundary around the standard-library connection."""
+    target = urlsplit(request.endpoint)
+    path = f"{target.path or '/'}?{target.query}".rstrip("?")
+    connection = http.client.HTTPSConnection(target.netloc, timeout=timeout)
+    connection.request("POST", path, body=request.data, headers=dict(request.headers))
+    return connection.getresponse()
+
+
+class JsonRpcMcpClient:
+    """The production Honeycomb client: a JSON-RPC ``tools/call`` for ``run_query``."""
+
+    def run_query(
+        self, *, api_key: str, endpoint: str, payload: Mapping[str, object]
+    ) -> McpResponse:
+        body = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": "scheduler-honeycomb-reader",
+                "method": "tools/call",
+                "params": {"name": "run_query", "arguments": payload},
+            }
+        ).encode("utf-8")
+        request = McpRequest(
+            endpoint=endpoint,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        with urlopen(request=request, timeout=_MCP_TIMEOUT_SECONDS) as response:
+            decoded: object = json.loads(response.read().decode("utf-8"))
+        return McpResponse(payload=cast("Mapping[str, object]", decoded), failure_reason=None)
+
+
+def reader_from_environment(*, client: McpClient, endpoint: str | None = None) -> "HoneycombReader":
+    """Build a reader from the MCP key injected by ``with-livespec-env.sh``."""
+    return HoneycombReader(
+        api_key=os.environ[_MCP_KEY_ENV],
+        budget=MAX_QUERIES_PER_TICK,
+        client=client,
+        endpoint=endpoint or DEFAULT_MCP_ENDPOINT,
+    )
 
 
 @dataclass(kw_only=True)
