@@ -266,6 +266,13 @@
     - role: ci_converge_unit
       tags: [ci_converge_unit]
       when: cluster_role == 'server'
+    # The local-path provisioner manifest ALONE, under its own tag, so a fix to
+    # the provisioner's volume setup script reaches the cluster without a
+    # whole-stack converge under live CI (livespec-dev-tooling-5j5x). It diffs
+    # under --check and fails unless the live setup script's sha256 equals git.
+    - role: ci_local_path_provisioner
+      tags: [ci_local_path_provisioner]
+      when: cluster_role == 'server'
     # Beside it, and AFTER it on purpose: the factory reach proof as a converge
     # artifact (livespec-dev-tooling-jvnqwv, freeze ruling R70 of 2026-10-16).
     # It installs ci-runner/k3s/phase2/factory/verify-factory-reach.sh, its

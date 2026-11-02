@@ -134,6 +134,9 @@ _POWEREDGE_ROLES = (
     "cache_telemetry",
     "container_hook",
     "ci_converge_unit",
+    # The local-path provisioner manifest alone, under its own tag
+    # (livespec-dev-tooling-5j5x). Server-only.
+    "ci_local_path_provisioner",
     # The factory reach proof's install-and-consent-gated-run step
     # (livespec-dev-tooling-jvnqwv, freeze ruling R70). Server-only, and the ONE
     # role here gated on `cluster_role` rather than FACTORY_NODE despite being
