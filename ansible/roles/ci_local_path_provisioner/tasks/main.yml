@@ -1,0 +1,91 @@
+---
+# ci_local_path_provisioner: apply ONLY the fleet-owned local-path provisioner
+# manifest, ci-runner/k3s/phase2/local-path-provisioner/local-path-provisioner.yaml,
+# on the k3s server (livespec-dev-tooling-5j5x).
+#
+# WHY A ROLE OF ITS OWN. The boot converge (../ci_converge_unit,
+# converge-ci-stack.sh step 3) is the only other path that applies this file,
+# and it re-applies the WHOLE stack: Kueue, every ClusterQueue, ARC and every
+# scale set. A fix to the provisioner's `setup` script then reaches the cluster
+# only at the next reboot, or through a whole-stack run under live CI. Measured
+# 2026-11-02: the double-provision fix (eb5cb575) was merged while the live
+# ConfigMap still carried the old script. This tag converges that ONE manifest
+# and nothing else, in the same `kubectl apply -f` form the converge uses.
+#
+# UNDER --check the diff below still RUNS (check_mode: false; `kubectl diff`
+# writes nothing) and reports a pending change as `changed`, so
+# `just ansible-drift ansible/ci-pool.yml --tags ci_local_path_provisioner`
+# shows the drift instead of a silent `skipping`.
+#
+# AFTER THE APPLY it reads the live `kube-system/local-path-config` `setup`
+# script back and FAILS unless its sha256 equals the committed one. The
+# provisioner runs that script, so the ConfigMap is what must match git, not
+# the file on disk (CLAUDE.md "Ordering — confirm the reader before you write").
+
+- name: Refuse to run anywhere but the k3s server
+  ansible.builtin.assert:
+    that:
+      - cluster_role == 'server'
+
+- name: Diff the committed local-path provisioner manifest against the cluster
+  ansible.builtin.command:
+    argv: [kubectl, diff, -f, "-"]
+    stdin: "{{ lookup('ansible.builtin.file', ci_local_path_provisioner_manifest) }}"
+  environment:
+    KUBECONFIG: "{{ ci_local_path_provisioner_kubeconfig }}"
+  become: true
+  check_mode: false
+  register: ci_local_path_provisioner_diff
+  # kubectl diff: 0 = no drift, 1 = drift, anything else = the diff failed.
+  changed_when: ci_local_path_provisioner_diff.rc == 1
+  failed_when: ci_local_path_provisioner_diff.rc > 1
+
+- name: Apply the committed local-path provisioner manifest
+  ansible.builtin.command:
+    argv: [kubectl, apply, -f, "-"]
+    stdin: "{{ lookup('ansible.builtin.file', ci_local_path_provisioner_manifest) }}"
+  environment:
+    KUBECONFIG: "{{ ci_local_path_provisioner_kubeconfig }}"
+  become: true
+  when: ci_local_path_provisioner_diff.rc == 1
+  changed_when: true
+
+- name: Read the live provisioner setup script back
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - kube-system
+      - get
+      - configmap
+      - local-path-config
+      - -o
+      - jsonpath={.data.setup}
+  environment:
+    KUBECONFIG: "{{ ci_local_path_provisioner_kubeconfig }}"
+  become: true
+  check_mode: false
+  changed_when: false
+  register: ci_local_path_provisioner_live_setup
+  when: not ansible_check_mode
+
+- name: Fail unless the live setup script is the committed one
+  vars:
+    _committed_setup: >-
+      {{ (lookup('ansible.builtin.file', ci_local_path_provisioner_manifest)
+          | ansible.builtin.from_yaml_all
+          | selectattr('kind', 'defined')
+          | selectattr('kind', 'equalto', 'ConfigMap')
+          | first).data.setup }}
+  ansible.builtin.assert:
+    that:
+      - (ci_local_path_provisioner_live_setup.stdout | hash('sha256'))
+        == (_committed_setup | hash('sha256'))
+    fail_msg: >-
+      kube-system/local-path-config setup sha256
+      {{ ci_local_path_provisioner_live_setup.stdout | hash('sha256') }} is not the
+      committed {{ _committed_setup | hash('sha256') }}
+    success_msg: >-
+      live local-path-config setup sha256
+      {{ _committed_setup | hash('sha256') }} equals git
+  when: not ansible_check_mode

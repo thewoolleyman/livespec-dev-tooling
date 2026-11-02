@@ -1,0 +1,5 @@
+---
+# The ONE manifest this role applies, from the committed tree (livespec-dev-tooling-5j5x).
+ci_local_path_provisioner_manifest: "{{ role_path }}/../../../ci-runner/k3s/phase2/local-path-provisioner/local-path-provisioner.yaml"
+# The server's admin kubeconfig, the same one ../node_labels reads.
+ci_local_path_provisioner_kubeconfig: /etc/rancher/k3s/k3s.yaml
