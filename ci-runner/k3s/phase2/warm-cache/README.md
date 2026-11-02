@@ -152,8 +152,10 @@ emptyDirs. Workflow pods never use the proxy (their locks are untouched), but
 delegated gate Jobs do: their ephemeral work volumes start from the same warm
 generation, and their pod script routes each locked artifact the proxy serves
 through `/packages/` while leaving a miss or unreachable proxy direct to PyPI.
-Their `UV_DEFAULT_INDEX` also routes `uvx` tool environments through the
-proxy's rewritten Simple API. There is no hostPort or NetworkPolicy change. An
+Their `uvx` shim routes tool environments through the proxy's rewritten Simple
+API, then retries normal PyPI only when proxy resolution or download fails;
+the Job never sets `UV_DEFAULT_INDEX` globally, so its locked `uv run` still
+has its direct-PyPI fallback. There is no hostPort or NetworkPolicy change. An
 unreachable proxy degrades a rebuild or gate artifact to direct PyPI; it never
 fails the run.
 

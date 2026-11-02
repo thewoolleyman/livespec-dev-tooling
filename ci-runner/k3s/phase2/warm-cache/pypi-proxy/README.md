@@ -10,8 +10,11 @@ time (48 rebuilds a day at the CronJob cadence is 5 GB/day direct), and for
 delegated gate Jobs. Gate Jobs start with the seeded generation, route any
 locked artifact the proxy serves through `/packages/`, fall through to direct
 PyPI for a miss or unreachable service, and use the rewritten `/simple/` API
-for `uvx` tool environments. Workflow pods otherwise do not use it: their locks
-remain untouched and they read the seeded generation.
+for `uvx` tool environments. The gate applies that index only to `uvx` and
+retries direct PyPI if proxy resolution fails, rather than setting a global
+`UV_DEFAULT_INDEX` that could make locked `uv run` unsatisfiable. Workflow pods
+otherwise do not use it: their locks remain untouched and they read the seeded
+generation.
 
 | Path | Role |
 |---|---|

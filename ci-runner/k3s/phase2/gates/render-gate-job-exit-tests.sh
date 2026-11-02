@@ -57,7 +57,8 @@
 #      shell-carrying form is refused at render time;
 #   S. the uv cache path is backed by a generic ephemeral local-path work volume,
 #      so the provisioner seeds the current warm generation before the gate starts.
-#   T. uv and uvx misses resolve through the in-cluster PyPI files proxy.
+#   T. uvx resolves through the in-cluster PyPI files proxy without changing
+#      uv's default index, and retries direct PyPI only for proxy failures.
 #   U. a locked artifact the proxy cannot serve falls through to PyPI directly.
 #   V. the operator cache kill switch removes the gate's private uv seed before
 #      the gate container starts.
@@ -364,15 +365,13 @@ else
   fail "UV_CACHE_DIR is not mounted from a local-path generic ephemeral volume"
 fi
 
-echo "== T. uv and uvx misses resolve through the in-cluster PyPI files proxy =="
-# A frozen uv.lock carries absolute file-host URLs; uvx first reads Simple API
-# metadata. Both routes must reach the one proxy, whose Simple response has to
-# be rewritten before uv sees it. Clearing Accept-Encoding is load-bearing:
-# nginx sub_filter cannot rewrite a compressed upstream response.
-proxy_index="$(grep -A1 -F 'name: UV_DEFAULT_INDEX' "${out_a}" | grep -oE 'value: .*' | head -1)"
+echo "== T. uvx uses the proxy Simple API without globally changing uv's index =="
+# A frozen uv.lock carries absolute file-host URLs and is routed per artifact.
+# Only uvx lacks such a lock, so its shim gets the proxy's rewritten Simple API
+# and can retry normal PyPI if resolution through the proxy fails.
 proxy_origin="$(grep -A1 -F 'name: PYPI_FILES_PROXY' "${out_a}" | grep -oE 'value: .*' | head -1)"
-if [ "${proxy_index}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple' ]; then
-  fail "the gate does not set UV_DEFAULT_INDEX to the PyPI files proxy Simple API"
+if grep -qF 'name: UV_DEFAULT_INDEX' "${out_a}"; then
+  fail "the gate globally sets UV_DEFAULT_INDEX, so uv run cannot fall through from a proxy miss"
 elif [ "${proxy_origin}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081' ]; then
   fail "the gate does not name the PyPI files proxy origin for locked artifacts"
 elif ! grep -F 'location /simple/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
@@ -381,7 +380,7 @@ elif ! grep -F 'location /simple/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
      ! grep -F 'http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
   fail "the PyPI files proxy does not provide a decodable Simple API that rewrites artifacts through /packages/"
 else
-  pass "uv and uvx use the proxy Simple API and its rewritten artifact URLs"
+  pass "the uvx-only proxy shim and its rewritten Simple API are rendered"
 fi
 
 echo "== V. the operator cache kill switch makes the gate's uv volume cold =="
@@ -587,6 +586,9 @@ if [ "${1:-}" = "--show" ]; then
     *)          exit 1 ;;
   esac
 fi
+if [ "${GATE_RUN_UVX:-}" = 1 ]; then
+  uvx test-tool
+fi
 exit 0
 STUB
 chmod +x "${STUB_DIR}/just"
@@ -606,6 +608,17 @@ fi
 exit 0
 STUB
 chmod +x "${STUB_DIR}/git"
+
+cat > "${STUB_DIR}/uvx" <<'STUB'
+#!/usr/bin/env bash
+printf 'uvx index=%s args=%s\n' "${UV_DEFAULT_INDEX:-}" "$*" >> "${STUB_LOG}"
+if [ -n "${UVX_PROXY_FAIL:-}" ] && [ -n "${UV_DEFAULT_INDEX:-}" ]; then
+  echo 'error: failed to fetch package metadata from proxy' >&2
+  exit 1
+fi
+exit 0
+STUB
+chmod +x "${STUB_DIR}/uvx"
 
 gate_script() {
   # The gate container's shell script, dedented out of a rendered manifest.
@@ -631,6 +644,7 @@ run_gate_script() {
     cd "${SCRATCH}/gate-cwd" || exit 1
     PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
       CLONE_FAILS="${3:-}" PYPI_FILES_PROXY="${GATE_TEST_PROXY:-http://127.0.0.1:9}" \
+      UVX_PROXY_FAIL="${UVX_PROXY_FAIL:-}" GATE_RUN_UVX="${GATE_RUN_UVX:-}" \
       bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
   )
 }
@@ -1028,7 +1042,43 @@ else
   fail "refused without naming the cause: $(cat "${SCRATCH}/authority-member-shell.err")"
 fi
 
-echo "== U. locked artifacts use the proxy when served and fall through on a miss =="
+echo "== U. uvx retries direct PyPI when the proxy fails after a healthy probe =="
+uvx_proxy_root="${SCRATCH}/uvx-proxy"
+mkdir -p "${uvx_proxy_root}/simple"
+printf 'simple api\n' > "${uvx_proxy_root}/simple/index.html"
+uvx_proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+(cd "${uvx_proxy_root}" && exec python3 -m http.server "${uvx_proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
+uvx_proxy_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  (exec 9<>"/dev/tcp/127.0.0.1/${uvx_proxy_port}") 2>/dev/null && break
+  sleep 0.1
+done
+if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" UVX_PROXY_FAIL=1 GATE_RUN_UVX=1 \
+     run_gate_script "${declared_out}" "verify publish"; then
+  if grep -qF "uvx index=http://127.0.0.1:${uvx_proxy_port}/simple args=test-tool" "${SCRATCH}/stub.log" && \
+     grep -qF 'uvx index= args=test-tool' "${SCRATCH}/stub.log"; then
+    pass "a resolver failure through a healthy proxy retries uvx against direct PyPI"
+  else
+    fail "uvx did not use the proxy then direct fallback: $(cat "${SCRATCH}/stub.log")"
+  fi
+else
+  fail "the uvx proxy-fallback path made the gate fail: $(cat "${SCRATCH}/gate.err")"
+fi
+kill "${uvx_proxy_pid}" 2>/dev/null || true
+wait "${uvx_proxy_pid}" 2>/dev/null || true
+if GATE_TEST_PROXY="http://127.0.0.1:${uvx_proxy_port}" GATE_RUN_UVX=1 \
+     run_gate_script "${declared_out}" "verify publish"; then
+  if [ "$(grep -c '^uvx index=' "${SCRATCH}/stub.log")" -eq 2 ] && \
+     [ "$(grep -cF 'uvx index= args=test-tool' "${SCRATCH}/stub.log")" -eq 2 ]; then
+    pass "an unreachable proxy sends uvx directly to PyPI without failing the gate"
+  else
+    fail "an unreachable proxy did not bypass uvx cleanly: $(cat "${SCRATCH}/stub.log")"
+  fi
+else
+  fail "an unreachable uvx proxy made the gate fail: $(cat "${SCRATCH}/gate.err")"
+fi
+
+echo "== W. locked artifacts use the proxy when served and fall through on a miss =="
 # Run the rendered script against a local stand-in proxy. It serves exactly one
 # locked artifact: that URL must be rewritten, while the 404 remains direct.
 # Stopping the proxy then proves an unavailable service leaves both direct and
