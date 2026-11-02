@@ -146,7 +146,7 @@ else
   no "server plan equals the historical ordered command sequence"
   diff <(printf '%s\n' "$EXPECTED_SERVER_PLAN") <(printf '%s\n' "$SERVER_PLAN") || true
 fi
-if printf '%s\n' "$REPLY_OUT" | grep '^role: server$' >/dev/null; then
+if printf '%s\n' "$REPLY_OUT" | grep '^role:     server$' >/dev/null; then
   ok "server plan header states the role it read from the profile"
 else
   no "server plan header states the role it read from the profile"
@@ -195,7 +195,7 @@ else
   ok "the install command names the token FILE and never the token"
 fi
 
-if printf '%s\n' "$AGENT_PLAN" | grep -F "RUN [agent] 1. Install k3s v1.36.2+k3s1 AGENT joining https://192.168.1.200:6443" >/dev/null; then
+if printf '%s\n' "$AGENT_PLAN" | grep -F "RUN  [agent] 1. Install k3s v1.36.2+k3s1 AGENT joining https://192.168.1.200:6443" >/dev/null; then
   ok "the agent RUNs the pinned agent install, naming the cluster it joins"
 else
   no "the agent RUNs the pinned agent install, naming the cluster it joins"
@@ -213,7 +213,7 @@ do
   else
     no "agent SKIPs: ${fragment}"
   fi
-  if printf '%s\n' "$AGENT_PLAN" | grep -F "RUN [agent] ${fragment}" >/dev/null; then
+  if printf '%s\n' "$AGENT_PLAN" | grep -F "RUN  [agent] ${fragment}" >/dev/null; then
     no "agent plan must not RUN: ${fragment}"
   else
     ok "agent plan does not RUN: ${fragment}"
@@ -546,8 +546,8 @@ fi
 # second assertion is the one that matters: without it the label could be a
 # literal the script appends unconditionally, and FACTORY_NODE would be
 # decoration.
-if printf '%s\n' "$GMKTEC_COMMAND" | grep -F -- '--node-label ci-runner.io/factory=true' \
- >/dev/null   && printf '%s\n' "$SERVER_PLAN" | grep -F -- '--node-label ci-runner.io/factory=true' >/dev/null; then
+if printf '%s\n' "$GMKTEC_COMMAND" | grep -F -- '--node-label ci-runner.io/factory=true' >/dev/null \
+   && printf '%s\n' "$SERVER_PLAN" | grep -F -- '--node-label ci-runner.io/factory=true' >/dev/null; then
   ok "F6  every committed pool profile plans the factory label, the server included"
 else
   no "F6  every committed pool profile plans the factory label, the server included"
