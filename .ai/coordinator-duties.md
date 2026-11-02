@@ -29,6 +29,12 @@ Measured 2026-10-31: `bd-guard/test/test-capture-start.sh` asserted a 5.0 s wall
 bd-ib-qbwd7n (#4036). Under normal host load it measured 8-13 s, and it blocked every hand commit in the orchestrator
 repo. A coordinator endorsed a 90 s retry loop instead of the root fix.
 
+Before you fix a flake yourself, search the ledger for an item that already owns it
+(`/usr/local/bin/with-livespec-env.sh -- bd list --status all --json`, matching the test or script name). If one
+exists, leave the fix to its owner, or name the item in your PR so its factory run is not duplicated. Measured
+2026-11-02: PR #3182 fixed the `render-gate-job-exit-tests.sh` proxy readiness flake while
+livespec-dev-tooling-b2mnrq, the same flake, already had a factory run in flight.
+
 ## 3. Unblock blocked seats every tick
 
 A seat sitting at a picker produces no reports, so waiting on its report waits forever. Every tick:
