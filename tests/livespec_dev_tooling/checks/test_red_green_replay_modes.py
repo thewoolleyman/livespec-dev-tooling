@@ -254,9 +254,10 @@ def _run_suite_leg(
 
     seen: dict[str, object] = {}
 
-    def fake_run_suite(*, argv: list[str], timeout_seconds: int):
+    def fake_run_suite(*, argv: list[str], timeout_seconds: int | None = None, bound=None):
         seen["argv"] = argv
         seen["timeout"] = timeout_seconds
+        seen["bound"] = bound
         return suite_run
 
     monkeypatch.setattr(suite, "run_suite", fake_run_suite)
@@ -280,7 +281,11 @@ def test_suite_green_passes_n_from_test_nprocs_and_writes_unchanged_trailers(
     rc, log, message, seen, _ = _run_suite_leg(monkeypatch, tmp_path, suite_run=run)
     assert rc == 0
     assert seen["argv"][-2:] == ["-n", "4"]  # type: ignore[index]
-    assert seen["timeout"] == 2400
+    bound = seen["bound"]
+    assert bound is not None
+    assert isinstance(bound, _suite_bound_cls())
+    assert bound.stall_seconds == 900
+    assert bound.ceiling_seconds is None
     assert "TDD-Suite-Green-Scope: full-suite" in message
     assert "TDD-Suite-Green-Output-Checksum: sha256:" in message
     assert "TDD-Suite-Green-Captured-At:" in message
@@ -412,3 +417,10 @@ def _suite_run_cls():
     from _red_green_replay_suite import SuiteRun
 
     return SuiteRun
+
+
+def _suite_bound_cls():
+    _load_modes()  # puts the checks dir on sys.path
+    from _red_green_replay_suite import SuiteBound
+
+    return SuiteBound

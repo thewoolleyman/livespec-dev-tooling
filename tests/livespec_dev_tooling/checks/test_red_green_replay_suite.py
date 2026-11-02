@@ -133,6 +133,24 @@ def test_suite_bound_defaults_to_a_stall_window_without_a_total_ceiling() -> Non
         assert invalid.ceiling_seconds is None
 
 
+def test_kill_reason_uses_output_progress_unless_an_operator_sets_a_ceiling() -> None:
+    """Long-running suites survive when they print; silent ones do not."""
+    mod = _load()
+    assert hasattr(mod, "kill_reason")
+    unbounded = mod.SuiteBound(stall_seconds=900, ceiling_seconds=None)
+    assert (
+        mod.kill_reason(started=0.0, last_progress=10_740.0, now=10_800.0, bound=unbounded) is None
+    )
+    assert (
+        mod.kill_reason(started=0.0, last_progress=9_900.0, now=10_800.0, bound=unbounded)
+        == "stalled"
+    )
+    ceiling = mod.SuiteBound(stall_seconds=900, ceiling_seconds=4_800)
+    assert (
+        mod.kill_reason(started=0.0, last_progress=4_799.0, now=4_800.0, bound=ceiling) == "ceiling"
+    )
+
+
 def test_checksum_ignores_line_order_and_duration() -> None:
     mod = _load()
     first = (
