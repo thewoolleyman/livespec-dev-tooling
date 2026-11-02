@@ -54,7 +54,12 @@
 #      under the GATED REPOSITORY'S OWN skip variable, before any recipe can
 #      read it and said out loud in the verdict stream — a run told nothing
 #      exports nothing and keeps today's command, and every half-told or
-#      shell-carrying form is refused at render time.
+#      shell-carrying form is refused at render time;
+#   S. the uv cache path is backed by a generic ephemeral local-path work volume,
+#      so the provisioner seeds the current warm generation before the gate starts.
+#   T. uv and uvx misses, and the locked artifacts of every uv.lock, resolve
+#      through the in-cluster PyPI files proxy; and
+#   U. the operator cache kill switch reaches the gate and removes its uv seed.
 #
 # WHY R EXISTS (livespec-dev-tooling-mex6ga). A member declaring it reads an
 # authorization held outside the tree must not run in the gate Job, but the Job
@@ -115,6 +120,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RENDERER="${SCRIPT_DIR}/render-gate-job.sh"
 TEMPLATE="${SCRIPT_DIR}/gate-job-template.yaml"
 HOOK_POD_TEMPLATE="${SCRIPT_DIR}/../arc/hook-pod-template.yaml"
+PYPI_PROXY_TEMPLATE="${SCRIPT_DIR}/../warm-cache/pypi-proxy/pypi-proxy.yaml"
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "${SCRATCH}"' EXIT
 
@@ -128,6 +134,7 @@ fail() { echo "  FAIL  $1"; failures=$((failures + 1)); }
 [ -x "${RENDERER}" ] || { echo "FATAL: ${RENDERER} not found or not executable" >&2; exit 1; }
 [ -f "${TEMPLATE}" ] || { echo "FATAL: ${TEMPLATE} not found" >&2; exit 1; }
 [ -f "${HOOK_POD_TEMPLATE}" ] || { echo "FATAL: ${HOOK_POD_TEMPLATE} not found" >&2; exit 1; }
+[ -f "${PYPI_PROXY_TEMPLATE}" ] || { echo "FATAL: ${PYPI_PROXY_TEMPLATE} not found" >&2; exit 1; }
 
 # --- fixture repositories -----------------------------------------------------
 make_repo() {
@@ -335,6 +342,94 @@ for var in UV_CACHE_DIR SCCACHE_REDIS_ENDPOINT SCCACHE_REDIS_RW_MODE CI_CACHE_CA
   fi
 done
 [ "${drift}" -eq 0 ] && pass "all four cache variables match the hook pod template"
+
+echo "== S. UV_CACHE_DIR is backed by the seeded local-path work volume =="
+# The local-path provisioner seeds _warm/uv at the root of every volume it
+# provisions. Mount that volume at /__w, the parent of UV_CACHE_DIR, rather
+# than mounting a host path or an emptyDir at the cache path.
+gate_cache_mount="$(grep -A1 -F '            - name: warm-uv-cache' "${out_a}" \
+  | grep -F 'mountPath: /__w' || true)"
+cache_claim="$(awk '
+  /- name: warm-uv-cache/ { found = 1 }
+  found { print }
+  found && /storageClassName: local-path$/ { exit }
+' "${out_a}")"
+if [ -n "${gate_cache_mount}" ] && \
+   printf '%s\n' "${cache_claim}" | grep -F 'ephemeral:' >/dev/null && \
+   printf '%s\n' "${cache_claim}" | grep -F 'volumeClaimTemplate:' >/dev/null && \
+   printf '%s\n' "${cache_claim}" | grep -F 'storageClassName: local-path' >/dev/null; then
+  pass "UV_CACHE_DIR is under a local-path generic ephemeral volume"
+else
+  fail "UV_CACHE_DIR is not mounted from a local-path generic ephemeral volume"
+fi
+
+echo "== T. uv and uvx misses resolve through the in-cluster PyPI files proxy =="
+# uvx resolves an unseeded tool from the Simple API, whose response names the
+# artifact at files.pythonhosted.org. The gate must use the proxy's Simple API,
+# and that proxy must rewrite those artifact URLs back to its /packages/ cache.
+proxy_index="$(grep -A1 -F 'name: UV_DEFAULT_INDEX' "${out_a}" | grep -oE 'value: .*' | head -1)"
+if [ "${proxy_index}" != 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple' ]; then
+  fail "the gate does not set UV_DEFAULT_INDEX to the PyPI files proxy Simple API"
+elif ! grep -F 'location /simple/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
+  fail "the PyPI files proxy does not serve the Simple API"
+elif ! grep -F 'https://files.pythonhosted.org/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null || \
+     ! grep -F 'http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/packages/' "${PYPI_PROXY_TEMPLATE}" >/dev/null; then
+  fail "the PyPI files proxy does not rewrite Simple API artifact URLs through /packages/"
+elif ! awk '/location \/simple\/ \{/ { in_simple = 1 } in_simple && /proxy_set_header Accept-Encoding "";/ { found = 1 } in_simple && /^        \}/ { in_simple = 0 } END { exit found ? 0 : 1 }' "${PYPI_PROXY_TEMPLATE}"; then
+  fail "the PyPI files proxy /simple/ location forwards the client Accept-Encoding, so sub_filter cannot rewrite gzipped responses"
+else
+  pass "uv and uvx use the proxy Simple API and its rewritten artifact URLs"
+fi
+# UV_DEFAULT_INDEX cannot reach the absolute files.pythonhosted.org URLs a
+# frozen uv.lock carries, so the gate script must also swap that prefix for the
+# proxy's /packages/ in every uv.lock, before any recipe runs, and under the
+# operator kill switch too (an unseeded cache is exactly when it downloads).
+check_locked_artifact_rewrite() {
+  local manifest="$1"
+  local origin
+  origin="$(grep -A1 -F 'name: PYPI_FILES_PROXY' "${manifest}" | grep -oE 'value: .*' | head -1)"
+  [ "${origin}" = 'value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081' ] || return 1
+  awk '
+    /^ *#/ { next }
+    index($0, "files.pythonhosted.org/packages/#${PYPI_FILES_PROXY}/packages/#g") && /sed -i/ { rewrite = NR }
+    /for recipe in / { recipes = NR }
+    END { exit !(rewrite && recipes && rewrite < recipes) }
+  ' "${manifest}"
+}
+if check_locked_artifact_rewrite "${out_a}"; then
+  pass "locked uv.lock artifact URLs are rewritten through the proxy before the recipes run"
+else
+  fail "the gate does not rewrite locked uv.lock artifact URLs through the PyPI files proxy before its recipes"
+fi
+
+echo "== U. the operator cache kill switch makes the gate's uv volume cold =="
+operator_out="${SCRATCH}/operator-cache-off.yaml"
+if CI_CACHE_KILL_SWITCH=operator "${RENDERER}" --repo-root "${SCRATCH}/repo-a" \
+     --tree-hash "${HASH_A}" "${OUR_SUITE[@]}" > "${operator_out}" 2>"${SCRATCH}/operator-cache-off.err"; then
+  operator_switch="$(grep -A1 -F 'name: CI_CACHE_KILL_SWITCH' "${operator_out}" | grep -oE 'value: .*' | head -1)"
+  if [ "${operator_switch}" != 'value: "operator"' ]; then
+    fail "CI_CACHE_KILL_SWITCH=operator does not reach the gate container"
+  elif ! grep -F 'rm -rf /__w/_warm/uv' "${operator_out}" >/dev/null; then
+    fail "the operator cache kill switch does not remove the gate's uv seed"
+  elif grep -F 'postStart:' "${operator_out}" >/dev/null; then
+    fail "the gate removes its uv seed in a postStart hook, which runs concurrently with the entrypoint"
+  elif ! check_locked_artifact_rewrite "${operator_out}"; then
+    fail "the Job rendered under the operator kill switch does not route locked uv.lock artifacts through the PyPI files proxy"
+  elif ! awk '
+      /^      initContainers:/ { in_init = 1; next }
+      /^      containers:/ { in_init = 0 }
+      in_init && /- name: apply-cache-kill-switch/ { named = 1 }
+      in_init && named && /rm -rf \/__w\/_warm\/uv/ { removed = 1 }
+      in_init && named && /mountPath: \/__w$/ { mounted = 1 }
+      END { exit !(removed && mounted) }
+    ' "${operator_out}"; then
+    fail "the uv seed is not removed by an init container that mounts the warm-uv-cache volume at /__w"
+  else
+    pass "the operator switch reaches the gate and an init container removes its uv seed before the entrypoint"
+  fi
+else
+  fail "renderer errored under CI_CACHE_KILL_SWITCH=operator: $(cat "${SCRATCH}/operator-cache-off.err")"
+fi
 
 echo "== I. the fetch brings the RANGE and a resolvable diff base =="
 if check_fetch_brings_range_and_master "${out_a}" "${HASH_A}"; then
@@ -553,9 +648,15 @@ run_gate_script() {
   # own exit status, which IS the Job's verdict.
   : > "${SCRATCH}/stub.log"
   gate_script "$1" > "${SCRATCH}/gate-script.sh"
-  PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
-    CLONE_FAILS="${3:-}" \
-    bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
+  # Run from a scratch working directory (the pod's is /workspace) and point the
+  # proxy at a closed port, so the lock rewrite never reaches a real tree.
+  mkdir -p "${SCRATCH}/gate-cwd"
+  (
+    cd "${SCRATCH}/gate-cwd" || exit 1
+    PATH="${STUB_DIR}:${PATH}" STUB_LOG="${SCRATCH}/stub.log" PROVIDED="$2" \
+      CLONE_FAILS="${3:-}" PYPI_FILES_PROXY="${GATE_TEST_PROXY:-http://127.0.0.1:9}" \
+      bash "${SCRATCH}/gate-script.sh" > "${SCRATCH}/gate.out" 2> "${SCRATCH}/gate.err"
+  )
 }
 
 if run_gate_script "${declared_out}" "verify publish"; then
@@ -949,6 +1050,47 @@ elif grep -qF 'is not a plain just' "${SCRATCH}/authority-member-shell.err"; the
   pass "an authority skip member name carrying shell is refused at render time"
 else
   fail "refused without naming the cause: $(cat "${SCRATCH}/authority-member-shell.err")"
+fi
+
+echo "== V. the gate script routes locked artifacts through a healthy proxy, and only then =="
+# Runs the rendered script (stub just/git) from a scratch working directory
+# holding a uv.lock, once against a stand-in proxy that answers /health and once
+# against a closed port. Hashes must survive the rewrite: it is a prefix swap.
+lock_line='wheels = [{ url = "https://files.pythonhosted.org/packages/ab/cd/x-1.0-py3-none-any.whl", hash = "sha256:0123abcd" }]'
+proxy_root="${SCRATCH}/fake-proxy"
+mkdir -p "${proxy_root}" "${SCRATCH}/gate-cwd/sub"
+echo ok > "${proxy_root}/health"
+proxy_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+(cd "${proxy_root}" && exec python3 -m http.server "${proxy_port}" --bind 127.0.0.1 >/dev/null 2>&1) &
+proxy_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  (exec 9<>"/dev/tcp/127.0.0.1/${proxy_port}") 2>/dev/null && break
+  sleep 0.3
+done
+printf '%s\n' "${lock_line}" > "${SCRATCH}/gate-cwd/uv.lock"
+printf '%s\n' "${lock_line}" > "${SCRATCH}/gate-cwd/sub/uv.lock"
+if GATE_TEST_PROXY="http://127.0.0.1:${proxy_port}" run_gate_script "${declared_out}" "verify publish"; then
+  expected="wheels = [{ url = \"http://127.0.0.1:${proxy_port}/packages/ab/cd/x-1.0-py3-none-any.whl\", hash = \"sha256:0123abcd\" }]"
+  if [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${expected}" ] && \
+     [ "$(cat "${SCRATCH}/gate-cwd/sub/uv.lock")" = "${expected}" ]; then
+    pass "with a healthy proxy every uv.lock's file-host prefix is swapped and its hashes are untouched"
+  else
+    fail "a healthy proxy did not produce the prefix-swapped locks: $(cat "${SCRATCH}/gate-cwd/uv.lock")"
+  fi
+else
+  fail "the gate script failed against a healthy stand-in proxy: $(cat "${SCRATCH}/gate.err")"
+fi
+kill "${proxy_pid}" 2>/dev/null || true
+wait "${proxy_pid}" 2>/dev/null || true
+printf '%s\n' "${lock_line}" > "${SCRATCH}/gate-cwd/uv.lock"
+if run_gate_script "${declared_out}" "verify publish"; then
+  if [ "$(cat "${SCRATCH}/gate-cwd/uv.lock")" = "${lock_line}" ] && grep -qF 'not answering /health' "${SCRATCH}/gate.err"; then
+    pass "with an unreachable proxy the locks are left alone and the gate says so"
+  else
+    fail "an unreachable proxy changed the lock or went unreported"
+  fi
+else
+  fail "an unreachable proxy made the gate script fail instead of falling back to direct fetches"
 fi
 
 echo

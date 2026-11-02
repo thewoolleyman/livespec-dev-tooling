@@ -226,6 +226,26 @@ spec:
           volumeMounts:
             - name: livespec-core
               mountPath: /livespec-core
+        # The operator cache kill switch, applied BEFORE the gate container's
+        # entrypoint. A postStart hook runs concurrently with the entrypoint, so
+        # it could not guarantee the gate starts on a cold UV_CACHE_DIR; an init
+        # container finishes first. It removes only this Job's private reflink
+        # seed, never the warm generation.
+        - name: apply-cache-kill-switch
+          image: @@IMAGE@@
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ "${CI_CACHE_KILL_SWITCH:-}" = "operator" ]; then
+                rm -rf /__w/_warm/uv
+              fi
+          env:
+            - name: CI_CACHE_KILL_SWITCH
+              value: "@@CACHE_KILL_SWITCH@@"
+          volumeMounts:
+            - name: warm-uv-cache
+              mountPath: /__w
       containers:
         - name: gate
           # Requirement 1: resolved by render-gate-job.sh from the GATED
@@ -379,6 +399,40 @@ spec:
               # before any recipe can read it, and an export written after the
               # suite started would reach nothing it ran.
               @@GATE_AUTHORITY_SKIP@@
+              # LOCKED ARTIFACTS ROUTE THROUGH THE PYPI FILES PROXY TOO.
+              # UV_DEFAULT_INDEX below serves only what uv resolves from an index
+              # (uvx tool environments, build dependencies). `uv sync` of a
+              # frozen uv.lock downloads every locked distribution from the
+              # ABSOLUTE files.pythonhosted.org URL written into the lock, which
+              # no index setting changes (warm-cache/README.md, "The PyPI files
+              # proxy"). So a cold or incomplete seed, or the operator cache
+              # kill switch, would still fetch from PyPI directly. Do what the
+              # warm-cache populator does to its own clone of each lock: swap
+              # the file-host prefix for the proxy's /packages/. The lock's
+              # hashes are untouched and still enforced, and the cache entries
+              # land where the ORIGINAL lock expects them, so a seeded hit is
+              # unaffected. The container's working directory is /workspace, a
+              # throwaway fetch, so the rewrite never leaves the pod. Only when the proxy answers /health:
+              # unreachable, uv goes direct exactly as the populator does.
+              gate_pypi_proxy_healthy() {
+                local hostport="${PYPI_FILES_PROXY#http://}"
+                timeout 5 bash -c '
+                  hostport="$1"
+                  exec 9<>"/dev/tcp/${hostport%%:*}/${hostport##*:}" || exit 1
+                  printf "GET /health HTTP/1.0\r\nHost: %s\r\n\r\n" "${hostport%%:*}" >&9
+                  head -n 1 <&9 | grep -q " 200 "
+                ' _ "${hostport}"
+              }
+              if gate_pypi_proxy_healthy; then
+                locks=0
+                while IFS= read -r -d '' lock; do
+                  sed -i "s#https://files.pythonhosted.org/packages/#${PYPI_FILES_PROXY}/packages/#g" "${lock}"
+                  locks=$((locks + 1))
+                done < <(find . -name uv.lock -not -path '*/.git/*' -print0)
+                echo ":: gate: ${locks} uv.lock file(s) rewritten to fetch locked artifacts through ${PYPI_FILES_PROXY}/packages/"
+              else
+                echo ":: gate: WARN: pypi files proxy ${PYPI_FILES_PROXY} not answering /health; locked artifacts will be fetched directly from files.pythonhosted.org" >&2
+              fi
               for recipe in @@GATE_RECIPE_NAMES@@; do
                 if just --show "${recipe}" > /dev/null 2>&1; then
                   continue
@@ -544,8 +598,22 @@ spec:
             # cannot drift. Keep these in step with that file's container env.
             - name: UV_CACHE_DIR
               value: /__w/_warm/uv
+            # The files proxy also serves a rewritten Simple API. This routes
+            # unseeded uv and uvx tool environments through its cached
+            # /packages/ artifacts instead of files.pythonhosted.org.
+            - name: UV_DEFAULT_INDEX
+              value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081/simple
+            # The same proxy's origin, for the gate script's rewrite of the
+            # locked artifact URLs in every uv.lock (UV_DEFAULT_INDEX cannot
+            # reach those).
+            - name: PYPI_FILES_PROXY
+              value: http://pypi-proxy.ci-warm-cache.svc.cluster.local:8081
+            # Keep the fleet cache kill switch on the gate's one seeded work
+            # volume too. The apply-cache-kill-switch init container above
+            # removes only this Job's private reflink seed when an operator
+            # needs a cold control.
             - name: CI_CACHE_KILL_SWITCH
-              value: ""
+              value: "@@CACHE_KILL_SWITCH@@"
             - name: SCCACHE_REDIS_ENDPOINT
               value: redis://sccache-redis.ci-sccache.svc.cluster.local:6379
             - name: SCCACHE_REDIS_RW_MODE
@@ -586,6 +654,11 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+            # The local-path provisioner seeds _warm/uv at a work volume's
+            # root before its consumer starts. Mount its parent at /__w so the
+            # UV_CACHE_DIR above reaches that private reflink seed.
+            - name: warm-uv-cache
+              mountPath: /__w
             # The core tree the init container fetched, at the path
             # LIVESPEC_CORE_PLUGIN_ROOT above names. Without this mount that
             # variable names an empty path and the checks that read it fail
@@ -598,4 +671,16 @@ spec:
           emptyDir: {}
         - name: livespec-core
           emptyDir: {}
+        # A generic ephemeral PVC uses the same local-path class as ARC's work
+        # volumes, so its provision-time setup reflink-seeds the live uv
+        # generation at _warm/uv before this gate container starts.
+        - name: warm-uv-cache
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                storageClassName: local-path
+                resources:
+                  requests:
+                    storage: 5Gi
         @@GATE_PRIVATE_SIBLING_VOLUME@@

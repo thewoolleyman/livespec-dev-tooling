@@ -222,14 +222,9 @@ plan_lifecycle_anchor = true
 delegated_gate = true
 # The dev host delegates this commit-time aggregate when it can submit a gates
 # Job; sandbox and credentialless hosts retain the local pre-commit gate.
-# OFF until the delegated Job bootstraps its checkout: pre_commit_delegate's
-# Job suite is only `check-pre-commit-gated-tree`, without this repo's
-# `install-worktree-pack` / `install-commit-refuse-hooks` prefix from
-# gate_check_suite, so check-primary-checkout-commit-refuse-hook-installed
-# fails in every delegated Job and refused every dev-host hand commit
-# (measured 2026-11-02 07:26Z, Job gate-livespec-dev-tooling-fh94v).
-# Re-enable with the fix; plan epic livespec-dev-tooling-6vuiwe.
-delegated_pre_commit = false
+# The delegated pre-commit Job derives this declared bootstrap, replacing only
+# its final aggregate with `check-pre-commit-gated-tree` for the staged index.
+delegated_pre_commit = true
 # What THIS repository's gate Job runs, in order — its own declaration rather
 # than a constant inside the shared `gate-job-template.yaml`
 # (livespec-dev-tooling-saxz). Three of these four exist in no other
