@@ -1048,7 +1048,7 @@ fi
 wait_for_stand_in_proxy() {
   local port="$1" _
   for _ in $(seq 1 300); do
-    if (exec 9<>"/dev/tcp/127.0.0.1/${port}" && printf 'HEAD / HTTP/1.0\r\n\r\n' >&9 && head -n 1 <&9 | grep -q '^HTTP/') 2>/dev/null; then
+    if (exec 9<>"/dev/tcp/127.0.0.1/${port}" && printf 'HEAD / HTTP/1.0\r\n\r\n' >&9 && IFS= read -r status_line <&9 && [[ "${status_line}" == HTTP/* ]]) 2>/dev/null; then
       return 0
     fi
     sleep 0.1
