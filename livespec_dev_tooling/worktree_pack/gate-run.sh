@@ -41,12 +41,12 @@
 # files every terminal state is derivable, with no ambiguity left:
 #
 #   exit_code == 0            → PASSED
-#   exit_code 1..127          → FAILED   (a real verdict: a check failed
+#   exit_code 1..74, 76..127  → FAILED   (a real verdict: a check failed
 #                                         or a hook refused; output.log
 #                                         carries the reason)
-#   exit_code >= 128          → DIED_WITHOUT_VERDICT (killed by signal
-#                                         N=code-128; a signal death is
-#                                         NOT a check verdict)
+#   exit_code == 75 or >= 128 → DIED_WITHOUT_VERDICT (the delegated
+#                                         no-verdict sentinel, or a signal
+#                                         death; neither is a check verdict)
 #   no exit_code, pid alive   → RUNNING
 #   no exit_code, pid dead    → DIED_WITHOUT_VERDICT (vanished)
 #
@@ -290,7 +290,7 @@ derive_state_into() {
         read -r code <"$dir/exit_code" || code=""
         if [[ "$code" == "0" ]]; then
             STATE='PASSED'
-        elif [[ "$code" -ge "$SIGNAL_EXIT_FLOOR" ]]; then
+        elif [[ "$code" -eq "$EX_NO_VERDICT" || "$code" -ge "$SIGNAL_EXIT_FLOOR" ]]; then
             STATE='DIED_WITHOUT_VERDICT'
         else
             STATE='FAILED'

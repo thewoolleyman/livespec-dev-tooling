@@ -310,14 +310,19 @@ def test_gate_start_keeps_commit_and_push_hooks_on_the_launching_host(*, tmp_pat
 
 
 @pytest.mark.parametrize(
-    ("remote_exit", "expected_wait_exit"),
+    ("remote_exit", "expected_wait_exit", "expected_state"),
     [
-        pytest.param(0, 0, id="job-verdict-streams-into-the-run-record"),
-        pytest.param(75, 75, id="lost-job-is-died-without-verdict-without-local-retry"),
+        pytest.param(0, 0, "PASSED", id="job-verdict-streams-into-the-run-record"),
+        pytest.param(
+            75,
+            75,
+            "DIED_WITHOUT_VERDICT",
+            id="lost-job-is-died-without-verdict-without-local-retry",
+        ),
     ],
 )
 def test_gate_start_runs_the_cluster_client_over_the_worktree_tree(
-    *, tmp_path: Path, remote_exit: int, expected_wait_exit: int
+    *, tmp_path: Path, remote_exit: int, expected_wait_exit: int, expected_state: str
 ) -> None:
     """The shell runner reaches its cluster child and preserves its remote verdict."""
     root, environment, original_index_tree = _worktree_with_uncommitted_content(tmp_path=tmp_path)
@@ -360,6 +365,9 @@ def test_gate_start_runs_the_cluster_client_over_the_worktree_tree(
     waited = _run(args=["bash", str(_RUNNER), "wait", run_dir.name], cwd=root, env=environment)
 
     assert waited.returncode == expected_wait_exit
+    assert f"state             : {expected_state}" in waited.stdout
+    if expected_state == "DIED_WITHOUT_VERDICT":
+        assert "FAILED" not in waited.stdout
     assert (run_dir / "venue").read_text(encoding="utf-8") == "cluster_job\n"
     assert (run_dir / "tree_hash").read_text(encoding="utf-8") == "worktree-tree\n"
     assert (run_dir / "job_name").read_text(encoding="utf-8") == "gate-worktree-job\n"
