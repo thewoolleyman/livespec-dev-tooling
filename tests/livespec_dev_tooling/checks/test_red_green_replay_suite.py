@@ -111,14 +111,25 @@ def test_xdist_importable_matches_find_spec() -> None:
     assert mod.xdist_importable() is (importlib.util.find_spec("xdist") is not None)
 
 
-def test_timeout_default_and_override() -> None:
+def test_the_default_bound_is_a_stall_window_with_no_total_ceiling() -> None:
+    """An unset ceiling lets a slow suite continue while it prints progress."""
     mod = _load()
-    assert mod.DEFAULT_TIMEOUT_SECONDS == 2400
-    assert mod.suite_timeout_seconds(environ={}) == 2400
-    assert mod.suite_timeout_seconds(environ={"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": "90"}) == 90
+    bound = mod.suite_bound(environ={})
+    assert bound.stall_seconds == mod.DEFAULT_STALL_SECONDS == 900
+    assert bound.ceiling_seconds is None
+    assert mod.suite_bound(environ={"LIVESPEC_SUITE_GREEN_STALL_SECONDS": "90"}).stall_seconds == 90
+    assert (
+        mod.suite_bound(environ={"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": "4800"}).ceiling_seconds
+        == 4800
+    )
     for bad in ("", "abc", "0", "-5"):
-        environ = {"LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": bad}
-        assert mod.suite_timeout_seconds(environ=environ) == 2400
+        environ = {
+            "LIVESPEC_SUITE_GREEN_STALL_SECONDS": bad,
+            "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS": bad,
+        }
+        assert mod.suite_bound(environ=environ) == mod.SuiteBound(
+            stall_seconds=900, ceiling_seconds=None
+        )
 
 
 def test_checksum_ignores_line_order_and_duration() -> None:

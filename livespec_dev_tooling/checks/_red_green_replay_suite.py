@@ -42,19 +42,24 @@ from _red_green_replay_protocol import RED_GREEN_REPLAY_PROTOCOL  # noqa: E402
 from _red_green_replay_trailers import write_trailers  # noqa: E402
 
 __all__: list[str] = [
+    "DEFAULT_STALL_SECONDS",
     "DEFAULT_TIMEOUT_SECONDS",
+    "SuiteBound",
     "SuiteRun",
     "_handle_suite_green_mode",
     "canonical_output_checksum",
     "has_shared_test_support",
     "run_suite",
     "stages_only_shared_test_support",
+    "suite_bound",
     "suite_pytest_argv",
     "suite_timeout_seconds",
     "xdist_importable",
 ]
 
+DEFAULT_STALL_SECONDS: int = 900
 DEFAULT_TIMEOUT_SECONDS: int = 2400
+_STALL_ENV: str = "LIVESPEC_SUITE_GREEN_STALL_SECONDS"
 _TIMEOUT_ENV: str = "LIVESPEC_SUITE_GREEN_TIMEOUT_SECONDS"
 _NPROCS_ENV: str = "test_nprocs"
 _LANE_ENV: str = "LIVESPEC_CI_LANE"
@@ -84,6 +89,28 @@ class SuiteRun:
     returncode: int | None
     output: str
     timed_out: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class SuiteBound:
+    """The progress stall window and optional wall-clock ceiling for a suite run."""
+
+    stall_seconds: int
+    ceiling_seconds: int | None
+
+
+def _positive_seconds(*, raw: str) -> int | None:
+    """Return a valid positive duration, or None for an unset/invalid value."""
+    text = raw.strip()
+    return int(text) if text.isdigit() and int(text) > 0 else None
+
+
+def suite_bound(*, environ: Mapping[str, str]) -> SuiteBound:
+    """Return the stall default and the optional operator-provided total ceiling."""
+    return SuiteBound(
+        stall_seconds=_positive_seconds(raw=environ.get(_STALL_ENV, "")) or DEFAULT_STALL_SECONDS,
+        ceiling_seconds=_positive_seconds(raw=environ.get(_TIMEOUT_ENV, "")),
+    )
 
 
 def suite_timeout_seconds(*, environ: Mapping[str, str]) -> int:
