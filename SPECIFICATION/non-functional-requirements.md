@@ -672,3 +672,27 @@ A radar is VALID only when ALL of the following hold:
 Defects that need only the committed file MUST fail `just check`. These are duplicate pairs, malformed references and schema violations, the last through the repository's type gate. Defects that need the ledger MUST NOT be checked inside `just check`, because `just check` also runs where no ledger is reachable, and per constraints.md §"No network I/O" a check module performs no network I/O. They MUST instead be checked by the ONE load-time entry point every radar consumer calls, and by a `just radar-validate` recipe run through the credential wrapper. That entry point MUST refuse an invalid radar, naming every defect, and MUST NOT return a partial, cached or previously valid radar in its place.
 
 An entry's target is NOT READY when it is closed, or when any of its blockers is not closed. Its blockers are its ledger `blocks` edges and its declared `blocked_by` references. `parent-child`, `relates-to`, `discovered-from`, `related` and `duplicates` edges MUST NOT block. A plan's children MUST be computed as the union of its dotted-id descendants and the items carrying a `parent-child` edge to its epic, because neither source is complete alone. Readers MUST accept both dependency-row spellings the ledger emits: `depends_on_id` with `type` (from `bd list`) and `id` with `dependency_type` (from `bd show`). Readers MUST read an absent `dependencies` key as no edges.
+
+## Scheduler Honeycomb input contract
+
+Every measured observable that the radar admission function consumes MUST be read from the Honeycomb `livespec` environment by code, never by an LLM. That covers host pressure, available memory, node allocatable against requested resources, live runs per execution target, and per-run-class cost percentiles. The reader MUST query through the Honeycomb MCP endpoint (`https://mcp.honeycomb.io/mcp`) with the MCP key that `with-livespec-env.sh` injects, because the team's Pro plan has no REST Query Data API.
+
+Each query MUST be a named query spec committed in code. A spec names:
+
+- its dataset;
+- its calculations, filters and breakdowns;
+- its time window;
+- every expected result column with that column's type;
+- a staleness bound.
+
+The set of specs one admission tick runs MUST be fixed and counted. A unit test MUST fail when that count exceeds the committed per-tick budget constant. Results MUST be cached for the duration of a tick, so a repeat read inside the tick spends no query. The constant MUST be set from a measurement of the other callers' share of the MCP key's hourly budget, recorded beside it, and MUST NOT be set from an estimate.
+
+A contract test, run against live Honeycomb through the credential wrapper, MUST fail for a spec in each of these cases:
+
+- a result is missing an expected column;
+- a column's parsed type differs from the spec;
+- the newest row is older than the spec's staleness bound.
+
+The required attribute and column set MUST be published from one committed file that other repositories' gates read, never duplicated. A Honeycomb board named `scheduler inputs` MUST be generated from the specs by a committed applier, whose read-only drift mode reports every difference between the live board and the generated definition.
+
+When the endpoint is unreachable, returns an error, or the per-tick budget is exhausted, the reader MUST return the fixed conservative defaults from a committed fallback table. Every decision made from those defaults MUST carry `inputs: fallback` together with the failure reason. The coordinator's printout MUST show a `HONEYCOMB UNREACHABLE since <UTC>` line above radar entry 1, and a work item for the outage MUST exist in the ledger within one tick. The reader MUST NOT reorder or edit the radar array.

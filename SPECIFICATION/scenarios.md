@@ -1937,3 +1937,31 @@ When readiness is computed for `I`
 Then `I` MUST be ready
 
 And no open item MUST be named as its blocker
+
+## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test
+
+Given a committed query spec that expects column `p90_cpu_seconds` of type float
+
+When the contract test runs that spec against live Honeycomb and the result has no `p90_cpu_seconds` column
+
+Then the contract test MUST fail naming the spec and the missing column
+
+## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions
+
+Given the MCP endpoint override names a host that does not resolve
+
+When an admission tick runs
+
+Then every decision in that tick MUST carry `inputs: fallback` with the failure reason
+
+And the coordinator printout MUST show a `HONEYCOMB UNREACHABLE since <UTC>` line above radar entry 1
+
+And the radar array MUST be unchanged
+
+## Scenario: a per-tick query set larger than the budget constant fails the unit tests
+
+Given the per-tick budget constant is N
+
+When a change adds query specs so that one tick would run N + 1 queries
+
+Then the unit test that counts the per-tick set MUST fail naming the count and the constant

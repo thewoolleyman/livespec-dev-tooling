@@ -1574,5 +1574,37 @@
     "test": "TODO",
     "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, computing readiness over ledger fixtures in both dependency-row spellings with relates-to and discovered-from edges to open items and a blocks edge to a closed item. livespec-dev-tooling-m2x5pt owns it.",
     "work_item": "livespec-dev-tooling-m2x5pt"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Scheduler Honeycomb input contract",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the scheduler's Honeycomb reader over its committed query specs with a stub MCP client for the cache, budget and fallback paths; plan radar-and-deterministic-admission slice 2. livespec-dev-tooling-34bee5 owns it.",
+    "work_item": "livespec-dev-tooling-34bee5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, running the contract test against a result lacking an expected column and asserting it fails naming the spec and the column. livespec-dev-tooling-k3dpo2 owns it.",
+    "work_item": "livespec-dev-tooling-k3dpo2"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, pointing the reader's MCP endpoint override at an unresolvable host and asserting every value is marked inputs: fallback with the reason and the radar array is unchanged; the printout line lands with the slice-4 report generator. livespec-dev-tooling-34bee5 owns it.",
+    "work_item": "livespec-dev-tooling-34bee5"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
+    "test": "TODO",
+    "reason": "Spec-first: a real test at the integration tier or above is owed for this heading, adding query specs past the per-tick budget constant and asserting the counting test fails naming the count and the constant. livespec-dev-tooling-34bee5 owns it.",
+    "work_item": "livespec-dev-tooling-34bee5"
   }
 ]

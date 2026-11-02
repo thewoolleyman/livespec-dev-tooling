@@ -85,6 +85,13 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "non-functional-requirements.md",
+    "heading": "## Scheduler Honeycomb input contract",
+    "work_item": "livespec-dev-tooling-34bee5",
+    "first_seen": "2026-11-02"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario: a Docker engine install guard observation sample ignores pod veths on a bridge the snapshot recorded",
     "work_item": "livespec-dev-tooling-eaigbj",
@@ -103,6 +110,13 @@
     "heading": "## Scenario: a Docker engine install guard publish resumed after a kill during dpkg -i completes the trigger handler that install activated",
     "work_item": "livespec-dev-tooling-mrr7ye",
     "first_seen": "2026-10-17"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a Honeycomb query spec whose result lacks an expected column fails its contract test",
+    "work_item": "livespec-dev-tooling-k3dpo2",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -243,6 +257,13 @@
     "heading": "## Scenario: a member with an unparseable pin file or a non-pin error row is still excluded from the release dispatch",
     "work_item": "livespec-dev-tooling-epcoja",
     "first_seen": "2026-10-24"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: a per-tick query set larger than the budget constant fails the unit tests",
+    "work_item": "livespec-dev-tooling-34bee5",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -397,6 +418,13 @@
     "heading": "## Scenario: an unparseable member .livespec.jsonc is a tenant-connection finding, never a skip",
     "work_item": "livespec-dev-tooling-kvvfo3",
     "first_seen": "2026-10-30"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: an unreachable Honeycomb endpoint yields flagged fallback decisions",
+    "work_item": "livespec-dev-tooling-34bee5",
+    "first_seen": "2026-11-02"
   },
   {
     "spec_root": "SPECIFICATION",
